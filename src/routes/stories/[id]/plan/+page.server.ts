@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { characters, characterStoryNotes } from '$lib/server/db/schema';
+import { characters, characterStoryNotes, entityMentions, scenes } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -39,7 +39,42 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
-	return { story, universe, user: locals.user!, characters: characterList, selected, storyNotesMd };
+	// Every mention of the selected character in this story, for the
+	// "Appears in" panel. Grouped by scene in the page.
+	let appearsIn: {
+		sceneId: string;
+		sceneTitle: string | null;
+		snippet: string;
+	}[] = [];
+	if (selected) {
+		appearsIn = await db
+			.select({
+				sceneId: scenes.id,
+				sceneTitle: scenes.title,
+				snippet: entityMentions.surroundingText
+			})
+			.from(entityMentions)
+			.innerJoin(scenes, eq(entityMentions.sourceId, scenes.id))
+			.where(
+				and(
+					eq(entityMentions.sourceType, 'scene'),
+					eq(entityMentions.targetType, 'character'),
+					eq(entityMentions.targetId, selected.id),
+					eq(scenes.storyId, story.id)
+				)
+			)
+			.orderBy(asc(scenes.globalPosition), asc(entityMentions.position));
+	}
+
+	return {
+		story,
+		universe,
+		user: locals.user!,
+		characters: characterList,
+		selected,
+		storyNotesMd,
+		appearsIn
+	};
 };
 
 export const actions: Actions = {
