@@ -155,7 +155,9 @@
 			<div class="left-head">
 				<div class="seg full">
 					<button class="seg-btn active" type="button">Write</button>
-					<button class="seg-btn" type="button" disabled>Plan</button>
+					<a class="seg-btn seg-link" href={resolve('/stories/[id]/plan', { id: data.story.id })}>
+						Plan
+					</a>
 					<button class="seg-btn" type="button" disabled>Notes</button>
 				</div>
 			</div>
@@ -379,6 +381,10 @@
 	.scene-row {
 		text-decoration: none;
 		color: inherit;
+	}
+	.seg-link {
+		text-decoration: none;
+		text-align: center;
 	}
 	main.pane.center {
 		scroll-behavior: smooth;

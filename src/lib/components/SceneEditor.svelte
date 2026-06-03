@@ -4,10 +4,9 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { EditorView, keymap, placeholder } from '@codemirror/view';
+	import { EditorView } from '@codemirror/view';
 	import { Compartment, EditorState } from '@codemirror/state';
-	import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-	import { markdown } from '@codemirror/lang-markdown';
+	import { proseExtensions } from '$lib/editor';
 
 	let {
 		sceneId,
@@ -67,14 +66,7 @@
 			state: EditorState.create({
 				doc: body,
 				extensions: [
-					history(),
-					keymap.of([...defaultKeymap, ...historyKeymap]),
-					markdown(),
-					placeholder('Start writing...'),
-					EditorView.lineWrapping,
-					EditorView.updateListener.of((update) => {
-						if (update.docChanged) scheduleSave();
-					}),
+					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
 					mentionsCompartment.of([]),
 					autocompleteCompartment.of([])
 				]
@@ -116,33 +108,5 @@
 	}
 	.editor-title-input::placeholder {
 		color: var(--text-faint);
-	}
-	.editor-cm :global(.cm-editor) {
-		background: none;
-	}
-	.editor-cm :global(.cm-editor.cm-focused) {
-		outline: none;
-	}
-	.editor-cm :global(.cm-scroller) {
-		font-family: var(--font-content);
-		font-size: 17.5px;
-		line-height: 1.7;
-		color: var(--text);
-	}
-	.editor-cm :global(.cm-content) {
-		padding: 0;
-		caret-color: var(--text);
-	}
-	.editor-cm :global(.cm-line) {
-		padding: 0;
-	}
-	.editor-cm :global(.cm-placeholder) {
-		color: var(--text-faint);
-	}
-	.editor-cm :global(.cm-cursor) {
-		border-left-color: var(--text);
-	}
-	.editor-cm :global(.cm-selectionBackground) {
-		background: var(--accent-soft) !important;
 	}
 </style>

@@ -90,6 +90,34 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 
+	// Plan view: create a character, fill the editor, and it persists.
+	await page.getByRole('link', { name: 'Plan' }).click();
+	await expect(page).toHaveURL(/\/plan$/);
+	await page.getByPlaceholder('New character name').fill('Alice');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	const characterSave = page.waitForResponse(
+		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByPlaceholder('Name', { exact: true }).fill('Alice Vane');
+	await page
+		.getByPlaceholder('Nicknames and variants, separated by commas. Used to spot mentions.')
+		.fill('Allie, Mrs. Fenwick');
+	await page
+		.getByPlaceholder('Notes that apply only to this story.')
+		.fill('Starts the book in debt.');
+	await characterSave;
+	await page.reload();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
+	await expect(page.locator('.ent-row .name')).toHaveText('Alice Vane');
+	await expect(page.getByPlaceholder('Notes that apply only to this story.')).toHaveValue(
+		'Starts the book in debt.'
+	);
+
+	// Back to Write via the segmented control.
+	await page.getByRole('link', { name: 'Write' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();

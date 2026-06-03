@@ -24,7 +24,15 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 12. Drag-to-reorder scenes
 - [x] 12b. Continuous story view, read-only (pulled forward from Phase 6)
 
-> v0.5 ships at the end of Phase 2.
+> v0.5 ships at the end of Phase 2. (Shipped.)
+
+## Phase 3 - Worldbuilding
+
+- [x] 13. Characters: schema, Plan view CRUD, story notes overlay, aliases
+- [ ] 14. Entity mentions index, worker rebuild, editor underlines, hover tooltips
+- [ ] 15. Find usages / appears-in panels
+
+> v1.0 ships after step 15.
 
 ## Feedback backlog
 
