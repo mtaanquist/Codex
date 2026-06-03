@@ -2,7 +2,7 @@
 // imports carry explicit .ts extensions.
 import { and, eq } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, entityMentions, scenes, stories } from './db/schema.ts';
+import { characters, entityMentions, places, scenes, stories } from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
 
 export async function rebuildSceneMentions(
@@ -22,11 +22,22 @@ export async function rebuildSceneMentions(
 		.where(
 			and(eq(characters.universeId, scene.universeId), eq(characters.autoDetectMentions, true))
 		);
-	const targets: MentionTarget[] = cast.map((character) => ({
-		id: character.id,
-		type: 'character',
-		names: [character.name, ...character.aliases]
-	}));
+	const placeRows = await db
+		.select({ id: places.id, name: places.name })
+		.from(places)
+		.where(and(eq(places.universeId, scene.universeId), eq(places.autoDetectMentions, true)));
+	const targets: MentionTarget[] = [
+		...cast.map(
+			(character): MentionTarget => ({
+				id: character.id,
+				type: 'character',
+				names: [character.name, ...character.aliases]
+			})
+		),
+		...placeRows.map(
+			(place): MentionTarget => ({ id: place.id, type: 'place', names: [place.name] })
+		)
+	];
 	const found = detectMentions(scene.bodyMd, targets);
 
 	await db.transaction(async (tx) => {
