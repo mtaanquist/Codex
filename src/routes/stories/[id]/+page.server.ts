@@ -35,7 +35,23 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		.where(eq(scenes.storyId, story.id))
 		.orderBy(asc(scenes.globalPosition));
 
-	const selectedId = url.searchParams.get('scene');
+	// The story view renders every scene as one continuous document.
+	const view = url.searchParams.get('view') === 'story' ? ('story' as const) : ('scene' as const);
+	let storyDoc = null;
+	if (view === 'story') {
+		storyDoc = await db
+			.select({
+				id: scenes.id,
+				chapterId: scenes.chapterId,
+				title: scenes.title,
+				bodyMd: scenes.bodyMd
+			})
+			.from(scenes)
+			.where(eq(scenes.storyId, story.id))
+			.orderBy(asc(scenes.globalPosition));
+	}
+
+	const selectedId = view === 'scene' ? url.searchParams.get('scene') : null;
 	let selectedScene = null;
 	if (selectedId) {
 		const [row] = await db
@@ -51,7 +67,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		user: locals.user!,
 		chapters: chapterList,
 		scenes: sceneList,
-		selectedScene
+		selectedScene,
+		view,
+		storyDoc
 	};
 };
 

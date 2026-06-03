@@ -34,8 +34,15 @@
 
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
+	const viewStory = $derived(data.view === 'story');
+	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.id }));
+
 	function chapterScenes(chapterId: string) {
 		return data.scenes.filter((scene) => scene.chapterId === chapterId);
+	}
+
+	function docScenes(chapterId: string | null) {
+		return (data.storyDoc ?? []).filter((scene) => scene.chapterId === chapterId);
 	}
 
 	function words(count: number) {
@@ -129,6 +136,7 @@
 		{initials}
 		onEnterFocus={() => (focus = true)}
 		{saveStatus}
+		storyView={{ active: viewStory, toggleHref: viewStory ? storyPath : `${storyPath}?view=story` }}
 	/>
 	<div class="body">
 		<aside class="pane left">
@@ -182,7 +190,7 @@
 											<a
 												class="scene-row"
 												class:active={scene.id === data.selectedScene?.id}
-												href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${scene.id}`}
+												href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
 												draggable="true"
 												ondragstart={(e) => {
 													draggingSceneId = scene.id;
@@ -223,7 +231,7 @@
 									<a
 										class="scene-row"
 										class:active={scene.id === data.selectedScene?.id}
-										href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${scene.id}`}
+										href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
 										draggable="true"
 										ondragstart={(e) => {
 											draggingSceneId = scene.id;
@@ -256,7 +264,55 @@
 			</div>
 		</aside>
 		<main class="pane center">
-			{#if data.selectedScene}
+			{#if viewStory}
+				<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+				<div class="editor story-doc">
+					<h1 class="doc-title">{data.story.title}</h1>
+					{#if (data.storyDoc ?? []).length === 0}
+						<div class="empty">
+							<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+						</div>
+					{/if}
+					{#each data.chapters as chapter, index (chapter.id)}
+						{@const docList = docScenes(chapter.id)}
+						{#if docList.length > 0}
+							<section class="doc-chapter" id="chapter-{chapter.id}">
+								<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
+								{#each docList as scene (scene.id)}
+									<article class="doc-scene" id="scene-{scene.id}">
+										<a
+											class="doc-scene-mark"
+											href={`${storyPath}?scene=${scene.id}`}
+											title="Edit this scene"
+										>
+											{scene.title ?? 'Untitled scene'}
+										</a>
+										<div class="doc-scene-body">{scene.bodyMd}</div>
+									</article>
+								{/each}
+							</section>
+						{/if}
+					{/each}
+					{#if docScenes(null).length > 0}
+						<section class="doc-chapter">
+							<h2>Unfiled scenes</h2>
+							{#each docScenes(null) as scene (scene.id)}
+								<article class="doc-scene" id="scene-{scene.id}">
+									<a
+										class="doc-scene-mark"
+										href={`${storyPath}?scene=${scene.id}`}
+										title="Edit this scene"
+									>
+										{scene.title ?? 'Untitled scene'}
+									</a>
+									<div class="doc-scene-body">{scene.bodyMd}</div>
+								</article>
+							{/each}
+						</section>
+					{/if}
+				</div>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			{:else if data.selectedScene}
 				{#key data.selectedScene.id}
 					<SceneEditor
 						sceneId={data.selectedScene.id}
@@ -307,5 +363,47 @@
 	.scene-row {
 		text-decoration: none;
 		color: inherit;
+	}
+	main.pane.center {
+		scroll-behavior: smooth;
+	}
+	.doc-title {
+		font-family: var(--font-content);
+		font-size: 34px;
+		font-weight: 600;
+		letter-spacing: -0.015em;
+		margin: 0 0 30px;
+	}
+	.doc-chapter {
+		scroll-margin-top: 24px;
+	}
+	.doc-chapter h2 {
+		font-family: var(--font-content);
+		font-size: 23px;
+		font-weight: 600;
+		margin: 40px 0 16px;
+	}
+	.doc-scene {
+		margin: 0 0 30px;
+		scroll-margin-top: 24px;
+	}
+	.doc-scene-mark {
+		display: block;
+		color: var(--text-faint);
+		font-size: 11.5px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		text-decoration: none;
+		margin: 0 0 8px;
+	}
+	.doc-scene-mark:hover {
+		color: var(--accent);
+	}
+	.doc-scene-body {
+		font-family: var(--font-content);
+		font-size: 17.5px;
+		line-height: 1.7;
+		white-space: pre-wrap;
 	}
 </style>
