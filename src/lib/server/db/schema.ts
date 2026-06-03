@@ -9,6 +9,7 @@ import {
 	pgTable,
 	text,
 	timestamp,
+	unique,
 	uuid
 } from 'drizzle-orm/pg-core';
 
@@ -168,6 +169,54 @@ export const scenes = pgTable(
 			.$onUpdate(() => new Date())
 	},
 	(table) => [index('scenes_characters_present_gin').using('gin', table.charactersPresent)]
+);
+
+// Characters belong to the universe, not a story; per-story context layers on
+// through character_story_notes.
+export const characters = pgTable('characters', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	universeId: uuid('universe_id')
+		.references(() => universes.id)
+		.notNull(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	name: text('name').notNull(),
+	// Nicknames and variants; used for mention detection.
+	aliases: text('aliases').array().notNull().default([]),
+	// One or two lines; shown in hover popovers.
+	summaryMd: text('summary_md'),
+	bodyMd: text('body_md').notNull().default(''),
+	// Set false for common-word names ("Will", "Art").
+	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+	metadata: jsonb('metadata').notNull().default({}),
+	// Original card data if imported (SillyTavern etc).
+	importedFrom: jsonb('imported_from'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+export const characterStoryNotes = pgTable(
+	'character_story_notes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		characterId: uuid('character_id')
+			.references(() => characters.id)
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		notesMd: text('notes_md').notNull().default(''),
+		metadata: jsonb('metadata').notNull().default({}),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [unique('character_story_notes_unique').on(table.characterId, table.storyId)]
 );
 
 // Single-use tokens for email verification and password reset. The raw token
