@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	export type EntityKind = 'character' | 'place';
+	export type EntityKind = 'character' | 'place' | 'lore';
 </script>
 
 <script lang="ts">
@@ -13,6 +13,7 @@
 	let {
 		kind,
 		entity,
+		categories = [],
 		storyId,
 		storyNotesMd,
 		onStatus
@@ -22,9 +23,12 @@
 			id: string;
 			name: string;
 			aliases?: string[];
+			keywords?: string[];
+			categoryId?: string | null;
 			summaryMd: string | null;
 			bodyMd: string;
 		};
+		categories?: { id: string; name: string; color: string | null }[];
 		storyId: string;
 		storyNotesMd: string;
 		onStatus: (status: SaveStatus) => void;
@@ -34,12 +38,14 @@
 	// kind never changes for an instance; the page keys this component by
 	// entity id.
 	// svelte-ignore state_referenced_locally
-	const ENDPOINT = kind === 'character' ? 'characters' : 'places';
+	const ENDPOINT = kind === 'character' ? 'characters' : kind === 'place' ? 'places' : 'lore';
 	// svelte-ignore state_referenced_locally
 	const BODY_PLACEHOLDER =
 		kind === 'character'
 			? 'Who are they? History, voice, appearance, secrets...'
-			: 'What is this place? Geography, mood, who holds it...';
+			: kind === 'place'
+				? 'What is this place? Geography, mood, who holds it...'
+				: 'What is it? Rules, history, how it matters...';
 
 	let editorEl: HTMLDivElement;
 	let view: EditorView | undefined;
@@ -49,6 +55,10 @@
 	let name = $state(entity.name);
 	// svelte-ignore state_referenced_locally
 	let aliasesText = $state((entity.aliases ?? []).join(', '));
+	// svelte-ignore state_referenced_locally
+	let keywordsText = $state((entity.keywords ?? []).join(', '));
+	// svelte-ignore state_referenced_locally
+	let categoryValue = $state(entity.categoryId ?? '');
 	// svelte-ignore state_referenced_locally
 	let summary = $state(entity.summaryMd ?? '');
 	// svelte-ignore state_referenced_locally
@@ -73,6 +83,12 @@
 			};
 			if (kind === 'character') {
 				payload.aliases = aliasesText.split(',').map((alias) => alias.trim());
+			}
+			if (kind === 'lore') {
+				payload.keywords = keywordsText.split(',').map((keyword) => keyword.trim());
+			}
+			if (categories.length > 0) {
+				payload.categoryId = categoryValue || null;
 			}
 			const response = await fetch(`/api/${ENDPOINT}/${entity.id}`, {
 				method: 'PUT',
@@ -121,7 +137,11 @@
 
 <div class="detail">
 	<div class="detail-head">
-		<span class="badge lg" style="background: {entityColor(entity.name)}">
+		<span
+			class="badge lg"
+			style="background: {categories.find((c) => c.id === categoryValue)?.color ??
+				entityColor(entity.name)}"
+		>
 			{entityLetter(entity.name)}
 		</span>
 		<input
@@ -142,6 +162,29 @@
 			bind:value={aliasesText}
 			oninput={scheduleSave}
 		/>
+	{/if}
+
+	{#if kind === 'lore'}
+		<div class="section-label">Keywords</div>
+		<input
+			class="line-input"
+			type="text"
+			placeholder="Terms that refer to this entry, separated by commas. Used to spot mentions."
+			bind:value={keywordsText}
+			oninput={scheduleSave}
+		/>
+	{/if}
+
+	{#if categories.length > 0}
+		<div class="section-label">Category</div>
+		<select class="line-input" bind:value={categoryValue} onchange={scheduleSave}>
+			{#if kind !== 'lore'}
+				<option value="">No category</option>
+			{/if}
+			{#each categories as category (category.id)}
+				<option value={category.id}>{category.name}</option>
+			{/each}
+		</select>
 	{/if}
 
 	<div class="section-label">Summary</div>

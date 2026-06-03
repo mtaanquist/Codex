@@ -1,11 +1,13 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { places, placeStoryNotes, stories } from './db/schema';
+import { entityCategories, places, placeStoryNotes, stories } from './db/schema';
 
 export type PlaceSave = {
 	name: string;
 	summaryMd: string | null;
 	bodyMd: string;
+	// Optional grouping; null clears it, undefined leaves it unchanged.
+	categoryId?: string | null;
 	// When present, the per-story "In this book" notes are upserted too.
 	storyId?: string;
 	storyNotesMd?: string;
@@ -31,9 +33,27 @@ export async function savePlace(
 	// Only a changed name can add or remove mentions.
 	const mentionsAffected = name !== place.name;
 
+	if (save.categoryId != null) {
+		const [category] = await db
+			.select({ id: entityCategories.id })
+			.from(entityCategories)
+			.where(
+				and(
+					eq(entityCategories.id, save.categoryId),
+					eq(entityCategories.universeId, place.universeId)
+				)
+			);
+		if (!category) return { ok: false, reason: 'category not found' };
+	}
+
 	await db
 		.update(places)
-		.set({ name, summaryMd: save.summaryMd?.trim() || null, bodyMd: save.bodyMd })
+		.set({
+			name,
+			summaryMd: save.summaryMd?.trim() || null,
+			bodyMd: save.bodyMd,
+			...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
+		})
 		.where(eq(places.id, place.id));
 
 	if (save.storyId !== undefined) {

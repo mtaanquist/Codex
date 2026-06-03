@@ -136,6 +136,31 @@ describe('place mentions', () => {
 	});
 });
 
+describe('lore mentions', () => {
+	it('indexes lore titles and keywords', async () => {
+		const owner = (await db.select({ id: users.id }).from(users).limit(1))[0].id;
+		const [category] = await db
+			.insert(schema.entityCategories)
+			.values({ universeId, ownerId: owner, name: 'Lore', sortOrder: 0 })
+			.returning();
+		await db.insert(schema.loreEntries).values({
+			universeId,
+			ownerId: owner,
+			categoryId: category.id,
+			title: 'Toll-pass',
+			keywords: ['pass-stamp']
+		});
+		await db
+			.update(scenes)
+			.set({ bodyMd: 'She held the pass-stamp high; the Toll-pass was hers.' })
+			.where(eq(scenes.id, sceneId));
+		const result = await rebuildSceneMentions(db, sceneId);
+		expect(result).toMatchObject({ ok: true, count: 2 });
+		const rows = await mentionRows(sceneId);
+		expect(rows.every((row) => row.targetType === 'lore_entry')).toBe(true);
+	});
+});
+
 describe('rebuildUniverseMentions', () => {
 	it('reindexes every scene in the universe', async () => {
 		await db

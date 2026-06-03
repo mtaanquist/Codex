@@ -60,7 +60,10 @@
 						class:active={character.id === data.selected?.id}
 						href={`${planPath}?entity=${character.id}`}
 					>
-						<span class="badge dot" style="background: {entityColor(character.name)}">
+						<span
+							class="badge dot"
+							style="background: {character.color ?? entityColor(character.name)}"
+						>
 							{entityLetter(character.name)}
 						</span>
 						<span class="name">{character.name}</span>
@@ -88,7 +91,7 @@
 						class:active={place.id === data.selected?.id}
 						href={`${planPath}?entity=${place.id}`}
 					>
-						<span class="badge dot" style="background: {entityColor(place.name)}">
+						<span class="badge dot" style="background: {place.color ?? entityColor(place.name)}">
 							{entityLetter(place.name)}
 						</span>
 						<span class="name">{place.name}</span>
@@ -104,6 +107,63 @@
 						<Icon name="plus" size={13} /> Add place
 					</button>
 				</form>
+
+				{#each data.categories as category (category.id)}
+					{@const entries = data.lore.filter((entry) => entry.categoryId === category.id)}
+					<div class="group-label">
+						<span class="gl-left">
+							{#if category.color}<span class="cat-dot" style="background: {category.color}"
+								></span>{/if}
+							{category.name}
+						</span>
+						<span class="count">{entries.length}</span>
+					</div>
+					{#each entries as entry (entry.id)}
+						<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+						<a
+							class="ent-row"
+							class:active={entry.id === data.selected?.id}
+							href={`${planPath}?entity=${entry.id}`}
+						>
+							<span
+								class="badge dot"
+								style="background: {category.color ?? entityColor(entry.name)}"
+							>
+								{entityLetter(entry.name)}
+							</span>
+							<span class="name">{entry.name}</span>
+						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					{/each}
+					<form method="POST" action="?/createLoreEntry" class="new-entity">
+						<input type="hidden" name="categoryId" value={category.id} />
+						<input type="text" name="name" placeholder="New {category.name} entry" required />
+						<button class="outline-add" type="submit">
+							<Icon name="plus" size={13} /> Add entry
+						</button>
+					</form>
+				{/each}
+				{#if form?.kind === 'lore' && form.message}
+					<p class="error new-entity" role="alert">{form.message}</p>
+				{/if}
+
+				<form method="POST" action="?/createCategory" class="new-entity">
+					{#if form?.kind === 'category' && form.message}
+						<p class="error" role="alert">{form.message}</p>
+					{/if}
+					<input type="text" name="name" placeholder="New category name" required />
+					<select name="color">
+						<option value="">No colour</option>
+						<option value="var(--cat-blue)">Blue</option>
+						<option value="var(--cat-violet)">Violet</option>
+						<option value="var(--cat-rose)">Rose</option>
+						<option value="var(--cat-green)">Green</option>
+						<option value="var(--cat-amber)">Amber</option>
+					</select>
+					<button class="outline-add" type="submit">
+						<Icon name="plus" size={13} /> Add category
+					</button>
+				</form>
 			</div>
 		</aside>
 		<main class="pane center">
@@ -112,6 +172,7 @@
 					<EntityEditor
 						kind={data.selectedKind}
 						entity={data.selected}
+						categories={data.categories}
 						storyId={data.story.id}
 						storyNotesMd={data.storyNotesMd}
 						onStatus={(status) => (saveStatus = status)}
@@ -201,6 +262,22 @@
 	}
 	.r-line {
 		text-decoration: none;
+	}
+	.cat-dot {
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		border-radius: 99px;
+		margin-right: 6px;
+	}
+	.new-entity select {
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 6px);
+		color: var(--text);
+		font-size: 13px;
+		padding: 7px 9px;
+		outline: none;
 	}
 	.snippet {
 		color: var(--text-muted);
