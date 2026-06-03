@@ -33,6 +33,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		error(result.reason.includes('not found') ? 404 : 400, result.reason);
 	}
 	// Name or alias changes can add or remove mentions anywhere in the universe.
-	await queueUniverseMentions(result.universeId);
+	if (result.mentionsAffected) {
+		await queueUniverseMentions(result.universeId);
+	}
 	return json({ savedAt: new Date().toISOString() });
 };

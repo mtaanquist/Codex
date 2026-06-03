@@ -46,4 +46,10 @@ From first real use (2026-06-03):
 - [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
 - [ ] Entity colours with meaning: let characters/places optionally join an entity_category (nullable category_id, additive) so badge colours are universe-defined groupings; build with step 16's category work
 
+From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
+
+- [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts)
+- [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
+- [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
+
 Later phases tracked in the roadmap until they get close.

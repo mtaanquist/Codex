@@ -107,6 +107,24 @@ describe('saveCharacter', () => {
 		expect(rows[0].notesMd).toBe('Starts the book in debt to Corvin.');
 	});
 
+	it('reports whether the name or aliases changed, so callers can skip reindexing', async () => {
+		const changed = await saveCharacter(db, characterId, ownerId, {
+			name: 'Alice V.',
+			aliases: ['Allie'],
+			summaryMd: null,
+			bodyMd: ''
+		});
+		expect(changed).toMatchObject({ ok: true, mentionsAffected: true });
+
+		const unchanged = await saveCharacter(db, characterId, ownerId, {
+			name: 'Alice V.',
+			aliases: ['Allie'],
+			summaryMd: 'Body and summary edits alone do not affect mentions.',
+			bodyMd: 'New body.'
+		});
+		expect(unchanged).toMatchObject({ ok: true, mentionsAffected: false });
+	});
+
 	it('rejects a save by someone who does not own the character', async () => {
 		const result = await saveCharacter(db, characterId, strangerId, {
 			name: 'Hijacked',

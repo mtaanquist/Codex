@@ -40,6 +40,9 @@
 	let notes = $state(storyNotesMd);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let dirty = false;
+	// Saves are chained so an earlier slow request can never land after, and
+	// overwrite, a newer one.
+	let saveChain: Promise<void> = Promise.resolve();
 
 	async function save() {
 		if (!view) return;
@@ -66,10 +69,14 @@
 		}
 	}
 
+	function enqueueSave() {
+		saveChain = saveChain.then(save);
+	}
+
 	function scheduleSave() {
 		dirty = true;
 		clearTimeout(saveTimer);
-		saveTimer = setTimeout(save, SAVE_DEBOUNCE_MS);
+		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
 	}
 
 	onMount(() => {
@@ -85,9 +92,11 @@
 		});
 		return () => {
 			clearTimeout(saveTimer);
-			if (dirty) void save();
-			view?.destroy();
-			view = undefined;
+			if (dirty) enqueueSave();
+			void saveChain.then(() => {
+				view?.destroy();
+				view = undefined;
+			});
 		};
 	});
 </script>
