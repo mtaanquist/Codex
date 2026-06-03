@@ -8,6 +8,9 @@ export default defineConfig({
 		// throwaway Postgres) live under tests/integration. End-to-end tests run
 		// under Playwright (see playwright.config.ts) and are excluded here.
 		include: ['src/**/*.{test,spec}.ts', 'tests/integration/**/*.{test,spec}.ts'],
-		environment: 'node'
+		environment: 'node',
+		// Integration test files share one test database; running files in
+		// parallel would let their truncates race.
+		fileParallelism: false
 	}
 });

@@ -2,6 +2,7 @@ import {
 	bigint,
 	boolean,
 	customType,
+	inet,
 	jsonb,
 	pgTable,
 	text,
@@ -47,4 +48,34 @@ export const users = pgTable('users', {
 	approvedAt: timestamp('approved_at', { withTimezone: true }),
 	// Updated on successful sign-in; useful for stale-account cleanup.
 	lastLoginAt: timestamp('last_login_at', { withTimezone: true })
+});
+
+// Server-side session rows so sessions can be listed and revoked; the cookie
+// carries the session id.
+export const sessions = pgTable('sessions', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id')
+		.references(() => users.id)
+		.notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+	// Set on sign-out or 'log out everywhere'.
+	revokedAt: timestamp('revoked_at', { withTimezone: true }),
+	userAgent: text('user_agent'),
+	ip: inet('ip')
+});
+
+// Single-use tokens for email verification and password reset. The raw token
+// is emailed; only its hash is stored.
+export const authTokens = pgTable('auth_tokens', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	userId: uuid('user_id')
+		.references(() => users.id)
+		.notNull(),
+	kind: text('kind', { enum: ['email_verify', 'password_reset'] }).notNull(),
+	tokenHash: text('token_hash').notNull(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+	consumedAt: timestamp('consumed_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });

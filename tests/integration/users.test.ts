@@ -34,7 +34,7 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool);
 	await migrate(db, { migrationsFolder: 'drizzle' });
-	await pool.query('truncate table users');
+	await pool.query('truncate table users cascade');
 });
 
 afterAll(async () => {
