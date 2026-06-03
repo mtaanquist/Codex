@@ -31,6 +31,13 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 13. Characters: schema, Plan view CRUD, story notes overlay, aliases
 - [x] 14. Entity mentions index, worker rebuild, editor underlines, hover tooltips
 - [x] 15. Find usages / appears-in panels
+- [x] 16a. Places (v1.1): schema, Plan view, story notes, mention pipeline
+- [ ] 16b. Lore entries and entity categories (v1.2), incl. entity-colour groupings
+- [ ] 17. Universe editor (v1.3)
+- [ ] 18. Entity relationships (v1.4)
+- [ ] 19. Outline tree (v1.5)
+- [ ] 20. Declared story membership
+- [ ] 21. Entity autocomplete (v1.6)
 
 > v1.0 ships after step 15 - but not before a full code review of everything
 > on develop (correctness, security, schema fidelity). Do not tag v1.0 without it.

@@ -6,6 +6,7 @@ import {
 	chapters,
 	characters,
 	entityMentions,
+	places,
 	scenes,
 	stories,
 	universes
@@ -71,7 +72,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// Who is mentioned in the open scene, read from the worker-built index.
 	let inScene: { id: string; name: string; count: number }[] = [];
 	if (selectedScene) {
-		inScene = await db
+		const mentionedCharacters = await db
 			.select({
 				id: characters.id,
 				name: characters.name,
@@ -86,12 +87,30 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 					eq(entityMentions.targetType, 'character')
 				)
 			)
-			.groupBy(characters.id, characters.name)
-			.orderBy(asc(characters.name));
+			.groupBy(characters.id, characters.name);
+		const mentionedPlaces = await db
+			.select({
+				id: places.id,
+				name: places.name,
+				count: sql<number>`count(*)::int`
+			})
+			.from(entityMentions)
+			.innerJoin(places, eq(entityMentions.targetId, places.id))
+			.where(
+				and(
+					eq(entityMentions.sourceType, 'scene'),
+					eq(entityMentions.sourceId, selectedScene.id),
+					eq(entityMentions.targetType, 'place')
+				)
+			)
+			.groupBy(places.id, places.name);
+		inScene = [...mentionedCharacters, ...mentionedPlaces].sort((a, b) =>
+			a.name.localeCompare(b.name)
+		);
 	}
 
 	// Known entities feed the editor's live underlines and hover tooltips.
-	const mentionEntities = await db
+	const knownCharacters = await db
 		.select({
 			id: characters.id,
 			name: characters.name,
@@ -100,6 +119,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		})
 		.from(characters)
 		.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true)));
+	const knownPlaces = await db
+		.select({ id: places.id, name: places.name, summaryMd: places.summaryMd })
+		.from(places)
+		.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true)));
+	const mentionEntities = [
+		...knownCharacters,
+		...knownPlaces.map((place) => ({ ...place, aliases: [] as string[] }))
+	];
 
 	return {
 		story,
