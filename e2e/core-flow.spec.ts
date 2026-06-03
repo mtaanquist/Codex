@@ -27,6 +27,14 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.keyboard.press('Escape');
 	await expect(page.locator('.topbar')).toBeVisible();
 
+	// Build the tree: a chapter, then a scene inside it, which opens.
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.editor-title')).toHaveText('Untitled scene');
+	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Untitled scene');
+
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();

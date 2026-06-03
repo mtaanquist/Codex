@@ -2,6 +2,7 @@ import {
 	bigint,
 	boolean,
 	customType,
+	index,
 	inet,
 	integer,
 	jsonb,
@@ -113,6 +114,61 @@ export const stories = pgTable('stories', {
 		.defaultNow()
 		.$onUpdate(() => new Date())
 });
+
+// Chapters are organisational only; prose lives on scenes.
+export const chapters = pgTable('chapters', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	storyId: uuid('story_id')
+		.references(() => stories.id)
+		.notNull(),
+	position: integer('position').notNull(),
+	title: text('title'),
+	summaryMd: text('summary_md'),
+	metadata: jsonb('metadata').notNull().default({}),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+export const scenes = pgTable(
+	'scenes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		// Nullable: orphan scenes are allowed before they have a chapter home.
+		chapterId: uuid('chapter_id').references(() => chapters.id),
+		// Null when orphan.
+		positionInChapter: integer('position_in_chapter'),
+		// Order across all scenes in the story; drives continuous-scroll views.
+		globalPosition: integer('global_position').notNull(),
+		title: text('title'),
+		bodyMd: text('body_md').notNull().default(''),
+		// References characters(id) and places(id) once those tables exist
+		// (phase 3); plain columns until then, same pattern as users.plan_id.
+		povCharacterId: uuid('pov_character_id'),
+		locationId: uuid('location_id'),
+		// Freeform, e.g. "Day 3 afternoon".
+		storyTime: text('story_time'),
+		// References characters.id once that table exists; GIN indexed.
+		charactersPresent: uuid('characters_present').array(),
+		status: text('status', { enum: ['outline', 'draft', 'revised', 'final'] })
+			.notNull()
+			.default('draft'),
+		// One line of what happens; shown in the sidebar and outline.
+		summaryMd: text('summary_md'),
+		// Updated on save.
+		wordCount: integer('word_count').notNull().default(0),
+		metadata: jsonb('metadata').notNull().default({}),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('scenes_characters_present_gin').using('gin', table.charactersPresent)]
+);
 
 // Single-use tokens for email verification and password reset. The raw token
 // is emailed; only its hash is stored.
