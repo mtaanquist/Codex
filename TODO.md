@@ -21,7 +21,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 9. Focus mode
 - [x] 10. chapters, scenes; scene tree in left sidebar
 - [x] 11. CodeMirror 6 editor, debounced autosave, Compartment wrapping
-- [ ] 12. Drag-to-reorder scenes
+- [x] 12. Drag-to-reorder scenes
 - [ ] 12b. Continuous story view, read-only (pulled forward from Phase 6)
 
 > v0.5 ships at the end of Phase 2.

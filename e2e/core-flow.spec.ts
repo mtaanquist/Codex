@@ -48,6 +48,27 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
 
+	// Reorder: a second scene dragged above the first keeps its place after
+	// a reload, proving the positions persisted.
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(2);
+	await expect(page.locator('.scene-row').nth(1).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+	const orderSave = page.waitForResponse((r) => r.url().includes('/scene-order') && r.ok());
+	await page
+		.locator('.scene-row')
+		.nth(1)
+		.dragTo(page.locator('.scene-row').nth(0), { targetPosition: { x: 60, y: 4 } });
+	await orderSave;
+	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+	await page.reload();
+	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
