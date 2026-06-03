@@ -43,5 +43,6 @@ From first real use (2026-06-03):
 - [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
 - [ ] Markdown affordances: renderer lands with Phase 4 exports and reading pages (continuous view picks it up); in-editor styling and the prototype's toolbar as polish after; visibility of marks likely a display preference
 - [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
+- [ ] Entity colours with meaning: let characters/places optionally join an entity_category (nullable category_id, additive) so badge colours are universe-defined groupings; build with step 16's category work
 
 Later phases tracked in the roadmap until they get close.
