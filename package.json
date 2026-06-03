@@ -22,6 +22,9 @@
 	"devDependencies": {
 		"@eslint/compat": "^2.0.4",
 		"@eslint/js": "^10.0.1",
+		"@fontsource-variable/hanken-grotesk": "^5.2.8",
+		"@fontsource-variable/jetbrains-mono": "^5.2.8",
+		"@fontsource/spectral": "^5.2.8",
 		"@playwright/test": "^1.60.0",
 		"@sveltejs/adapter-node": "^5.5.4",
 		"@sveltejs/kit": "^2.57.0",

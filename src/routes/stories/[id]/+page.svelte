@@ -1,73 +1,77 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { ActionData, PageData } from './$types';
+	import Icon from '$lib/components/Icon.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
+	import type { PageData } from './$types';
 
-	let { data, form }: { data: PageData; form: ActionData } = $props();
+	let { data }: { data: PageData } = $props();
+
+	const initials = $derived(
+		data.user.displayName
+			.split(/\s+/)
+			.map((part) => part[0])
+			.slice(0, 2)
+			.join('')
+			.toUpperCase()
+	);
 </script>
 
 <svelte:head>
 	<title>{data.story.title} - Codex</title>
 </svelte:head>
 
-<main>
-	<nav>
-		<a href={resolve('/')}>Library</a> /
-		<a href={resolve('/universes/[id]', { id: data.universe.id })}>{data.universe.name}</a>
-	</nav>
-	<h1>{data.story.title}</h1>
-	{#if data.story.brief}
-		<p>{data.story.brief}</p>
-	{/if}
-
-	<h2>Story settings</h2>
-	<form method="POST" action="?/update">
-		{#if form?.action === 'update' && form.message}
-			<p class="error" role="alert">{form.message}</p>
-		{/if}
-		{#if form?.action === 'update' && form.saved}
-			<p role="status">Saved.</p>
-		{/if}
-		<label>
-			Title
-			<input type="text" name="title" value={data.story.title} required />
-		</label>
-		<label>
-			Author
-			<input type="text" name="author" value={data.story.author ?? ''} />
-		</label>
-		<label>
-			Brief
-			<input type="text" name="brief" value={data.story.brief ?? ''} />
-		</label>
-		<label>
-			Description
-			<textarea name="description" rows="4">{data.story.descriptionMd ?? ''}</textarea>
-		</label>
-		<button type="submit">Save</button>
-	</form>
-
-	<form method="POST" action="?/delete">
-		<button type="submit" class="danger">Delete story</button>
-	</form>
-</main>
+<div class="app">
+	<TopBar
+		universe={{ id: data.universe.id, name: data.universe.name }}
+		story={{ id: data.story.id, title: data.story.title }}
+		{initials}
+	/>
+	<div class="body">
+		<aside class="pane left">
+			<div class="left-head">
+				<div class="seg full">
+					<button class="seg-btn active" type="button">Write</button>
+					<button class="seg-btn" type="button" disabled>Plan</button>
+					<button class="seg-btn" type="button" disabled>Notes</button>
+				</div>
+			</div>
+			<div class="left-scroll">
+				<div class="outline">
+					<div class="outline-head">
+						<div class="story-switch">
+							<span class="story-book"><Icon name="book" size={15} /></span>
+							<span class="story-id">
+								<span class="story-title">{data.story.title}</span>
+								<span class="story-universe">{data.universe.name}</span>
+							</span>
+						</div>
+					</div>
+					<div class="chapters">
+						<div class="empty">No chapters yet.</div>
+					</div>
+				</div>
+			</div>
+		</aside>
+		<main class="pane center">
+			<div class="empty">
+				<p>The editor arrives here. For now, you can edit this story's details.</p>
+				<a href={resolve('/stories/[id]/settings', { id: data.story.id })}>Story settings</a>
+			</div>
+		</main>
+		<aside class="pane right">
+			<div class="right-scroll">
+				<div class="empty">Nothing to show yet.</div>
+			</div>
+		</aside>
+	</div>
+</div>
 
 <style>
-	main {
-		max-width: 36rem;
-		margin: 4rem auto 0;
-		font-family: system-ui, sans-serif;
+	.empty a {
+		color: var(--accent);
+		text-decoration: none;
 	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin-bottom: 0.5rem;
-	}
-	.error {
-		color: #b00020;
-	}
-	.danger {
-		color: #b00020;
-		margin-top: 1.5rem;
+	.empty a:hover {
+		text-decoration: underline;
 	}
 </style>

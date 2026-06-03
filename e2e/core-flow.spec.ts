@@ -15,7 +15,11 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 
 	await page.getByLabel('New story').fill('Book of Ash');
 	await page.getByRole('button', { name: 'Create story' }).click();
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Book of Ash');
+
+	// Opening a story lands in the editor shell: breadcrumb and sidebar both
+	// carry the story title.
+	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
+	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
