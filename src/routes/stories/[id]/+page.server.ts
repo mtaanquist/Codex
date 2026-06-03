@@ -121,11 +121,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 export const actions: Actions = {
 	createChapter: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		const [{ next }] = await db
-			.select({ next: sql<number>`coalesce(max(${chapters.position}), 0) + 1` })
-			.from(chapters)
-			.where(eq(chapters.storyId, story.id));
-		await db.insert(chapters).values({ storyId: story.id, position: next });
+		// Position computed inside the insert so concurrent creates cannot read
+		// the same max.
+		await db.insert(chapters).values({
+			storyId: story.id,
+			position: sql`(select coalesce(max(${chapters.position}), 0) + 1 from ${chapters} where ${chapters.storyId} = ${story.id})`
+		});
 		return { created: 'chapter' };
 	},
 	createScene: async ({ request, params, locals }) => {
@@ -139,21 +140,18 @@ export const actions: Actions = {
 				.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, story.id)));
 			if (!chapter) return fail(400, { message: 'That chapter does not exist.' });
 		}
-		const [{ nextGlobal }] = await db
-			.select({ nextGlobal: sql<number>`coalesce(max(${scenes.globalPosition}), 0) + 1` })
-			.from(scenes)
-			.where(eq(scenes.storyId, story.id));
-		let positionInChapter: number | null = null;
-		if (chapterId) {
-			const [{ nextInChapter }] = await db
-				.select({ nextInChapter: sql<number>`coalesce(max(${scenes.positionInChapter}), 0) + 1` })
-				.from(scenes)
-				.where(eq(scenes.chapterId, chapterId));
-			positionInChapter = nextInChapter;
-		}
+		// Positions computed inside the insert so concurrent creates cannot read
+		// the same max.
 		const [scene] = await db
 			.insert(scenes)
-			.values({ storyId: story.id, chapterId, positionInChapter, globalPosition: nextGlobal })
+			.values({
+				storyId: story.id,
+				chapterId,
+				positionInChapter: chapterId
+					? sql`(select coalesce(max(${scenes.positionInChapter}), 0) + 1 from ${scenes} where ${scenes.chapterId} = ${chapterId})`
+					: null,
+				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${story.id})`
+			})
 			.returning({ id: scenes.id });
 		redirect(303, `/stories/${story.id}?scene=${scene.id}`);
 	}

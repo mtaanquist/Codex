@@ -17,9 +17,16 @@ export async function saveCharacter(
 	characterId: string,
 	userId: string,
 	save: CharacterSave
-): Promise<{ ok: true; universeId: string } | { ok: false; reason: string }> {
+): Promise<
+	{ ok: true; universeId: string; mentionsAffected: boolean } | { ok: false; reason: string }
+> {
 	const [character] = await db
-		.select({ id: characters.id, universeId: characters.universeId })
+		.select({
+			id: characters.id,
+			universeId: characters.universeId,
+			name: characters.name,
+			aliases: characters.aliases
+		})
 		.from(characters)
 		.where(and(eq(characters.id, characterId), eq(characters.ownerId, userId)));
 	if (!character) return { ok: false, reason: 'character not found' };
@@ -27,6 +34,13 @@ export async function saveCharacter(
 	const name = save.name.trim();
 	if (!name) return { ok: false, reason: 'the character needs a name' };
 	const aliases = save.aliases.map((alias) => alias.trim()).filter((alias) => alias !== '');
+
+	// Only a changed name or alias set can add or remove mentions; body and
+	// summary edits should not trigger a universe-wide reindex.
+	const mentionsAffected =
+		name !== character.name ||
+		aliases.length !== character.aliases.length ||
+		aliases.some((alias, index) => alias !== character.aliases[index]);
 
 	await db
 		.update(characters)
@@ -52,5 +66,5 @@ export async function saveCharacter(
 				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
 			});
 	}
-	return { ok: true, universeId: character.universeId };
+	return { ok: true, universeId: character.universeId, mentionsAffected };
 }
