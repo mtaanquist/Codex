@@ -2,6 +2,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
+	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData } from './$types';
@@ -10,6 +11,13 @@
 
 	// Focus mode hides the chrome around the prose; Esc leaves it.
 	let focus = $state(false);
+
+	let saveStatus = $state<SaveStatus>('idle');
+	const selectedSceneId = $derived(data.selectedScene?.id);
+	$effect(() => {
+		void selectedSceneId;
+		saveStatus = 'idle';
+	});
 
 	// Chapters start expanded; collapsing is per-visit state.
 	let collapsed = new SvelteSet<string>();
@@ -30,7 +38,8 @@
 	}
 
 	function words(count: number) {
-		return count > 0 ? `${(count / 1000).toFixed(1)}k` : '';
+		if (count <= 0) return '';
+		return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
 	}
 </script>
 
@@ -50,6 +59,7 @@
 		story={{ id: data.story.id, title: data.story.title }}
 		{initials}
 		onEnterFocus={() => (focus = true)}
+		{saveStatus}
 	/>
 	<div class="body">
 		<aside class="pane left">
@@ -145,10 +155,14 @@
 		</aside>
 		<main class="pane center">
 			{#if data.selectedScene}
-				<div class="editor">
-					<h1 class="editor-title">{data.selectedScene.title ?? 'Untitled scene'}</h1>
-					<div class="editor-body readonly">{data.selectedScene.bodyMd}</div>
-				</div>
+				{#key data.selectedScene.id}
+					<SceneEditor
+						sceneId={data.selectedScene.id}
+						title={data.selectedScene.title}
+						body={data.selectedScene.bodyMd}
+						onStatus={(status) => (saveStatus = status)}
+					/>
+				{/key}
 			{:else if data.scenes.length === 0}
 				<div class="empty">
 					<p>Create a chapter in the sidebar, then add a scene to it to start writing.</p>
@@ -191,9 +205,5 @@
 	.scene-row {
 		text-decoration: none;
 		color: inherit;
-	}
-	/* Plain rendering until the editor lands in the next step. */
-	.editor-body.readonly {
-		white-space: pre-wrap;
 	}
 </style>

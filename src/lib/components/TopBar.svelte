@@ -7,13 +7,22 @@
 		universe,
 		story,
 		initials,
-		onEnterFocus
+		onEnterFocus,
+		saveStatus = 'idle'
 	}: {
 		universe: { id: string; name: string };
 		story: { id: string; title: string };
 		initials: string;
 		onEnterFocus?: () => void;
+		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 	} = $props();
+
+	const SAVE_LABEL = {
+		idle: '',
+		saving: 'Saving...',
+		saved: 'Saved just now',
+		error: 'Not saved. Retrying on your next change.'
+	} as const;
 </script>
 
 <header class="topbar">
@@ -29,6 +38,9 @@
 		</a>
 	</nav>
 	<div class="topbar-right">
+		{#if saveStatus !== 'idle'}
+			<span class="saved" role="status"><span class="dot"></span> {SAVE_LABEL[saveStatus]}</span>
+		{/if}
 		<ThemeToggle />
 		<a
 			class="icon-btn"
