@@ -11,9 +11,9 @@ ENV NODE_ENV=production
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/build build
 COPY --from=build /app/package.json package.json
-# Migrations and their runner, applied on app start.
+# Migrations (applied on app start) and operational scripts (seed-admin).
 COPY --from=build /app/drizzle drizzle
-COPY --from=build /app/scripts/migrate.ts scripts/migrate.ts
+COPY --from=build /app/scripts scripts
 # The worker runs from source under Node's native TypeScript support.
 COPY --from=build /app/src/worker src/worker
 USER node

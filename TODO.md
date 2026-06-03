@@ -9,8 +9,8 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 2. Drizzle + node-postgres, users table, first migration
 - [x] 3. Dockerfile, compose.yaml (app, worker stub, postgres, Caddy), compose.dev.yaml
 - [x] 4. Run the stack in Docker end to end
-- [ ] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
-- [ ] 6. Seed admin via SQL; verify sign-in and the approval gate
+- [x] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
+- [x] 6. Seed admin via SQL; verify sign-in and the approval gate
 
 > v0.1 ships at the end of Phase 1.
 

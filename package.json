@@ -9,6 +9,7 @@
 		"preview": "vite preview",
 		"worker": "node src/worker/index.ts",
 		"migrate": "node scripts/migrate.ts",
+		"seed:admin": "node scripts/seed-admin.ts",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -42,6 +43,7 @@
 		"vitest": "^4.1.8"
 	},
 	"dependencies": {
+		"@node-rs/argon2": "^2.0.2",
 		"drizzle-orm": "^0.45.2",
 		"pg": "^8.21.0",
 		"pg-boss": "^12.18.2"
