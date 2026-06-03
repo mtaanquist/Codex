@@ -33,5 +33,7 @@ From first real use (2026-06-03):
 - [ ] Scene marks in the continuous view should be hideable (display preference; rides with roadmap step 23b or the preferences UI)
 - [ ] Editable continuous view: promoted to roadmap step 23b, ships as a v1.x release
 - [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
+- [ ] Markdown affordances: renderer lands with Phase 4 exports and reading pages (continuous view picks it up); in-editor styling and the prototype's toolbar as polish after; visibility of marks likely a display preference
+- [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
 
 Later phases tracked in the roadmap until they get close.
