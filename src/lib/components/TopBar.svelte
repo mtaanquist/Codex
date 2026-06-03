@@ -8,13 +8,15 @@
 		story,
 		initials,
 		onEnterFocus,
-		saveStatus = 'idle'
+		saveStatus = 'idle',
+		storyView
 	}: {
 		universe: { id: string; name: string };
 		story: { id: string; title: string };
 		initials: string;
 		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+		storyView?: { active: boolean; toggleHref: string };
 	} = $props();
 
 	const SAVE_LABEL = {
@@ -49,6 +51,17 @@
 		>
 			<Icon name="gear" />
 		</a>
+		{#if storyView}
+			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+			<a
+				class="icon-btn"
+				href={storyView.toggleHref}
+				title={storyView.active ? 'Back to the scene editor' : 'Read the whole story'}
+			>
+				<Icon name={storyView.active ? 'scene' : 'chapter'} />
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		{/if}
 		{#if onEnterFocus}
 			<button class="icon-btn" type="button" title="Focus mode" onclick={onEnterFocus}>
 				<Icon name="expand" />

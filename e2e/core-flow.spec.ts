@@ -69,6 +69,17 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 		'Untitled scene'
 	);
 
+	// The whole story reads as one continuous document with jump navigation.
+	await page.getByRole('link', { name: 'Read the whole story' }).click();
+	await expect(page).toHaveURL(/view=story/);
+	await expect(page.locator('.doc-scene')).toHaveCount(2);
+	await expect(page.locator('.story-doc')).toContainText('The gate of Halden');
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(/#scene-/);
+	await page.locator('.doc-scene-mark').nth(1).click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
+
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
