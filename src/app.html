@@ -4,6 +4,22 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Set the theme before first paint to avoid a flash. The toggle in
+			// the top bar writes the same localStorage key.
+			(function () {
+				var theme = 'light';
+				try {
+					var stored = localStorage.getItem('codex-theme');
+					if (stored === 'light' || stored === 'dark') theme = stored;
+					else if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
+				} catch (e) {
+					/* default stands */
+				}
+				document.documentElement.setAttribute('data-theme', theme);
+				document.documentElement.setAttribute('data-density', 'comfortable');
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
