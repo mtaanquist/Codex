@@ -16,7 +16,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Phase 2 - Core content
 
-- [ ] 7. universes, stories tables; CRUD pages
+- [x] 7. universes, stories tables; CRUD pages
 - [ ] 8. Shell layout port from prototype (top bar, three columns, CSS tokens)
 - [ ] 9. Focus mode
 - [ ] 10. chapters, scenes; scene tree in left sidebar
