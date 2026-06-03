@@ -1,12 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, characterStoryNotes, stories } from './db/schema';
+import { characters, characterStoryNotes, entityCategories, stories } from './db/schema';
 
 export type CharacterSave = {
 	name: string;
 	aliases: string[];
 	summaryMd: string | null;
 	bodyMd: string;
+	// Optional grouping; null clears it, undefined leaves it unchanged.
+	categoryId?: string | null;
 	// When present, the per-story "In this book" notes are upserted too.
 	storyId?: string;
 	storyNotesMd?: string;
@@ -42,13 +44,27 @@ export async function saveCharacter(
 		aliases.length !== character.aliases.length ||
 		aliases.some((alias, index) => alias !== character.aliases[index]);
 
+	if (save.categoryId != null) {
+		const [category] = await db
+			.select({ id: entityCategories.id })
+			.from(entityCategories)
+			.where(
+				and(
+					eq(entityCategories.id, save.categoryId),
+					eq(entityCategories.universeId, character.universeId)
+				)
+			);
+		if (!category) return { ok: false, reason: 'category not found' };
+	}
+
 	await db
 		.update(characters)
 		.set({
 			name,
 			aliases,
 			summaryMd: save.summaryMd?.trim() || null,
-			bodyMd: save.bodyMd
+			bodyMd: save.bodyMd,
+			...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
 		})
 		.where(eq(characters.id, character.id));
 

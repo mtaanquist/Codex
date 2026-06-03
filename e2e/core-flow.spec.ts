@@ -123,6 +123,35 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page).toHaveURL(/entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Halden');
 
+	// Lore entries live under the seeded category; keywords drive mentions.
+	await page.getByPlaceholder('New Lore entry').fill('Toll-pass');
+	await page.getByRole('button', { name: 'Add entry' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	const loreSave = page.waitForResponse(
+		(r) => r.url().includes('/api/lore/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page
+		.getByPlaceholder('Terms that refer to this entry, separated by commas. Used to spot mentions.')
+		.fill('gate');
+	await loreSave;
+
+	// A coloured category groups the cast: create one, assign Alice to it,
+	// and her badge takes the colour.
+	await page.getByPlaceholder('New category name').fill('Factions');
+	await page.locator('select[name="color"]').selectOption('var(--cat-rose)');
+	await page.getByRole('button', { name: 'Add category' }).click();
+	await expect(page.locator('.group-label', { hasText: 'Factions' })).toBeVisible();
+	await page.locator('.ent-row', { hasText: 'Alice Vane' }).click();
+	const categorySave = page.waitForResponse(
+		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.locator('.detail select').selectOption({ label: 'Factions' });
+	await categorySave;
+	await page.reload();
+	await expect(
+		page.locator('.ent-row', { hasText: 'Alice Vane' }).locator('.badge')
+	).toHaveAttribute('style', /var\(--cat-rose\)/);
+
 	// Back to Write via the segmented control.
 	await page.getByRole('link', { name: 'Write' }).click();
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
@@ -134,8 +163,9 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('Control+End');
 	await page.keyboard.type(' Mrs. Fenwick waited.');
-	// The body mentions the place "Halden" and the alias: both underline.
-	await expect(page.locator('.ref-word')).toHaveText(['Halden', 'Mrs. Fenwick']);
+	// The body mentions the lore keyword "gate", the place "Halden", and the
+	// alias: all three underline.
+	await expect(page.locator('.ref-word')).toHaveText(['gate', 'Halden', 'Mrs. Fenwick']);
 	await page.locator('.ref-word', { hasText: 'Mrs. Fenwick' }).hover();
 	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
@@ -144,7 +174,7 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	// cast shows in the right panel.
 	await expect(async () => {
 		await page.reload();
-		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden'], {
+		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden', 'Toll-pass'], {
 			timeout: 1500
 		});
 	}).toPass({ timeout: 30000 });

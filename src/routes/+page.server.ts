@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { desc, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { universes } from '$lib/server/db/schema';
+import { entityCategories, universes } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -22,10 +22,21 @@ export const actions: Actions = {
 		if (!name) {
 			return fail(400, { message: 'Give the universe a name.' });
 		}
-		const [universe] = await db
-			.insert(universes)
-			.values({ ownerId: locals.user!.id, name })
-			.returning();
+		const universe = await db.transaction(async (tx) => {
+			const [row] = await tx
+				.insert(universes)
+				.values({ ownerId: locals.user!.id, name })
+				.returning();
+			// Every universe starts with one lore category; users rename and
+			// extend from there.
+			await tx.insert(entityCategories).values({
+				universeId: row.id,
+				ownerId: locals.user!.id,
+				name: 'Lore',
+				sortOrder: 0
+			});
+			return row;
+		});
 		redirect(303, `/universes/${universe.id}`);
 	},
 	signout: async ({ locals, cookies }) => {

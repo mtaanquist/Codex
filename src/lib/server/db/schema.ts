@@ -189,6 +189,8 @@ export const characters = pgTable('characters', {
 	bodyMd: text('body_md').notNull().default(''),
 	// Set false for common-word names ("Will", "Art").
 	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+	// Optional grouping; the category's colour drives the badge.
+	categoryId: uuid('category_id').references(() => entityCategories.id),
 	metadata: jsonb('metadata').notNull().default({}),
 	// Original card data if imported (SillyTavern etc).
 	importedFrom: jsonb('imported_from'),
@@ -219,6 +221,74 @@ export const characterStoryNotes = pgTable(
 	(table) => [unique('character_story_notes_unique').on(table.characterId, table.storyId)]
 );
 
+// User-defined groupings. Every lore entry belongs to one; characters and
+// places may join one, which then drives their badge colour.
+export const entityCategories = pgTable('entity_categories', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	universeId: uuid('universe_id')
+		.references(() => universes.id)
+		.notNull(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	// "Lore", "Magical spells", "Factions" etc. New universes seed one "Lore".
+	name: text('name').notNull(),
+	// Hex or design token; used for sidebar dots and mention underlines.
+	color: text('color'),
+	sortOrder: integer('sort_order').notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export const loreEntries = pgTable('lore_entries', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	universeId: uuid('universe_id')
+		.references(() => universes.id)
+		.notNull(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	categoryId: uuid('category_id')
+		.references(() => entityCategories.id)
+		.notNull(),
+	title: text('title').notNull(),
+	summaryMd: text('summary_md'),
+	bodyMd: text('body_md').notNull().default(''),
+	// In-editor search, mention detection, and (eventually) LLM context
+	// injection.
+	keywords: text('keywords').array().notNull().default([]),
+	// Reserved for future LLM context injection; inert in v1.
+	activationMode: text('activation_mode', { enum: ['always', 'keyword', 'manual'] })
+		.notNull()
+		.default('keyword'),
+	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+	metadata: jsonb('metadata').notNull().default({}),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+export const loreStoryNotes = pgTable(
+	'lore_story_notes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		loreEntryId: uuid('lore_entry_id')
+			.references(() => loreEntries.id)
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		notesMd: text('notes_md').notNull().default(''),
+		metadata: jsonb('metadata').notNull().default({}),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [unique('lore_story_notes_unique').on(table.loreEntryId, table.storyId)]
+);
+
 export const places = pgTable('places', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	universeId: uuid('universe_id')
@@ -233,6 +303,8 @@ export const places = pgTable('places', {
 	bodyMd: text('body_md').notNull().default(''),
 	// Set false for common-word names.
 	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+	// Optional grouping; the category's colour drives the badge.
+	categoryId: uuid('category_id').references(() => entityCategories.id),
 	metadata: jsonb('metadata').notNull().default({}),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
