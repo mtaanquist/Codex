@@ -219,6 +219,48 @@ export const characterStoryNotes = pgTable(
 	(table) => [unique('character_story_notes_unique').on(table.characterId, table.storyId)]
 );
 
+export const places = pgTable('places', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	universeId: uuid('universe_id')
+		.references(() => universes.id)
+		.notNull(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	name: text('name').notNull(),
+	// One or two lines; shown in hover popovers.
+	summaryMd: text('summary_md'),
+	bodyMd: text('body_md').notNull().default(''),
+	// Set false for common-word names.
+	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+	metadata: jsonb('metadata').notNull().default({}),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+export const placeStoryNotes = pgTable(
+	'place_story_notes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		placeId: uuid('place_id')
+			.references(() => places.id)
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		notesMd: text('notes_md').notNull().default(''),
+		metadata: jsonb('metadata').notNull().default({}),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [unique('place_story_notes_unique').on(table.placeId, table.storyId)]
+);
+
 // Derived index of entity occurrences in prose. Rebuilt by the worker when a
 // source's body changes: delete the source's rows, insert fresh ones. The
 // polymorphic source/target columns carry no FKs by design.

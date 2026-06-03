@@ -117,6 +117,12 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 		'Starts the book in debt.'
 	);
 
+	// Places follow the same pattern.
+	await page.getByPlaceholder('New place name').fill('Halden');
+	await page.getByRole('button', { name: 'Add place' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Halden');
+
 	// Back to Write via the segmented control.
 	await page.getByRole('link', { name: 'Write' }).click();
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
@@ -128,8 +134,9 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('Control+End');
 	await page.keyboard.type(' Mrs. Fenwick waited.');
-	await expect(page.locator('.ref-word')).toHaveText('Mrs. Fenwick');
-	await page.locator('.ref-word').hover();
+	// The body mentions the place "Halden" and the alias: both underline.
+	await expect(page.locator('.ref-word')).toHaveText(['Halden', 'Mrs. Fenwick']);
+	await page.locator('.ref-word', { hasText: 'Mrs. Fenwick' }).hover();
 	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
 
@@ -137,12 +144,14 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	// cast shows in the right panel.
 	await expect(async () => {
 		await page.reload();
-		await expect(page.locator('.r-line-name')).toHaveText('Alice Vane', { timeout: 1500 });
+		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden'], {
+			timeout: 1500
+		});
 	}).toPass({ timeout: 30000 });
 
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
-	await page.locator('.r-line').click();
+	await page.locator('.r-line', { hasText: 'Alice Vane' }).click();
 	await expect(page).toHaveURL(/\/plan\?entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
 	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
