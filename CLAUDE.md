@@ -18,6 +18,17 @@ Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for backg
 - Authored content stays exportable. Anything holding a user's words is stored as markdown that round-trips through export; do not introduce a format that traps content.
 - Prefer what is already here. Reach for the standard library or an existing dependency before adding a new one, favour stable low-churn packages, and match the patterns and naming already in the file.
 
+## Testing
+
+- Write tests alongside the code, not in a pass at the end. This is not strict test-driven development, but lean towards it: for anything with real logic or a contract (a server endpoint, a data-access function, a parser), write the test with or just before the implementation. A bug fix starts with a failing test that reproduces it.
+- Three layers, each with a clear job:
+  - **Unit (Vitest).** Pure logic with no I/O: mention detection, position maths, markdown round-trip, alias matching, token and slug helpers. Fast, no database.
+  - **Integration (Vitest against a real Postgres).** Server endpoints, Drizzle queries, and migrations, run against a throwaway test database rather than a mock. The queries are thin and SQL-first by design, so a mocked database would test nothing real. Reset state between tests (a per-test transaction rolled back, or a truncate).
+  - **End-to-end (Playwright).** A small set covering the journeys that must never break: sign in, create a universe and a story, draft a scene and see it persist after reload. Playwright is already provisioned in the dev harness.
+- Test behaviour and contracts, not implementation details, so a refactor that preserves behaviour does not break the suite. Do not chase a coverage number; cover the paths that matter and the ones that have broken before.
+- A roadmap step is not done until its tests pass. Keep the suite fast and deterministic; a flaky or slow test gets fixed or removed, not tolerated.
+- Run the tests locally before pushing, wherever the environment allows it. The local suite is much faster than a CI runner, so `npm run lint` and `npm test` (or at least the unit tests and any relevant end-to-end ones) catch most failures without the wait. CI is the backstop, not the first place a failure should surface.
+
 ## Working approach
 
 - Challenge decisions that no longer fit. If the design or use case has shifted enough to undermine an earlier choice, say so instead of building around it.

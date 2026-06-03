@@ -24,7 +24,7 @@ A rough rule for when to bump a version number: anything a user would notice, ev
 
 Get the skeleton breathing. At the end, you can log in and see your own data.
 
-1. Scaffold a SvelteKit app in TypeScript with `adapter-node`. Verify it runs.
+1. Scaffold a SvelteKit app in TypeScript with `adapter-node`. Verify it runs. Stand up the test harness in the same step so it exists from the first commit: Vitest for unit and integration tests, Playwright for end-to-end, an `npm test` script, and one trivial test of each kind to prove the pipeline. The integration tests want a throwaway test database; point them at one (a separate `codex_test` database the setup runs migrations against) once Drizzle lands in step 2, and add the first real query test there.
 2. Add Drizzle with the `node-postgres` driver, pointed at Postgres. Define the `users` table and generate the first migration.
 3. Add `Dockerfile` and `compose.yaml` (app, a worker stub, `postgres:18-alpine`, and Caddy) plus a `compose.dev.yaml` with just the database for editor-hosted dev. The worker is a near-empty pg-boss process for now; real jobs arrive in later phases.
 4. Run the stack in Docker end to end to prove the pipeline works.
@@ -119,6 +119,7 @@ Driven by real use. Candidates, roughly in order of cost-to-value:
 ## Principles for sequencing
 
 - **Use it as you build.** Draft real words in the tool from phase 2 onward. The frustrations you hit drive the best backlog.
+- **Test as you build.** Write tests alongside each step, not in a cleanup pass at the end, and treat a step as unfinished until they pass. Close to test-driven without being strict about it. See the testing section in `CLAUDE.md` for how the unit, integration, and end-to-end layers divide the work.
 - **One entity type fully before adding the next.** Build characters end-to-end, then places, then lore. Parallel development means parallel half-finished features.
 - **Do not build the LLM layer in v1, at all.** Resist the temptation to prototype the gateway early. The writing app has to earn its keep on its own, and the LLM layer will benefit enormously from having a real corpus of your prose to calibrate prompts and context assembly against.
 - **Wrap every swappable editor behaviour in a CodeMirror Compartment from phase 2.** Cheap up front, expensive to retrofit. Mentions, autocomplete, possibly future linting and (eventually) continuation-mode ghost text all want independent reconfiguration.

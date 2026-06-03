@@ -1,14 +1,27 @@
 # Dependencies
 node_modules/
 
-# Build output (SvelteKit)
+# Build output
 .svelte-kit/
 build/
+.output
+.vercel
+.netlify
+.wrangler
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Test artifacts
+test-results/
+playwright-report/
 
 # Environment and local secrets
 .env
 .env.*
 !.env.example
+!.env.test
 
 # Local Claude Code overrides (settings.json is committed; local is not)
 .claude/settings.local.json
@@ -19,3 +32,4 @@ scratch/app-design/
 
 # OS noise
 .DS_Store
+Thumbs.db
