@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { saveCharacter } from '$lib/server/characters';
+import { queueUniverseMentions } from '$lib/server/jobs';
 
 // Debounced autosave target for the character editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
@@ -31,5 +32,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	if (!result.ok) {
 		error(result.reason.includes('not found') ? 404 : 400, result.reason);
 	}
+	// Name or alias changes can add or remove mentions anywhere in the universe.
+	await queueUniverseMentions(result.universeId);
 	return json({ savedAt: new Date().toISOString() });
 };

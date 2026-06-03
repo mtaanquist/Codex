@@ -104,6 +104,9 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 		.getByPlaceholder('Nicknames and variants, separated by commas. Used to spot mentions.')
 		.fill('Allie, Mrs. Fenwick');
 	await page
+		.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
+		.fill('A toll-road smuggler.');
+	await page
 		.getByPlaceholder('Notes that apply only to this story.')
 		.fill('Starts the book in debt.');
 	await characterSave;
@@ -117,6 +120,18 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	// Back to Write via the segmented control.
 	await page.getByRole('link', { name: 'Write' }).click();
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+
+	// Mentions: typing a known alias underlines it live; hovering shows the
+	// character's summary.
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Mrs. Fenwick waited.');
+	await expect(page.locator('.ref-word')).toHaveText('Mrs. Fenwick');
+	await page.locator('.ref-word').hover();
+	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
+	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
 
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();

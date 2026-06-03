@@ -7,16 +7,19 @@
 	import { EditorView } from '@codemirror/view';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
+	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 
 	let {
 		sceneId,
 		title,
 		body,
+		entities = [],
 		onStatus
 	}: {
 		sceneId: string;
 		title: string | null;
 		body: string;
+		entities?: MentionEntity[];
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -67,7 +70,7 @@
 				doc: body,
 				extensions: [
 					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
-					mentionsCompartment.of([]),
+					mentionsCompartment.of(mentionExtensions(entities)),
 					autocompleteCompartment.of([])
 				]
 			})

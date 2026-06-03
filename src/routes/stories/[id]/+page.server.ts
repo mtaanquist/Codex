@@ -2,7 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { chapters, scenes, stories, universes } from '$lib/server/db/schema';
+import { chapters, characters, scenes, stories, universes } from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -61,6 +61,17 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedScene = row ?? null;
 	}
 
+	// Known entities feed the editor's live underlines and hover tooltips.
+	const mentionEntities = await db
+		.select({
+			id: characters.id,
+			name: characters.name,
+			aliases: characters.aliases,
+			summaryMd: characters.summaryMd
+		})
+		.from(characters)
+		.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true)));
+
 	return {
 		story,
 		universe,
@@ -68,6 +79,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		chapters: chapterList,
 		scenes: sceneList,
 		selectedScene,
+		mentionEntities,
 		view,
 		storyDoc,
 		// Carried through the story view so toggling back lands on the scene
