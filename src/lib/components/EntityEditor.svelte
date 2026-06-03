@@ -4,16 +4,35 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import type { SaveStatus } from './SceneEditor.svelte';
 
+	type RelationTypeOption = {
+		id: string;
+		forwardLabel: string;
+		fromType: string;
+		toType: string;
+		category: string | null;
+	};
+	type RelationshipRow = {
+		id: string;
+		label: string;
+		otherId: string;
+		otherName: string;
+		notesMd: string | null;
+	};
+
 	let {
 		kind,
 		entity,
 		categories = [],
+		relationTypes = [],
+		relationships = [],
+		targets = {},
 		storyId,
 		storyNotesMd,
 		onStatus
@@ -29,6 +48,10 @@
 			bodyMd: string;
 		};
 		categories?: { id: string; name: string; color: string | null }[];
+		relationTypes?: RelationTypeOption[];
+		relationships?: RelationshipRow[];
+		// Entities a relationship can point at, keyed by entity type.
+		targets?: Record<string, { id: string; name: string }[]>;
 		// Absent at universe scope; the "In this book" notes need a story.
 		storyId?: string;
 		storyNotesMd?: string;
@@ -69,6 +92,55 @@
 	// Saves are chained so an earlier slow request can never land after, and
 	// overwrite, a newer one.
 	let saveChain: Promise<void> = Promise.resolve();
+
+	// Relationships are rows added and removed one at a time, not part of
+	// the debounced field autosave.
+	// svelte-ignore state_referenced_locally
+	const ENTITY_TYPE = kind === 'lore' ? 'lore_entry' : kind;
+	const applicableTypes = $derived(
+		relationTypes.filter((relationType) => relationType.fromType === ENTITY_TYPE)
+	);
+	const relCategories = $derived([
+		...new Set(applicableTypes.map((relationType) => relationType.category))
+	]);
+	let relTypeId = $state('');
+	let relTargetId = $state('');
+	let relNotes = $state('');
+	let relError = $state('');
+	const relTargetOptions = $derived.by(() => {
+		const relationType = relationTypes.find((option) => option.id === relTypeId);
+		if (!relationType) return [];
+		return (targets[relationType.toType] ?? []).filter((target) => target.id !== entity.id);
+	});
+
+	async function addRelationship(event: SubmitEvent) {
+		event.preventDefault();
+		relError = '';
+		const response = await fetch('/api/relationships', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				fromKind: kind,
+				fromId: entity.id,
+				relationTypeId: relTypeId,
+				toId: relTargetId,
+				notesMd: relNotes
+			})
+		});
+		if (!response.ok) {
+			relError = (await response.json().catch(() => null))?.message ?? 'Could not add that.';
+			return;
+		}
+		relTypeId = '';
+		relTargetId = '';
+		relNotes = '';
+		await invalidateAll();
+	}
+
+	async function removeRelationship(relationshipId: string) {
+		const response = await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
+		if (response.ok) await invalidateAll();
+	}
 
 	async function save() {
 		if (!view) return;
@@ -180,7 +252,12 @@
 
 	{#if categories.length > 0}
 		<div class="section-label">Category</div>
-		<select class="line-input" bind:value={categoryValue} onchange={scheduleSave}>
+		<select
+			class="line-input"
+			bind:value={categoryValue}
+			onchange={scheduleSave}
+			aria-label="Category"
+		>
 			{#if kind !== 'lore'}
 				<option value="">No category</option>
 			{/if}
@@ -201,6 +278,64 @@
 
 	<div class="section-label">Description</div>
 	<div class="editor-cm" bind:this={editorEl}></div>
+
+	{#if applicableTypes.length > 0 || relationships.length > 0}
+		<div class="section-label">Relationships</div>
+		{#each relationships as relationship (relationship.id)}
+			<div class="rel-row">
+				<span class="rel-label">{relationship.label}</span>
+				<span class="rel-name">{relationship.otherName}</span>
+				{#if relationship.notesMd}
+					<span class="rel-notes">{relationship.notesMd}</span>
+				{/if}
+				<button
+					class="rel-remove"
+					type="button"
+					title="Remove relationship"
+					onclick={() => removeRelationship(relationship.id)}
+				>
+					&times;
+				</button>
+			</div>
+		{/each}
+		{#if applicableTypes.length > 0}
+			<form class="rel-add" onsubmit={addRelationship}>
+				<select
+					class="line-input"
+					bind:value={relTypeId}
+					onchange={() => (relTargetId = '')}
+					aria-label="Relation"
+				>
+					<option value="">Add a relationship...</option>
+					{#each relCategories as category (category)}
+						<optgroup label={category ?? 'Other'}>
+							{#each applicableTypes.filter((option) => option.category === category) as option (option.id)}
+								<option value={option.id}>{option.forwardLabel}</option>
+							{/each}
+						</optgroup>
+					{/each}
+				</select>
+				{#if relTypeId}
+					<select class="line-input" bind:value={relTargetId} aria-label="Related entity">
+						<option value="">Who or where...</option>
+						{#each relTargetOptions as target (target.id)}
+							<option value={target.id}>{target.name}</option>
+						{/each}
+					</select>
+					<input
+						class="line-input"
+						type="text"
+						placeholder="Notes (optional)"
+						bind:value={relNotes}
+					/>
+					<button class="outline-add" type="submit" disabled={!relTargetId}>Add</button>
+				{/if}
+				{#if relError}
+					<p class="rel-error" role="alert">{relError}</p>
+				{/if}
+			</form>
+		{/if}
+	{/if}
 
 	{#if storyId}
 		<div class="section-label">In this book</div>
@@ -253,5 +388,53 @@
 	.editor-cm {
 		min-height: 180px;
 		padding: 4px 0 12px;
+	}
+	.rel-row {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 6px 2px;
+		border-bottom: 1px dashed var(--border);
+		font-size: 13.5px;
+	}
+	.rel-label {
+		color: var(--text-muted);
+		white-space: nowrap;
+	}
+	.rel-name {
+		color: var(--text);
+		font-weight: 550;
+	}
+	.rel-notes {
+		flex: 1;
+		min-width: 0;
+		color: var(--text-faint);
+		font-size: 12.5px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.rel-remove {
+		margin-left: auto;
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		font-size: 15px;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.rel-remove:hover {
+		color: var(--danger, #b00020);
+	}
+	.rel-add {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.rel-error {
+		color: var(--danger, #b00020);
+		font-size: 12.5px;
+		margin: 0;
 	}
 </style>

@@ -57,6 +57,13 @@
 			"when": 1780517695447,
 			"tag": "0007_lore_categories",
 			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1780520160474,
+			"tag": "0008_relationships",
+			"breakpoints": true
 		}
 	]
 }

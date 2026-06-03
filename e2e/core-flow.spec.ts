@@ -145,7 +145,7 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	const categorySave = page.waitForResponse(
 		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
 	);
-	await page.locator('.detail select').selectOption({ label: 'Factions' });
+	await page.getByLabel('Category').selectOption({ label: 'Factions' });
 	await categorySave;
 	await page.reload();
 	await expect(
@@ -214,6 +214,32 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(
 		page.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
 	).toHaveValue('A toll-road smuggler in debt.');
+
+	// Relationships: declare "lives in Halden" from Alice's page.
+	await page.getByLabel('Relation').selectOption({ label: 'lives in' });
+	await page.getByLabel('Related entity').selectOption({ label: 'Halden' });
+	await page.getByPlaceholder('Notes (optional)').fill('Since the toll war.');
+	const relCreate = page.waitForResponse(
+		(r) => r.url().includes('/api/relationships') && r.request().method() === 'POST' && r.ok()
+	);
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await relCreate;
+	await expect(page.locator('.rel-row')).toContainText('lives in Halden');
+
+	// The right panel gains a Relationships card; following it lands on
+	// Halden, which renders the inverse label.
+	const relCard = page.locator('.r-card', { hasText: 'Relationships' });
+	await relCard.locator('.r-line', { hasText: 'Halden' }).click();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Halden');
+	await expect(page.locator('.rel-row')).toContainText('home of Alice Vane');
+
+	// Removing it from the other end clears both sides.
+	const relDelete = page.waitForResponse(
+		(r) => r.url().includes('/api/relationships/') && r.request().method() === 'DELETE' && r.ok()
+	);
+	await page.locator('.rel-remove').click();
+	await relDelete;
+	await expect(page.locator('.rel-row')).toHaveCount(0);
 
 	// The dashboard reaches the story directly, under its universe.
 	await page.locator('.brand').click();

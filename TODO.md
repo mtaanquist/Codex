@@ -34,7 +34,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 16a. Places (v1.1): schema, Plan view, story notes, mention pipeline
 - [x] 16b. Lore entries and entity categories (v1.2), incl. entity-colour groupings
 - [x] 17. Universe editor (v1.3): universe-scoped Plan view, no "In this book" without a story, dashboard lists stories per universe and routes the universe name to the editor (Notes view still does not exist at any scope; it stays a disabled toggle)
-- [ ] 18. Entity relationships (v1.4)
+- [x] 18. Entity relationships (v1.4): relation_types + entity_relationships schema (story_id and custom types modelled, no UI yet), 15 built-ins seeded by migration, editor section with typed picker + target select + notes, right-panel card, inverse labels on the target's page
 - [ ] 19. Outline tree (v1.5)
 - [ ] 20. Declared story membership
 - [ ] 21. Entity autocomplete (v1.6)

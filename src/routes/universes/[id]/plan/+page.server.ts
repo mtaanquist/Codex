@@ -8,6 +8,11 @@ import {
 	resolvePlanEntity,
 	type PlanAppearance
 } from '$lib/server/plan-data';
+import {
+	listEntityRelationships,
+	listRelationTypes,
+	type RelationshipView
+} from '$lib/server/relationships';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -36,13 +41,24 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		);
 	}
 
+	const relationTypes = await listRelationTypes(db, universe.id);
+	let relationships: RelationshipView[] = [];
+	if (selected) {
+		relationships = await listEntityRelationships(db, universe.id, {
+			kind: selectedKind,
+			id: selected.id
+		});
+	}
+
 	return {
 		universe,
 		user: locals.user!,
 		...lists,
 		selected,
 		selectedKind,
-		appearsIn
+		appearsIn,
+		relationTypes,
+		relationships
 	};
 };
 
