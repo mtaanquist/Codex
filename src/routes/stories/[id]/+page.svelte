@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// Focus mode hides the chrome around the prose; Esc leaves it.
+	let focus = $state(false);
 
 	const initials = $derived(
 		data.user.displayName
@@ -16,15 +20,22 @@
 	);
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape') focus = false;
+	}}
+/>
+
 <svelte:head>
 	<title>{data.story.title} - Codex</title>
 </svelte:head>
 
-<div class="app">
+<div class="app" class:focus-mode={focus}>
 	<TopBar
 		universe={{ id: data.universe.id, name: data.universe.name }}
 		story={{ id: data.story.id, title: data.story.title }}
 		{initials}
+		onEnterFocus={() => (focus = true)}
 	/>
 	<div class="body">
 		<aside class="pane left">
@@ -64,6 +75,20 @@
 			</div>
 		</aside>
 	</div>
+
+	{#if focus}
+		<div class="focus-controls">
+			<ThemeToggle />
+			<button
+				class="icon-btn"
+				type="button"
+				title="Exit focus (Esc)"
+				onclick={() => (focus = false)}
+			>
+				<Icon name="compress" />
+			</button>
+		</div>
+	{/if}
 </div>
 
 <style>

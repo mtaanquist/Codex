@@ -21,6 +21,12 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
+	// Focus mode hides the chrome; Esc brings it back.
+	await page.getByRole('button', { name: 'Focus mode' }).click();
+	await expect(page.locator('.topbar')).toBeHidden();
+	await page.keyboard.press('Escape');
+	await expect(page.locator('.topbar')).toBeVisible();
+
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
