@@ -1,0 +1,21 @@
+# Database only, for editor-hosted development. The full stack (app, worker,
+# Caddy) lives in compose.yaml once it exists.
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: codex
+      POSTGRES_PASSWORD: codex
+      POSTGRES_DB: codex
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U codex']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:
