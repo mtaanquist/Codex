@@ -22,11 +22,24 @@
 	{#if data.universes.length === 0}
 		<p>No universes yet. A universe holds the worldbuilding your stories share.</p>
 	{:else}
-		<ul>
-			{#each data.universes as universe (universe.id)}
-				<li><a href={resolve('/universes/[id]', { id: universe.id })}>{universe.name}</a></li>
-			{/each}
-		</ul>
+		{#each data.universes as universe (universe.id)}
+			{@const universeStories = data.stories.filter((story) => story.universeId === universe.id)}
+			<section>
+				<h3>
+					<a href={resolve('/universes/[id]/plan', { id: universe.id })}>{universe.name}</a>
+					<a class="settings" href={resolve('/universes/[id]', { id: universe.id })}>Settings</a>
+				</h3>
+				{#if universeStories.length === 0}
+					<p>No stories yet.</p>
+				{:else}
+					<ul>
+						{#each universeStories as story (story.id)}
+							<li><a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a></li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/each}
 	{/if}
 
 	<form method="POST" action="?/createUniverse">
@@ -65,5 +78,14 @@
 	}
 	.error {
 		color: #b00020;
+	}
+	h3 {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+	}
+	.settings {
+		font-size: 0.8rem;
+		font-weight: normal;
 	}
 </style>

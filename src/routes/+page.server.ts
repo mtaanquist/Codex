@@ -1,8 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { entityCategories, universes } from '$lib/server/db/schema';
+import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -12,7 +12,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.from(universes)
 		.where(eq(universes.ownerId, user.id))
 		.orderBy(desc(universes.updatedAt));
-	return { user, universes: list };
+	const storyList =
+		list.length === 0
+			? []
+			: await db
+					.select({ id: stories.id, title: stories.title, universeId: stories.universeId })
+					.from(stories)
+					.where(
+						inArray(
+							stories.universeId,
+							list.map((universe) => universe.id)
+						)
+					)
+					.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
+	return { user, universes: list, stories: storyList };
 };
 
 export const actions: Actions = {

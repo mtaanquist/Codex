@@ -190,9 +190,36 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
 
-	// The breadcrumb leads back to the universe, which lists the story.
+	// The breadcrumb leads to the universe editor: the same cast at universe
+	// scope, with no per-story notes section.
 	await page.getByRole('link', { name: universeName }).click();
-	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
+	await expect(page).toHaveURL(/\/universes\/[^/]+\/plan$/);
+	await page.locator('.ent-row', { hasText: 'Alice Vane' }).click();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
+	await expect(page.getByPlaceholder('Notes that apply only to this story.')).toHaveCount(0);
+
+	// Appearances group under the story they come from.
+	await expect(page.locator('.r-card h5')).toHaveText('Appears in Book of Ash');
+	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
+
+	// An edit made at universe scope persists.
+	const universeScopeSave = page.waitForResponse(
+		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page
+		.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
+		.fill('A toll-road smuggler in debt.');
+	await universeScopeSave;
+	await page.reload();
+	await expect(
+		page.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
+	).toHaveValue('A toll-road smuggler in debt.');
+
+	// The dashboard reaches the story directly, under its universe.
+	await page.locator('.brand').click();
+	await expect(page).toHaveURL('/');
+	const universeSection = page.locator('section', { hasText: universeName });
+	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
 });
 
 test('wrong password is rejected', async ({ page }) => {
