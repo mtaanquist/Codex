@@ -1,0 +1,67 @@
+# The full self-host stack: app, worker, database, and Caddy for TLS.
+# Editor-hosted development uses compose.dev.yaml (database only) instead.
+#
+# Defaults run out of the box on localhost. For a real deployment set:
+#   SITE_ADDRESS=your.domain   (Caddy then obtains TLS certificates)
+#   ORIGIN=https://your.domain
+#   POSTGRES_PASSWORD=something-strong
+name: codex
+
+services:
+  app:
+    build: .
+    image: codex-app
+    restart: unless-stopped
+    command: sh -c "node scripts/migrate.ts && node build"
+    environment:
+      DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
+      ORIGIN: ${ORIGIN:-http://localhost}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    image: codex-app
+    build: .
+    restart: unless-stopped
+    command: node src/worker/index.ts
+    environment:
+      DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: codex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codex}
+      POSTGRES_DB: codex
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U codex']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
