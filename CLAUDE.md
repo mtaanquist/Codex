@@ -27,6 +27,7 @@ Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for backg
   - **End-to-end (Playwright).** A small set covering the journeys that must never break: sign in, create a universe and a story, draft a scene and see it persist after reload. Playwright is already provisioned in the dev harness.
 - Test behaviour and contracts, not implementation details, so a refactor that preserves behaviour does not break the suite. Do not chase a coverage number; cover the paths that matter and the ones that have broken before.
 - A roadmap step is not done until its tests pass. Keep the suite fast and deterministic; a flaky or slow test gets fixed or removed, not tolerated.
+- Run the tests locally before pushing, wherever the environment allows it. The local suite is much faster than a CI runner, so `npm run lint` and `npm test` (or at least the unit tests and any relevant end-to-end ones) catch most failures without the wait. CI is the backstop, not the first place a failure should surface.
 
 ## Working approach
 
