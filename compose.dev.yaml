@@ -1,5 +1,8 @@
 # Database only, for editor-hosted development. The full stack (app, worker,
-# Caddy) lives in compose.yaml once it exists.
+# Caddy) lives in compose.yaml. The explicit project name keeps this stack's
+# containers and volumes separate from the full stack's.
+name: codex-dev
+
 services:
   db:
     image: postgres:18-alpine
