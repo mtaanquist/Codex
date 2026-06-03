@@ -15,6 +15,13 @@
 			"when": 1780507885523,
 			"tag": "0001_auth",
 			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1780508772694,
+			"tag": "0002_universes_stories",
+			"breakpoints": true
 		}
 	]
 }

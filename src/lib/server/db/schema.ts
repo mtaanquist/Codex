@@ -3,6 +3,7 @@ import {
 	boolean,
 	customType,
 	inet,
+	integer,
 	jsonb,
 	pgTable,
 	text,
@@ -64,6 +65,53 @@ export const sessions = pgTable('sessions', {
 	revokedAt: timestamp('revoked_at', { withTimezone: true }),
 	userAgent: text('user_agent'),
 	ip: inet('ip')
+});
+
+export const universes = pgTable('universes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	name: text('name').notNull(),
+	descriptionMd: text('description_md'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+export const stories = pgTable('stories', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	universeId: uuid('universe_id')
+		.references(() => universes.id)
+		.notNull(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	title: text('title').notNull(),
+	// Pen name shown on covers and public pages; defaults to the owner's
+	// display name at render time when null.
+	author: text('author'),
+	brief: text('brief'),
+	descriptionMd: text('description_md'),
+	// Null if standalone or unordered.
+	positionInSeries: integer('position_in_series'),
+	visibility: text('visibility', { enum: ['private', 'unlisted', 'public'] })
+		.notNull()
+		.default('private'),
+	// Author-flagged adult content; readers avoid it by default.
+	isAdult: boolean('is_adult').notNull().default(false),
+	// References assets(id) once that table exists (phase 4); null renders a
+	// default cover from title and author.
+	coverAssetId: uuid('cover_asset_id'),
+	// Reserved for future LLM integration; inert in v1.
+	llmConfig: jsonb('llm_config').notNull().default({}),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
 });
 
 // Single-use tokens for email verification and password reset. The raw token
