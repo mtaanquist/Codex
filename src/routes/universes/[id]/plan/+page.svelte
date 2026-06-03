@@ -54,6 +54,13 @@
 						kind={data.selectedKind}
 						entity={data.selected}
 						categories={data.categories}
+						relationTypes={data.relationTypes}
+						relationships={data.relationships}
+						targets={{
+							character: data.characters,
+							place: data.places,
+							lore_entry: data.lore
+						}}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
@@ -69,6 +76,21 @@
 		</main>
 		<aside class="pane right">
 			<div class="right-scroll">
+				{#if data.selected && data.relationships.length > 0}
+					<div class="r-card">
+						<h5>Relationships</h5>
+						{#each data.relationships as relationship (relationship.id)}
+							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+							<a class="r-line" href={`${planPath}?entity=${relationship.otherId}`}>
+								<span class="r-line-left">
+									<span class="rel-label">{relationship.label}</span>
+									<span class="r-line-name">{relationship.otherName}</span>
+								</span>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{/each}
+					</div>
+				{/if}
 				{#if data.selected && data.appearsIn.length > 0}
 					{#each storiesSeen as storyRef (storyRef.storyId)}
 						{@const inStory = data.appearsIn.filter((m) => m.storyId === storyRef.storyId)}
@@ -109,6 +131,11 @@
 <style>
 	.r-line {
 		text-decoration: none;
+	}
+	.rel-label {
+		color: var(--text-muted);
+		font-size: 12px;
+		margin-right: 6px;
 	}
 	.snippet {
 		color: var(--text-muted);

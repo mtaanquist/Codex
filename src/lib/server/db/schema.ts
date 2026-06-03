@@ -356,6 +356,73 @@ export const entityMentions = pgTable(
 	]
 );
 
+// The vocabulary of declared relations. A seed migration provides the
+// built-in library (universe_id null); universes can add their own, the
+// same way entity categories work. Labels are never free-form on a
+// relationship row: pick a type, put prose in the notes.
+export const relationTypes = pgTable(
+	'relation_types',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		// Null for built-ins, set for user-added types.
+		universeId: uuid('universe_id').references(() => universes.id),
+		key: text('key').notNull(),
+		// "parent of"
+		forwardLabel: text('forward_label').notNull(),
+		// "child of"; null when bidirectional.
+		reverseLabel: text('reverse_label'),
+		// True for symmetric relations (sibling, friend, rival): one row,
+		// forward label shown on both ends.
+		bidirectional: boolean('bidirectional').notNull().default(false),
+		fromType: text('from_type', { enum: ['character', 'place', 'lore_entry'] }).notNull(),
+		toType: text('to_type', { enum: ['character', 'place', 'lore_entry'] }).notNull(),
+		// 'family' | 'social' | 'geography'; groups the picker.
+		category: text('category'),
+		sortOrder: integer('sort_order'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		// nulls-not-distinct so built-in keys (universe_id null) are unique too.
+		unique('relation_types_universe_key').on(table.universeId, table.key).nullsNotDistinct()
+	]
+);
+
+// User-declared relations between entities. Distinct from entity_mentions:
+// relationships are entered, mentions are discovered. Directional relations
+// store one row and render the reverse label on the target's page.
+export const entityRelationships = pgTable(
+	'entity_relationships',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		universeId: uuid('universe_id')
+			.references(() => universes.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		fromType: text('from_type', { enum: ['character', 'place', 'lore_entry'] }).notNull(),
+		fromId: uuid('from_id').notNull(),
+		toType: text('to_type', { enum: ['character', 'place', 'lore_entry'] }).notNull(),
+		toId: uuid('to_id').notNull(),
+		relationTypeId: uuid('relation_type_id')
+			.references(() => relationTypes.id)
+			.notNull(),
+		// Null = universe-wide. Reserved for story-scoped overrides; no UI yet.
+		storyId: uuid('story_id').references(() => stories.id),
+		notesMd: text('notes_md'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [
+		index('entity_relationships_from_idx').on(table.fromType, table.fromId),
+		index('entity_relationships_to_idx').on(table.toType, table.toId),
+		index('entity_relationships_scope_idx').on(table.universeId, table.storyId)
+	]
+);
+
 // Single-use tokens for email verification and password reset. The raw token
 // is emailed; only its hash is stored.
 export const authTokens = pgTable('auth_tokens', {
