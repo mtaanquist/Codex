@@ -12,7 +12,8 @@
 		storyView
 	}: {
 		universe: { id: string; name: string };
-		story: { id: string; title: string };
+		// Absent on universe-scoped pages; the universe becomes the crumb.
+		story?: { id: string; title: string };
 		initials: string;
 		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
@@ -33,11 +34,19 @@
 		<span class="brand-name">Codex</span>
 	</a>
 	<nav class="crumbs">
-		<a class="crumb" href={resolve('/universes/[id]', { id: universe.id })}>{universe.name}</a>
-		<span class="sep"><Icon name="chevron" size={13} /></span>
-		<a class="crumb current" href={resolve('/stories/[id]/settings', { id: story.id })}>
-			{story.title}
-		</a>
+		{#if story}
+			<a class="crumb" href={resolve('/universes/[id]/plan', { id: universe.id })}>
+				{universe.name}
+			</a>
+			<span class="sep"><Icon name="chevron" size={13} /></span>
+			<a class="crumb current" href={resolve('/stories/[id]/settings', { id: story.id })}>
+				{story.title}
+			</a>
+		{:else}
+			<a class="crumb current" href={resolve('/universes/[id]', { id: universe.id })}>
+				{universe.name}
+			</a>
+		{/if}
 	</nav>
 	<div class="topbar-right">
 		{#if saveStatus !== 'idle'}

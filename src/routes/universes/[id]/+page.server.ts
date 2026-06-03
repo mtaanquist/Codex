@@ -1,17 +1,9 @@
-import { error, fail, redirect } from '@sveltejs/kit';
-import { and, asc, eq } from 'drizzle-orm';
+import { fail, redirect } from '@sveltejs/kit';
+import { asc, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { stories, universes } from '$lib/server/db/schema';
-
-async function ownedUniverse(universeId: string, userId: string) {
-	const [universe] = await db
-		.select()
-		.from(universes)
-		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
-	if (!universe) error(404, 'Universe not found');
-	return universe;
-}
+import { ownedUniverse } from '$lib/server/universe-access';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
