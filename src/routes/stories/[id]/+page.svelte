@@ -37,6 +37,18 @@
 	const viewStory = $derived(data.view === 'story');
 	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.id }));
 
+	// Entering the story view carries the open scene along; leaving it returns
+	// there.
+	const toggleHref = $derived(
+		viewStory
+			? data.returnSceneId
+				? `${storyPath}?scene=${data.returnSceneId}`
+				: storyPath
+			: data.selectedScene
+				? `${storyPath}?view=story&scene=${data.selectedScene.id}`
+				: `${storyPath}?view=story`
+	);
+
 	function chapterScenes(chapterId: string) {
 		return data.scenes.filter((scene) => scene.chapterId === chapterId);
 	}
@@ -136,7 +148,7 @@
 		{initials}
 		onEnterFocus={() => (focus = true)}
 		{saveStatus}
-		storyView={{ active: viewStory, toggleHref: viewStory ? storyPath : `${storyPath}?view=story` }}
+		storyView={{ active: viewStory, toggleHref }}
 	/>
 	<div class="body">
 		<aside class="pane left">
@@ -318,7 +330,11 @@
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
-						onStatus={(status) => (saveStatus = status)}
+						onStatus={(status) => {
+							saveStatus = status;
+							// Refresh the tree so the sidebar name and word count track edits.
+							if (status === 'saved') void invalidateAll();
+						}}
 					/>
 				{/key}
 			{:else if data.scenes.length === 0}

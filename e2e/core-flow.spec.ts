@@ -44,6 +44,8 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	);
 	await page.getByPlaceholder('Untitled scene').fill('Departure from Halden');
 	await titleSave;
+	// The sidebar name tracks the rename without a reload.
+	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
 	await page.reload();
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
@@ -70,12 +72,20 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	);
 
 	// The whole story reads as one continuous document with jump navigation.
+	const sceneUrl = page.url();
 	await page.getByRole('link', { name: 'Read the whole story' }).click();
 	await expect(page).toHaveURL(/view=story/);
 	await expect(page.locator('.doc-scene')).toHaveCount(2);
 	await expect(page.locator('.story-doc')).toContainText('The gate of Halden');
 	await page.locator('.scene-row').nth(1).click();
 	await expect(page).toHaveURL(/#scene-/);
+
+	// Toggling back returns to the scene that was open before.
+	await page.getByRole('link', { name: 'Back to the scene editor' }).click();
+	await expect(page).toHaveURL(sceneUrl);
+
+	// A scene mark in the document jumps straight into editing that scene.
+	await page.getByRole('link', { name: 'Read the whole story' }).click();
 	await page.locator('.doc-scene-mark').nth(1).click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
