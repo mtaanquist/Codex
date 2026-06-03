@@ -44,6 +44,8 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	);
 	await page.getByPlaceholder('Untitled scene').fill('Departure from Halden');
 	await titleSave;
+	// The sidebar name tracks the rename without a reload.
+	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
 	await page.reload();
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
@@ -70,15 +72,84 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	);
 
 	// The whole story reads as one continuous document with jump navigation.
+	const sceneUrl = page.url();
 	await page.getByRole('link', { name: 'Read the whole story' }).click();
 	await expect(page).toHaveURL(/view=story/);
 	await expect(page.locator('.doc-scene')).toHaveCount(2);
 	await expect(page.locator('.story-doc')).toContainText('The gate of Halden');
 	await page.locator('.scene-row').nth(1).click();
 	await expect(page).toHaveURL(/#scene-/);
+
+	// Toggling back returns to the scene that was open before.
+	await page.getByRole('link', { name: 'Back to the scene editor' }).click();
+	await expect(page).toHaveURL(sceneUrl);
+
+	// A scene mark in the document jumps straight into editing that scene.
+	await page.getByRole('link', { name: 'Read the whole story' }).click();
 	await page.locator('.doc-scene-mark').nth(1).click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
+
+	// Plan view: create a character, fill the editor, and it persists.
+	await page.getByRole('link', { name: 'Plan' }).click();
+	await expect(page).toHaveURL(/\/plan$/);
+	await page.getByPlaceholder('New character name').fill('Alice');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	const characterSave = page.waitForResponse(
+		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByPlaceholder('Name', { exact: true }).fill('Alice Vane');
+	await page
+		.getByPlaceholder('Nicknames and variants, separated by commas. Used to spot mentions.')
+		.fill('Allie, Mrs. Fenwick');
+	await page
+		.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
+		.fill('A toll-road smuggler.');
+	await page
+		.getByPlaceholder('Notes that apply only to this story.')
+		.fill('Starts the book in debt.');
+	await characterSave;
+	await page.reload();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
+	await expect(page.locator('.ent-row .name')).toHaveText('Alice Vane');
+	await expect(page.getByPlaceholder('Notes that apply only to this story.')).toHaveValue(
+		'Starts the book in debt.'
+	);
+
+	// Back to Write via the segmented control.
+	await page.getByRole('link', { name: 'Write' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+
+	// Mentions: typing a known alias underlines it live; hovering shows the
+	// character's summary.
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Mrs. Fenwick waited.');
+	await expect(page.locator('.ref-word')).toHaveText('Mrs. Fenwick');
+	await page.locator('.ref-word').hover();
+	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
+	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
+
+	// The worker indexes the mention asynchronously; once it has, the scene's
+	// cast shows in the right panel.
+	await expect(async () => {
+		await page.reload();
+		await expect(page.locator('.r-line-name')).toHaveText('Alice Vane', { timeout: 1500 });
+	}).toPass({ timeout: 30000 });
+
+	// Find usages: the character's panel lists the scene with the snippet,
+	// and jumps back into it.
+	await page.locator('.r-line').click();
+	await expect(page).toHaveURL(/\/plan\?entity=/);
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
+	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
+	await expect(page.locator('.snippet')).toContainText('Mrs. Fenwick waited.');
+	await page.locator('.r-line').click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
 
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();

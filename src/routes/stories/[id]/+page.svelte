@@ -2,6 +2,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
@@ -36,6 +37,18 @@
 
 	const viewStory = $derived(data.view === 'story');
 	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.id }));
+
+	// Entering the story view carries the open scene along; leaving it returns
+	// there.
+	const toggleHref = $derived(
+		viewStory
+			? data.returnSceneId
+				? `${storyPath}?scene=${data.returnSceneId}`
+				: storyPath
+			: data.selectedScene
+				? `${storyPath}?view=story&scene=${data.selectedScene.id}`
+				: `${storyPath}?view=story`
+	);
 
 	function chapterScenes(chapterId: string) {
 		return data.scenes.filter((scene) => scene.chapterId === chapterId);
@@ -136,14 +149,16 @@
 		{initials}
 		onEnterFocus={() => (focus = true)}
 		{saveStatus}
-		storyView={{ active: viewStory, toggleHref: viewStory ? storyPath : `${storyPath}?view=story` }}
+		storyView={{ active: viewStory, toggleHref }}
 	/>
 	<div class="body">
 		<aside class="pane left">
 			<div class="left-head">
 				<div class="seg full">
 					<button class="seg-btn active" type="button">Write</button>
-					<button class="seg-btn" type="button" disabled>Plan</button>
+					<a class="seg-btn seg-link" href={resolve('/stories/[id]/plan', { id: data.story.id })}>
+						Plan
+					</a>
 					<button class="seg-btn" type="button" disabled>Notes</button>
 				</div>
 			</div>
@@ -318,7 +333,12 @@
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
-						onStatus={(status) => (saveStatus = status)}
+						entities={data.mentionEntities}
+						onStatus={(status) => {
+							saveStatus = status;
+							// Refresh the tree so the sidebar name and word count track edits.
+							if (status === 'saved') void invalidateAll();
+						}}
 					/>
 				{/key}
 			{:else if data.scenes.length === 0}
@@ -333,7 +353,29 @@
 		</main>
 		<aside class="pane right">
 			<div class="right-scroll">
-				<div class="empty">Nothing to show yet.</div>
+				{#if data.selectedScene && data.inScene.length > 0}
+					<div class="r-card">
+						<h5>In this scene</h5>
+						{#each data.inScene as entity (entity.id)}
+							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+							<a
+								class="r-line"
+								href={`${resolve('/stories/[id]/plan', { id: data.story.id })}?entity=${entity.id}`}
+							>
+								<span class="r-line-left">
+									<span class="badge dot" style="background: {entityColor(entity.name)}">
+										{entityLetter(entity.name)}
+									</span>
+									<span class="r-line-name">{entity.name}</span>
+								</span>
+								<span class="r-count">{entity.count}</span>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{/each}
+					</div>
+				{:else}
+					<div class="empty">Nothing to show yet.</div>
+				{/if}
 			</div>
 		</aside>
 	</div>
@@ -363,6 +405,10 @@
 	.scene-row {
 		text-decoration: none;
 		color: inherit;
+	}
+	.seg-link {
+		text-decoration: none;
+		text-align: center;
 	}
 	main.pane.center {
 		scroll-behavior: smooth;

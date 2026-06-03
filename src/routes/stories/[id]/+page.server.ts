@@ -2,7 +2,14 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { chapters, scenes, stories, universes } from '$lib/server/db/schema';
+import {
+	chapters,
+	characters,
+	entityMentions,
+	scenes,
+	stories,
+	universes
+} from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -61,6 +68,39 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedScene = row ?? null;
 	}
 
+	// Who is mentioned in the open scene, read from the worker-built index.
+	let inScene: { id: string; name: string; count: number }[] = [];
+	if (selectedScene) {
+		inScene = await db
+			.select({
+				id: characters.id,
+				name: characters.name,
+				count: sql<number>`count(*)::int`
+			})
+			.from(entityMentions)
+			.innerJoin(characters, eq(entityMentions.targetId, characters.id))
+			.where(
+				and(
+					eq(entityMentions.sourceType, 'scene'),
+					eq(entityMentions.sourceId, selectedScene.id),
+					eq(entityMentions.targetType, 'character')
+				)
+			)
+			.groupBy(characters.id, characters.name)
+			.orderBy(asc(characters.name));
+	}
+
+	// Known entities feed the editor's live underlines and hover tooltips.
+	const mentionEntities = await db
+		.select({
+			id: characters.id,
+			name: characters.name,
+			aliases: characters.aliases,
+			summaryMd: characters.summaryMd
+		})
+		.from(characters)
+		.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true)));
+
 	return {
 		story,
 		universe,
@@ -68,19 +108,25 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		chapters: chapterList,
 		scenes: sceneList,
 		selectedScene,
+		mentionEntities,
+		inScene,
 		view,
-		storyDoc
+		storyDoc,
+		// Carried through the story view so toggling back lands on the scene
+		// that was open before.
+		returnSceneId: url.searchParams.get('scene')
 	};
 };
 
 export const actions: Actions = {
 	createChapter: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		const [{ next }] = await db
-			.select({ next: sql<number>`coalesce(max(${chapters.position}), 0) + 1` })
-			.from(chapters)
-			.where(eq(chapters.storyId, story.id));
-		await db.insert(chapters).values({ storyId: story.id, position: next });
+		// Position computed inside the insert so concurrent creates cannot read
+		// the same max.
+		await db.insert(chapters).values({
+			storyId: story.id,
+			position: sql`(select coalesce(max(${chapters.position}), 0) + 1 from ${chapters} where ${chapters.storyId} = ${story.id})`
+		});
 		return { created: 'chapter' };
 	},
 	createScene: async ({ request, params, locals }) => {
@@ -94,21 +140,18 @@ export const actions: Actions = {
 				.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, story.id)));
 			if (!chapter) return fail(400, { message: 'That chapter does not exist.' });
 		}
-		const [{ nextGlobal }] = await db
-			.select({ nextGlobal: sql<number>`coalesce(max(${scenes.globalPosition}), 0) + 1` })
-			.from(scenes)
-			.where(eq(scenes.storyId, story.id));
-		let positionInChapter: number | null = null;
-		if (chapterId) {
-			const [{ nextInChapter }] = await db
-				.select({ nextInChapter: sql<number>`coalesce(max(${scenes.positionInChapter}), 0) + 1` })
-				.from(scenes)
-				.where(eq(scenes.chapterId, chapterId));
-			positionInChapter = nextInChapter;
-		}
+		// Positions computed inside the insert so concurrent creates cannot read
+		// the same max.
 		const [scene] = await db
 			.insert(scenes)
-			.values({ storyId: story.id, chapterId, positionInChapter, globalPosition: nextGlobal })
+			.values({
+				storyId: story.id,
+				chapterId,
+				positionInChapter: chapterId
+					? sql`(select coalesce(max(${scenes.positionInChapter}), 0) + 1 from ${scenes} where ${scenes.chapterId} = ${chapterId})`
+					: null,
+				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${story.id})`
+			})
 			.returning({ id: scenes.id });
 		redirect(303, `/stories/${story.id}?scene=${scene.id}`);
 	}

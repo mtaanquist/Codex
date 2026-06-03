@@ -1,0 +1,51 @@
+/* CodeMirror prose styling shared by the scene and entity editors. */
+.editor-cm .cm-editor {
+	background: none;
+}
+.editor-cm .cm-editor.cm-focused {
+	outline: none;
+}
+.editor-cm .cm-scroller {
+	font-family: var(--font-content);
+	font-size: 17.5px;
+	line-height: 1.7;
+	color: var(--text);
+}
+.editor-cm .cm-content {
+	padding: 0;
+	caret-color: var(--text);
+}
+.editor-cm .cm-line {
+	padding: 0;
+}
+.editor-cm .cm-placeholder {
+	color: var(--text-faint);
+}
+.editor-cm .cm-cursor {
+	border-left-color: var(--text);
+}
+.editor-cm .cm-selectionBackground {
+	background: var(--accent-soft) !important;
+}
+
+/* Entity hover tooltip (CodeMirror hoverTooltip). */
+.cm-tooltip:has(.entity-tip) {
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+	border-radius: var(--radius, 9px);
+	box-shadow: var(--shadow);
+	padding: 8px 11px;
+	max-width: 280px;
+}
+.entity-tip-name {
+	font-family: var(--font-ui);
+	font-size: 13px;
+	font-weight: 650;
+}
+.entity-tip-summary {
+	font-family: var(--font-ui);
+	color: var(--text-muted);
+	font-size: 12.5px;
+	line-height: 1.5;
+	margin-top: 3px;
+}

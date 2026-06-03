@@ -24,6 +24,32 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 12. Drag-to-reorder scenes
 - [x] 12b. Continuous story view, read-only (pulled forward from Phase 6)
 
-> v0.5 ships at the end of Phase 2.
+> v0.5 ships at the end of Phase 2. (Shipped.)
+
+## Phase 3 - Worldbuilding
+
+- [x] 13. Characters: schema, Plan view CRUD, story notes overlay, aliases
+- [x] 14. Entity mentions index, worker rebuild, editor underlines, hover tooltips
+- [x] 15. Find usages / appears-in panels
+
+> v1.0 ships after step 15 - but not before a full code review of everything
+> on develop (correctness, security, schema fidelity). Do not tag v1.0 without it.
+
+## Feedback backlog
+
+From first real use (2026-06-03):
+
+- [ ] Scene marks in the continuous view should be hideable (display preference; rides with roadmap step 23b or the preferences UI)
+- [ ] Editable continuous view: promoted to roadmap step 23b, ships as a v1.x release
+- [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
+- [ ] Markdown affordances: renderer lands with Phase 4 exports and reading pages (continuous view picks it up); in-editor styling and the prototype's toolbar as polish after; visibility of marks likely a display preference
+- [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
+- [ ] Entity colours with meaning: let characters/places optionally join an entity_category (nullable category_id, additive) so badge colours are universe-defined groupings; build with step 16's category work
+
+From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
+
+- [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts)
+- [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
+- [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
 
 Later phases tracked in the roadmap until they get close.

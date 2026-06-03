@@ -4,20 +4,22 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { EditorView, keymap, placeholder } from '@codemirror/view';
+	import { EditorView } from '@codemirror/view';
 	import { Compartment, EditorState } from '@codemirror/state';
-	import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-	import { markdown } from '@codemirror/lang-markdown';
+	import { proseExtensions } from '$lib/editor';
+	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 
 	let {
 		sceneId,
 		title,
 		body,
+		entities = [],
 		onStatus
 	}: {
 		sceneId: string;
 		title: string | null;
 		body: string;
+		entities?: MentionEntity[];
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -36,6 +38,9 @@
 	let titleValue = $state(title ?? '');
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let dirty = false;
+	// Saves are chained so an earlier slow request can never land after, and
+	// overwrite, a newer one.
+	let saveChain: Promise<void> = Promise.resolve();
 
 	async function save() {
 		if (!view) return;
@@ -55,10 +60,14 @@
 		}
 	}
 
+	function enqueueSave() {
+		saveChain = saveChain.then(save);
+	}
+
 	function scheduleSave() {
 		dirty = true;
 		clearTimeout(saveTimer);
-		saveTimer = setTimeout(save, SAVE_DEBOUNCE_MS);
+		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
 	}
 
 	onMount(() => {
@@ -67,15 +76,8 @@
 			state: EditorState.create({
 				doc: body,
 				extensions: [
-					history(),
-					keymap.of([...defaultKeymap, ...historyKeymap]),
-					markdown(),
-					placeholder('Start writing...'),
-					EditorView.lineWrapping,
-					EditorView.updateListener.of((update) => {
-						if (update.docChanged) scheduleSave();
-					}),
-					mentionsCompartment.of([]),
+					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
+					mentionsCompartment.of(mentionExtensions(entities)),
 					autocompleteCompartment.of([])
 				]
 			})
@@ -83,9 +85,11 @@
 		return () => {
 			clearTimeout(saveTimer);
 			// Last-chance flush so navigating away does not lose the tail edit.
-			if (dirty) void save();
-			view?.destroy();
-			view = undefined;
+			if (dirty) enqueueSave();
+			void saveChain.then(() => {
+				view?.destroy();
+				view = undefined;
+			});
 		};
 	});
 </script>
@@ -116,33 +120,5 @@
 	}
 	.editor-title-input::placeholder {
 		color: var(--text-faint);
-	}
-	.editor-cm :global(.cm-editor) {
-		background: none;
-	}
-	.editor-cm :global(.cm-editor.cm-focused) {
-		outline: none;
-	}
-	.editor-cm :global(.cm-scroller) {
-		font-family: var(--font-content);
-		font-size: 17.5px;
-		line-height: 1.7;
-		color: var(--text);
-	}
-	.editor-cm :global(.cm-content) {
-		padding: 0;
-		caret-color: var(--text);
-	}
-	.editor-cm :global(.cm-line) {
-		padding: 0;
-	}
-	.editor-cm :global(.cm-placeholder) {
-		color: var(--text-faint);
-	}
-	.editor-cm :global(.cm-cursor) {
-		border-left-color: var(--text);
-	}
-	.editor-cm :global(.cm-selectionBackground) {
-		background: var(--accent-soft) !important;
 	}
 </style>
