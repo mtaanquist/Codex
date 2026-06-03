@@ -29,8 +29,9 @@
 			bodyMd: string;
 		};
 		categories?: { id: string; name: string; color: string | null }[];
-		storyId: string;
-		storyNotesMd: string;
+		// Absent at universe scope; the "In this book" notes need a story.
+		storyId?: string;
+		storyNotesMd?: string;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -62,7 +63,7 @@
 	// svelte-ignore state_referenced_locally
 	let summary = $state(entity.summaryMd ?? '');
 	// svelte-ignore state_referenced_locally
-	let notes = $state(storyNotesMd);
+	let notes = $state(storyNotesMd ?? '');
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let dirty = false;
 	// Saves are chained so an earlier slow request can never land after, and
@@ -77,10 +78,12 @@
 			const payload: Record<string, unknown> = {
 				name,
 				summaryMd: summary,
-				bodyMd: view.state.doc.toString(),
-				storyId,
-				storyNotesMd: notes
+				bodyMd: view.state.doc.toString()
 			};
+			if (storyId) {
+				payload.storyId = storyId;
+				payload.storyNotesMd = notes;
+			}
 			if (kind === 'character') {
 				payload.aliases = aliasesText.split(',').map((alias) => alias.trim());
 			}
@@ -199,14 +202,16 @@
 	<div class="section-label">Description</div>
 	<div class="editor-cm" bind:this={editorEl}></div>
 
-	<div class="section-label">In this book</div>
-	<textarea
-		class="area-input"
-		rows="3"
-		placeholder="Notes that apply only to this story."
-		bind:value={notes}
-		oninput={scheduleSave}
-	></textarea>
+	{#if storyId}
+		<div class="section-label">In this book</div>
+		<textarea
+			class="area-input"
+			rows="3"
+			placeholder="Notes that apply only to this story."
+			bind:value={notes}
+			oninput={scheduleSave}
+		></textarea>
+	{/if}
 </div>
 
 <style>

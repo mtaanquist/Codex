@@ -15,7 +15,11 @@
 		saveStatus = 'idle';
 	});
 
-	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.id }));
+	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.id }));
+
+	// Appearances arrive flat and ordered; the panel shows them story by
+	// story, scene by scene.
+	const storiesSeen = $derived([...new Map(data.appearsIn.map((m) => [m.storyId, m])).values()]);
 
 	const initials = $derived(
 		data.user.displayName
@@ -28,16 +32,11 @@
 </script>
 
 <svelte:head>
-	<title>{data.story.title} - Plan - Codex</title>
+	<title>{data.universe.name} - Plan - Codex</title>
 </svelte:head>
 
 <div class="app">
-	<TopBar
-		universe={{ id: data.universe.id, name: data.universe.name }}
-		story={{ id: data.story.id, title: data.story.title }}
-		{initials}
-		{saveStatus}
-	/>
+	<TopBar universe={{ id: data.universe.id, name: data.universe.name }} {initials} {saveStatus} />
 	<div class="body">
 		<PlanSidebar
 			characters={data.characters}
@@ -46,7 +45,6 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
-			writeHref={resolve('/stories/[id]', { id: data.story.id })}
 			{form}
 		/>
 		<main class="pane center">
@@ -56,8 +54,6 @@
 						kind={data.selectedKind}
 						entity={data.selected}
 						categories={data.categories}
-						storyId={data.story.id}
-						storyNotesMd={data.storyNotesMd}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
@@ -74,30 +70,33 @@
 		<aside class="pane right">
 			<div class="right-scroll">
 				{#if data.selected && data.appearsIn.length > 0}
-					{@const scenesSeen = [...new Map(data.appearsIn.map((m) => [m.sceneId, m])).values()]}
-					<div class="r-card">
-						<h5>Appears in</h5>
-						{#each scenesSeen as sceneRef (sceneRef.sceneId)}
-							{@const mentions = data.appearsIn.filter((m) => m.sceneId === sceneRef.sceneId)}
-							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-							<a
-								class="r-line"
-								href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneRef.sceneId}`}
-							>
-								<span class="r-line-left">
-									<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
-								</span>
-								<span class="r-count">{mentions.length}</span>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{#each mentions as mention, mi (mi)}
-								<div class="snippet">{mention.snippet}</div>
+					{#each storiesSeen as storyRef (storyRef.storyId)}
+						{@const inStory = data.appearsIn.filter((m) => m.storyId === storyRef.storyId)}
+						{@const scenesSeen = [...new Map(inStory.map((m) => [m.sceneId, m])).values()]}
+						<div class="r-card">
+							<h5>Appears in {storyRef.storyTitle}</h5>
+							{#each scenesSeen as sceneRef (sceneRef.sceneId)}
+								{@const mentions = inStory.filter((m) => m.sceneId === sceneRef.sceneId)}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+								<a
+									class="r-line"
+									href={`${resolve('/stories/[id]', { id: storyRef.storyId })}?scene=${sceneRef.sceneId}`}
+								>
+									<span class="r-line-left">
+										<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
+									</span>
+									<span class="r-count">{mentions.length}</span>
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{#each mentions as mention, mi (mi)}
+									<div class="snippet">{mention.snippet}</div>
+								{/each}
 							{/each}
-						{/each}
-					</div>
+						</div>
+					{/each}
 				{:else if data.selected}
 					<div class="empty">
-						No mentions in this story yet. Mentions appear shortly after the prose is saved.
+						No mentions yet. Mentions appear shortly after the prose is saved.
 					</div>
 				{:else}
 					<div class="empty">Mentions and relationships arrive here.</div>
