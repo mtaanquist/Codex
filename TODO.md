@@ -26,4 +26,12 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 > v0.5 ships at the end of Phase 2.
 
+## Feedback backlog
+
+From first real use (2026-06-03):
+
+- [ ] Scene marks in the continuous view should be hideable (display preference; rides with roadmap step 23b or the preferences UI)
+- [ ] Editable continuous view: promoted to roadmap step 23b, ships as a v1.x release
+- [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
+
 Later phases tracked in the roadmap until they get close.

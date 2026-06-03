@@ -69,7 +69,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		scenes: sceneList,
 		selectedScene,
 		view,
-		storyDoc
+		storyDoc,
+		// Carried through the story view so toggling back lands on the scene
+		// that was open before.
+		returnSceneId: url.searchParams.get('scene')
 	};
 };
 

@@ -139,7 +139,7 @@ A button in the top bar hides both sidebars using `visibility: hidden` rather th
 
 ### Continuous view
 
-The Write view can also show the whole story as one continuous document: scenes flow together in story order, chapter titles act as section headings, and the sidebar becomes navigation, scrolling to whatever it names. The point is reading a draft the way a reader will meet it; editing stays in the scene-at-a-time view, one click away from any scene. The rendering is driven by `global_position`, so reordering scenes reorders the reading flow. Editing inside the continuous view (stitched per-scene editors) is deferred until real use shows it is needed.
+The Write view can also show the whole story as one continuous document: scenes flow together in story order, chapter titles act as section headings, and the sidebar becomes navigation, scrolling to whatever it names. The point is reading a draft the way a reader will meet it; editing stays in the scene-at-a-time view, one click away from any scene, and toggling back returns to the scene that was open. Whether scene marks render inside the flow is a display preference: some authors treat scenes as atomic splits that should not interrupt the reading flow. The rendering is driven by `global_position`, so reordering scenes reorders the reading flow. Editing inside the continuous view (stitched per-scene editors, each autosaving separately) is scheduled as roadmap step 23b.
 
 ### Images
 
@@ -238,7 +238,7 @@ Portability is achieved through export, not through storage format. The database
 
 ## Open questions
 
-- **Editing in the continuous view.** Resolved in part: a read-only continuous view ships with the core writing loop (author feedback moved it up from the deferred list), with scene-at-a-time remaining the editing surface. Whether the continuous view ever becomes editable in place (stitched per-scene editors) stays open until real use demands it.
+- **Editing in the continuous view.** Resolved: the read-only continuous view shipped with the core writing loop, and author feedback confirmed editing in place is needed, scheduled as roadmap step 23b. What remains open is the default for scene marks inside the flow (shown or hidden) until the preferences UI exists to make it a choice.
 - **Plotlines or arcs as first-class entities.** Currently modelled through scene tags and metadata `jsonb`. May be promoted to their own table if usage shows it's needed.
 - **Command palette (Ctrl+K).** Desirable long-term, not v1. Would absorb search and cross-view navigation into one surface.
 - **Session tab refinements (deferred with AI).** When a chat panel eventually lives below the quick settings, it will need persistence, resumption, and browsing of past conversations. The quick-settings portion may also need a collapse control once chat sessions grow long enough to compete for vertical space. None of this matters until the chat exists.
