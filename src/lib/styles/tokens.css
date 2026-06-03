@@ -1,0 +1,158 @@
+/* Codex design tokens. Ported from the prototype's tokens.css; the #root
+   rule is dropped (SvelteKit mounts differently) and font stacks include
+   the fontsource variable-font family names. */
+/* Codex - shared design tokens + base (used by every page) */
+
+:root {
+	--font-ui: 'Hanken Grotesk Variable', 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+	--font-serif: 'Spectral', Georgia, 'Times New Roman', serif;
+	--font-mono:
+		'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+	/* content family is swapped by the editor "Content type" tweak */
+	--font-content: var(--font-serif);
+
+	/* accent (the editor overrides this inline via tweak) */
+	--accent: #5b8cff;
+	--accent-contrast: #0b1020;
+
+	/* density */
+	--row-h: 36px;
+	--pane-pad: 22px;
+	--content-max: 720px;
+
+	--radius-sm: 6px;
+	--radius: 9px;
+	--radius-lg: 14px;
+
+	/* spacing scale */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+	--space-10: 44px;
+}
+
+[data-density='compact'] {
+	--row-h: 30px;
+	--pane-pad: 16px;
+}
+
+/* ---------- DARK ---------- */
+[data-theme='dark'] {
+	--bg: #0d0d10;
+	--bg-elevated: #131317;
+	--bg-panel: #16161b;
+	--bg-card: #17171d;
+	--bg-hover: rgba(255, 255, 255, 0.045);
+	--bg-active: rgba(255, 255, 255, 0.07);
+	--bg-inset: rgba(255, 255, 255, 0.035);
+	--bg-canvas: #15151b;
+	--border: rgba(255, 255, 255, 0.07);
+	--border-strong: rgba(255, 255, 255, 0.12);
+	--text: #e9e9ec;
+	--text-muted: #8b8b94;
+	--text-faint: #62626b;
+	--shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
+	--pane-shadow: rgba(0, 0, 0, 0.55);
+	--accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
+	--accent-line: color-mix(in oklab, var(--accent) 40%, transparent);
+
+	--status-draft: #c8924a;
+	--status-revised: #9b7bff;
+	--status-final: #2fae8c;
+	--status-outline: #7d8aa3;
+	--danger: #e2687c;
+	--danger-soft: color-mix(in oklab, var(--danger) 16%, transparent);
+
+	/* category tints (lore/factions/etc.) */
+	--cat-violet: #9b7bff;
+	--cat-rose: #d4708a;
+	--cat-green: #5fae5f;
+	--cat-blue: #5b8cff;
+	--cat-amber: #c8924a;
+	color-scheme: dark;
+}
+
+/* ---------- LIGHT ---------- */
+[data-theme='light'] {
+	--bg: #f7f7f5;
+	--bg-elevated: #ffffff;
+	--bg-panel: #ffffff;
+	--bg-card: #ffffff;
+	--bg-hover: rgba(15, 15, 20, 0.04);
+	--bg-active: rgba(15, 15, 20, 0.065);
+	--bg-inset: rgba(15, 15, 20, 0.03);
+	--bg-canvas: #ffffff;
+	--border: rgba(15, 15, 20, 0.09);
+	--border-strong: rgba(15, 15, 20, 0.16);
+	--text: #1c1c22;
+	--text-muted: #6a6a73;
+	--text-faint: #9a9aa2;
+	--shadow: 0 18px 44px -24px rgba(20, 20, 40, 0.28);
+	--pane-shadow: rgba(20, 20, 45, 0.13);
+	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
+
+	--status-draft: #b07b34;
+	--status-revised: #7d5fe0;
+	--status-final: #1f8a5b;
+	--status-outline: #8a8a93;
+	--danger: #c8384f;
+	--danger-soft: color-mix(in oklab, var(--danger) 9%, transparent);
+
+	--cat-violet: #7d5fe0;
+	--cat-rose: #c2557a;
+	--cat-green: #3f9a4f;
+	--cat-blue: #3b5bdb;
+	--cat-amber: #b07b34;
+	color-scheme: light;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-ui);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+button {
+	font-family: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+input,
+textarea,
+select {
+	font-family: inherit;
+}
+::selection {
+	background: var(--accent-soft);
+}
+
+/* scrollbars */
+*::-webkit-scrollbar {
+	width: 11px;
+	height: 11px;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 99px;
+	border: 3px solid transparent;
+	background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--text-faint);
+	background-clip: padding-box;
+}

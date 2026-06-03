@@ -11,7 +11,7 @@ Phases describe **build sequence**: what depends on what, and in what order thin
 For a solo project with no external deadline, small and frequent versioning is healthier than waiting for a phase to complete. The target milestones below are markers for when it makes sense to pause, tidy up, invite someone new to try it, and start the next thing.
 
 - **v0.1** - end of Phase 1. Logs in, sees your name. Proves deployment works; nothing else does. Self-host only; admin approves new users via SQL.
-- **v0.5** - end of Phase 2. Can create a universe, create a story, draft prose in scenes, and come back tomorrow. Minimal but genuinely usable.
+- **v0.5** - end of Phase 2. Can create a universe, create a story, draft prose in scenes, read the story back as one continuous document, and come back tomorrow. Minimal but genuinely usable.
 - **v1.0** - step 15. The first version you would actually want to write a book in: universes and stories and scenes, plus characters with mentions that underline names in the prose and "find usages" panels that make the mention index visible. Drops cleanly between Phase 3's character work and its places-and-lore work. Mentions are the piece that distinguishes Codex from a Scrivener clone, so shipping before they are in would undersell the tool.
 - **v1.x** - incremental additions through the rest of Phase 3: places, lore, universe editor, relationships, outline, declared membership, autocomplete. Each ships independently when it feels done. By the end of Phase 3, you are on something like v1.6.
 - **v2.0** - end of Phase 4. History timeline and diffs real, TODO markers in, SillyTavern and lorebook imports working, images and covers in, markdown and EPUB export getting your words out cleanly, and public reading pages live on self-host. The v1 design realised for self-hosters, sans AI.
@@ -43,8 +43,9 @@ Prove the writing loop. At the end, you can draft a novel in the tool, even if i
 10. Add `chapters`, `scenes` with the schema as spec'd. Left sidebar shows the scene tree. Click a scene to open it.
 11. Integrate CodeMirror 6 in the editor component. Debounced autosave posts to a server endpoint. Orphan-scene support verified. Wrap swappable extensions (future autocomplete, mentions) in a CodeMirror `Compartment` from day one.
 12. Drag-to-reorder scenes in the sidebar (SortableJS or a Svelte drag library). Persist `global_position` and `position_in_chapter`.
+12b. Continuous story view, read-only ("12b" keeps the step numbers below stable). A Write-view toggle renders the whole story as one document: scenes flow in `global_position` order with chapter titles as section headings, sidebar rows jump-scroll to their section, and clicking into a scene returns to the scene-at-a-time editor. Pulled forward from the Phase 6 candidates on author feedback; `global_position` was designed for it, so it is a rendering addition only. Editing inside the continuous view stays deferred.
 
-> **-> v0.5 ships.** You can draft a book in the tool. No entities, no AI, no history, no outline, but the core writing loop works, and that is the hardest part.
+> **-> v0.5 ships.** You can draft a book in the tool and read it back as one continuous document. No entities, no AI, no history, no outline, but the core writing loop works, and that is the hardest part.
 
 ## Phase 3 - Worldbuilding
 
@@ -105,7 +106,7 @@ Driven by real use. Candidates, roughly in order of cost-to-value:
 - **Entity heatmap at universe scope.** Derived from existing mention and revision data. Shows which entities are central vs forgotten, which parts of the world are under-developed. Nearly free, uses data the tool already has.
 - **Progress dashboard.** Word counts across stories, scenes by status, streaks, writing velocity. Mostly stats rendered as charts.
 - **Scene cards on a board.** Visual planning surface; an alternate rendering of the existing outline and scene data.
-- **Scrivenings-style continuous view.** `global_position` already supports this; it is a rendering addition, not a data change.
+- **Editable continuous view.** The read-only continuous view ships in Phase 2 (step 12b); editing in place (stitched per-scene editors) waits until real use shows it is needed.
 - **Plotlines and arcs as first-class entities.** Promoted from scene tags / metadata jsonb if real use shows it is needed.
 - **Relationship web view.** Graph rendering of the `entity_relationships` data built in phase 3 step 18. Force-directed layout, filters by entity or relation type.
 - **Timeline view.** Requires "what is a date in your world" design work first; potentially dependent on a first-class calendar model.

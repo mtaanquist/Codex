@@ -15,7 +15,70 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 
 	await page.getByLabel('New story').fill('Book of Ash');
 	await page.getByRole('button', { name: 'Create story' }).click();
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Book of Ash');
+
+	// Opening a story lands in the editor shell: breadcrumb and sidebar both
+	// carry the story title.
+	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
+	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
+
+	// Focus mode hides the chrome; Esc brings it back.
+	await page.getByRole('button', { name: 'Focus mode' }).click();
+	await expect(page.locator('.topbar')).toBeHidden();
+	await page.keyboard.press('Escape');
+	await expect(page.locator('.topbar')).toBeVisible();
+
+	// Build the tree: a chapter, then a scene inside it, which opens.
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.getByPlaceholder('Untitled scene')).toBeVisible();
+	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Untitled scene');
+
+	// Write prose: the autosave chip confirms, and a reload preserves it.
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('The gate of Halden opened the way it always did.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	const titleSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByPlaceholder('Untitled scene').fill('Departure from Halden');
+	await titleSave;
+	await page.reload();
+	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
+	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
+
+	// Reorder: a second scene dragged above the first keeps its place after
+	// a reload, proving the positions persisted.
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(2);
+	await expect(page.locator('.scene-row').nth(1).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+	const orderSave = page.waitForResponse((r) => r.url().includes('/scene-order') && r.ok());
+	await page
+		.locator('.scene-row')
+		.nth(1)
+		.dragTo(page.locator('.scene-row').nth(0), { targetPosition: { x: 60, y: 4 } });
+	await orderSave;
+	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+	await page.reload();
+	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+
+	// The whole story reads as one continuous document with jump navigation.
+	await page.getByRole('link', { name: 'Read the whole story' }).click();
+	await expect(page).toHaveURL(/view=story/);
+	await expect(page.locator('.doc-scene')).toHaveCount(2);
+	await expect(page.locator('.story-doc')).toContainText('The gate of Halden');
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(/#scene-/);
+	await page.locator('.doc-scene-mark').nth(1).click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();

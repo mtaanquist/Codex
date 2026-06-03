@@ -1,73 +1,409 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { ActionData, PageData } from './$types';
+	import Icon from '$lib/components/Icon.svelte';
+	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
+	import type { PageData } from './$types';
 
-	let { data, form }: { data: PageData; form: ActionData } = $props();
+	let { data }: { data: PageData } = $props();
+
+	// Focus mode hides the chrome around the prose; Esc leaves it.
+	let focus = $state(false);
+
+	let saveStatus = $state<SaveStatus>('idle');
+	const selectedSceneId = $derived(data.selectedScene?.id);
+	$effect(() => {
+		void selectedSceneId;
+		saveStatus = 'idle';
+	});
+
+	// Chapters start expanded; collapsing is per-visit state.
+	let collapsed = new SvelteSet<string>();
+
+	const initials = $derived(
+		data.user.displayName
+			.split(/\s+/)
+			.map((part) => part[0])
+			.slice(0, 2)
+			.join('')
+			.toUpperCase()
+	);
+
+	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
+
+	const viewStory = $derived(data.view === 'story');
+	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.id }));
+
+	function chapterScenes(chapterId: string) {
+		return data.scenes.filter((scene) => scene.chapterId === chapterId);
+	}
+
+	function docScenes(chapterId: string | null) {
+		return (data.storyDoc ?? []).filter((scene) => scene.chapterId === chapterId);
+	}
+
+	function words(count: number) {
+		if (count <= 0) return '';
+		return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
+	}
+
+	// Drag-to-reorder. The drop target is a chapter (or the orphan list, null)
+	// plus an insertion index; on drop the full order is sent to the server,
+	// which renumbers global_position and position_in_chapter.
+	let draggingSceneId = $state<string | null>(null);
+	let dropTarget = $state<{ chapterId: string | null; index: number } | null>(null);
+
+	function overScene(event: DragEvent, chapterId: string | null, index: number) {
+		if (!draggingSceneId) return;
+		event.preventDefault();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const after = event.clientY > rect.top + rect.height / 2;
+		dropTarget = { chapterId, index: index + (after ? 1 : 0) };
+	}
+
+	function overChapterHeader(event: DragEvent, chapterId: string) {
+		if (!draggingSceneId) return;
+		event.preventDefault();
+		dropTarget = { chapterId, index: chapterScenes(chapterId).length };
+	}
+
+	function buildOrder(sceneId: string, target: { chapterId: string | null; index: number }) {
+		const chapterLists = data.chapters.map((chapter) => ({
+			id: chapter.id,
+			sceneIds: chapterScenes(chapter.id).map((scene) => scene.id)
+		}));
+		const orphanSceneIds = orphanScenes.map((scene) => scene.id);
+		let index = target.index;
+		for (const chapter of chapterLists) {
+			const at = chapter.sceneIds.indexOf(sceneId);
+			if (at !== -1) {
+				chapter.sceneIds.splice(at, 1);
+				if (chapter.id === target.chapterId && at < index) index -= 1;
+			}
+		}
+		const orphanAt = orphanSceneIds.indexOf(sceneId);
+		if (orphanAt !== -1) {
+			orphanSceneIds.splice(orphanAt, 1);
+			if (target.chapterId === null && orphanAt < index) index -= 1;
+		}
+		if (target.chapterId === null) {
+			orphanSceneIds.splice(index, 0, sceneId);
+		} else {
+			chapterLists
+				.find((chapter) => chapter.id === target.chapterId)
+				?.sceneIds.splice(index, 0, sceneId);
+		}
+		return { chapters: chapterLists, orphanSceneIds };
+	}
+
+	async function commitDrop(event: DragEvent) {
+		event.preventDefault();
+		if (!draggingSceneId || !dropTarget) return;
+		const order = buildOrder(draggingSceneId, { ...dropTarget });
+		draggingSceneId = null;
+		dropTarget = null;
+		await fetch(`/api/stories/${data.story.id}/scene-order`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(order)
+		});
+		await invalidateAll();
+	}
+
+	function endDrag() {
+		draggingSceneId = null;
+		dropTarget = null;
+	}
 </script>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape') focus = false;
+	}}
+/>
 
 <svelte:head>
 	<title>{data.story.title} - Codex</title>
 </svelte:head>
 
-<main>
-	<nav>
-		<a href={resolve('/')}>Library</a> /
-		<a href={resolve('/universes/[id]', { id: data.universe.id })}>{data.universe.name}</a>
-	</nav>
-	<h1>{data.story.title}</h1>
-	{#if data.story.brief}
-		<p>{data.story.brief}</p>
+<div class="app" class:focus-mode={focus}>
+	<TopBar
+		universe={{ id: data.universe.id, name: data.universe.name }}
+		story={{ id: data.story.id, title: data.story.title }}
+		{initials}
+		onEnterFocus={() => (focus = true)}
+		{saveStatus}
+		storyView={{ active: viewStory, toggleHref: viewStory ? storyPath : `${storyPath}?view=story` }}
+	/>
+	<div class="body">
+		<aside class="pane left">
+			<div class="left-head">
+				<div class="seg full">
+					<button class="seg-btn active" type="button">Write</button>
+					<button class="seg-btn" type="button" disabled>Plan</button>
+					<button class="seg-btn" type="button" disabled>Notes</button>
+				</div>
+			</div>
+			<div class="left-scroll">
+				<div class="outline">
+					<div class="outline-head">
+						<div class="story-switch">
+							<span class="story-book"><Icon name="book" size={15} /></span>
+							<span class="story-id">
+								<span class="story-title">{data.story.title}</span>
+								<span class="story-universe">{data.universe.name}</span>
+							</span>
+						</div>
+					</div>
+					<div class="chapters">
+						{#each data.chapters as chapter, index (chapter.id)}
+							{@const list = chapterScenes(chapter.id)}
+							{@const open = !collapsed.has(chapter.id)}
+							<div class="chapter">
+								<button
+									class="chapter-row"
+									class:scene-target={dropTarget?.chapterId === chapter.id &&
+										dropTarget.index === list.length &&
+										!open}
+									type="button"
+									onclick={() =>
+										collapsed.has(chapter.id)
+											? collapsed.delete(chapter.id)
+											: collapsed.add(chapter.id)}
+									ondragover={(e) => overChapterHeader(e, chapter.id)}
+									ondrop={commitDrop}
+								>
+									<span class="tw" class:open><Icon name="chevron" size={12} /></span>
+									<span class="chapter-name">{chapter.title ?? `Chapter ${index + 1}`}</span>
+									<span class="chapter-meta">{list.length}</span>
+								</button>
+								{#if open}
+									<div class="scenes">
+										{#each list as scene, si (scene.id)}
+											{#if dropTarget?.chapterId === chapter.id && dropTarget.index === si}
+												<div class="drop-line scene"></div>
+											{/if}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a
+												class="scene-row"
+												class:active={scene.id === data.selectedScene?.id}
+												href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+												draggable="true"
+												ondragstart={(e) => {
+													draggingSceneId = scene.id;
+													e.dataTransfer?.setData('text/plain', scene.id);
+												}}
+												ondragover={(e) => overScene(e, chapter.id, si)}
+												ondrop={commitDrop}
+												ondragend={endDrag}
+											>
+												<span class="scene-status st-{scene.status}" title={scene.status}></span>
+												<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+												{#if scene.wordCount > 0}
+													<span class="scene-words">{words(scene.wordCount)}</span>
+												{/if}
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+										{/each}
+										{#if dropTarget?.chapterId === chapter.id && dropTarget.index === list.length && open}
+											<div class="drop-line scene"></div>
+										{/if}
+										<form method="POST" action="?/createScene">
+											<input type="hidden" name="chapterId" value={chapter.id} />
+											<button class="outline-add scene" type="submit">
+												<Icon name="plus" size={12} /> New scene
+											</button>
+										</form>
+									</div>
+								{/if}
+							</div>
+						{/each}
+						{#if orphanScenes.length > 0}
+							<div class="scenes">
+								{#each orphanScenes as scene, si (scene.id)}
+									{#if dropTarget?.chapterId === null && dropTarget.index === si}
+										<div class="drop-line scene"></div>
+									{/if}
+									<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+									<a
+										class="scene-row"
+										class:active={scene.id === data.selectedScene?.id}
+										href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+										draggable="true"
+										ondragstart={(e) => {
+											draggingSceneId = scene.id;
+											e.dataTransfer?.setData('text/plain', scene.id);
+										}}
+										ondragover={(e) => overScene(e, null, si)}
+										ondrop={commitDrop}
+										ondragend={endDrag}
+									>
+										<span class="scene-status st-{scene.status}" title={scene.status}></span>
+										<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+										{#if scene.wordCount > 0}
+											<span class="scene-words">{words(scene.wordCount)}</span>
+										{/if}
+									</a>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{/each}
+								{#if dropTarget?.chapterId === null && dropTarget.index === orphanScenes.length}
+									<div class="drop-line scene"></div>
+								{/if}
+							</div>
+						{/if}
+						<form method="POST" action="?/createChapter">
+							<button class="outline-add" type="submit">
+								<Icon name="plus" size={13} /> New chapter
+							</button>
+						</form>
+					</div>
+				</div>
+			</div>
+		</aside>
+		<main class="pane center">
+			{#if viewStory}
+				<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+				<div class="editor story-doc">
+					<h1 class="doc-title">{data.story.title}</h1>
+					{#if (data.storyDoc ?? []).length === 0}
+						<div class="empty">
+							<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+						</div>
+					{/if}
+					{#each data.chapters as chapter, index (chapter.id)}
+						{@const docList = docScenes(chapter.id)}
+						{#if docList.length > 0}
+							<section class="doc-chapter" id="chapter-{chapter.id}">
+								<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
+								{#each docList as scene (scene.id)}
+									<article class="doc-scene" id="scene-{scene.id}">
+										<a
+											class="doc-scene-mark"
+											href={`${storyPath}?scene=${scene.id}`}
+											title="Edit this scene"
+										>
+											{scene.title ?? 'Untitled scene'}
+										</a>
+										<div class="doc-scene-body">{scene.bodyMd}</div>
+									</article>
+								{/each}
+							</section>
+						{/if}
+					{/each}
+					{#if docScenes(null).length > 0}
+						<section class="doc-chapter">
+							<h2>Unfiled scenes</h2>
+							{#each docScenes(null) as scene (scene.id)}
+								<article class="doc-scene" id="scene-{scene.id}">
+									<a
+										class="doc-scene-mark"
+										href={`${storyPath}?scene=${scene.id}`}
+										title="Edit this scene"
+									>
+										{scene.title ?? 'Untitled scene'}
+									</a>
+									<div class="doc-scene-body">{scene.bodyMd}</div>
+								</article>
+							{/each}
+						</section>
+					{/if}
+				</div>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			{:else if data.selectedScene}
+				{#key data.selectedScene.id}
+					<SceneEditor
+						sceneId={data.selectedScene.id}
+						title={data.selectedScene.title}
+						body={data.selectedScene.bodyMd}
+						onStatus={(status) => (saveStatus = status)}
+					/>
+				{/key}
+			{:else if data.scenes.length === 0}
+				<div class="empty">
+					<p>Create a chapter in the sidebar, then add a scene to it to start writing.</p>
+				</div>
+			{:else}
+				<div class="empty">
+					<p>Select a scene in the sidebar.</p>
+				</div>
+			{/if}
+		</main>
+		<aside class="pane right">
+			<div class="right-scroll">
+				<div class="empty">Nothing to show yet.</div>
+			</div>
+		</aside>
+	</div>
+
+	{#if focus}
+		<div class="focus-controls">
+			<ThemeToggle />
+			<button
+				class="icon-btn"
+				type="button"
+				title="Exit focus (Esc)"
+				onclick={() => (focus = false)}
+			>
+				<Icon name="compress" />
+			</button>
+		</div>
 	{/if}
-
-	<h2>Story settings</h2>
-	<form method="POST" action="?/update">
-		{#if form?.action === 'update' && form.message}
-			<p class="error" role="alert">{form.message}</p>
-		{/if}
-		{#if form?.action === 'update' && form.saved}
-			<p role="status">Saved.</p>
-		{/if}
-		<label>
-			Title
-			<input type="text" name="title" value={data.story.title} required />
-		</label>
-		<label>
-			Author
-			<input type="text" name="author" value={data.story.author ?? ''} />
-		</label>
-		<label>
-			Brief
-			<input type="text" name="brief" value={data.story.brief ?? ''} />
-		</label>
-		<label>
-			Description
-			<textarea name="description" rows="4">{data.story.descriptionMd ?? ''}</textarea>
-		</label>
-		<button type="submit">Save</button>
-	</form>
-
-	<form method="POST" action="?/delete">
-		<button type="submit" class="danger">Delete story</button>
-	</form>
-</main>
+</div>
 
 <style>
-	main {
-		max-width: 36rem;
-		margin: 4rem auto 0;
-		font-family: system-ui, sans-serif;
+	.chapter-row {
+		width: 100%;
+		border: 0;
+		background: none;
+		text-align: left;
 	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin-bottom: 0.5rem;
+	.scene-row {
+		text-decoration: none;
+		color: inherit;
 	}
-	.error {
-		color: #b00020;
+	main.pane.center {
+		scroll-behavior: smooth;
 	}
-	.danger {
-		color: #b00020;
-		margin-top: 1.5rem;
+	.doc-title {
+		font-family: var(--font-content);
+		font-size: 34px;
+		font-weight: 600;
+		letter-spacing: -0.015em;
+		margin: 0 0 30px;
+	}
+	.doc-chapter {
+		scroll-margin-top: 24px;
+	}
+	.doc-chapter h2 {
+		font-family: var(--font-content);
+		font-size: 23px;
+		font-weight: 600;
+		margin: 40px 0 16px;
+	}
+	.doc-scene {
+		margin: 0 0 30px;
+		scroll-margin-top: 24px;
+	}
+	.doc-scene-mark {
+		display: block;
+		color: var(--text-faint);
+		font-size: 11.5px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		text-decoration: none;
+		margin: 0 0 8px;
+	}
+	.doc-scene-mark:hover {
+		color: var(--accent);
+	}
+	.doc-scene-body {
+		font-family: var(--font-content);
+		font-size: 17.5px;
+		line-height: 1.7;
+		white-space: pre-wrap;
 	}
 </style>

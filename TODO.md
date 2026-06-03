@@ -17,11 +17,12 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 ## Phase 2 - Core content
 
 - [x] 7. universes, stories tables; CRUD pages
-- [ ] 8. Shell layout port from prototype (top bar, three columns, CSS tokens)
-- [ ] 9. Focus mode
-- [ ] 10. chapters, scenes; scene tree in left sidebar
-- [ ] 11. CodeMirror 6 editor, debounced autosave, Compartment wrapping
-- [ ] 12. Drag-to-reorder scenes
+- [x] 8. Shell layout port from prototype (top bar, three columns, CSS tokens)
+- [x] 9. Focus mode
+- [x] 10. chapters, scenes; scene tree in left sidebar
+- [x] 11. CodeMirror 6 editor, debounced autosave, Compartment wrapping
+- [x] 12. Drag-to-reorder scenes
+- [x] 12b. Continuous story view, read-only (pulled forward from Phase 6)
 
 > v0.5 ships at the end of Phase 2.
 

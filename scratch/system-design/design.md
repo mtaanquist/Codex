@@ -137,6 +137,10 @@ A diff view sits alongside the timeline. Any two revisions can be compared, and 
 
 A button in the top bar hides both sidebars using `visibility: hidden` rather than `display: none`, so the prose column stays anchored where it was instead of shifting to the new centre of a now-wider grid. The mode doesn't widen the prose — it removes the chrome around it. The content width setting controls how wide the prose column actually is, independently of focus.
 
+### Continuous view
+
+The Write view can also show the whole story as one continuous document: scenes flow together in story order, chapter titles act as section headings, and the sidebar becomes navigation, scrolling to whatever it names. The point is reading a draft the way a reader will meet it; editing stays in the scene-at-a-time view, one click away from any scene. The rendering is driven by `global_position`, so reordering scenes reorders the reading flow. Editing inside the continuous view (stitched per-scene editors) is deferred until real use shows it is needed.
+
 ### Images
 
 Codex is a markdown editor, so an image is just a markdown image. What Codex adds is storage: an image dropped or pasted into the editor is uploaded and kept as an asset, and the markdown points at a path Codex serves rather than at someone else's server. This keeps a universe self-contained, lets images show up in exports, and stops links from rotting. Pasting an external image URL still works when that is what you want; it simply is not stored. Each story can also carry a cover image, and a book without one is shown with a default cover built from its title and author so a shelf never looks broken. Image files live on disk for self-host and in object storage for the hosted service; only their metadata is in the database. See `schema.md` for the `assets` table.
@@ -234,7 +238,7 @@ Portability is achieved through export, not through storage format. The database
 
 ## Open questions
 
-- **Scene-at-a-time vs Scrivenings-style continuous rendering.** Default is scene-at-a-time; continuous is modelled in the schema via `global_position` and will be a rendering-only addition.
+- **Editing in the continuous view.** Resolved in part: a read-only continuous view ships with the core writing loop (author feedback moved it up from the deferred list), with scene-at-a-time remaining the editing surface. Whether the continuous view ever becomes editable in place (stitched per-scene editors) stays open until real use demands it.
 - **Plotlines or arcs as first-class entities.** Currently modelled through scene tags and metadata `jsonb`. May be promoted to their own table if usage shows it's needed.
 - **Command palette (Ctrl+K).** Desirable long-term, not v1. Would absorb search and cross-view navigation into one surface.
 - **Session tab refinements (deferred with AI).** When a chat panel eventually lives below the quick settings, it will need persistence, resumption, and browsing of past conversations. The quick-settings portion may also need a collapse control once chat sessions grow long enough to compete for vertical space. None of this matters until the chat exists.

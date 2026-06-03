@@ -1,8 +1,8 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { stories, universes } from '$lib/server/db/schema';
+import { chapters, scenes, stories, universes } from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -14,30 +14,102 @@ async function ownedStory(storyId: string, userId: string) {
 	return row;
 }
 
-export const load: PageServerLoad = async ({ params, locals }) => {
-	return await ownedStory(params.id, locals.user!.id);
+export const load: PageServerLoad = async ({ params, locals, url }) => {
+	const { story, universe } = await ownedStory(params.id, locals.user!.id);
+
+	const chapterList = await db
+		.select()
+		.from(chapters)
+		.where(eq(chapters.storyId, story.id))
+		.orderBy(asc(chapters.position));
+	const sceneList = await db
+		.select({
+			id: scenes.id,
+			chapterId: scenes.chapterId,
+			title: scenes.title,
+			status: scenes.status,
+			wordCount: scenes.wordCount,
+			globalPosition: scenes.globalPosition
+		})
+		.from(scenes)
+		.where(eq(scenes.storyId, story.id))
+		.orderBy(asc(scenes.globalPosition));
+
+	// The story view renders every scene as one continuous document.
+	const view = url.searchParams.get('view') === 'story' ? ('story' as const) : ('scene' as const);
+	let storyDoc = null;
+	if (view === 'story') {
+		storyDoc = await db
+			.select({
+				id: scenes.id,
+				chapterId: scenes.chapterId,
+				title: scenes.title,
+				bodyMd: scenes.bodyMd
+			})
+			.from(scenes)
+			.where(eq(scenes.storyId, story.id))
+			.orderBy(asc(scenes.globalPosition));
+	}
+
+	const selectedId = view === 'scene' ? url.searchParams.get('scene') : null;
+	let selectedScene = null;
+	if (selectedId) {
+		const [row] = await db
+			.select()
+			.from(scenes)
+			.where(and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id)));
+		selectedScene = row ?? null;
+	}
+
+	return {
+		story,
+		universe,
+		user: locals.user!,
+		chapters: chapterList,
+		scenes: sceneList,
+		selectedScene,
+		view,
+		storyDoc
+	};
 };
 
 export const actions: Actions = {
-	update: async ({ request, params, locals }) => {
+	createChapter: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const [{ next }] = await db
+			.select({ next: sql<number>`coalesce(max(${chapters.position}), 0) + 1` })
+			.from(chapters)
+			.where(eq(chapters.storyId, story.id));
+		await db.insert(chapters).values({ storyId: story.id, position: next });
+		return { created: 'chapter' };
+	},
+	createScene: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const title = String(data.get('title') ?? '').trim();
-		const author = String(data.get('author') ?? '').trim() || null;
-		const brief = String(data.get('brief') ?? '').trim() || null;
-		const descriptionMd = String(data.get('description') ?? '').trim() || null;
-		if (!title) {
-			return fail(400, { action: 'update', message: 'The story needs a title.' });
+		const chapterId = String(data.get('chapterId') ?? '') || null;
+		if (chapterId) {
+			const [chapter] = await db
+				.select({ id: chapters.id })
+				.from(chapters)
+				.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, story.id)));
+			if (!chapter) return fail(400, { message: 'That chapter does not exist.' });
 		}
-		await db
-			.update(stories)
-			.set({ title, author, brief, descriptionMd })
-			.where(eq(stories.id, story.id));
-		return { action: 'update', saved: true };
-	},
-	delete: async ({ params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		await db.delete(stories).where(eq(stories.id, story.id));
-		redirect(303, `/universes/${story.universeId}`);
+		const [{ nextGlobal }] = await db
+			.select({ nextGlobal: sql<number>`coalesce(max(${scenes.globalPosition}), 0) + 1` })
+			.from(scenes)
+			.where(eq(scenes.storyId, story.id));
+		let positionInChapter: number | null = null;
+		if (chapterId) {
+			const [{ nextInChapter }] = await db
+				.select({ nextInChapter: sql<number>`coalesce(max(${scenes.positionInChapter}), 0) + 1` })
+				.from(scenes)
+				.where(eq(scenes.chapterId, chapterId));
+			positionInChapter = nextInChapter;
+		}
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, chapterId, positionInChapter, globalPosition: nextGlobal })
+			.returning({ id: scenes.id });
+		redirect(303, `/stories/${story.id}?scene=${scene.id}`);
 	}
 };
