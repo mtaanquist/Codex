@@ -13,9 +13,7 @@ import {
 	type Database
 } from '../../src/lib/server/auth';
 import { hashPassword } from '../../src/lib/server/password';
-
-const TEST_DATABASE_URL =
-	process.env.TEST_DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex_test';
+import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 let pool: pg.Pool;
 let db: Database;
@@ -40,6 +38,7 @@ async function seedUser(
 }
 
 beforeAll(async () => {
+	await ensureTestDatabase();
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
