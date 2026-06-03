@@ -17,9 +17,9 @@ export async function saveCharacter(
 	characterId: string,
 	userId: string,
 	save: CharacterSave
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true; universeId: string } | { ok: false; reason: string }> {
 	const [character] = await db
-		.select({ id: characters.id })
+		.select({ id: characters.id, universeId: characters.universeId })
 		.from(characters)
 		.where(and(eq(characters.id, characterId), eq(characters.ownerId, userId)));
 	if (!character) return { ok: false, reason: 'character not found' };
@@ -52,5 +52,5 @@ export async function saveCharacter(
 				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
 			});
 	}
-	return { ok: true };
+	return { ok: true, universeId: character.universeId };
 }

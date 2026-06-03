@@ -219,6 +219,29 @@ export const characterStoryNotes = pgTable(
 	(table) => [unique('character_story_notes_unique').on(table.characterId, table.storyId)]
 );
 
+// Derived index of entity occurrences in prose. Rebuilt by the worker when a
+// source's body changes: delete the source's rows, insert fresh ones. The
+// polymorphic source/target columns carry no FKs by design.
+export const entityMentions = pgTable(
+	'entity_mentions',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		// 'scene' now; outline nodes and notes join later.
+		sourceType: text('source_type').notNull(),
+		sourceId: uuid('source_id').notNull(),
+		targetType: text('target_type', { enum: ['character', 'place', 'lore_entry'] }).notNull(),
+		targetId: uuid('target_id').notNull(),
+		// Character offset in the source's body_md.
+		position: integer('position').notNull(),
+		// Snippet for previews and find-usages.
+		surroundingText: text('surrounding_text').notNull()
+	},
+	(table) => [
+		index('entity_mentions_target_idx').on(table.targetType, table.targetId),
+		index('entity_mentions_source_idx').on(table.sourceType, table.sourceId)
+	]
+);
+
 // Single-use tokens for email verification and password reset. The raw token
 // is emailed; only its hash is stored.
 export const authTokens = pgTable('auth_tokens', {
