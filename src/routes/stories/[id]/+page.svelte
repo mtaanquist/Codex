@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
@@ -10,6 +11,9 @@
 	// Focus mode hides the chrome around the prose; Esc leaves it.
 	let focus = $state(false);
 
+	// Chapters start expanded; collapsing is per-visit state.
+	let collapsed = new SvelteSet<string>();
+
 	const initials = $derived(
 		data.user.displayName
 			.split(/\s+/)
@@ -18,6 +22,16 @@
 			.join('')
 			.toUpperCase()
 	);
+
+	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
+
+	function chapterScenes(chapterId: string) {
+		return data.scenes.filter((scene) => scene.chapterId === chapterId);
+	}
+
+	function words(count: number) {
+		return count > 0 ? `${(count / 1000).toFixed(1)}k` : '';
+	}
 </script>
 
 <svelte:window
@@ -58,16 +72,92 @@
 						</div>
 					</div>
 					<div class="chapters">
-						<div class="empty">No chapters yet.</div>
+						{#each data.chapters as chapter, index (chapter.id)}
+							{@const list = chapterScenes(chapter.id)}
+							{@const open = !collapsed.has(chapter.id)}
+							<div class="chapter">
+								<button
+									class="chapter-row"
+									type="button"
+									onclick={() =>
+										collapsed.has(chapter.id)
+											? collapsed.delete(chapter.id)
+											: collapsed.add(chapter.id)}
+								>
+									<span class="tw" class:open><Icon name="chevron" size={12} /></span>
+									<span class="chapter-name">{chapter.title ?? `Chapter ${index + 1}`}</span>
+									<span class="chapter-meta">{list.length}</span>
+								</button>
+								{#if open}
+									<div class="scenes">
+										{#each list as scene (scene.id)}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a
+												class="scene-row"
+												class:active={scene.id === data.selectedScene?.id}
+												href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${scene.id}`}
+											>
+												<span class="scene-status st-{scene.status}" title={scene.status}></span>
+												<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+												{#if scene.wordCount > 0}
+													<span class="scene-words">{words(scene.wordCount)}</span>
+												{/if}
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+										{/each}
+										<form method="POST" action="?/createScene">
+											<input type="hidden" name="chapterId" value={chapter.id} />
+											<button class="outline-add scene" type="submit">
+												<Icon name="plus" size={12} /> New scene
+											</button>
+										</form>
+									</div>
+								{/if}
+							</div>
+						{/each}
+						{#if orphanScenes.length > 0}
+							<div class="scenes">
+								{#each orphanScenes as scene (scene.id)}
+									<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+									<a
+										class="scene-row"
+										class:active={scene.id === data.selectedScene?.id}
+										href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${scene.id}`}
+									>
+										<span class="scene-status st-{scene.status}" title={scene.status}></span>
+										<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+										{#if scene.wordCount > 0}
+											<span class="scene-words">{words(scene.wordCount)}</span>
+										{/if}
+									</a>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{/each}
+							</div>
+						{/if}
+						<form method="POST" action="?/createChapter">
+							<button class="outline-add" type="submit">
+								<Icon name="plus" size={13} /> New chapter
+							</button>
+						</form>
 					</div>
 				</div>
 			</div>
 		</aside>
 		<main class="pane center">
-			<div class="empty">
-				<p>The editor arrives here. For now, you can edit this story's details.</p>
-				<a href={resolve('/stories/[id]/settings', { id: data.story.id })}>Story settings</a>
-			</div>
+			{#if data.selectedScene}
+				<div class="editor">
+					<h1 class="editor-title">{data.selectedScene.title ?? 'Untitled scene'}</h1>
+					<div class="editor-body readonly">{data.selectedScene.bodyMd}</div>
+				</div>
+			{:else if data.scenes.length === 0}
+				<div class="empty">
+					<p>Create a chapter in the sidebar, then add a scene to it to start writing.</p>
+				</div>
+			{:else}
+				<div class="empty">
+					<p>Select a scene in the sidebar.</p>
+				</div>
+			{/if}
 		</main>
 		<aside class="pane right">
 			<div class="right-scroll">
@@ -92,11 +182,18 @@
 </div>
 
 <style>
-	.empty a {
-		color: var(--accent);
-		text-decoration: none;
+	.chapter-row {
+		width: 100%;
+		border: 0;
+		background: none;
+		text-align: left;
 	}
-	.empty a:hover {
-		text-decoration: underline;
+	.scene-row {
+		text-decoration: none;
+		color: inherit;
+	}
+	/* Plain rendering until the editor lands in the next step. */
+	.editor-body.readonly {
+		white-space: pre-wrap;
 	}
 </style>

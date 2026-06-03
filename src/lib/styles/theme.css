@@ -622,15 +622,20 @@
 	border-radius: 99px;
 	flex: none;
 }
-.st-done {
-	background: var(--accent);
+/* Status dots keyed to the schema's scene statuses (the prototype used a
+   three-state set; the data model has four). */
+.st-outline {
+	background: transparent;
+	border: 1px solid var(--text-faint);
 }
 .st-draft {
 	background: var(--text-faint);
 }
-.st-todo {
-	background: transparent;
-	border: 1px solid var(--text-faint);
+.st-revised {
+	background: var(--status-revised, #9b7bff);
+}
+.st-final {
+	background: var(--accent);
 }
 
 .drop-line {
