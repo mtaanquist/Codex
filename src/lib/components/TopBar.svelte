@@ -1,33 +1,19 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
 
 	let {
 		universe,
 		story,
-		initials
+		initials,
+		onEnterFocus
 	}: {
 		universe: { id: string; name: string };
 		story: { id: string; title: string };
 		initials: string;
+		onEnterFocus?: () => void;
 	} = $props();
-
-	// Initialised from the attribute the app.html inline script set; reassigned
-	// by the toggle (writable derived).
-	let theme = $derived<'light' | 'dark'>(
-		browser && document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-	);
-
-	function toggleTheme() {
-		theme = theme === 'dark' ? 'light' : 'dark';
-		document.documentElement.setAttribute('data-theme', theme);
-		try {
-			localStorage.setItem('codex-theme', theme);
-		} catch {
-			/* preference just does not persist */
-		}
-	}
 </script>
 
 <header class="topbar">
@@ -43,9 +29,7 @@
 		</a>
 	</nav>
 	<div class="topbar-right">
-		<button class="icon-btn" type="button" title="Toggle theme" onclick={toggleTheme}>
-			{#if theme === 'dark'}<Icon name="sun" />{:else}<Icon name="moon" />{/if}
-		</button>
+		<ThemeToggle />
 		<a
 			class="icon-btn"
 			href={resolve('/universes/[id]', { id: universe.id })}
@@ -53,6 +37,11 @@
 		>
 			<Icon name="gear" />
 		</a>
+		{#if onEnterFocus}
+			<button class="icon-btn" type="button" title="Focus mode" onclick={onEnterFocus}>
+				<Icon name="expand" />
+			</button>
+		{/if}
 		<a class="avatar-me" href={resolve('/')} title="Account">{initials}</a>
 	</div>
 </header>

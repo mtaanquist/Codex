@@ -18,7 +18,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 - [x] 7. universes, stories tables; CRUD pages
 - [x] 8. Shell layout port from prototype (top bar, three columns, CSS tokens)
-- [ ] 9. Focus mode
+- [x] 9. Focus mode
 - [ ] 10. chapters, scenes; scene tree in left sidebar
 - [ ] 11. CodeMirror 6 editor, debounced autosave, Compartment wrapping
 - [ ] 12. Drag-to-reorder scenes
