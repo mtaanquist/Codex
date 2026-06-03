@@ -12,7 +12,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
 - [x] 6. Seed admin via SQL; verify sign-in and the approval gate
 
-> v0.1 ships at the end of Phase 1.
+> v0.1 shipped at the end of Phase 1.
 
 ## Phase 2 - Core content
 
@@ -24,7 +24,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 12. Drag-to-reorder scenes
 - [x] 12b. Continuous story view, read-only (pulled forward from Phase 6)
 
-> v0.5 ships at the end of Phase 2. (Shipped.)
+> v0.5 shipped at the end of Phase 2 (plus v0.2 along the way).
 
 ## Phase 3 - Worldbuilding
 
@@ -32,15 +32,16 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 14. Entity mentions index, worker rebuild, editor underlines, hover tooltips
 - [x] 15. Find usages / appears-in panels
 - [x] 16a. Places (v1.1): schema, Plan view, story notes, mention pipeline
-- [ ] 16b. Lore entries and entity categories (v1.2), incl. entity-colour groupings
+- [x] 16b. Lore entries and entity categories (v1.2), incl. entity-colour groupings
 - [ ] 17. Universe editor (v1.3)
 - [ ] 18. Entity relationships (v1.4)
 - [ ] 19. Outline tree (v1.5)
 - [ ] 20. Declared story membership
 - [ ] 21. Entity autocomplete (v1.6)
 
-> v1.0 ships after step 15 - but not before a full code review of everything
-> on develop (correctness, security, schema fidelity). Do not tag v1.0 without it.
+> v1.0 shipped after step 15, gated on the full code review (done; findings
+> fixed, leftovers in the backlog below). v1.1 (places) shipped. Each remaining
+> step ships as its own v1.x release.
 
 ## Feedback backlog
 
@@ -51,7 +52,7 @@ From first real use (2026-06-03):
 - [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
 - [ ] Markdown affordances: renderer lands with Phase 4 exports and reading pages (continuous view picks it up); in-editor styling and the prototype's toolbar as polish after; visibility of marks likely a display preference
 - [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
-- [ ] Entity colours with meaning: let characters/places optionally join an entity_category (nullable category_id, additive) so badge colours are universe-defined groupings; build with step 16's category work
+- [x] Entity colours with meaning: shipped with v1.2 (characters/places join categories; badge takes the category colour)
 
 From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
 

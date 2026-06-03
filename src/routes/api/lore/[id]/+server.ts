@@ -1,13 +1,14 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { savePlace } from '$lib/server/places';
+import { saveLoreEntry } from '$lib/server/lore';
 import { queueUniverseMentions } from '$lib/server/jobs';
 
-// Debounced autosave target for the place editor.
+// Debounced autosave target for the lore editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const payload = (await request.json()) as {
 		name?: unknown;
+		keywords?: unknown;
 		summaryMd?: unknown;
 		bodyMd?: unknown;
 		categoryId?: unknown;
@@ -17,17 +18,16 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	if (typeof payload.name !== 'string' || typeof payload.bodyMd !== 'string') {
 		error(400, 'name and bodyMd must be strings');
 	}
+	const keywords = Array.isArray(payload.keywords)
+		? payload.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
+		: [];
 
-	const result = await savePlace(db, params.id, locals.user!.id, {
+	const result = await saveLoreEntry(db, params.id, locals.user!.id, {
 		name: payload.name,
+		keywords,
 		summaryMd: typeof payload.summaryMd === 'string' ? payload.summaryMd : null,
 		bodyMd: payload.bodyMd,
-		categoryId:
-			payload.categoryId === null
-				? null
-				: typeof payload.categoryId === 'string'
-					? payload.categoryId
-					: undefined,
+		categoryId: typeof payload.categoryId === 'string' ? payload.categoryId : undefined,
 		storyId: typeof payload.storyId === 'string' ? payload.storyId : undefined,
 		storyNotesMd: typeof payload.storyNotesMd === 'string' ? payload.storyNotesMd : undefined
 	});

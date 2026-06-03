@@ -6,6 +6,7 @@ import {
 	chapters,
 	characters,
 	entityMentions,
+	loreEntries,
 	places,
 	scenes,
 	stories,
@@ -104,7 +105,23 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				)
 			)
 			.groupBy(places.id, places.name);
-		inScene = [...mentionedCharacters, ...mentionedPlaces].sort((a, b) =>
+		const mentionedLore = await db
+			.select({
+				id: loreEntries.id,
+				name: loreEntries.title,
+				count: sql<number>`count(*)::int`
+			})
+			.from(entityMentions)
+			.innerJoin(loreEntries, eq(entityMentions.targetId, loreEntries.id))
+			.where(
+				and(
+					eq(entityMentions.sourceType, 'scene'),
+					eq(entityMentions.sourceId, selectedScene.id),
+					eq(entityMentions.targetType, 'lore_entry')
+				)
+			)
+			.groupBy(loreEntries.id, loreEntries.title);
+		inScene = [...mentionedCharacters, ...mentionedPlaces, ...mentionedLore].sort((a, b) =>
 			a.name.localeCompare(b.name)
 		);
 	}
@@ -123,9 +140,24 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		.select({ id: places.id, name: places.name, summaryMd: places.summaryMd })
 		.from(places)
 		.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true)));
+	const knownLore = await db
+		.select({
+			id: loreEntries.id,
+			name: loreEntries.title,
+			keywords: loreEntries.keywords,
+			summaryMd: loreEntries.summaryMd
+		})
+		.from(loreEntries)
+		.where(and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true)));
 	const mentionEntities = [
 		...knownCharacters,
-		...knownPlaces.map((place) => ({ ...place, aliases: [] as string[] }))
+		...knownPlaces.map((place) => ({ ...place, aliases: [] as string[] })),
+		...knownLore.map((entry) => ({
+			id: entry.id,
+			name: entry.name,
+			aliases: entry.keywords,
+			summaryMd: entry.summaryMd
+		}))
 	];
 
 	return {

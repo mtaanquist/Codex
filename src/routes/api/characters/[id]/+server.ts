@@ -11,6 +11,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		aliases?: unknown;
 		summaryMd?: unknown;
 		bodyMd?: unknown;
+		categoryId?: unknown;
 		storyId?: unknown;
 		storyNotesMd?: unknown;
 	};
@@ -26,6 +27,12 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		aliases,
 		summaryMd: typeof payload.summaryMd === 'string' ? payload.summaryMd : null,
 		bodyMd: payload.bodyMd,
+		categoryId:
+			payload.categoryId === null
+				? null
+				: typeof payload.categoryId === 'string'
+					? payload.categoryId
+					: undefined,
 		storyId: typeof payload.storyId === 'string' ? payload.storyId : undefined,
 		storyNotesMd: typeof payload.storyNotesMd === 'string' ? payload.storyNotesMd : undefined
 	});
