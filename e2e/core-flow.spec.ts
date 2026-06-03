@@ -32,8 +32,21 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page).toHaveURL(/scene=/);
-	await expect(page.locator('.editor-title')).toHaveText('Untitled scene');
+	await expect(page.getByPlaceholder('Untitled scene')).toBeVisible();
 	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Untitled scene');
+
+	// Write prose: the autosave chip confirms, and a reload preserves it.
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('The gate of Halden opened the way it always did.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	const titleSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByPlaceholder('Untitled scene').fill('Departure from Halden');
+	await titleSave;
+	await page.reload();
+	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
+	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Departure from Halden');
 
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
