@@ -2,7 +2,14 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { chapters, characters, scenes, stories, universes } from '$lib/server/db/schema';
+import {
+	chapters,
+	characters,
+	entityMentions,
+	scenes,
+	stories,
+	universes
+} from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -61,6 +68,28 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedScene = row ?? null;
 	}
 
+	// Who is mentioned in the open scene, read from the worker-built index.
+	let inScene: { id: string; name: string; count: number }[] = [];
+	if (selectedScene) {
+		inScene = await db
+			.select({
+				id: characters.id,
+				name: characters.name,
+				count: sql<number>`count(*)::int`
+			})
+			.from(entityMentions)
+			.innerJoin(characters, eq(entityMentions.targetId, characters.id))
+			.where(
+				and(
+					eq(entityMentions.sourceType, 'scene'),
+					eq(entityMentions.sourceId, selectedScene.id),
+					eq(entityMentions.targetType, 'character')
+				)
+			)
+			.groupBy(characters.id, characters.name)
+			.orderBy(asc(characters.name));
+	}
+
 	// Known entities feed the editor's live underlines and hover tooltips.
 	const mentionEntities = await db
 		.select({
@@ -80,6 +109,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		scenes: sceneList,
 		selectedScene,
 		mentionEntities,
+		inScene,
 		view,
 		storyDoc,
 		// Carried through the story view so toggling back lands on the scene

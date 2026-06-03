@@ -100,7 +100,35 @@
 		</main>
 		<aside class="pane right">
 			<div class="right-scroll">
-				<div class="empty">Mentions and relationships arrive here.</div>
+				{#if data.selected && data.appearsIn.length > 0}
+					{@const scenesSeen = [...new Map(data.appearsIn.map((m) => [m.sceneId, m])).values()]}
+					<div class="r-card">
+						<h5>Appears in</h5>
+						{#each scenesSeen as sceneRef (sceneRef.sceneId)}
+							{@const mentions = data.appearsIn.filter((m) => m.sceneId === sceneRef.sceneId)}
+							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+							<a
+								class="r-line"
+								href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneRef.sceneId}`}
+							>
+								<span class="r-line-left">
+									<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
+								</span>
+								<span class="r-count">{mentions.length}</span>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#each mentions as mention, mi (mi)}
+								<div class="snippet">{mention.snippet}</div>
+							{/each}
+						{/each}
+					</div>
+				{:else if data.selected}
+					<div class="empty">
+						No mentions in this story yet. Mentions appear shortly after the prose is saved.
+					</div>
+				{:else}
+					<div class="empty">Mentions and relationships arrive here.</div>
+				{/if}
 			</div>
 		</aside>
 	</div>
@@ -141,5 +169,15 @@
 		color: var(--danger, #b00020);
 		font-size: 12.5px;
 		margin: 0;
+	}
+	.r-line {
+		text-decoration: none;
+	}
+	.snippet {
+		color: var(--text-muted);
+		font-size: 12px;
+		line-height: 1.5;
+		padding: 2px 0 6px;
+		border-bottom: 1px dashed var(--border);
 	}
 </style>

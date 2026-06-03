@@ -133,6 +133,24 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
 
+	// The worker indexes the mention asynchronously; once it has, the scene's
+	// cast shows in the right panel.
+	await expect(async () => {
+		await page.reload();
+		await expect(page.locator('.r-line-name')).toHaveText('Alice Vane', { timeout: 1500 });
+	}).toPass({ timeout: 30000 });
+
+	// Find usages: the character's panel lists the scene with the snippet,
+	// and jumps back into it.
+	await page.locator('.r-line').click();
+	await expect(page).toHaveURL(/\/plan\?entity=/);
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
+	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
+	await expect(page.locator('.snippet')).toContainText('Mrs. Fenwick waited.');
+	await page.locator('.r-line').click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
+
 	// The breadcrumb leads back to the universe, which lists the story.
 	await page.getByRole('link', { name: universeName }).click();
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
