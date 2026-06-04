@@ -41,7 +41,9 @@
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
-	const SAVE_DEBOUNCE_MS = 800;
+	// Autosave fires on a pause, not on every keystroke; the revision history
+	// coalesces these so a burst of saves is one timeline entry.
+	const SAVE_DEBOUNCE_MS = 1500;
 
 	// Swappable behaviour goes in compartments from day one, so mentions and
 	// autocomplete can be reconfigured at runtime in later phases.

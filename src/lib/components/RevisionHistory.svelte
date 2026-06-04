@@ -24,6 +24,21 @@
 	let label = $state('');
 	let saving = $state(false);
 
+	// Autosaves coalesce in storage, but older ones still accrue over a long
+	// session. Show checkpoints plus the most recent autosave by default; the
+	// rest are a click away.
+	let showAllAutosaves = $state(false);
+	const isAutosave = (row: Row) => (row.reason ?? 'autosave') === 'autosave';
+	const latestAutosaveId = $derived(revisions.find(isAutosave)?.id);
+	const hiddenAutosaves = $derived(
+		revisions.filter((row) => isAutosave(row) && row.id !== latestAutosaveId).length
+	);
+	const shownRevisions = $derived(
+		showAllAutosaves
+			? revisions
+			: revisions.filter((row) => !isAutosave(row) || row.id === latestAutosaveId)
+	);
+
 	const DOT: Record<string, string> = { checkpoint: 'checkpoint', restore: 'import' };
 	const TITLE: Record<string, string> = {
 		checkpoint: 'Checkpoint',
@@ -70,7 +85,7 @@
 		<button class="mini-btn solid" type="submit" disabled={saving}>Checkpoint now</button>
 	</form>
 	<div class="hist-list">
-		{#each revisions as row (row.id)}
+		{#each shownRevisions as row (row.id)}
 			<div class="hist-row" class:previewing={row.id === previewId}>
 				<span class="revision-dot revision-dot-{DOT[row.reason ?? ''] ?? 'autosave'}"></span>
 				<div class="hist-main">
@@ -92,10 +107,19 @@
 			</div>
 		{/each}
 	</div>
+	{#if hiddenAutosaves > 0}
+		<button
+			class="mini-btn show-all"
+			type="button"
+			onclick={() => (showAllAutosaves = !showAllAutosaves)}
+		>
+			{showAllAutosaves ? 'Show fewer' : `Show all autosaves (${hiddenAutosaves} more)`}
+		</button>
+	{/if}
 	<div class="hist-foot">
 		{revisions.length === 0
 			? 'Saved versions appear here as you write.'
-			: 'Select a revision to preview it in the editor.'}
+			: 'Checkpoints and the latest autosave show here; checkpoint to mark a version.'}
 	</div>
 </div>
 
@@ -125,5 +149,19 @@
 	.mini-btn {
 		text-decoration: none;
 		cursor: pointer;
+	}
+	.show-all {
+		display: block;
+		width: 100%;
+		text-align: center;
+		padding: 6px;
+		margin-top: 6px;
+		border: 0;
+		background: none;
+		color: var(--text-muted);
+		font-size: 12px;
+	}
+	.show-all:hover {
+		color: var(--text);
 	}
 </style>
