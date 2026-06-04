@@ -1,5 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
+import { recordRevision } from './revisions';
 import { entityCategories, loreEntries, loreStoryNotes, stories } from './db/schema';
 
 export type LoreSave = {
@@ -69,6 +70,7 @@ export async function saveLoreEntry(
 			bodyMd: save.bodyMd
 		})
 		.where(eq(loreEntries.id, entry.id));
+	await recordRevision(db, 'lore_entry', entry.id, save.bodyMd);
 
 	if (save.storyId !== undefined) {
 		const [story] = await db

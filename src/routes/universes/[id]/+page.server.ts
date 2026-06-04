@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { stories, universes } from '$lib/server/db/schema';
 import { ownedUniverse } from '$lib/server/universe-access';
+import { universeTimeline } from '$lib/server/revisions';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -12,7 +13,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.from(stories)
 		.where(eq(stories.universeId, universe.id))
 		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
-	return { universe, stories: storyList };
+	const timeline = await universeTimeline(db, universe.id, 30);
+	return { universe, stories: storyList, timeline };
 };
 
 export const actions: Actions = {

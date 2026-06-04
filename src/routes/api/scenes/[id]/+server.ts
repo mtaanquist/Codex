@@ -4,6 +4,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { scenes, stories } from '$lib/server/db/schema';
 import { queueSceneMentions } from '$lib/server/jobs';
+import { recordRevision } from '$lib/server/revisions';
 import { wordCount } from '$lib/word-count';
 
 // Debounced autosave target for the scene editor.
@@ -27,6 +28,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		.update(scenes)
 		.set({ title, bodyMd: payload.bodyMd, wordCount: count })
 		.where(eq(scenes.id, row.id));
+	await recordRevision(db, 'scene', row.id, payload.bodyMd);
 	await queueSceneMentions(row.id);
 
 	return json({ savedAt: new Date().toISOString(), wordCount: count });

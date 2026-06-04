@@ -485,6 +485,30 @@ export const entityRelationships = pgTable(
 	]
 );
 
+// Version history, polymorphic over everything with editable prose. A row
+// per debounced save that changed the body (plus manual checkpoints), the
+// newest first in the timeline. Snapshot-plus-diff compression is a later
+// optimisation if the table grows large.
+export const revisions = pgTable(
+	'revisions',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		entityType: text('entity_type', {
+			enum: ['scene', 'character', 'place', 'lore_entry', 'outline_node', 'chapter', 'note']
+		}).notNull(),
+		entityId: uuid('entity_id').notNull(),
+		bodyMd: text('body_md').notNull(),
+		// 'autosave' | 'checkpoint' | 'restore'; machine category, not prose.
+		reason: text('reason'),
+		// Optional checkpoint name given by the user.
+		label: text('label'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('revisions_timeline_idx').on(table.entityType, table.entityId, table.createdAt.desc())
+	]
+);
+
 // Single-use tokens for email verification and password reset. The raw token
 // is emailed; only its hash is stored.
 export const authTokens = pgTable('auth_tokens', {

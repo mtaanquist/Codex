@@ -13,6 +13,7 @@ import {
 	universes
 } from '$lib/server/db/schema';
 import { userPreferences } from '$lib/server/preferences';
+import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -69,6 +70,18 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			.from(scenes)
 			.where(and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id)));
 		selectedScene = row ?? null;
+	}
+
+	// The open scene's timeline, and the revision being previewed if the
+	// URL names one. Both ride the scene's ownership check above.
+	let sceneRevisions: RevisionRow[] = [];
+	let revisionPreview = null;
+	if (selectedScene) {
+		sceneRevisions = await listRevisions(db, 'scene', selectedScene.id);
+		const revisionId = url.searchParams.get('revision');
+		if (revisionId) {
+			revisionPreview = (await getRevision(db, revisionId, 'scene', selectedScene.id)) ?? null;
+		}
 	}
 
 	// Who is mentioned in the open scene, read from the worker-built index.
@@ -171,6 +184,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		chapters: chapterList,
 		scenes: sceneList,
 		selectedScene,
+		sceneRevisions,
+		revisionPreview,
 		mentionEntities,
 		inScene,
 		view,

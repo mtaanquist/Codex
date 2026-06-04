@@ -43,12 +43,53 @@
 		<button type="submit">Save</button>
 	</form>
 
+	<h2>History</h2>
+	{#if data.timeline.length === 0}
+		<p>Recent changes to this story's scenes and outline appear here.</p>
+	{:else}
+		<ul class="timeline">
+			{#each data.timeline as row (row.id)}
+				<li>
+					<span class="t-name">{row.entityName ?? 'Untitled'}</span>
+					<span class="t-what">
+						{row.label ?? (row.reason === 'checkpoint' ? 'checkpoint' : (row.reason ?? 'autosave'))}
+					</span>
+					<span class="t-when">{row.createdAt.toLocaleString()}</span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
 	<form method="POST" action="?/delete">
 		<button type="submit" class="danger">Delete story</button>
 	</form>
 </main>
 
 <style>
+	.timeline {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+	.timeline li {
+		display: flex;
+		gap: 0.75rem;
+		align-items: baseline;
+		padding: 0.3rem 0;
+		border-bottom: 1px dashed var(--border, #ddd);
+		font-size: 0.9rem;
+	}
+	.t-name {
+		font-weight: 600;
+	}
+	.t-what {
+		color: var(--text-muted, #666);
+	}
+	.t-when {
+		margin-left: auto;
+		color: var(--text-faint, #999);
+		font-size: 0.8rem;
+	}
 	main {
 		max-width: 36rem;
 		margin: 4rem auto 0;
