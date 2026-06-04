@@ -39,8 +39,9 @@ await boss.work<{ universeId: string }>('mentions-universe', async (jobs) => {
 await boss.work<{ trigger?: 'scheduled' | 'manual' }>('run-backup', async (jobs) => {
 	for (const job of jobs) {
 		const result = await runBackup(db, job.data.trigger ?? 'scheduled');
-		if (result.ok) console.log(`backup: uploaded ${result.key}`);
-		else console.error(`backup: failed (${result.reason})`);
+		if (!result.ok) console.error(`backup: failed (${result.reason})`);
+		else if (result.skipped) console.log('backup: skipped, nothing changed');
+		else console.log(`backup: uploaded ${result.key}`);
 	}
 });
 
@@ -49,7 +50,9 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>('run-backup', async (jobs)
 const backups = backupConfig();
 if (backups) {
 	await boss.schedule('run-backup', backups.cron, { trigger: 'scheduled' }, { tz: 'UTC' });
-	console.log(`backups: scheduled (${backups.cron} UTC, keep ${backups.keep})`);
+	console.log(
+		`backups: scheduled (${backups.cron} UTC; keep ${backups.keepRecentHours}h full, ${backups.keepDays}d daily)`
+	);
 } else {
 	await boss.unschedule('run-backup');
 }

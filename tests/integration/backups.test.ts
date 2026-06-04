@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	backupKey,
 	listRecentBackupRuns,
 	runBackup,
 	type BackupConfig,
@@ -23,8 +24,9 @@ const config: BackupConfig = {
 	prefix: 'codex-backups',
 	accessKeyId: 'id',
 	secretAccessKey: 'secret',
-	keep: 2,
-	cron: '0 3 * * *'
+	keepRecentHours: 48,
+	keepDays: 30,
+	cron: '0 * * * *'
 };
 
 // An in-memory bucket; the S3 client itself is thin SDK calls.
@@ -64,21 +66,32 @@ afterAll(async () => {
 });
 
 describe('runBackup', () => {
-	it('dumps, uploads, records the run, and prunes beyond retention', async () => {
+	it('dumps, uploads, records the run, and prunes by tier', async () => {
 		const { store, objects } = memoryStore();
-		// Pre-existing old dumps; keep=2 means only the newest survives
-		// alongside the run that is about to land.
-		await store.put('codex-backups/codex-2026-01-01.dump', Readable.from('old-1'));
-		await store.put('codex-backups/codex-2026-01-02.dump', Readable.from('old-2'));
+		const now = new Date('2026-06-04T12:00:00Z');
+		// Beyond the recent window: two dumps on one old day (the newest of
+		// them survives as that day's daily) and one ancient dump (pruned).
+		await store.put(
+			backupKey('codex-backups', new Date('2026-05-20T08:00:00Z')),
+			Readable.from('a')
+		);
+		await store.put(
+			backupKey('codex-backups', new Date('2026-05-20T20:00:00Z')),
+			Readable.from('b')
+		);
+		await store.put(
+			backupKey('codex-backups', new Date('2026-01-01T03:00:00Z')),
+			Readable.from('c')
+		);
 
 		const result = await runBackup(db, 'manual', {
 			config,
 			store,
 			databaseUrl: TEST_DATABASE_URL,
 			dumpCommand: ['printf', 'fake-dump-bytes'],
-			now: new Date('2026-06-04T03:00:00Z')
+			now
 		});
-		expect(result).toMatchObject({ ok: true });
+		expect(result).toMatchObject({ ok: true, skipped: false });
 
 		const [run] = await listRecentBackupRuns(db, 1);
 		expect(run).toMatchObject({
@@ -86,17 +99,41 @@ describe('runBackup', () => {
 			status: 'ok',
 			sizeBytes: 'fake-dump-bytes'.length
 		});
-		expect(run.objectKey).toContain('2026-06-04');
+		expect(run.contentHash).toMatch(/^[0-9a-f]{64}$/);
 		expect(objects.get(run.objectKey!)?.toString()).toBe('fake-dump-bytes');
 
-		// keep=2: the new dump plus the newest old one survive.
-		expect([...objects.keys()].sort()).toEqual([
-			'codex-backups/codex-2026-01-02.dump',
-			run.objectKey
-		]);
+		expect([...objects.keys()].sort()).toEqual(
+			[backupKey('codex-backups', new Date('2026-05-20T20:00:00Z')), run.objectKey].sort()
+		);
 	});
 
-	it('records a failure and removes the truncated object', async () => {
+	it('skips the upload when nothing changed, and resumes when it does', async () => {
+		const { store, objects } = memoryStore();
+		const sizeBefore = objects.size;
+		const again = await runBackup(db, 'scheduled', {
+			config,
+			store,
+			databaseUrl: TEST_DATABASE_URL,
+			dumpCommand: ['printf', 'fake-dump-bytes'],
+			now: new Date('2026-06-04T13:00:00Z')
+		});
+		expect(again).toMatchObject({ ok: true, skipped: true, key: null });
+		expect(objects.size).toBe(sizeBefore);
+		const [skippedRun] = await listRecentBackupRuns(db, 1);
+		expect(skippedRun).toMatchObject({ status: 'skipped', objectKey: null });
+
+		const changed = await runBackup(db, 'scheduled', {
+			config,
+			store,
+			databaseUrl: TEST_DATABASE_URL,
+			dumpCommand: ['printf', 'different-bytes'],
+			now: new Date('2026-06-04T14:00:00Z')
+		});
+		expect(changed).toMatchObject({ ok: true, skipped: false });
+		expect(objects.size).toBe(sizeBefore + 1);
+	});
+
+	it('records a failure and uploads nothing', async () => {
 		const { store, objects } = memoryStore();
 		const result = await runBackup(db, 'scheduled', {
 			config,
@@ -146,14 +183,14 @@ describe('pg_dump round trip', () => {
 			context.skip();
 			return;
 		}
-		const key = [...objects.keys()][0];
+		const dumpKey = result.key!;
 		// A custom-format dump starts with the PGDMP magic bytes.
-		expect(objects.get(key)?.subarray(0, 5).toString()).toBe('PGDMP');
+		expect(objects.get(dumpKey)?.subarray(0, 5).toString()).toBe('PGDMP');
 		// pg_restore can list its table of contents, proving the archive is
 		// readable end to end.
 		const dumpFile = `${process.env.TMPDIR ?? '/tmp'}/codex-backup-test.dump`;
 		const { writeFile, rm } = await import('node:fs/promises');
-		await writeFile(dumpFile, objects.get(key)!);
+		await writeFile(dumpFile, objects.get(dumpKey)!);
 		const { stdout } = await run('pg_restore', ['--list', dumpFile]);
 		expect(stdout).toContain('TABLE DATA');
 		await rm(dumpFile);
