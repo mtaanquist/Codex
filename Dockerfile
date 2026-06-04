@@ -14,8 +14,10 @@ COPY --from=build /app/package.json package.json
 # Migrations (applied on app start) and operational scripts (seed-admin).
 COPY --from=build /app/drizzle drizzle
 COPY --from=build /app/scripts scripts
-# The worker runs from source under Node's native TypeScript support.
+# The worker runs from source under Node's native TypeScript support; it
+# imports from src/lib (schema, mention pipeline), so both come along.
 COPY --from=build /app/src/worker src/worker
+COPY --from=build /app/src/lib src/lib
 USER node
 EXPOSE 3000
 CMD ["node", "build"]

@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: codex
       POSTGRES_DB: codex
     ports:
-      - '5432:5432'
+      - '${DEV_DB_PORT:-5432}:5432'
     volumes:
       - db-data:/var/lib/postgresql
     healthcheck:
