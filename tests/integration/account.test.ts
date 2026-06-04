@@ -8,7 +8,9 @@ import { sessions, users } from '../../src/lib/server/db/schema';
 import {
 	changeDisplayName,
 	changePassword,
+	confirmEmailChange,
 	listSessions,
+	requestEmailChange,
 	revokeOtherSessions,
 	revokeOwnSession
 } from '../../src/lib/server/account';
@@ -94,6 +96,44 @@ describe('changePassword', () => {
 		// Unchanged.
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(await verifyPassword(row.passwordHash, 'current-password')).toBe(true);
+	});
+});
+
+describe('email change', () => {
+	it('records a pending address and swaps it in on confirmation', async () => {
+		const result = await requestEmailChange(db, userId, 'current-password', '  New@Example.com ');
+		expect(result.ok).toBe(true);
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
+		// The live email is unchanged until confirmation.
+		expect(row.email).toBe('acct@example.com');
+		expect(row.pendingEmail).toBe('new@example.com');
+
+		if (!result.ok) throw new Error('unreachable');
+		expect((await confirmEmailChange(db, result.token)).ok).toBe(true);
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.email).toBe('new@example.com');
+		expect(row.pendingEmail).toBeNull();
+		expect(row.emailVerifiedAt).not.toBeNull();
+	});
+
+	it('rejects a wrong password, an invalid address, and a taken one', async () => {
+		await db.insert(users).values({
+			email: 'taken@example.com',
+			displayName: 'T',
+			passwordHash: 'x',
+			role: 'user'
+		});
+		expect((await requestEmailChange(db, userId, 'wrong', 'fine@example.com')).ok).toBe(false);
+		expect((await requestEmailChange(db, userId, 'current-password', 'nope')).ok).toBe(false);
+		expect((await requestEmailChange(db, userId, 'current-password', 'taken@example.com')).ok).toBe(
+			false
+		);
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.pendingEmail).toBeNull();
+	});
+
+	it('refuses an unknown confirmation token', async () => {
+		expect((await confirmEmailChange(db, 'not-a-real-token')).ok).toBe(false);
 	});
 });
 

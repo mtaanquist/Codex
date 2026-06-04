@@ -3,7 +3,7 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { authTokens } from './db/schema.ts';
 
-export type TokenKind = 'email_verify' | 'password_reset' | 'deletion_cancel';
+export type TokenKind = 'email_verify' | 'password_reset' | 'deletion_cancel' | 'email_change';
 
 // Only the hash is ever stored, so a leaked database row cannot be turned back
 // into a usable link.
