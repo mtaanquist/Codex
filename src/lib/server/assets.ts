@@ -3,9 +3,9 @@ import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { Database } from './auth';
-import { assets, universes } from './db/schema';
-import { makeS3Client } from './s3-client';
-import { IMAGE_TYPES } from './media-types';
+import { assets, universes } from './db/schema.ts';
+import { makeS3Client } from './s3-client.ts';
+import { IMAGE_TYPES } from './media-types.ts';
 
 // Uploaded images live in an S3-compatible bucket, deliberately separate
 // from the backups bucket: a database restore then keeps every asset link

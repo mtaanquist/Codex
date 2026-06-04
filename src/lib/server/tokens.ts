@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { authTokens } from './db/schema';
+import { authTokens } from './db/schema.ts';
 
-export type TokenKind = 'email_verify' | 'password_reset';
+export type TokenKind = 'email_verify' | 'password_reset' | 'deletion_cancel';
 
 // Only the hash is ever stored, so a leaked database row cannot be turned back
 // into a usable link.

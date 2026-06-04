@@ -112,6 +112,25 @@
 		</p>
 		<p><a href={resolve('/account/export')} data-sveltekit-reload>Download everything</a></p>
 	</section>
+
+	<section class="danger">
+		<h2>Delete account</h2>
+		<p>
+			This deletes your account and everything you have written. Your public pages come down
+			straight away, and after {data.graceDays} days everything is removed for good. We email you a link
+			to cancel if you change your mind before then. Download your work above first if you want a copy.
+		</p>
+		<form method="POST" action="?/deleteAccount">
+			{#if form?.scope === 'delete' && form.message}
+				<p class="error" role="alert">{form.message}</p>
+			{/if}
+			<label>
+				Confirm your password to continue
+				<input type="password" name="password" required autocomplete="current-password" />
+			</label>
+			<button type="submit" class="danger-btn">Delete my account</button>
+		</form>
+	</section>
 </main>
 
 <style>
@@ -174,5 +193,15 @@
 	}
 	.ok {
 		color: #1a7f37;
+	}
+	.danger {
+		border-top: 1px solid #f0c0c0;
+		padding-top: 1.5rem;
+	}
+	.danger h2 {
+		color: #b00020;
+	}
+	.danger-btn {
+		color: #b00020;
 	}
 </style>
