@@ -4,6 +4,8 @@
 	import { resolve } from '$app/paths';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
+	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
+	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
@@ -48,6 +50,12 @@
 			: data.selectedScene
 				? `${storyPath}?view=story&scene=${data.selectedScene.id}`
 				: `${storyPath}?view=story`
+	);
+
+	// Right column tabs; History holds the open scene's timeline.
+	let rightTab = $state<'reference' | 'history'>('reference');
+	const sceneHref = $derived(
+		data.selectedScene ? `${storyPath}?scene=${data.selectedScene.id}` : storyPath
 	);
 
 	function chapterScenes(chapterId: string) {
@@ -327,6 +335,16 @@
 					{/if}
 				</div>
 				<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			{:else if data.selectedScene && data.revisionPreview}
+				<div class="editor">
+					<RevisionPreview
+						revision={data.revisionPreview}
+						currentBody={data.selectedScene.bodyMd}
+						entityType="scene"
+						entityId={data.selectedScene.id}
+						exitHref={sceneHref}
+					/>
+				</div>
 			{:else if data.selectedScene}
 				{#key data.selectedScene.id}
 					<SceneEditor
@@ -353,31 +371,63 @@
 			{/if}
 		</main>
 		<aside class="pane right">
-			<div class="right-scroll">
-				{#if data.selectedScene && data.inScene.length > 0}
-					<div class="r-card">
-						<h5>In this scene</h5>
-						{#each data.inScene as entity (entity.id)}
-							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-							<a
-								class="r-line"
-								href={`${resolve('/stories/[id]/plan', { id: data.story.id })}?entity=${entity.id}`}
-							>
-								<span class="r-line-left">
-									<span class="badge dot" style="background: {entityColor(entity.name)}">
-										{entityLetter(entity.name)}
-									</span>
-									<span class="r-line-name">{entity.name}</span>
-								</span>
-								<span class="r-count">{entity.count}</span>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						{/each}
+			{#if data.selectedScene}
+				<div class="right-head">
+					<div class="rtabs">
+						<button
+							class="rtab"
+							class:active={rightTab === 'reference'}
+							type="button"
+							onclick={() => (rightTab = 'reference')}
+						>
+							Reference
+						</button>
+						<button
+							class="rtab"
+							class:active={rightTab === 'history'}
+							type="button"
+							onclick={() => (rightTab = 'history')}
+						>
+							History
+						</button>
 					</div>
-				{:else}
-					<div class="empty">Nothing to show yet.</div>
-				{/if}
-			</div>
+				</div>
+			{/if}
+			{#if data.selectedScene && rightTab === 'history'}
+				<RevisionHistory
+					entityType="scene"
+					entityId={data.selectedScene.id}
+					revisions={data.sceneRevisions}
+					previewId={data.revisionPreview?.id}
+					previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
+				/>
+			{:else}
+				<div class="right-scroll">
+					{#if data.selectedScene && data.inScene.length > 0}
+						<div class="r-card">
+							<h5>In this scene</h5>
+							{#each data.inScene as entity (entity.id)}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+								<a
+									class="r-line"
+									href={`${resolve('/stories/[id]/plan', { id: data.story.id })}?entity=${entity.id}`}
+								>
+									<span class="r-line-left">
+										<span class="badge dot" style="background: {entityColor(entity.name)}">
+											{entityLetter(entity.name)}
+										</span>
+										<span class="r-line-name">{entity.name}</span>
+									</span>
+									<span class="r-count">{entity.count}</span>
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{/each}
+						</div>
+					{:else}
+						<div class="empty">Nothing to show yet.</div>
+					{/if}
+				</div>
+			{/if}
 		</aside>
 	</div>
 

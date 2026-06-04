@@ -273,6 +273,49 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.cm-content')).toContainText('Alice Vane Halden');
 	await ghostSave;
 
+	// History: the autosaves are already on the timeline; a named
+	// checkpoint joins them.
+	await page.getByRole('button', { name: 'History' }).click();
+	await expect(page.locator('.hist-row').first()).toBeVisible();
+	const checkpointSave = page.waitForResponse(
+		(r) => r.url().includes('/api/revisions') && r.request().method() === 'POST' && r.ok()
+	);
+	await page.getByLabel('Checkpoint name').fill('Before the rewrite');
+	await page.getByRole('button', { name: 'Checkpoint now' }).click();
+	await checkpointSave;
+	await expect(page.locator('.hist-label').first()).toHaveText('Before the rewrite');
+
+	// An edit after the checkpoint, so the preview has changes to show.
+	const tailSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' The end.');
+	await tailSave;
+
+	// Preview the checkpoint: banner, the old text, and a diff against
+	// what is live now.
+	await page
+		.locator('.hist-row', { hasText: 'Before the rewrite' })
+		.getByRole('link', { name: 'Preview' })
+		.click();
+	await expect(page).toHaveURL(/revision=/);
+	await expect(page.locator('.revision-banner-title')).toHaveText('Viewing a past revision');
+	await expect(page.locator('.prose-historical')).not.toContainText('The end.');
+	await page.getByRole('button', { name: 'Show changes' }).click();
+	await expect(page.locator('.diff-del')).toContainText('The end.');
+
+	// Restore: the editor comes back with the checkpoint's text and the
+	// timeline gains a restore entry on top.
+	const restoreDone = page.waitForResponse((r) => r.url().includes('/restore') && r.ok());
+	await page.getByRole('button', { name: 'Restore this version' }).click();
+	await restoreDone;
+	await expect(page).not.toHaveURL(/revision=/);
+	await expect(page.locator('.cm-content')).toContainText('Alice Vane Halden');
+	await expect(page.locator('.cm-content')).not.toContainText('The end.');
+	await expect(page.locator('.hist-label').first()).toHaveText('Restored');
+
 	// The breadcrumb leads to the universe editor: the same cast at universe
 	// scope, with no per-story notes section.
 	await page.getByRole('link', { name: universeName }).click();

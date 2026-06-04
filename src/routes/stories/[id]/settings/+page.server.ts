@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { stories, universes } from '$lib/server/db/schema';
+import { storyTimeline } from '$lib/server/revisions';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -15,7 +16,9 @@ async function ownedStory(storyId: string, userId: string) {
 }
 
 export const load: PageServerLoad = async ({ params, locals }) => {
-	return await ownedStory(params.id, locals.user!.id);
+	const { story, universe } = await ownedStory(params.id, locals.user!.id);
+	const timeline = await storyTimeline(db, story.id, 30);
+	return { story, universe, timeline };
 };
 
 export const actions: Actions = {

@@ -1,5 +1,6 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
+import { recordRevision } from './revisions';
 import { chapters, outlineNodes, scenes, stories } from './db/schema';
 
 export type OutlineNodeView = {
@@ -120,6 +121,7 @@ export async function saveOutlineNode(
 		.update(outlineNodes)
 		.set({ title, bodyMd: save.bodyMd, linkedSceneId, linkedChapterId })
 		.where(eq(outlineNodes.id, node.id));
+	await recordRevision(db, 'outline_node', node.id, save.bodyMd);
 	return { ok: true };
 }
 

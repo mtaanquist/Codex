@@ -13,6 +13,12 @@ import {
 	listRelationTypes,
 	type RelationshipView
 } from '$lib/server/relationships';
+import {
+	getRevision,
+	listRevisions,
+	type RevisionEntityType,
+	type RevisionRow
+} from '$lib/server/revisions';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -50,6 +56,22 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		});
 	}
 
+	// The open entity's timeline, and the previewed revision if the URL
+	// names one. Selection above already enforced ownership.
+	const revisionTarget: { type: RevisionEntityType; id: string } | null = selected
+		? { type: selectedKind === 'lore' ? 'lore_entry' : selectedKind, id: selected.id }
+		: null;
+	let revisionRows: RevisionRow[] = [];
+	let revisionPreview = null;
+	if (revisionTarget) {
+		revisionRows = await listRevisions(db, revisionTarget.type, revisionTarget.id);
+		const revisionId = url.searchParams.get('revision');
+		if (revisionId) {
+			revisionPreview =
+				(await getRevision(db, revisionId, revisionTarget.type, revisionTarget.id)) ?? null;
+		}
+	}
+
 	return {
 		universe,
 		user: locals.user!,
@@ -58,7 +80,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedKind,
 		appearsIn,
 		relationTypes,
-		relationships
+		relationships,
+		revisionTarget,
+		revisionRows,
+		revisionPreview
 	};
 };
 

@@ -45,6 +45,19 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 > steps 22-27, releasing as v2.0. The author holds 3 free /code-review
 > ultra runs, intended for phase boundaries.
 
+## Phase 4 - History, polish, import/export
+
+- [x] 22. Revisions and history (v1.7): polymorphic revisions table, insert on body-changing saves across all five types, checkpoints with labels, Reference/History tabs in the right column, preview banner with jsdiff changes toggle, restore-on-top, story and universe settings timelines
+- [ ] 23. TODO markers (v1.x point release)
+- [ ] 23b. Editable continuous view (v1.x point release)
+- [ ] 24. SillyTavern character card import, lorebook import, round-trip export
+- [ ] 25. Assets and images
+- [ ] 26. Markdown and EPUB export
+- [ ] 27. Public reading pages, self-host
+
+> Phase 4 releases as v2.0 after step 27; 23 and 23b ship as point releases
+> along the way. The author plans the first /code-review ultra run at v2.0.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
