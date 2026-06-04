@@ -76,7 +76,77 @@
 		{/if}
 	</form>
 
+	{#if data.archive.enabled}
+		<h2>Public archive</h2>
+		{#if data.archive.handle}
+			<p>
+				Your shelf lives at
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (public reader path) -->
+				<a href="/@{data.archive.handle}">/@{data.archive.handle}</a>. Publish stories from their
+				settings page.
+			</p>
+		{:else}
+			<form method="POST" action="?/claimHandle">
+				{#if form?.message}
+					<p class="error" role="alert">{form.message}</p>
+				{/if}
+				<label>
+					Claim a public handle
+					<input
+						type="text"
+						name="handle"
+						placeholder="your-name"
+						pattern="[a-z0-9][a-z0-9-]+"
+						required
+					/>
+				</label>
+				<button type="submit">Claim handle</button>
+			</form>
+		{/if}
+	{/if}
+
 	{#if data.isAdmin}
+		<h2>Public archive admin</h2>
+		<form method="POST" action="?/setArchive">
+			<label>
+				User email
+				<input type="email" name="email" required />
+			</label>
+			<label class="inline">
+				<input type="checkbox" name="enabled" checked />
+				Public archive enabled
+			</label>
+			<button type="submit">Apply</button>
+			{#if form && 'archiveSaved' in form && form.archiveSaved}
+				<span role="status">Saved.</span>
+			{/if}
+		</form>
+		{#if data.published.length > 0}
+			<ul class="timeline">
+				{#each data.published as edition (edition.id)}
+					<li>
+						<span class="t-name" class:failed={edition.removedAt !== null}>
+							@{edition.handle}/{edition.title}
+						</span>
+						<span class="t-what">
+							{edition.removedAt
+								? 'taken down'
+								: edition.isCurrent
+									? 'current'
+									: 'superseded'}{edition.isAdult ? ', adult' : ''}
+						</span>
+						<span class="t-when">{edition.publishedAt.toLocaleString()}</span>
+						{#if !edition.removedAt}
+							<form method="POST" action="?/takedown">
+								<input type="hidden" name="publicationId" value={edition.id} />
+								<button type="submit">Take down</button>
+							</form>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
 		<h2>Backups</h2>
 		{#if !data.backupsConfigured}
 			<p>
@@ -168,5 +238,10 @@
 		margin-left: auto;
 		color: #999;
 		font-size: 0.8rem;
+	}
+	label.inline {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.4rem;
 	}
 </style>

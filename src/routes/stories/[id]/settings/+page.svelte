@@ -80,6 +80,51 @@
 		<p>Image uploads need the ASSET_S3_* variables set; see .env.example.</p>
 	{/if}
 
+	{#if data.archive.enabled && data.archive.handle}
+		<h2>Publish</h2>
+		<form method="POST" action="?/setVisibility">
+			{#if form?.action === 'publish' && form.message}
+				<p class="error" role="alert">{form.message}</p>
+			{/if}
+			{#if form?.action === 'publish' && 'saved' in form && form.saved}
+				<p role="status">Saved.</p>
+			{/if}
+			<label>
+				Visibility
+				<select name="visibility" value={data.story.visibility}>
+					<option value="private">Private - not on your public pages</option>
+					<option value="unlisted">Unlisted - direct link only</option>
+					<option value="public">Public - listed on your shelf</option>
+				</select>
+			</label>
+			<label class="inline">
+				<input type="checkbox" name="isAdult" checked={data.story.isAdult} />
+				Adult content
+			</label>
+			<button type="submit">Save visibility</button>
+		</form>
+		<form method="POST" action="?/publish">
+			{#if form?.action === 'publish' && 'published' in form && form.published}
+				<p role="status">
+					Edition published. Readers see it at
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (public reader path) -->
+					<a href="/@{data.archive.handle}/{data.story.id}">
+						/@{data.archive.handle}/{data.story.id}
+					</a>.
+				</p>
+			{/if}
+			<label>
+				Edition label (optional)
+				<input type="text" name="versionLabel" placeholder="Edition 2" />
+			</label>
+			<button type="submit">Publish edition</button>
+			<p class="hint">
+				Publishing freezes the story as it stands now. Later edits stay private until you publish
+				again.
+			</p>
+		</form>
+	{/if}
+
 	<h2>Export</h2>
 	<ul class="exports">
 		<!-- eslint-disable svelte/no-navigation-without-resolve (file downloads and the print view) -->
@@ -123,6 +168,15 @@
 </main>
 
 <style>
+	label.inline {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.hint {
+		color: #777;
+		font-size: 0.85rem;
+	}
 	.cover {
 		width: 120px;
 		height: 180px;

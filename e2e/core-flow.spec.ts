@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('sign in, create a universe and a story, and open it', async ({ page }) => {
+test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	await page.goto('/login');
 	await page.getByLabel('Email').fill('e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
@@ -418,9 +418,27 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 		console.warn('ASSET_S3_BUCKET not set: skipping the asset upload segment.');
 	}
 
+	// Publishing: set the story public, freeze an edition, and read it
+	// back anonymously on the public pages.
+	await page.locator('.crumb.current').click();
+	await expect(page.getByRole('heading', { name: 'Publish' })).toBeVisible();
+	await page.getByLabel('Visibility').selectOption('public');
+	await page.getByRole('button', { name: 'Save visibility' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.getByRole('button', { name: 'Publish edition' }).click();
+	await expect(page.getByRole('status')).toContainText('Edition published.');
+
+	const anonymous = await browser.newContext();
+	const reader = await anonymous.newPage();
+	await reader.goto('/@e2e-tester');
+	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
+	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
+	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
+	await expect(reader.locator('.reader')).toContainText('The gate of Halden');
+	await anonymous.close();
+
 	// Exports: the zip and the EPUB download, and the print view renders
 	// the prose for PDF via the browser dialog.
-	await page.locator('.crumb.current').click();
 	await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
 	const zipDownload = page.waitForEvent('download');
 	await page.getByRole('link', { name: 'Markdown (.zip)' }).click();
