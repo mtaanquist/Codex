@@ -2,7 +2,13 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 
-const PUBLIC_PATHS = new Set(['/login', '/signup', '/verify-email']);
+const PUBLIC_PATHS = new Set([
+	'/login',
+	'/signup',
+	'/verify-email',
+	'/forgot-password',
+	'/reset-password'
+]);
 // Pages a signed-in user has no reason to see; bounce them home instead.
 const AUTH_PATHS = new Set(['/login', '/signup']);
 // Reader pages are public; assets check publication state themselves.
