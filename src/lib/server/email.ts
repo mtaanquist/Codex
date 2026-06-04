@@ -1,34 +1,31 @@
-// Transactional email. Sending happens in the worker, so this module reads
-// plain process.env rather than SvelteKit's env modules. Configuration is
-// off by default: with no SMTP_URL set, messages are logged instead of sent,
-// which is what a self-host instance without mail or a dev machine wants.
+// Transactional email. Sending happens in the worker. The SMTP relay is
+// configured from the admin panel (stored in app_settings) or seeded from the
+// environment; see settings.ts. With neither set, messages are logged instead
+// of sent, which is what a self-host instance without mail or a dev box wants.
+import type { Database } from './auth';
+import { effectiveSmtp } from './settings.ts';
 
 export type EmailMessage = { to: string; subject: string; text: string };
 
-export function isEmailConfigured(): boolean {
-	return Boolean(process.env.SMTP_URL);
-}
-
-// A nodemailer connection string, e.g. smtps://user:pass@smtp.example.com:465.
-// Loaded lazily so the app bundle does not pull nodemailer in just to build a
-// message; only the worker, which actually sends, ever imports it.
-async function buildTransport() {
-	const url = process.env.SMTP_URL;
-	if (!url) return null;
-	const { createTransport } = await import('nodemailer');
-	return createTransport(url);
-}
-
-export async function sendEmail(message: EmailMessage): Promise<void> {
-	const transport = await buildTransport();
-	if (!transport) {
+// nodemailer is loaded lazily so the app bundle does not pull it in just to
+// build a message; only the worker, which actually sends, reaches this.
+export async function sendEmail(db: Database, message: EmailMessage): Promise<void> {
+	const config = await effectiveSmtp(db);
+	if (!config) {
 		console.log(
 			`[email] not configured; would send:\n  To: ${message.to}\n  Subject: ${message.subject}\n\n${message.text}\n`
 		);
 		return;
 	}
+	const { createTransport } = await import('nodemailer');
+	const transport = createTransport({
+		host: config.host,
+		port: config.port,
+		secure: config.secure,
+		auth: config.user ? { user: config.user, pass: config.password } : undefined
+	});
 	await transport.sendMail({
-		from: process.env.SMTP_FROM ?? 'Codex <no-reply@localhost>',
+		from: config.from,
 		to: message.to,
 		subject: message.subject,
 		text: message.text

@@ -35,6 +35,15 @@ services:
       BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-}
       BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
       BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      # Encrypts secrets stored in the database (the SMTP password).
+      APP_SECRET: ${APP_SECRET:-}
+      # SMTP relay seed; the admin panel can override and store these.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     depends_on:
       db:
         condition: service_healthy
@@ -56,6 +65,15 @@ services:
       BACKUP_CRON: ${BACKUP_CRON:-}
       BACKUP_KEEP_RECENT_HOURS: ${BACKUP_KEEP_RECENT_HOURS:-}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-}
+      # The worker sends email, so it needs the relay config and the key to
+      # decrypt a stored SMTP password.
+      APP_SECRET: ${APP_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     depends_on:
       db:
         condition: service_healthy
