@@ -509,6 +509,34 @@ export const revisions = pgTable(
 	]
 );
 
+// A frozen, read-only edition of a story, served on the public reading
+// pages. Snapshot, not live: in-progress drafts never appear, and the
+// reader path reads only these rows.
+export const publications = pgTable('publications', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	storyId: uuid('story_id')
+		.references(() => stories.id)
+		.notNull(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	// Denormalised from users.handle for the reader path.
+	handle: text('handle').notNull(),
+	title: text('title').notNull(),
+	author: text('author'),
+	descriptionMd: text('description_md'),
+	// Carried from stories.is_adult; the reader pages confirm before showing.
+	isAdult: boolean('is_adult').notNull().default(false),
+	// Frozen chapters and scenes for this edition, as markdown.
+	content: jsonb('content').notNull(),
+	// Optional, e.g. 'Edition 2'.
+	versionLabel: text('version_label'),
+	isCurrent: boolean('is_current').notNull().default(true),
+	// Set by an admin takedown; hides the edition without deleting the source.
+	removedAt: timestamp('removed_at', { withTimezone: true }),
+	publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // Uploaded files, stored in an S3-compatible bucket (separate from the
 // backups bucket) and served through the app. The row is the source of
 // truth for type and ownership; the object key is just the asset id under

@@ -7,6 +7,8 @@ import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
 import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
 import { queueBackup } from '$lib/server/jobs';
+import { listPublications, takedownPublication } from '$lib/server/publish';
+import { users } from '$lib/server/db/schema';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -36,6 +38,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const backupsConfigured = isAdmin && backupConfig() !== null;
 	const backupRuns = isAdmin ? await listRecentBackupRuns(db, 5) : [];
 
+	// Public archive standing for this user; the admin additionally sees
+	// everything published on the instance.
+	const [archive] = await db
+		.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
+		.from(users)
+		.where(eq(users.id, user.id));
+	const published = isAdmin ? await listPublications(db, 20) : [];
+
 	return {
 		user,
 		universes: list,
@@ -43,7 +53,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		preferences,
 		isAdmin,
 		backupsConfigured,
-		backupRuns
+		backupRuns,
+		archive,
+		published
 	};
 };
 
@@ -101,6 +113,52 @@ export const actions: Actions = {
 			return fail(500, { message: 'Could not queue the backup.' });
 		}
 		return { backupQueued: true };
+	},
+	claimHandle: async ({ request, locals }) => {
+		const data = await request.formData();
+		const handle = String(data.get('handle') ?? '')
+			.trim()
+			.toLowerCase();
+		if (!/^[a-z0-9][a-z0-9-]{2,29}$/.test(handle)) {
+			return fail(400, {
+				message: 'Handles are 3-30 characters: letters, numbers, and dashes.'
+			});
+		}
+		try {
+			await db.update(users).set({ handle }).where(eq(users.id, locals.user!.id));
+		} catch (error) {
+			if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
+				return fail(400, { message: 'That handle is taken.' });
+			}
+			throw error;
+		}
+		return { handleSaved: true };
+	},
+	setArchive: async ({ request, locals }) => {
+		if (locals.user!.role !== 'admin') {
+			return fail(403, { message: 'Only the site admin can enable public archives.' });
+		}
+		const data = await request.formData();
+		const email = String(data.get('email') ?? '').trim();
+		const enabled = data.get('enabled') === 'on';
+		const updated = await db
+			.update(users)
+			.set({ publicArchiveEnabled: enabled })
+			.where(eq(users.email, email))
+			.returning({ id: users.id });
+		if (updated.length === 0) {
+			return fail(404, { message: 'No user with that email.' });
+		}
+		return { archiveSaved: true };
+	},
+	takedown: async ({ request, locals }) => {
+		if (locals.user!.role !== 'admin') {
+			return fail(403, { message: 'Only the site admin can take down editions.' });
+		}
+		const data = await request.formData();
+		const publicationId = String(data.get('publicationId') ?? '');
+		await takedownPublication(db, publicationId);
+		return { takedownDone: true };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) {
