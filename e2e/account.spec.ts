@@ -28,6 +28,19 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.keyboard.press('Escape');
 	await expect(avatar).toHaveAttribute('aria-expanded', 'false');
 
+	// The avatar-menu theme toggle persists across a reload, not just the current
+	// view (regression: it used to write only localStorage, so the next
+	// server-rendered navigation reverted it).
+	await avatar.click();
+	const wasDark = (await page.locator('html').getAttribute('data-theme')) === 'dark';
+	const toggleTo = wasDark ? 'light' : 'dark';
+	const themeSave = page.waitForResponse((r) => r.url().includes('/api/appearance') && r.ok());
+	await page.getByRole('menuitem', { name: `Switch to ${toggleTo}` }).click();
+	await themeSave;
+	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
+	await page.reload();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
+
 	// Sessions live under Security; the signed-in device shows as current.
 	await page.getByRole('button', { name: 'Security' }).click();
 	await expect(page.getByText('Current', { exact: true })).toBeVisible();

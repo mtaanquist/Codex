@@ -16,8 +16,10 @@
 	let open = $state(false);
 	let root = $state<HTMLElement>();
 
-	// Mirrors the standalone toggle: flip data-theme and remember it. Leaves the
-	// accent untouched.
+	// Flip data-theme now for an instant response, mirror it to localStorage so a
+	// reload keeps it, and persist it to the account so the next navigation (where
+	// the layout re-applies the saved preference) does not revert it. Accent is
+	// left untouched.
 	let dark = $state(browser && document.documentElement.getAttribute('data-theme') === 'dark');
 	function toggleTheme() {
 		const next = dark ? 'light' : 'dark';
@@ -28,6 +30,13 @@
 			/* preference just does not persist */
 		}
 		dark = !dark;
+		fetch('/api/appearance', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ theme: next })
+		}).catch(() => {
+			/* the optimistic flip stands; it just will not survive a reload */
+		});
 	}
 
 	function onWindowClick(event: MouseEvent) {

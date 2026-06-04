@@ -65,12 +65,15 @@ export function parseLinks(raw: unknown): ProfileLink[] {
 	}
 	if (!Array.isArray(value)) return [];
 	const links: ProfileLink[] = [];
+	const seen = new Set<string>();
 	for (const item of value) {
 		if (!item || typeof item !== 'object') continue;
 		const url = String((item as Record<string, unknown>).url ?? '')
 			.trim()
 			.slice(0, MAX_LINK_URL);
-		if (!url) continue;
+		// Drop blanks and duplicate addresses; the public page keys on the URL.
+		if (!url || seen.has(url)) continue;
+		seen.add(url);
 		const label = String((item as Record<string, unknown>).label ?? '')
 			.trim()
 			.slice(0, MAX_LINK_LABEL);

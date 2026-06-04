@@ -168,6 +168,33 @@ describe('avatars', () => {
 		expect(row.avatarAssetId).toBeNull();
 		expect(objects.size).toBe(0);
 	});
+
+	it('does not orphan an asset when two uploads race', async () => {
+		const { store, objects } = memoryStore();
+		const [a, b] = await Promise.all([
+			setUserAvatar(db, store, config, ownerId, {
+				filename: 'a.png',
+				contentType: 'image/png',
+				bytes: PNG
+			}),
+			setUserAvatar(db, store, config, ownerId, {
+				filename: 'b.png',
+				contentType: 'image/png',
+				bytes: PNG
+			})
+		]);
+		expect(a.ok && b.ok).toBe(true);
+		if (!a.ok || !b.ok) return;
+		const [row] = await db.select().from(users).where(eq(users.id, ownerId));
+		// One upload wins the row; the other's asset must be cleaned up, leaving
+		// exactly one stored object rather than an orphan.
+		expect([a.id, b.id]).toContain(row.avatarAssetId);
+		expect(objects.size).toBe(1);
+		const loser = row.avatarAssetId === a.id ? b.id : a.id;
+		expect(await openAsset(db, store, ownerId, loser)).toBeNull();
+
+		await clearUserAvatar(db, store, ownerId);
+	});
 });
 
 describe('deleteAsset', () => {
