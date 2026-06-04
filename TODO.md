@@ -60,9 +60,12 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 > and the schema already models for its return (imported_from,
 > activation_mode). Step 25 resolved the asset-durability question by going S3-only.
 
-> Phase 4 code complete on develop. v2.0 tags after the author's first
-> /code-review ultra run and its findings. New Phase 6 candidate recorded:
-> stored export artifacts (GitHub-releases style), at the author's request.
+> Phase 4 complete; shipped as v2.0. The /code-review ultra run before the
+> tag found 10 issues (9 public-surface + 1 pre-existing story-delete
+> cascade); all fixed and merged. Phase 6 candidates recorded along the
+> way: stored export artifacts (GitHub-releases style) and SillyTavern
+> import. Next is Phase 5 (account lifecycle and hosted launch), steps
+> 28-35, releasing as v2.5.
 
 ## Feedback backlog
 
