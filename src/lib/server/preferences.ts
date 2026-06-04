@@ -2,12 +2,22 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { users } from './db/schema';
 import type { AutocompleteMode } from '$lib/editor-autocomplete';
+import {
+	DEFAULT_ACCENT,
+	DEFAULT_THEME,
+	isTheme,
+	normaliseAccent,
+	type Theme
+} from '$lib/appearance';
 
 export type UserPreferences = {
 	entityAutocomplete: AutocompleteMode;
 	// Whether scene marks render inside the continuous story view's flow;
 	// some authors treat scenes as atomic splits, not part of the reading.
 	continuousSceneMarks: 'shown' | 'hidden';
+	// The colour theme and accent applied across the app.
+	theme: Theme;
+	accent: string;
 };
 
 // The user's preferences with defaults applied; unknown values fall back
@@ -22,7 +32,9 @@ export async function userPreferences(db: Database, userId: string): Promise<Use
 	const marks = raw.continuousSceneMarks;
 	return {
 		entityAutocomplete: mode === 'ghost' || mode === 'off' ? mode : 'popup',
-		continuousSceneMarks: marks === 'hidden' ? 'hidden' : 'shown'
+		continuousSceneMarks: marks === 'hidden' ? 'hidden' : 'shown',
+		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
+		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};
 }
 

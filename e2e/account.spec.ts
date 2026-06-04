@@ -21,4 +21,16 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	// Sessions live under Security; the signed-in device shows as current.
 	await page.getByRole('button', { name: 'Security' }).click();
 	await expect(page.getByText('Current', { exact: true })).toBeVisible();
+
+	// Display: a saved theme applies app-wide via the data-theme attribute.
+	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByLabel('Theme').selectOption('dark');
+	await page.getByRole('button', { name: 'Save display' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+	// Reset so repeated runs start from a known theme.
+	await page.getByLabel('Theme').selectOption('system');
+	await page.getByRole('button', { name: 'Save display' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
 });

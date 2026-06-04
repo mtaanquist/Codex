@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { browser } from '$app/environment';
+	import { ACCENT_PRESETS } from '$lib/appearance';
+	import { applyAppearance } from '$lib/appearance-apply';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -17,6 +20,7 @@
 			case 'delete':
 				return 'security';
 			case 'prefs':
+			case 'appearance':
 				return 'display';
 			default:
 				return null;
@@ -52,6 +56,16 @@
 		if (links.length === 0) links = [{ label: '', url: '' }];
 	}
 	const linksJson = $derived(JSON.stringify(links.filter((link) => link.url.trim())));
+
+	// Appearance preview: local state seeded from the saved preferences, applied
+	// live as the user edits. Saving persists it; the layout re-applies on load.
+	// svelte-ignore state_referenced_locally
+	let theme = $state(data.preferences.theme);
+	// svelte-ignore state_referenced_locally
+	let accent = $state(data.preferences.accent);
+	$effect(() => {
+		if (browser) applyAppearance(theme, accent);
+	});
 
 	function seen(date: Date): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -728,7 +742,87 @@
 					<div class="admin-head">
 						<p class="admin-eyebrow">Account</p>
 						<h1 class="admin-title">Display</h1>
-						<p class="admin-lede">How the editor behaves while you write.</p>
+						<p class="admin-lede">How the app looks, and how the editor behaves while you write.</p>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Appearance</h2>
+							<p class="admin-block-sub">The colour theme and accent used across the app.</p>
+						</div>
+						<div class="settings-group">
+							<form method="POST" action="?/saveAppearance">
+								<div class="field">
+									<label for="theme-pref">Theme</label>
+									<select id="theme-pref" class="select" name="theme" bind:value={theme}>
+										<option value="system">Follow system</option>
+										<option value="light">Light</option>
+										<option value="dark">Dark</option>
+									</select>
+								</div>
+
+								<div class="field" style="margin-bottom:0;">
+									<!-- svelte-ignore a11y_label_has_associated_control -->
+									<label id="accent-label">Accent colour</label>
+									<input type="hidden" name="accent" value={accent} />
+									<div class="swatch-row" role="radiogroup" aria-labelledby="accent-label">
+										{#each ACCENT_PRESETS as preset (preset.value)}
+											<button
+												type="button"
+												class="swatch"
+												class:is-selected={accent === preset.value}
+												style="background:{preset.value};"
+												title={preset.name}
+												role="radio"
+												aria-checked={accent === preset.value}
+												aria-label={preset.name}
+												onclick={() => (accent = preset.value)}
+											>
+												<svg
+													viewBox="0 0 16 16"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2.4"
+													stroke-linecap="round"
+													stroke-linejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" /></svg
+												>
+											</button>
+										{/each}
+										<span class="swatch-sep"></span>
+										<label class="swatch-custom" title="Pick a custom colour">
+											<svg
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2.2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												><path d="M19 3a2.83 2.83 0 0 0-4 0l-2.5 2.5" /><path d="m11 7 6 6" /><path
+													d="M16 12 6.5 21.5a2.12 2.12 0 0 1-3-3L13 9"
+												/></svg
+											>
+											<input type="color" bind:value={accent} aria-label="Custom accent colour" />
+										</label>
+									</div>
+									<p class="field-hint">
+										Tints buttons, links, and highlights. Pick a preset, or choose any colour.
+									</p>
+								</div>
+
+								<div class="settings-actions">
+									{#if form?.scope === 'appearance' && form.message}
+										<span class="field-hint" role="alert" style="color:var(--danger);"
+											>{form.message}</span
+										>
+									{:else if form?.scope === 'appearance' && form.saved}
+										<span class="field-hint" role="status" style="color:var(--status-final);"
+											>Saved.</span
+										>
+									{/if}
+									<button type="submit" class="btn btn-primary">Save display</button>
+								</div>
+							</form>
+						</div>
 					</div>
 
 					<div class="admin-block">
