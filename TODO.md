@@ -114,7 +114,8 @@ From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed
 
 From a pre-v2.0 self-review (2026-06-04); the cover IDOR and the duplicated media-types map were fixed:
 
-- [x] The worker-indexed find-usages e2e assertion was timing-flaky on loaded CI runners; the toPass window was widened to 60s (3s per attempt) so the worker has room. If it recurs, switch to asserting set membership rather than exact contents.
+- [x] The worker-indexed find-usages e2e assertion was timing-flaky on loaded CI runners. Widened the toPass window to 60s, then (v2.1) marked the journey test slow and switched to set-membership assertions, then gated test start on worker readiness (global-setup waits for the worker's "started" log before any test relies on the async index, and captures its output to a file). Recurred across the v2.0.1 and v2.1 release runs each time, so chased to the readiness race rather than re-running.
+- [ ] For the v2.5 review: worker job enqueue is best-effort and silently drops on failure (jobs.ts), so a dropped mention rebuild leaves the index stale until the next save. Fine for a single-operator tool, but worth deciding whether a periodic reconciliation or a durable enqueue is wanted before the hosted launch. This was the suspected deeper cause behind the find-usages e2e flake.
 - [x] CI never ran the Docker image, so a broken worker import closure shipped silently (caught by hand at v1.6: src/lib was missing from the image since step 14). Fixed in v1.6.1 with a docker-smoke CI job that builds the image and boots compose with a worker check
 
 Later phases tracked in the roadmap until they get close.
