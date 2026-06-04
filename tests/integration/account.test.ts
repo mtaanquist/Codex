@@ -14,7 +14,8 @@ import {
 	revokeOtherSessions,
 	revokeOwnSession,
 	saveIdentity,
-	saveProfile
+	saveProfile,
+	verifyAccountPassword
 } from '../../src/lib/server/account';
 import { hashPassword, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
@@ -64,6 +65,16 @@ beforeEach(async () => {
 
 afterAll(async () => {
 	await pool.end();
+});
+
+describe('verifyAccountPassword', () => {
+	it('accepts the current password and rejects a wrong one or an unknown user', async () => {
+		expect(await verifyAccountPassword(db, userId, 'current-password')).toBe(true);
+		expect(await verifyAccountPassword(db, userId, 'wrong-password')).toBe(false);
+		expect(
+			await verifyAccountPassword(db, '00000000-0000-0000-0000-000000000000', 'current-password')
+		).toBe(false);
+	});
 });
 
 describe('saveIdentity', () => {

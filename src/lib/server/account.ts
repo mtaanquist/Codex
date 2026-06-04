@@ -10,6 +10,21 @@ const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
 
 export type AccountResult = { ok: true } | { ok: false; reason: string };
 
+// Re-confirms the account password for a sensitive action. Security-relevant
+// mutations (change password/email, delete, and turning two-factor off or
+// rotating its recovery codes) require it so a bare session is not enough.
+export async function verifyAccountPassword(
+	db: Database,
+	userId: string,
+	password: string
+): Promise<boolean> {
+	const [user] = await db
+		.select({ passwordHash: users.passwordHash })
+		.from(users)
+		.where(eq(users.id, userId));
+	return Boolean(user) && verifyPassword(user.passwordHash, password);
+}
+
 const MAX_PEN_NAME = 120;
 
 // Saves the always-editable identity fields: the required display name and the

@@ -3,6 +3,7 @@ import {
 	generateRecoveryCodes,
 	generateSecret,
 	hashRecoveryCode,
+	matchTotpStep,
 	normaliseRecoveryCode,
 	otpauthUri,
 	totpCode,
@@ -43,6 +44,22 @@ describe('verifyTotp', () => {
 		const tooOld = totpCode(RFC_SECRET, atMs - 90_000);
 		expect(verifyTotp(RFC_SECRET, previous, { atMs })).toBe(true);
 		expect(verifyTotp(RFC_SECRET, tooOld, { atMs })).toBe(false);
+	});
+});
+
+describe('matchTotpStep', () => {
+	const atMs = 1111111111 * 1000;
+	const step = Math.floor(atMs / 1000 / 30);
+
+	it('returns the matched step counter, accounting for drift', () => {
+		expect(matchTotpStep(RFC_SECRET, '050471', { atMs })).toBe(step);
+		// The previous step's code is accepted via drift and reports its own step.
+		expect(matchTotpStep(RFC_SECRET, totpCode(RFC_SECRET, atMs - 30_000), { atMs })).toBe(step - 1);
+	});
+
+	it('returns null for a wrong or malformed code', () => {
+		expect(matchTotpStep(RFC_SECRET, '000000', { atMs })).toBeNull();
+		expect(matchTotpStep(RFC_SECRET, 'abc', { atMs })).toBeNull();
 	});
 });
 

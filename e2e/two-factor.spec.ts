@@ -30,7 +30,10 @@ test('two-factor: enrol from the account page and turn it back off', async ({ pa
 	await expect(page.getByText('Treat these like passwords')).toBeVisible();
 	await expect(page.getByText(/you'll be asked for a code/)).toBeVisible();
 
-	// Turn it off again so repeated local runs start clean.
-	await page.getByRole('button', { name: 'Turn off' }).click();
+	// Turn it off again so repeated local runs start clean. Turning off now
+	// re-confirms the password, so fill the field on that form first.
+	const turnOff = page.locator('form', { has: page.getByRole('button', { name: 'Turn off' }) });
+	await turnOff.getByLabel('Current password').fill('e2e-password');
+	await turnOff.getByRole('button', { name: 'Turn off' }).click();
 	await expect(page.getByRole('button', { name: 'Set up' })).toBeVisible();
 });

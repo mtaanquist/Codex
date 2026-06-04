@@ -701,6 +701,9 @@ export const userTotp = pgTable('user_totp', {
 	secret: text('secret').notNull(),
 	confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
 	lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+	// The highest TOTP step counter accepted so far; a code at or below it is a
+	// replay and is refused. Backs single-use enforcement (RFC 6238 5.2).
+	lastUsedStep: bigint('last_used_step', { mode: 'number' }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 

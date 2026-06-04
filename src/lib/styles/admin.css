@@ -1181,6 +1181,37 @@ a.nav-item {
 	display: flex;
 }
 
+/* The "on" actions each re-confirm the password, so they stack as small
+   password-plus-button rows rather than bare buttons. */
+.tfa-on-actions {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+}
+.tfa-guard {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.tfa-guard input[type='password'] {
+	flex: 1;
+	min-width: 0;
+	background: var(--bg-inset, var(--bg));
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm, 6px);
+	color: var(--text);
+	font-size: 12.5px;
+	padding: 6px 9px;
+	outline: none;
+}
+.tfa-guard input[type='password']:focus {
+	border-color: var(--accent);
+}
+.tfa-guard .btn {
+	flex: none;
+}
+
 /* setup flow */
 .tfa-setup {
 	margin-top: 20px;

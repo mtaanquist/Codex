@@ -728,13 +728,29 @@
 								</div>
 								<div class="tfa-status-action">
 									{#if data.twoFactor.status === 'on'}
-										<div class="tfa-on-actions" style="gap:8px;">
-											<form method="POST" action="?/regenerateRecovery">
+										<div class="tfa-on-actions">
+											<form method="POST" action="?/regenerateRecovery" class="tfa-guard">
+												<input
+													type="password"
+													name="password"
+													placeholder="Current password"
+													autocomplete="current-password"
+													aria-label="Current password"
+													required
+												/>
 												<button type="submit" class="btn btn-secondary btn-sm"
 													>Recovery codes</button
 												>
 											</form>
-											<form method="POST" action="?/disableTotp">
+											<form method="POST" action="?/disableTotp" class="tfa-guard">
+												<input
+													type="password"
+													name="password"
+													placeholder="Current password"
+													autocomplete="current-password"
+													aria-label="Current password"
+													required
+												/>
 												<button
 													type="submit"
 													class="btn btn-ghost btn-sm"
@@ -883,7 +899,20 @@
 											class="btn btn-ghost btn-sm"
 											onclick={() => downloadCodes(codes)}>Download .txt</button
 										>
-										<form method="POST" action="?/regenerateRecovery" style="margin-left:auto;">
+										<form
+											method="POST"
+											action="?/regenerateRecovery"
+											class="tfa-guard"
+											style="margin-left:auto;"
+										>
+											<input
+												type="password"
+												name="password"
+												placeholder="Current password"
+												autocomplete="current-password"
+												aria-label="Current password"
+												required
+											/>
 											<button type="submit" class="btn btn-ghost btn-sm">Regenerate</button>
 										</form>
 									</div>

@@ -71,26 +71,39 @@ export function totpCode(secret: string, atMs: number = Date.now()): string {
 	return codeForCounter(secret, Math.floor(atMs / 1000 / STEP_SECONDS));
 }
 
-// Whether a submitted code is valid now, allowing one step either side to
-// absorb clock drift. Constant-time per candidate so a near-miss leaks nothing.
+// The step counter a submitted code matches, allowing one step either side to
+// absorb clock drift, or null if it matches none. Constant-time per candidate
+// (every offset is checked, no early return) so a near-miss leaks nothing. The
+// step is what makes a code single-use: the caller records the highest step it
+// has accepted and refuses anything at or below it.
+export function matchTotpStep(
+	secret: string,
+	token: string,
+	options: { window?: number; atMs?: number } = {}
+): number | null {
+	const candidate = token.replace(/\s/g, '');
+	if (!/^\d{6}$/.test(candidate)) return null;
+	const window = options.window ?? 1;
+	const counter = Math.floor((options.atMs ?? Date.now()) / 1000 / STEP_SECONDS);
+	const submitted = Buffer.from(candidate);
+	let matched: number | null = null;
+	for (let offset = -window; offset <= window; offset++) {
+		const expected = Buffer.from(codeForCounter(secret, counter + offset));
+		if (submitted.length === expected.length && timingSafeEqual(submitted, expected)) {
+			matched = counter + offset;
+		}
+	}
+	return matched;
+}
+
+// Whether a submitted code is valid now. Thin wrapper over matchTotpStep for
+// callers that do not need replay protection (enrolment confirmation).
 export function verifyTotp(
 	secret: string,
 	token: string,
 	options: { window?: number; atMs?: number } = {}
 ): boolean {
-	const candidate = token.replace(/\s/g, '');
-	if (!/^\d{6}$/.test(candidate)) return false;
-	const window = options.window ?? 1;
-	const counter = Math.floor((options.atMs ?? Date.now()) / 1000 / STEP_SECONDS);
-	const submitted = Buffer.from(candidate);
-	let valid = false;
-	for (let offset = -window; offset <= window; offset++) {
-		const expected = Buffer.from(codeForCounter(secret, counter + offset));
-		if (submitted.length === expected.length && timingSafeEqual(submitted, expected)) {
-			valid = true;
-		}
-	}
-	return valid;
+	return matchTotpStep(secret, token, options) !== null;
 }
 
 // The otpauth:// URI an authenticator imports from a QR code. Label and issuer
