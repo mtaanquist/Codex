@@ -1,16 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { db } from '$lib/server/db';
-import { entityCategories, stories, universes } from '$lib/server/db/schema';
+import { entityCategories, stories, universes, users } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
-import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
-import { queueBackup } from '$lib/server/jobs';
-import { listPublications, takedownPublication } from '$lib/server/publish';
-import { users } from '$lib/server/db/schema';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -34,30 +28,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 					.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 	const preferences = await userPreferences(db, user.id);
 
-	// The backups panel is the admin's: configuration state and the recent
-	// runs, so a silently failing backup is visible.
-	const isAdmin = user.role === 'admin';
-	const backupsConfigured = isAdmin && backupConfig() !== null;
-	const backupRuns = isAdmin ? await listRecentBackupRuns(db, 5) : [];
-
-	// Public archive standing for this user; the admin additionally sees
-	// everything published on the instance.
+	// This user's own publishing standing (their handle and whether an admin has
+	// enabled their archive). Site administration lives at /admin.
 	const [archive] = await db
 		.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
 		.from(users)
 		.where(eq(users.id, user.id));
-	const published = isAdmin ? await listPublications(db, 20) : [];
 
 	return {
 		user,
 		universes: list,
 		stories: storyList,
 		preferences,
-		isAdmin,
-		backupsConfigured,
-		backupRuns,
-		archive,
-		published
+		isAdmin: user.role === 'admin',
+		archive
 	};
 };
 
@@ -103,19 +87,6 @@ export const actions: Actions = {
 		});
 		return { prefSaved: true };
 	},
-	runBackup: async ({ locals }) => {
-		if (locals.user!.role !== 'admin') {
-			return fail(403, { scope: 'backup', message: 'Only the site admin can run backups.' });
-		}
-		if (!backupConfig()) {
-			return fail(400, { scope: 'backup', message: 'Backups are not configured.' });
-		}
-		const queued = await queueBackup();
-		if (!queued) {
-			return fail(500, { scope: 'backup', message: 'Could not queue the backup.' });
-		}
-		return { backupQueued: true };
-	},
 	claimHandle: async ({ request, locals }) => {
 		const data = await request.formData();
 		const handle = String(data.get('handle') ?? '')
@@ -150,45 +121,6 @@ export const actions: Actions = {
 			throw error;
 		}
 		return { handleSaved: true };
-	},
-	setArchive: async ({ request, locals }) => {
-		if (locals.user!.role !== 'admin') {
-			return fail(403, {
-				scope: 'archive',
-				message: 'Only the site admin can enable public archives.'
-			});
-		}
-		const data = await request.formData();
-		const email = String(data.get('email') ?? '').trim();
-		const enabled = data.get('enabled') === 'on';
-		const updated = await db
-			.update(users)
-			.set({ publicArchiveEnabled: enabled })
-			.where(eq(users.email, email))
-			.returning({ id: users.id });
-		if (updated.length === 0) {
-			return fail(404, { scope: 'archive', message: 'No user with that email.' });
-		}
-		return { archiveSaved: true };
-	},
-	takedown: async ({ request, locals }) => {
-		if (locals.user!.role !== 'admin') {
-			return fail(403, {
-				scope: 'takedown',
-				message: 'Only the site admin can take down editions.'
-			});
-		}
-		const data = await request.formData();
-		const publicationId = String(data.get('publicationId') ?? '');
-		// A malformed id would otherwise reach a uuid-typed query and 500;
-		// guard it the way setArchive guards a missing email.
-		if (!UUID.test(publicationId)) {
-			return fail(400, { scope: 'takedown', message: 'That edition does not exist.' });
-		}
-		if (!(await takedownPublication(db, publicationId))) {
-			return fail(404, { scope: 'takedown', message: 'That edition does not exist.' });
-		}
-		return { takedownDone: true };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) {

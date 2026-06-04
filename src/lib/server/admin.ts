@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth';
 import { authTokens, users } from './db/schema';
 import { hashPassword } from './password';
@@ -110,4 +110,65 @@ export async function rejectUser(db: Database, userId: string): Promise<boolean>
 export async function adminEmails(db: Database): Promise<string[]> {
 	const rows = await db.select({ email: users.email }).from(users).where(eq(users.role, 'admin'));
 	return rows.map((row) => row.email);
+}
+
+export type AdminUser = {
+	id: string;
+	email: string;
+	displayName: string;
+	role: 'admin' | 'user';
+	emailVerifiedAt: Date | null;
+	approvedAt: Date | null;
+	suspendedAt: Date | null;
+	publicArchiveEnabled: boolean;
+	handle: string | null;
+	createdAt: Date;
+};
+
+// Every account on the instance, newest first, for the admin accounts list.
+export async function listAllUsers(db: Database): Promise<AdminUser[]> {
+	return db
+		.select({
+			id: users.id,
+			email: users.email,
+			displayName: users.displayName,
+			role: users.role,
+			emailVerifiedAt: users.emailVerifiedAt,
+			approvedAt: users.approvedAt,
+			suspendedAt: users.suspendedAt,
+			publicArchiveEnabled: users.publicArchiveEnabled,
+			handle: users.handle,
+			createdAt: users.createdAt
+		})
+		.from(users)
+		.orderBy(desc(users.createdAt));
+}
+
+// Enables or disables a user's public archive (their permission to publish).
+export async function setUserArchive(
+	db: Database,
+	userId: string,
+	enabled: boolean
+): Promise<boolean> {
+	const [row] = await db
+		.update(users)
+		.set({ publicArchiveEnabled: enabled })
+		.where(eq(users.id, userId))
+		.returning({ id: users.id });
+	return Boolean(row);
+}
+
+// Suspends or unsuspends an account. Suspending blocks sign-in and drops the
+// account's live sessions on their next request; it never touches an admin.
+export async function setUserSuspended(
+	db: Database,
+	userId: string,
+	suspended: boolean
+): Promise<boolean> {
+	const [row] = await db
+		.update(users)
+		.set({ suspendedAt: suspended ? new Date() : null })
+		.where(and(eq(users.id, userId), ne(users.role, 'admin')))
+		.returning({ id: users.id });
+	return Boolean(row);
 }

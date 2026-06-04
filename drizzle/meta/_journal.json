@@ -127,6 +127,13 @@
 			"when": 1780562930140,
 			"tag": "0017_publication-constraints",
 			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "7",
+			"when": 1780572894965,
+			"tag": "0018_user_suspension",
+			"breakpoints": true
 		}
 	]
 }
