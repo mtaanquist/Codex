@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
 import { rebuildSceneMentions, rebuildUniverseMentions } from '../lib/server/mentions.ts';
 import { backupConfig, runBackup } from '../lib/server/backups.ts';
+import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -20,6 +21,7 @@ await boss.start();
 await boss.createQueue('mentions-scene');
 await boss.createQueue('mentions-universe');
 await boss.createQueue('run-backup');
+await boss.createQueue('send-email');
 
 await boss.work<{ sceneId: string }>('mentions-scene', async (jobs) => {
 	for (const job of jobs) {
@@ -42,6 +44,13 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>('run-backup', async (jobs)
 		if (!result.ok) console.error(`backup: failed (${result.reason})`);
 		else if (result.skipped) console.log('backup: skipped, nothing changed');
 		else console.log(`backup: uploaded ${result.key}`);
+	}
+});
+
+await boss.work<EmailMessage>('send-email', async (jobs) => {
+	for (const job of jobs) {
+		await sendEmail(job.data);
+		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
 	}
 });
 

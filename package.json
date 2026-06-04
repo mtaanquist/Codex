@@ -1,7 +1,7 @@
 {
 	"name": "codex",
 	"private": true,
-	"version": "2.0.1",
+	"version": "2.1.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -33,6 +33,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@types/markdown-it": "^14.1.2",
 		"@types/node": "^24",
+		"@types/nodemailer": "^8.0.0",
 		"@types/pg": "^8.20.0",
 		"drizzle-kit": "^0.31.10",
 		"eslint": "^10.2.0",
@@ -58,6 +59,7 @@
 		"drizzle-orm": "^0.45.2",
 		"fflate": "^0.8.3",
 		"markdown-it": "^14.2.0",
+		"nodemailer": "^8.0.10",
 		"pg": "^8.21.0",
 		"pg-boss": "^12.18.2"
 	}

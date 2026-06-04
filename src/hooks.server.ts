@@ -2,7 +2,9 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 
-const PUBLIC_PATHS = new Set(['/login']);
+const PUBLIC_PATHS = new Set(['/login', '/signup', '/verify-email']);
+// Pages a signed-in user has no reason to see; bounce them home instead.
+const AUTH_PATHS = new Set(['/login', '/signup']);
 // Reader pages are public; assets check publication state themselves.
 const PUBLIC_PREFIXES = ['/@', '/assets/'];
 
@@ -28,7 +30,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	) {
 		redirect(303, '/login');
 	}
-	if (event.locals.user && event.url.pathname === '/login') {
+	if (event.locals.user && AUTH_PATHS.has(event.url.pathname)) {
 		redirect(303, '/');
 	}
 

@@ -1,5 +1,6 @@
 import { PgBoss } from 'pg-boss';
 import { env } from '$env/dynamic/private';
+import type { EmailMessage } from './email';
 
 // Send-only pg-boss handle for the app; the worker process owns the handlers.
 // Queueing is best-effort: a failed enqueue logs and never breaks a save.
@@ -7,6 +8,7 @@ import { env } from '$env/dynamic/private';
 export const MENTIONS_SCENE_QUEUE = 'mentions-scene';
 export const MENTIONS_UNIVERSE_QUEUE = 'mentions-universe';
 export const BACKUP_QUEUE = 'run-backup';
+export const EMAIL_QUEUE = 'send-email';
 
 let starting: Promise<PgBoss> | null = null;
 
@@ -18,6 +20,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(MENTIONS_SCENE_QUEUE);
 		await boss.createQueue(MENTIONS_UNIVERSE_QUEUE);
 		await boss.createQueue(BACKUP_QUEUE);
+		await boss.createQueue(EMAIL_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -49,6 +52,18 @@ export async function queueUniverseMentions(universeId: string): Promise<void> {
 		);
 	} catch (error) {
 		console.error('queueing universe mention rebuild failed:', error);
+	}
+}
+
+// Queues a transactional email (verification, password reset). Best-effort,
+// like the mention queues: a failed enqueue logs rather than breaking the
+// request, and the caller shows the same neutral "check your email" either way.
+export async function queueEmail(message: EmailMessage): Promise<void> {
+	try {
+		const boss = await getBoss();
+		await boss.send(EMAIL_QUEUE, message);
+	} catch (error) {
+		console.error('queueing email failed:', error);
 	}
 }
 
