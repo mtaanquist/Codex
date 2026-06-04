@@ -97,14 +97,19 @@ format preference deferred to Phase 6 (see the feedback backlog).
 - [x] 32b. TOTP two-factor, in the /account Security section. TOTP itself (RFC 6238) is implemented on Node crypto in a pure totp.ts (base32, generate/verify with a 1-step drift window, otpauth URI, recovery code gen/hash); only qrcode is added as a dependency, for the QR. two-factor.ts orchestrates enrolment, verification, recovery codes, and a signed short-lived sign-in challenge; the secret is encrypted via crypto.ts (new HMAC signToken/verifyToken there back the challenge). Migration 0023 adds user_totp + totp_recovery_codes (additive); purgeAccount clears them. Account Security shows the real flow: Set up -> scan the QR or enter the key -> confirm a code -> recovery codes shown once; On state offers regenerate and turn-off. Sign-in branches after the password: with 2FA on, the login sets a challenge cookie and redirects to /login/totp (public path), which accepts a code or a recovery code and only then creates the session. Admin Users gains Reset 2FA for lockout recovery (surfaced via a twoFactorEnabled flag). Unit tests (RFC vectors, recovery codes), integration tests (enrol/verify/recovery/disable, challenge sign/verify), and an e2e enrolment journey. Lint, check, unit/integration (225), build, and the e2e suite pass. Passkeys stay in Phase 6.
 - [x] 33. Operational essentials + cross-user isolation audit. Rate limiting: a small in-memory fixed-window limiter (rate-limit.ts, unit-tested) keyed by the targeted account (no trusted client IP behind the proxy), applied to login (per email), sign-up and password reset (per email, returning the same enumeration-safe response without mailing on the limit), and the two-factor challenge (per user, so the six-digit space cannot be brute forced). Structured logs: log.ts emits one JSON event per line; wired into auth events, rate-limit rejections, and a handleError hook for server faults. Health check: GET /healthz (public path) runs a select 1 and returns 200 ok or 503, for the proxy/orchestrator. Isolation audit: reviewed every owner-scoped route, action, endpoint, and data-access helper; found no gaps. Private content is gated consistently through ownedStory/ownedUniverse (owner_id) and transitive joins (scene/outline/marker -> story.owner_id; character/place/lore -> owner_id), with the autosave PUT and asset serving spot-verified; the property is already covered by stranger-denial assertions across ~15 integration test suites, so no new tests or fixes were needed. Public-by-design surfaces (the /@handle reader, public asset/avatar serving, auth pages) expose only published/public data. Lint, check, unit (229), build, and the affected e2e specs (incl. a new /healthz smoke check) pass.
 - [x] 34 + 35. Dropped (2026-06-04): the hosted service is one shared instance (GitHub model), not a per-user fleet, so there is no control plane to provision and no central cross-instance reader/handle registry. Deploying the hosted service is just running the image; cross-user isolation is enforced by owner_id scoping and audited in step 33. See the design-doc update.
-- [ ] In-app help (/docs), held to the end of Phase 5. Help articles as
-      committed markdown rendered through the existing renderMarkdown (no wiki
-      engine, no docs SaaS: too much ops surface and breaks self-host/offline
-      for an audience this small). Routes /docs and /docs/[topic]; a reusable
-      "?" HelpLink component placed on the editor, Plan, publish, and backups
-      pages, opening the relevant topic. Tone follows the CLAUDE.md writing
-      rules (kind, plain, tells the reader what to do, no jargon). Articles
-      live in the repo so they version with the features they describe.
+- [x] In-app help (/docs). Help articles are committed markdown under
+      src/lib/docs/ (getting-started, editor, planning, publishing), bundled via
+      import.meta.glob and rendered through the existing renderMarkdown; a small
+      registry (docs.ts) sets order and index summaries while titles come from
+      each file's heading. Routes /docs (index) and /docs/[topic] (404s unknown
+      topics). A reusable "?" HelpLink component opens the relevant topic, placed
+      on the editor (story sidebar), the Plan view (shared PlanSidebar), and
+      publish (story settings); the library page links to the help index. No
+      admin help (the admin panel does not need articles, per the author). Tone
+      follows the CLAUDE.md writing rules. CLAUDE.md now reminds us to keep the
+      docs in step when functionality changes. Unit test covers the registry and
+      article lookup; e2e browses the index and opens an article. Lint, check,
+      unit (232), build, and e2e pass.
 
 ## Feedback backlog
 

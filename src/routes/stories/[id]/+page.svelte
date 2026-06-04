@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
+	import HelpLink from '$lib/components/HelpLink.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
@@ -195,6 +196,7 @@
 								<span class="story-universe">{data.universe.name}</span>
 							</span>
 						</div>
+						<HelpLink topic="editor" label="the editor" />
 					</div>
 					<div class="chapters">
 						{#each data.chapters as chapter, index (chapter.id)}

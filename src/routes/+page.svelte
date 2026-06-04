@@ -56,7 +56,8 @@
 
 	<p class="account-link">
 		Display preferences, your public handle, and account settings live on your
-		<a href={resolve('/account')}>account page</a>.
+		<a href={resolve('/account')}>account page</a>. New here? Read the
+		<a href={resolve('/docs')}>help</a>.
 	</p>
 
 	{#if data.isAdmin}
