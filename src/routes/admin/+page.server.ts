@@ -11,6 +11,9 @@ import {
 import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
 import { queueBackup } from '$lib/server/jobs';
 import { listPublications, takedownPublication } from '$lib/server/publish';
+import { saveSmtp, smtpView } from '$lib/server/settings';
+import { secretsAvailable } from '$lib/server/crypto';
+import { sendEmail } from '$lib/server/email';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -24,7 +27,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		users: await listAllUsers(db),
 		published: await listPublications(db, 50),
 		backupsConfigured: backupConfig() !== null,
-		backupRuns: await listRecentBackupRuns(db, 5)
+		backupRuns: await listRecentBackupRuns(db, 5),
+		smtp: await smtpView(db),
+		secretsAvailable: secretsAvailable()
 	};
 };
 
@@ -82,5 +87,36 @@ export const actions: Actions = {
 			return fail(500, { scope: 'backups', message: 'Could not queue the backup.' });
 		}
 		return { scope: 'backups', done: true };
+	},
+	saveSmtp: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const result = await saveSmtp(db, {
+			host: String(data.get('host') ?? ''),
+			port: Number(data.get('port') ?? 587),
+			secure: data.get('secure') === 'on',
+			user: String(data.get('user') ?? ''),
+			from: String(data.get('from') ?? ''),
+			password: String(data.get('password') ?? '')
+		});
+		if (!result.ok) return fail(400, { scope: 'smtp', message: result.reason });
+		return { scope: 'smtp', saved: true };
+	},
+	testEmail: async ({ locals }) => {
+		requireAdmin(locals);
+		// Sent inline (not queued) so the result is reported back to the admin.
+		try {
+			await sendEmail(db, {
+				to: locals.user!.email,
+				subject: 'Codex test email',
+				text: 'This is a test email from your Codex instance. Email is working.'
+			});
+		} catch (err) {
+			return fail(400, {
+				scope: 'smtp',
+				message: `Could not send: ${err instanceof Error ? err.message : 'unknown error'}`
+			});
+		}
+		return { scope: 'smtp', tested: true };
 	}
 };

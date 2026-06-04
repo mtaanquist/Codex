@@ -49,7 +49,7 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>('run-backup', async (jobs)
 
 await boss.work<EmailMessage>('send-email', async (jobs) => {
 	for (const job of jobs) {
-		await sendEmail(job.data);
+		await sendEmail(db, job.data);
 		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
 	}
 });
