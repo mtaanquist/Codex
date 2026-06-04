@@ -45,7 +45,8 @@ services:
       BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
       BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
       BACKUP_CRON: ${BACKUP_CRON:-}
-      BACKUP_KEEP: ${BACKUP_KEEP:-}
+      BACKUP_KEEP_RECENT_HOURS: ${BACKUP_KEEP_RECENT_HOURS:-}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-}
     depends_on:
       db:
         condition: service_healthy

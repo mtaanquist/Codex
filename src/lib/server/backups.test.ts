@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { backupConfig, backupKey, selectPrunable } from './backups.ts';
+import { backupConfig, backupKey, backupKeyTime, selectPrunable } from './backups.ts';
 
 describe('backupConfig', () => {
 	it('is off until the bucket and keys are set', () => {
@@ -18,41 +18,66 @@ describe('backupConfig', () => {
 			bucket: 'codex',
 			prefix: 'mine',
 			region: 'auto',
-			keep: 30,
-			cron: '0 3 * * *',
+			keepRecentHours: 48,
+			keepDays: 30,
+			cron: '0 * * * *',
 			endpoint: undefined
 		});
 	});
 
-	it('rejects a nonsense retention count', () => {
+	it('rejects nonsense retention values', () => {
 		const config = backupConfig({
 			BACKUP_S3_BUCKET: 'codex',
 			BACKUP_S3_ACCESS_KEY_ID: 'id',
 			BACKUP_S3_SECRET_ACCESS_KEY: 'secret',
-			BACKUP_KEEP: '-4'
+			BACKUP_KEEP_RECENT_HOURS: '-4',
+			BACKUP_KEEP_DAYS: 'soon'
 		});
-		expect(config?.keep).toBe(30);
+		expect(config).toMatchObject({ keepRecentHours: 48, keepDays: 30 });
 	});
 });
 
-describe('backupKey', () => {
+describe('backupKey and backupKeyTime', () => {
+	it('round-trips the timestamp through the key name', () => {
+		const when = new Date('2026-06-04T03:15:42.123Z');
+		const key = backupKey('p', when);
+		expect(key).toBe('p/codex-2026-06-04T03-15-42-123Z.dump');
+		expect(backupKeyTime(key)?.toISOString()).toBe(when.toISOString());
+	});
+
 	it('produces keys that sort lexically by age', () => {
 		const older = backupKey('p', new Date('2026-06-04T03:00:00Z'));
 		const newer = backupKey('p', new Date('2026-06-05T03:00:00Z'));
 		expect(older < newer).toBe(true);
-		expect(older).toMatch(/^p\/codex-2026-06-04T03-00-00-000Z\.dump$/);
+	});
+
+	it('returns null for foreign keys', () => {
+		expect(backupKeyTime('p/notes.txt')).toBeNull();
 	});
 });
 
 describe('selectPrunable', () => {
-	const keys = ['p/codex-2026-06-01.dump', 'p/codex-2026-06-03.dump', 'p/codex-2026-06-02.dump'];
+	const now = new Date('2026-06-04T12:00:00Z');
+	const key = (iso: string) => backupKey('p', new Date(iso));
 
-	it('keeps the newest n and prunes the rest, oldest included', () => {
-		expect(selectPrunable(keys, 2)).toEqual(['p/codex-2026-06-01.dump']);
-		expect(selectPrunable(keys, 3)).toEqual([]);
+	it('keeps everything inside the recent window', () => {
+		const keys = [key('2026-06-04T11:00:00Z'), key('2026-06-03T13:00:00Z')];
+		expect(selectPrunable(keys, now, 48, 30)).toEqual([]);
 	});
 
-	it('never prunes everything', () => {
-		expect(selectPrunable(keys, 0)).toHaveLength(2);
+	it('keeps only the newest per day beyond the window', () => {
+		const morning = key('2026-05-20T08:00:00Z');
+		const evening = key('2026-05-20T20:00:00Z');
+		const other = key('2026-05-21T09:00:00Z');
+		expect(selectPrunable([morning, evening, other], now, 48, 30)).toEqual([morning]);
+	});
+
+	it('prunes everything older than keepDays', () => {
+		const ancient = key('2026-01-01T03:00:00Z');
+		expect(selectPrunable([ancient], now, 48, 30)).toEqual([ancient]);
+	});
+
+	it('never deletes keys it cannot parse', () => {
+		expect(selectPrunable(['p/manual-snapshot.dump'], now, 48, 30)).toEqual([]);
 	});
 });
