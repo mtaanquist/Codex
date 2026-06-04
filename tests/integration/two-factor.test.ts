@@ -84,13 +84,31 @@ describe('enrolment', () => {
 		await enroll();
 		expect(await beginEnrollment(db, userId, 'tfa@example.com')).toMatchObject({ ok: false });
 	});
+
+	it('confirming again does not rotate the recovery codes', async () => {
+		const { secret, recoveryCodes } = await enroll();
+		// A double-submit of confirm must not delete the codes the user just saw.
+		const again = await confirmEnrollment(db, userId, totpCode(secret));
+		expect(again.ok).toBe(false);
+		expect(await consumeRecoveryCode(db, userId, recoveryCodes[0])).toBe(true);
+	});
 });
 
 describe('verification', () => {
-	it('accepts a current code and rejects a wrong one', async () => {
+	it('accepts a fresh code and rejects a wrong one', async () => {
 		const { secret } = await enroll();
-		expect(await verifyUserTotp(db, userId, totpCode(secret))).toBe(true);
+		// The code that confirmed enrolment is spent; sign in with the next step.
+		const next = totpCode(secret, Date.now() + 30_000);
+		expect(await verifyUserTotp(db, userId, next)).toBe(true);
 		expect(await verifyUserTotp(db, userId, '000000')).toBe(false);
+	});
+
+	it('rejects a replayed code within the drift window (single use)', async () => {
+		const { secret } = await enroll();
+		const code = totpCode(secret, Date.now() + 30_000);
+		expect(await verifyUserTotp(db, userId, code)).toBe(true);
+		// Same code again, still inside its validity window: a replay, refused.
+		expect(await verifyUserTotp(db, userId, code)).toBe(false);
 	});
 });
 

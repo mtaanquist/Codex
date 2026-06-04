@@ -12,7 +12,8 @@ import {
 	revokeOtherSessions,
 	revokeOwnSession,
 	saveIdentity,
-	saveProfile
+	saveProfile,
+	verifyAccountPassword
 } from '$lib/server/account';
 import { assetConfig, clearUserAvatar, s3AssetStore, setUserAvatar } from '$lib/server/assets';
 import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/account-deletion';
@@ -183,11 +184,19 @@ export const actions: Actions = {
 		await disableTotp(db, locals.user!.id);
 		return { scope: 'totp', cancelled: true };
 	},
-	disableTotp: async ({ locals }) => {
+	disableTotp: async ({ request, locals }) => {
+		const data = await request.formData();
+		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+			return fail(400, { scope: 'totp', message: 'That password is not right.' });
+		}
 		await disableTotp(db, locals.user!.id);
 		return { scope: 'totp', disabled: true };
 	},
-	regenerateRecovery: async ({ locals }) => {
+	regenerateRecovery: async ({ request, locals }) => {
+		const data = await request.formData();
+		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+			return fail(400, { scope: 'totp', message: 'That password is not right.' });
+		}
 		const codes = await regenerateRecoveryCodes(db, locals.user!.id);
 		if (!codes) return fail(400, { scope: 'totp', message: 'Two-factor authentication is off.' });
 		return { scope: 'totp', recoveryCodes: codes };

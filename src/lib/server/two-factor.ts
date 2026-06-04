@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { totpRecoveryCodes, userTotp } from './db/schema';
 import { decryptSecret, encryptSecret, signToken, verifyToken } from './crypto';
@@ -6,8 +6,8 @@ import {
 	generateRecoveryCodes,
 	generateSecret,
 	hashRecoveryCode,
-	otpauthUri,
-	verifyTotp
+	matchTotpStep,
+	otpauthUri
 } from './totp';
 
 // Database-facing two-factor logic: enrolment, verification, recovery codes,
@@ -83,21 +83,29 @@ export async function pendingEnrollment(
 
 // Confirms enrolment with a code from the app, turning two-factor on and
 // issuing the recovery codes (returned once, in the clear, to show the user).
+// One-shot: it only acts on an unconfirmed row, so a double-submit cannot
+// rotate the recovery codes out from under a user who copied the first set.
 export async function confirmEnrollment(
 	db: Database,
 	userId: string,
 	code: string
 ): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; reason: string }> {
-	const [row] = await db.select().from(userTotp).where(eq(userTotp.userId, userId));
+	const [row] = await db
+		.select()
+		.from(userTotp)
+		.where(and(eq(userTotp.userId, userId), isNull(userTotp.confirmedAt)));
 	if (!row) return { ok: false, reason: 'Start setup again.' };
-	if (!verifyTotp(decryptSecret(row.secret), code)) {
+	const step = matchTotpStep(decryptSecret(row.secret), code);
+	if (step === null) {
 		return { ok: false, reason: 'That code is not right. Check your app and try again.' };
 	}
 	const recoveryCodes = generateRecoveryCodes();
 	await db.transaction(async (tx) => {
+		// The confirming code's step is recorded so it cannot be replayed at the
+		// next sign-in.
 		await tx
 			.update(userTotp)
-			.set({ confirmedAt: sql`now()`, lastUsedAt: sql`now()` })
+			.set({ confirmedAt: sql`now()`, lastUsedAt: sql`now()`, lastUsedStep: step })
 			.where(eq(userTotp.userId, userId));
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));
 		await tx
@@ -107,20 +115,28 @@ export async function confirmEnrollment(
 	return { ok: true, recoveryCodes };
 }
 
-// Verifies a code against the confirmed secret (sign-in challenge). Records the
-// time so the row reflects recent use.
+// Verifies a code against the confirmed secret (sign-in challenge). Single-use:
+// the matched step must be higher than the last one accepted, and the gate is
+// the UPDATE's WHERE so two parallel sign-ins cannot both spend the same code.
 export async function verifyUserTotp(db: Database, userId: string, code: string): Promise<boolean> {
 	const [row] = await db
 		.select()
 		.from(userTotp)
 		.where(and(eq(userTotp.userId, userId), isNotNull(userTotp.confirmedAt)));
 	if (!row) return false;
-	if (!verifyTotp(decryptSecret(row.secret), code)) return false;
-	await db
+	const step = matchTotpStep(decryptSecret(row.secret), code);
+	if (step === null) return false;
+	const [updated] = await db
 		.update(userTotp)
-		.set({ lastUsedAt: sql`now()` })
-		.where(eq(userTotp.userId, userId));
-	return true;
+		.set({ lastUsedAt: sql`now()`, lastUsedStep: step })
+		.where(
+			and(
+				eq(userTotp.userId, userId),
+				or(isNull(userTotp.lastUsedStep), lt(userTotp.lastUsedStep, step))
+			)
+		)
+		.returning({ userId: userTotp.userId });
+	return Boolean(updated);
 }
 
 // Spends a recovery code if it matches an unused one. The update's WHERE does
