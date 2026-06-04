@@ -5,6 +5,8 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import OutlineNodeEditor from '$lib/components/OutlineNodeEditor.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
+	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
+	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -19,6 +21,17 @@
 	});
 
 	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.id }));
+
+	// Right column tabs; History holds the open item's timeline.
+	let rightTab = $state<'reference' | 'history'>('reference');
+	const itemHref = $derived(
+		data.selected
+			? `${planPath}?entity=${data.selected.id}`
+			: data.selectedNode
+				? `${planPath}?node=${data.selectedNode.id}`
+				: planPath
+	);
+	const currentBody = $derived(data.selected?.bodyMd ?? data.selectedNode?.bodyMd ?? '');
 
 	const initials = $derived(
 		data.user.displayName
@@ -174,7 +187,17 @@
 			{/snippet}
 		</PlanSidebar>
 		<main class="pane center">
-			{#if data.selectedNode}
+			{#if data.revisionPreview && data.revisionTarget}
+				<div class="detail">
+					<RevisionPreview
+						revision={data.revisionPreview}
+						{currentBody}
+						entityType={data.revisionTarget.type}
+						entityId={data.revisionTarget.id}
+						exitHref={itemHref}
+					/>
+				</div>
+			{:else if data.selectedNode}
 				{#key data.selectedNode.id}
 					<OutlineNodeEditor
 						node={data.selectedNode}
@@ -217,52 +240,84 @@
 			{/if}
 		</main>
 		<aside class="pane right">
-			<div class="right-scroll">
-				{#if data.selected && data.relationships.length > 0}
-					<div class="r-card">
-						<h5>Relationships</h5>
-						{#each data.relationships as relationship (relationship.id)}
-							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-							<a class="r-line" href={`${planPath}?entity=${relationship.otherId}`}>
-								<span class="r-line-left">
-									<span class="rel-label">{relationship.label}</span>
-									<span class="r-line-name">{relationship.otherName}</span>
-								</span>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						{/each}
+			{#if data.revisionTarget}
+				<div class="right-head">
+					<div class="rtabs">
+						<button
+							class="rtab"
+							class:active={rightTab === 'reference'}
+							type="button"
+							onclick={() => (rightTab = 'reference')}
+						>
+							Reference
+						</button>
+						<button
+							class="rtab"
+							class:active={rightTab === 'history'}
+							type="button"
+							onclick={() => (rightTab = 'history')}
+						>
+							History
+						</button>
 					</div>
-				{/if}
-				{#if data.selected && data.appearsIn.length > 0}
-					{@const scenesSeen = [...new Map(data.appearsIn.map((m) => [m.sceneId, m])).values()]}
-					<div class="r-card">
-						<h5>Appears in</h5>
-						{#each scenesSeen as sceneRef (sceneRef.sceneId)}
-							{@const mentions = data.appearsIn.filter((m) => m.sceneId === sceneRef.sceneId)}
-							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-							<a
-								class="r-line"
-								href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneRef.sceneId}`}
-							>
-								<span class="r-line-left">
-									<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
-								</span>
-								<span class="r-count">{mentions.length}</span>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{#each mentions as mention, mi (mi)}
-								<div class="snippet">{mention.snippet}</div>
+				</div>
+			{/if}
+			{#if data.revisionTarget && rightTab === 'history'}
+				<RevisionHistory
+					entityType={data.revisionTarget.type}
+					entityId={data.revisionTarget.id}
+					revisions={data.revisionRows}
+					previewId={data.revisionPreview?.id}
+					previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+				/>
+			{:else}
+				<div class="right-scroll">
+					{#if data.selected && data.relationships.length > 0}
+						<div class="r-card">
+							<h5>Relationships</h5>
+							{#each data.relationships as relationship (relationship.id)}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+								<a class="r-line" href={`${planPath}?entity=${relationship.otherId}`}>
+									<span class="r-line-left">
+										<span class="rel-label">{relationship.label}</span>
+										<span class="r-line-name">{relationship.otherName}</span>
+									</span>
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							{/each}
-						{/each}
-					</div>
-				{:else if data.selected}
-					<div class="empty">
-						No mentions in this story yet. Mentions appear shortly after the prose is saved.
-					</div>
-				{:else}
-					<div class="empty">Mentions and relationships arrive here.</div>
-				{/if}
-			</div>
+						</div>
+					{/if}
+					{#if data.selected && data.appearsIn.length > 0}
+						{@const scenesSeen = [...new Map(data.appearsIn.map((m) => [m.sceneId, m])).values()]}
+						<div class="r-card">
+							<h5>Appears in</h5>
+							{#each scenesSeen as sceneRef (sceneRef.sceneId)}
+								{@const mentions = data.appearsIn.filter((m) => m.sceneId === sceneRef.sceneId)}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+								<a
+									class="r-line"
+									href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneRef.sceneId}`}
+								>
+									<span class="r-line-left">
+										<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
+									</span>
+									<span class="r-count">{mentions.length}</span>
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{#each mentions as mention, mi (mi)}
+									<div class="snippet">{mention.snippet}</div>
+								{/each}
+							{/each}
+						</div>
+					{:else if data.selected}
+						<div class="empty">
+							No mentions in this story yet. Mentions appear shortly after the prose is saved.
+						</div>
+					{:else}
+						<div class="empty">Mentions and relationships arrive here.</div>
+					{/if}
+				</div>
+			{/if}
 		</aside>
 	</div>
 </div>

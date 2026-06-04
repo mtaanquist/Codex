@@ -1,7 +1,7 @@
 {
 	"name": "codex",
 	"private": true,
-	"version": "1.6.1",
+	"version": "1.7.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -49,6 +49,7 @@
 		"@codemirror/lang-markdown": "^6.5.0",
 		"@node-rs/argon2": "^2.0.2",
 		"codemirror": "^6.0.2",
+		"diff": "^9.0.0",
 		"drizzle-orm": "^0.45.2",
 		"pg": "^8.21.0",
 		"pg-boss": "^12.18.2"
