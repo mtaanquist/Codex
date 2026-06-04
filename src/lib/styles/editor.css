@@ -67,3 +67,14 @@
 	background: var(--accent-soft);
 	color: var(--text);
 }
+
+/* TODO markers: highlighted selections and TODO: lines. */
+.cm-line.todo-line {
+	background: color-mix(in oklab, var(--cat-amber, #b8860b) 14%, transparent);
+	border-radius: 3px;
+}
+.todo-marker {
+	background: color-mix(in oklab, var(--cat-amber, #b8860b) 28%, transparent);
+	border-bottom: 1.5px solid var(--cat-amber, #b8860b);
+	border-radius: 2px;
+}

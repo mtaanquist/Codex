@@ -319,6 +319,39 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.cm-content')).not.toContainText('The end.');
 	await expect(page.locator('.hist-label').first()).toHaveText('Restored');
 
+	// TODO markers: a TODO: line highlights in the prose and lands in the
+	// To do panel.
+	await page.getByRole('button', { name: 'Reference' }).click();
+	const todoSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('TODO: tighten the toll scene');
+	await todoSave;
+	await expect(page.locator('.cm-line.todo-line')).toHaveCount(1);
+	await expect(page.locator('.todo-text').first()).toContainText('tighten the toll scene');
+
+	// A marked selection gets a checkable entry and a highlight.
+	const markerCreate = page.waitForResponse(
+		(r) => r.url().includes('/markers') && r.request().method() === 'POST' && r.ok()
+	);
+	await page.keyboard.press('Shift+Home');
+	await page.keyboard.press('Control+Alt+m');
+	await markerCreate;
+	await expect(page.locator('.todo-marker')).toHaveCount(1);
+	await expect(page.locator('.todo-row')).toHaveCount(2);
+
+	// Checking it off clears the highlight and the row.
+	const markerResolve = page.waitForResponse(
+		(r) => r.url().includes('/api/markers/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.locator('.todo-check').click();
+	await markerResolve;
+	await expect(page.locator('.todo-marker')).toHaveCount(0);
+	await expect(page.locator('.todo-row')).toHaveCount(1);
+
 	// The breadcrumb leads to the universe editor: the same cast at universe
 	// scope, with no per-story notes section.
 	await page.getByRole('link', { name: universeName }).click();

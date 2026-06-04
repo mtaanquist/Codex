@@ -14,6 +14,7 @@ import {
 } from '$lib/server/db/schema';
 import { userPreferences } from '$lib/server/preferences';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
+import { listSceneMarkers, listStoryTodos } from '$lib/server/markers';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -76,13 +77,18 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// URL names one. Both ride the scene's ownership check above.
 	let sceneRevisions: RevisionRow[] = [];
 	let revisionPreview = null;
+	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
 	if (selectedScene) {
 		sceneRevisions = await listRevisions(db, 'scene', selectedScene.id);
+		sceneMarkers = await listSceneMarkers(db, selectedScene.id);
 		const revisionId = url.searchParams.get('revision');
 		if (revisionId) {
 			revisionPreview = (await getRevision(db, revisionId, 'scene', selectedScene.id)) ?? null;
 		}
 	}
+
+	// Everything still to do across the story, for the right panel.
+	const storyTodos = await listStoryTodos(db, story.id);
 
 	// Who is mentioned in the open scene, read from the worker-built index.
 	let inScene: { id: string; name: string; count: number }[] = [];
@@ -186,6 +192,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedScene,
 		sceneRevisions,
 		revisionPreview,
+		sceneMarkers,
+		storyTodos,
 		mentionEntities,
 		inScene,
 		view,
