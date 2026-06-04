@@ -3,7 +3,7 @@ import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { Database } from './auth';
-import { assets, universes } from './db/schema.ts';
+import { assets, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
 import { IMAGE_TYPES } from './media-types.ts';
 
@@ -69,7 +69,7 @@ export const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 
 export type AssetInput = {
 	universeId: string | null;
-	kind: 'inline' | 'cover';
+	kind: 'inline' | 'cover' | 'avatar';
 	filename: string;
 	contentType: string;
 	bytes: Buffer;
@@ -147,4 +147,50 @@ export async function deleteAsset(
 	if (deleted.length === 0) return false;
 	await store.remove(deleted[0].storageKey).catch(() => {});
 	return true;
+}
+
+// Uploads a new account avatar and points the user at it, then removes the
+// previous avatar so old images do not pile up.
+export async function setUserAvatar(
+	db: Database,
+	store: AssetObjectStore,
+	config: AssetConfig,
+	userId: string,
+	input: { filename: string; contentType: string; bytes: Buffer }
+): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+	const result = await createAsset(db, store, config, userId, {
+		universeId: null,
+		kind: 'avatar',
+		filename: input.filename,
+		contentType: input.contentType,
+		bytes: input.bytes
+	});
+	if (!result.ok) return result;
+	const [user] = await db
+		.select({ avatarAssetId: users.avatarAssetId })
+		.from(users)
+		.where(eq(users.id, userId));
+	const previous = user?.avatarAssetId ?? null;
+	await db.update(users).set({ avatarAssetId: result.id }).where(eq(users.id, userId));
+	if (previous && previous !== result.id) {
+		await deleteAsset(db, store, userId, previous).catch(() => {});
+	}
+	return { ok: true, id: result.id };
+}
+
+// Clears the account avatar and removes its stored image. Falls back to
+// initials wherever the avatar is shown.
+export async function clearUserAvatar(
+	db: Database,
+	store: AssetObjectStore,
+	userId: string
+): Promise<void> {
+	const [user] = await db
+		.select({ avatarAssetId: users.avatarAssetId })
+		.from(users)
+		.where(eq(users.id, userId));
+	const previous = user?.avatarAssetId ?? null;
+	if (!previous) return;
+	await db.update(users).set({ avatarAssetId: null }).where(eq(users.id, userId));
+	await deleteAsset(db, store, userId, previous).catch(() => {});
 }

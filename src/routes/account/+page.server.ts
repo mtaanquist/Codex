@@ -4,15 +4,17 @@ import { env } from '$env/dynamic/private';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
-	changeDisplayName,
 	changePassword,
 	claimHandle,
 	listSessions,
+	parseLinks,
 	requestEmailChange,
 	revokeOtherSessions,
 	revokeOwnSession,
+	saveIdentity,
 	saveProfile
 } from '$lib/server/account';
+import { assetConfig, clearUserAvatar, s3AssetStore, setUserAvatar } from '$lib/server/assets';
 import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/account-deletion';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { users } from '$lib/server/db/schema';
@@ -27,7 +29,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const [profile] = await db
 		.select({
 			handle: users.handle,
+			penName: users.penName,
 			bioMd: users.bioMd,
+			links: users.links,
+			commissionsOpen: users.commissionsOpen,
+			commissionsMd: users.commissionsMd,
+			avatarAssetId: users.avatarAssetId,
 			profilePublic: users.profilePublic,
 			publicArchiveEnabled: users.publicArchiveEnabled
 		})
@@ -36,6 +43,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return {
 		displayName: user.displayName,
 		email: user.email,
+		assetsConfigured: assetConfig() !== null,
 		isAdmin: user.role === 'admin',
 		origin: env.ORIGIN ?? url.origin,
 		profile,
@@ -48,11 +56,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	updateName: async ({ request, locals }) => {
 		const data = await request.formData();
-		const result = await changeDisplayName(
-			db,
-			locals.user!.id,
-			String(data.get('displayName') ?? '')
-		);
+		const result = await saveIdentity(db, locals.user!.id, {
+			displayName: String(data.get('displayName') ?? ''),
+			penName: String(data.get('penName') ?? '')
+		});
 		if (!result.ok) return fail(400, { scope: 'name', message: result.reason });
 		return { scope: 'name', saved: true };
 	},
@@ -60,10 +67,36 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const result = await saveProfile(db, locals.user!.id, {
 			bioMd: String(data.get('bioMd') ?? ''),
-			profilePublic: data.get('profilePublic') === 'on'
+			profilePublic: data.get('profilePublic') === 'on',
+			links: parseLinks(String(data.get('links') ?? '')),
+			commissionsOpen: data.get('commissionsOpen') === 'on',
+			commissionsMd: String(data.get('commissionsMd') ?? '')
 		});
 		if (!result.ok) return fail(400, { scope: 'profile', message: result.reason });
 		return { scope: 'profile', saved: true };
+	},
+	uploadAvatar: async ({ request, locals }) => {
+		const config = assetConfig();
+		if (!config) {
+			return fail(503, { scope: 'avatar', message: 'Image uploads are not configured.' });
+		}
+		const data = await request.formData();
+		const file = data.get('file');
+		if (!(file instanceof File) || file.size === 0) {
+			return fail(400, { scope: 'avatar', message: 'Choose an image to upload.' });
+		}
+		const result = await setUserAvatar(db, s3AssetStore(config), config, locals.user!.id, {
+			filename: file.name,
+			contentType: file.type,
+			bytes: Buffer.from(await file.arrayBuffer())
+		});
+		if (!result.ok) return fail(400, { scope: 'avatar', message: result.reason });
+		return { scope: 'avatar', saved: true };
+	},
+	removeAvatar: async ({ locals }) => {
+		const config = assetConfig();
+		if (config) await clearUserAvatar(db, s3AssetStore(config), locals.user!.id);
+		return { scope: 'avatar', saved: true };
 	},
 	claimHandle: async ({ request, locals }) => {
 		const data = await request.formData();

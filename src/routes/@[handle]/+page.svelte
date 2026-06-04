@@ -9,6 +9,22 @@
 	// The reader page de-indexes adult work; the shelf shows its title,
 	// cover, and description, so it must de-index too when any book is adult.
 	const hasAdult = $derived(data.shelf.some((book) => book.isAdult));
+
+	const profile = $derived(data.profile);
+	const authorName = $derived(profile ? (profile.penName ?? profile.displayName) : '');
+
+	function initials(name: string): string {
+		const parts = name.trim().split(/\s+/).filter(Boolean);
+		const first = parts[0]?.[0] ?? '';
+		const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+		return (first + last).toUpperCase() || '?';
+	}
+
+	// Only http(s) addresses become live links; anything else (a bare handle,
+	// say) is shown as plain text so a profile cannot inject other schemes.
+	function linkHref(url: string): string | null {
+		return /^https?:\/\//i.test(url) ? url : null;
+	}
 </script>
 
 <svelte:head>
@@ -19,7 +35,50 @@
 </svelte:head>
 
 <main class="shelf">
-	<h1>@{data.handle}</h1>
+	{#if profile}
+		<header class="profile">
+			<div class="avatar">
+				{#if profile.avatarAssetId}
+					<img src="/assets/{profile.avatarAssetId}" alt="" />
+				{:else}
+					<span>{initials(authorName)}</span>
+				{/if}
+			</div>
+			<div class="profile-text">
+				<h1>{authorName}</h1>
+				<p class="profile-handle">@{data.handle}</p>
+				{#if profile.bioMd}
+					<!-- Author markdown; renderMarkdown escapes raw HTML. -->
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+					<div class="profile-bio">{@html renderMarkdown(profile.bioMd)}</div>
+				{/if}
+				{#if profile.links.length > 0}
+					<ul class="profile-links">
+						{#each profile.links as link (link.url)}
+							<li>
+								{#if linkHref(link.url)}
+									<!-- An external author link, not an app route; resolve() does not apply. -->
+									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+									<a href={linkHref(link.url)} rel="nofollow noopener">{link.label || link.url}</a>
+								{:else}
+									<span>{link.label ? `${link.label}: ${link.url}` : link.url}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if profile.commissionsOpen}
+					<p class="commissions">
+						<span class="commissions-badge">Open for commissions</span>
+						{#if profile.commissionsMd}<span class="commissions-line">{profile.commissionsMd}</span
+							>{/if}
+					</p>
+				{/if}
+			</div>
+		</header>
+	{:else}
+		<h1>@{data.handle}</h1>
+	{/if}
 	{#if data.shelf.length === 0}
 		<p>Nothing published here yet.</p>
 	{:else}
@@ -66,6 +125,76 @@
 	h1 {
 		font-size: 1.6rem;
 		margin-bottom: 2rem;
+	}
+	.profile {
+		display: flex;
+		gap: 1.25rem;
+		align-items: flex-start;
+		margin-bottom: 2.5rem;
+	}
+	.profile .avatar {
+		flex: none;
+		width: 5rem;
+		height: 5rem;
+		border-radius: 50%;
+		overflow: hidden;
+		background: #1a4a8a;
+		color: #fff;
+		display: grid;
+		place-items: center;
+		font-size: 1.6rem;
+		font-weight: 700;
+	}
+	.profile .avatar img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.profile-text {
+		min-width: 0;
+	}
+	.profile h1 {
+		margin: 0;
+	}
+	.profile-handle {
+		margin: 0.15rem 0 0;
+		color: #666;
+		font-size: 0.95rem;
+	}
+	.profile-bio {
+		margin-top: 0.75rem;
+	}
+	.profile-bio :global(p) {
+		margin: 0.4rem 0;
+	}
+	.profile-links {
+		list-style: none;
+		padding: 0;
+		margin: 0.75rem 0 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 1rem;
+		font-size: 0.9rem;
+	}
+	.profile-links a {
+		color: #1a4a8a;
+	}
+	.commissions {
+		margin: 0.85rem 0 0;
+		font-size: 0.9rem;
+	}
+	.commissions-badge {
+		display: inline-block;
+		background: #e7f3ea;
+		color: #1e5631;
+		border-radius: 999px;
+		padding: 0.1rem 0.6rem;
+		font-weight: 700;
+		font-size: 0.8rem;
+		margin-right: 0.5rem;
+	}
+	.commissions-line {
+		color: #444;
 	}
 	.books {
 		list-style: none;

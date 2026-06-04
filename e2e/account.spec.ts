@@ -14,7 +14,8 @@ test('account settings: rename and see the current session', async ({ page }) =>
 
 	// Profile is the default section; a fixed name keeps repeated runs idempotent.
 	await page.getByLabel('Display name').fill('E2E Tester');
-	await page.getByRole('button', { name: 'Save name' }).click();
+	await page.getByLabel('Pen name').fill('E. Tester');
+	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 
 	// Sessions live under Security; the signed-in device shows as current.
