@@ -141,6 +141,13 @@
 			"when": 1780573827612,
 			"tag": "0019_app_settings",
 			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "7",
+			"when": 1780576986525,
+			"tag": "0020_account_deletion",
+			"breakpoints": true
 		}
 	]
 }

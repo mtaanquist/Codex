@@ -14,6 +14,10 @@ import { listPublications, takedownPublication } from '$lib/server/publish';
 import { saveSmtp, smtpView } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
+import { purgeAccount } from '$lib/server/account-deletion';
+import { assetConfig, s3AssetStore } from '$lib/server/assets';
+import { eq } from 'drizzle-orm';
+import { users } from '$lib/server/db/schema';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -64,6 +68,22 @@ export const actions: Actions = {
 	suspend: async ({ request, locals }) => {
 		requireAdmin(locals);
 		return onUser(request, 'accounts', (id) => setUserSuspended(db, id, true));
+	},
+	deleteAccount: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const userId = String(data.get('userId') ?? '');
+		if (!UUID.test(userId)) {
+			return fail(400, { scope: 'accounts', message: 'That account could not be deleted.' });
+		}
+		// Never delete an admin or yourself from here.
+		const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId));
+		if (!target || target.role === 'admin' || userId === locals.user!.id) {
+			return fail(400, { scope: 'accounts', message: 'That account cannot be deleted here.' });
+		}
+		const config = assetConfig();
+		await purgeAccount(db, userId, config ? s3AssetStore(config) : null);
+		return { scope: 'accounts', done: true };
 	},
 	unsuspend: async ({ request, locals }) => {
 		requireAdmin(locals);

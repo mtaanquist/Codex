@@ -64,6 +64,21 @@ export function signupNotificationEmail(
 	};
 }
 
+export function accountDeletionEmail(to: string, cancelLink: string, days: number): EmailMessage {
+	return {
+		to,
+		subject: 'Your account is scheduled for deletion',
+		text: [
+			`Your Codex account is scheduled to be permanently deleted in ${days} days.`,
+			'',
+			'If you did not ask for this, or you have changed your mind, open this link to cancel and keep your account:',
+			cancelLink,
+			'',
+			'Once the deletion runs, everything you have written is removed for good and cannot be recovered.'
+		].join('\n')
+	};
+}
+
 export function passwordResetEmail(to: string, link: string): EmailMessage {
 	return {
 		to,
