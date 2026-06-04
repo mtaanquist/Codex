@@ -1,9 +1,18 @@
-import { and, eq } from 'drizzle-orm';
+import { fail, redirect } from '@sveltejs/kit';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { characterStoryNotes, loreStoryNotes, placeStoryNotes } from '$lib/server/db/schema';
+import {
+	chapters,
+	characterStoryNotes,
+	loreStoryNotes,
+	outlineNodes,
+	placeStoryNotes,
+	scenes
+} from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
 import { planActions } from '$lib/server/plan-actions';
+import { createOutlineNode, listOutline } from '$lib/server/outline';
 import {
 	entityAppearances,
 	planEntityLists,
@@ -90,6 +99,28 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		});
 	}
 
+	// The story's outline, and the chapters and scenes a node can link to.
+	const outline = await listOutline(db, story.id);
+	const nodeId = url.searchParams.get('node');
+	let selectedNode = null;
+	if (nodeId && !selected) {
+		const [nodeRow] = await db
+			.select()
+			.from(outlineNodes)
+			.where(and(eq(outlineNodes.id, nodeId), eq(outlineNodes.storyId, story.id)));
+		selectedNode = nodeRow ?? null;
+	}
+	const chapterList = await db
+		.select({ id: chapters.id, title: chapters.title })
+		.from(chapters)
+		.where(eq(chapters.storyId, story.id))
+		.orderBy(asc(chapters.position));
+	const sceneList = await db
+		.select({ id: scenes.id, title: scenes.title })
+		.from(scenes)
+		.where(eq(scenes.storyId, story.id))
+		.orderBy(asc(scenes.globalPosition));
+
 	return {
 		story,
 		universe,
@@ -100,15 +131,31 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		storyNotesMd,
 		appearsIn,
 		relationTypes,
-		relationships
+		relationships,
+		outline,
+		selectedNode,
+		chapters: chapterList,
+		scenes: sceneList
 	};
 };
 
-export const actions: Actions = planActions(async ({ params, locals }) => {
-	const { story, universe } = await ownedStory(params.id, locals.user!.id);
-	return {
-		universeId: universe.id,
-		ownerId: locals.user!.id,
-		planPath: `/stories/${story.id}/plan`
-	};
-});
+export const actions: Actions = {
+	...planActions(async ({ params, locals }) => {
+		const { story, universe } = await ownedStory(params.id, locals.user!.id);
+		return {
+			universeId: universe.id,
+			ownerId: locals.user!.id,
+			planPath: `/stories/${story.id}/plan`
+		};
+	}),
+	createOutlineNode: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const title = String(data.get('title') ?? '').trim();
+		if (!title) {
+			return fail(400, { kind: 'outline', message: 'Give the node a title.' });
+		}
+		const node = await createOutlineNode(db, story.id, title);
+		redirect(303, `/stories/${story.id}/plan?node=${node.id}`);
+	}
+};

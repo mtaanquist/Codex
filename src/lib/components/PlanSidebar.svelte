@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 
@@ -13,7 +14,8 @@
 		selectedId,
 		planPath,
 		writeHref,
-		form
+		form,
+		before
 	}: {
 		characters: { id: string; name: string; color: string | null }[];
 		places: { id: string; name: string; color: string | null }[];
@@ -24,6 +26,8 @@
 		// Present at story scope only; the universe Plan has no Write view.
 		writeHref?: string;
 		form: { kind?: string; message?: string } | null;
+		// Rendered above the entity groups; the story Plan puts its outline here.
+		before?: Snippet;
 	} = $props();
 </script>
 
@@ -39,6 +43,9 @@
 		</div>
 	</div>
 	<div class="left-scroll">
+		{#if before}
+			{@render before()}
+		{/if}
 		<div class="group-label">
 			<span class="gl-left">Characters</span>
 			<span class="count">{characters.length}</span>
