@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
 	approveUser,
+	instanceStats,
 	listAllUsers,
 	rejectUser,
 	setUserArchive,
@@ -28,6 +29,8 @@ function requireAdmin(locals: App.Locals) {
 export const load: PageServerLoad = async ({ locals }) => {
 	requireAdmin(locals);
 	return {
+		meId: locals.user!.id,
+		stats: await instanceStats(db),
 		users: await listAllUsers(db),
 		published: await listPublications(db, 50),
 		backupsConfigured: backupConfig() !== null,
