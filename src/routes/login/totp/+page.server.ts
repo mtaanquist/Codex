@@ -8,6 +8,13 @@ import {
 	TOTP_CHALLENGE_COOKIE,
 	verifyUserTotp
 } from '$lib/server/two-factor';
+import { rateLimit } from '$lib/server/rate-limit';
+import { logEvent } from '$lib/server/log';
+
+// Keyed by the challenged account, so the six-digit space cannot be brute
+// forced: a handful of tries per window makes guessing infeasible.
+const CODE_LIMIT = 10;
+const CODE_WINDOW_MS = 5 * 60 * 1000;
 
 // The second sign-in step. Reachable only with a valid challenge cookie, which
 // the login form sets after the password checks out.
@@ -31,6 +38,14 @@ export const actions: Actions = {
 		const code = String(data.get('code') ?? '').trim();
 		if (!code) {
 			return fail(400, { recovery: useRecovery, message: 'Enter a code.' });
+		}
+
+		if (!rateLimit(`totp:${userId}`, CODE_LIMIT, CODE_WINDOW_MS).allowed) {
+			logEvent('warn', 'totp.rate_limited', { userId });
+			return fail(429, {
+				recovery: useRecovery,
+				message: 'Too many attempts. Wait a few minutes and try again.'
+			});
 		}
 
 		const ok = useRecovery
