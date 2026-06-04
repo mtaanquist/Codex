@@ -80,6 +80,11 @@ From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed
 - [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts)
 - [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
 - [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
+- [ ] updateMarkerAnchors issues one UPDATE per anchor in a loop; batch it the same way (markers.ts)
+
+From a pre-v2.0 self-review (2026-06-04); the cover IDOR and the duplicated media-types map were fixed:
+
+- [ ] The worker-indexed find-usages e2e assertion (core-flow.spec.ts ~248) is timing-flaky on loaded CI runners: the 30s toPass window occasionally is not enough for the worker to index all three entities. Harden the wait (or assert membership of the set rather than exact contents) rather than rerunning.
 - [x] CI never ran the Docker image, so a broken worker import closure shipped silently (caught by hand at v1.6: src/lib was missing from the image since step 14). Fixed in v1.6.1 with a docker-smoke CI job that builds the image and boots compose with a worker check
 
 Later phases tracked in the roadmap until they get close.
