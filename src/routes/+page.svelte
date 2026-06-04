@@ -14,6 +14,7 @@
 		<h1>Codex</h1>
 		<form method="POST" action="?/signout">
 			<span>{data.user.displayName}</span>
+			<a href={resolve('/account')}>Account</a>
 			<button type="submit">Sign out</button>
 		</form>
 	</header>
