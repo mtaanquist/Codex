@@ -1,19 +1,20 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	import { openHelp } from '$lib/help.svelte';
 
-	// Opens the relevant help article. `label` names what is being explained, for
-	// the accessible name and tooltip (e.g. "the editor").
+	// Opens the relevant help article in a modal. `label` names what is being
+	// explained, for the accessible name and tooltip (e.g. "the editor").
 	let { topic, label }: { topic: string; label: string } = $props();
 </script>
 
-<a
+<button
 	class="help-link"
-	href={resolve('/docs/[topic]', { topic })}
+	type="button"
 	title={`Help: ${label}`}
 	aria-label={`Help: ${label}`}
+	onclick={() => openHelp(topic)}
 >
 	?
-</a>
+</button>
 
 <style>
 	.help-link {
@@ -21,6 +22,7 @@
 		place-items: center;
 		width: 18px;
 		height: 18px;
+		padding: 0;
 		border-radius: 50%;
 		border: 1px solid var(--border);
 		background: var(--bg-inset);
@@ -28,7 +30,7 @@
 		font-size: 11px;
 		font-weight: 700;
 		line-height: 1;
-		text-decoration: none;
+		cursor: pointer;
 		vertical-align: middle;
 	}
 	.help-link:hover {

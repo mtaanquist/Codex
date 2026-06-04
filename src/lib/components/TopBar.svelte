@@ -3,13 +3,15 @@
 	import Icon from './Icon.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import UserMenu from './UserMenu.svelte';
+	import HelpLink from './HelpLink.svelte';
 
 	let {
 		universe,
 		story,
 		onEnterFocus,
 		saveStatus = 'idle',
-		storyView
+		storyView,
+		help
 	}: {
 		universe: { id: string; name: string };
 		// Absent on universe-scoped pages; the universe becomes the crumb.
@@ -17,6 +19,8 @@
 		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 		storyView?: { active: boolean; toggleHref: string };
+		// The help topic for this page, shown as a "?" in the bar.
+		help?: { topic: string; label: string };
 	} = $props();
 
 	const SAVE_LABEL = {
@@ -74,6 +78,9 @@
 			<button class="icon-btn" type="button" title="Focus mode" onclick={onEnterFocus}>
 				<Icon name="expand" />
 			</button>
+		{/if}
+		{#if help}
+			<HelpLink topic={help.topic} label={help.label} />
 		{/if}
 		<UserMenu />
 	</div>

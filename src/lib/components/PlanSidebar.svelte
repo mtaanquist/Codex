@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
-	import HelpLink from './HelpLink.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 
 	// The left pane of a Plan view, shared by the story and universe scopes.
@@ -48,7 +47,6 @@
 			<button class="seg-btn active" type="button">Plan</button>
 			<button class="seg-btn" type="button" disabled>Notes</button>
 		</div>
-		<HelpLink topic="planning" label="the planning view" />
 	</div>
 	<div class="left-scroll">
 		{#if before}
