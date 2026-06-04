@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { invalidateAll, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import EntityEditor from '$lib/components/EntityEditor.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+	import OutlineNodeEditor from '$lib/components/OutlineNodeEditor.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
@@ -9,7 +12,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let saveStatus = $state<SaveStatus>('idle');
-	const selectedId = $derived(data.selected?.id);
+	const selectedId = $derived(data.selected?.id ?? data.selectedNode?.id);
 	$effect(() => {
 		void selectedId;
 		saveStatus = 'idle';
@@ -25,6 +28,60 @@
 			.join('')
 			.toUpperCase()
 	);
+
+	// Outline drag-to-reorder. Restricted to one sibling group: the dragged
+	// node can only drop between nodes that share its parent; indent and
+	// outdent move between levels instead.
+	let draggingNodeId = $state<string | null>(null);
+	let nodeDrop = $state<{ markerId: string; after: boolean } | null>(null);
+	const draggingNode = $derived(data.outline.find((node) => node.id === draggingNodeId));
+
+	function siblingsOf(parentId: string | null) {
+		return data.outline.filter((node) => node.parentId === parentId);
+	}
+
+	function overNode(event: DragEvent, node: (typeof data.outline)[number]) {
+		if (!draggingNode || node.parentId !== draggingNode.parentId || node.id === draggingNode.id) {
+			return;
+		}
+		event.preventDefault();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		nodeDrop = { markerId: node.id, after: event.clientY > rect.top + rect.height / 2 };
+	}
+
+	async function dropNode(event: DragEvent) {
+		event.preventDefault();
+		if (!draggingNode || !nodeDrop) return;
+		const parentId = draggingNode.parentId;
+		const order = siblingsOf(parentId).map((node) => node.id);
+		const from = order.indexOf(draggingNode.id);
+		order.splice(from, 1);
+		let to = order.indexOf(nodeDrop.markerId) + (nodeDrop.after ? 1 : 0);
+		if (to < 0) to = order.length;
+		order.splice(to, 0, draggingNode.id);
+		draggingNodeId = null;
+		nodeDrop = null;
+		await fetch(`/api/stories/${data.story.id}/outline-order`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ parentId, order })
+		});
+		await invalidateAll();
+	}
+
+	function endNodeDrag() {
+		draggingNodeId = null;
+		nodeDrop = null;
+	}
+
+	async function moveNode(nodeId: string, direction: 'indent' | 'outdent') {
+		const response = await fetch(`/api/outline/${nodeId}/move`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ direction })
+		});
+		if (response.ok) await invalidateAll();
+	}
 </script>
 
 <svelte:head>
@@ -48,9 +105,87 @@
 			{planPath}
 			writeHref={resolve('/stories/[id]', { id: data.story.id })}
 			{form}
-		/>
+		>
+			{#snippet before()}
+				<div class="group-label">
+					<span class="gl-left">Outline</span>
+					<span class="count">{data.outline.length}</span>
+				</div>
+				<div class="o-tree" role="list" ondragend={endNodeDrag}>
+					{#each data.outline as node, index (node.id)}
+						{@const siblingIndex = siblingsOf(node.parentId).findIndex(
+							(sibling) => sibling.id === node.id
+						)}
+						<div
+							class="o-row"
+							class:active={node.id === data.selectedNode?.id}
+							class:drop-before={nodeDrop?.markerId === node.id && !nodeDrop.after}
+							class:drop-after={nodeDrop?.markerId === node.id && nodeDrop.after}
+							role="listitem"
+							draggable="true"
+							style="padding-left: {8 + node.depth * 14}px"
+							ondragstart={(event) => {
+								draggingNodeId = node.id;
+								event.dataTransfer?.setData('text/plain', String(index));
+							}}
+							ondragover={(event) => overNode(event, node)}
+							ondrop={dropNode}
+						>
+							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+							<a class="o-title" href={`${planPath}?node=${node.id}`}>{node.title}</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#if node.linkedSceneId || node.linkedChapterId}
+								<span class="o-linked" title="Linked to the draft">
+									<Icon name={node.linkedSceneId ? 'scene' : 'chapter'} size={11} />
+								</span>
+							{/if}
+							<span class="o-tools">
+								<button
+									type="button"
+									title="Outdent"
+									disabled={node.depth === 0}
+									onclick={() => moveNode(node.id, 'outdent')}
+								>
+									&lt;
+								</button>
+								<button
+									type="button"
+									title="Indent"
+									disabled={siblingIndex === 0}
+									onclick={() => moveNode(node.id, 'indent')}
+								>
+									&gt;
+								</button>
+							</span>
+						</div>
+					{/each}
+				</div>
+				<form method="POST" action="?/createOutlineNode" class="new-node">
+					{#if form?.kind === 'outline' && form.message}
+						<p class="error" role="alert">{form.message}</p>
+					{/if}
+					<input type="text" name="title" placeholder="New outline node" required />
+					<button class="outline-add" type="submit">
+						<Icon name="plus" size={13} /> Add node
+					</button>
+				</form>
+			{/snippet}
+		</PlanSidebar>
 		<main class="pane center">
-			{#if data.selected}
+			{#if data.selectedNode}
+				{#key data.selectedNode.id}
+					<OutlineNodeEditor
+						node={data.selectedNode}
+						storyId={data.story.id}
+						chapters={data.chapters}
+						scenes={data.scenes}
+						onStatus={(status) => (saveStatus = status)}
+						onDeleted={async () => {
+							await goto(planPath, { invalidateAll: true });
+						}}
+					/>
+				{/key}
+			{:else if data.selected}
 				{#key data.selected.id}
 					<EntityEditor
 						kind={data.selectedKind}
@@ -137,6 +272,89 @@
 		color: var(--text-muted);
 		font-size: 12px;
 		margin-right: 6px;
+	}
+	.o-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding-top: 3px;
+		padding-bottom: 3px;
+		padding-right: 8px;
+		border-top: 2px solid transparent;
+		border-bottom: 2px solid transparent;
+		font-size: 13px;
+	}
+	.o-row.active {
+		background: var(--bg-inset);
+	}
+	.o-row.drop-before {
+		border-top-color: var(--accent-line, #888);
+	}
+	.o-row.drop-after {
+		border-bottom-color: var(--accent-line, #888);
+	}
+	.o-title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		text-decoration: none;
+		color: var(--text);
+	}
+	.o-linked {
+		color: var(--text-faint);
+		display: inline-flex;
+	}
+	.o-tools {
+		display: none;
+		gap: 2px;
+	}
+	.o-row:hover .o-tools {
+		display: inline-flex;
+	}
+	.o-tools button {
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		font-size: 12px;
+		line-height: 1;
+		padding: 2px 4px;
+		cursor: pointer;
+	}
+	.o-tools button:hover:not(:disabled) {
+		color: var(--text);
+	}
+	.o-tools button:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.new-node {
+		margin-top: 10px;
+		padding: 0 8px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.new-node input {
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 6px);
+		color: var(--text);
+		font-size: 13px;
+		padding: 7px 9px;
+		outline: none;
+	}
+	.new-node input:focus {
+		border-color: var(--accent-line);
+	}
+	.new-node input::placeholder {
+		color: var(--text-faint);
+	}
+	.error {
+		color: var(--danger, #b00020);
+		font-size: 12.5px;
+		margin: 0;
 	}
 	.snippet {
 		color: var(--text-muted);
