@@ -12,11 +12,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL('/');
 
 	// Repeated runs share the seeded user, so pin the preferences to their
-	// defaults before exercising them later.
+	// defaults before exercising them later. They live on the account page now.
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.goto('/');
 
 	// Backups belong to the site admin; a regular account sees no panel.
 	await expect(page.getByRole('heading', { name: 'Backups' })).toHaveCount(0);
@@ -34,6 +37,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// carry the story title.
 	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
+
+	// The top-bar help opens the editor article in a modal; Esc closes it.
+	await page.getByRole('button', { name: 'Help: the editor' }).click();
+	const help = page.getByRole('dialog', { name: 'Writing in the editor' });
+	await expect(help.getByRole('heading', { name: 'Writing in the editor' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(help).toBeHidden();
 
 	// Focus mode hides the chrome; Esc brings it back.
 	await page.getByRole('button', { name: 'Focus mode' }).click();
@@ -174,9 +184,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.getByPlaceholder('Name', { exact: true }).fill('Alice Vane');
-	await page
-		.getByPlaceholder('Nicknames and variants, separated by commas. Used to spot mentions.')
-		.fill('Allie, Mrs. Fenwick');
+	// Aliases are tags: open the input, then add each on Enter.
+	await page.getByRole('button', { name: 'Add alias' }).click();
+	await page.getByLabel('Add alias').fill('Allie');
+	await page.getByLabel('Add alias').press('Enter');
+	await page.getByLabel('Add alias').fill('Mrs. Fenwick');
+	await page.getByLabel('Add alias').press('Enter');
+	await expect(page.locator('.chip', { hasText: 'Mrs. Fenwick' })).toBeVisible();
 	await page
 		.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
 		.fill('A toll-road smuggler.');
@@ -204,9 +218,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const loreSave = page.waitForResponse(
 		(r) => r.url().includes('/api/lore/') && r.request().method() === 'PUT' && r.ok()
 	);
-	await page
-		.getByPlaceholder('Terms that refer to this entry, separated by commas. Used to spot mentions.')
-		.fill('gate');
+	await page.getByRole('button', { name: 'Add keyword' }).click();
+	await page.getByLabel('Add keyword').fill('gate');
+	await page.getByLabel('Add keyword').press('Enter');
 	await loreSave;
 
 	// A coloured category groups the cast: create one, assign Alice to it,
@@ -236,6 +250,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('Control+End');
+	// Capture the autosave so the prose (and its mention rebuild) is persisted
+	// before the reload below, independent of the autosave debounce.
+	const fenwickSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
 	await page.keyboard.type(' Mrs. Fenwick waited.');
 	// The body mentions the lore keyword "gate", the place "Halden", and the
 	// alias: all three underline.
@@ -243,6 +262,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.locator('.ref-word', { hasText: 'Mrs. Fenwick' }).hover();
 	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
+	await fenwickSave;
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
 	// cast shows in the right panel. The window is generous because a loaded
@@ -292,7 +312,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Ghost mode comes from the user preference: an unambiguous prefix
 	// shows the rest of the name, and Tab accepts it.
-	await page.locator('.brand').click();
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('ghost');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
@@ -485,7 +506,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.goto(proseSceneUrl);
 
 	// Scene marks in the story view follow the display preference.
-	await page.locator('.brand').click();
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
@@ -519,7 +541,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		page.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
 	).toHaveValue('A toll-road smuggler in debt.');
 
-	// Relationships: declare "lives in Halden" from Alice's page.
+	// Relationships: declare "lives in Halden" from Alice's page. The add form
+	// is behind a dashed chip.
+	await page.getByRole('button', { name: 'Add relationship' }).click();
 	await page.getByLabel('Relation').selectOption({ label: 'lives in' });
 	await page.getByLabel('Related entity').selectOption({ label: 'Halden' });
 	await page.getByPlaceholder('Notes (optional)').fill('Since the toll war.');

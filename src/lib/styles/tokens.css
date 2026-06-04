@@ -14,7 +14,9 @@
 
 	/* accent (the editor overrides this inline via tweak) */
 	--accent: #5b8cff;
-	--accent-contrast: #0b1020;
+	/* Text on accent fills (primary buttons). White reads on the accent presets
+	   and any reasonable custom colour; dark text was illegible on the blues. */
+	--accent-contrast: #ffffff;
 
 	/* density */
 	--row-h: 36px;
@@ -22,6 +24,7 @@
 	--content-max: 720px;
 
 	--radius-sm: 6px;
+	--radius-md: 9px;
 	--radius: 9px;
 	--radius-lg: 14px;
 

@@ -33,15 +33,6 @@
 	);
 	const currentBody = $derived(data.selected?.bodyMd ?? data.selectedNode?.bodyMd ?? '');
 
-	const initials = $derived(
-		data.user.displayName
-			.split(/\s+/)
-			.map((part) => part[0])
-			.slice(0, 2)
-			.join('')
-			.toUpperCase()
-	);
-
 	// Outline drag-to-reorder. Restricted to one sibling group: the dragged
 	// node can only drop between nodes that share its parent; indent and
 	// outdent move between levels instead.
@@ -105,8 +96,8 @@
 	<TopBar
 		universe={{ id: data.universe.id, name: data.universe.name }}
 		story={{ id: data.story.id, title: data.story.title }}
-		{initials}
 		{saveStatus}
+		help={{ topic: 'planning', label: 'the planning view' }}
 	/>
 	<div class="body">
 		<PlanSidebar
@@ -226,6 +217,7 @@
 						storyId={data.story.id}
 						storyNotesMd={data.storyNotesMd}
 						membership={data.membership}
+						entityHref={(id) => `${planPath}?entity=${id}`}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
@@ -315,6 +307,12 @@
 						</div>
 					{:else}
 						<div class="empty">Mentions and relationships arrive here.</div>
+					{/if}
+					{#if data.selected}
+						<div class="r-card mentions-card">
+							<span>All mentions</span>
+							<span class="r-count">{data.mentionTotal}</span>
+						</div>
 					{/if}
 				</div>
 			{/if}
@@ -420,5 +418,14 @@
 		line-height: 1.5;
 		padding: 2px 0 6px;
 		border-bottom: 1px dashed var(--border);
+	}
+	.mentions-card {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.mentions-card span:first-child {
+		font-size: 13.5px;
+		font-weight: 600;
 	}
 </style>

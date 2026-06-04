@@ -15,8 +15,10 @@ import {
 } from '../../src/lib/server/db/schema';
 import {
 	isPublicAsset,
+	isPublicAvatar,
 	listPublications,
 	publicEdition,
+	publicProfile,
 	publicShelf,
 	publishStory,
 	takedownPublication,
@@ -204,6 +206,59 @@ describe('takedown and covers', () => {
 		);
 		await takedownPublication(db, current.id);
 		expect(await isPublicAsset(db, asset.id)).toBe(false);
+	});
+});
+
+describe('public profile and avatar', () => {
+	it('exposes the profile only while it is listed publicly', async () => {
+		await db
+			.update(users)
+			.set({
+				bioMd: 'Writes about salt and sea.',
+				penName: 'A. Vane',
+				links: [{ label: 'Site', url: 'https://vane.test' }],
+				commissionsOpen: true,
+				commissionsMd: 'Short fiction.',
+				profilePublic: false
+			})
+			.where(eq(users.id, authorId));
+		expect(await publicProfile(db, 'inkwright')).toBeNull();
+
+		await db.update(users).set({ profilePublic: true }).where(eq(users.id, authorId));
+		const profile = await publicProfile(db, 'inkwright');
+		expect(profile).toMatchObject({
+			penName: 'A. Vane',
+			bioMd: 'Writes about salt and sea.',
+			commissionsOpen: true,
+			commissionsMd: 'Short fiction.'
+		});
+		expect(profile!.links).toEqual([{ label: 'Site', url: 'https://vane.test' }]);
+	});
+
+	it('serves the current avatar only while the profile is public', async () => {
+		const [avatar] = await db
+			.insert(assets)
+			.values({
+				ownerId: authorId,
+				kind: 'avatar',
+				filename: 'me.png',
+				contentType: 'image/png',
+				byteSize: 8,
+				storageKey: 'codex-assets/me'
+			})
+			.returning();
+		await db.update(users).set({ avatarAssetId: avatar.id }).where(eq(users.id, authorId));
+
+		// profilePublic is true from the previous test.
+		expect(await isPublicAvatar(db, avatar.id)).toBe(true);
+		await db.update(users).set({ profilePublic: false }).where(eq(users.id, authorId));
+		expect(await isPublicAvatar(db, avatar.id)).toBe(false);
+		// A stale id (no longer the current avatar) never serves.
+		await db
+			.update(users)
+			.set({ profilePublic: true, avatarAssetId: null })
+			.where(eq(users.id, authorId));
+		expect(await isPublicAvatar(db, avatar.id)).toBe(false);
 	});
 });
 

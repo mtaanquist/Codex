@@ -1,23 +1,25 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
-	import ThemeToggle from './ThemeToggle.svelte';
+	import UserMenu from './UserMenu.svelte';
+	import HelpLink from './HelpLink.svelte';
 
 	let {
 		universe,
 		story,
-		initials,
 		onEnterFocus,
 		saveStatus = 'idle',
-		storyView
+		storyView,
+		help
 	}: {
 		universe: { id: string; name: string };
 		// Absent on universe-scoped pages; the universe becomes the crumb.
 		story?: { id: string; title: string };
-		initials: string;
 		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 		storyView?: { active: boolean; toggleHref: string };
+		// The help topic for this page, shown as a "?" in the bar.
+		help?: { topic: string; label: string };
 	} = $props();
 
 	const SAVE_LABEL = {
@@ -52,7 +54,6 @@
 		{#if saveStatus !== 'idle'}
 			<span class="saved" role="status"><span class="dot"></span> {SAVE_LABEL[saveStatus]}</span>
 		{/if}
-		<ThemeToggle />
 		<a
 			class="icon-btn"
 			href={resolve('/universes/[id]', { id: universe.id })}
@@ -76,6 +77,9 @@
 				<Icon name="expand" />
 			</button>
 		{/if}
-		<a class="avatar-me" href={resolve('/')} title="Account">{initials}</a>
+		{#if help}
+			<HelpLink topic={help.topic} label={help.label} />
+		{/if}
+		<UserMenu />
 	</div>
 </header>

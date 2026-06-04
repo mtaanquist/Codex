@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
 	approveUser,
+	instanceStats,
 	listAllUsers,
 	rejectUser,
 	setUserArchive,
@@ -15,9 +16,18 @@ import { saveSmtp, smtpView } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
 import { purgeAccount } from '$lib/server/account-deletion';
+import { disableTotp } from '$lib/server/two-factor';
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
 import { users } from '$lib/server/db/schema';
+import pkg from '../../../package.json';
+
+// A compact uptime for the sidebar footer: minutes, then hours, then days.
+function formatUptime(seconds: number): string {
+	if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m`;
+	if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+	return `${Math.floor(seconds / 86400)}d`;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -28,12 +38,16 @@ function requireAdmin(locals: App.Locals) {
 export const load: PageServerLoad = async ({ locals }) => {
 	requireAdmin(locals);
 	return {
+		meId: locals.user!.id,
+		stats: await instanceStats(db),
 		users: await listAllUsers(db),
 		published: await listPublications(db, 50),
 		backupsConfigured: backupConfig() !== null,
 		backupRuns: await listRecentBackupRuns(db, 5),
 		smtp: await smtpView(db),
-		secretsAvailable: secretsAvailable()
+		secretsAvailable: secretsAvailable(),
+		version: pkg.version,
+		uptime: formatUptime(process.uptime())
 	};
 };
 
@@ -88,6 +102,15 @@ export const actions: Actions = {
 	unsuspend: async ({ request, locals }) => {
 		requireAdmin(locals);
 		return onUser(request, 'accounts', (id) => setUserSuspended(db, id, false));
+	},
+	resetTotp: async ({ request, locals }) => {
+		requireAdmin(locals);
+		// Lockout recovery: clear a user's two-factor so they can sign in with
+		// their password alone and set it up again.
+		return onUser(request, 'accounts', async (id) => {
+			await disableTotp(db, id);
+			return true;
+		});
 	},
 	takedown: async ({ request, locals }) => {
 		requireAdmin(locals);

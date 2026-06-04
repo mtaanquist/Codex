@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	characters,
@@ -22,8 +22,15 @@ export type RevisionEntityType =
 
 export type RevisionReason = 'autosave' | 'checkpoint' | 'restore';
 
-// Appends a revision unless the body matches the latest one, so title-only
-// and metadata saves do not pile up identical copies. Checkpoints always
+// Consecutive autosaves within this window roll the same revision row forward
+// instead of appending, so a writing burst leaves one timeline entry rather
+// than one per pause. A gap longer than this starts a fresh autosave entry.
+const AUTOSAVE_COALESCE_MS = 2 * 60 * 1000;
+
+// Records a revision. An autosave skips when the body is unchanged, and
+// otherwise coalesces into the latest entry when that entry is a recent
+// autosave (rolling its body and timestamp forward); past the window, or when
+// the latest entry is a checkpoint, it appends a new row. Checkpoints always
 // insert: the point of one is the marker, even on unchanged text.
 export async function recordRevision(
 	db: Database,
@@ -35,12 +42,28 @@ export async function recordRevision(
 ): Promise<{ recorded: boolean }> {
 	if (reason === 'autosave') {
 		const [latest] = await db
-			.select({ bodyMd: revisions.bodyMd })
+			.select({
+				id: revisions.id,
+				bodyMd: revisions.bodyMd,
+				reason: revisions.reason,
+				createdAt: revisions.createdAt
+			})
 			.from(revisions)
 			.where(and(eq(revisions.entityType, entityType), eq(revisions.entityId, entityId)))
 			.orderBy(desc(revisions.createdAt))
 			.limit(1);
 		if (latest && latest.bodyMd === bodyMd) return { recorded: false };
+		if (
+			latest &&
+			latest.reason === 'autosave' &&
+			Date.now() - latest.createdAt.getTime() < AUTOSAVE_COALESCE_MS
+		) {
+			await db
+				.update(revisions)
+				.set({ bodyMd, createdAt: sql`now()` })
+				.where(eq(revisions.id, latest.id));
+			return { recorded: true };
+		}
 	}
 	await db.insert(revisions).values({
 		entityType,

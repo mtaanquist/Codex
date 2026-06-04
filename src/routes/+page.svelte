@@ -54,57 +54,11 @@
 		<button type="submit">Create universe</button>
 	</form>
 
-	<h2>Preferences</h2>
-	<form method="POST" action="?/savePreferences">
-		<label>
-			Entity autocomplete
-			<select name="entityAutocomplete" value={data.preferences.entityAutocomplete}>
-				<option value="popup">Popup list</option>
-				<option value="ghost">Ghost text</option>
-				<option value="off">Off</option>
-			</select>
-		</label>
-		<label>
-			Scene marks in the story view
-			<select name="continuousSceneMarks" value={data.preferences.continuousSceneMarks}>
-				<option value="shown">Shown</option>
-				<option value="hidden">Hidden</option>
-			</select>
-		</label>
-		<button type="submit">Save preferences</button>
-		{#if form && 'prefSaved' in form && form.prefSaved}
-			<p role="status">Saved.</p>
-		{/if}
-	</form>
-
-	{#if data.archive.enabled}
-		<h2>Public archive</h2>
-		{#if data.archive.handle}
-			<p>
-				Your shelf lives at
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (public reader path) -->
-				<a href="/@{data.archive.handle}">/@{data.archive.handle}</a>. Publish stories from their
-				settings page.
-			</p>
-		{:else}
-			<form method="POST" action="?/claimHandle">
-				{#if form?.scope === 'handle' && form.message}
-					<p class="error" role="alert">{form.message}</p>
-				{/if}
-				<label>
-					Claim a public handle
-					<input
-						type="text"
-						name="handle"
-						placeholder="your-name"
-						pattern="[a-z0-9][a-z0-9-]+"
-						required
-					/>
-				</label>
-				<button type="submit">Claim handle</button>
-			</form>
-		{/if}
-	{/if}
+	<p class="account-link">
+		Display preferences, your public handle, and account settings live on your
+		<a href={resolve('/account')}>account page</a>. New here? Read the
+		<a href={resolve('/docs')}>help</a>.
+	</p>
 
 	{#if data.isAdmin}
 		<h2>Administration</h2>

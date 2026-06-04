@@ -52,6 +52,24 @@ export default async function globalSetup() {
 		   handle = excluded.handle, public_archive_enabled = excluded.public_archive_enabled`,
 		['e2e@example.com', passwordHash]
 	);
+	// A separate account for the two-factor journey, so toggling 2FA there never
+	// trips the password-only sign-ins the other specs rely on.
+	await pool.query(
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at)
+		 values ($1, '2FA Tester', $2, 'user', now(), now())
+		 on conflict (email) do update set password_hash = excluded.password_hash`,
+		['tfa-e2e@example.com', passwordHash]
+	);
+	// Clear any two-factor left over from a previous run so the journey starts
+	// from "off" every time.
+	await pool.query(
+		`delete from totp_recovery_codes where user_id = (select id from users where email = $1)`,
+		['tfa-e2e@example.com']
+	);
+	await pool.query(
+		`delete from user_totp where user_id = (select id from users where email = $1)`,
+		['tfa-e2e@example.com']
+	);
 	await pool.end();
 
 	// Do not start the tests until the worker is actually processing jobs.

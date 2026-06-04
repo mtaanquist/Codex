@@ -6,13 +6,16 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import {
-	changeDisplayName,
 	changePassword,
+	claimHandle,
 	confirmEmailChange,
 	listSessions,
 	requestEmailChange,
 	revokeOtherSessions,
-	revokeOwnSession
+	revokeOwnSession,
+	saveIdentity,
+	saveProfile,
+	verifyAccountPassword
 } from '../../src/lib/server/account';
 import { hashPassword, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
@@ -64,12 +67,99 @@ afterAll(async () => {
 	await pool.end();
 });
 
-describe('changeDisplayName', () => {
-	it('trims and saves, and rejects empty', async () => {
-		expect((await changeDisplayName(db, userId, '  New Name  ')).ok).toBe(true);
-		const [row] = await db.select().from(users).where(eq(users.id, userId));
+describe('verifyAccountPassword', () => {
+	it('accepts the current password and rejects a wrong one or an unknown user', async () => {
+		expect(await verifyAccountPassword(db, userId, 'current-password')).toBe(true);
+		expect(await verifyAccountPassword(db, userId, 'wrong-password')).toBe(false);
+		expect(
+			await verifyAccountPassword(db, '00000000-0000-0000-0000-000000000000', 'current-password')
+		).toBe(false);
+	});
+});
+
+describe('saveIdentity', () => {
+	it('trims the display name, saves the pen name, and rejects an empty name', async () => {
+		expect(
+			(await saveIdentity(db, userId, { displayName: '  New Name  ', penName: '  Quill  ' })).ok
+		).toBe(true);
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.displayName).toBe('New Name');
-		expect((await changeDisplayName(db, userId, '   ')).ok).toBe(false);
+		expect(row.penName).toBe('Quill');
+
+		// A blank pen name clears it; an empty display name is refused.
+		await saveIdentity(db, userId, { displayName: 'Keep', penName: '   ' });
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.penName).toBeNull();
+		expect((await saveIdentity(db, userId, { displayName: '   ', penName: '' })).ok).toBe(false);
+	});
+});
+
+describe('saveProfile', () => {
+	it('saves the bio, links, commissions, and public flag, nulling blanks', async () => {
+		expect(
+			(
+				await saveProfile(db, userId, {
+					bioMd: '  Hello.  ',
+					profilePublic: true,
+					links: [{ label: 'Site', url: 'https://example.com' }],
+					commissionsOpen: true,
+					commissionsMd: '  Short fiction.  '
+				})
+			).ok
+		).toBe(true);
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.bioMd).toBe('Hello.');
+		expect(row.profilePublic).toBe(true);
+		expect(row.links).toEqual([{ label: 'Site', url: 'https://example.com' }]);
+		expect(row.commissionsOpen).toBe(true);
+		expect(row.commissionsMd).toBe('Short fiction.');
+
+		await saveProfile(db, userId, {
+			bioMd: '   ',
+			profilePublic: false,
+			links: [],
+			commissionsOpen: false,
+			commissionsMd: '   '
+		});
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.bioMd).toBeNull();
+		expect(row.profilePublic).toBe(false);
+		expect(row.links).toEqual([]);
+		expect(row.commissionsOpen).toBe(false);
+		expect(row.commissionsMd).toBeNull();
+	});
+});
+
+describe('claimHandle', () => {
+	it('claims a valid handle once and refuses to change it', async () => {
+		expect((await claimHandle(db, userId, '  Mads-T  ')).ok).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.handle).toBe('mads-t');
+
+		const second = await claimHandle(db, userId, 'something-else');
+		expect(second.ok).toBe(false);
+	});
+
+	it('rejects malformed handles', async () => {
+		expect((await claimHandle(db, userId, 'ab')).ok).toBe(false);
+		expect((await claimHandle(db, userId, '-leading')).ok).toBe(false);
+		expect((await claimHandle(db, userId, 'has space')).ok).toBe(false);
+	});
+
+	it('reports a handle already taken by someone else', async () => {
+		const [other] = await db
+			.insert(users)
+			.values({
+				email: 'other@example.com',
+				displayName: 'Other',
+				passwordHash: 'x',
+				role: 'user'
+			})
+			.returning({ id: users.id });
+		expect((await claimHandle(db, other.id, 'shared')).ok).toBe(true);
+		const result = await claimHandle(db, userId, 'shared');
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toMatch(/taken/i);
 	});
 });
 

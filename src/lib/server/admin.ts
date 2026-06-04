@@ -1,7 +1,7 @@
-import { and, asc, count, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { authTokens, users } from './db/schema';
-import { hashPassword } from './password';
+import { authTokens, stories, universes, users, userTotp } from './db/schema.ts';
+import { hashPassword } from './password.ts';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
 
@@ -122,6 +122,7 @@ export type AdminUser = {
 	suspendedAt: Date | null;
 	publicArchiveEnabled: boolean;
 	handle: string | null;
+	twoFactorEnabled: boolean;
 	createdAt: Date;
 };
 
@@ -138,10 +139,41 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			suspendedAt: users.suspendedAt,
 			publicArchiveEnabled: users.publicArchiveEnabled,
 			handle: users.handle,
+			twoFactorEnabled: sql<boolean>`${userTotp.confirmedAt} is not null`,
 			createdAt: users.createdAt
 		})
 		.from(users)
+		.leftJoin(userTotp, eq(userTotp.userId, users.id))
 		.orderBy(desc(users.createdAt));
+}
+
+export type InstanceStats = {
+	writers: number;
+	pending: number;
+	universes: number;
+	stories: number;
+};
+
+// Headline counts for the admin overview. Active writers are approved and not
+// suspended; pending are non-admin accounts still awaiting approval. Universe
+// and story counts are instance-wide.
+export async function instanceStats(db: Database): Promise<InstanceStats> {
+	const [writers] = await db
+		.select({ n: count() })
+		.from(users)
+		.where(and(isNotNull(users.approvedAt), isNull(users.suspendedAt)));
+	const [pending] = await db
+		.select({ n: count() })
+		.from(users)
+		.where(and(isNull(users.approvedAt), ne(users.role, 'admin')));
+	const [universeCount] = await db.select({ n: count() }).from(universes);
+	const [storyCount] = await db.select({ n: count() }).from(stories);
+	return {
+		writers: writers.n,
+		pending: pending.n,
+		universes: universeCount.n,
+		stories: storyCount.n
+	};
 }
 
 // Enables or disables a user's public archive (their permission to publish).

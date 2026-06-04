@@ -125,6 +125,37 @@ export async function publicShelf(db: Database, handle: string) {
 		.orderBy(desc(publications.publishedAt));
 }
 
+// The author's public profile for the shelf header: identity, bio, links, and
+// commissions. Only returned when the profile is listed publicly, so a private
+// page never leaks the author's details even if editions exist.
+export async function publicProfile(db: Database, handle: string) {
+	const [row] = await db
+		.select({
+			displayName: users.displayName,
+			penName: users.penName,
+			bioMd: users.bioMd,
+			links: users.links,
+			commissionsOpen: users.commissionsOpen,
+			commissionsMd: users.commissionsMd,
+			avatarAssetId: users.avatarAssetId
+		})
+		.from(users)
+		.where(and(eq(users.handle, handle), eq(users.profilePublic, true)));
+	return row ?? null;
+}
+
+// True when an asset is the current avatar of a user whose profile is listed
+// publicly, which makes it servable without a session. Turning the profile
+// private or changing the avatar revokes public access immediately.
+export async function isPublicAvatar(db: Database, assetId: string): Promise<boolean> {
+	const [row] = await db
+		.select({ id: users.id })
+		.from(users)
+		.where(and(eq(users.avatarAssetId, assetId), eq(users.profilePublic, true)))
+		.limit(1);
+	return Boolean(row);
+}
+
 // The reader view: the current edition, provided the story is not
 // private and no takedown applies.
 export async function publicEdition(db: Database, handle: string, storyId: string) {

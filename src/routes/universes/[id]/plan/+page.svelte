@@ -26,15 +26,6 @@
 	// Appearances arrive flat and ordered; the panel shows them story by
 	// story, scene by scene.
 	const storiesSeen = $derived([...new Map(data.appearsIn.map((m) => [m.storyId, m])).values()]);
-
-	const initials = $derived(
-		data.user.displayName
-			.split(/\s+/)
-			.map((part) => part[0])
-			.slice(0, 2)
-			.join('')
-			.toUpperCase()
-	);
 </script>
 
 <svelte:head>
@@ -42,7 +33,11 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar universe={{ id: data.universe.id, name: data.universe.name }} {initials} {saveStatus} />
+	<TopBar
+		universe={{ id: data.universe.id, name: data.universe.name }}
+		{saveStatus}
+		help={{ topic: 'planning', label: 'the planning view' }}
+	/>
 	<div class="body">
 		<PlanSidebar
 			characters={data.characters}
@@ -77,6 +72,7 @@
 							place: data.places,
 							lore_entry: data.lore
 						}}
+						entityHref={(id) => `${planPath}?entity=${id}`}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
@@ -170,6 +166,12 @@
 					{:else}
 						<div class="empty">Mentions and relationships arrive here.</div>
 					{/if}
+					{#if data.selected}
+						<div class="r-card mentions-card">
+							<span>All mentions</span>
+							<span class="r-count">{data.mentionTotal}</span>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</aside>
@@ -177,9 +179,6 @@
 </div>
 
 <style>
-	.r-line {
-		text-decoration: none;
-	}
 	.rel-label {
 		color: var(--text-muted);
 		font-size: 12px;
@@ -191,5 +190,14 @@
 		line-height: 1.5;
 		padding: 2px 0 6px;
 		border-bottom: 1px dashed var(--border);
+	}
+	.mentions-card {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.mentions-card span:first-child {
+		font-size: 13.5px;
+		font-weight: 600;
 	}
 </style>

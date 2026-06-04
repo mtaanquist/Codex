@@ -983,18 +983,20 @@
 	overflow: hidden;
 	margin-top: 8px;
 }
-.field {
+/* Scoped under .fields so the bare .field class is free for form fields
+   (see pages.css). These entity-detail cells only ever sit inside .fields. */
+.fields .field {
 	background: var(--bg);
 	padding: 12px 15px;
 }
-.field .k {
+.fields .field .k {
 	font-size: 11px;
 	letter-spacing: 0.07em;
 	text-transform: uppercase;
 	color: var(--text-faint);
 	margin-bottom: 4px;
 }
-.field .v {
+.fields .field .v {
 	font-size: 14px;
 	color: var(--text);
 }
@@ -1625,6 +1627,9 @@
 	text-align: left;
 	border-radius: 7px;
 	color: var(--text);
+	/* Reference rows are anchors; do not let the name pick up the default
+	   anchor underline. */
+	text-decoration: none;
 }
 .r-line + .r-line {
 	border-top: 1px solid var(--border);

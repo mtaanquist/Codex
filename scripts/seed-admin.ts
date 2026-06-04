@@ -1,8 +1,8 @@
 import { createInterface } from 'node:readline';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import * as schema from '../src/lib/server/db/schema';
-import { createFirstAdmin } from '../src/lib/server/admin';
+import * as schema from '../src/lib/server/db/schema.ts';
+import { createFirstAdmin } from '../src/lib/server/admin.ts';
 
 // Seeds the first site admin, pre-verified and pre-approved. A one-shot
 // bootstrap: once an admin exists it refuses (manage further admins in the

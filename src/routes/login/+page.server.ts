@@ -2,6 +2,15 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { db } from '$lib/server/db';
 import { createSession, SESSION_COOKIE, verifyCredentials } from '$lib/server/auth';
+import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '$lib/server/two-factor';
+import { rateLimit } from '$lib/server/rate-limit';
+import { logEvent } from '$lib/server/log';
+
+const CHALLENGE_MAX_AGE_SECONDS = 10 * 60;
+// Keyed by the targeted account, so brute force against one login is slowed
+// without locking the whole instance out; ample for a human retyping.
+const LOGIN_LIMIT = 15;
+const LOGIN_WINDOW_MS = 5 * 60 * 1000;
 
 export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
@@ -15,8 +24,18 @@ export const actions: Actions = {
 			return fail(400, { email, message: 'Enter your email and password.' });
 		}
 
+		const limit = rateLimit(`login:${email}`, LOGIN_LIMIT, LOGIN_WINDOW_MS);
+		if (!limit.allowed) {
+			logEvent('warn', 'login.rate_limited', { email });
+			return fail(429, {
+				email,
+				message: 'Too many sign-in attempts. Wait a few minutes and try again.'
+			});
+		}
+
 		const result = await verifyCredentials(db, email, password);
 		if (result.status === 'invalid') {
+			logEvent('info', 'login.failed', { email });
 			return fail(400, { email, message: 'Wrong email or password.' });
 		}
 		if (result.status === 'unverified') {
@@ -29,10 +48,24 @@ export const actions: Actions = {
 			return fail(403, { email, message: 'This account has been suspended.' });
 		}
 
+		// With two-factor on, the password is only half the sign-in: hold a signed
+		// challenge in a short-lived cookie and ask for a code before any session
+		// exists.
+		if (await isTotpEnabled(db, result.user.id)) {
+			cookies.set(TOTP_CHALLENGE_COOKIE, issueTotpChallenge(result.user.id), {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'lax',
+				maxAge: CHALLENGE_MAX_AGE_SECONDS
+			});
+			redirect(303, '/login/totp');
+		}
+
 		const session = await createSession(db, result.user.id, {
 			userAgent: request.headers.get('user-agent'),
 			ip: getClientAddress()
 		});
+		logEvent('info', 'login.ok', { userId: result.user.id });
 		cookies.set(SESSION_COOKIE, session.id, {
 			path: '/',
 			httpOnly: true,

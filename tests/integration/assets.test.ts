@@ -5,10 +5,13 @@ import { Readable } from 'node:stream';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { universes, users } from '../../src/lib/server/db/schema';
+import { eq } from 'drizzle-orm';
 import {
+	clearUserAvatar,
 	createAsset,
 	deleteAsset,
 	openAsset,
+	setUserAvatar,
 	type AssetConfig,
 	type AssetObjectStore
 } from '../../src/lib/server/assets';
@@ -130,6 +133,67 @@ describe('createAsset', () => {
 			ok: false,
 			reason: 'universe not found'
 		});
+	});
+});
+
+describe('avatars', () => {
+	it('sets the avatar, replaces the previous one, and clears it', async () => {
+		const { store, objects } = memoryStore();
+		const first = await setUserAvatar(db, store, config, ownerId, {
+			filename: 'me.png',
+			contentType: 'image/png',
+			bytes: PNG
+		});
+		expect(first.ok).toBe(true);
+		if (!first.ok) return;
+		let [row] = await db.select().from(users).where(eq(users.id, ownerId));
+		expect(row.avatarAssetId).toBe(first.id);
+		expect(objects.size).toBe(1);
+
+		// A second upload points the user at the new asset and drops the old one.
+		const second = await setUserAvatar(db, store, config, ownerId, {
+			filename: 'me2.png',
+			contentType: 'image/png',
+			bytes: PNG
+		});
+		expect(second.ok).toBe(true);
+		if (!second.ok) return;
+		[row] = await db.select().from(users).where(eq(users.id, ownerId));
+		expect(row.avatarAssetId).toBe(second.id);
+		expect(objects.size).toBe(1);
+		expect(await openAsset(db, store, ownerId, first.id)).toBeNull();
+
+		await clearUserAvatar(db, store, ownerId);
+		[row] = await db.select().from(users).where(eq(users.id, ownerId));
+		expect(row.avatarAssetId).toBeNull();
+		expect(objects.size).toBe(0);
+	});
+
+	it('does not orphan an asset when two uploads race', async () => {
+		const { store, objects } = memoryStore();
+		const [a, b] = await Promise.all([
+			setUserAvatar(db, store, config, ownerId, {
+				filename: 'a.png',
+				contentType: 'image/png',
+				bytes: PNG
+			}),
+			setUserAvatar(db, store, config, ownerId, {
+				filename: 'b.png',
+				contentType: 'image/png',
+				bytes: PNG
+			})
+		]);
+		expect(a.ok && b.ok).toBe(true);
+		if (!a.ok || !b.ok) return;
+		const [row] = await db.select().from(users).where(eq(users.id, ownerId));
+		// One upload wins the row; the other's asset must be cleaned up, leaving
+		// exactly one stored object rather than an orphan.
+		expect([a.id, b.id]).toContain(row.avatarAssetId);
+		expect(objects.size).toBe(1);
+		const loser = row.avatarAssetId === a.id ? b.id : a.id;
+		expect(await openAsset(db, store, ownerId, loser)).toBeNull();
+
+		await clearUserAvatar(db, store, ownerId);
 	});
 });
 

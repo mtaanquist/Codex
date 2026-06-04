@@ -18,6 +18,13 @@
 				}
 				document.documentElement.setAttribute('data-theme', theme);
 				document.documentElement.setAttribute('data-density', 'comfortable');
+				try {
+					var accent = localStorage.getItem('codex-accent');
+					if (accent && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(accent))
+						document.documentElement.style.setProperty('--accent', accent);
+				} catch (e) {
+					/* default accent stands */
+				}
 			})();
 		</script>
 		%sveltekit.head%

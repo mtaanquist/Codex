@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, count, eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	characters,
@@ -110,4 +110,28 @@ export async function entityAppearances(
 			asc(scenes.globalPosition),
 			asc(entityMentions.position)
 		);
+}
+
+// Total mentions of an entity across every story in the universe, for the
+// "All mentions" summary. A single count, regardless of the page's scope.
+export async function entityMentionCount(
+	db: Database,
+	target: { kind: EntityKind; id: string },
+	universeId: string
+): Promise<number> {
+	const targetType = target.kind === 'lore' ? 'lore_entry' : target.kind;
+	const [row] = await db
+		.select({ total: count() })
+		.from(entityMentions)
+		.innerJoin(scenes, eq(entityMentions.sourceId, scenes.id))
+		.innerJoin(stories, eq(scenes.storyId, stories.id))
+		.where(
+			and(
+				eq(entityMentions.sourceType, 'scene'),
+				eq(entityMentions.targetType, targetType),
+				eq(entityMentions.targetId, target.id),
+				eq(stories.universeId, universeId)
+			)
+		);
+	return row?.total ?? 0;
 }

@@ -110,6 +110,13 @@ jobs:
           echo "worker: $state"
           [ "$state" = "running restarts=0" ]
           docker logs codex-worker-1 2>&1 | grep -q "Worker started"
+      - name: First-admin bootstrap runs in the image
+        # seed-admin runs raw under Node in the image, like the worker; a
+        # missing-extension import fails only here, never in the host-run tests.
+        # The script exits non-zero on any failure, so this step gates on it.
+        run: >-
+          docker compose -f compose.yaml exec -T -e ADMIN_PASSWORD=ci-bootstrap-pw
+          app node scripts/seed-admin.ts ci-admin@example.com "CI Admin"
       - name: Show logs on failure
         if: failure()
         run: docker compose -f compose.yaml logs
