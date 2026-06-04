@@ -10,6 +10,7 @@
 	import { proseExtensions } from '$lib/editor';
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
+	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 
 	let {
@@ -19,6 +20,7 @@
 		entities = [],
 		autocompleteMode = 'popup',
 		markers = [],
+		imageUniverseId,
 		compact = false,
 		onCrossBoundary,
 		onStatus
@@ -29,6 +31,9 @@
 		entities?: MentionEntity[];
 		autocompleteMode?: AutocompleteMode;
 		markers?: SceneMarker[];
+		// When set, pasted and dropped images upload into this universe and
+		// land as markdown.
+		imageUniverseId?: string;
 		// The continuous story view stitches one editor per scene: no title
 		// input, and vertical arrows at the edges hand focus to neighbours.
 		compact?: boolean;
@@ -161,7 +166,8 @@
 					mentionsCompartment.of(mentionExtensions(entities)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
-					boundaryKeymap()
+					boundaryKeymap(),
+					imageUniverseId ? imageUploadExtension(imageUniverseId) : []
 				]
 			})
 		});

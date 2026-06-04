@@ -374,6 +374,50 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.todo-marker')).toHaveCount(0);
 	await expect(page.locator('.todo-row')).toHaveCount(1);
 
+	// Assets: a story cover uploads to the bucket and serves back, and a
+	// dropped image lands in the prose as markdown. Needs a bucket (CI
+	// provides MinIO); without one the segment is skipped, loudly.
+	const PNG_B64 =
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+	if (process.env.ASSET_S3_BUCKET) {
+		await page.locator('.crumb.current').click();
+		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
+		await expect(page.locator('svg.cover')).toBeVisible();
+		await page.getByLabel('Cover image').setInputFiles({
+			name: 'cover.png',
+			mimeType: 'image/png',
+			buffer: Buffer.from(PNG_B64, 'base64')
+		});
+		await page.getByRole('button', { name: 'Upload cover' }).click();
+		await expect(page.getByRole('status')).toHaveText('Cover saved.');
+		const coverSrc = await page.locator('img.cover').getAttribute('src');
+		const served = await page.request.get(coverSrc!);
+		expect(served.status()).toBe(200);
+		expect(served.headers()['content-type']).toBe('image/png');
+
+		await page.goto(proseSceneUrl);
+		await page.locator('.cm-content').click();
+		await page.evaluate((b64) => {
+			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+			const transfer = new DataTransfer();
+			transfer.items.add(new File([bytes], 'sketch.png', { type: 'image/png' }));
+			const target = document.querySelector('.cm-content')!;
+			const rect = target.getBoundingClientRect();
+			target.dispatchEvent(
+				new DragEvent('drop', {
+					bubbles: true,
+					cancelable: true,
+					dataTransfer: transfer,
+					clientX: rect.x + 10,
+					clientY: rect.y + 10
+				})
+			);
+		}, PNG_B64);
+		await expect(page.locator('.cm-content')).toContainText('![sketch.png](/assets/');
+	} else {
+		console.warn('ASSET_S3_BUCKET not set: skipping the asset upload segment.');
+	}
+
 	// Scene marks in the story view follow the display preference.
 	await page.locator('.brand').click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
