@@ -50,6 +50,23 @@ export function verificationEmail(to: string, link: string): EmailMessage {
 	};
 }
 
+export function signupNotificationEmail(
+	to: string,
+	signup: { displayName: string; email: string },
+	reviewLink: string
+): EmailMessage {
+	return {
+		to,
+		subject: 'A new account is waiting for review',
+		text: [
+			`${signup.displayName} (${signup.email}) has signed up and is waiting for approval.`,
+			'',
+			'Review pending accounts here:',
+			reviewLink
+		].join('\n')
+	};
+}
+
 export function passwordResetEmail(to: string, link: string): EmailMessage {
 	return {
 		to,

@@ -1,6 +1,6 @@
-import { count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth';
-import { users } from './db/schema';
+import { authTokens, users } from './db/schema';
 import { hashPassword } from './password';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
@@ -53,4 +53,61 @@ export async function createFirstAdmin(
 		}
 		throw err;
 	}
+}
+
+export type PendingUser = {
+	id: string;
+	email: string;
+	displayName: string;
+	emailVerifiedAt: Date | null;
+	createdAt: Date;
+};
+
+// Accounts waiting on the operator: signed up but not yet approved. Verified
+// or not is surfaced so the operator can see who has confirmed their email.
+export async function listPendingUsers(db: Database): Promise<PendingUser[]> {
+	return db
+		.select({
+			id: users.id,
+			email: users.email,
+			displayName: users.displayName,
+			emailVerifiedAt: users.emailVerifiedAt,
+			createdAt: users.createdAt
+		})
+		.from(users)
+		.where(and(isNull(users.approvedAt), ne(users.role, 'admin')))
+		.orderBy(asc(users.createdAt));
+}
+
+// Approves a pending account. Scoped to still-pending non-admin rows so a
+// double-click or a stale form cannot re-approve or touch an admin.
+export async function approveUser(db: Database, userId: string): Promise<boolean> {
+	const [row] = await db
+		.update(users)
+		.set({ approvedAt: new Date() })
+		.where(and(eq(users.id, userId), isNull(users.approvedAt), ne(users.role, 'admin')))
+		.returning({ id: users.id });
+	return Boolean(row);
+}
+
+// Rejects a pending account by deleting it. Only ever a brand-new sign-up with
+// no content of its own; its outstanding tokens go first to clear the foreign
+// key. Refuses to delete an already-approved account or an admin.
+export async function rejectUser(db: Database, userId: string): Promise<boolean> {
+	return db.transaction(async (tx) => {
+		const [pending] = await tx
+			.select({ id: users.id })
+			.from(users)
+			.where(and(eq(users.id, userId), isNull(users.approvedAt), ne(users.role, 'admin')));
+		if (!pending) return false;
+		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
+		await tx.delete(users).where(eq(users.id, userId));
+		return true;
+	});
+}
+
+// Admin addresses to notify when someone signs up.
+export async function adminEmails(db: Database): Promise<string[]> {
+	const rows = await db.select({ email: users.email }).from(users).where(eq(users.role, 'admin'));
+	return rows.map((row) => row.email);
 }
