@@ -563,6 +563,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Remove from this story' }).click();
 	await memberOff;
 	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+
+	// Deleting a story that has chapters, scenes, an outline, markers,
+	// revisions, and a published edition succeeds rather than 500ing on the
+	// foreign keys, and lands back on the universe.
+	await page.goto(`${proseSceneUrl.split('?')[0]}/settings`);
+	await page.getByRole('button', { name: 'Delete story' }).click();
+	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
+	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
 });
 
 test('wrong password is rejected', async ({ page }) => {
