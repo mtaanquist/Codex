@@ -1,4 +1,11 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import {
+	createCipheriv,
+	createDecipheriv,
+	createHash,
+	createHmac,
+	randomBytes,
+	timingSafeEqual
+} from 'node:crypto';
 
 // Symmetric encryption for secrets kept in the database - the SMTP password
 // now, and the same helper is meant to serve LLM keys and TOTP secrets later.
@@ -36,4 +43,25 @@ export function decryptSecret(packed: string): string {
 		decipher.update(Buffer.from(bodyB64, 'base64')),
 		decipher.final()
 	]).toString('utf8');
+}
+
+// A tamper-proof token: the payload travels in the clear with an HMAC over it,
+// keyed by APP_SECRET. Use for short-lived state that the server issues and
+// later trusts (the two-factor sign-in challenge), not for secrets. The payload
+// must not contain the '.' separator.
+export function signToken(payload: string): string {
+	const sig = createHmac('sha256', key()).update(payload).digest('base64url');
+	return `${payload}.${sig}`;
+}
+
+export function verifyToken(signed: string): string | null {
+	const dot = signed.lastIndexOf('.');
+	if (dot <= 0) return null;
+	const payload = signed.slice(0, dot);
+	const sig = signed.slice(dot + 1);
+	const expected = createHmac('sha256', key()).update(payload).digest('base64url');
+	const a = Buffer.from(sig);
+	const b = Buffer.from(expected);
+	if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+	return payload;
 }

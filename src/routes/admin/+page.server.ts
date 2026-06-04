@@ -16,6 +16,7 @@ import { saveSmtp, smtpView } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
 import { purgeAccount } from '$lib/server/account-deletion';
+import { disableTotp } from '$lib/server/two-factor';
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
 import { users } from '$lib/server/db/schema';
@@ -91,6 +92,15 @@ export const actions: Actions = {
 	unsuspend: async ({ request, locals }) => {
 		requireAdmin(locals);
 		return onUser(request, 'accounts', (id) => setUserSuspended(db, id, false));
+	},
+	resetTotp: async ({ request, locals }) => {
+		requireAdmin(locals);
+		// Lockout recovery: clear a user's two-factor so they can sign in with
+		// their password alone and set it up again.
+		return onUser(request, 'accounts', async (id) => {
+			await disableTotp(db, id);
+			return true;
+		});
 	},
 	takedown: async ({ request, locals }) => {
 		requireAdmin(locals);
