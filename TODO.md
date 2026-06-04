@@ -75,8 +75,8 @@ agreed with the author on 2026-06-04: TOTP promoted forward from Phase 6
 format preference deferred to Phase 6 (see the feedback backlog).
 
 - [x] 27b. Harden the admin bootstrap CLI (v2.0.1). The seed:admin script already exists and runs in-container (docker compose exec app node scripts/seed-admin.ts <email> <password> <name>), creating a pre-verified pre-approved admin. Make it a true first-admin-only bootstrap: refuse with a clear message if any admin already exists (after that, admins are managed in-app), catch the duplicate-email case instead of dumping a stack trace, and read the password from a prompt or stdin rather than argv so it stays out of shell history. Document the one command for operators in the README. A prerequisite for the rest of Phase 5: there is no admin to approve sign-ups without it.
-- [ ] 28. Sign-up page (email, password, display name; row with approved_at null; sends verification link; pending users see "awaiting approval")
-- [ ] 29. Email verification flow (confirm link sets email_verified_at; pluggable transactional email sent from the worker)
+- [x] 28. Sign-up page (v2.1): /signup creates an unverified, unapproved user, issues an email_verify token, and enqueues the link; the page shows a neutral "check your email" even for a taken address (no enumeration). Login link added.
+- [x] 29. Email verification flow (v2.1): /verify-email consumes the single-use token and sets email_verified_at; both gates already enforced by verifyCredentials. Pluggable email abstraction ($lib/server/email) sent from the worker via a send-email job, with a console transport by default and SMTP (nodemailer, SMTP_URL) for production.
 - [ ] 30. Password reset flow (forgot-password with token + expiry by email)
 - [ ] 31. Admin approval UI (list pending users, approve/reject; also where an admin enables a public archive; operator emailed on new sign-ups)
 - [ ] 32. Account self-service (settings: display name, password, email re-verify, session list/revoke, claim handle, preferences; danger zone: export-everything and hard delete-account)
