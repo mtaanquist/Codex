@@ -35,7 +35,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 16b. Lore entries and entity categories (v1.2), incl. entity-colour groupings
 - [x] 17. Universe editor (v1.3): universe-scoped Plan view, no "In this book" without a story, dashboard lists stories per universe and routes the universe name to the editor (Notes view still does not exist at any scope; it stays a disabled toggle)
 - [x] 18. Entity relationships (v1.4): relation_types + entity_relationships schema (story_id and custom types modelled, no UI yet), 15 built-ins seeded by migration, editor section with typed picker + target select + notes, right-panel card, inverse labels on the target's page
-- [ ] 19. Outline tree (v1.5)
+- [x] 19. Outline tree (v1.5): outline_nodes schema, Outline group atop the story Plan sidebar (drag reorders siblings, buttons indent/outdent), node editor with notes and scene/chapter link, delete promotes children (placement and nesting interaction confirmed with the author; no designed screen existed)
 - [ ] 20. Declared story membership
 - [ ] 21. Entity autocomplete (v1.6)
 

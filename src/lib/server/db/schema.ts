@@ -10,7 +10,8 @@ import {
 	text,
 	timestamp,
 	unique,
-	uuid
+	uuid,
+	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 
 // Case-insensitive text, used for the public handle. The citext extension is
@@ -354,6 +355,35 @@ export const entityMentions = pgTable(
 		index('entity_mentions_target_idx').on(table.targetType, table.targetId),
 		index('entity_mentions_source_idx').on(table.sourceType, table.sourceId)
 	]
+);
+
+// The story's planning tree, independent of the drafted chapter and scene
+// structure: an outline can precede or diverge from what is written. Nodes
+// optionally link to the scene or chapter that realises them. Ownership
+// flows through the story.
+export const outlineNodes = pgTable(
+	'outline_nodes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		// Null = a root node.
+		parentId: uuid('parent_id').references((): AnyPgColumn => outlineNodes.id),
+		// Order among siblings of the same parent.
+		position: integer('position').notNull(),
+		title: text('title').notNull(),
+		bodyMd: text('body_md').notNull().default(''),
+		linkedSceneId: uuid('linked_scene_id').references(() => scenes.id),
+		linkedChapterId: uuid('linked_chapter_id').references(() => chapters.id),
+		metadata: jsonb('metadata').notNull().default({}),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('outline_nodes_story_idx').on(table.storyId, table.parentId, table.position)]
 );
 
 // The vocabulary of declared relations. A seed migration provides the

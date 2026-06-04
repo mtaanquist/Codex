@@ -93,6 +93,45 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	// Plan view: create a character, fill the editor, and it persists.
 	await page.getByRole('link', { name: 'Plan' }).click();
 	await expect(page).toHaveURL(/\/plan$/);
+
+	// Outline: two nodes, the second indented under the first.
+	await page.getByPlaceholder('New outline node').fill('Act one');
+	await page.getByRole('button', { name: 'Add node' }).click();
+	await expect(page).toHaveURL(/node=/);
+	await page.getByPlaceholder('New outline node').fill('The toll');
+	await page.getByRole('button', { name: 'Add node' }).click();
+	const tollRow = page.locator('.o-row', { hasText: 'The toll' });
+	await tollRow.hover();
+	const indentMove = page.waitForResponse((r) => r.url().includes('/move') && r.ok());
+	await tollRow.getByTitle('Indent').click();
+	await indentMove;
+	await expect(page.locator('.o-row').nth(1)).toHaveAttribute('style', /padding-left: 22px/);
+
+	// The node editor renames and links the node to a scene; both survive a
+	// reload.
+	await page.locator('.o-title', { hasText: 'The toll' }).click();
+	const nodeSave = page.waitForResponse(
+		(r) => r.url().includes('/api/outline/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByPlaceholder('Outline node', { exact: true }).fill('The toll-gate');
+	await page.getByLabel('Linked to').selectOption({ label: 'Departure from Halden' });
+	await nodeSave;
+	await page.reload();
+	await expect(page.getByPlaceholder('Outline node', { exact: true })).toHaveValue('The toll-gate');
+	await expect(page.getByRole('link', { name: 'Open the linked scene' })).toBeVisible();
+
+	// A third root node dragged above the first keeps its place.
+	await page.getByPlaceholder('New outline node').fill('Act two');
+	await page.getByRole('button', { name: 'Add node' }).click();
+	const outlineOrderSave = page.waitForResponse(
+		(r) => r.url().includes('/outline-order') && r.ok()
+	);
+	await page
+		.locator('.o-row', { hasText: 'Act two' })
+		.dragTo(page.locator('.o-row', { hasText: 'Act one' }), { targetPosition: { x: 60, y: 4 } });
+	await outlineOrderSave;
+	await expect(page.locator('.o-row').first()).toContainText('Act two');
+
 	await page.getByPlaceholder('New character name').fill('Alice');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page).toHaveURL(/entity=/);
