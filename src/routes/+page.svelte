@@ -106,6 +106,9 @@
 	{/if}
 
 	{#if data.isAdmin}
+		<h2>Administration</h2>
+		<p><a href={resolve('/admin')}>Review pending accounts</a></p>
+
 		<h2>Public archive admin</h2>
 		<form method="POST" action="?/setArchive">
 			<label>
