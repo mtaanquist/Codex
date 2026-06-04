@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { entityColor } from '$lib/entity-color';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	const coverColor = $derived(entityColor(data.story.title));
 </script>
 
 <svelte:head>
@@ -43,6 +46,40 @@
 		<button type="submit">Save</button>
 	</form>
 
+	<h2>Cover</h2>
+	{#if data.story.coverAssetId}
+		<img class="cover" src="/assets/{data.story.coverAssetId}" alt="Story cover" />
+	{:else}
+		<svg class="cover" viewBox="0 0 200 300" role="img" aria-label="Default cover">
+			<rect width="200" height="300" rx="6" style="fill: {coverColor}" />
+			<text x="100" y="150" text-anchor="middle" fill="#fff" font-size="16" font-family="serif">
+				{data.story.title.slice(0, 18)}
+			</text>
+		</svg>
+	{/if}
+	{#if data.assetsConfigured}
+		<form method="POST" action="?/setCover" enctype="multipart/form-data">
+			{#if form?.action === 'cover' && form.message}
+				<p class="error" role="alert">{form.message}</p>
+			{/if}
+			{#if form?.action === 'cover' && form.saved}
+				<p role="status">Cover saved.</p>
+			{/if}
+			<label>
+				Cover image
+				<input
+					type="file"
+					name="cover"
+					accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+					required
+				/>
+			</label>
+			<button type="submit">Upload cover</button>
+		</form>
+	{:else}
+		<p>Image uploads need the ASSET_S3_* variables set; see .env.example.</p>
+	{/if}
+
 	<h2>History</h2>
 	{#if data.timeline.length === 0}
 		<p>Recent changes to this story's scenes and outline appear here.</p>
@@ -66,6 +103,14 @@
 </main>
 
 <style>
+	.cover {
+		width: 120px;
+		height: 180px;
+		object-fit: cover;
+		border-radius: 6px;
+		display: block;
+		margin-bottom: 0.5rem;
+	}
 	.timeline {
 		list-style: none;
 		padding: 0;

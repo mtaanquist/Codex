@@ -1,0 +1,151 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Readable } from 'node:stream';
+import pg from 'pg';
+import * as schema from '../../src/lib/server/db/schema';
+import { universes, users } from '../../src/lib/server/db/schema';
+import {
+	createAsset,
+	deleteAsset,
+	openAsset,
+	type AssetConfig,
+	type AssetObjectStore
+} from '../../src/lib/server/assets';
+import type { Database } from '../../src/lib/server/auth';
+import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+
+let pool: pg.Pool;
+let db: Database;
+let ownerId: string;
+let strangerId: string;
+let universeId: string;
+
+const config: AssetConfig = {
+	endpoint: undefined,
+	region: 'auto',
+	bucket: 'test',
+	prefix: 'codex-assets',
+	accessKeyId: 'id',
+	secretAccessKey: 'secret'
+};
+
+function memoryStore() {
+	const objects = new Map<string, { body: Buffer; contentType: string }>();
+	const store: AssetObjectStore = {
+		async put(key, body, contentType) {
+			objects.set(key, { body, contentType });
+		},
+		async get(key) {
+			const object = objects.get(key);
+			if (!object) throw new Error(`missing: ${key}`);
+			return Readable.from(object.body);
+		},
+		async remove(key) {
+			objects.delete(key);
+		}
+	};
+	return { store, objects };
+}
+
+const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
+
+beforeAll(async () => {
+	await ensureTestDatabase();
+	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+	db = drizzle(pool, { schema });
+	await migrate(db, { migrationsFolder: 'drizzle' });
+	await pool.query('truncate table assets, universes, users cascade');
+
+	const [owner] = await db
+		.insert(users)
+		.values({ email: 'asset@example.com', displayName: 'A', passwordHash: 'x', role: 'user' })
+		.returning();
+	ownerId = owner.id;
+	const [stranger] = await db
+		.insert(users)
+		.values({ email: 'asset2@example.com', displayName: 'B', passwordHash: 'x', role: 'user' })
+		.returning();
+	strangerId = stranger.id;
+	const [universe] = await db.insert(universes).values({ ownerId, name: 'U' }).returning();
+	universeId = universe.id;
+});
+
+afterAll(async () => {
+	await pool.end();
+});
+
+describe('createAsset', () => {
+	it('stores the object under the prefix and round-trips the bytes', async () => {
+		const { store, objects } = memoryStore();
+		const result = await createAsset(db, store, config, ownerId, {
+			universeId,
+			kind: 'inline',
+			filename: 'gate.png',
+			contentType: 'image/png',
+			bytes: PNG
+		});
+		expect(result).toMatchObject({ ok: true });
+		if (!result.ok) return;
+		expect([...objects.keys()][0]).toBe(`codex-assets/${result.id}`);
+
+		const opened = await openAsset(db, store, ownerId, result.id);
+		expect(opened?.asset).toMatchObject({
+			kind: 'inline',
+			filename: 'gate.png',
+			contentType: 'image/png',
+			byteSize: PNG.length
+		});
+		const chunks: Buffer[] = [];
+		for await (const chunk of opened!.body) chunks.push(Buffer.from(chunk));
+		expect(Buffer.concat(chunks).equals(PNG)).toBe(true);
+
+		// Another user can neither open nor delete it.
+		expect(await openAsset(db, store, strangerId, result.id)).toBeNull();
+		expect(await deleteAsset(db, store, strangerId, result.id)).toBe(false);
+	});
+
+	it('rejects unsupported types, empty files, oversize files, and foreign universes', async () => {
+		const { store } = memoryStore();
+		const base = {
+			universeId,
+			kind: 'inline' as const,
+			filename: 'x',
+			contentType: 'image/png',
+			bytes: PNG
+		};
+		expect(
+			await createAsset(db, store, config, ownerId, { ...base, contentType: 'image/svg+xml' })
+		).toMatchObject({ ok: false });
+		expect(
+			await createAsset(db, store, config, ownerId, { ...base, bytes: Buffer.alloc(0) })
+		).toMatchObject({ ok: false });
+		expect(
+			await createAsset(db, store, config, ownerId, {
+				...base,
+				bytes: Buffer.alloc(10 * 1024 * 1024 + 1)
+			})
+		).toMatchObject({ ok: false });
+		expect(await createAsset(db, store, config, strangerId, base)).toMatchObject({
+			ok: false,
+			reason: 'universe not found'
+		});
+	});
+});
+
+describe('deleteAsset', () => {
+	it('removes the row and the object', async () => {
+		const { store, objects } = memoryStore();
+		const created = await createAsset(db, store, config, ownerId, {
+			universeId: null,
+			kind: 'cover',
+			filename: 'cover.png',
+			contentType: 'image/png',
+			bytes: PNG
+		});
+		if (!created.ok) throw new Error('setup failed');
+		expect(await deleteAsset(db, store, ownerId, created.id)).toBe(true);
+		expect(objects.size).toBe(0);
+		expect(await openAsset(db, store, ownerId, created.id)).toBeNull();
+	});
+});

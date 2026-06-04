@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { stories, universes } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
+import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -18,7 +19,7 @@ async function ownedStory(storyId: string, userId: string) {
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 	const timeline = await storyTimeline(db, story.id, 30);
-	return { story, universe, timeline };
+	return { story, universe, timeline, assetsConfigured: assetConfig() !== null };
 };
 
 export const actions: Actions = {
@@ -37,6 +38,34 @@ export const actions: Actions = {
 			.set({ title, author, brief, descriptionMd })
 			.where(eq(stories.id, story.id));
 		return { action: 'update', saved: true };
+	},
+	setCover: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const config = assetConfig();
+		if (!config) {
+			return fail(400, { action: 'cover', message: 'Assets are not configured on this server.' });
+		}
+		const data = await request.formData();
+		const file = data.get('cover');
+		if (!(file instanceof File) || file.size === 0) {
+			return fail(400, { action: 'cover', message: 'Choose an image file.' });
+		}
+		const store = s3AssetStore(config);
+		const created = await createAsset(db, store, config, locals.user!.id, {
+			universeId: story.universeId,
+			kind: 'cover',
+			filename: file.name,
+			contentType: file.type,
+			bytes: Buffer.from(await file.arrayBuffer())
+		});
+		if (!created.ok) {
+			return fail(400, { action: 'cover', message: created.reason });
+		}
+		const previous = story.coverAssetId;
+		await db.update(stories).set({ coverAssetId: created.id }).where(eq(stories.id, story.id));
+		// The replaced cover has no other references; clean it up.
+		if (previous) await deleteAsset(db, store, locals.user!.id, previous);
+		return { action: 'cover', saved: true };
 	},
 	delete: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
