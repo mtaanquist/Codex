@@ -643,7 +643,7 @@ Key points:
 
 ## Multi-tenancy
 
-- The application is single-operator and multi-user: `owner_id` separates one user's data from another's within an instance. On the hosted service, separate customers (tenants) are isolated at the instance and database level rather than by a shared-table filter (see `design.md`), so `owner_id` never carries a cross-tenant boundary.
+- The application is single-operator and multi-user, on one shared instance and database (the GitHub model; see `design.md`). `owner_id` is the isolation boundary: it separates one user's private data from another's on the same instance, so every read or write of private content must be scoped to the signed-in owner. Published `/@handle` editions are the only content that crosses between users. (The earlier instance-per-customer "fleet" idea was dropped on 2026-06-04; there is no instance- or database-level tenant boundary.)
 - Every user-owned table has an `owner_id`.
 - All queries filter by owner at the universe level, with cascading access through stories, scenes, and entities.
 - Guest review access (see Review and collaboration) is granted per story through an invitation rather than by sharing ownership. Authorization checks are intentionally kept in one service layer, so adding that access later is a small, contained change.

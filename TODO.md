@@ -81,13 +81,12 @@ format preference deferred to Phase 6 (see the feedback backlog).
 - [x] 31. Admin approval UI (v2.3): /admin lists pending accounts (name, email, sign-up time, email-confirmed state) with approve/reject, admin-gated (404 to non-admins); approve sets approved_at, reject deletes the brand-new row and its tokens. Operator(s) emailed on each new sign-up. Public-archive enable stays on the dashboard for now.
 - [~] 32. Account self-service. Split across releases:
   - [x] 32a (v2.4): /account page - change display name, change password (verifies current, revokes other sessions), review active sessions with revoke-one and sign-out-everywhere-else. Linked from the dashboard.
-  - [ ] 32b-email. Change email with re-verification (needs an additive pending_email column; switch on confirming the new address so a typo never locks anyone out).
-  - [ ] 32c-dangerzone. Export-everything (one archive of the user's universes, stories, scenes, entities, notes, images as markdown; reuses the step 26 exporter) and hard delete-account (cascade across owned rows and files, purge public editions; GDPR erasure).
+  - [ ] 32-email. Change email with re-verification (needs an additive pending_email column; switch on confirming the new address so a typo never locks anyone out).
+  - [ ] 32-danger. Danger zone: export-everything (one archive of the user's universes, stories, scenes, entities, notes, images as markdown; reuses the step 26 exporter) and hard delete-account (cascade across owned rows and files, purge public editions; GDPR erasure).
   - Note: handle claim and preferences already live on the dashboard; fold them into /account when the page is consolidated.
 - [ ] 32b. TOTP two-factor (user_totp additive migration; enrolment with QR on the settings page, confirm one code; challenge folded into sign-in after the password; admin reset for lockout; recovery codes a noted follow-on; passkeys stay in Phase 6)
-- [ ] 33. Operational essentials (rate-limit sign-up and reset, structured logs, health-check endpoint)
-- [ ] 34. Minimal control plane (scope decision 2026-06-04): a scripted provisioner in its own repo that brings up an instance, routes a subdomain, and issues on-demand TLS - no fleet-upgrade automation or UI. Full fleet management deferred to Phase 6.
-- [ ] 35. Central reader site and handle registry: deferred to Phase 6. Each instance already serves its own /@handle reader, which suffices for the dozen-writer launch.
+- [ ] 33. Operational essentials (rate-limit sign-up and reset, structured logs, health-check endpoint) plus a cross-user isolation audit: the hosted service is one shared instance, so confirm every route and data-access path that touches private content is scoped to the signed-in owner_id.
+- [x] 34 + 35. Dropped (2026-06-04): the hosted service is one shared instance (GitHub model), not a per-user fleet, so there is no control plane to provision and no central cross-instance reader/handle registry. Deploying the hosted service is just running the image; cross-user isolation is enforced by owner_id scoping and audited in step 33. See the design-doc update.
 - [ ] In-app help (/docs), held to the end of Phase 5. Help articles as
       committed markdown rendered through the existing renderMarkdown (no wiki
       engine, no docs SaaS: too much ops surface and breaks self-host/offline
