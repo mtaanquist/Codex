@@ -14,6 +14,12 @@ import { ownedStory } from '$lib/server/story-access';
 import { planActions } from '$lib/server/plan-actions';
 import { createOutlineNode, listOutline } from '$lib/server/outline';
 import {
+	declareMembership,
+	membershipStatus,
+	storyEntityLists,
+	type MembershipStatus
+} from '$lib/server/membership';
+import {
 	entityAppearances,
 	planEntityLists,
 	resolvePlanEntity,
@@ -29,9 +35,21 @@ import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 
-	// Until declared membership and mention-based filtering exist (step 20),
-	// the story's Plan lists every entity in the universe.
-	const lists = await planEntityLists(db, universe.id);
+	// The sidebar shows the story's cast: declared members plus anyone
+	// mentioned in its prose. The full universe lists feed the "add an
+	// existing entity" selects and the relationship targets. Lore stays
+	// universe-wide; it has no membership.
+	const universeLists = await planEntityLists(db, universe.id);
+	const storyLists = await storyEntityLists(db, universe.id, story.id);
+	const inStory = new Set([...storyLists.characters, ...storyLists.places].map((row) => row.id));
+	const lists = {
+		...universeLists,
+		...storyLists,
+		universeCharacters: universeLists.characters,
+		universePlaces: universeLists.places,
+		availableCharacters: universeLists.characters.filter((row) => !inStory.has(row.id)),
+		availablePlaces: universeLists.places.filter((row) => !inStory.has(row.id))
+	};
 
 	const entityId = url.searchParams.get('entity');
 	let selected = null;
@@ -92,11 +110,15 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	const relationTypes = await listRelationTypes(db, universe.id);
 	let relationships: RelationshipView[] = [];
+	let membership: MembershipStatus | null = null;
 	if (selected) {
 		relationships = await listEntityRelationships(db, universe.id, {
 			kind: selectedKind,
 			id: selected.id
 		});
+		if (selectedKind !== 'lore') {
+			membership = await membershipStatus(db, selectedKind, selected.id, story.id);
+		}
 	}
 
 	// The story's outline, and the chapters and scenes a node can link to.
@@ -132,6 +154,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		appearsIn,
 		relationTypes,
 		relationships,
+		membership,
 		outline,
 		selectedNode,
 		chapters: chapterList,
@@ -145,9 +168,24 @@ export const actions: Actions = {
 		return {
 			universeId: universe.id,
 			ownerId: locals.user!.id,
-			planPath: `/stories/${story.id}/plan`
+			planPath: `/stories/${story.id}/plan`,
+			storyId: story.id
 		};
 	}),
+	declareMember: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const kind = String(data.get('kind') ?? '');
+		const entityId = String(data.get('entityId') ?? '');
+		if ((kind !== 'character' && kind !== 'place') || !entityId) {
+			return fail(400, { kind: 'member', message: 'Pick an entity to add.' });
+		}
+		const result = await declareMembership(db, locals.user!.id, kind, entityId, story.id);
+		if (!result.ok) {
+			return fail(400, { kind: 'member', message: result.reason });
+		}
+		redirect(303, `/stories/${story.id}/plan?entity=${entityId}`);
+	},
 	createOutlineNode: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();

@@ -7,6 +7,7 @@ import {
 	integer,
 	jsonb,
 	pgTable,
+	primaryKey,
 	text,
 	timestamp,
 	unique,
@@ -355,6 +356,37 @@ export const entityMentions = pgTable(
 		index('entity_mentions_target_idx').on(table.targetType, table.targetId),
 		index('entity_mentions_source_idx').on(table.sourceType, table.sourceId)
 	]
+);
+
+// Declared story membership: the explicit "this entity belongs to this
+// story" signal, next to the derived one from mentions. Written when an
+// entity is created while working in a story, or added to one by hand.
+export const characterStoryMemberships = pgTable(
+	'character_story_memberships',
+	{
+		characterId: uuid('character_id')
+			.references(() => characters.id)
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		declaredAt: timestamp('declared_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [primaryKey({ columns: [table.characterId, table.storyId] })]
+);
+
+export const placeStoryMemberships = pgTable(
+	'place_story_memberships',
+	{
+		placeId: uuid('place_id')
+			.references(() => places.id)
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		declaredAt: timestamp('declared_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [primaryKey({ columns: [table.placeId, table.storyId] })]
 );
 
 // The story's planning tree, independent of the drafted chapter and scene

@@ -105,6 +105,8 @@
 			{planPath}
 			writeHref={resolve('/stories/[id]', { id: data.story.id })}
 			{form}
+			availableCharacters={data.availableCharacters}
+			availablePlaces={data.availablePlaces}
 		>
 			{#snippet before()}
 				<div class="group-label">
@@ -194,12 +196,13 @@
 						relationTypes={data.relationTypes}
 						relationships={data.relationships}
 						targets={{
-							character: data.characters,
-							place: data.places,
+							character: data.universeCharacters,
+							place: data.universePlaces,
 							lore_entry: data.lore
 						}}
 						storyId={data.story.id}
 						storyNotesMd={data.storyNotesMd}
+						membership={data.membership}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
