@@ -43,7 +43,7 @@
 	{/if}
 
 	<form method="POST" action="?/createUniverse">
-		{#if form?.message}
+		{#if form?.scope === 'universe' && form.message}
 			<p class="error" role="alert">{form.message}</p>
 		{/if}
 		<label>
@@ -87,7 +87,7 @@
 			</p>
 		{:else}
 			<form method="POST" action="?/claimHandle">
-				{#if form?.message}
+				{#if form?.scope === 'handle' && form.message}
 					<p class="error" role="alert">{form.message}</p>
 				{/if}
 				<label>
@@ -117,6 +117,9 @@
 				Public archive enabled
 			</label>
 			<button type="submit">Apply</button>
+			{#if form?.scope === 'archive' && form.message}
+				<span class="error" role="alert">{form.message}</span>
+			{/if}
 			{#if form && 'archiveSaved' in form && form.archiveSaved}
 				<span role="status">Saved.</span>
 			{/if}

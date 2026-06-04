@@ -21,7 +21,7 @@
 		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 		<a
 			class="continue"
-			href={`${resolve('/@[handle]/[story]', { handle: data.handle, story: data.storyId })}?adult=ok`}
+			href={`${resolve('/@[handle]/[story=uuid]', { handle: data.handle, story: data.storyId })}?adult=ok`}
 		>
 			I am an adult; show the story
 		</a>
@@ -36,7 +36,11 @@
 			{/if}
 			<h1>{data.title}</h1>
 			{#if data.author}<p class="author">{data.author}</p>{/if}
-			{#if data.descriptionMd}<p class="brief">{data.descriptionMd}</p>{/if}
+			{#if data.descriptionMd}
+				<!-- Author markdown; renderMarkdown escapes raw HTML. -->
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+				<div class="brief">{@html renderMarkdown(data.descriptionMd)}</div>
+			{/if}
 			<p class="meta">
 				Published {data.publishedAt.toLocaleDateString()}
 				{#if data.versionLabel}- {data.versionLabel}{/if}
