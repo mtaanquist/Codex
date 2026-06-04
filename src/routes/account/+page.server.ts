@@ -22,6 +22,7 @@ import { verifyPassword } from '$lib/server/password';
 import { queueEmail } from '$lib/server/jobs';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
+import { isAccentColor, isTheme, normaliseAccent } from '$lib/appearance';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!;
@@ -119,6 +120,17 @@ export const actions: Actions = {
 			continuousSceneMarks: marks
 		});
 		return { scope: 'prefs', saved: true };
+	},
+	saveAppearance: async ({ request, locals }) => {
+		const data = await request.formData();
+		const theme = String(data.get('theme') ?? '');
+		const accent = String(data.get('accent') ?? '');
+		if (!isTheme(theme)) return fail(400, { scope: 'appearance', message: 'Pick a theme.' });
+		if (!isAccentColor(accent)) {
+			return fail(400, { scope: 'appearance', message: 'Pick a valid accent colour.' });
+		}
+		await savePreferences(db, locals.user!.id, { theme, accent: normaliseAccent(accent) });
+		return { scope: 'appearance', saved: true };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) await revokeSession(db, locals.session.id);
