@@ -52,7 +52,7 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 23b. Editable continuous view (v1.10): the story view stitches one SceneEditor per scene (own autosave chain, mentions, autocomplete, markers), vertical arrows cross scene boundaries, and the continuousSceneMarks preference hides the scene marks for authors who treat scenes as atomic splits (both first-use feedback items)
 - [x] 24. Scheduled off-site backups and restore (v1.8, cadence in v1.8.1): hourly pg_dump from the worker to any S3-compatible bucket with skip-if-unchanged and tiered retention (48h full, 30d daily), admin "Back up now" with visible run history, restore script drilled live against MinIO (took the slot SillyTavern vacated; pulled forward from step 33 because no disaster recovery means not production ready). WAL/PITR noted as a Phase 6 candidate.
 - [ ] 25. Assets and images
-- [ ] 26. Markdown and EPUB export
+- [ ] 26. Markdown, EPUB, and PDF export (PDF added at the author's request: print-optimised route + browser print dialog; shared markdown-to-HTML renderer feeds all three and step 27)
 - [ ] 27. Public reading pages, self-host
 
 > Step 24 was originally SillyTavern/lorebook import, dropped on 2026-06-04
