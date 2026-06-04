@@ -39,9 +39,11 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 20. Declared story membership: membership tables, story Plan lists members-or-mentioned, create-in-story declares, "From the universe..." select adds existing entities, editor shows the standing with add/remove (ships with v1.6)
 - [x] 21. Entity autocomplete (v1.6): completion source over names and aliases, popup and ghost-text modes in the reserved compartment, user preference (popup default) stored in users.preferences; the three-option select sits on the dashboard until Display settings arrives at step 32
 
-> v1.0 shipped after step 15, gated on the full code review (done; findings
-> fixed, leftovers in the backlog below). v1.1 (places) shipped. Each remaining
-> step ships as its own v1.x release.
+> Phase 3 complete: v1.0 shipped after step 15 (gated on the full code
+> review; findings fixed, leftovers in the backlog below), then v1.1
+> through v1.6 in turn. Next is Phase 4 (history, polish, import/export),
+> steps 22-27, releasing as v2.0. The author holds 3 free /code-review
+> ultra runs, intended for phase boundaries.
 
 ## Feedback backlog
 
