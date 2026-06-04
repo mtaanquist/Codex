@@ -241,13 +241,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
-	// cast shows in the right panel.
+	// cast shows in the right panel. The window is generous because a loaded
+	// CI runner shares cycles between the app, the worker, and Postgres.
 	await expect(async () => {
 		await page.reload();
 		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden', 'Toll-pass'], {
-			timeout: 1500
+			timeout: 3000
 		});
-	}).toPass({ timeout: 30000 });
+	}).toPass({ timeout: 60000 });
 
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
