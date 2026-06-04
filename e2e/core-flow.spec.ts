@@ -7,9 +7,10 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page).toHaveURL('/');
 
-	// Repeated runs share the seeded user, so pin the autocomplete
-	// preference to the default before exercising it later.
+	// Repeated runs share the seeded user, so pin the preferences to their
+	// defaults before exercising them later.
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
+	await page.getByLabel('Scene marks in the story view').selectOption('shown');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 
@@ -86,6 +87,26 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page).toHaveURL(/view=story/);
 	await expect(page.locator('.doc-scene')).toHaveCount(2);
 	await expect(page.locator('.story-doc')).toContainText('The gate of Halden');
+
+	// The continuous view is editable in place: each scene is its own
+	// editor with its own autosave.
+	await expect(page.locator('.doc-scene-mark')).toHaveCount(2);
+	const docEditor = page
+		.locator('.doc-scene', { hasText: 'The gate of Halden' })
+		.locator('.cm-content');
+	const docSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await docEditor.click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Edited in the flow.');
+	await docSave;
+
+	// Vertical arrows cross scene boundaries.
+	await page.locator('.doc-scene').nth(0).locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ArrowDown');
+	await expect(page.locator('.doc-scene').nth(1).locator('.cm-content')).toBeFocused();
 	await page.locator('.scene-row').nth(1).click();
 	await expect(page).toHaveURL(/#scene-/);
 
@@ -96,6 +117,7 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	// A scene mark in the document jumps straight into editing that scene.
 	await page.getByRole('link', { name: 'Read the whole story' }).click();
 	await page.locator('.doc-scene-mark').nth(1).click();
+	await expect(page).not.toHaveURL(/view=story/);
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 
@@ -351,6 +373,16 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await markerResolve;
 	await expect(page.locator('.todo-marker')).toHaveCount(0);
 	await expect(page.locator('.todo-row')).toHaveCount(1);
+
+	// Scene marks in the story view follow the display preference.
+	await page.locator('.brand').click();
+	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
+	await page.getByRole('button', { name: 'Save preferences' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.goto(`${proseSceneUrl}&view=story`);
+	await expect(page.locator('.doc-scene').first()).toBeVisible();
+	await expect(page.locator('.doc-scene-mark')).toHaveCount(0);
+	await page.goto(proseSceneUrl);
 
 	// The breadcrumb leads to the universe editor: the same cast at universe
 	// scope, with no per-story notes section.

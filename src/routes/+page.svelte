@@ -63,6 +63,13 @@
 				<option value="off">Off</option>
 			</select>
 		</label>
+		<label>
+			Scene marks in the story view
+			<select name="continuousSceneMarks" value={data.preferences.continuousSceneMarks}>
+				<option value="shown">Shown</option>
+				<option value="hidden">Hidden</option>
+			</select>
+		</label>
 		<button type="submit">Save preferences</button>
 		{#if form && 'prefSaved' in form && form.prefSaved}
 			<p role="status">Saved.</p>

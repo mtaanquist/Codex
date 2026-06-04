@@ -5,8 +5,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { EditorView } from '@codemirror/view';
-	import { Compartment, EditorState } from '@codemirror/state';
+	import { EditorView, keymap } from '@codemirror/view';
+	import { Compartment, EditorState, Prec } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
@@ -19,6 +19,8 @@
 		entities = [],
 		autocompleteMode = 'popup',
 		markers = [],
+		compact = false,
+		onCrossBoundary,
 		onStatus
 	}: {
 		sceneId: string;
@@ -27,6 +29,10 @@
 		entities?: MentionEntity[];
 		autocompleteMode?: AutocompleteMode;
 		markers?: SceneMarker[];
+		// The continuous story view stitches one editor per scene: no title
+		// input, and vertical arrows at the edges hand focus to neighbours.
+		compact?: boolean;
+		onCrossBoundary?: (direction: 'up' | 'down') => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -93,6 +99,38 @@
 		if (response.ok) await invalidateAll();
 	}
 
+	// At the visual top or bottom of this editor, vertical arrows hand
+	// focus to the neighbouring scene instead of dying at the edge. High
+	// precedence, because the default keymap consumes an edge ArrowDown to
+	// record its goal column and would eat the first press.
+	function boundaryKeymap() {
+		if (!onCrossBoundary) return [];
+		const cross = (forward: boolean) => (view: EditorView) => {
+			const range = view.state.selection.main;
+			if (!range.empty) return false;
+			const moved = view.moveVertically(range, forward);
+			if (moved.head !== range.head) return false;
+			onCrossBoundary!(forward ? 'down' : 'up');
+			return true;
+		};
+		return Prec.high(
+			keymap.of([
+				{ key: 'ArrowDown', run: cross(true) },
+				{ key: 'ArrowUp', run: cross(false) }
+			])
+		);
+	}
+
+	// Lets the page place the caret when focus crosses a scene boundary.
+	export function focusEdge(edge: 'start' | 'end') {
+		if (!view) return;
+		view.focus();
+		view.dispatch({
+			selection: { anchor: edge === 'start' ? 0 : view.state.doc.length },
+			scrollIntoView: true
+		});
+	}
+
 	// Checking a marker off elsewhere (or creating one) changes the set of
 	// ids; rebuild the highlights from the fresh server anchors. Same-set
 	// updates keep the editor's own mapped positions, which are newer.
@@ -122,7 +160,8 @@
 					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
 					mentionsCompartment.of(mentionExtensions(entities)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
-					markersCompartment.of(markerHandle.extension)
+					markersCompartment.of(markerHandle.extension),
+					boundaryKeymap()
 				]
 			})
 		});
@@ -138,14 +177,16 @@
 	});
 </script>
 
-<div class="editor">
-	<input
-		class="editor-title-input"
-		type="text"
-		placeholder="Untitled scene"
-		bind:value={titleValue}
-		oninput={scheduleSave}
-	/>
+<div class="editor" class:compact>
+	{#if !compact}
+		<input
+			class="editor-title-input"
+			type="text"
+			placeholder="Untitled scene"
+			bind:value={titleValue}
+			oninput={scheduleSave}
+		/>
+	{/if}
 	<div class="editor-cm" bind:this={editorEl}></div>
 </div>
 
@@ -164,5 +205,8 @@
 	}
 	.editor-title-input::placeholder {
 		color: var(--text-faint);
+	}
+	.editor.compact :global(.editor-cm) {
+		min-height: 0;
 	}
 </style>

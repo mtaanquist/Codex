@@ -4,7 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
-import { saveEntityAutocomplete, userPreferences } from '$lib/server/preferences';
+import { savePreferences, userPreferences } from '$lib/server/preferences';
 import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
 import { queueBackup } from '$lib/server/jobs';
 
@@ -76,10 +76,17 @@ export const actions: Actions = {
 	savePreferences: async ({ request, locals }) => {
 		const data = await request.formData();
 		const mode = String(data.get('entityAutocomplete') ?? '');
+		const marks = String(data.get('continuousSceneMarks') ?? '');
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { message: 'Pick an autocomplete mode.' });
 		}
-		await saveEntityAutocomplete(db, locals.user!.id, mode);
+		if (marks !== 'shown' && marks !== 'hidden') {
+			return fail(400, { message: 'Pick a scene marks option.' });
+		}
+		await savePreferences(db, locals.user!.id, {
+			entityAutocomplete: mode,
+			continuousSceneMarks: marks
+		});
 		return { prefSaved: true };
 	},
 	runBackup: async ({ locals }) => {

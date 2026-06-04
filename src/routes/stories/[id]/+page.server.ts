@@ -14,7 +14,7 @@ import {
 } from '$lib/server/db/schema';
 import { userPreferences } from '$lib/server/preferences';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
-import { listSceneMarkers, listStoryTodos } from '$lib/server/markers';
+import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -89,6 +89,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// Everything still to do across the story, for the right panel.
 	const storyTodos = await listStoryTodos(db, story.id);
+
+	// Marker highlights for the continuous view's stitched editors.
+	const storyDocMarkers = view === 'story' ? await listStoryMarkersByScene(db, story.id) : {};
 
 	// Who is mentioned in the open scene, read from the worker-built index.
 	let inScene: { id: string; name: string; count: number }[] = [];
@@ -194,6 +197,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionPreview,
 		sceneMarkers,
 		storyTodos,
+		storyDocMarkers,
 		mentionEntities,
 		inScene,
 		view,
