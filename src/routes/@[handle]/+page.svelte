@@ -54,7 +54,9 @@
 				{/if}
 				{#if profile.links.length > 0}
 					<ul class="profile-links">
-						{#each profile.links as link (link.url)}
+						<!-- Keyed by index: this is a short static list, and a URL is not a
+						     safe key (older rows may hold duplicates that would crash hydration). -->
+						{#each profile.links as link, i (i)}
 							<li>
 								{#if linkHref(link.url)}
 									<!-- An external author link, not an app route; resolve() does not apply. -->

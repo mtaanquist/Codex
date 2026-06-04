@@ -41,6 +41,18 @@ describe('parseLinks', () => {
 		expect(link.url.length).toBe(200);
 	});
 
+	it('drops duplicate addresses, keeping the first', () => {
+		const value = [
+			{ label: 'Site', url: 'https://example.com' },
+			{ label: 'Mirror', url: 'https://example.com' },
+			{ label: 'Blog', url: 'https://blog.test' }
+		];
+		expect(parseLinks(value)).toEqual([
+			{ label: 'Site', url: 'https://example.com' },
+			{ label: 'Blog', url: 'https://blog.test' }
+		]);
+	});
+
 	it('returns an empty array for invalid input', () => {
 		expect(parseLinks('not json')).toEqual([]);
 		expect(parseLinks('{"not":"an array"}')).toEqual([]);

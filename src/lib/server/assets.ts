@@ -166,12 +166,19 @@ export async function setUserAvatar(
 		bytes: input.bytes
 	});
 	if (!result.ok) return result;
-	const [user] = await db
-		.select({ avatarAssetId: users.avatarAssetId })
-		.from(users)
-		.where(eq(users.id, userId));
-	const previous = user?.avatarAssetId ?? null;
-	await db.update(users).set({ avatarAssetId: result.id }).where(eq(users.id, userId));
+	// Lock the row, read its current avatar, then point it at the new one, all in
+	// one transaction. The FOR UPDATE lock serialises concurrent uploads, so each
+	// sees the value its predecessor actually left and deletes exactly that,
+	// rather than racing on a stale read and orphaning the loser's asset.
+	const previous = await db.transaction(async (tx) => {
+		const [user] = await tx
+			.select({ avatarAssetId: users.avatarAssetId })
+			.from(users)
+			.where(eq(users.id, userId))
+			.for('update');
+		await tx.update(users).set({ avatarAssetId: result.id }).where(eq(users.id, userId));
+		return user?.avatarAssetId ?? null;
+	});
 	if (previous && previous !== result.id) {
 		await deleteAsset(db, store, userId, previous).catch(() => {});
 	}
@@ -185,12 +192,17 @@ export async function clearUserAvatar(
 	store: AssetObjectStore,
 	userId: string
 ): Promise<void> {
-	const [user] = await db
-		.select({ avatarAssetId: users.avatarAssetId })
-		.from(users)
-		.where(eq(users.id, userId));
-	const previous = user?.avatarAssetId ?? null;
-	if (!previous) return;
-	await db.update(users).set({ avatarAssetId: null }).where(eq(users.id, userId));
-	await deleteAsset(db, store, userId, previous).catch(() => {});
+	// Same locked read-then-write as setUserAvatar, so a clear racing an upload
+	// cannot leave the just-uploaded image orphaned.
+	const previous = await db.transaction(async (tx) => {
+		const [user] = await tx
+			.select({ avatarAssetId: users.avatarAssetId })
+			.from(users)
+			.where(eq(users.id, userId))
+			.for('update');
+		const current = user?.avatarAssetId ?? null;
+		if (current) await tx.update(users).set({ avatarAssetId: null }).where(eq(users.id, userId));
+		return current;
+	});
+	if (previous) await deleteAsset(db, store, userId, previous).catch(() => {});
 }
