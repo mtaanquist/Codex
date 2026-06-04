@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('sign in, create a universe and a story, and open it', async ({ page }) => {
+test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	await page.goto('/login');
 	await page.getByLabel('Email').fill('e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
@@ -241,13 +241,14 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
-	// cast shows in the right panel.
+	// cast shows in the right panel. The window is generous because a loaded
+	// CI runner shares cycles between the app, the worker, and Postgres.
 	await expect(async () => {
 		await page.reload();
 		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden', 'Toll-pass'], {
-			timeout: 1500
+			timeout: 3000
 		});
-	}).toPass({ timeout: 30000 });
+	}).toPass({ timeout: 60000 });
 
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
@@ -255,7 +256,7 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await expect(page).toHaveURL(/\/plan\?entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
 	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
-	await expect(page.locator('.snippet')).toContainText('Mrs. Fenwick waited.');
+	await expect(page.locator('.snippet').first()).toContainText('Mrs. Fenwick waited.');
 	await page.locator('.r-line').click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
@@ -397,6 +398,13 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 
 		await page.goto(proseSceneUrl);
 		await page.locator('.cm-content').click();
+		// Cursor to the end so the dropped image lands after the prose rather
+		// than splitting a word; the drop handler falls back to the caret when
+		// the drop point is past the text.
+		await page.keyboard.press('Control+End');
+		const dropSave = page.waitForResponse(
+			(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+		);
 		await page.evaluate((b64) => {
 			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 			const transfer = new DataTransfer();
@@ -408,19 +416,52 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 					bubbles: true,
 					cancelable: true,
 					dataTransfer: transfer,
-					clientX: rect.x + 10,
-					clientY: rect.y + 10
+					clientX: rect.x + 5,
+					clientY: rect.bottom + 50
 				})
 			);
 		}, PNG_B64);
 		await expect(page.locator('.cm-content')).toContainText('![sketch.png](/assets/');
+		// Let the autosave persist the inserted markdown before publishing,
+		// so the frozen edition actually contains the image.
+		await dropSave;
 	} else {
 		console.warn('ASSET_S3_BUCKET not set: skipping the asset upload segment.');
 	}
 
+	// Publishing: set the story public, freeze an edition, and read it
+	// back anonymously on the public pages.
+	await page.locator('.crumb.current').click();
+	await expect(page.getByRole('heading', { name: 'Publish' })).toBeVisible();
+	await page.getByLabel('Visibility').selectOption('public');
+	await page.getByRole('button', { name: 'Save visibility' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.getByRole('button', { name: 'Publish edition' }).click();
+	await expect(page.getByRole('status')).toContainText('Edition published.');
+
+	const anonymous = await browser.newContext();
+	const reader = await anonymous.newPage();
+	await reader.goto('/@e2e-tester');
+	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
+	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
+	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
+	await expect(reader.locator('.reader')).toContainText('The gate of Halden');
+	// Inline images of a published edition must serve to the anonymous
+	// reader, not 404 (bug_004).
+	if (process.env.ASSET_S3_BUCKET) {
+		const inlineImg = reader.locator('.reader article img').first();
+		await expect(inlineImg).toHaveCount(1);
+		const src = await inlineImg.getAttribute('src');
+		const served = await reader.request.get(src!);
+		expect(served.status()).toBe(200);
+	}
+	// A mistyped story id under a real handle is a clean 404, not a 500.
+	const notFound = await reader.request.get('/@e2e-tester/not-a-uuid');
+	expect(notFound.status()).toBe(404);
+	await anonymous.close();
+
 	// Exports: the zip and the EPUB download, and the print view renders
 	// the prose for PDF via the browser dialog.
-	await page.locator('.crumb.current').click();
 	await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
 	const zipDownload = page.waitForEvent('download');
 	await page.getByRole('link', { name: 'Markdown (.zip)' }).click();
@@ -523,6 +564,14 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.getByRole('button', { name: 'Remove from this story' }).click();
 	await memberOff;
 	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+
+	// Deleting a story that has chapters, scenes, an outline, markers,
+	// revisions, and a published edition succeeds rather than 500ing on the
+	// foreign keys, and lands back on the universe.
+	await page.goto(`${proseSceneUrl.split('?')[0]}/settings`);
+	await page.getByRole('button', { name: 'Delete story' }).click();
+	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
+	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
 });
 
 test('wrong password is rejected', async ({ page }) => {

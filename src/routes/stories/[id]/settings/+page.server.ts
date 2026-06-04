@@ -5,6 +5,9 @@ import { db } from '$lib/server/db';
 import { stories, universes } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
 import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
+import { publishStory } from '$lib/server/publish';
+import { deleteStory } from '$lib/server/story-delete';
+import { users } from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -19,7 +22,11 @@ async function ownedStory(storyId: string, userId: string) {
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 	const timeline = await storyTimeline(db, story.id, 30);
-	return { story, universe, timeline, assetsConfigured: assetConfig() !== null };
+	const [archive] = await db
+		.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
+		.from(users)
+		.where(eq(users.id, locals.user!.id));
+	return { story, universe, timeline, assetsConfigured: assetConfig() !== null, archive };
 };
 
 export const actions: Actions = {
@@ -38,6 +45,27 @@ export const actions: Actions = {
 			.set({ title, author, brief, descriptionMd })
 			.where(eq(stories.id, story.id));
 		return { action: 'update', saved: true };
+	},
+	setVisibility: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const visibility = String(data.get('visibility') ?? '');
+		if (visibility !== 'private' && visibility !== 'unlisted' && visibility !== 'public') {
+			return fail(400, { action: 'publish', message: 'Pick a visibility.' });
+		}
+		const isAdult = data.get('isAdult') === 'on';
+		await db.update(stories).set({ visibility, isAdult }).where(eq(stories.id, story.id));
+		return { action: 'publish', saved: true };
+	},
+	publish: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const versionLabel = String(data.get('versionLabel') ?? '');
+		const result = await publishStory(db, locals.user!.id, story.id, versionLabel);
+		if (!result.ok) {
+			return fail(400, { action: 'publish', message: result.reason });
+		}
+		return { action: 'publish', published: true };
 	},
 	setCover: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
@@ -69,7 +97,9 @@ export const actions: Actions = {
 	},
 	delete: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		await db.delete(stories).where(eq(stories.id, story.id));
+		// Clears every story-scoped row first; a plain delete 500s on the FKs
+		// the moment the story has any content or a published edition.
+		await deleteStory(db, story.id, locals.user!.id);
 		redirect(303, `/universes/${story.universeId}`);
 	}
 };

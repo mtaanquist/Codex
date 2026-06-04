@@ -53,15 +53,19 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 24. Scheduled off-site backups and restore (v1.8, cadence in v1.8.1): hourly pg_dump from the worker to any S3-compatible bucket with skip-if-unchanged and tiered retention (48h full, 30d daily), admin "Back up now" with visible run history, restore script drilled live against MinIO (took the slot SillyTavern vacated; pulled forward from step 33 because no disaster recovery means not production ready). WAL/PITR noted as a Phase 6 candidate.
 - [x] 25. Assets and images (v1.11): S3-compatible storage as the only backend (author's call: a database restore keeps every asset link valid), separate bucket from backups, off until ASSET*S3*\* set with an optional minio compose profile, paste/drop image upload in the scene editors inserting markdown, story covers with a generated SVG default, app-served with nosniff
 - [x] 26. Markdown, EPUB, and PDF export (v1.12): shared markdown-it renderer (raw HTML escaped), zip of front-mattered scene files with bundled rewritten assets, hand-rolled minimal EPUB3 over fflate (stale libs declined), print-optimised route for PDF via the browser dialog; Export section in story settings
-- [ ] 27. Public reading pages, self-host
+- [x] 27. Public reading pages, self-host (v2.0 candidate): publications table, publish freezes editions (gated on admin-enabled archive + claimed handle), /@handle shelf and per-story reader (semantic HTML, adult confirmation + noindex, public covers), visibility private/unlisted/public, admin enable + takedown. RSS noted as easy follow-on.
 
 > Step 24 was originally SillyTavern/lorebook import, dropped on 2026-06-04
 > at the author's call; that now sits in the roadmap's Phase 6 candidates,
 > and the schema already models for its return (imported_from,
 > activation_mode). Step 25 resolved the asset-durability question by going S3-only.
 
-> Phase 4 releases as v2.0 after step 27; 23 and 23b ship as point releases
-> along the way. The author plans the first /code-review ultra run at v2.0.
+> Phase 4 complete; shipped as v2.0. The /code-review ultra run before the
+> tag found 10 issues (9 public-surface + 1 pre-existing story-delete
+> cascade); all fixed and merged. Phase 6 candidates recorded along the
+> way: stored export artifacts (GitHub-releases style) and SillyTavern
+> import. Next is Phase 5 (account lifecycle and hosted launch), steps
+> 28-35, releasing as v2.5.
 
 ## Feedback backlog
 
@@ -79,6 +83,11 @@ From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed
 - [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts)
 - [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
 - [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
+- [ ] updateMarkerAnchors issues one UPDATE per anchor in a loop; batch it the same way (markers.ts)
+
+From a pre-v2.0 self-review (2026-06-04); the cover IDOR and the duplicated media-types map were fixed:
+
+- [x] The worker-indexed find-usages e2e assertion was timing-flaky on loaded CI runners; the toPass window was widened to 60s (3s per attempt) so the worker has room. If it recurs, switch to asserting set membership rather than exact contents.
 - [x] CI never ran the Docker image, so a broken worker import closure shipped silently (caught by hand at v1.6: src/lib was missing from the image since step 14). Fixed in v1.6.1 with a docker-smoke CI job that builds the image and boots compose with a worker check
 
 Later phases tracked in the roadmap until they get close.

@@ -3,6 +3,8 @@ import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 
 const PUBLIC_PATHS = new Set(['/login']);
+// Reader pages are public; assets check publication state themselves.
+const PUBLIC_PREFIXES = ['/@', '/assets/'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
@@ -19,7 +21,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	if (!event.locals.user && !PUBLIC_PATHS.has(event.url.pathname)) {
+	if (
+		!event.locals.user &&
+		!PUBLIC_PATHS.has(event.url.pathname) &&
+		!PUBLIC_PREFIXES.some((prefix) => event.url.pathname.startsWith(prefix))
+	) {
 		redirect(303, '/login');
 	}
 	if (event.locals.user && event.url.pathname === '/login') {

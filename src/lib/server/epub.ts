@@ -2,6 +2,7 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 import type { Database } from './auth';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '$lib/markdown';
 import { gatherStory, type AssetLoader, type ExportAsset, type ExportStory } from './export';
+import { extensionFor } from './media-types';
 
 // A minimal EPUB 3 by hand: it is a zip whose first entry is the literal
 // string "application/epub+zip", stored uncompressed, plus a container
@@ -15,14 +16,6 @@ function escapeXml(text: string): string {
 		.replaceAll('>', '&gt;')
 		.replaceAll('"', '&quot;');
 }
-
-const EXTENSIONS: Record<string, string> = {
-	'image/png': 'png',
-	'image/jpeg': 'jpg',
-	'image/webp': 'webp',
-	'image/gif': 'gif',
-	'image/avif': 'avif'
-};
 
 const STYLE = `body { font-family: serif; line-height: 1.6; }
 h1 { text-align: center; margin: 2em 0 1.5em; }
@@ -52,7 +45,7 @@ export async function buildEpub(
 	const loaded = await loadAssets(wanted);
 	const images = new Map<string, ExportAsset>(loaded.map((asset) => [asset.id, asset]));
 	const imageFile = (id: string) =>
-		`images/${id}.${EXTENSIONS[images.get(id)?.contentType ?? ''] ?? 'bin'}`;
+		`images/${id}.${extensionFor(images.get(id)?.contentType ?? '')}`;
 
 	// Sections: each chapter is one XHTML file; chapterless scenes close
 	// the book as an unfiled section.
