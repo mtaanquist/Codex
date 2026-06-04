@@ -12,7 +12,7 @@ Companion documents:
 
 Codex sits between the formal tools that treat writing as a deliverable (Scrivener, Final Draft) and the prose editors that treat writing as a single document (markdown editors, Word). What it adds is structure: a **universe** that holds shared worldbuilding, **stories** that tell specific narratives within that universe, **chapters** and **scenes** that carry the prose, and **characters, places, and lore entries** — cross-referenced, searchable, visible alongside the writing surface without crowding it.
 
-It is not a chat tool. It is not a role-play tool. It is not, principally, a publishing platform — though it exports what you need to take your work elsewhere. The shape is the same whether you self-host or use the hosted service: a small number of accounts under one operator, with strong per-user data isolation. The hosted service runs one such instance per customer; what differs is who is responsible for the box it runs on, not the model.
+It is not a chat tool. It is not a role-play tool. It is not, principally, a publishing platform — though it exports what you need to take your work elsewhere. The shape is the same whether you self-host or use the hosted service: one shared instance with a number of accounts on it, each user's work scoped to them and private by default, and published pages reachable by anyone (the GitHub model). What differs between self-host and hosted is only who is responsible for the box it runs on, not the model.
 
 ## Who uses it
 
@@ -185,7 +185,7 @@ Codex assumes private writing, but a writer can choose to share finished work as
 
 A few smaller rules round this out. Handles come from a reserved list so application routes (sign-in, settings, and the like) can never be claimed; changing a handle is allowed but breaks old links. Adult pages are served with a noindex instruction so search engines do not surface them. And there is, by design, no site-wide directory or search: the only routes to a reader page are an author's handle and a direct link, so discovery across authors is deliberately out of scope.
 
-On a self-hosted instance, the instance serves these pages for its own users directly. On the hosted service, the global `/@handle` namespace and the page rendering belong to a central reader site that reads only the synced, frozen editions and never touches any tenant's live database; the handle registry lives in the control plane. The code that produces an edition is the same in both places. See `roadmap.md` for sequencing.
+The instance serves these `/@handle` pages directly for its own users, the same way whether self-hosted or hosted. They render only the frozen, published editions, never a draft, and handles are unique within the instance. (A central cross-instance handle registry would only matter if there were ever many separate instances sharing one public namespace, which the single-instance model does not need; see `roadmap.md`.)
 
 ## AI: deferred
 
@@ -230,9 +230,11 @@ The stack is chosen to stay easy to maintain over a long-running project and app
 
 ### Hosting and tenancy
 
-The application is single-operator and multi-user: one person runs an instance for themselves and any friends they invite, each of whom owns their own universes and stories. That is exactly the self-host shape, and it is the only shape the application code knows about.
+The application is single-operator and multi-user: one person runs an instance for themselves and any friends they invite, each of whom owns their own universes and stories. That is the self-host shape, and the hosted service is the same shape - the maintainer runs one instance and opens sign-up on it.
 
-The hosted service is a fleet of those same instances, one per customer, following the Ghost Pro model. A tenant is an operator account, and each tenant gets an isolated app process and database. Isolation is therefore at the process and database level rather than a filter applied to shared tables, which keeps one tenant's unpublished work structurally out of reach of another. Provisioning instances, routing by subdomain, issuing TLS, and rolling upgrades across the fleet all live in a separate control plane built for the hosted launch (see `roadmap.md`, Phase 5), not in the application. If per-tenant database overhead ever matters at small scale, the cheap step is a shared Postgres server with one database per tenant, which keeps database-level isolation.
+There is one instance and one database, shared by everyone on it, in the GitHub model: your work is scoped to you and private by default, and the pages you choose to publish are reachable by anyone. There is no fleet, no instance-per-user, and no control plane to provision or route tenants; the hosted service is simply this one application running, with accounts on it. Self-host and hosted run identical code.
+
+Because the instance is shared, isolation is a property of the code rather than the deployment: every universe and story carries a single `owner_id`, and every query that reads or writes a user's private content is scoped to the signed-in owner. One user's unpublished work is kept out of another's reach by that scoping, so it has to hold on every path - which makes a deliberate cross-tenant isolation audit part of preparing the instance for sign-ups (see `roadmap.md`, Phase 5). The published `/@handle` reader pages are the only content that crosses between users, and only ever the frozen editions a user chose to make public.
 
 Portability is achieved through export, not through storage format. The database is the running format; markdown archives and EPUB are the portable artefacts produced on demand. Version history is a polymorphic `revisions` table rather than Git.
 
