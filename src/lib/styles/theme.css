@@ -1627,6 +1627,9 @@
 	text-align: left;
 	border-radius: 7px;
 	color: var(--text);
+	/* Reference rows are anchors; do not let the name pick up the default
+	   anchor underline. */
+	text-decoration: none;
 }
 .r-line + .r-line {
 	border-top: 1px solid var(--border);

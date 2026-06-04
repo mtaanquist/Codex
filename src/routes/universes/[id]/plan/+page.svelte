@@ -172,9 +172,6 @@
 </div>
 
 <style>
-	.r-line {
-		text-decoration: none;
-	}
 	.rel-label {
 		color: var(--text-muted);
 		font-size: 12px;
