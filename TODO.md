@@ -50,14 +50,17 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 22. Revisions and history (v1.7): polymorphic revisions table, insert on body-changing saves across all five types, checkpoints with labels, Reference/History tabs in the right column, preview banner with jsdiff changes toggle, restore-on-top, story and universe settings timelines
 - [ ] 23. TODO markers (v1.x point release)
 - [ ] 23b. Editable continuous view (v1.x point release)
+- [x] 24. Scheduled off-site backups and restore (v1.8): nightly pg_dump from the worker to any S3-compatible bucket, retention pruning, admin "Back up now" with visible run history, restore script drilled live against MinIO (took the slot SillyTavern vacated; pulled forward from step 33 because no disaster recovery means not production ready)
 - [ ] 25. Assets and images
 - [ ] 26. Markdown and EPUB export
 - [ ] 27. Public reading pages, self-host
 
-> Step 24 (SillyTavern and lorebook import) was dropped from Phase 4 on
-> 2026-06-04 at the author's call; it now sits in the roadmap's Phase 6
-> candidates. The schema already models for its return (imported_from,
-> activation_mode).
+> Step 24 was originally SillyTavern/lorebook import, dropped on 2026-06-04
+> at the author's call; that now sits in the roadmap's Phase 6 candidates,
+> and the schema already models for its return (imported_from,
+> activation_mode). Note for step 25: assets on local disk must join the
+> backup story (or use an S3 storage backend directly); decide when assets
+> land.
 
 > Phase 4 releases as v2.0 after step 27; 23 and 23b ship as point releases
 > along the way. The author plans the first /code-review ultra run at v2.0.

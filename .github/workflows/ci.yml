@@ -30,6 +30,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Install postgresql-client-18 (backup round-trip test)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -so /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
       - run: npm ci
       - run: npm run lint
       - run: npm run check

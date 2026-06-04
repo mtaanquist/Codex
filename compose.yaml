@@ -19,6 +19,13 @@ services:
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
       ORIGIN: ${ORIGIN:-http://localhost:3000}
+      # The app only reads these to show backup status on the admin page.
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
     depends_on:
       db:
         condition: service_healthy
@@ -30,6 +37,15 @@ services:
     command: node src/worker/index.ts
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
+      # Off-site backups; off until the bucket and keys are set.
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_CRON: ${BACKUP_CRON:-}
+      BACKUP_KEEP: ${BACKUP_KEEP:-}
     depends_on:
       db:
         condition: service_healthy

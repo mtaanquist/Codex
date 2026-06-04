@@ -6,6 +6,7 @@ import { env } from '$env/dynamic/private';
 
 export const MENTIONS_SCENE_QUEUE = 'mentions-scene';
 export const MENTIONS_UNIVERSE_QUEUE = 'mentions-universe';
+export const BACKUP_QUEUE = 'run-backup';
 
 let starting: Promise<PgBoss> | null = null;
 
@@ -16,6 +17,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.start();
 		await boss.createQueue(MENTIONS_SCENE_QUEUE);
 		await boss.createQueue(MENTIONS_UNIVERSE_QUEUE);
+		await boss.createQueue(BACKUP_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -47,5 +49,23 @@ export async function queueUniverseMentions(universeId: string): Promise<void> {
 		);
 	} catch (error) {
 		console.error('queueing universe mention rebuild failed:', error);
+	}
+}
+
+// Ad-hoc backup, queued from the admin page. Unlike the mention queues
+// this returns whether the enqueue succeeded, so the page can say so; the
+// singleton key stops a double-click from running two dumps at once.
+export async function queueBackup(): Promise<boolean> {
+	try {
+		const boss = await getBoss();
+		const id = await boss.send(
+			BACKUP_QUEUE,
+			{ trigger: 'manual' },
+			{ singletonKey: 'backup', singletonSeconds: 30 }
+		);
+		return id !== null;
+	} catch (error) {
+		console.error('queueing backup failed:', error);
+		return false;
 	}
 }
