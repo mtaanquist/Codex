@@ -28,6 +28,9 @@ const citext = customType<{ data: string }>({
 export const users = pgTable('users', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	email: text('email').unique().notNull(),
+	// A new address awaiting confirmation; the live email only changes once the
+	// emailed link is clicked, so a typo never locks anyone out.
+	pendingEmail: text('pending_email'),
 	displayName: text('display_name').notNull(),
 	// Public profile slug ('@handle'); null until a public profile is claimed.
 	handle: citext('handle').unique(),
@@ -657,7 +660,9 @@ export const authTokens = pgTable('auth_tokens', {
 	userId: uuid('user_id')
 		.references(() => users.id)
 		.notNull(),
-	kind: text('kind', { enum: ['email_verify', 'password_reset', 'deletion_cancel'] }).notNull(),
+	kind: text('kind', {
+		enum: ['email_verify', 'password_reset', 'deletion_cancel', 'email_change']
+	}).notNull(),
 	tokenHash: text('token_hash').notNull(),
 	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 	consumedAt: timestamp('consumed_at', { withTimezone: true }),

@@ -64,6 +64,21 @@ export function signupNotificationEmail(
 	};
 }
 
+export function emailChangeEmail(to: string, link: string): EmailMessage {
+	return {
+		to,
+		subject: 'Confirm your new email address',
+		text: [
+			'You asked to change the email address on your Codex account to this one.',
+			'',
+			'Open this link to confirm the change:',
+			link,
+			'',
+			'The link is good for 24 hours. Until you confirm, your account keeps its current address. If you did not ask for this, you can ignore this message.'
+		].join('\n')
+	};
+}
+
 export function accountDeletionEmail(to: string, cancelLink: string, days: number): EmailMessage {
 	return {
 		to,

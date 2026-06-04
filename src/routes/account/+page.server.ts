@@ -7,6 +7,7 @@ import {
 	changeDisplayName,
 	changePassword,
 	listSessions,
+	requestEmailChange,
 	revokeOtherSessions,
 	revokeOwnSession
 } from '$lib/server/account';
@@ -15,7 +16,7 @@ import { SESSION_COOKIE } from '$lib/server/auth';
 import { users } from '$lib/server/db/schema';
 import { verifyPassword } from '$lib/server/password';
 import { queueEmail } from '$lib/server/jobs';
-import { accountDeletionEmail } from '$lib/server/email';
+import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -38,6 +39,21 @@ export const actions: Actions = {
 		);
 		if (!result.ok) return fail(400, { scope: 'name', message: result.reason });
 		return { scope: 'name', saved: true };
+	},
+	changeEmail: async ({ request, locals, url }) => {
+		const data = await request.formData();
+		const result = await requestEmailChange(
+			db,
+			locals.user!.id,
+			String(data.get('password') ?? ''),
+			String(data.get('newEmail') ?? '')
+		);
+		if (!result.ok) return fail(400, { scope: 'email', message: result.reason });
+		const origin = env.ORIGIN ?? url.origin;
+		await queueEmail(
+			emailChangeEmail(result.newEmail, `${origin}/confirm-email-change?token=${result.token}`)
+		);
+		return { scope: 'email', sent: true };
 	},
 	changePassword: async ({ request, locals }) => {
 		const data = await request.formData();

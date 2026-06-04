@@ -45,6 +45,25 @@
 	<section>
 		<h2>Email</h2>
 		<p>Your email address is <strong>{data.email}</strong>.</p>
+		<form method="POST" action="?/changeEmail">
+			{#if form?.scope === 'email' && form.message}
+				<span class="error" role="alert">{form.message}</span>
+			{:else if form?.scope === 'email' && form.sent}
+				<span class="ok" role="status">
+					Check your new inbox for a link to confirm the change. Your address stays the same until
+					you do.
+				</span>
+			{/if}
+			<label>
+				New email
+				<input type="email" name="newEmail" required autocomplete="email" />
+			</label>
+			<label>
+				Confirm your password
+				<input type="password" name="password" required autocomplete="current-password" />
+			</label>
+			<button type="submit">Change email</button>
+		</form>
 	</section>
 
 	<section>
