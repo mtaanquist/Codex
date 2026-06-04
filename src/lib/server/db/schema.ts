@@ -509,6 +509,39 @@ export const revisions = pgTable(
 	]
 );
 
+// A flagged spot in a scene to return to: a selection marked by hand, with
+// a checkable state. Plain "TODO:" lines in prose are detected from the
+// text instead and never get a row; deleting the line resolves them.
+export const sceneMarkers = pgTable(
+	'scene_markers',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		sceneId: uuid('scene_id')
+			.references(() => scenes.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		// 'note' and 'flag' are modelled for later; the UI creates 'todo'.
+		kind: text('kind', { enum: ['todo', 'note', 'flag'] })
+			.notNull()
+			.default('todo'),
+		// Character offsets into the scene body; the editor maps them through
+		// edits and the autosave persists the moved positions.
+		anchorStart: integer('anchor_start'),
+		anchorEnd: integer('anchor_end'),
+		// Optional note on the marker.
+		bodyMd: text('body_md'),
+		resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('scene_markers_scene_idx').on(table.sceneId)]
+);
+
 // One row per off-site backup attempt, success or failure, so the admin
 // page can show whether backups are actually happening. The bucket holds
 // the dumps; this table holds the evidence.

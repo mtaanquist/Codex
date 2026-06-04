@@ -353,6 +353,7 @@
 						body={data.selectedScene.bodyMd}
 						entities={data.mentionEntities}
 						autocompleteMode={data.preferences.entityAutocomplete}
+						markers={data.sceneMarkers}
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.
@@ -403,6 +404,41 @@
 				/>
 			{:else}
 				<div class="right-scroll">
+					{#if data.storyTodos.length > 0}
+						<div class="r-card">
+							<h5>To do</h5>
+							{#each data.storyTodos as todo, ti (ti)}
+								<div class="todo-row">
+									{#if todo.markerId}
+										<button
+											class="todo-check"
+											type="button"
+											title="Mark done"
+											onclick={async () => {
+												await fetch(`/api/markers/${todo.markerId}`, {
+													method: 'PUT',
+													headers: { 'content-type': 'application/json' },
+													body: JSON.stringify({ resolved: true })
+												});
+												await invalidateAll();
+											}}
+										></button>
+									{:else}
+										<span class="todo-dot" title="A TODO: line; delete it when done"></span>
+									{/if}
+									<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+									<a class="todo-text" href={`${storyPath}?scene=${todo.sceneId}`}>
+										{todo.text}
+										<span class="todo-scene">{todo.sceneTitle ?? 'Untitled scene'}</span>
+									</a>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								</div>
+							{/each}
+							<div class="todo-hint">
+								Write a line starting with TODO:, or select prose and press Ctrl+Alt+M.
+							</div>
+						</div>
+					{/if}
 					{#if data.selectedScene && data.inScene.length > 0}
 						<div class="r-card">
 							<h5>In this scene</h5>
@@ -502,5 +538,51 @@
 		font-size: 17.5px;
 		line-height: 1.7;
 		white-space: pre-wrap;
+	}
+	.todo-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 5px 0;
+		border-bottom: 1px dashed var(--border);
+	}
+	.todo-check {
+		width: 14px;
+		height: 14px;
+		margin-top: 2px;
+		flex: none;
+		border: 1.5px solid var(--cat-amber, #b8860b);
+		border-radius: 4px;
+		background: none;
+		cursor: pointer;
+	}
+	.todo-check:hover {
+		background: color-mix(in oklab, var(--cat-amber, #b8860b) 30%, transparent);
+	}
+	.todo-dot {
+		width: 14px;
+		height: 14px;
+		margin-top: 2px;
+		flex: none;
+		border-radius: 99px;
+		background: color-mix(in oklab, var(--cat-amber, #b8860b) 35%, transparent);
+	}
+	.todo-text {
+		flex: 1;
+		min-width: 0;
+		text-decoration: none;
+		color: var(--text);
+		font-size: 12.5px;
+		line-height: 1.45;
+	}
+	.todo-scene {
+		display: block;
+		color: var(--text-faint);
+		font-size: 11.5px;
+	}
+	.todo-hint {
+		color: var(--text-faint);
+		font-size: 11.5px;
+		padding-top: 8px;
 	}
 </style>

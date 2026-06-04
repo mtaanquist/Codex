@@ -4,11 +4,13 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
+	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 
 	let {
 		sceneId,
@@ -16,6 +18,7 @@
 		body,
 		entities = [],
 		autocompleteMode = 'popup',
+		markers = [],
 		onStatus
 	}: {
 		sceneId: string;
@@ -23,6 +26,7 @@
 		body: string;
 		entities?: MentionEntity[];
 		autocompleteMode?: AutocompleteMode;
+		markers?: SceneMarker[];
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -32,6 +36,9 @@
 	// autocomplete can be reconfigured at runtime in later phases.
 	const mentionsCompartment = new Compartment();
 	const autocompleteCompartment = new Compartment();
+	const markersCompartment = new Compartment();
+	// svelte-ignore state_referenced_locally
+	let markerHandle: MarkerHandle = markerExtensions(markers, markSelection);
 
 	let editorEl: HTMLDivElement;
 	let view: EditorView | undefined;
@@ -53,7 +60,12 @@
 			const response = await fetch(`/api/scenes/${sceneId}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ title: titleValue, bodyMd: view.state.doc.toString() })
+				body: JSON.stringify({
+					title: titleValue,
+					bodyMd: view.state.doc.toString(),
+					// Marker anchors as the editor mapped them through edits.
+					markers: markerHandle.anchors(view)
+				})
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
 			onStatus(dirty ? 'saving' : 'saved');
@@ -66,6 +78,34 @@
 	function enqueueSave() {
 		saveChain = saveChain.then(save);
 	}
+
+	// A new marker's anchors must land against saved text, so the prose is
+	// flushed first; the page data refresh then re-renders the highlights.
+	async function markSelection(from: number, to: number) {
+		clearTimeout(saveTimer);
+		enqueueSave();
+		await saveChain;
+		const response = await fetch(`/api/scenes/${sceneId}/markers`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ anchorStart: from, anchorEnd: to })
+		});
+		if (response.ok) await invalidateAll();
+	}
+
+	// Checking a marker off elsewhere (or creating one) changes the set of
+	// ids; rebuild the highlights from the fresh server anchors. Same-set
+	// updates keep the editor's own mapped positions, which are newer.
+	$effect(() => {
+		const incoming = markers
+			.map((marker) => marker.id)
+			.sort()
+			.join(',');
+		const current = [...markerHandle.ids].sort().join(',');
+		if (!view || incoming === current) return;
+		markerHandle = markerExtensions(markers, markSelection);
+		view.dispatch({ effects: markersCompartment.reconfigure(markerHandle.extension) });
+	});
 
 	function scheduleSave() {
 		dirty = true;
@@ -81,7 +121,8 @@
 				extensions: [
 					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
 					mentionsCompartment.of(mentionExtensions(entities)),
-					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode))
+					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
+					markersCompartment.of(markerHandle.extension)
 				]
 			})
 		});
