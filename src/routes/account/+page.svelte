@@ -18,6 +18,7 @@
 			case 'email':
 			case 'sessions':
 			case 'delete':
+			case 'totp':
 				return 'security';
 			case 'prefs':
 			case 'appearance':
@@ -616,12 +617,127 @@
 						<div class="admin-block-head">
 							<h2 class="admin-block-title">Two-factor authentication</h2>
 							<p class="admin-block-sub">
-								A one-time code from an authenticator app on top of your password.
+								A one-time code from an authenticator app on top of your password. Works with any
+								standard authenticator, such as Aegis, Ente Auth, 1Password, or Google
+								Authenticator.
 							</p>
 						</div>
-						<div class="admin-card">
-							<p class="admin-block-sub" style="margin:0;">Coming in a later release.</p>
-						</div>
+
+						{#if form?.scope === 'totp' && form.recoveryCodes}
+							<!-- Shown once, right after confirming or regenerating. -->
+							<div class="admin-card" style="border-color:var(--accent-line);">
+								<h3 class="settings-group-title" style="margin:0 0 var(--space-2);">
+									Save your recovery codes
+								</h3>
+								<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
+									Keep these somewhere safe. Each one signs you in once if you lose your
+									authenticator. They will not be shown again.
+								</p>
+								<div class="recovery-grid">
+									{#each form.recoveryCodes as code (code)}
+										<code>{code}</code>
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						{#if data.twoFactor.status === 'on'}
+							<div class="admin-card">
+								<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
+									<span class="pill pill-accent">On</span>
+									{#if data.twoFactor.confirmedAt}
+										Enabled {seen(data.twoFactor.confirmedAt)}.
+									{/if}
+									You will be asked for a code when you sign in.
+									{data.twoFactor.recoveryRemaining} of your recovery codes are unused.
+								</p>
+								<div class="row" style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
+									<form method="POST" action="?/regenerateRecovery">
+										<button type="submit" class="btn btn-secondary btn-sm"
+											>Regenerate recovery codes</button
+										>
+									</form>
+									<form method="POST" action="?/disableTotp">
+										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
+											>Turn off</button
+										>
+									</form>
+								</div>
+							</div>
+						{:else if data.twoFactor.status === 'pending' && data.totpSetup}
+							<div class="admin-card">
+								<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
+									Scan this with your authenticator app, then enter the 6-digit code it shows to
+									finish.
+								</p>
+								<div
+									style="display:flex; gap:var(--space-4); flex-wrap:wrap; align-items:flex-start; margin-bottom:var(--space-3);"
+								>
+									<img
+										src={data.totpSetup.qr}
+										alt="QR code for your authenticator app"
+										width="160"
+										height="160"
+										style="border-radius:var(--radius-sm); background:#fff; padding:6px;"
+									/>
+									<div class="field" style="margin:0; min-width:12rem;">
+										<label for="totp-secret">Setup key</label>
+										<div class="copy-field">
+											<input id="totp-secret" type="text" value={data.totpSetup.secret} readonly />
+										</div>
+										<p class="field-hint">Enter this by hand if you cannot scan the code.</p>
+									</div>
+								</div>
+								<form method="POST" action="?/confirmTotp">
+									<div class="field">
+										<label for="totp-code">6-digit code</label>
+										<input
+											id="totp-code"
+											class="input"
+											type="text"
+											name="code"
+											inputmode="numeric"
+											pattern="[0-9]*"
+											maxlength="6"
+											autocomplete="one-time-code"
+											required
+											style="max-width:9rem; letter-spacing:0.3em;"
+										/>
+									</div>
+									<div class="settings-actions">
+										{#if form?.scope === 'totp' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{/if}
+										<button type="submit" class="btn btn-primary">Verify and turn on</button>
+									</div>
+								</form>
+								<form method="POST" action="?/cancelTotp" style="margin-top:var(--space-2);">
+									<button type="submit" class="btn btn-ghost btn-sm">Cancel setup</button>
+								</form>
+							</div>
+						{:else}
+							<div class="admin-card">
+								{#if !data.twoFactor.available}
+									<p class="admin-block-sub" style="margin:0;">
+										Two-factor authentication is not set up on this instance.
+									</p>
+								{:else}
+									<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
+										Not enabled. Anyone with your password can sign in.
+									</p>
+									<form method="POST" action="?/startTotp">
+										{#if form?.scope === 'totp' && form.message}
+											<p class="field-hint" role="alert" style="color:var(--danger);">
+												{form.message}
+											</p>
+										{/if}
+										<button type="submit" class="btn btn-primary">Set up</button>
+									</form>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<div class="admin-block">

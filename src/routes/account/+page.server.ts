@@ -23,6 +23,17 @@ import { queueEmail } from '$lib/server/jobs';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
 import { isAccentColor, isTheme, normaliseAccent } from '$lib/appearance';
+import { secretsAvailable } from '$lib/server/crypto';
+import {
+	beginEnrollment,
+	confirmEnrollment,
+	disableTotp,
+	pendingEnrollment,
+	recoveryCodesRemaining,
+	regenerateRecoveryCodes,
+	totpStatus
+} from '$lib/server/two-factor';
+import QRCode from 'qrcode';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!;
@@ -41,6 +52,16 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		})
 		.from(users)
 		.where(eq(users.id, user.id));
+
+	const totp = await totpStatus(db, user.id);
+	const totpAvailable = secretsAvailable();
+	// While setup is pending, hand the screen the secret and a QR to redraw.
+	let totpSetup: { secret: string; otpauthUri: string; qr: string } | null = null;
+	if (totp.status === 'pending' && totpAvailable) {
+		const pending = await pendingEnrollment(db, user.id, user.email);
+		if (pending) totpSetup = { ...pending, qr: await QRCode.toDataURL(pending.otpauthUri) };
+	}
+
 	return {
 		displayName: user.displayName,
 		email: user.email,
@@ -50,7 +71,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		profile,
 		preferences: await userPreferences(db, user.id),
 		sessions: await listSessions(db, user.id, sessionId),
-		graceDays: DELETION_GRACE_DAYS
+		graceDays: DELETION_GRACE_DAYS,
+		twoFactor: {
+			status: totp.status,
+			confirmedAt: totp.confirmedAt,
+			available: totpAvailable,
+			recoveryRemaining: totp.status === 'on' ? await recoveryCodesRemaining(db, user.id) : 0
+		},
+		totpSetup
 	};
 };
 
@@ -131,6 +159,38 @@ export const actions: Actions = {
 		}
 		await savePreferences(db, locals.user!.id, { theme, accent: normaliseAccent(accent) });
 		return { scope: 'appearance', saved: true };
+	},
+	startTotp: async ({ locals }) => {
+		if (!secretsAvailable()) {
+			return fail(503, {
+				scope: 'totp',
+				message: 'Two-factor authentication is not configured on this instance.'
+			});
+		}
+		const result = await beginEnrollment(db, locals.user!.id, locals.user!.email);
+		if (!result.ok) return fail(400, { scope: 'totp', message: result.reason });
+		// The load now sees a pending enrolment and renders the setup step.
+		return { scope: 'totp', setupStarted: true };
+	},
+	confirmTotp: async ({ request, locals }) => {
+		const data = await request.formData();
+		const result = await confirmEnrollment(db, locals.user!.id, String(data.get('code') ?? ''));
+		if (!result.ok) return fail(400, { scope: 'totp', message: result.reason });
+		return { scope: 'totp', recoveryCodes: result.recoveryCodes };
+	},
+	cancelTotp: async ({ locals }) => {
+		// Only clears an unconfirmed setup; the button is hidden once it is on.
+		await disableTotp(db, locals.user!.id);
+		return { scope: 'totp', cancelled: true };
+	},
+	disableTotp: async ({ locals }) => {
+		await disableTotp(db, locals.user!.id);
+		return { scope: 'totp', disabled: true };
+	},
+	regenerateRecovery: async ({ locals }) => {
+		const codes = await regenerateRecoveryCodes(db, locals.user!.id);
+		if (!codes) return fail(400, { scope: 'totp', message: 'Two-factor authentication is off.' });
+		return { scope: 'totp', recoveryCodes: codes };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) await revokeSession(db, locals.session.id);

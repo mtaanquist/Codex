@@ -11,7 +11,9 @@ import {
 	publications,
 	sessions,
 	stories,
+	totpRecoveryCodes,
 	universes,
+	userTotp,
 	users,
 	authTokens
 } from './db/schema.ts';
@@ -119,6 +121,8 @@ export async function purgeAccount(
 		}
 
 		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
+		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));
+		await tx.delete(userTotp).where(eq(userTotp.userId, userId));
 		await tx.delete(sessions).where(eq(sessions.userId, userId));
 		await tx.delete(users).where(eq(users.id, userId));
 	});

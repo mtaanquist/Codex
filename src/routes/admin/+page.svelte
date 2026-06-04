@@ -598,6 +598,23 @@
 															>
 														</form>
 													{/if}
+													{#if account.twoFactorEnabled}
+														<form
+															method="POST"
+															action="?/resetTotp"
+															onsubmit={(event) => {
+																if (
+																	!confirm(
+																		`Turn off two-factor authentication for ${account.email}? They will sign in with their password alone until they set it up again.`
+																	)
+																)
+																	event.preventDefault();
+															}}
+														>
+															<input type="hidden" name="userId" value={account.id} />
+															<button type="submit" class="btn btn-ghost btn-sm">Reset 2FA</button>
+														</form>
+													{/if}
 													<form
 														method="POST"
 														action="?/deleteAccount"

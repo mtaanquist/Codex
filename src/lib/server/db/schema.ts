@@ -689,3 +689,33 @@ export const appSettings = pgTable('app_settings', {
 	value: jsonb('value').notNull(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+// A user's TOTP authenticator enrolment, at most one per account. The secret is
+// stored encrypted (see crypto.ts). The row exists from the moment setup begins;
+// confirmed_at stays null until the first code is verified, so an abandoned
+// setup never blocks sign-in. last_used_at backs replay protection.
+export const userTotp = pgTable('user_totp', {
+	userId: uuid('user_id')
+		.primaryKey()
+		.references(() => users.id),
+	secret: text('secret').notNull(),
+	confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+	lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// One-time recovery codes for when the authenticator is unavailable. Only the
+// hash is stored; used_at marks a code spent so it cannot be replayed.
+export const totpRecoveryCodes = pgTable(
+	'totp_recovery_codes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		codeHash: text('code_hash').notNull(),
+		usedAt: timestamp('used_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('totp_recovery_codes_user_idx').on(table.userId)]
+);

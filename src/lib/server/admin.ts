@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { authTokens, stories, universes, users } from './db/schema';
+import { authTokens, stories, universes, users, userTotp } from './db/schema';
 import { hashPassword } from './password';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
@@ -122,6 +122,7 @@ export type AdminUser = {
 	suspendedAt: Date | null;
 	publicArchiveEnabled: boolean;
 	handle: string | null;
+	twoFactorEnabled: boolean;
 	createdAt: Date;
 };
 
@@ -138,9 +139,11 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			suspendedAt: users.suspendedAt,
 			publicArchiveEnabled: users.publicArchiveEnabled,
 			handle: users.handle,
+			twoFactorEnabled: sql<boolean>`${userTotp.confirmedAt} is not null`,
 			createdAt: users.createdAt
 		})
 		.from(users)
+		.leftJoin(userTotp, eq(userTotp.userId, users.id))
 		.orderBy(desc(users.createdAt));
 }
 

@@ -4,6 +4,9 @@ import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 
 const PUBLIC_PATHS = new Set([
 	'/login',
+	// The two-factor challenge runs before a session exists; it guards itself on
+	// the signed challenge cookie.
+	'/login/totp',
 	'/signup',
 	'/verify-email',
 	'/forgot-password',

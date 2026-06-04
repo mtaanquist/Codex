@@ -2,6 +2,9 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { db } from '$lib/server/db';
 import { createSession, SESSION_COOKIE, verifyCredentials } from '$lib/server/auth';
+import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '$lib/server/two-factor';
+
+const CHALLENGE_MAX_AGE_SECONDS = 10 * 60;
 
 export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
@@ -27,6 +30,19 @@ export const actions: Actions = {
 		}
 		if (result.status === 'suspended') {
 			return fail(403, { email, message: 'This account has been suspended.' });
+		}
+
+		// With two-factor on, the password is only half the sign-in: hold a signed
+		// challenge in a short-lived cookie and ask for a code before any session
+		// exists.
+		if (await isTotpEnabled(db, result.user.id)) {
+			cookies.set(TOTP_CHALLENGE_COOKIE, issueTotpChallenge(result.user.id), {
+				path: '/',
+				httpOnly: true,
+				sameSite: 'lax',
+				maxAge: CHALLENGE_MAX_AGE_SECONDS
+			});
+			redirect(303, '/login/totp');
 		}
 
 		const session = await createSession(db, result.user.id, {
