@@ -80,6 +80,26 @@
 		<p>Image uploads need the ASSET_S3_* variables set; see .env.example.</p>
 	{/if}
 
+	<h2>Export</h2>
+	<ul class="exports">
+		<!-- eslint-disable svelte/no-navigation-without-resolve (file downloads and the print view) -->
+		<li>
+			<a href={`${resolve('/stories/[id]', { id: data.story.id })}/export`} download>
+				Markdown (.zip)
+			</a>
+			- every scene as a markdown file, images bundled
+		</li>
+		<li>
+			<a href={`${resolve('/stories/[id]', { id: data.story.id })}/epub`} download>EPUB</a>
+			- for e-readers
+		</li>
+		<li>
+			<a href={`${resolve('/stories/[id]', { id: data.story.id })}/print`}>PDF</a>
+			- opens a print view; choose "Save as PDF" in the print dialog
+		</li>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	</ul>
+
 	<h2>History</h2>
 	{#if data.timeline.length === 0}
 		<p>Recent changes to this story's scenes and outline appear here.</p>
