@@ -98,6 +98,34 @@ export async function updateMarkerAnchors(
 	}
 }
 
+// Unresolved markers across a story, for the continuous view's stitched
+// editors, grouped by scene.
+export async function listStoryMarkersByScene(db: Database, storyId: string) {
+	const rows = await db
+		.select({
+			id: sceneMarkers.id,
+			sceneId: sceneMarkers.sceneId,
+			anchorStart: sceneMarkers.anchorStart,
+			anchorEnd: sceneMarkers.anchorEnd
+		})
+		.from(sceneMarkers)
+		.innerJoin(scenes, eq(sceneMarkers.sceneId, scenes.id))
+		.where(and(eq(scenes.storyId, storyId), isNull(sceneMarkers.resolvedAt)))
+		.orderBy(asc(sceneMarkers.anchorStart));
+	const byScene: Record<
+		string,
+		{ id: string; anchorStart: number | null; anchorEnd: number | null }[]
+	> = {};
+	for (const row of rows) {
+		(byScene[row.sceneId] ??= []).push({
+			id: row.id,
+			anchorStart: row.anchorStart,
+			anchorEnd: row.anchorEnd
+		});
+	}
+	return byScene;
+}
+
 // Unresolved markers for one scene, for the editor's highlights.
 export async function listSceneMarkers(db: Database, sceneId: string) {
 	return await db

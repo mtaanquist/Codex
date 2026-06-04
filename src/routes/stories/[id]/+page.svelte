@@ -66,6 +66,21 @@
 		return (data.storyDoc ?? []).filter((scene) => scene.chapterId === chapterId);
 	}
 
+	// The continuous view stitches one editor per scene; vertical arrows at
+	// an editor's edge move the caret into the neighbouring scene.
+	const docOrder = $derived([
+		...data.chapters.flatMap((chapter) => docScenes(chapter.id).map((scene) => scene.id)),
+		...docScenes(null).map((scene) => scene.id)
+	]);
+	let docEditors: Record<string, { focusEdge: (edge: 'start' | 'end') => void } | undefined> =
+		$state({});
+
+	function focusNeighbor(sceneId: string, direction: 'up' | 'down') {
+		const index = docOrder.indexOf(sceneId);
+		const target = docOrder[index + (direction === 'down' ? 1 : -1)];
+		if (target) docEditors[target]?.focusEdge(direction === 'down' ? 'start' : 'end');
+	}
+
 	function words(count: number) {
 		if (count <= 0) return '';
 		return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
@@ -288,7 +303,36 @@
 		</aside>
 		<main class="pane center">
 			{#if viewStory}
-				<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+				{#snippet docScene(scene: NonNullable<typeof data.storyDoc>[number])}
+					<article class="doc-scene" id="scene-{scene.id}">
+						{#if data.preferences.continuousSceneMarks === 'shown'}
+							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+							<a
+								class="doc-scene-mark"
+								href={`${storyPath}?scene=${scene.id}`}
+								title="Edit this scene alone"
+							>
+								{scene.title ?? 'Untitled scene'}
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{/if}
+						<SceneEditor
+							bind:this={docEditors[scene.id]}
+							compact
+							sceneId={scene.id}
+							title={scene.title}
+							body={scene.bodyMd}
+							entities={data.mentionEntities}
+							autocompleteMode={data.preferences.entityAutocomplete}
+							markers={data.storyDocMarkers[scene.id] ?? []}
+							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
+							onStatus={(status) => {
+								saveStatus = status;
+								if (status === 'saved') void invalidateAll();
+							}}
+						/>
+					</article>
+				{/snippet}
 				<div class="editor story-doc">
 					<h1 class="doc-title">{data.story.title}</h1>
 					{#if (data.storyDoc ?? []).length === 0}
@@ -302,16 +346,7 @@
 							<section class="doc-chapter" id="chapter-{chapter.id}">
 								<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
 								{#each docList as scene (scene.id)}
-									<article class="doc-scene" id="scene-{scene.id}">
-										<a
-											class="doc-scene-mark"
-											href={`${storyPath}?scene=${scene.id}`}
-											title="Edit this scene"
-										>
-											{scene.title ?? 'Untitled scene'}
-										</a>
-										<div class="doc-scene-body">{scene.bodyMd}</div>
-									</article>
+									{@render docScene(scene)}
 								{/each}
 							</section>
 						{/if}
@@ -320,21 +355,11 @@
 						<section class="doc-chapter">
 							<h2>Unfiled scenes</h2>
 							{#each docScenes(null) as scene (scene.id)}
-								<article class="doc-scene" id="scene-{scene.id}">
-									<a
-										class="doc-scene-mark"
-										href={`${storyPath}?scene=${scene.id}`}
-										title="Edit this scene"
-									>
-										{scene.title ?? 'Untitled scene'}
-									</a>
-									<div class="doc-scene-body">{scene.bodyMd}</div>
-								</article>
+								{@render docScene(scene)}
 							{/each}
 						</section>
 					{/if}
 				</div>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{:else if data.selectedScene && data.revisionPreview}
 				<div class="editor">
 					<RevisionPreview
@@ -532,12 +557,6 @@
 	}
 	.doc-scene-mark:hover {
 		color: var(--accent);
-	}
-	.doc-scene-body {
-		font-family: var(--font-content);
-		font-size: 17.5px;
-		line-height: 1.7;
-		white-space: pre-wrap;
 	}
 	.todo-row {
 		display: flex;
