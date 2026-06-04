@@ -61,5 +61,6 @@ From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed
 - [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts)
 - [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
 - [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
+- [ ] CI never runs the Docker image, so a broken worker import closure ships silently (caught by hand at v1.6: src/lib was missing from the image since step 14). Candidate: a CI job that builds the image and boots compose with a worker healthcheck
 
 Later phases tracked in the roadmap until they get close.

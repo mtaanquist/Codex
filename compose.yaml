@@ -1,10 +1,11 @@
-# The full self-host stack: app, worker, database, and Caddy for TLS.
-# Editor-hosted development uses compose.dev.yaml (database only) instead.
+# The self-host stack: app, worker, and database. Caddy is optional and
+# off by default, for instances that sit behind their own reverse proxy;
+# enable it with COMPOSE_PROFILES=caddy in .env (or --profile caddy) to
+# let this stack terminate TLS instead.
 #
-# Defaults run out of the box on localhost. For a real deployment set:
-#   SITE_ADDRESS=your.domain   (Caddy then obtains TLS certificates)
-#   ORIGIN=https://your.domain
-#   POSTGRES_PASSWORD=something-strong
+# Defaults run out of the box on http://localhost:3000. Every variable is
+# documented in .env.example. Editor-hosted development uses
+# compose.dev.yaml (database only) instead.
 name: codex
 
 services:
@@ -13,9 +14,11 @@ services:
     image: codex-app
     restart: unless-stopped
     command: sh -c "node scripts/migrate.ts && node build"
+    ports:
+      - '${APP_PORT:-3000}:3000'
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
-      ORIGIN: ${ORIGIN:-http://localhost}
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
@@ -48,10 +51,12 @@ services:
 
   caddy:
     image: caddy:2-alpine
+    profiles:
+      - caddy
     restart: unless-stopped
     ports:
-      - '80:80'
-      - '443:443'
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     volumes:
