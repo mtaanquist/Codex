@@ -418,6 +418,22 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 		console.warn('ASSET_S3_BUCKET not set: skipping the asset upload segment.');
 	}
 
+	// Exports: the zip and the EPUB download, and the print view renders
+	// the prose for PDF via the browser dialog.
+	await page.locator('.crumb.current').click();
+	await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
+	const zipDownload = page.waitForEvent('download');
+	await page.getByRole('link', { name: 'Markdown (.zip)' }).click();
+	expect((await zipDownload).suggestedFilename()).toBe('book-of-ash.zip');
+	const epubDownload = page.waitForEvent('download');
+	await page.getByRole('link', { name: 'EPUB' }).click();
+	expect((await epubDownload).suggestedFilename()).toContain('.epub');
+	await page.getByRole('link', { name: 'PDF' }).click();
+	await expect(page).toHaveURL(/\/print$/);
+	await expect(page.locator('.title-page h1')).toHaveText('Book of Ash');
+	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');
+	await page.goto(proseSceneUrl);
+
 	// Scene marks in the story view follow the display preference.
 	await page.locator('.brand').click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
