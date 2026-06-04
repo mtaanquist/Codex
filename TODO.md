@@ -67,6 +67,29 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 > import. Next is Phase 5 (account lifecycle and hosted launch), steps
 > 28-35, releasing as v2.5.
 
+## Before the hosted launch (requested 2026-06-04)
+
+The hosted instance opens to under a dozen non-technical writers, so these
+two land before inviting them in. Both fit in Phase 5 alongside the
+account-lifecycle work; sequence with the author when Phase 5 starts.
+
+- [ ] In-app help (/docs). Help articles as committed markdown rendered
+      through the existing renderMarkdown (no wiki engine, no docs SaaS: too
+      much ops surface and breaks self-host/offline for an audience this
+      small). Routes /docs and /docs/[topic]; a reusable "?" HelpLink
+      component placed on the editor, Plan, publish, and backups pages,
+      opening the relevant topic. Tone follows the CLAUDE.md writing rules
+      (kind, plain, tells the reader what to do, no jargon). Articles live in
+      the repo so they version with the features they describe.
+- [ ] Default editing format preference (does not exist today: the editor
+      is CodeMirror over raw markdown, prefs hold only entityAutocomplete and
+      continuousSceneMarks). A writer should be able to choose a softer,
+      Word-like editing surface rather than seeing markdown syntax. New work:
+      a rich/WYSIWYG editing mode behind a preference, settable at user level
+      with a per-story override. Depends on the "markdown affordances" and
+      "preference layering" backlog items below; treat those as the
+      foundation and this as the user-facing choice on top.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
