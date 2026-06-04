@@ -26,6 +26,7 @@
 		</label>
 		<button type="submit">Sign in</button>
 	</form>
+	<p><a href={resolve('/forgot-password')}>Forgot password?</a></p>
 	<p><a href={resolve('/signup')}>Create an account</a></p>
 </main>
 
