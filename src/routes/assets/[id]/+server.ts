@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { assets } from '$lib/server/db/schema';
 import { assetConfig, openAsset, s3AssetStore } from '$lib/server/assets';
-import { isPublicAsset } from '$lib/server/publish';
+import { isPublicAsset, isPublicAvatar } from '$lib/server/publish';
 
 // Streams an uploaded asset: to its owner always, and to anyone when it
 // belongs to a publicly readable edition (cover or inline image).
@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	let opened = locals.user ? await openAsset(db, store, locals.user.id, params.id) : null;
 	let isPublic = false;
-	if (!opened && (await isPublicAsset(db, params.id))) {
+	if (!opened && ((await isPublicAsset(db, params.id)) || (await isPublicAvatar(db, params.id)))) {
 		const [row] = await db.select().from(assets).where(eq(assets.id, params.id));
 		if (row) {
 			opened = { asset: row, body: await store.get(row.storageKey) };

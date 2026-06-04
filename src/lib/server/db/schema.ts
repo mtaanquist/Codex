@@ -32,10 +32,22 @@ export const users = pgTable('users', {
 	// emailed link is clicked, so a typo never locks anyone out.
 	pendingEmail: text('pending_email'),
 	displayName: text('display_name').notNull(),
+	// Name to publish under when it differs from the display name; defaults to
+	// the display name at render time when null.
+	penName: text('pen_name'),
 	// Public profile slug ('@handle'); null until a public profile is claimed.
 	handle: citext('handle').unique(),
 	// Short bio shown on the public profile shelf.
 	bioMd: text('bio_md'),
+	// External links for the public shelf: an ordered array of { label, url }.
+	links: jsonb('links').notNull().default([]).$type<{ label: string; url: string }[]>(),
+	// Whether the author is taking commissions, with an optional line saying
+	// what they take on; both surface on the public shelf.
+	commissionsOpen: boolean('commissions_open').notNull().default(false),
+	commissionsMd: text('commissions_md'),
+	// Account-level avatar image; references assets(id) (kind 'avatar'). Null
+	// renders initials. Plain column, like stories.cover_asset_id.
+	avatarAssetId: uuid('avatar_asset_id'),
 	// Whether the '@handle' shelf is listed publicly.
 	profilePublic: boolean('profile_public').notNull().default(false),
 	// Admin grants this before a user may publish public pages.

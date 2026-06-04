@@ -6,7 +6,6 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import {
-	changeDisplayName,
 	changePassword,
 	claimHandle,
 	confirmEmailChange,
@@ -14,6 +13,7 @@ import {
 	requestEmailChange,
 	revokeOtherSessions,
 	revokeOwnSession,
+	saveIdentity,
 	saveProfile
 } from '../../src/lib/server/account';
 import { hashPassword, verifyPassword } from '../../src/lib/server/password';
@@ -66,28 +66,56 @@ afterAll(async () => {
 	await pool.end();
 });
 
-describe('changeDisplayName', () => {
-	it('trims and saves, and rejects empty', async () => {
-		expect((await changeDisplayName(db, userId, '  New Name  ')).ok).toBe(true);
-		const [row] = await db.select().from(users).where(eq(users.id, userId));
+describe('saveIdentity', () => {
+	it('trims the display name, saves the pen name, and rejects an empty name', async () => {
+		expect(
+			(await saveIdentity(db, userId, { displayName: '  New Name  ', penName: '  Quill  ' })).ok
+		).toBe(true);
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.displayName).toBe('New Name');
-		expect((await changeDisplayName(db, userId, '   ')).ok).toBe(false);
+		expect(row.penName).toBe('Quill');
+
+		// A blank pen name clears it; an empty display name is refused.
+		await saveIdentity(db, userId, { displayName: 'Keep', penName: '   ' });
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.penName).toBeNull();
+		expect((await saveIdentity(db, userId, { displayName: '   ', penName: '' })).ok).toBe(false);
 	});
 });
 
 describe('saveProfile', () => {
-	it('saves a trimmed bio and the public flag, and nulls an empty bio', async () => {
-		expect((await saveProfile(db, userId, { bioMd: '  Hello.  ', profilePublic: true })).ok).toBe(
-			true
-		);
+	it('saves the bio, links, commissions, and public flag, nulling blanks', async () => {
+		expect(
+			(
+				await saveProfile(db, userId, {
+					bioMd: '  Hello.  ',
+					profilePublic: true,
+					links: [{ label: 'Site', url: 'https://example.com' }],
+					commissionsOpen: true,
+					commissionsMd: '  Short fiction.  '
+				})
+			).ok
+		).toBe(true);
 		let [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.bioMd).toBe('Hello.');
 		expect(row.profilePublic).toBe(true);
+		expect(row.links).toEqual([{ label: 'Site', url: 'https://example.com' }]);
+		expect(row.commissionsOpen).toBe(true);
+		expect(row.commissionsMd).toBe('Short fiction.');
 
-		await saveProfile(db, userId, { bioMd: '   ', profilePublic: false });
+		await saveProfile(db, userId, {
+			bioMd: '   ',
+			profilePublic: false,
+			links: [],
+			commissionsOpen: false,
+			commissionsMd: '   '
+		});
 		[row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.bioMd).toBeNull();
 		expect(row.profilePublic).toBe(false);
+		expect(row.links).toEqual([]);
+		expect(row.commissionsOpen).toBe(false);
+		expect(row.commissionsMd).toBeNull();
 	});
 });
 

@@ -33,6 +33,26 @@
 		active = section;
 	}
 
+	let avatarForm = $state<HTMLFormElement | null>(null);
+
+	// The links editor works on a local copy seeded once from the loaded
+	// profile; the form posts it as JSON. Start with one empty row so there is
+	// always something to fill in.
+	// svelte-ignore state_referenced_locally
+	let links = $state(
+		data.profile.links?.length
+			? data.profile.links.map((link) => ({ ...link }))
+			: [{ label: '', url: '' }]
+	);
+	function addLink() {
+		links = [...links, { label: '', url: '' }];
+	}
+	function removeLink(index: number) {
+		links = links.filter((_, i) => i !== index);
+		if (links.length === 0) links = [{ label: '', url: '' }];
+	}
+	const linksJson = $derived(JSON.stringify(links.filter((link) => link.url.trim())));
+
 	function seen(date: Date): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 	}
@@ -191,6 +211,54 @@
 
 					<div class="admin-block">
 						<div class="settings-group">
+							<div class="avatar-edit">
+								<div class="avatar-lg">
+									{#if data.profile.avatarAssetId}
+										<img src="/assets/{data.profile.avatarAssetId}" alt="" />
+									{:else}
+										{initials(data.displayName)}
+									{/if}
+								</div>
+								<div class="avatar-edit-actions">
+									{#if data.assetsConfigured}
+										<div class="row">
+											<form
+												method="POST"
+												action="?/uploadAvatar"
+												enctype="multipart/form-data"
+												bind:this={avatarForm}
+											>
+												<label class="btn btn-secondary btn-sm">
+													Upload photo
+													<input
+														type="file"
+														name="file"
+														accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+														hidden
+														onchange={() => avatarForm?.requestSubmit()}
+													/>
+												</label>
+											</form>
+											{#if data.profile.avatarAssetId}
+												<form method="POST" action="?/removeAvatar">
+													<button type="submit" class="btn btn-ghost btn-sm">Remove</button>
+												</form>
+											{/if}
+										</div>
+										<p class="avatar-edit-hint">
+											PNG, JPEG, WebP, GIF or AVIF, up to 10 MB. A square image works best.
+										</p>
+										{#if form?.scope === 'avatar' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{/if}
+									{:else}
+										<p class="avatar-edit-hint">Image uploads are not set up on this instance.</p>
+									{/if}
+								</div>
+							</div>
+
 							<form method="POST" action="?/updateName">
 								<div class="field">
 									<label for="display-name">Display name</label>
@@ -207,6 +275,20 @@
 										Shown in your avatar initials and on any notes you write.
 									</p>
 								</div>
+								<div class="field">
+									<label for="pen-name">Pen name <span class="lbl-opt">optional</span></label>
+									<input
+										id="pen-name"
+										class="input"
+										type="text"
+										name="penName"
+										value={data.profile.penName ?? ''}
+										placeholder="A name to publish under, if different from your own"
+									/>
+									<p class="field-hint">
+										Used as the author name on stories and your public page when set.
+									</p>
+								</div>
 								<div class="settings-actions">
 									{#if form?.scope === 'name' && form.message}
 										<span class="field-hint" role="alert" style="color:var(--danger);"
@@ -217,7 +299,7 @@
 											>Saved.</span
 										>
 									{/if}
-									<button type="submit" class="btn btn-primary">Save name</button>
+									<button type="submit" class="btn btn-primary">Save changes</button>
 								</div>
 							</form>
 						</div>
@@ -297,7 +379,7 @@
 										</p>
 									</div>
 
-									<div class="field" style="margin-bottom:0;">
+									<div class="field">
 										<label for="bio">Bio</label>
 										<textarea
 											id="bio"
@@ -307,6 +389,93 @@
 											placeholder="A short paragraph about you. Basic Markdown is fine."
 											>{data.profile.bioMd ?? ''}</textarea
 										>
+									</div>
+
+									<div class="field">
+										<!-- svelte-ignore a11y_label_has_associated_control -->
+										<label>Links</label>
+										<input type="hidden" name="links" value={linksJson} />
+										<div class="link-list">
+											{#each links as link, i (i)}
+												<div class="link-row">
+													<input
+														type="text"
+														class="input"
+														style="max-width:9rem;"
+														placeholder="Label"
+														aria-label="Link label"
+														bind:value={link.label}
+													/>
+													<input
+														type="text"
+														class="input"
+														placeholder="https://example.com"
+														aria-label="Link address"
+														bind:value={link.url}
+													/>
+													<button
+														type="button"
+														class="link-del"
+														aria-label="Remove link"
+														onclick={() => removeLink(i)}
+													>
+														<svg
+															viewBox="0 0 24 24"
+															fill="none"
+															stroke="currentColor"
+															stroke-width="2"
+															stroke-linecap="round"
+															stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg
+														>
+													</button>
+												</div>
+											{/each}
+										</div>
+										<button type="button" class="btn btn-ghost btn-sm link-add" onclick={addLink}>
+											<svg
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												><line x1="12" y1="5" x2="12" y2="19" /><line
+													x1="5"
+													y1="12"
+													x2="19"
+													y2="12"
+												/></svg
+											>Add link
+										</button>
+										<p class="field-hint">
+											Your website, social profiles, or anywhere else readers can find you.
+										</p>
+									</div>
+
+									<div class="field" style="margin-bottom:0;">
+										<!-- svelte-ignore a11y_label_has_associated_control -->
+										<label>Commissions</label>
+										<div class="toggle-row" style="margin-bottom:var(--space-2);">
+											<label class="toggle">
+												<input
+													type="checkbox"
+													name="commissionsOpen"
+													checked={data.profile.commissionsOpen}
+												/>
+												<span class="toggle-track"></span>
+											</label>
+											<div style="flex:1;">
+												<div class="t-title">Open for commissions</div>
+												<div class="t-sub">Shows an "open" note on your page.</div>
+											</div>
+										</div>
+										<input
+											type="text"
+											class="input"
+											name="commissionsMd"
+											value={data.profile.commissionsMd ?? ''}
+											placeholder="A line about what you take on"
+										/>
 									</div>
 
 									<div class="settings-actions">
