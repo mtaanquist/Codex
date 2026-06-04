@@ -8,11 +8,13 @@ import { sessions, users } from '../../src/lib/server/db/schema';
 import {
 	changeDisplayName,
 	changePassword,
+	claimHandle,
 	confirmEmailChange,
 	listSessions,
 	requestEmailChange,
 	revokeOtherSessions,
-	revokeOwnSession
+	revokeOwnSession,
+	saveProfile
 } from '../../src/lib/server/account';
 import { hashPassword, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
@@ -70,6 +72,55 @@ describe('changeDisplayName', () => {
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.displayName).toBe('New Name');
 		expect((await changeDisplayName(db, userId, '   ')).ok).toBe(false);
+	});
+});
+
+describe('saveProfile', () => {
+	it('saves a trimmed bio and the public flag, and nulls an empty bio', async () => {
+		expect((await saveProfile(db, userId, { bioMd: '  Hello.  ', profilePublic: true })).ok).toBe(
+			true
+		);
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.bioMd).toBe('Hello.');
+		expect(row.profilePublic).toBe(true);
+
+		await saveProfile(db, userId, { bioMd: '   ', profilePublic: false });
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.bioMd).toBeNull();
+		expect(row.profilePublic).toBe(false);
+	});
+});
+
+describe('claimHandle', () => {
+	it('claims a valid handle once and refuses to change it', async () => {
+		expect((await claimHandle(db, userId, '  Mads-T  ')).ok).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.handle).toBe('mads-t');
+
+		const second = await claimHandle(db, userId, 'something-else');
+		expect(second.ok).toBe(false);
+	});
+
+	it('rejects malformed handles', async () => {
+		expect((await claimHandle(db, userId, 'ab')).ok).toBe(false);
+		expect((await claimHandle(db, userId, '-leading')).ok).toBe(false);
+		expect((await claimHandle(db, userId, 'has space')).ok).toBe(false);
+	});
+
+	it('reports a handle already taken by someone else', async () => {
+		const [other] = await db
+			.insert(users)
+			.values({
+				email: 'other@example.com',
+				displayName: 'Other',
+				passwordHash: 'x',
+				role: 'user'
+			})
+			.returning({ id: users.id });
+		expect((await claimHandle(db, other.id, 'shared')).ok).toBe(true);
+		const result = await claimHandle(db, userId, 'shared');
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toMatch(/taken/i);
 	});
 });
 
