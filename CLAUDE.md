@@ -21,6 +21,7 @@ Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for backg
 - Keep server-only code server-only. Database access, secrets, and session checks belong in server modules (`$lib/server`, `+server.ts`, `hooks.server.ts`) and must never reach the browser.
 - Authored content stays exportable. Anything holding a user's words is stored as markdown that round-trips through export; do not introduce a format that traps content.
 - Prefer what is already here. Reach for the standard library or an existing dependency before adding a new one, favour stable low-churn packages, and match the patterns and naming already in the file.
+- Keep the in-app help current. When you add or change user-facing functionality, check whether a help article in `src/lib/docs/` covers it and update or add one so the docs stay in step with the features. Admin-only panels do not need help articles.
 
 ## Testing
 

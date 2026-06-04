@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
+	import HelpLink from '$lib/components/HelpLink.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -81,7 +82,7 @@
 	{/if}
 
 	{#if data.archive.enabled && data.archive.handle}
-		<h2>Publish</h2>
+		<h2>Publish <HelpLink topic="publishing" label="publishing" /></h2>
 		<form method="POST" action="?/setVisibility">
 			{#if form?.action === 'publish' && form.message}
 				<p class="error" role="alert">{form.message}</p>
