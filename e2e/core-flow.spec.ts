@@ -236,6 +236,15 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		page.locator('.ent-row', { hasText: 'Alice Vane' }).locator('.badge')
 	).toHaveAttribute('style', /var\(--cat-rose\)/);
 
+	// The Plan editor autosaves, and also offers an explicit Save that persists
+	// the current state and reports "Saved".
+	const manualSave = page.waitForResponse(
+		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await manualSave;
+	await expect(page.locator('.save-state')).toHaveText('Saved');
+
 	// Back to Write via the segmented control.
 	await page.getByRole('link', { name: 'Write' }).click();
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
