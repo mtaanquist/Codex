@@ -1,7 +1,17 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from './auth';
-import { assets, chapters, scenes } from './db/schema';
+import {
+	assets,
+	chapters,
+	characters,
+	entityCategories,
+	loreEntries,
+	places,
+	scenes,
+	stories,
+	universes
+} from './db/schema';
 import { findAssetReferences, rewriteAssetReferences } from '$lib/markdown';
 import { assetConfig, s3AssetStore } from './assets';
 import { extensionFor } from './media-types';
@@ -129,4 +139,171 @@ export async function buildStoryZip(
 	}
 
 	return { filename: `${root}.zip`, bytes: zipSync(files) };
+}
+
+// One document destined for the account archive, gathered before any assets
+// are loaded so references can be rewritten in a second pass.
+type Doc = {
+	dir: string;
+	name: string;
+	front: Record<string, string | null | undefined>;
+	body: string;
+	coverId?: string | null;
+};
+
+// Everything one account owns, as a single markdown archive: every universe
+// with its characters, places, and lore, and every story's chapters and
+// scenes, with referenced images and covers bundled and links rewritten. This
+// is the "export first" safety net before account deletion. Story-scoped note
+// overlays are not yet included (the universe-level entries are).
+export async function buildAccountExport(
+	db: Database,
+	userId: string,
+	loadAssets: AssetLoader
+): Promise<{ filename: string; bytes: Uint8Array }> {
+	const docs: Doc[] = [];
+	const universeList = await db
+		.select()
+		.from(universes)
+		.where(eq(universes.ownerId, userId))
+		.orderBy(asc(universes.createdAt));
+
+	for (const universe of universeList) {
+		const uDir = `universes/${slugify(universe.name, universe.id)}`;
+		docs.push({
+			dir: uDir,
+			name: 'universe.md',
+			front: { name: universe.name },
+			body: universe.descriptionMd ?? ''
+		});
+
+		const categories = new Map(
+			(
+				await db
+					.select({ id: entityCategories.id, name: entityCategories.name })
+					.from(entityCategories)
+					.where(eq(entityCategories.universeId, universe.id))
+			).map((c) => [c.id, c.name])
+		);
+		const categoryName = (id: string | null) => (id ? (categories.get(id) ?? null) : null);
+
+		const characterList = await db
+			.select()
+			.from(characters)
+			.where(eq(characters.universeId, universe.id))
+			.orderBy(asc(characters.name));
+		for (const c of characterList) {
+			docs.push({
+				dir: `${uDir}/characters`,
+				name: `${slugify(c.name, c.id)}.md`,
+				front: {
+					name: c.name,
+					aliases: c.aliases.length ? c.aliases.join(', ') : null,
+					category: categoryName(c.categoryId)
+				},
+				body: joinBody(c.summaryMd, c.bodyMd)
+			});
+		}
+
+		const placeList = await db
+			.select()
+			.from(places)
+			.where(eq(places.universeId, universe.id))
+			.orderBy(asc(places.name));
+		for (const p of placeList) {
+			docs.push({
+				dir: `${uDir}/places`,
+				name: `${slugify(p.name, p.id)}.md`,
+				front: { name: p.name, category: categoryName(p.categoryId) },
+				body: joinBody(p.summaryMd, p.bodyMd)
+			});
+		}
+
+		const loreList = await db
+			.select()
+			.from(loreEntries)
+			.where(eq(loreEntries.universeId, universe.id))
+			.orderBy(asc(loreEntries.title));
+		for (const l of loreList) {
+			docs.push({
+				dir: `${uDir}/lore`,
+				name: `${slugify(l.title, l.id)}.md`,
+				front: {
+					title: l.title,
+					keywords: l.keywords.length ? l.keywords.join(', ') : null,
+					category: categoryName(l.categoryId)
+				},
+				body: joinBody(l.summaryMd, l.bodyMd)
+			});
+		}
+
+		const storyList = await db
+			.select()
+			.from(stories)
+			.where(eq(stories.universeId, universe.id))
+			.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
+		for (const story of storyList) {
+			const sDir = `${uDir}/stories/${slugify(story.title, story.id)}`;
+			docs.push({
+				dir: sDir,
+				name: 'story.md',
+				front: { title: story.title, author: story.author, brief: story.brief },
+				body: story.descriptionMd ?? '',
+				coverId: story.coverAssetId
+			});
+			const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
+			const addScene = (scene: (typeof sceneList)[number], index: number, dir: string) => {
+				docs.push({
+					dir,
+					name: `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`,
+					front: { title: scene.title, status: scene.status },
+					body: scene.bodyMd
+				});
+			};
+			chapterList.forEach((chapter, ci) => {
+				const dir = `${sDir}/chapters/${String(ci + 1).padStart(2, '0')}-${slugify(chapter.title, 'chapter')}`;
+				sceneList
+					.filter((s) => s.chapterId === chapter.id)
+					.forEach((s, si) => addScene(s, si, dir));
+			});
+			sceneList
+				.filter((s) => s.chapterId === null)
+				.forEach((s, si) => addScene(s, si, `${sDir}/unfiled`));
+		}
+	}
+
+	// Collect every referenced and cover asset, load once, then write each doc
+	// with links rewritten relative to its own depth.
+	const referenced = new Set<string>();
+	for (const doc of docs) {
+		findAssetReferences(doc.body).forEach((id) => referenced.add(id));
+		if (doc.coverId) referenced.add(doc.coverId);
+	}
+	const loaded = await loadAssets([...referenced]);
+	const assetPath = new Map(
+		loaded.map((a) => [a.id, `assets/${a.id}.${extensionFor(a.contentType)}`])
+	);
+
+	const files: Zippable = {};
+	for (const doc of docs) {
+		const up = '../'.repeat(doc.dir.split('/').filter(Boolean).length);
+		const linkFor = (id: string) =>
+			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`;
+		const front = { ...doc.front };
+		if (doc.coverId && assetPath.has(doc.coverId)) front.cover = linkFor(doc.coverId);
+		files[`${doc.dir}/${doc.name}`] = strToU8(
+			frontMatter(front) + rewriteAssetReferences(doc.body, linkFor)
+		);
+	}
+	for (const asset of loaded) {
+		files[assetPath.get(asset.id)!] = asset.bytes;
+	}
+	if (docs.length === 0)
+		files['README.md'] = strToU8('# Codex export\n\nThis account has no content yet.\n');
+
+	return { filename: 'codex-export.zip', bytes: zipSync(files) };
+}
+
+function joinBody(summaryMd: string | null, bodyMd: string): string {
+	return [summaryMd?.trim(), bodyMd.trim()].filter(Boolean).join('\n\n');
 }
