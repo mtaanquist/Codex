@@ -37,6 +37,8 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-18
+          # The runner image preinstalls an older client; put 18 first.
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
       - run: npm ci
       - run: npm run lint
       - run: npm run check
