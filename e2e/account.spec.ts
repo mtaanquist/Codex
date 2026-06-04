@@ -18,6 +18,16 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.getByRole('button', { name: 'Save changes' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 
+	// The top-right avatar opens the account menu; Esc closes it.
+	const avatar = page.getByRole('button', { name: 'Account menu' });
+	await expect(avatar).toHaveAttribute('aria-expanded', 'false');
+	await avatar.click();
+	await expect(avatar).toHaveAttribute('aria-expanded', 'true');
+	await expect(page.getByRole('menuitem', { name: 'Account settings' })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(avatar).toHaveAttribute('aria-expanded', 'false');
+
 	// Sessions live under Security; the signed-in device shows as current.
 	await page.getByRole('button', { name: 'Security' }).click();
 	await expect(page.getByText('Current', { exact: true })).toBeVisible();

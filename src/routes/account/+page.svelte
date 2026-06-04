@@ -3,6 +3,8 @@
 	import { browser } from '$app/environment';
 	import { ACCENT_PRESETS } from '$lib/appearance';
 	import { applyAppearance } from '$lib/appearance-apply';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import UserMenu from '$lib/components/UserMenu.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -104,6 +106,8 @@
 			Library
 		</a>
 		<span class="spacer"></span>
+		<ThemeToggle />
+		<UserMenu />
 	</header>
 
 	<div class="admin-shell">

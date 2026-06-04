@@ -27,15 +27,6 @@
 	// Chapters start expanded; collapsing is per-visit state.
 	let collapsed = new SvelteSet<string>();
 
-	const initials = $derived(
-		data.user.displayName
-			.split(/\s+/)
-			.map((part) => part[0])
-			.slice(0, 2)
-			.join('')
-			.toUpperCase()
-	);
-
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
 	const viewStory = $derived(data.view === 'story');
@@ -170,7 +161,6 @@
 	<TopBar
 		universe={{ id: data.universe.id, name: data.universe.name }}
 		story={{ id: data.story.id, title: data.story.title }}
-		{initials}
 		onEnterFocus={() => (focus = true)}
 		{saveStatus}
 		storyView={{ active: viewStory, toggleHref }}
