@@ -67,6 +67,32 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 > import. Next is Phase 5 (account lifecycle and hosted launch), steps
 > 28-35, releasing as v2.5.
 
+## Phase 5 - Account lifecycle and hosted launch
+
+Make the app safe to point strangers at. Releases as v2.5. Sequencing
+agreed with the author on 2026-06-04: TOTP promoted forward from Phase 6
+(step 32b); in-app /docs held to the end of the phase; the default editing
+format preference deferred to Phase 6 (see the feedback backlog).
+
+- [x] 27b. Harden the admin bootstrap CLI (v2.0.1). The seed:admin script already exists and runs in-container (docker compose exec app node scripts/seed-admin.ts <email> <password> <name>), creating a pre-verified pre-approved admin. Make it a true first-admin-only bootstrap: refuse with a clear message if any admin already exists (after that, admins are managed in-app), catch the duplicate-email case instead of dumping a stack trace, and read the password from a prompt or stdin rather than argv so it stays out of shell history. Document the one command for operators in the README. A prerequisite for the rest of Phase 5: there is no admin to approve sign-ups without it.
+- [ ] 28. Sign-up page (email, password, display name; row with approved_at null; sends verification link; pending users see "awaiting approval")
+- [ ] 29. Email verification flow (confirm link sets email_verified_at; pluggable transactional email sent from the worker)
+- [ ] 30. Password reset flow (forgot-password with token + expiry by email)
+- [ ] 31. Admin approval UI (list pending users, approve/reject; also where an admin enables a public archive; operator emailed on new sign-ups)
+- [ ] 32. Account self-service (settings: display name, password, email re-verify, session list/revoke, claim handle, preferences; danger zone: export-everything and hard delete-account)
+- [ ] 32b. TOTP two-factor (user_totp additive migration; enrolment with QR on the settings page, confirm one code; challenge folded into sign-in after the password; admin reset for lockout; recovery codes a noted follow-on; passkeys stay in Phase 6)
+- [ ] 33. Operational essentials (rate-limit sign-up and reset, structured logs, health-check endpoint)
+- [ ] 34. Provisioning control plane (one isolated instance + database per tenant; subdomain routing, on-demand TLS, fleet upgrades; lives outside the app)
+- [ ] 35. Central reader site and handle registry (global /@handle namespace in the control plane; worker syncs frozen editions to a central store the reader site renders from)
+- [ ] In-app help (/docs), held to the end of Phase 5. Help articles as
+      committed markdown rendered through the existing renderMarkdown (no wiki
+      engine, no docs SaaS: too much ops surface and breaks self-host/offline
+      for an audience this small). Routes /docs and /docs/[topic]; a reusable
+      "?" HelpLink component placed on the editor, Plan, publish, and backups
+      pages, opening the relevant topic. Tone follows the CLAUDE.md writing
+      rules (kind, plain, tells the reader what to do, no jargon). Articles
+      live in the repo so they version with the features they describe.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
@@ -76,6 +102,7 @@ From first real use (2026-06-03):
 - [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
 - [ ] Markdown affordances: the shared renderer shipped with v1.12 (exports + print); reading pages pick it up in step 27; in-editor styling and the prototype's toolbar remain as polish
 - [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
+- [ ] Default editing format preference (deferred to Phase 6 on 2026-06-04). The editor is CodeMirror over raw markdown today; a writer should be able to choose a softer, Word-like editing surface rather than seeing markdown syntax. A rich/WYSIWYG editing mode behind a preference, settable at user level with a per-story override. Builds on the "markdown affordances" and "preference layering" items above; that is the foundation, this is the user-facing choice on top
 - [x] Entity colours with meaning: shipped with v1.2 (characters/places join categories; badge takes the category colour)
 
 From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
