@@ -246,6 +246,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('Control+End');
+	// Capture the autosave so the prose (and its mention rebuild) is persisted
+	// before the reload below, independent of the autosave debounce.
+	const fenwickSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
 	await page.keyboard.type(' Mrs. Fenwick waited.');
 	// The body mentions the lore keyword "gate", the place "Halden", and the
 	// alias: all three underline.
@@ -253,6 +258,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.locator('.ref-word', { hasText: 'Mrs. Fenwick' }).hover();
 	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
+	await fenwickSave;
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
 	// cast shows in the right panel. The window is generous because a loaded

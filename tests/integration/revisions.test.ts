@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
 	outlineNodes,
+	revisions,
 	scenes,
 	stories,
 	universes,
@@ -80,7 +82,7 @@ afterAll(async () => {
 });
 
 describe('recordRevision', () => {
-	it('appends on change and skips an unchanged autosave', async () => {
+	it('coalesces a changed autosave into the latest, and skips an unchanged one', async () => {
 		expect(await recordRevision(db, 'scene', sceneId, 'First draft.')).toEqual({
 			recorded: true
 		});
@@ -90,7 +92,11 @@ describe('recordRevision', () => {
 		expect(await recordRevision(db, 'scene', sceneId, 'Second draft.')).toEqual({
 			recorded: true
 		});
-		expect(await listRevisions(db, 'scene', sceneId)).toHaveLength(2);
+		// The change rolled the single autosave entry forward rather than adding one.
+		const rows = await listRevisions(db, 'scene', sceneId);
+		expect(rows).toHaveLength(1);
+		const body = await getRevision(db, rows[0].id, 'scene', sceneId);
+		expect(body?.bodyMd).toBe('Second draft.');
 	});
 
 	it('always records a checkpoint, even on unchanged text', async () => {
@@ -99,6 +105,26 @@ describe('recordRevision', () => {
 		).toEqual({ recorded: true });
 		const rows = await listRevisions(db, 'scene', sceneId);
 		expect(rows[0]).toMatchObject({ reason: 'checkpoint', label: 'Before edits' });
+	});
+
+	it('starts a new autosave entry once the coalesce window has passed', async () => {
+		const id = randomUUID();
+		await recordRevision(db, 'scene', id, 'A.');
+		// Age the entry well past the coalesce window.
+		await db
+			.update(revisions)
+			.set({ createdAt: sql`now() - interval '10 minutes'` })
+			.where(eq(revisions.entityId, id));
+		await recordRevision(db, 'scene', id, 'B.');
+		expect(await listRevisions(db, 'scene', id)).toHaveLength(2);
+	});
+
+	it('does not coalesce an autosave into a preceding checkpoint', async () => {
+		const id = randomUUID();
+		await recordRevision(db, 'scene', id, 'A.');
+		await recordRevision(db, 'scene', id, 'A.', 'checkpoint', 'Mark');
+		await recordRevision(db, 'scene', id, 'B.');
+		expect(await listRevisions(db, 'scene', id)).toHaveLength(3);
 	});
 });
 
@@ -139,14 +165,18 @@ describe('createCheckpoint', () => {
 
 describe('restoreRevision', () => {
 	it('restores the text and stacks a new revision on top', async () => {
+		// Checkpoints never coalesce, so they give a deterministic older revision
+		// to restore regardless of how the autosaves above collapsed.
+		await recordRevision(db, 'scene', sceneId, 'Older body here.', 'checkpoint', 'Older');
+		await recordRevision(db, 'scene', sceneId, 'Newer body now.', 'checkpoint', 'Newer');
 		const timeline = await listRevisions(db, 'scene', sceneId);
-		const first = timeline.at(-1)!;
-		const result = await restoreRevision(db, ownerId, first.id, 'scene', sceneId);
+		const older = timeline.find((row) => row.label === 'Older')!;
+		const result = await restoreRevision(db, ownerId, older.id, 'scene', sceneId);
 		expect(result).toMatchObject({ ok: true });
 
 		const [scene] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
-		expect(scene.bodyMd).toBe('First draft.');
-		expect(scene.wordCount).toBe(2);
+		expect(scene.bodyMd).toBe('Older body here.');
+		expect(scene.wordCount).toBe(3);
 
 		const after = await listRevisions(db, 'scene', sceneId);
 		expect(after).toHaveLength(timeline.length + 1);
