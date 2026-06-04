@@ -20,6 +20,14 @@ import { disableTotp } from '$lib/server/two-factor';
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
 import { users } from '$lib/server/db/schema';
+import pkg from '../../../package.json';
+
+// A compact uptime for the sidebar footer: minutes, then hours, then days.
+function formatUptime(seconds: number): string {
+	if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m`;
+	if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+	return `${Math.floor(seconds / 86400)}d`;
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -37,7 +45,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		backupsConfigured: backupConfig() !== null,
 		backupRuns: await listRecentBackupRuns(db, 5),
 		smtp: await smtpView(db),
-		secretsAvailable: secretsAvailable()
+		secretsAvailable: secretsAvailable(),
+		version: pkg.version,
+		uptime: formatUptime(process.uptime())
 	};
 };
 
