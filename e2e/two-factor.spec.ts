@@ -20,11 +20,15 @@ test('two-factor: enrol from the account page and turn it back off', async ({ pa
 	const secret = await page.locator('#totp-secret').inputValue();
 	expect(secret.length).toBeGreaterThan(0);
 
-	// Confirm with a freshly computed code; recovery codes appear once.
-	await page.getByLabel('6-digit code').fill(totpCode(secret));
+	// Confirm with a freshly computed code, entered across the segmented boxes;
+	// recovery codes appear once.
+	const code = totpCode(secret);
+	for (let i = 0; i < 6; i++) {
+		await page.getByLabel(`Digit ${i + 1}`).fill(code[i]);
+	}
 	await page.getByRole('button', { name: 'Verify and turn on' }).click();
-	await expect(page.getByText('Save your recovery codes')).toBeVisible();
-	await expect(page.getByText('You will be asked for a code when you sign in.')).toBeVisible();
+	await expect(page.getByText('Treat these like passwords')).toBeVisible();
+	await expect(page.getByText(/you'll be asked for a code/)).toBeVisible();
 
 	// Turn it off again so repeated local runs start clean.
 	await page.getByRole('button', { name: 'Turn off' }).click();

@@ -74,6 +74,54 @@
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 	}
 
+	function onDate(date: Date): string {
+		return new Date(date).toLocaleDateString(undefined, {
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric'
+		});
+	}
+
+	// The segmented setup code. Each box holds one digit; the joined value posts
+	// as `code`. A fresh page load (after a failed confirm) starts empty.
+	let otpDigits = $state(['', '', '', '', '', '']);
+	let otpBoxes = $state<HTMLElement>();
+	const otpCode = $derived(otpDigits.join(''));
+	function otpInputs(): HTMLInputElement[] {
+		return otpBoxes ? Array.from(otpBoxes.querySelectorAll('input')) : [];
+	}
+	function onOtpInput(i: number, event: Event) {
+		const el = event.target as HTMLInputElement;
+		const digit = el.value.replace(/\D/g, '').slice(-1);
+		otpDigits[i] = digit;
+		el.value = digit;
+		if (digit && i < 5) otpInputs()[i + 1]?.focus();
+	}
+	function onOtpKey(i: number, event: KeyboardEvent) {
+		if (event.key === 'Backspace' && !otpDigits[i] && i > 0) otpInputs()[i - 1]?.focus();
+	}
+	function onOtpPaste(event: ClipboardEvent) {
+		const text = (event.clipboardData?.getData('text') ?? '').replace(/\D/g, '').slice(0, 6);
+		if (!text) return;
+		event.preventDefault();
+		otpDigits = Array.from({ length: 6 }, (_, k) => text[k] ?? '');
+		otpInputs().forEach((input, k) => (input.value = otpDigits[k]));
+		otpInputs()[Math.min(text.length, 5)]?.focus();
+	}
+
+	function copyText(text: string) {
+		navigator.clipboard?.writeText(text).catch(() => {});
+	}
+	function downloadCodes(codes: string[]) {
+		const blob = new Blob([codes.join('\n') + '\n'], { type: 'text/plain' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'codex-recovery-codes.txt';
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
 	function initials(name: string): string {
 		const parts = name.trim().split(/\s+/).filter(Boolean);
 		const first = parts[0]?.[0] ?? '';
@@ -621,127 +669,229 @@
 						<div class="admin-block-head">
 							<h2 class="admin-block-title">Two-factor authentication</h2>
 							<p class="admin-block-sub">
-								A one-time code from an authenticator app on top of your password. Works with any
-								standard authenticator, such as Aegis, Ente Auth, 1Password, or Google
-								Authenticator.
+								Add a one-time code from an authenticator app on top of your password. Codex uses
+								standard TOTP, so any app works - Aegis, Ente Auth, 1Password, Google Authenticator.
 							</p>
 						</div>
 
-						{#if form?.scope === 'totp' && form.recoveryCodes}
-							<!-- Shown once, right after confirming or regenerating. -->
-							<div class="admin-card" style="border-color:var(--accent-line);">
-								<h3 class="settings-group-title" style="margin:0 0 var(--space-2);">
-									Save your recovery codes
-								</h3>
-								<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
-									Keep these somewhere safe. Each one signs you in once if you lose your
-									authenticator. They will not be shown again.
-								</p>
-								<div class="recovery-grid">
-									{#each form.recoveryCodes as code (code)}
-										<code>{code}</code>
-									{/each}
-								</div>
-							</div>
-						{/if}
-
-						{#if data.twoFactor.status === 'on'}
-							<div class="admin-card">
-								<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
-									<span class="pill pill-accent">On</span>
-									{#if data.twoFactor.confirmedAt}
-										Enabled {seen(data.twoFactor.confirmedAt)}.
+						<div class="admin-card">
+							<div class="tfa-status">
+								<span class="tfa-ic">
+									{#if data.twoFactor.status === 'on'}
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.7"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z" /><path
+												d="m9 12 2 2 4-4"
+											/></svg
+										>
+									{:else}
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.7"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><rect x="5" y="11" width="14" height="10" rx="2" /><path
+												d="M8 11V7a4 4 0 0 1 8 0v4"
+											/></svg
+										>
 									{/if}
-									You will be asked for a code when you sign in.
-									{data.twoFactor.recoveryRemaining} of your recovery codes are unused.
-								</p>
-								<div class="row" style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
-									<form method="POST" action="?/regenerateRecovery">
-										<button type="submit" class="btn btn-secondary btn-sm"
-											>Regenerate recovery codes</button
-										>
-									</form>
-									<form method="POST" action="?/disableTotp">
-										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
-											>Turn off</button
-										>
-									</form>
+								</span>
+								<div class="tfa-body">
+									<div class="tfa-titlerow">
+										<span class="tfa-title">Authenticator app</span>
+										{#if data.twoFactor.status === 'on'}
+											<span class="tfa-badge">On</span>
+										{:else if data.twoFactor.status === 'pending'}
+											<span class="tfa-badge">Setting up</span>
+										{:else}
+											<span class="tfa-badge">Off</span>
+										{/if}
+									</div>
+									<p class="tfa-sub">
+										{#if data.twoFactor.status === 'on'}
+											{#if data.twoFactor.confirmedAt}Enabled {onDate(data.twoFactor.confirmedAt)} -
+											{/if}you'll be asked for a code on new devices. {data.twoFactor
+												.recoveryRemaining} recovery codes remain.
+										{:else if data.twoFactor.status === 'pending'}
+											Scan the code, then enter a code to confirm.
+										{:else if !data.twoFactor.available}
+											Two-factor authentication is not set up on this instance.
+										{:else}
+											Not enabled. Anyone with your password can sign in.
+										{/if}
+									</p>
+								</div>
+								<div class="tfa-status-action">
+									{#if data.twoFactor.status === 'on'}
+										<div class="tfa-on-actions" style="gap:8px;">
+											<form method="POST" action="?/regenerateRecovery">
+												<button type="submit" class="btn btn-secondary btn-sm"
+													>Recovery codes</button
+												>
+											</form>
+											<form method="POST" action="?/disableTotp">
+												<button
+													type="submit"
+													class="btn btn-ghost btn-sm"
+													style="color:var(--danger);">Turn off</button
+												>
+											</form>
+										</div>
+									{:else if data.twoFactor.status === 'pending'}
+										<form method="POST" action="?/cancelTotp">
+											<button type="submit" class="btn btn-ghost">Cancel</button>
+										</form>
+									{:else if data.twoFactor.available}
+										<form method="POST" action="?/startTotp">
+											<button type="submit" class="btn btn-primary">Set up</button>
+										</form>
+									{/if}
 								</div>
 							</div>
-						{:else if data.twoFactor.status === 'pending' && data.totpSetup}
-							<div class="admin-card">
-								<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
-									Scan this with your authenticator app, then enter the 6-digit code it shows to
-									finish.
-								</p>
-								<div
-									style="display:flex; gap:var(--space-4); flex-wrap:wrap; align-items:flex-start; margin-bottom:var(--space-3);"
+
+							{#if form?.scope === 'totp' && form.message}
+								<p
+									class="field-hint"
+									role="alert"
+									style="color:var(--danger); margin-top:var(--space-2);"
 								>
-									<img
-										src={data.totpSetup.qr}
-										alt="QR code for your authenticator app"
-										width="160"
-										height="160"
-										style="border-radius:var(--radius-sm); background:#fff; padding:6px;"
-									/>
-									<div class="field" style="margin:0; min-width:12rem;">
-										<label for="totp-secret">Setup key</label>
-										<div class="copy-field">
-											<input id="totp-secret" type="text" value={data.totpSetup.secret} readonly />
+									{form.message}
+								</p>
+							{/if}
+
+							{#if data.twoFactor.status === 'pending' && data.totpSetup}
+								<div class="tfa-setup">
+									<div class="tfa-step">
+										<span class="tfa-step-n">1</span>
+										<div class="tfa-step-main">
+											<div class="tfa-step-title">Scan this with your authenticator app</div>
+											<p class="tfa-step-sub">Or enter the key by hand if you cannot scan.</p>
+											<div class="tfa-scan">
+												<div class="qr">
+													<img
+														src={data.totpSetup.qr}
+														alt="QR code for your authenticator app"
+														style="width:100%;height:100%"
+													/>
+												</div>
+												<div class="tfa-scan-alt">
+													<div class="lbl">Setup key</div>
+													<p class="hint">
+														Account: <span class="mono">Codex ({data.email})</span>
+													</p>
+													<div class="copy-field">
+														<input
+															id="totp-secret"
+															type="text"
+															value={data.totpSetup.secret}
+															readonly
+														/>
+														<button
+															type="button"
+															onclick={() => copyText(data.totpSetup?.secret ?? '')}>Copy</button
+														>
+													</div>
+													<p class="hint" style="margin-top:9px;">
+														Time-based, 6 digits, refreshes every 30s.
+													</p>
+												</div>
+											</div>
 										</div>
-										<p class="field-hint">Enter this by hand if you cannot scan the code.</p>
 									</div>
-								</div>
-								<form method="POST" action="?/confirmTotp">
-									<div class="field">
-										<label for="totp-code">6-digit code</label>
-										<input
-											id="totp-code"
-											class="input"
-											type="text"
-											name="code"
-											inputmode="numeric"
-											pattern="[0-9]*"
-											maxlength="6"
-											autocomplete="one-time-code"
-											required
-											style="max-width:9rem; letter-spacing:0.3em;"
-										/>
+									<div class="tfa-step">
+										<span class="tfa-step-n">2</span>
+										<div class="tfa-step-main">
+											<div class="tfa-step-title">Enter the 6-digit code</div>
+											<p class="tfa-step-sub">
+												Type the current code shown in your app to confirm it's set up.
+											</p>
+											<form method="POST" action="?/confirmTotp" id="totp-confirm">
+												<input type="hidden" name="code" value={otpCode} />
+												<div class="otp-input" bind:this={otpBoxes} onpaste={onOtpPaste}>
+													{#each otpDigits as digit, i (i)}
+														{#if i === 3}<span class="otp-gap"></span>{/if}
+														<input
+															type="text"
+															inputmode="numeric"
+															maxlength="1"
+															value={digit}
+															aria-label={`Digit ${i + 1}`}
+															oninput={(event) => onOtpInput(i, event)}
+															onkeydown={(event) => onOtpKey(i, event)}
+														/>
+													{/each}
+												</div>
+											</form>
+										</div>
 									</div>
 									<div class="settings-actions">
-										{#if form?.scope === 'totp' && form.message}
-											<span class="field-hint" role="alert" style="color:var(--danger);"
-												>{form.message}</span
-											>
-										{/if}
-										<button type="submit" class="btn btn-primary">Verify and turn on</button>
+										<form method="POST" action="?/cancelTotp">
+											<button type="submit" class="btn btn-ghost">Cancel</button>
+										</form>
+										<button type="submit" form="totp-confirm" class="btn btn-primary"
+											>Verify and turn on</button
+										>
 									</div>
-								</form>
-								<form method="POST" action="?/cancelTotp" style="margin-top:var(--space-2);">
-									<button type="submit" class="btn btn-ghost btn-sm">Cancel setup</button>
-								</form>
-							</div>
-						{:else}
-							<div class="admin-card">
-								{#if !data.twoFactor.available}
-									<p class="admin-block-sub" style="margin:0;">
-										Two-factor authentication is not set up on this instance.
+								</div>
+							{/if}
+
+							{#if form?.scope === 'totp' && form.recoveryCodes}
+								{@const codes = form.recoveryCodes}
+								<div class="tfa-setup">
+									<div class="tfa-step-title">Recovery codes</div>
+									<p class="tfa-step-sub">
+										Save these somewhere safe. Each one signs you in once if you lose your
+										authenticator. They will not be shown in full again.
 									</p>
-								{:else}
-									<p class="admin-block-sub" style="margin:0 0 var(--space-3);">
-										Not enabled. Anyone with your password can sign in.
-									</p>
-									<form method="POST" action="?/startTotp">
-										{#if form?.scope === 'totp' && form.message}
-											<p class="field-hint" role="alert" style="color:var(--danger);">
-												{form.message}
-											</p>
-										{/if}
-										<button type="submit" class="btn btn-primary">Set up</button>
-									</form>
-								{/if}
-							</div>
-						{/if}
+									<div class="recovery-note">
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><path
+												d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"
+											/><line x1="12" y1="9" x2="12" y2="13" /><line
+												x1="12"
+												y1="17"
+												x2="12"
+												y2="17"
+											/></svg
+										>
+										<span
+											>Treat these like passwords. Anyone with one can get into your account.</span
+										>
+									</div>
+									<div class="recovery-grid">
+										{#each codes as code (code)}<code>{code}</code>{/each}
+									</div>
+									<div class="recovery-actions">
+										<button
+											type="button"
+											class="btn btn-secondary btn-sm"
+											onclick={() => copyText(codes.join('\n'))}>Copy all</button
+										>
+										<button
+											type="button"
+											class="btn btn-ghost btn-sm"
+											onclick={() => downloadCodes(codes)}>Download .txt</button
+										>
+										<form method="POST" action="?/regenerateRecovery" style="margin-left:auto;">
+											<button type="submit" class="btn btn-ghost btn-sm">Regenerate</button>
+										</form>
+									</div>
+								</div>
+							{/if}
+						</div>
 					</div>
 
 					<div class="admin-block">
@@ -800,7 +950,7 @@
 									>
 								{/if}
 								<form method="POST" action="?/revokeOthers">
-									<button type="submit" class="btn btn-secondary">Sign out everywhere else</button>
+									<button type="submit" class="btn btn-danger">Sign out all other sessions</button>
 								</form>
 							</div>
 						{/if}
