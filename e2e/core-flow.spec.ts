@@ -280,11 +280,34 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await relDelete;
 	await expect(page.locator('.rel-row')).toHaveCount(0);
 
+	// A character created at universe scope belongs to no story yet.
+	await page.getByPlaceholder('New character name').fill('Corvin');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Corvin');
+
 	// The dashboard reaches the story directly, under its universe.
 	await page.locator('.brand').click();
 	await expect(page).toHaveURL('/');
 	const universeSection = page.locator('section', { hasText: universeName });
 	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
+
+	// Membership: the story's cast does not list Corvin until he is added
+	// to the story; removing the declaration drops him again.
+	await universeSection.getByRole('link', { name: 'Book of Ash' }).click();
+	await page.getByRole('link', { name: 'Plan' }).click();
+	await expect(page.locator('.ent-row', { hasText: 'Alice Vane' })).toHaveCount(1);
+	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+	await page.getByLabel('Add an existing character').selectOption({ label: 'Corvin' });
+	await page.getByRole('button', { name: 'Add to this story' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(1);
+	await expect(page.getByText('Declared in this story.')).toBeVisible();
+	const memberOff = page.waitForResponse(
+		(r) => r.url().includes('/members') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByRole('button', { name: 'Remove from this story' }).click();
+	await memberOff;
+	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
 });
 
 test('wrong password is rejected', async ({ page }) => {

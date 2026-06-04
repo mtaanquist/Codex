@@ -35,6 +35,7 @@
 		targets = {},
 		storyId,
 		storyNotesMd,
+		membership = null,
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -55,6 +56,8 @@
 		// Absent at universe scope; the "In this book" notes need a story.
 		storyId?: string;
 		storyNotesMd?: string;
+		// The entity's standing in the story; characters and places only.
+		membership?: { member: boolean; mentioned: boolean } | null;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -139,6 +142,15 @@
 
 	async function removeRelationship(relationshipId: string) {
 		const response = await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
+		if (response.ok) await invalidateAll();
+	}
+
+	async function setMembership(member: boolean) {
+		const response = await fetch(`/api/stories/${storyId}/members`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ kind, entityId: entity.id, member })
+		});
 		if (response.ok) await invalidateAll();
 	}
 
@@ -339,6 +351,23 @@
 
 	{#if storyId}
 		<div class="section-label">In this book</div>
+		{#if membership}
+			<div class="member-row">
+				{#if membership.member}
+					<span class="member-note">Declared in this story.</span>
+					<button class="member-btn" type="button" onclick={() => setMembership(false)}>
+						Remove from this story
+					</button>
+				{:else}
+					{#if membership.mentioned}
+						<span class="member-note">Mentioned in this story's prose.</span>
+					{/if}
+					<button class="member-btn" type="button" onclick={() => setMembership(true)}>
+						Appears in this story
+					</button>
+				{/if}
+			</div>
+		{/if}
 		<textarea
 			class="area-input"
 			rows="3"
@@ -436,5 +465,28 @@
 		color: var(--danger, #b00020);
 		font-size: 12.5px;
 		margin: 0;
+	}
+	.member-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		font-size: 13px;
+		margin-bottom: 8px;
+	}
+	.member-note {
+		color: var(--text-muted);
+	}
+	.member-btn {
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 6px);
+		background: none;
+		color: var(--text-muted);
+		font-size: 12.5px;
+		padding: 5px 10px;
+		cursor: pointer;
+	}
+	.member-btn:hover {
+		color: var(--text);
+		border-color: var(--accent-line);
 	}
 </style>

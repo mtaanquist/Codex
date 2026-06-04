@@ -71,6 +71,13 @@
 			"when": 1780544471878,
 			"tag": "0009_outline",
 			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1780545328278,
+			"tag": "0010_memberships",
+			"breakpoints": true
 		}
 	]
 }

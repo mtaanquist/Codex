@@ -1,13 +1,23 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from './db';
-import { characters, entityCategories, loreEntries, places } from './db/schema';
+import {
+	characters,
+	characterStoryMemberships,
+	entityCategories,
+	loreEntries,
+	places,
+	placeStoryMemberships
+} from './db/schema';
 
 type PlanScope = {
 	universeId: string;
 	ownerId: string;
 	// Where the page lives, for redirecting to the entity just created.
 	planPath: string;
+	// At story scope, a created character or place is declared a member of
+	// the story right away.
+	storyId?: string;
 };
 
 // The structural slice of the route's RequestEvent the actions need; both
@@ -34,6 +44,11 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 				.insert(characters)
 				.values({ universeId: scope.universeId, ownerId: scope.ownerId, name })
 				.returning({ id: characters.id });
+			if (scope.storyId) {
+				await db
+					.insert(characterStoryMemberships)
+					.values({ characterId: character.id, storyId: scope.storyId });
+			}
 			redirect(303, `${scope.planPath}?entity=${character.id}`);
 		},
 		createPlace: async (event: PlanEvent) => {
@@ -47,6 +62,11 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 				.insert(places)
 				.values({ universeId: scope.universeId, ownerId: scope.ownerId, name })
 				.returning({ id: places.id });
+			if (scope.storyId) {
+				await db
+					.insert(placeStoryMemberships)
+					.values({ placeId: place.id, storyId: scope.storyId });
+			}
 			redirect(303, `${scope.planPath}?entity=${place.id}`);
 		},
 		createLoreEntry: async (event: PlanEvent) => {
