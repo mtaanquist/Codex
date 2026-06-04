@@ -5,7 +5,8 @@ import { db } from '$lib/server/db';
 import { registerUser } from '$lib/server/signup';
 import { issueToken } from '$lib/server/tokens';
 import { queueEmail } from '$lib/server/jobs';
-import { verificationEmail } from '$lib/server/email';
+import { signupNotificationEmail, verificationEmail } from '$lib/server/email';
+import { adminEmails } from '$lib/server/admin';
 
 const VERIFY_TTL_MINUTES = 60 * 24;
 
@@ -30,8 +31,21 @@ export const actions: Actions = {
 			// origin is the dev fallback. Using a configured origin keeps a spoofed
 			// Host header out of the link.
 			const origin = env.ORIGIN ?? url.origin;
+			const cleanEmail = email.trim().toLowerCase();
 			const link = `${origin}/verify-email?token=${token}`;
-			await queueEmail(verificationEmail(email.trim().toLowerCase(), link));
+			await queueEmail(verificationEmail(cleanEmail, link));
+
+			// Let the operator know there is someone to review.
+			const reviewLink = `${origin}/admin`;
+			for (const admin of await adminEmails(db)) {
+				await queueEmail(
+					signupNotificationEmail(
+						admin,
+						{ displayName: displayName.trim(), email: cleanEmail },
+						reviewLink
+					)
+				);
+			}
 		}
 
 		return { sent: true };
