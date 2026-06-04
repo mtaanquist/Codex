@@ -3,6 +3,7 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
 import { rebuildSceneMentions, rebuildUniverseMentions } from '../lib/server/mentions.ts';
+import { backupConfig, runBackup } from '../lib/server/backups.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -18,6 +19,7 @@ boss.on('error', (error) => {
 await boss.start();
 await boss.createQueue('mentions-scene');
 await boss.createQueue('mentions-universe');
+await boss.createQueue('run-backup');
 
 await boss.work<{ sceneId: string }>('mentions-scene', async (jobs) => {
 	for (const job of jobs) {
@@ -33,6 +35,24 @@ await boss.work<{ universeId: string }>('mentions-universe', async (jobs) => {
 		console.log(`mentions: universe ${job.data.universeId} -> ${count} scenes reindexed`);
 	}
 });
+
+await boss.work<{ trigger?: 'scheduled' | 'manual' }>('run-backup', async (jobs) => {
+	for (const job of jobs) {
+		const result = await runBackup(db, job.data.trigger ?? 'scheduled');
+		if (result.ok) console.log(`backup: uploaded ${result.key}`);
+		else console.error(`backup: failed (${result.reason})`);
+	}
+});
+
+// Nightly off-site backups, only when the bucket is configured. The
+// schedule lives in pg-boss, so it is cleared when configuration goes away.
+const backups = backupConfig();
+if (backups) {
+	await boss.schedule('run-backup', backups.cron, { trigger: 'scheduled' }, { tz: 'UTC' });
+	console.log(`backups: scheduled (${backups.cron} UTC, keep ${backups.keep})`);
+} else {
+	await boss.unschedule('run-backup');
+}
 
 console.log('Worker started; processing mention rebuilds.');
 

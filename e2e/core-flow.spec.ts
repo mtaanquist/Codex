@@ -13,6 +13,9 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 
+	// Backups belong to the site admin; a regular account sees no panel.
+	await expect(page.getByRole('heading', { name: 'Backups' })).toHaveCount(0);
+
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
 	await page.getByLabel('New universe').fill(universeName);
