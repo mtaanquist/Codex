@@ -1,0 +1,1 @@
+ALTER TABLE "scenes" ADD COLUMN "mentions_indexed_at" timestamp with time zone;

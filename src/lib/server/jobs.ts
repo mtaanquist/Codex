@@ -3,7 +3,10 @@ import { env } from '$env/dynamic/private';
 import type { EmailMessage } from './email';
 
 // Send-only pg-boss handle for the app; the worker process owns the handlers.
-// Queueing is best-effort: a failed enqueue logs and never breaks a save.
+// Queueing is best-effort: a failed enqueue logs and never breaks a save. A
+// dropped mention rebuild is not lost for good - the worker's reconcile sweep
+// (see mentions.ts reconcileMentions) re-indexes any scene whose watermark has
+// fallen behind, so the index self-heals within minutes.
 
 export const MENTIONS_SCENE_QUEUE = 'mentions-scene';
 export const MENTIONS_UNIVERSE_QUEUE = 'mentions-universe';

@@ -190,7 +190,11 @@ export const scenes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => new Date()),
+		// When the mention index was last rebuilt for this scene. Null means never.
+		// The reconcile sweep re-indexes any scene whose body or whose universe's
+		// entities changed after this, so a dropped rebuild job self-heals.
+		mentionsIndexedAt: timestamp('mentions_indexed_at', { withTimezone: true })
 	},
 	(table) => [index('scenes_characters_present_gin').using('gin', table.charactersPresent)]
 );

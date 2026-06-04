@@ -176,6 +176,13 @@
 			"when": 1780605832766,
 			"tag": "0024_add_totp_last_used_step",
 			"breakpoints": true
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1780610132333,
+			"tag": "0025_add_scene_mentions_indexed_at",
+			"breakpoints": true
 		}
 	]
 }
