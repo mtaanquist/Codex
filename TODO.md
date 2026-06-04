@@ -50,10 +50,14 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 - [x] 22. Revisions and history (v1.7): polymorphic revisions table, insert on body-changing saves across all five types, checkpoints with labels, Reference/History tabs in the right column, preview banner with jsdiff changes toggle, restore-on-top, story and universe settings timelines
 - [ ] 23. TODO markers (v1.x point release)
 - [ ] 23b. Editable continuous view (v1.x point release)
-- [ ] 24. SillyTavern character card import, lorebook import, round-trip export
 - [ ] 25. Assets and images
 - [ ] 26. Markdown and EPUB export
 - [ ] 27. Public reading pages, self-host
+
+> Step 24 (SillyTavern and lorebook import) was dropped from Phase 4 on
+> 2026-06-04 at the author's call; it now sits in the roadmap's Phase 6
+> candidates. The schema already models for its return (imported_from,
+> activation_mode).
 
 > Phase 4 releases as v2.0 after step 27; 23 and 23b ship as point releases
 > along the way. The author plans the first /code-review ultra run at v2.0.
