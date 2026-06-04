@@ -6,6 +6,7 @@ import { stories, universes } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
 import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 import { publishStory } from '$lib/server/publish';
+import { deleteStory } from '$lib/server/story-delete';
 import { users } from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
@@ -96,7 +97,9 @@ export const actions: Actions = {
 	},
 	delete: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		await db.delete(stories).where(eq(stories.id, story.id));
+		// Clears every story-scoped row first; a plain delete 500s on the FKs
+		// the moment the story has any content or a published edition.
+		await deleteStory(db, story.id, locals.user!.id);
 		redirect(303, `/universes/${story.universeId}`);
 	}
 };

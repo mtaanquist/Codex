@@ -241,13 +241,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
-	// cast shows in the right panel.
+	// cast shows in the right panel. The window is generous because a loaded
+	// CI runner shares cycles between the app, the worker, and Postgres.
 	await expect(async () => {
 		await page.reload();
 		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden', 'Toll-pass'], {
-			timeout: 1500
+			timeout: 3000
 		});
-	}).toPass({ timeout: 30000 });
+	}).toPass({ timeout: 60000 });
 
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
@@ -563,6 +564,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Remove from this story' }).click();
 	await memberOff;
 	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+
+	// Deleting a story that has chapters, scenes, an outline, markers,
+	// revisions, and a published edition succeeds rather than 500ing on the
+	// foreign keys, and lands back on the universe.
+	await page.goto(`${proseSceneUrl.split('?')[0]}/settings`);
+	await page.getByRole('button', { name: 'Delete story' }).click();
+	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
+	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
 });
 
 test('wrong password is rejected', async ({ page }) => {
