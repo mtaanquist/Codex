@@ -255,7 +255,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL(/\/plan\?entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
 	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
-	await expect(page.locator('.snippet')).toContainText('Mrs. Fenwick waited.');
+	await expect(page.locator('.snippet').first()).toContainText('Mrs. Fenwick waited.');
 	await page.locator('.r-line').click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');

@@ -152,5 +152,12 @@ describe('takedown and covers', () => {
 		expect(await isPublishedCover(db, coverId)).toBe(false);
 		await publishStory(db, authorId, storyId);
 		expect(await isPublishedCover(db, coverId)).toBe(true);
+
+		// Making the story private must stop the cover serving, matching
+		// publicEdition; unlisted stays reachable by direct link.
+		await db.update(stories).set({ visibility: 'private' }).where(eq(stories.id, storyId));
+		expect(await isPublishedCover(db, coverId)).toBe(false);
+		await db.update(stories).set({ visibility: 'unlisted' }).where(eq(stories.id, storyId));
+		expect(await isPublishedCover(db, coverId)).toBe(true);
 	});
 });

@@ -4,6 +4,7 @@ import type { Database } from './auth';
 import { assets, chapters, scenes } from './db/schema';
 import { findAssetReferences, rewriteAssetReferences } from '$lib/markdown';
 import { assetConfig, s3AssetStore } from './assets';
+import { extensionFor } from './media-types';
 
 // Story export: a zip of markdown files with YAML front matter, in
 // chapter order, with referenced images bundled into assets/ and the
@@ -28,14 +29,6 @@ function frontMatter(fields: Record<string, string | null | undefined>): string 
 	lines.push('---', '');
 	return lines.join('\n');
 }
-
-const EXTENSIONS: Record<string, string> = {
-	'image/png': 'png',
-	'image/jpeg': 'jpg',
-	'image/webp': 'webp',
-	'image/gif': 'gif',
-	'image/avif': 'avif'
-};
 
 export type ExportAsset = { id: string; contentType: string; bytes: Uint8Array };
 export type AssetLoader = (ids: string[]) => Promise<ExportAsset[]>;
@@ -99,10 +92,7 @@ export async function buildStoryZip(
 	const referenced = [...new Set(sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd)))];
 	const loaded = await loadAssets(referenced);
 	const assetPath = new Map(
-		loaded.map((asset) => [
-			asset.id,
-			`assets/${asset.id}.${EXTENSIONS[asset.contentType] ?? 'bin'}`
-		])
+		loaded.map((asset) => [asset.id, `assets/${asset.id}.${extensionFor(asset.contentType)}`])
 	);
 
 	const root = slugify(story.title, 'story');

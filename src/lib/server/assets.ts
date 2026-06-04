@@ -5,6 +5,7 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sd
 import type { Database } from './auth';
 import { assets, universes } from './db/schema';
 import { makeS3Client } from './s3-client';
+import { IMAGE_TYPES } from './media-types';
 
 // Uploaded images live in an S3-compatible bucket, deliberately separate
 // from the backups bucket: a database restore then keeps every asset link
@@ -64,15 +65,6 @@ export function s3AssetStore(config: AssetConfig): AssetObjectStore {
 	};
 }
 
-// Raster images only. SVG stays out: it can carry scripts, and these
-// objects are served back on our own origin.
-export const IMAGE_TYPES = new Set([
-	'image/png',
-	'image/jpeg',
-	'image/webp',
-	'image/gif',
-	'image/avif'
-]);
 export const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 
 export type AssetInput = {
