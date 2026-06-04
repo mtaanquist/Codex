@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
+import { saveEntityAutocomplete, userPreferences } from '$lib/server/preferences';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -25,7 +26,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 						)
 					)
 					.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
-	return { user, universes: list, stories: storyList };
+	const preferences = await userPreferences(db, user.id);
+	return { user, universes: list, stories: storyList, preferences };
 };
 
 export const actions: Actions = {
@@ -51,6 +53,17 @@ export const actions: Actions = {
 			return row;
 		});
 		redirect(303, `/universes/${universe.id}`);
+	},
+	// A small stand-in until the account settings page arrives (step 32);
+	// the Display settings select moves there.
+	savePreferences: async ({ request, locals }) => {
+		const data = await request.formData();
+		const mode = String(data.get('entityAutocomplete') ?? '');
+		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
+			return fail(400, { message: 'Pick an autocomplete mode.' });
+		}
+		await saveEntityAutocomplete(db, locals.user!.id, mode);
+		return { prefSaved: true };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) {

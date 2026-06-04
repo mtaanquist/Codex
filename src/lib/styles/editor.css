@@ -49,3 +49,21 @@
 	line-height: 1.5;
 	margin-top: 3px;
 }
+
+/* Entity autocomplete: ghost text and the completion popup. */
+.cm-ghost-text {
+	color: var(--text-faint);
+	pointer-events: none;
+}
+.cm-tooltip.cm-tooltip-autocomplete {
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm, 6px);
+	box-shadow: var(--shadow);
+	font-family: var(--font-ui);
+	font-size: 13px;
+}
+.cm-tooltip-autocomplete ul li[aria-selected] {
+	background: var(--accent-soft);
+	color: var(--text);
+}

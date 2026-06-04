@@ -15,7 +15,9 @@
 		planPath,
 		writeHref,
 		form,
-		before
+		before,
+		availableCharacters = [],
+		availablePlaces = []
 	}: {
 		characters: { id: string; name: string; color: string | null }[];
 		places: { id: string; name: string; color: string | null }[];
@@ -28,6 +30,10 @@
 		form: { kind?: string; message?: string } | null;
 		// Rendered above the entity groups; the story Plan puts its outline here.
 		before?: Snippet;
+		// Universe entities not in the story yet; picking one declares it a
+		// member. Story scope only.
+		availableCharacters?: { id: string; name: string }[];
+		availablePlaces?: { id: string; name: string }[];
 	} = $props();
 </script>
 
@@ -76,6 +82,20 @@
 				<Icon name="plus" size={13} /> Add character
 			</button>
 		</form>
+		{#if availableCharacters.length > 0}
+			<form method="POST" action="?/declareMember" class="new-entity">
+				<input type="hidden" name="kind" value="character" />
+				<select name="entityId" aria-label="Add an existing character" required>
+					<option value="">From the universe...</option>
+					{#each availableCharacters as candidate (candidate.id)}
+						<option value={candidate.id}>{candidate.name}</option>
+					{/each}
+				</select>
+				<button class="outline-add" type="submit">
+					<Icon name="plus" size={13} /> Add to this story
+				</button>
+			</form>
+		{/if}
 
 		<div class="group-label">
 			<span class="gl-left">Places</span>
@@ -104,6 +124,23 @@
 				<Icon name="plus" size={13} /> Add place
 			</button>
 		</form>
+		{#if availablePlaces.length > 0}
+			<form method="POST" action="?/declareMember" class="new-entity">
+				<input type="hidden" name="kind" value="place" />
+				<select name="entityId" aria-label="Add an existing place" required>
+					<option value="">From the universe...</option>
+					{#each availablePlaces as candidate (candidate.id)}
+						<option value={candidate.id}>{candidate.name}</option>
+					{/each}
+				</select>
+				<button class="outline-add" type="submit">
+					<Icon name="plus" size={13} /> Add to this story
+				</button>
+			</form>
+		{/if}
+		{#if form?.kind === 'member' && form.message}
+			<p class="error new-entity" role="alert">{form.message}</p>
+		{/if}
 
 		{#each categories as category (category.id)}
 			{@const entries = lore.filter((entry) => entry.categoryId === category.id)}

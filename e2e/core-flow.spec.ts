@@ -7,6 +7,12 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page).toHaveURL('/');
 
+	// Repeated runs share the seeded user, so pin the autocomplete
+	// preference to the default before exercising it later.
+	await page.getByLabel('Entity autocomplete').selectOption('popup');
+	await page.getByRole('button', { name: 'Save preferences' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
 	await page.getByLabel('New universe').fill(universeName);
@@ -228,6 +234,44 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.locator('.r-line').click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
+	const proseSceneUrl = page.url();
+
+	// Entity autocomplete, popup mode (the default): typing part of a name
+	// offers the full one.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Ali');
+	// Ctrl-Space asks for the completion explicitly, so the assertion does
+	// not race the type-activation debounce.
+	await page.keyboard.press('Control+Space');
+	await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
+	await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
+		'Alice Vane'
+	);
+	const acceptSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.locator('.cm-tooltip-autocomplete li', { hasText: 'Alice Vane' }).click();
+	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited. Alice Vane');
+	await acceptSave;
+
+	// Ghost mode comes from the user preference: an unambiguous prefix
+	// shows the rest of the name, and Tab accepts it.
+	await page.locator('.brand').click();
+	await page.getByLabel('Entity autocomplete').selectOption('ghost');
+	await page.getByRole('button', { name: 'Save preferences' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.goto(proseSceneUrl);
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Hal');
+	await expect(page.locator('.cm-ghost-text')).toHaveText('den');
+	const ghostSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.keyboard.press('Tab');
+	await expect(page.locator('.cm-content')).toContainText('Alice Vane Halden');
+	await ghostSave;
 
 	// The breadcrumb leads to the universe editor: the same cast at universe
 	// scope, with no per-story notes section.
@@ -280,11 +324,34 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await relDelete;
 	await expect(page.locator('.rel-row')).toHaveCount(0);
 
+	// A character created at universe scope belongs to no story yet.
+	await page.getByPlaceholder('New character name').fill('Corvin');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Corvin');
+
 	// The dashboard reaches the story directly, under its universe.
 	await page.locator('.brand').click();
 	await expect(page).toHaveURL('/');
 	const universeSection = page.locator('section', { hasText: universeName });
 	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
+
+	// Membership: the story's cast does not list Corvin until he is added
+	// to the story; removing the declaration drops him again.
+	await universeSection.getByRole('link', { name: 'Book of Ash' }).click();
+	await page.getByRole('link', { name: 'Plan' }).click();
+	await expect(page.locator('.ent-row', { hasText: 'Alice Vane' })).toHaveCount(1);
+	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+	await page.getByLabel('Add an existing character').selectOption({ label: 'Corvin' });
+	await page.getByRole('button', { name: 'Add to this story' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(1);
+	await expect(page.getByText('Declared in this story.')).toBeVisible();
+	const memberOff = page.waitForResponse(
+		(r) => r.url().includes('/members') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByRole('button', { name: 'Remove from this story' }).click();
+	await memberOff;
+	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
 });
 
 test('wrong password is rejected', async ({ page }) => {

@@ -8,18 +8,21 @@
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
+	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
 
 	let {
 		sceneId,
 		title,
 		body,
 		entities = [],
+		autocompleteMode = 'popup',
 		onStatus
 	}: {
 		sceneId: string;
 		title: string | null;
 		body: string;
 		entities?: MentionEntity[];
+		autocompleteMode?: AutocompleteMode;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -78,7 +81,7 @@
 				extensions: [
 					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
 					mentionsCompartment.of(mentionExtensions(entities)),
-					autocompleteCompartment.of([])
+					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode))
 				]
 			})
 		});
