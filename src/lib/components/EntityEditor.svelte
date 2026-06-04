@@ -9,6 +9,7 @@
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
 	import { entityColor, entityLetter } from '$lib/entity-color';
+	import TagInput from './TagInput.svelte';
 	import type { SaveStatus } from './SceneEditor.svelte';
 
 	type RelationTypeOption = {
@@ -36,6 +37,7 @@
 		storyId,
 		storyNotesMd,
 		membership = null,
+		entityHref,
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -58,6 +60,8 @@
 		storyNotesMd?: string;
 		// The entity's standing in the story; characters and places only.
 		membership?: { member: boolean; mentioned: boolean } | null;
+		// Builds the Plan link for a related entity, scoped to story or universe.
+		entityHref?: (entityId: string) => string;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -81,9 +85,9 @@
 	// svelte-ignore state_referenced_locally
 	let name = $state(entity.name);
 	// svelte-ignore state_referenced_locally
-	let aliasesText = $state((entity.aliases ?? []).join(', '));
+	let aliases = $state([...(entity.aliases ?? [])]);
 	// svelte-ignore state_referenced_locally
-	let keywordsText = $state((entity.keywords ?? []).join(', '));
+	let keywords = $state([...(entity.keywords ?? [])]);
 	// svelte-ignore state_referenced_locally
 	let categoryValue = $state(entity.categoryId ?? '');
 	// svelte-ignore state_referenced_locally
@@ -92,13 +96,6 @@
 	let notes = $state(storyNotesMd ?? '');
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let dirty = false;
-	// Mirrors what we report to the top bar, so the inline Save control can show
-	// it right here too.
-	let status = $state<SaveStatus>('idle');
-	function report(next: SaveStatus) {
-		status = next;
-		onStatus(next);
-	}
 	// Saves are chained so an earlier slow request can never land after, and
 	// overwrite, a newer one.
 	let saveChain: Promise<void> = Promise.resolve();
@@ -113,6 +110,7 @@
 	const relCategories = $derived([
 		...new Set(applicableTypes.map((relationType) => relationType.category))
 	]);
+	let addingRel = $state(false);
 	let relTypeId = $state('');
 	let relTargetId = $state('');
 	let relNotes = $state('');
@@ -144,6 +142,7 @@
 		relTypeId = '';
 		relTargetId = '';
 		relNotes = '';
+		addingRel = false;
 		await invalidateAll();
 	}
 
@@ -164,7 +163,7 @@
 	async function save() {
 		if (!view) return;
 		dirty = false;
-		report('saving');
+		onStatus('saving');
 		try {
 			const payload: Record<string, unknown> = {
 				name,
@@ -176,10 +175,10 @@
 				payload.storyNotesMd = notes;
 			}
 			if (kind === 'character') {
-				payload.aliases = aliasesText.split(',').map((alias) => alias.trim());
+				payload.aliases = aliases;
 			}
 			if (kind === 'lore') {
-				payload.keywords = keywordsText.split(',').map((keyword) => keyword.trim());
+				payload.keywords = keywords;
 			}
 			if (categories.length > 0) {
 				payload.categoryId = categoryValue || null;
@@ -190,10 +189,10 @@
 				body: JSON.stringify(payload)
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			report(dirty ? 'saving' : 'saved');
+			onStatus(dirty ? 'saving' : 'saved');
 		} catch {
 			dirty = true;
-			report('error');
+			onStatus('error');
 		}
 	}
 
@@ -205,12 +204,6 @@
 		dirty = true;
 		clearTimeout(saveTimer);
 		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
-	}
-
-	// Explicit save: skip the debounce and persist now.
-	function saveNow() {
-		clearTimeout(saveTimer);
-		enqueueSave();
 	}
 
 	onMount(() => {
@@ -251,36 +244,33 @@
 			bind:value={name}
 			oninput={scheduleSave}
 		/>
-		<div class="save-control">
-			<span class="save-state" class:err={status === 'error'}>
-				{#if status === 'saving'}Saving...{:else if status === 'saved'}Saved{:else if status === 'error'}Not
-					saved{:else}Autosaves{/if}
-			</span>
-			<button class="save-now" type="button" onclick={saveNow} disabled={status === 'saving'}>
-				Save
-			</button>
-		</div>
 	</div>
 
 	{#if kind === 'character'}
 		<div class="section-label">Aliases</div>
-		<input
-			class="line-input"
-			type="text"
-			placeholder="Nicknames and variants, separated by commas. Used to spot mentions."
-			bind:value={aliasesText}
-			oninput={scheduleSave}
+		<p class="field-hint">Nicknames and variants used to spot mentions in your prose.</p>
+		<TagInput
+			values={aliases}
+			onChange={(next) => {
+				aliases = next;
+				scheduleSave();
+			}}
+			addLabel="Add alias"
+			ariaLabel="Add alias"
 		/>
 	{/if}
 
 	{#if kind === 'lore'}
 		<div class="section-label">Keywords</div>
-		<input
-			class="line-input"
-			type="text"
-			placeholder="Terms that refer to this entry, separated by commas. Used to spot mentions."
-			bind:value={keywordsText}
-			oninput={scheduleSave}
+		<p class="field-hint">Terms that refer to this entry, used to spot mentions in your prose.</p>
+		<TagInput
+			values={keywords}
+			onChange={(next) => {
+				keywords = next;
+				scheduleSave();
+			}}
+			addLabel="Add keyword"
+			ariaLabel="Add keyword"
 		/>
 	{/if}
 
@@ -315,59 +305,97 @@
 
 	{#if applicableTypes.length > 0 || relationships.length > 0}
 		<div class="section-label">Relationships</div>
-		{#each relationships as relationship (relationship.id)}
-			<div class="rel-row">
-				<span class="rel-label">{relationship.label}</span>
-				<span class="rel-name">{relationship.otherName}</span>
-				{#if relationship.notesMd}
-					<span class="rel-notes">{relationship.notesMd}</span>
-				{/if}
-				<button
-					class="rel-remove"
-					type="button"
-					title="Remove relationship"
-					onclick={() => removeRelationship(relationship.id)}
-				>
-					&times;
-				</button>
+		{#if relationships.length > 0}
+			<div class="rel-list">
+				{#each relationships as relationship (relationship.id)}
+					<div class="rel-row">
+						<span class="rel-type">{relationship.label}</span>
+						{#if entityHref}
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller passes a resolved Plan path plus a query string) -->
+							<a class="rel-target" href={entityHref(relationship.otherId)}>
+								<span class="badge dot" style="background: {entityColor(relationship.otherName)}"
+								></span>
+								<span>{relationship.otherName}</span>
+							</a>
+						{:else}
+							<span class="rel-target">
+								<span class="badge dot" style="background: {entityColor(relationship.otherName)}"
+								></span>
+								<span>{relationship.otherName}</span>
+							</span>
+						{/if}
+						{#if relationship.notesMd}
+							<span class="rel-note">{relationship.notesMd}</span>
+						{/if}
+						<button
+							class="rel-remove"
+							type="button"
+							title="Remove relationship"
+							onclick={() => removeRelationship(relationship.id)}
+						>
+							&times;
+						</button>
+					</div>
+				{/each}
 			</div>
-		{/each}
+		{/if}
 		{#if applicableTypes.length > 0}
-			<form class="rel-add" onsubmit={addRelationship}>
-				<select
-					class="line-input"
-					bind:value={relTypeId}
-					onchange={() => (relTargetId = '')}
-					aria-label="Relation"
-				>
-					<option value="">Add a relationship...</option>
-					{#each relCategories as category (category)}
-						<optgroup label={category ?? 'Other'}>
-							{#each applicableTypes.filter((option) => option.category === category) as option (option.id)}
-								<option value={option.id}>{option.forwardLabel}</option>
-							{/each}
-						</optgroup>
-					{/each}
-				</select>
-				{#if relTypeId}
-					<select class="line-input" bind:value={relTargetId} aria-label="Related entity">
-						<option value="">Who or where...</option>
-						{#each relTargetOptions as target (target.id)}
-							<option value={target.id}>{target.name}</option>
+			{#if addingRel}
+				<form class="rel-add" onsubmit={addRelationship}>
+					<select
+						class="line-input"
+						bind:value={relTypeId}
+						onchange={() => (relTargetId = '')}
+						aria-label="Relation"
+					>
+						<option value="">Pick a relationship...</option>
+						{#each relCategories as category (category)}
+							<optgroup label={category ?? 'Other'}>
+								{#each applicableTypes.filter((option) => option.category === category) as option (option.id)}
+									<option value={option.id}>{option.forwardLabel}</option>
+								{/each}
+							</optgroup>
 						{/each}
 					</select>
-					<input
-						class="line-input"
-						type="text"
-						placeholder="Notes (optional)"
-						bind:value={relNotes}
-					/>
-					<button class="outline-add" type="submit" disabled={!relTargetId}>Add</button>
-				{/if}
-				{#if relError}
-					<p class="rel-error" role="alert">{relError}</p>
-				{/if}
-			</form>
+					{#if relTypeId}
+						<select class="line-input" bind:value={relTargetId} aria-label="Related entity">
+							<option value="">Who or where...</option>
+							{#each relTargetOptions as target (target.id)}
+								<option value={target.id}>{target.name}</option>
+							{/each}
+						</select>
+						<input
+							class="line-input"
+							type="text"
+							placeholder="Notes (optional)"
+							bind:value={relNotes}
+						/>
+					{/if}
+					<div class="rel-add-actions">
+						<button class="outline-add" type="submit" disabled={!relTargetId}>Add</button>
+						<button
+							class="rel-cancel"
+							type="button"
+							onclick={() => {
+								addingRel = false;
+								relTypeId = '';
+								relTargetId = '';
+								relNotes = '';
+								relError = '';
+							}}
+						>
+							Cancel
+						</button>
+					</div>
+					{#if relError}
+						<p class="rel-error" role="alert">{relError}</p>
+					{/if}
+				</form>
+			{:else}
+				<button type="button" class="chip dashed rel-add-chip" onclick={() => (addingRel = true)}>
+					+ Add relationship
+				</button>
+			{/if}
 		{/if}
 	{/if}
 
@@ -415,36 +443,10 @@
 	.detail-title-input::placeholder {
 		color: var(--text-faint);
 	}
-	.save-control {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		flex: none;
-	}
-	.save-state {
-		font-size: 12px;
+	.field-hint {
 		color: var(--text-faint);
-		white-space: nowrap;
-	}
-	.save-state.err {
-		color: var(--danger, #b00020);
-	}
-	.save-now {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm, 6px);
-		background: none;
-		color: var(--text-muted);
 		font-size: 12.5px;
-		padding: 5px 12px;
-		cursor: pointer;
-	}
-	.save-now:hover:not(:disabled) {
-		color: var(--text);
-		border-color: var(--accent-line);
-	}
-	.save-now:disabled {
-		opacity: 0.5;
-		cursor: default;
+		margin: -4px 0 4px;
 	}
 	.line-input,
 	.area-input {
@@ -471,48 +473,30 @@
 		min-height: 180px;
 		padding: 4px 0 12px;
 	}
-	.rel-row {
-		display: flex;
-		align-items: baseline;
-		gap: 8px;
-		padding: 6px 2px;
-		border-bottom: 1px dashed var(--border);
-		font-size: 13.5px;
-	}
-	.rel-label {
-		color: var(--text-muted);
-		white-space: nowrap;
-	}
-	.rel-name {
-		color: var(--text);
-		font-weight: 550;
-	}
-	.rel-notes {
-		flex: 1;
-		min-width: 0;
-		color: var(--text-faint);
-		font-size: 12.5px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.rel-remove {
-		margin-left: auto;
-		border: 0;
-		background: none;
-		color: var(--text-faint);
-		font-size: 15px;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.rel-remove:hover {
-		color: var(--danger, #b00020);
-	}
 	.rel-add {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		margin-top: 8px;
+		margin-top: 10px;
+	}
+	.rel-add-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.rel-cancel {
+		border: 0;
+		background: none;
+		color: var(--text-muted);
+		font-size: 12.5px;
+		padding: 5px 8px;
+		cursor: pointer;
+	}
+	.rel-cancel:hover {
+		color: var(--text);
+	}
+	.rel-add-chip {
+		margin-top: 10px;
 	}
 	.rel-error {
 		color: var(--danger, #b00020);

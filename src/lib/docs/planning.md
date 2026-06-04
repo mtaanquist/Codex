@@ -10,7 +10,9 @@ Lore entries are grouped into categories you define, such as "Factions" or "Magi
 
 ## Aliases
 
-Give a character their nicknames and variants as aliases. The editor uses them to detect mentions, so "the Captain" can point at the same person as her name.
+Give a character their nicknames and variants as aliases. Type one and press Enter to add it; click the cross on an alias to remove it. The editor uses them to detect mentions, so "the Captain" can point at the same person as her name. Lore entries take keywords the same way.
+
+Your changes save on their own as you work, so there is no save button.
 
 ## The outline
 
@@ -18,7 +20,7 @@ Each story has its own outline, separate from the chapters you have drafted. Use
 
 ## Relationships
 
-You can record how entities relate: who is whose parent, which faction holds which city. Pick a relationship type and add a note; the reverse shows on the other entry's page automatically.
+You can record how entities relate: who is whose parent, which faction holds which city. Select "Add relationship", pick a type, choose the other entity, and add a note if you like; the reverse shows on the other entry's page automatically. Click a related entity to jump to it.
 
 ## Bringing entities into a story
 

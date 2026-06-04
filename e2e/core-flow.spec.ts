@@ -184,9 +184,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.getByPlaceholder('Name', { exact: true }).fill('Alice Vane');
-	await page
-		.getByPlaceholder('Nicknames and variants, separated by commas. Used to spot mentions.')
-		.fill('Allie, Mrs. Fenwick');
+	// Aliases are tags: open the input, then add each on Enter.
+	await page.getByRole('button', { name: 'Add alias' }).click();
+	await page.getByLabel('Add alias').fill('Allie');
+	await page.getByLabel('Add alias').press('Enter');
+	await page.getByLabel('Add alias').fill('Mrs. Fenwick');
+	await page.getByLabel('Add alias').press('Enter');
+	await expect(page.locator('.chip', { hasText: 'Mrs. Fenwick' })).toBeVisible();
 	await page
 		.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
 		.fill('A toll-road smuggler.');
@@ -214,9 +218,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const loreSave = page.waitForResponse(
 		(r) => r.url().includes('/api/lore/') && r.request().method() === 'PUT' && r.ok()
 	);
-	await page
-		.getByPlaceholder('Terms that refer to this entry, separated by commas. Used to spot mentions.')
-		.fill('gate');
+	await page.getByRole('button', { name: 'Add keyword' }).click();
+	await page.getByLabel('Add keyword').fill('gate');
+	await page.getByLabel('Add keyword').press('Enter');
 	await loreSave;
 
 	// A coloured category groups the cast: create one, assign Alice to it,
@@ -235,15 +239,6 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(
 		page.locator('.ent-row', { hasText: 'Alice Vane' }).locator('.badge')
 	).toHaveAttribute('style', /var\(--cat-rose\)/);
-
-	// The Plan editor autosaves, and also offers an explicit Save that persists
-	// the current state and reports "Saved".
-	const manualSave = page.waitForResponse(
-		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
-	);
-	await page.getByRole('button', { name: 'Save', exact: true }).click();
-	await manualSave;
-	await expect(page.locator('.save-state')).toHaveText('Saved');
 
 	// Back to Write via the segmented control.
 	await page.getByRole('link', { name: 'Write' }).click();
@@ -546,7 +541,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		page.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
 	).toHaveValue('A toll-road smuggler in debt.');
 
-	// Relationships: declare "lives in Halden" from Alice's page.
+	// Relationships: declare "lives in Halden" from Alice's page. The add form
+	// is behind a dashed chip.
+	await page.getByRole('button', { name: 'Add relationship' }).click();
 	await page.getByLabel('Relation').selectOption({ label: 'lives in' });
 	await page.getByLabel('Related entity').selectOption({ label: 'Halden' });
 	await page.getByPlaceholder('Notes (optional)').fill('Since the toll war.');

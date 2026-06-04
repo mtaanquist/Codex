@@ -4,6 +4,7 @@ import { ownedUniverse } from '$lib/server/universe-access';
 import { planActions } from '$lib/server/plan-actions';
 import {
 	entityAppearances,
+	entityMentionCount,
 	planEntityLists,
 	resolvePlanEntity,
 	type PlanAppearance
@@ -39,11 +40,17 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// Every mention of the selected entity across the universe's stories,
 	// for the "Appears in" panel. Grouped by story, then scene, in the page.
 	let appearsIn: PlanAppearance[] = [];
+	let mentionTotal = 0;
 	if (selected) {
 		appearsIn = await entityAppearances(
 			db,
 			{ kind: selectedKind, id: selected.id },
 			{ universeId: universe.id }
+		);
+		mentionTotal = await entityMentionCount(
+			db,
+			{ kind: selectedKind, id: selected.id },
+			universe.id
 		);
 	}
 
@@ -79,6 +86,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selected,
 		selectedKind,
 		appearsIn,
+		mentionTotal,
 		relationTypes,
 		relationships,
 		revisionTarget,

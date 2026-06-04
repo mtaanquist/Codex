@@ -72,6 +72,7 @@
 							place: data.places,
 							lore_entry: data.lore
 						}}
+						entityHref={(id) => `${planPath}?entity=${id}`}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
@@ -165,6 +166,12 @@
 					{:else}
 						<div class="empty">Mentions and relationships arrive here.</div>
 					{/if}
+					{#if data.selected}
+						<div class="r-card mentions-card">
+							<span>All mentions</span>
+							<span class="r-count">{data.mentionTotal}</span>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</aside>
@@ -183,5 +190,14 @@
 		line-height: 1.5;
 		padding: 2px 0 6px;
 		border-bottom: 1px dashed var(--border);
+	}
+	.mentions-card {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.mentions-card span:first-child {
+		font-size: 13.5px;
+		font-weight: 600;
 	}
 </style>
