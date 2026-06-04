@@ -509,6 +509,22 @@ export const revisions = pgTable(
 	]
 );
 
+// One row per off-site backup attempt, success or failure, so the admin
+// page can show whether backups are actually happening. The bucket holds
+// the dumps; this table holds the evidence.
+export const backupRuns = pgTable('backup_runs', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	// 'scheduled' | 'manual'
+	trigger: text('trigger', { enum: ['scheduled', 'manual'] }).notNull(),
+	status: text('status', { enum: ['running', 'ok', 'failed'] }).notNull(),
+	// Object key in the bucket, set on success.
+	objectKey: text('object_key'),
+	sizeBytes: bigint('size_bytes', { mode: 'number' }),
+	error: text('error'),
+	startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+	finishedAt: timestamp('finished_at', { withTimezone: true })
+});
+
 // Single-use tokens for email verification and password reset. The raw token
 // is emailed; only its hash is stored.
 export const authTokens = pgTable('auth_tokens', {

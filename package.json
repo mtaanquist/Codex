@@ -10,6 +10,8 @@
 		"worker": "node src/worker/index.ts",
 		"migrate": "node scripts/migrate.ts",
 		"seed:admin": "node scripts/seed-admin.ts",
+		"backup": "node scripts/run-backup.ts",
+		"restore:backup": "node scripts/restore-backup.ts",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -46,6 +48,8 @@
 		"vitest": "^4.1.8"
 	},
 	"dependencies": {
+		"@aws-sdk/client-s3": "^3.1061.0",
+		"@aws-sdk/lib-storage": "^3.1061.0",
 		"@codemirror/lang-markdown": "^6.5.0",
 		"@node-rs/argon2": "^2.0.2",
 		"codemirror": "^6.0.2",

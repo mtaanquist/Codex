@@ -5,6 +5,8 @@ import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { saveEntityAutocomplete, userPreferences } from '$lib/server/preferences';
+import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
+import { queueBackup } from '$lib/server/jobs';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -27,7 +29,22 @@ export const load: PageServerLoad = async ({ locals }) => {
 					)
 					.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 	const preferences = await userPreferences(db, user.id);
-	return { user, universes: list, stories: storyList, preferences };
+
+	// The backups panel is the admin's: configuration state and the recent
+	// runs, so a silently failing backup is visible.
+	const isAdmin = user.role === 'admin';
+	const backupsConfigured = isAdmin && backupConfig() !== null;
+	const backupRuns = isAdmin ? await listRecentBackupRuns(db, 5) : [];
+
+	return {
+		user,
+		universes: list,
+		stories: storyList,
+		preferences,
+		isAdmin,
+		backupsConfigured,
+		backupRuns
+	};
 };
 
 export const actions: Actions = {
@@ -64,6 +81,19 @@ export const actions: Actions = {
 		}
 		await saveEntityAutocomplete(db, locals.user!.id, mode);
 		return { prefSaved: true };
+	},
+	runBackup: async ({ locals }) => {
+		if (locals.user!.role !== 'admin') {
+			return fail(403, { message: 'Only the site admin can run backups.' });
+		}
+		if (!backupConfig()) {
+			return fail(400, { message: 'Backups are not configured.' });
+		}
+		const queued = await queueBackup();
+		if (!queued) {
+			return fail(500, { message: 'Could not queue the backup.' });
+		}
+		return { backupQueued: true };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) {
