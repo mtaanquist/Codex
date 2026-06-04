@@ -1,6 +1,7 @@
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
+import { logEvent } from '$lib/server/log';
 
 const PUBLIC_PATHS = new Set([
 	'/login',
@@ -12,7 +13,9 @@ const PUBLIC_PATHS = new Set([
 	'/forgot-password',
 	'/reset-password',
 	'/cancel-deletion',
-	'/confirm-email-change'
+	'/confirm-email-change',
+	// Liveness probe for the reverse proxy and orchestrators; no auth.
+	'/healthz'
 ]);
 // Pages a signed-in user has no reason to see; bounce them home instead.
 const AUTH_PATHS = new Set(['/login', '/signup']);
@@ -46,4 +49,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	return resolve(event);
+};
+
+// Server faults are logged as structured events with a request id; the client
+// still gets only SvelteKit's safe message. Expected 404s are left as noise.
+export const handleError: HandleServerError = ({ error, event, status, message }) => {
+	if (status !== 404) {
+		logEvent('error', 'request.error', {
+			method: event.request.method,
+			path: event.url.pathname,
+			status,
+			message: error instanceof Error ? error.message : String(error)
+		});
+	}
+	return { message };
 };
