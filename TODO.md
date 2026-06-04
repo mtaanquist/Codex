@@ -111,6 +111,14 @@ format preference deferred to Phase 6 (see the feedback backlog).
       article lookup; e2e browses the index and opens an article. Lint, check,
       unit (232), build, and e2e pass.
 
+> Phase 5 complete; shipped as v2.5.0 (2026-06-04). The held v2.5 review
+> (ultrareview) found six issues - single-use TOTP/replay, password re-auth on
+> 2FA disable/regenerate, one-shot enrolment confirm, an avatar-upload race, a
+> reverting theme toggle, and a duplicate-link crash on /@handle - all fixed
+> before the tag (migration 0024 adds user_totp.last_used_step). Phase 6
+> candidates recorded along the way: entity quick details (jsonb) paired with
+> full-fidelity entity history. One free /code-review ultra run remains.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
