@@ -103,6 +103,15 @@
 			<span class="ok" role="status">Done.</span>
 		{/if}
 	</section>
+
+	<section>
+		<h2>Your data</h2>
+		<p>
+			Download everything you have written - every universe, story, scene, and worldbuilding entry,
+			with your images - as a folder of markdown files.
+		</p>
+		<p><a href={resolve('/account/export')} data-sveltekit-reload>Download everything</a></p>
+	</section>
 </main>
 
 <style>
