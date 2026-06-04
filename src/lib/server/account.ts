@@ -21,6 +21,54 @@ export async function changeDisplayName(
 	return { ok: true };
 }
 
+const HANDLE_RE = /^[a-z0-9][a-z0-9-]{2,29}$/;
+
+// Saves the public-profile fields: the bio (markdown, stored verbatim) and
+// whether the @handle page is listed publicly.
+export async function saveProfile(
+	db: Database,
+	userId: string,
+	input: { bioMd: string; profilePublic: boolean }
+): Promise<AccountResult> {
+	const bio = input.bioMd.trim();
+	await db
+		.update(users)
+		.set({ bioMd: bio || null, profilePublic: input.profilePublic })
+		.where(eq(users.id, userId));
+	return { ok: true };
+}
+
+// Claims a public handle. A handle is claimed once and never changed:
+// publications carry a denormalised copy and the reader matches on it alone, so
+// freeing a handle would serve someone's editions under another name. The
+// IS NULL guard makes it write-once.
+export async function claimHandle(
+	db: Database,
+	userId: string,
+	rawHandle: string
+): Promise<AccountResult> {
+	const handle = rawHandle.trim().toLowerCase();
+	if (!HANDLE_RE.test(handle)) {
+		return { ok: false, reason: 'Handles are 3-30 characters: letters, numbers, and dashes.' };
+	}
+	try {
+		const claimed = await db
+			.update(users)
+			.set({ handle })
+			.where(and(eq(users.id, userId), isNull(users.handle)))
+			.returning({ id: users.id });
+		if (claimed.length === 0) {
+			return { ok: false, reason: 'You already have a handle; it cannot be changed.' };
+		}
+	} catch (error) {
+		if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
+			return { ok: false, reason: 'That handle is taken.' };
+		}
+		throw error;
+	}
+	return { ok: true };
+}
+
 // Verifies the current password before setting a new one, then revokes every
 // other session so a device that still held the old password is signed out.
 // The caller's own session is kept so they are not logged out mid-change.

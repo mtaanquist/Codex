@@ -12,11 +12,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL('/');
 
 	// Repeated runs share the seeded user, so pin the preferences to their
-	// defaults before exercising them later.
+	// defaults before exercising them later. They live on the account page now.
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.goto('/');
 
 	// Backups belong to the site admin; a regular account sees no panel.
 	await expect(page.getByRole('heading', { name: 'Backups' })).toHaveCount(0);
@@ -292,7 +295,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Ghost mode comes from the user preference: an unambiguous prefix
 	// shows the rest of the name, and Tab accepts it.
-	await page.locator('.brand').click();
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('ghost');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
@@ -485,7 +489,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.goto(proseSceneUrl);
 
 	// Scene marks in the story view follow the display preference.
-	await page.locator('.brand').click();
+	await page.goto('/account');
+	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
