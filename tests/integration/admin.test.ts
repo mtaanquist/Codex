@@ -5,7 +5,8 @@ import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { users } from '../../src/lib/server/db/schema';
-import { createFirstAdmin } from '../../src/lib/server/admin';
+import { createFirstAdmin, instanceStats } from '../../src/lib/server/admin';
+import { universes, stories } from '../../src/lib/server/db/schema';
 import { verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -78,5 +79,49 @@ describe('createFirstAdmin', () => {
 		const result = await createFirstAdmin(db, { email: '', password: 'pw', displayName: 'X' });
 		expect(result.ok).toBe(false);
 		expect(await db.select().from(users)).toHaveLength(0);
+	});
+});
+
+describe('instanceStats', () => {
+	async function makeUser(email: string, over: Partial<typeof users.$inferInsert> = {}) {
+		const [row] = await db
+			.insert(users)
+			.values({ email, displayName: email, passwordHash: 'x', role: 'user', ...over })
+			.returning({ id: users.id });
+		return row.id;
+	}
+
+	it('counts active writers, pending accounts, universes and stories', async () => {
+		const now = new Date();
+		// active writer
+		const ownerId = await makeUser('writer@example.com', { approvedAt: now });
+		// pending (not approved)
+		await makeUser('pending@example.com');
+		// suspended writers are not counted as active
+		await makeUser('suspended@example.com', { approvedAt: now, suspendedAt: now });
+		// an admin is approved, so it counts as an active writer but never as pending
+		await createFirstAdmin(db, {
+			email: 'admin@example.com',
+			password: 'pw',
+			displayName: 'Admin'
+		});
+
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId, name: 'U' })
+			.returning({ id: universes.id });
+		await db.insert(stories).values({ universeId: universe.id, ownerId, title: 'S1' });
+		await db.insert(stories).values({ universeId: universe.id, ownerId, title: 'S2' });
+
+		const stats = await instanceStats(db);
+		expect(stats.writers).toBe(2); // approved writer + admin, not the suspended or pending one
+		expect(stats.pending).toBe(1); // the pending writer; the admin is excluded
+		expect(stats.universes).toBe(1);
+		expect(stats.stories).toBe(2);
+	});
+
+	it('reports zeroes on an empty instance', async () => {
+		const stats = await instanceStats(db);
+		expect(stats).toEqual({ writers: 0, pending: 0, universes: 0, stories: 0 });
 	});
 });
