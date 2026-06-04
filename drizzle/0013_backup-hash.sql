@@ -1,0 +1,1 @@
+ALTER TABLE "backup_runs" ADD COLUMN "content_hash" text;

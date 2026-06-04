@@ -516,10 +516,14 @@ export const backupRuns = pgTable('backup_runs', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	// 'scheduled' | 'manual'
 	trigger: text('trigger', { enum: ['scheduled', 'manual'] }).notNull(),
-	status: text('status', { enum: ['running', 'ok', 'failed'] }).notNull(),
+	// 'skipped' means the dump matched the previous one, so nothing was
+	// uploaded; the run is still recorded so the cadence stays visible.
+	status: text('status', { enum: ['running', 'ok', 'skipped', 'failed'] }).notNull(),
 	// Object key in the bucket, set on success.
 	objectKey: text('object_key'),
 	sizeBytes: bigint('size_bytes', { mode: 'number' }),
+	// sha256 of the dump, for skipping uploads when nothing changed.
+	contentHash: text('content_hash'),
 	error: text('error'),
 	startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
 	finishedAt: timestamp('finished_at', { withTimezone: true })

@@ -15,4 +15,4 @@ if (!result.ok) {
 	console.error(`Backup failed: ${result.reason}`);
 	process.exit(1);
 }
-console.log(`Backup uploaded: ${result.key}`);
+console.log(result.skipped ? 'Backup skipped: nothing changed.' : `Backup uploaded: ${result.key}`);
