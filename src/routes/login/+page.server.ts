@@ -25,6 +25,9 @@ export const actions: Actions = {
 		if (result.status === 'unapproved') {
 			return fail(403, { email, message: 'Your account is awaiting approval.' });
 		}
+		if (result.status === 'suspended') {
+			return fail(403, { email, message: 'This account has been suspended.' });
+		}
 
 		const session = await createSession(db, result.user.id, {
 			userAgent: request.headers.get('user-agent'),

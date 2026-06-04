@@ -31,7 +31,8 @@ export type CredentialResult =
 	| { status: 'ok'; user: SessionUser }
 	| { status: 'invalid' }
 	| { status: 'unverified' }
-	| { status: 'unapproved' };
+	| { status: 'unapproved' }
+	| { status: 'suspended' };
 
 export async function verifyCredentials(
 	db: Database,
@@ -48,6 +49,7 @@ export async function verifyCredentials(
 	}
 	if (!user.emailVerifiedAt) return { status: 'unverified' };
 	if (!user.approvedAt) return { status: 'unapproved' };
+	if (user.suspendedAt) return { status: 'suspended' };
 	return {
 		status: 'ok',
 		user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role }
@@ -88,6 +90,8 @@ export async function validateSession(db: Database, sessionId: string) {
 			)
 		);
 	if (!row) return null;
+	// A suspended account loses its live sessions on the next request.
+	if (row.user.suspendedAt) return null;
 
 	if (Date.now() - row.session.lastSeenAt.getTime() > LAST_SEEN_REFRESH_MS) {
 		await db

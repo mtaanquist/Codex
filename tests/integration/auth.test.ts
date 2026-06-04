@@ -76,6 +76,12 @@ describe('verifyCredentials', () => {
 		const result = await verifyCredentials(db, 'unapproved@example.com', 'correct horse');
 		expect(result.status).toBe('unapproved');
 	});
+
+	it('blocks a suspended account even with the right password', async () => {
+		await seedUser('suspended@example.com', { suspendedAt: new Date() });
+		const result = await verifyCredentials(db, 'suspended@example.com', 'correct horse');
+		expect(result.status).toBe('suspended');
+	});
 });
 
 describe('sessions', () => {
@@ -110,5 +116,13 @@ describe('sessions', () => {
 
 	it('rejects a session id that does not exist', async () => {
 		expect(await validateSession(db, crypto.randomUUID())).toBeNull();
+	});
+
+	it('drops a live session when the account is suspended', async () => {
+		const userId = await seedUser('suspend-session@example.com');
+		const session = await createSession(db, userId);
+		expect(await validateSession(db, session.id)).not.toBeNull();
+		await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, userId));
+		expect(await validateSession(db, session.id)).toBeNull();
 	});
 });

@@ -108,80 +108,7 @@
 
 	{#if data.isAdmin}
 		<h2>Administration</h2>
-		<p><a href={resolve('/admin')}>Review pending accounts</a></p>
-
-		<h2>Public archive admin</h2>
-		<form method="POST" action="?/setArchive">
-			<label>
-				User email
-				<input type="email" name="email" required />
-			</label>
-			<label class="inline">
-				<input type="checkbox" name="enabled" checked />
-				Public archive enabled
-			</label>
-			<button type="submit">Apply</button>
-			{#if form?.scope === 'archive' && form.message}
-				<span class="error" role="alert">{form.message}</span>
-			{/if}
-			{#if form && 'archiveSaved' in form && form.archiveSaved}
-				<span role="status">Saved.</span>
-			{/if}
-		</form>
-		{#if data.published.length > 0}
-			<ul class="timeline">
-				{#each data.published as edition (edition.id)}
-					<li>
-						<span class="t-name" class:failed={edition.removedAt !== null}>
-							@{edition.handle}/{edition.title}
-						</span>
-						<span class="t-what">
-							{edition.removedAt
-								? 'taken down'
-								: edition.isCurrent
-									? 'current'
-									: 'superseded'}{edition.isAdult ? ', adult' : ''}
-						</span>
-						<span class="t-when">{edition.publishedAt.toLocaleString()}</span>
-						{#if !edition.removedAt}
-							<form method="POST" action="?/takedown">
-								<input type="hidden" name="publicationId" value={edition.id} />
-								<button type="submit">Take down</button>
-							</form>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-
-		<h2>Backups</h2>
-		{#if !data.backupsConfigured}
-			<p>
-				Off-site backups are not configured. Set the BACKUP_S3_* variables (see .env.example) and
-				restart; the worker then uploads a nightly database dump.
-			</p>
-		{:else}
-			<form method="POST" action="?/runBackup">
-				<button type="submit">Back up now</button>
-				{#if form && 'backupQueued' in form && form.backupQueued}
-					<span role="status">Backup queued. Refresh to see the result.</span>
-				{/if}
-			</form>
-		{/if}
-		{#if data.backupRuns.length > 0}
-			<ul class="timeline">
-				{#each data.backupRuns as run (run.id)}
-					<li>
-						<span class="t-name" class:failed={run.status === 'failed'}>{run.status}</span>
-						<span class="t-what">
-							{run.trigger}{run.sizeBytes ? `, ${(run.sizeBytes / 1024).toFixed(0)} KB` : ''}
-							{run.error ? ` - ${run.error}` : ''}
-						</span>
-						<span class="t-when">{run.startedAt.toLocaleString()}</span>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<p><a href={resolve('/admin')}>Open the site admin panel</a></p>
 	{/if}
 </main>
 
@@ -218,37 +145,5 @@
 	.settings {
 		font-size: 0.8rem;
 		font-weight: normal;
-	}
-	.timeline {
-		list-style: none;
-		padding: 0;
-		margin: 0.5rem 0 0;
-	}
-	.timeline li {
-		display: flex;
-		gap: 0.75rem;
-		align-items: baseline;
-		padding: 0.3rem 0;
-		border-bottom: 1px dashed #ddd;
-		font-size: 0.9rem;
-	}
-	.t-name {
-		font-weight: 600;
-	}
-	.t-name.failed {
-		color: #b00020;
-	}
-	.t-what {
-		color: #666;
-	}
-	.t-when {
-		margin-left: auto;
-		color: #999;
-		font-size: 0.8rem;
-	}
-	label.inline {
-		flex-direction: row;
-		align-items: center;
-		gap: 0.4rem;
 	}
 </style>

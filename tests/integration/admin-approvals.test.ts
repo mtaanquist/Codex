@@ -5,7 +5,15 @@ import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { authTokens, users } from '../../src/lib/server/db/schema';
-import { adminEmails, approveUser, listPendingUsers, rejectUser } from '../../src/lib/server/admin';
+import {
+	adminEmails,
+	approveUser,
+	listAllUsers,
+	listPendingUsers,
+	rejectUser,
+	setUserArchive,
+	setUserSuspended
+} from '../../src/lib/server/admin';
 import { issueToken } from '../../src/lib/server/tokens';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -98,5 +106,44 @@ describe('adminEmails', () => {
 		await makeUser('boss2@example.com', { role: 'admin' });
 		await makeUser('writer@example.com');
 		expect((await adminEmails(db)).sort()).toEqual(['boss1@example.com', 'boss2@example.com']);
+	});
+});
+
+describe('listAllUsers', () => {
+	it('returns every account, newest first', async () => {
+		await makeUser('admin@example.com', { role: 'admin', approved: true, verified: true });
+		await makeUser('active@example.com', { approved: true });
+		await makeUser('pending@example.com');
+		const all = await listAllUsers(db);
+		expect(all).toHaveLength(3);
+		// createdAt descending: the last inserted comes first.
+		expect(all[0].email).toBe('pending@example.com');
+	});
+});
+
+describe('setUserArchive', () => {
+	it('enables and disables a user public archive', async () => {
+		const id = await makeUser('pub@example.com', { approved: true });
+		expect(await setUserArchive(db, id, true)).toBe(true);
+		let [row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.publicArchiveEnabled).toBe(true);
+		expect(await setUserArchive(db, id, false)).toBe(true);
+		[row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.publicArchiveEnabled).toBe(false);
+	});
+});
+
+describe('setUserSuspended', () => {
+	it('suspends and unsuspends a user, but never an admin', async () => {
+		const id = await makeUser('naughty@example.com', { approved: true });
+		expect(await setUserSuspended(db, id, true)).toBe(true);
+		let [row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.suspendedAt).not.toBeNull();
+		expect(await setUserSuspended(db, id, false)).toBe(true);
+		[row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.suspendedAt).toBeNull();
+
+		const admin = await makeUser('boss@example.com', { role: 'admin', approved: true });
+		expect(await setUserSuspended(db, admin, true)).toBe(false);
 	});
 });

@@ -53,6 +53,8 @@ export const users = pgTable('users', {
 	emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
 	// Null until admin approves.
 	approvedAt: timestamp('approved_at', { withTimezone: true }),
+	// Set when an admin suspends the account; blocks sign-in without deleting.
+	suspendedAt: timestamp('suspended_at', { withTimezone: true }),
 	// Updated on successful sign-in; useful for stale-account cleanup.
 	lastLoginAt: timestamp('last_login_at', { withTimezone: true })
 });
