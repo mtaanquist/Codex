@@ -64,3 +64,25 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  docker-smoke:
+    name: Docker stack boots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and start the stack
+        run: docker compose -f compose.yaml up -d --build
+      - name: App responds
+        run: curl --retry 12 --retry-delay 5 --retry-all-errors -fsS -o /dev/null http://localhost:3000/login
+      - name: Worker stays up
+        # The worker imports from src/lib at runtime; a missing file in the
+        # image crash-loops here, which CI's host-spawned e2e never sees.
+        run: |
+          sleep 10
+          state=$(docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' codex-worker-1)
+          echo "worker: $state"
+          [ "$state" = "running restarts=0" ]
+          docker logs codex-worker-1 2>&1 | grep -q "Worker started"
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f compose.yaml logs
