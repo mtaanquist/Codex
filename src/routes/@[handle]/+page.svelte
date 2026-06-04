@@ -1,13 +1,21 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
+	import { renderMarkdown } from '$lib/markdown';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// The reader page de-indexes adult work; the shelf shows its title,
+	// cover, and description, so it must de-index too when any book is adult.
+	const hasAdult = $derived(data.shelf.some((book) => book.isAdult));
 </script>
 
 <svelte:head>
 	<title>@{data.handle} - Codex</title>
+	{#if hasAdult}
+		<meta name="robots" content="noindex" />
+	{/if}
 </svelte:head>
 
 <main class="shelf">
@@ -18,7 +26,9 @@
 		<ul class="books">
 			{#each data.shelf as book (book.storyId)}
 				<li>
-					<a href={resolve('/@[handle]/[story]', { handle: data.handle, story: book.storyId })}>
+					<a
+						href={resolve('/@[handle]/[story=uuid]', { handle: data.handle, story: book.storyId })}
+					>
 						{#if book.coverAssetId}
 							<img class="cover" src="/assets/{book.coverAssetId}" alt="" />
 						{:else}
@@ -33,7 +43,11 @@
 					</a>
 					{#if book.author}<p class="book-author">{book.author}</p>{/if}
 					{#if book.isAdult}<p class="adult-badge">Adult content</p>{/if}
-					{#if book.descriptionMd}<p class="book-brief">{book.descriptionMd}</p>{/if}
+					{#if book.descriptionMd}
+						<!-- Author markdown; renderMarkdown escapes raw HTML. -->
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<div class="book-brief">{@html renderMarkdown(book.descriptionMd)}</div>
+					{/if}
 				</li>
 			{/each}
 		</ul>

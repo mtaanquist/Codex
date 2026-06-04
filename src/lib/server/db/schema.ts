@@ -11,9 +11,11 @@ import {
 	text,
 	timestamp,
 	unique,
+	uniqueIndex,
 	uuid,
 	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // Case-insensitive text, used for the public handle. The citext extension is
 // created in the first migration.
@@ -512,30 +514,60 @@ export const revisions = pgTable(
 // A frozen, read-only edition of a story, served on the public reading
 // pages. Snapshot, not live: in-progress drafts never appear, and the
 // reader path reads only these rows.
-export const publications = pgTable('publications', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	storyId: uuid('story_id')
-		.references(() => stories.id)
-		.notNull(),
-	ownerId: uuid('owner_id')
-		.references(() => users.id)
-		.notNull(),
-	// Denormalised from users.handle for the reader path.
-	handle: text('handle').notNull(),
-	title: text('title').notNull(),
-	author: text('author'),
-	descriptionMd: text('description_md'),
-	// Carried from stories.is_adult; the reader pages confirm before showing.
-	isAdult: boolean('is_adult').notNull().default(false),
-	// Frozen chapters and scenes for this edition, as markdown.
-	content: jsonb('content').notNull(),
-	// Optional, e.g. 'Edition 2'.
-	versionLabel: text('version_label'),
-	isCurrent: boolean('is_current').notNull().default(true),
-	// Set by an admin takedown; hides the edition without deleting the source.
-	removedAt: timestamp('removed_at', { withTimezone: true }),
-	publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow()
-});
+export const publications = pgTable(
+	'publications',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		// Denormalised from users.handle for the reader path.
+		handle: text('handle').notNull(),
+		title: text('title').notNull(),
+		author: text('author'),
+		descriptionMd: text('description_md'),
+		// Carried from stories.is_adult; the reader pages confirm before showing.
+		isAdult: boolean('is_adult').notNull().default(false),
+		// Frozen chapters and scenes for this edition, as markdown.
+		content: jsonb('content').notNull(),
+		// Optional, e.g. 'Edition 2'.
+		versionLabel: text('version_label'),
+		isCurrent: boolean('is_current').notNull().default(true),
+		// Set by an admin takedown; hides the edition without deleting the source.
+		removedAt: timestamp('removed_at', { withTimezone: true }),
+		publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		// At most one current edition per story; a concurrent re-publish that
+		// would create a second hits this and rolls back.
+		uniqueIndex('publications_one_current_per_story')
+			.on(table.storyId)
+			.where(sql`${table.isCurrent}`)
+	]
+);
+
+// Assets a published edition references (inline images, plus the cover at
+// publish time), captured when an edition is frozen. The reader serves an
+// asset to anonymous visitors only when it appears here for a readable
+// edition, so private prose's images cannot be fetched by guessing ids.
+export const publicationAssets = pgTable(
+	'publication_assets',
+	{
+		publicationId: uuid('publication_id')
+			.references(() => publications.id)
+			.notNull(),
+		assetId: uuid('asset_id')
+			.references(() => assets.id)
+			.notNull()
+	},
+	(table) => [
+		primaryKey({ columns: [table.publicationId, table.assetId] }),
+		index('publication_assets_asset_idx').on(table.assetId)
+	]
+);
 
 // Uploaded files, stored in an S3-compatible bucket (separate from the
 // backups bucket) and served through the app. The row is the source of

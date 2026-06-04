@@ -1,7 +1,8 @@
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth';
-import { publications, stories, users } from './db/schema';
+import { publicationAssets, publications, stories, users } from './db/schema';
 import { gatherStory } from './export';
+import { findAssetReferences } from '$lib/markdown';
 
 // Publishing freezes the story's current prose into an edition; the
 // public reading pages serve only these snapshots, never live drafts.
@@ -49,28 +50,53 @@ export async function publishStory(
 		return { ok: false, reason: 'there is nothing to publish yet' };
 	}
 
-	const publicationId = await db.transaction(async (tx) => {
-		await tx
-			.update(publications)
-			.set({ isCurrent: false })
-			.where(and(eq(publications.storyId, story.id), eq(publications.isCurrent, true)));
-		const [edition] = await tx
-			.insert(publications)
-			.values({
-				storyId: story.id,
-				ownerId: userId,
-				handle: user.handle!,
-				title: story.title,
-				author: story.author,
-				descriptionMd: story.descriptionMd,
-				isAdult: story.isAdult,
-				content,
-				versionLabel: versionLabel?.trim() || null
-			})
-			.returning({ id: publications.id });
-		return edition.id;
-	});
-	return { ok: true, publicationId };
+	// Inline images the frozen prose points at, so the reader can serve them
+	// to anonymous visitors without exposing every asset by id.
+	const referencedAssets = [
+		...new Set([
+			...content.chapters.flatMap((chapter) =>
+				chapter.scenes.flatMap((scene) => findAssetReferences(scene.bodyMd))
+			),
+			...content.unfiled.flatMap((scene) => findAssetReferences(scene.bodyMd))
+		])
+	];
+
+	try {
+		const publicationId = await db.transaction(async (tx) => {
+			await tx
+				.update(publications)
+				.set({ isCurrent: false })
+				.where(and(eq(publications.storyId, story.id), eq(publications.isCurrent, true)));
+			const [edition] = await tx
+				.insert(publications)
+				.values({
+					storyId: story.id,
+					ownerId: userId,
+					handle: user.handle!,
+					title: story.title,
+					author: story.author,
+					descriptionMd: story.descriptionMd,
+					isAdult: story.isAdult,
+					content,
+					versionLabel: versionLabel?.trim() || null
+				})
+				.returning({ id: publications.id });
+			if (referencedAssets.length > 0) {
+				await tx
+					.insert(publicationAssets)
+					.values(referencedAssets.map((assetId) => ({ publicationId: edition.id, assetId })));
+			}
+			return edition.id;
+		});
+		return { ok: true, publicationId };
+	} catch (error) {
+		// The partial unique index caught a concurrent publish of the same
+		// story; the loser rolls back rather than leaving two current rows.
+		if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
+			return { ok: false, reason: 'another publish just happened; reload and try again' };
+		}
+		throw error;
+	}
 }
 
 // The author shelf: current, non-removed editions of stories the author
@@ -129,12 +155,13 @@ export async function publicEdition(db: Database, handle: string, storyId: strin
 	return edition;
 }
 
-// True when this asset is the cover of a publicly readable edition, which
-// makes it servable without a session. The visibility test must match
-// publicEdition exactly (private is excluded, unlisted is reachable by
-// link), or a cover would outlive the page it belongs to.
-export async function isPublishedCover(db: Database, assetId: string): Promise<boolean> {
-	const [row] = await db
+// True when an asset belongs to a publicly readable edition, which makes
+// it servable without a session: either the story's live cover, or an
+// inline image the frozen prose references. The visibility test mirrors
+// publicEdition exactly (private excluded, unlisted reachable by link), so
+// an asset never outlives the page it belongs to.
+export async function isPublicAsset(db: Database, assetId: string): Promise<boolean> {
+	const [cover] = await db
 		.select({ id: publications.id })
 		.from(publications)
 		.innerJoin(stories, eq(publications.storyId, stories.id))
@@ -147,7 +174,23 @@ export async function isPublishedCover(db: Database, assetId: string): Promise<b
 			)
 		)
 		.limit(1);
-	return Boolean(row);
+	if (cover) return true;
+
+	const [inline] = await db
+		.select({ id: publications.id })
+		.from(publicationAssets)
+		.innerJoin(publications, eq(publicationAssets.publicationId, publications.id))
+		.innerJoin(stories, eq(publications.storyId, stories.id))
+		.where(
+			and(
+				eq(publicationAssets.assetId, assetId),
+				eq(publications.isCurrent, true),
+				isNull(publications.removedAt),
+				ne(stories.visibility, 'private')
+			)
+		)
+		.limit(1);
+	return Boolean(inline);
 }
 
 // Admin takedown: hides the edition without touching the author's source.

@@ -4,9 +4,17 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { chapters, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
 import {
-	isPublishedCover,
+	assets,
+	chapters,
+	publications,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
+import {
+	isPublicAsset,
 	listPublications,
 	publicEdition,
 	publicShelf,
@@ -20,6 +28,7 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 let pool: pg.Pool;
 let db: Database;
 let authorId: string;
+let universeId: string;
 let storyId: string;
 let sceneId: string;
 
@@ -29,7 +38,7 @@ beforeAll(async () => {
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
 	await pool.query(
-		'truncate table publications, scenes, chapters, stories, universes, users cascade'
+		'truncate table publication_assets, publications, assets, scenes, chapters, stories, universes, users cascade'
 	);
 
 	const [author] = await db
@@ -48,6 +57,7 @@ beforeAll(async () => {
 		.insert(universes)
 		.values({ ownerId: authorId, name: 'U' })
 		.returning();
+	universeId = universe.id;
 	const [story] = await db
 		.insert(stories)
 		.values({
@@ -149,15 +159,73 @@ describe('takedown and covers', () => {
 		const coverId = crypto.randomUUID();
 		await db.update(stories).set({ coverAssetId: coverId }).where(eq(stories.id, storyId));
 		// The only current edition is taken down.
-		expect(await isPublishedCover(db, coverId)).toBe(false);
+		expect(await isPublicAsset(db, coverId)).toBe(false);
 		await publishStory(db, authorId, storyId);
-		expect(await isPublishedCover(db, coverId)).toBe(true);
+		expect(await isPublicAsset(db, coverId)).toBe(true);
 
 		// Making the story private must stop the cover serving, matching
 		// publicEdition; unlisted stays reachable by direct link.
 		await db.update(stories).set({ visibility: 'private' }).where(eq(stories.id, storyId));
-		expect(await isPublishedCover(db, coverId)).toBe(false);
+		expect(await isPublicAsset(db, coverId)).toBe(false);
 		await db.update(stories).set({ visibility: 'unlisted' }).where(eq(stories.id, storyId));
-		expect(await isPublishedCover(db, coverId)).toBe(true);
+		expect(await isPublicAsset(db, coverId)).toBe(true);
+	});
+
+	it('serves inline images of a readable edition, and stops on takedown', async () => {
+		const [asset] = await db
+			.insert(assets)
+			.values({
+				ownerId: authorId,
+				universeId,
+				kind: 'inline',
+				filename: 'sketch.png',
+				contentType: 'image/png',
+				byteSize: 8,
+				storageKey: 'codex-assets/sketch'
+			})
+			.returning();
+		const [inlineStory] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: authorId, title: 'Illustrated', visibility: 'public' })
+			.returning();
+		await db.insert(scenes).values({
+			storyId: inlineStory.id,
+			globalPosition: 1,
+			bodyMd: `A picture: ![sketch](/assets/${asset.id})`
+		});
+
+		// Unreferenced until published.
+		expect(await isPublicAsset(db, asset.id)).toBe(false);
+		expect(await publishStory(db, authorId, inlineStory.id)).toMatchObject({ ok: true });
+		expect(await isPublicAsset(db, asset.id)).toBe(true);
+
+		const [current] = (await listPublications(db)).filter(
+			(row) => row.title === 'Illustrated' && row.isCurrent
+		);
+		await takedownPublication(db, current.id);
+		expect(await isPublicAsset(db, asset.id)).toBe(false);
+	});
+});
+
+describe('concurrent publish', () => {
+	it('the partial index forbids two current editions of one story', async () => {
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: authorId, title: 'Solo', visibility: 'public' })
+			.returning();
+		const row = {
+			storyId: story.id,
+			ownerId: authorId,
+			handle: 'inkwright',
+			title: 'Solo',
+			content: { chapters: [], unfiled: [] },
+			isCurrent: true
+		};
+		await db.insert(publications).values(row);
+		// A second current row for the same story is the race the partial
+		// unique index exists to stop.
+		await expect(db.insert(publications).values(row)).rejects.toMatchObject({
+			cause: { code: '23505' }
+		});
 	});
 });

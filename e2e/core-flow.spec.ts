@@ -397,6 +397,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 		await page.goto(proseSceneUrl);
 		await page.locator('.cm-content').click();
+		// Cursor to the end so the dropped image lands after the prose rather
+		// than splitting a word; the drop handler falls back to the caret when
+		// the drop point is past the text.
+		await page.keyboard.press('Control+End');
+		const dropSave = page.waitForResponse(
+			(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+		);
 		await page.evaluate((b64) => {
 			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 			const transfer = new DataTransfer();
@@ -408,12 +415,15 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 					bubbles: true,
 					cancelable: true,
 					dataTransfer: transfer,
-					clientX: rect.x + 10,
-					clientY: rect.y + 10
+					clientX: rect.x + 5,
+					clientY: rect.bottom + 50
 				})
 			);
 		}, PNG_B64);
 		await expect(page.locator('.cm-content')).toContainText('![sketch.png](/assets/');
+		// Let the autosave persist the inserted markdown before publishing,
+		// so the frozen edition actually contains the image.
+		await dropSave;
 	} else {
 		console.warn('ASSET_S3_BUCKET not set: skipping the asset upload segment.');
 	}
@@ -435,6 +445,18 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
 	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
 	await expect(reader.locator('.reader')).toContainText('The gate of Halden');
+	// Inline images of a published edition must serve to the anonymous
+	// reader, not 404 (bug_004).
+	if (process.env.ASSET_S3_BUCKET) {
+		const inlineImg = reader.locator('.reader article img').first();
+		await expect(inlineImg).toHaveCount(1);
+		const src = await inlineImg.getAttribute('src');
+		const served = await reader.request.get(src!);
+		expect(served.status()).toBe(200);
+	}
+	// A mistyped story id under a real handle is a clean 404, not a 500.
+	const notFound = await reader.request.get('/@e2e-tester/not-a-uuid');
+	expect(notFound.status()).toBe(404);
 	await anonymous.close();
 
 	// Exports: the zip and the EPUB download, and the print view renders

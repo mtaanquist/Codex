@@ -1,6 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
@@ -64,7 +66,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const name = String(data.get('name') ?? '').trim();
 		if (!name) {
-			return fail(400, { message: 'Give the universe a name.' });
+			return fail(400, { scope: 'universe', message: 'Give the universe a name.' });
 		}
 		const universe = await db.transaction(async (tx) => {
 			const [row] = await tx
@@ -90,10 +92,10 @@ export const actions: Actions = {
 		const mode = String(data.get('entityAutocomplete') ?? '');
 		const marks = String(data.get('continuousSceneMarks') ?? '');
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
-			return fail(400, { message: 'Pick an autocomplete mode.' });
+			return fail(400, { scope: 'prefs', message: 'Pick an autocomplete mode.' });
 		}
 		if (marks !== 'shown' && marks !== 'hidden') {
-			return fail(400, { message: 'Pick a scene marks option.' });
+			return fail(400, { scope: 'prefs', message: 'Pick a scene marks option.' });
 		}
 		await savePreferences(db, locals.user!.id, {
 			entityAutocomplete: mode,
@@ -103,14 +105,14 @@ export const actions: Actions = {
 	},
 	runBackup: async ({ locals }) => {
 		if (locals.user!.role !== 'admin') {
-			return fail(403, { message: 'Only the site admin can run backups.' });
+			return fail(403, { scope: 'backup', message: 'Only the site admin can run backups.' });
 		}
 		if (!backupConfig()) {
-			return fail(400, { message: 'Backups are not configured.' });
+			return fail(400, { scope: 'backup', message: 'Backups are not configured.' });
 		}
 		const queued = await queueBackup();
 		if (!queued) {
-			return fail(500, { message: 'Could not queue the backup.' });
+			return fail(500, { scope: 'backup', message: 'Could not queue the backup.' });
 		}
 		return { backupQueued: true };
 	},
@@ -121,14 +123,29 @@ export const actions: Actions = {
 			.toLowerCase();
 		if (!/^[a-z0-9][a-z0-9-]{2,29}$/.test(handle)) {
 			return fail(400, {
+				scope: 'handle',
 				message: 'Handles are 3-30 characters: letters, numbers, and dashes.'
 			});
 		}
 		try {
-			await db.update(users).set({ handle }).where(eq(users.id, locals.user!.id));
+			// A handle is claimed once and never changed: publications carry a
+			// denormalised copy and the reader matches on it alone, so freeing
+			// a handle for someone else to claim would serve your editions
+			// under their name. The IS NULL guard makes it write-once.
+			const claimed = await db
+				.update(users)
+				.set({ handle })
+				.where(and(eq(users.id, locals.user!.id), isNull(users.handle)))
+				.returning({ id: users.id });
+			if (claimed.length === 0) {
+				return fail(400, {
+					scope: 'handle',
+					message: 'You already have a handle; it cannot be changed.'
+				});
+			}
 		} catch (error) {
 			if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
-				return fail(400, { message: 'That handle is taken.' });
+				return fail(400, { scope: 'handle', message: 'That handle is taken.' });
 			}
 			throw error;
 		}
@@ -136,7 +153,10 @@ export const actions: Actions = {
 	},
 	setArchive: async ({ request, locals }) => {
 		if (locals.user!.role !== 'admin') {
-			return fail(403, { message: 'Only the site admin can enable public archives.' });
+			return fail(403, {
+				scope: 'archive',
+				message: 'Only the site admin can enable public archives.'
+			});
 		}
 		const data = await request.formData();
 		const email = String(data.get('email') ?? '').trim();
@@ -147,17 +167,27 @@ export const actions: Actions = {
 			.where(eq(users.email, email))
 			.returning({ id: users.id });
 		if (updated.length === 0) {
-			return fail(404, { message: 'No user with that email.' });
+			return fail(404, { scope: 'archive', message: 'No user with that email.' });
 		}
 		return { archiveSaved: true };
 	},
 	takedown: async ({ request, locals }) => {
 		if (locals.user!.role !== 'admin') {
-			return fail(403, { message: 'Only the site admin can take down editions.' });
+			return fail(403, {
+				scope: 'takedown',
+				message: 'Only the site admin can take down editions.'
+			});
 		}
 		const data = await request.formData();
 		const publicationId = String(data.get('publicationId') ?? '');
-		await takedownPublication(db, publicationId);
+		// A malformed id would otherwise reach a uuid-typed query and 500;
+		// guard it the way setArchive guards a missing email.
+		if (!UUID.test(publicationId)) {
+			return fail(400, { scope: 'takedown', message: 'That edition does not exist.' });
+		}
+		if (!(await takedownPublication(db, publicationId))) {
+			return fail(404, { scope: 'takedown', message: 'That edition does not exist.' });
+		}
 		return { takedownDone: true };
 	},
 	signout: async ({ locals, cookies }) => {
