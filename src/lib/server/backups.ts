@@ -7,15 +7,11 @@ import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { desc, eq, inArray, isNotNull, and } from 'drizzle-orm';
-import {
-	DeleteObjectCommand,
-	GetObjectCommand,
-	ListObjectsV2Command,
-	S3Client
-} from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth';
 import { backupRuns } from './db/schema.ts';
+import { makeS3Client } from './s3-client.ts';
 
 // Off-site database backups to any S3-compatible bucket (S3, Backblaze B2,
 // MinIO, R2). Configured entirely through environment variables and off
@@ -121,16 +117,7 @@ export type BackupStore = {
 };
 
 export function s3Store(config: BackupConfig): BackupStore {
-	const client = new S3Client({
-		endpoint: config.endpoint,
-		region: config.region,
-		// B2 and MinIO want path-style addressing.
-		forcePathStyle: Boolean(config.endpoint),
-		credentials: {
-			accessKeyId: config.accessKeyId,
-			secretAccessKey: config.secretAccessKey
-		}
-	});
+	const client = makeS3Client(config);
 	return {
 		async put(key, body) {
 			const upload = new Upload({

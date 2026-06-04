@@ -19,6 +19,15 @@ services:
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
       ORIGIN: ${ORIGIN:-http://localhost:3000}
+      # Image uploads go up to 10 MB; the adapter default is 512 KB.
+      BODY_SIZE_LIMIT: ${BODY_SIZE_LIMIT:-15M}
+      # Uploaded images, stored in their own S3-compatible bucket.
+      ASSET_S3_ENDPOINT: ${ASSET_S3_ENDPOINT:-}
+      ASSET_S3_REGION: ${ASSET_S3_REGION:-}
+      ASSET_S3_BUCKET: ${ASSET_S3_BUCKET:-}
+      ASSET_S3_PREFIX: ${ASSET_S3_PREFIX:-}
+      ASSET_S3_ACCESS_KEY_ID: ${ASSET_S3_ACCESS_KEY_ID:-}
+      ASSET_S3_SECRET_ACCESS_KEY: ${ASSET_S3_SECRET_ACCESS_KEY:-}
       # The app only reads these to show backup status on the admin page.
       BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
       BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
@@ -66,6 +75,41 @@ services:
       timeout: 5s
       retries: 10
 
+  # A local S3-compatible bucket for assets (and backups, if pointed at
+  # it). Opt in with COMPOSE_PROFILES=minio. This keeps the objects on the
+  # same host; for real disaster recovery point ASSET_S3_* and BACKUP_S3_*
+  # at an external bucket (S3, B2, R2) instead.
+  minio:
+    image: minio/minio
+    profiles:
+      - minio
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-codex-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-codex-minio-secret}
+    volumes:
+      - minio-data:/data
+
+  # One-shot: creates the buckets on first start, then exits.
+  minio-init:
+    image: minio/mc
+    profiles:
+      - minio
+    depends_on:
+      - minio
+    restart: 'no'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-codex-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-codex-minio-secret}
+    entrypoint:
+      - sh
+      - -c
+      - >
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
+        do sleep 1; done &&
+        mc mb -p local/codex-assets && mc mb -p local/codex-backups
+
   caddy:
     image: caddy:2-alpine
     profiles:
@@ -85,5 +129,6 @@ services:
 
 volumes:
   db-data:
+  minio-data:
   caddy-data:
   caddy-config:

@@ -509,6 +509,29 @@ export const revisions = pgTable(
 	]
 );
 
+// Uploaded files, stored in an S3-compatible bucket (separate from the
+// backups bucket) and served through the app. The row is the source of
+// truth for type and ownership; the object key is just the asset id under
+// the configured prefix.
+export const assets = pgTable('assets', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	ownerId: uuid('owner_id')
+		.references(() => users.id)
+		.notNull(),
+	// Scope; null for account-level images such as an avatar.
+	universeId: uuid('universe_id').references(() => universes.id),
+	// 'cover' | 'inline' | 'avatar' | ...
+	kind: text('kind').notNull(),
+	filename: text('filename').notNull(),
+	contentType: text('content_type').notNull(),
+	byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+	// Key in the storage bucket.
+	storageKey: text('storage_key').notNull(),
+	width: integer('width'),
+	height: integer('height'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // A flagged spot in a scene to return to: a selection marked by hand, with
 // a checkable state. Plain "TODO:" lines in prose are detected from the
 // text instead and never get a row; deleting the line resolves them.
