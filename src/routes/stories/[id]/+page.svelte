@@ -334,6 +334,7 @@
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
 						entities={data.mentionEntities}
+						autocompleteMode={data.preferences.entityAutocomplete}
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.

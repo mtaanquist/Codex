@@ -52,6 +52,22 @@
 		</label>
 		<button type="submit">Create universe</button>
 	</form>
+
+	<h2>Preferences</h2>
+	<form method="POST" action="?/savePreferences">
+		<label>
+			Entity autocomplete
+			<select name="entityAutocomplete" value={data.preferences.entityAutocomplete}>
+				<option value="popup">Popup list</option>
+				<option value="ghost">Ghost text</option>
+				<option value="off">Off</option>
+			</select>
+		</label>
+		<button type="submit">Save preferences</button>
+		{#if form && 'prefSaved' in form && form.prefSaved}
+			<p role="status">Saved.</p>
+		{/if}
+	</form>
 </main>
 
 <style>

@@ -7,6 +7,12 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page).toHaveURL('/');
 
+	// Repeated runs share the seeded user, so pin the autocomplete
+	// preference to the default before exercising it later.
+	await page.getByLabel('Entity autocomplete').selectOption('popup');
+	await page.getByRole('button', { name: 'Save preferences' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
 	await page.getByLabel('New universe').fill(universeName);
@@ -228,6 +234,44 @@ test('sign in, create a universe and a story, and open it', async ({ page }) => 
 	await page.locator('.r-line').click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
+	const proseSceneUrl = page.url();
+
+	// Entity autocomplete, popup mode (the default): typing part of a name
+	// offers the full one.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Ali');
+	// Ctrl-Space asks for the completion explicitly, so the assertion does
+	// not race the type-activation debounce.
+	await page.keyboard.press('Control+Space');
+	await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
+	await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
+		'Alice Vane'
+	);
+	const acceptSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.locator('.cm-tooltip-autocomplete li', { hasText: 'Alice Vane' }).click();
+	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited. Alice Vane');
+	await acceptSave;
+
+	// Ghost mode comes from the user preference: an unambiguous prefix
+	// shows the rest of the name, and Tab accepts it.
+	await page.locator('.brand').click();
+	await page.getByLabel('Entity autocomplete').selectOption('ghost');
+	await page.getByRole('button', { name: 'Save preferences' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+	await page.goto(proseSceneUrl);
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+End');
+	await page.keyboard.type(' Hal');
+	await expect(page.locator('.cm-ghost-text')).toHaveText('den');
+	const ghostSave = page.waitForResponse(
+		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.keyboard.press('Tab');
+	await expect(page.locator('.cm-content')).toContainText('Alice Vane Halden');
+	await ghostSave;
 
 	// The breadcrumb leads to the universe editor: the same cast at universe
 	// scope, with no per-story notes section.

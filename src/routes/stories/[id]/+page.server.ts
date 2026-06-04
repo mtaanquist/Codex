@@ -12,6 +12,7 @@ import {
 	stories,
 	universes
 } from '$lib/server/db/schema';
+import { userPreferences } from '$lib/server/preferences';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -160,10 +161,13 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}))
 	];
 
+	const preferences = await userPreferences(db, locals.user!.id);
+
 	return {
 		story,
 		universe,
 		user: locals.user!,
+		preferences,
 		chapters: chapterList,
 		scenes: sceneList,
 		selectedScene,
