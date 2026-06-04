@@ -125,6 +125,71 @@
 	</section>
 
 	<section>
+		<h2>Email relay (SMTP)</h2>
+		<p>
+			Used to send verification, password-reset, and notification emails.
+			{#if data.smtp.source === 'environment'}
+				Currently taking values from the environment; saving here overrides them.
+			{:else if data.smtp.source === 'none'}
+				Not configured yet; until it is, emails are written to the worker log instead of sent.
+			{/if}
+		</p>
+		{#if !data.secretsAvailable}
+			<p class="error">
+				Set APP_SECRET on the server to store a password here. Without it you can still seed SMTP
+				from environment variables.
+			</p>
+		{/if}
+		<form method="POST" action="?/saveSmtp" class="stack">
+			{#if form?.scope === 'smtp' && form.message}
+				<p class="error" role="alert">{form.message}</p>
+			{:else if form?.scope === 'smtp' && form.saved}
+				<p class="ok" role="status">Saved.</p>
+			{:else if form?.scope === 'smtp' && form.tested}
+				<p class="ok" role="status">Test email sent.</p>
+			{/if}
+			<label>
+				Host
+				<input type="text" name="host" value={data.smtp.host} placeholder="smtp.example.com" />
+			</label>
+			<label>
+				Port
+				<input type="number" name="port" value={data.smtp.port} />
+			</label>
+			<label class="row">
+				<input type="checkbox" name="secure" checked={data.smtp.secure} />
+				Use TLS on connect (port 465)
+			</label>
+			<label>
+				Username
+				<input type="text" name="user" value={data.smtp.user} autocomplete="off" />
+			</label>
+			<label>
+				Password
+				<input
+					type="password"
+					name="password"
+					autocomplete="off"
+					placeholder={data.smtp.hasPassword ? 'Leave blank to keep the current password' : ''}
+				/>
+			</label>
+			<label>
+				From address
+				<input
+					type="text"
+					name="from"
+					value={data.smtp.from}
+					placeholder="Codex <no-reply@example.com>"
+				/>
+			</label>
+			<div class="actions">
+				<button type="submit">Save</button>
+				<button type="submit" formaction="?/testEmail">Send test email</button>
+			</div>
+		</form>
+	</section>
+
+	<section>
 		<h2>Backups</h2>
 		{#if form?.scope === 'backups' && form.message}
 			<p class="error" role="alert">{form.message}</p>
@@ -213,6 +278,22 @@
 		display: flex;
 		gap: 0.5rem;
 		flex-shrink: 0;
+	}
+	.stack {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		max-width: 26rem;
+	}
+	.stack label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+	.stack label.row {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.4rem;
 	}
 	.danger {
 		color: #b00020;

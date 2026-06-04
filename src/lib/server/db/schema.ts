@@ -660,3 +660,12 @@ export const authTokens = pgTable('auth_tokens', {
 	consumedAt: timestamp('consumed_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+// Instance-wide settings the admin manages from the panel (SMTP relay now).
+// One row per setting key; the value is jsonb so each setting shapes its own.
+// Any secret inside the value is stored encrypted (see crypto.ts).
+export const appSettings = pgTable('app_settings', {
+	key: text('key').primaryKey(),
+	value: jsonb('value').notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
