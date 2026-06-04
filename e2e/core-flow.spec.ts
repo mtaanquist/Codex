@@ -38,6 +38,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
+	// The top-bar help opens the editor article in a modal; Esc closes it.
+	await page.getByRole('button', { name: 'Help: the editor' }).click();
+	const help = page.getByRole('dialog', { name: 'Writing in the editor' });
+	await expect(help.getByRole('heading', { name: 'Writing in the editor' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(help).toBeHidden();
+
 	// Focus mode hides the chrome; Esc brings it back.
 	await page.getByRole('button', { name: 'Focus mode' }).click();
 	await expect(page.locator('.topbar')).toBeHidden();

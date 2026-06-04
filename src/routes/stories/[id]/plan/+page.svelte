@@ -97,6 +97,7 @@
 		universe={{ id: data.universe.id, name: data.universe.name }}
 		story={{ id: data.story.id, title: data.story.title }}
 		{saveStatus}
+		help={{ topic: 'planning', label: 'the planning view' }}
 	/>
 	<div class="body">
 		<PlanSidebar

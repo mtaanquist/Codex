@@ -13,6 +13,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';
+	import HelpModal from '$lib/components/HelpModal.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -31,3 +32,4 @@
 </svelte:head>
 
 {@render children()}
+<HelpModal />
