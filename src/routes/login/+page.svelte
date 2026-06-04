@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -25,6 +26,7 @@
 		</label>
 		<button type="submit">Sign in</button>
 	</form>
+	<p><a href={resolve('/signup')}>Create an account</a></p>
 </main>
 
 <style>
