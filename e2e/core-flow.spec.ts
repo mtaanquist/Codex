@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
+	// A long journey that waits on the async worker twice; the default 30s
+	// budget is too tight on a loaded CI runner and was silently capping the
+	// 60s indexing wait below. Tripling it to 90s gives that wait its room.
+	test.slow();
 	await page.goto('/login');
 	await page.getByLabel('Email').fill('e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
@@ -245,9 +249,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// CI runner shares cycles between the app, the worker, and Postgres.
 	await expect(async () => {
 		await page.reload();
-		await expect(page.locator('.r-line-name')).toHaveText(['Alice Vane', 'Halden', 'Toll-pass'], {
-			timeout: 3000
-		});
+		// Assert each expected entity is present rather than an exact ordered
+		// list: the worker can surface them in any order and in stages, and a
+		// strict array match turns a mid-indexing reload into a hard failure.
+		for (const name of ['Alice Vane', 'Halden', 'Toll-pass']) {
+			await expect(page.locator('.r-line-name').filter({ hasText: name })).toHaveCount(1, {
+				timeout: 3000
+			});
+		}
 	}).toPass({ timeout: 60000 });
 
 	// Find usages: the character's panel lists the scene with the snippet,
