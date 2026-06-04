@@ -79,6 +79,17 @@
 										<button type="submit" class="danger">Suspend</button>
 									</form>
 								{/if}
+								<form
+									method="POST"
+									action="?/deleteAccount"
+									onsubmit={(event) => {
+										if (!confirm(`Permanently delete ${account.email} and all their work?`))
+											event.preventDefault();
+									}}
+								>
+									<input type="hidden" name="userId" value={account.id} />
+									<button type="submit" class="danger">Delete</button>
+								</form>
 							{/if}
 						</div>
 					{/if}

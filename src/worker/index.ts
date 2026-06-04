@@ -5,6 +5,8 @@ import * as schema from '../lib/server/db/schema.ts';
 import { rebuildSceneMentions, rebuildUniverseMentions } from '../lib/server/mentions.ts';
 import { backupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
+import { assetConfig, s3AssetStore } from '../lib/server/assets.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -22,6 +24,7 @@ await boss.createQueue('mentions-scene');
 await boss.createQueue('mentions-universe');
 await boss.createQueue('run-backup');
 await boss.createQueue('send-email');
+await boss.createQueue('purge-accounts');
 
 await boss.work<{ sceneId: string }>('mentions-scene', async (jobs) => {
 	for (const job of jobs) {
@@ -53,6 +56,24 @@ await boss.work<EmailMessage>('send-email', async (jobs) => {
 		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
 	}
 });
+
+await boss.work('purge-accounts', async () => {
+	const due = await listAccountsDueForPurge(db);
+	if (due.length === 0) return;
+	const config = assetConfig();
+	const store = config ? s3AssetStore(config) : null;
+	for (const userId of due) {
+		try {
+			await purgeAccount(db, userId, store);
+			console.log(`purge: account ${userId} deleted`);
+		} catch (error) {
+			console.error(`purge: account ${userId} failed`, error);
+		}
+	}
+});
+
+// Run the account purge sweep hourly; accounts past their grace window go.
+await boss.schedule('purge-accounts', '30 * * * *', {}, { tz: 'UTC' });
 
 // Nightly off-site backups, only when the bucket is configured. The
 // schedule lives in pg-boss, so it is cleared when configuration goes away.

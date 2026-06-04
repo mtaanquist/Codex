@@ -7,7 +7,8 @@ const PUBLIC_PATHS = new Set([
 	'/signup',
 	'/verify-email',
 	'/forgot-password',
-	'/reset-password'
+	'/reset-password',
+	'/cancel-deletion'
 ]);
 // Pages a signed-in user has no reason to see; bounce them home instead.
 const AUTH_PATHS = new Set(['/login', '/signup']);

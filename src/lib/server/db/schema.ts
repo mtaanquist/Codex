@@ -55,6 +55,9 @@ export const users = pgTable('users', {
 	approvedAt: timestamp('approved_at', { withTimezone: true }),
 	// Set when an admin suspends the account; blocks sign-in without deleting.
 	suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+	// Set when the user schedules deletion; a worker purges after the grace
+	// window. The account is suspended for the duration so it cannot be used.
+	deletionScheduledAt: timestamp('deletion_scheduled_at', { withTimezone: true }),
 	// Updated on successful sign-in; useful for stale-account cleanup.
 	lastLoginAt: timestamp('last_login_at', { withTimezone: true })
 });
@@ -654,7 +657,7 @@ export const authTokens = pgTable('auth_tokens', {
 	userId: uuid('user_id')
 		.references(() => users.id)
 		.notNull(),
-	kind: text('kind', { enum: ['email_verify', 'password_reset'] }).notNull(),
+	kind: text('kind', { enum: ['email_verify', 'password_reset', 'deletion_cancel'] }).notNull(),
 	tokenHash: text('token_hash').notNull(),
 	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 	consumedAt: timestamp('consumed_at', { withTimezone: true }),
