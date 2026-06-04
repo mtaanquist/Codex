@@ -86,8 +86,8 @@ format preference deferred to Phase 6 (see the feedback backlog).
   - Note: handle claim and preferences already live on the dashboard; fold them into /account when the page is consolidated.
 - [ ] 32b. TOTP two-factor (user_totp additive migration; enrolment with QR on the settings page, confirm one code; challenge folded into sign-in after the password; admin reset for lockout; recovery codes a noted follow-on; passkeys stay in Phase 6)
 - [ ] 33. Operational essentials (rate-limit sign-up and reset, structured logs, health-check endpoint)
-- [ ] 34. Provisioning control plane (one isolated instance + database per tenant; subdomain routing, on-demand TLS, fleet upgrades; lives outside the app)
-- [ ] 35. Central reader site and handle registry (global /@handle namespace in the control plane; worker syncs frozen editions to a central store the reader site renders from)
+- [ ] 34. Minimal control plane (scope decision 2026-06-04): a scripted provisioner in its own repo that brings up an instance, routes a subdomain, and issues on-demand TLS - no fleet-upgrade automation or UI. Full fleet management deferred to Phase 6.
+- [ ] 35. Central reader site and handle registry: deferred to Phase 6. Each instance already serves its own /@handle reader, which suffices for the dozen-writer launch.
 - [ ] In-app help (/docs), held to the end of Phase 5. Help articles as
       committed markdown rendered through the existing renderMarkdown (no wiki
       engine, no docs SaaS: too much ops surface and breaks self-host/offline
