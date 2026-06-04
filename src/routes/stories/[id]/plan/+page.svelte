@@ -33,15 +33,6 @@
 	);
 	const currentBody = $derived(data.selected?.bodyMd ?? data.selectedNode?.bodyMd ?? '');
 
-	const initials = $derived(
-		data.user.displayName
-			.split(/\s+/)
-			.map((part) => part[0])
-			.slice(0, 2)
-			.join('')
-			.toUpperCase()
-	);
-
 	// Outline drag-to-reorder. Restricted to one sibling group: the dragged
 	// node can only drop between nodes that share its parent; indent and
 	// outdent move between levels instead.
@@ -105,7 +96,6 @@
 	<TopBar
 		universe={{ id: data.universe.id, name: data.universe.name }}
 		story={{ id: data.story.id, title: data.story.title }}
-		{initials}
 		{saveStatus}
 	/>
 	<div class="body">

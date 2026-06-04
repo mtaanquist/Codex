@@ -26,15 +26,6 @@
 	// Appearances arrive flat and ordered; the panel shows them story by
 	// story, scene by scene.
 	const storiesSeen = $derived([...new Map(data.appearsIn.map((m) => [m.storyId, m])).values()]);
-
-	const initials = $derived(
-		data.user.displayName
-			.split(/\s+/)
-			.map((part) => part[0])
-			.slice(0, 2)
-			.join('')
-			.toUpperCase()
-	);
 </script>
 
 <svelte:head>
@@ -42,7 +33,7 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar universe={{ id: data.universe.id, name: data.universe.name }} {initials} {saveStatus} />
+	<TopBar universe={{ id: data.universe.id, name: data.universe.name }} {saveStatus} />
 	<div class="body">
 		<PlanSidebar
 			characters={data.characters}

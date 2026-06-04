@@ -6,7 +6,15 @@ import { userPreferences } from '$lib/server/preferences';
 // accent across the app and on a fresh device. Null for guests, who keep the
 // pre-paint script's per-device choice.
 export const load: LayoutServerLoad = async ({ locals }) => {
-	if (!locals.user) return { appearance: null };
+	if (!locals.user) return { appearance: null, user: null };
 	const prefs = await userPreferences(db, locals.user.id);
-	return { appearance: { theme: prefs.theme, accent: prefs.accent } };
+	return {
+		appearance: { theme: prefs.theme, accent: prefs.accent },
+		// Drives the avatar menu in the top bars.
+		user: {
+			displayName: locals.user.displayName,
+			email: locals.user.email,
+			isAdmin: locals.user.role === 'admin'
+		}
+	};
 };

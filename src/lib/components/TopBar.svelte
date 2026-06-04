@@ -2,11 +2,11 @@
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import UserMenu from './UserMenu.svelte';
 
 	let {
 		universe,
 		story,
-		initials,
 		onEnterFocus,
 		saveStatus = 'idle',
 		storyView
@@ -14,7 +14,6 @@
 		universe: { id: string; name: string };
 		// Absent on universe-scoped pages; the universe becomes the crumb.
 		story?: { id: string; title: string };
-		initials: string;
 		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 		storyView?: { active: boolean; toggleHref: string };
@@ -76,6 +75,6 @@
 				<Icon name="expand" />
 			</button>
 		{/if}
-		<a class="avatar-me" href={resolve('/')} title="Account">{initials}</a>
+		<UserMenu />
 	</div>
 </header>
