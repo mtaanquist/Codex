@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth';
 import { publications, stories, users } from './db/schema';
 import { gatherStory } from './export';
@@ -130,7 +130,9 @@ export async function publicEdition(db: Database, handle: string, storyId: strin
 }
 
 // True when this asset is the cover of a publicly readable edition, which
-// makes it servable without a session.
+// makes it servable without a session. The visibility test must match
+// publicEdition exactly (private is excluded, unlisted is reachable by
+// link), or a cover would outlive the page it belongs to.
 export async function isPublishedCover(db: Database, assetId: string): Promise<boolean> {
 	const [row] = await db
 		.select({ id: publications.id })
@@ -140,7 +142,8 @@ export async function isPublishedCover(db: Database, assetId: string): Promise<b
 			and(
 				eq(stories.coverAssetId, assetId),
 				eq(publications.isCurrent, true),
-				isNull(publications.removedAt)
+				isNull(publications.removedAt),
+				ne(stories.visibility, 'private')
 			)
 		)
 		.limit(1);
