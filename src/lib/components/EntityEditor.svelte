@@ -92,6 +92,13 @@
 	let notes = $state(storyNotesMd ?? '');
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let dirty = false;
+	// Mirrors what we report to the top bar, so the inline Save control can show
+	// it right here too.
+	let status = $state<SaveStatus>('idle');
+	function report(next: SaveStatus) {
+		status = next;
+		onStatus(next);
+	}
 	// Saves are chained so an earlier slow request can never land after, and
 	// overwrite, a newer one.
 	let saveChain: Promise<void> = Promise.resolve();
@@ -157,7 +164,7 @@
 	async function save() {
 		if (!view) return;
 		dirty = false;
-		onStatus('saving');
+		report('saving');
 		try {
 			const payload: Record<string, unknown> = {
 				name,
@@ -183,10 +190,10 @@
 				body: JSON.stringify(payload)
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			onStatus(dirty ? 'saving' : 'saved');
+			report(dirty ? 'saving' : 'saved');
 		} catch {
 			dirty = true;
-			onStatus('error');
+			report('error');
 		}
 	}
 
@@ -198,6 +205,12 @@
 		dirty = true;
 		clearTimeout(saveTimer);
 		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
+	}
+
+	// Explicit save: skip the debounce and persist now.
+	function saveNow() {
+		clearTimeout(saveTimer);
+		enqueueSave();
 	}
 
 	onMount(() => {
@@ -238,6 +251,15 @@
 			bind:value={name}
 			oninput={scheduleSave}
 		/>
+		<div class="save-control">
+			<span class="save-state" class:err={status === 'error'}>
+				{#if status === 'saving'}Saving...{:else if status === 'saved'}Saved{:else if status === 'error'}Not
+					saved{:else}Autosaves{/if}
+			</span>
+			<button class="save-now" type="button" onclick={saveNow} disabled={status === 'saving'}>
+				Save
+			</button>
+		</div>
 	</div>
 
 	{#if kind === 'character'}
@@ -392,6 +414,37 @@
 	}
 	.detail-title-input::placeholder {
 		color: var(--text-faint);
+	}
+	.save-control {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: none;
+	}
+	.save-state {
+		font-size: 12px;
+		color: var(--text-faint);
+		white-space: nowrap;
+	}
+	.save-state.err {
+		color: var(--danger, #b00020);
+	}
+	.save-now {
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 6px);
+		background: none;
+		color: var(--text-muted);
+		font-size: 12.5px;
+		padding: 5px 12px;
+		cursor: pointer;
+	}
+	.save-now:hover:not(:disabled) {
+		color: var(--text);
+		border-color: var(--accent-line);
+	}
+	.save-now:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 	.line-input,
 	.area-input {
