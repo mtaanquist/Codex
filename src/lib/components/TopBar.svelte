@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
-	import ThemeToggle from './ThemeToggle.svelte';
 	import UserMenu from './UserMenu.svelte';
 	import HelpLink from './HelpLink.svelte';
 
@@ -55,7 +54,6 @@
 		{#if saveStatus !== 'idle'}
 			<span class="saved" role="status"><span class="dot"></span> {SAVE_LABEL[saveStatus]}</span>
 		{/if}
-		<ThemeToggle />
 		<a
 			class="icon-btn"
 			href={resolve('/universes/[id]', { id: universe.id })}

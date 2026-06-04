@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -143,7 +142,6 @@
 			Library
 		</a>
 		<span class="spacer"></span>
-		<ThemeToggle />
 		<UserMenu />
 	</header>
 
@@ -332,6 +330,7 @@
 					<span class="k">Email relay</span>
 					<span class="v">{emailReady ? 'Configured' : 'Console'}</span>
 				</div>
+				<div class="admin-health-meta">codex v{data.version} · up {data.uptime}</div>
 			</div>
 		</aside>
 
@@ -569,74 +568,80 @@
 											</td>
 											<td class="cell-muted">{when(account.createdAt)}</td>
 											<td class="row-actions">
-												{#if account.role === 'admin' || account.id === data.meId}
-													<span class="cell-muted">-</span>
-												{:else}
-													{#if account.publicArchiveEnabled}
-														<form method="POST" action="?/disableArchive">
-															<input type="hidden" name="userId" value={account.id} />
-															<button type="submit" class="btn btn-ghost btn-sm"
-																>Stop publishing</button
-															>
-														</form>
+												<div class="row-actions-inner">
+													{#if account.role === 'admin' || account.id === data.meId}
+														<span class="cell-muted">-</span>
 													{:else}
-														<form method="POST" action="?/enableArchive">
-															<input type="hidden" name="userId" value={account.id} />
-															<button type="submit" class="btn btn-ghost btn-sm"
-																>Allow publishing</button
+														{#if account.publicArchiveEnabled}
+															<form method="POST" action="?/disableArchive">
+																<input type="hidden" name="userId" value={account.id} />
+																<button type="submit" class="btn btn-ghost btn-sm"
+																	>Stop publishing</button
+																>
+															</form>
+														{:else}
+															<form method="POST" action="?/enableArchive">
+																<input type="hidden" name="userId" value={account.id} />
+																<button type="submit" class="btn btn-ghost btn-sm"
+																	>Allow publishing</button
+																>
+															</form>
+														{/if}
+														{#if account.suspendedAt}
+															<form method="POST" action="?/unsuspend">
+																<input type="hidden" name="userId" value={account.id} />
+																<button type="submit" class="btn btn-ghost btn-sm">Unsuspend</button
+																>
+															</form>
+														{:else}
+															<form method="POST" action="?/suspend">
+																<input type="hidden" name="userId" value={account.id} />
+																<button
+																	type="submit"
+																	class="btn btn-ghost btn-sm"
+																	style="color:var(--danger);">Suspend</button
+																>
+															</form>
+														{/if}
+														{#if account.twoFactorEnabled}
+															<form
+																method="POST"
+																action="?/resetTotp"
+																onsubmit={(event) => {
+																	if (
+																		!confirm(
+																			`Turn off two-factor authentication for ${account.email}? They will sign in with their password alone until they set it up again.`
+																		)
+																	)
+																		event.preventDefault();
+																}}
 															>
-														</form>
-													{/if}
-													{#if account.suspendedAt}
-														<form method="POST" action="?/unsuspend">
-															<input type="hidden" name="userId" value={account.id} />
-															<button type="submit" class="btn btn-ghost btn-sm">Unsuspend</button>
-														</form>
-													{:else}
-														<form method="POST" action="?/suspend">
-															<input type="hidden" name="userId" value={account.id} />
-															<button
-																type="submit"
-																class="btn btn-ghost btn-sm"
-																style="color:var(--danger);">Suspend</button
-															>
-														</form>
-													{/if}
-													{#if account.twoFactorEnabled}
+																<input type="hidden" name="userId" value={account.id} />
+																<button type="submit" class="btn btn-ghost btn-sm">Reset 2FA</button
+																>
+															</form>
+														{/if}
 														<form
 															method="POST"
-															action="?/resetTotp"
+															action="?/deleteAccount"
 															onsubmit={(event) => {
 																if (
 																	!confirm(
-																		`Turn off two-factor authentication for ${account.email}? They will sign in with their password alone until they set it up again.`
+																		`Permanently delete ${account.email} and all their work?`
 																	)
 																)
 																	event.preventDefault();
 															}}
 														>
 															<input type="hidden" name="userId" value={account.id} />
-															<button type="submit" class="btn btn-ghost btn-sm">Reset 2FA</button>
+															<button
+																type="submit"
+																class="btn btn-ghost btn-sm"
+																style="color:var(--danger);">Delete</button
+															>
 														</form>
 													{/if}
-													<form
-														method="POST"
-														action="?/deleteAccount"
-														onsubmit={(event) => {
-															if (
-																!confirm(`Permanently delete ${account.email} and all their work?`)
-															)
-																event.preventDefault();
-														}}
-													>
-														<input type="hidden" name="userId" value={account.id} />
-														<button
-															type="submit"
-															class="btn btn-ghost btn-sm"
-															style="color:var(--danger);">Delete</button
-														>
-													</form>
-												{/if}
+												</div>
 											</td>
 										</tr>
 									{/each}

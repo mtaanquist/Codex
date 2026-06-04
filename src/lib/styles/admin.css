@@ -265,7 +265,8 @@ a.nav-item {
 	font-weight: 600;
 	letter-spacing: -0.015em;
 	margin: 0;
-	line-height: 1.1;
+	/* Room for serif descenders; tighter clips them in some browsers. */
+	line-height: 1.25;
 }
 .admin-lede {
 	color: var(--text-muted);
@@ -290,6 +291,7 @@ a.nav-item {
 	font-size: 17px;
 	font-weight: 600;
 	margin: 0;
+	line-height: 1.3;
 }
 .admin-block-title .n {
 	color: var(--text-faint);
@@ -516,7 +518,12 @@ a.nav-item {
 .cell-muted {
 	color: var(--text-muted);
 }
+/* Keep this a real table cell so its row border lines up with the others;
+   the buttons flex inside an inner wrapper. */
 .row-actions {
+	text-align: right;
+}
+.row-actions-inner {
 	display: flex;
 	gap: 6px;
 	justify-content: flex-end;
