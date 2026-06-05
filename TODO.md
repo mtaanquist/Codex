@@ -125,7 +125,7 @@ format preference deferred to Phase 6 (see the feedback backlog).
 Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 
 - [x] Invite codes: invite_codes table (migration 0026), admin mints codes in Users & access (label, uses, expiry, copy-link), sign-up takes an optional code (or ?code= link) and a valid one sets approved_at immediately; email verification still applies. Redeem is a single guarded UPDATE; register-with-invite runs in one transaction so a duplicate email rolls the use back. Merged 2026-06-05 (#107).
-- [ ] Stored export artifacts
+- [ ] Stored export artifacts: export_artifacts table (migration 0027), the worker generates markdown zip, EPUB, and PDF from the frozen edition on publish (export-artifacts queue) and keeps them in the asset bucket; PDF renders the shared print HTML through headless Chromium (puppeteer-core + chromium in the image). Settings shows the files with "Generate again" and a per-edition reader-downloads toggle (downloads_public); readers get EPUB/PDF on the public page, the markdown zip stays owner-only.
 - [ ] Passkeys
 - [ ] Guest review (comments, then suggested edits)
 - [ ] Continuous backup (WAL/PITR) - only if hourly dumps ever bite
@@ -144,6 +144,7 @@ From first real use (2026-06-03):
 
 From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
 
+- [ ] Author-controlled page breaks in print/PDF: the title page and per-chapter breaks are automatic; an explicit in-chapter break (a scene-level "starts a new page" flag or a markdown marker styled with break-before) is additive when a real book needs it (noted 2026-06-05 while building stored exports)
 - [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts) (Phase 7)
 - [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
 - [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)

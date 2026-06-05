@@ -1,8 +1,7 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
-import type { Database } from './auth';
-import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '$lib/markdown';
-import { gatherStory, type AssetLoader, type ExportAsset, type ExportStory } from './export';
-import { extensionFor } from './media-types';
+import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
+import type { AssetLoader, ExportAsset, ExportStory, StoryContent } from './export.ts';
+import { extensionFor } from './media-types.ts';
 
 // A minimal EPUB 3 by hand: it is a zip whose first entry is the literal
 // string "application/epub+zip", stored uncompressed, plus a container
@@ -33,12 +32,12 @@ function xhtmlDocument(title: string, body: string): string {
 }
 
 export async function buildEpub(
-	db: Database,
 	story: ExportStory,
+	content: StoryContent,
 	loadAssets: AssetLoader,
 	coverAssetId: string | null
 ): Promise<{ filename: string; bytes: Uint8Array }> {
-	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
+	const { chapters: chapterList, scenes: sceneList } = content;
 
 	const referenced = sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd));
 	const wanted = [...new Set([...referenced, ...(coverAssetId ? [coverAssetId] : [])])];

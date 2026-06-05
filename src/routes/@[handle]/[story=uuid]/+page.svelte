@@ -46,6 +46,17 @@
 				{#if data.versionLabel}- {data.versionLabel}{/if}
 				- <a href={resolve('/@[handle]', { handle: data.handle })}>@{data.handle}</a>
 			</p>
+			{#if data.downloads.length > 0}
+				<p class="meta downloads">
+					Download:
+					{#each data.downloads as artifact (artifact.id)}
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (file download) -->
+						<a href="/artifacts/{artifact.id}" download>
+							{artifact.format === 'epub' ? 'EPUB' : 'PDF'}
+						</a>
+					{/each}
+				</p>
+			{/if}
 		</header>
 
 		{#each data.content.chapters as chapter, index (index)}
@@ -120,6 +131,9 @@
 	.meta a,
 	.gate a {
 		color: #1a4a8a;
+	}
+	.downloads a {
+		margin-left: 0.35rem;
 	}
 	.meta a:focus-visible,
 	.gate a:focus-visible {

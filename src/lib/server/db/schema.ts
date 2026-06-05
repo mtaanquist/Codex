@@ -559,6 +559,9 @@ export const publications = pgTable(
 		content: jsonb('content').notNull(),
 		// Optional, e.g. 'Edition 2'.
 		versionLabel: text('version_label'),
+		// Owner's choice: when true, readers can download the edition's EPUB and
+		// PDF artifacts from the public story page.
+		downloadsPublic: boolean('downloads_public').notNull().default(false),
 		isCurrent: boolean('is_current').notNull().default(true),
 		// Set by an admin takedown; hides the edition without deleting the source.
 		removedAt: timestamp('removed_at', { withTimezone: true }),
@@ -591,6 +594,29 @@ export const publicationAssets = pgTable(
 		primaryKey({ columns: [table.publicationId, table.assetId] }),
 		index('publication_assets_asset_idx').on(table.assetId)
 	]
+);
+
+// Export files generated in the worker when an edition publishes (markdown
+// zip, EPUB, PDF), stored in the asset bucket like release assets on a tag.
+// Derived data: every row can be regenerated from the edition's frozen
+// content, so rows simply replace on regeneration.
+export const exportArtifacts = pgTable(
+	'export_artifacts',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		publicationId: uuid('publication_id')
+			.references(() => publications.id, { onDelete: 'cascade' })
+			.notNull(),
+		format: text('format', { enum: ['markdown', 'epub', 'pdf'] }).notNull(),
+		// Key in the storage bucket; deterministic per publication and format so
+		// regeneration overwrites in place.
+		storageKey: text('storage_key').notNull(),
+		filename: text('filename').notNull(),
+		contentType: text('content_type').notNull(),
+		byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [unique('export_artifacts_one_per_format').on(table.publicationId, table.format)]
 );
 
 // Uploaded files, stored in an S3-compatible bucket (separate from the

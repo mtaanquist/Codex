@@ -63,6 +63,7 @@
 		"nodemailer": "^8.0.10",
 		"pg": "^8.21.0",
 		"pg-boss": "^12.18.2",
+		"puppeteer-core": "^25.1.0",
 		"qrcode": "^1.5.4"
 	}
 }

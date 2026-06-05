@@ -9,8 +9,11 @@ FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 # pg_dump and pg_restore for off-site backups; the major version must be
-# able to talk to the postgres:18 server.
-RUN apk add --no-cache postgresql18-client
+# able to talk to the postgres:18 server. Chromium renders the stored PDF
+# exports in the worker (driven via puppeteer-core); the font packages give
+# it a serif to typeset with.
+RUN apk add --no-cache postgresql18-client chromium font-liberation ttf-dejavu
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/build build
 COPY --from=build /app/package.json package.json
