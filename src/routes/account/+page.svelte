@@ -7,6 +7,7 @@
 	import { WRITING_LANGUAGES } from '$lib/writing-languages';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -199,6 +200,7 @@
 			Library
 		</a>
 		<span class="spacer"></span>
+		<PaletteButton />
 		<UserMenu />
 	</header>
 

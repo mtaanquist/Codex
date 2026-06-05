@@ -14,6 +14,7 @@
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import HelpModal from '$lib/components/HelpModal.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -33,3 +34,6 @@
 
 {@render children()}
 <HelpModal />
+{#if data.user}
+	<CommandPalette />
+{/if}
