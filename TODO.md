@@ -137,6 +137,12 @@ Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 > edits). WAL/PITR stays parked per the roadmap's own criterion. Next up when
 > work resumes: Phase 7 (writing and planning).
 
+## Phase 7 - Writing and planning
+
+Agreed sequence (2026-06-05): the quick details + entity history pair first, then preference layering (prerequisite for the rich-editing choice and page setup), with the self-contained items (spell-check, settings styling, command palette, markdown affordances, mention disambiguation) slotting in between. Started 2026-06-05.
+
+- [ ] Entity quick details + full-fidelity entity history: details jsonb on characters/places/lore (migration 0031) edited as the design's Details grid and shown in the hover tooltip (first three), plus snapshot jsonb on revisions capturing name, aliases/keywords, summary, category, details, and the relationship set, so every change registers in History (relationship changes land on both linked timelines) and Restore returns the whole entity, skipping parts whose category/type/target was deleted since; pre-snapshot rows restore body-only. Details ride the account export front matter.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):

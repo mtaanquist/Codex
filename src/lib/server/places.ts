@@ -1,12 +1,15 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { recordRevision } from './revisions';
+import { recordEntityRevision } from './revisions';
 import { entityCategories, places, placeStoryNotes, stories } from './db/schema';
+import type { EntityDetail } from '$lib/entity-snapshot';
 
 export type PlaceSave = {
 	name: string;
 	summaryMd: string | null;
 	bodyMd: string;
+	// Quick details; undefined leaves them unchanged.
+	details?: EntityDetail[];
 	// Optional grouping; null clears it, undefined leaves it unchanged.
 	categoryId?: string | null;
 	// When present, the per-story "In this book" notes are upserted too.
@@ -53,10 +56,13 @@ export async function savePlace(
 			name,
 			summaryMd: save.summaryMd?.trim() || null,
 			bodyMd: save.bodyMd,
+			...(save.details !== undefined ? { details: save.details } : {}),
 			...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
 		})
 		.where(eq(places.id, place.id));
-	await recordRevision(db, 'place', place.id, save.bodyMd);
+	// Full snapshot, so summary, category, and detail changes register in
+	// History even when the body is untouched.
+	await recordEntityRevision(db, 'place', place.id);
 
 	if (save.storyId !== undefined) {
 		const [story] = await db

@@ -1,9 +1,11 @@
-import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { Database } from './auth';
 import { characters, entityRelationships, loreEntries, places, relationTypes } from './db/schema';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
+import { recordEntityRevision } from './revisions';
 
-export type EntityType = 'character' | 'place' | 'lore_entry';
+export type { EntityType };
 
 export function toEntityType(kind: EntityKind): EntityType {
 	return kind === 'lore' ? 'lore_entry' : kind;
@@ -36,26 +38,6 @@ export type RelationshipView = {
 	otherName: string;
 	notesMd: string | null;
 };
-
-async function namesByType(db: Database, type: EntityType, ids: string[]) {
-	if (ids.length === 0) return new Map<string, string>();
-	const rows =
-		type === 'character'
-			? await db
-					.select({ id: characters.id, name: characters.name })
-					.from(characters)
-					.where(inArray(characters.id, ids))
-			: type === 'place'
-				? await db
-						.select({ id: places.id, name: places.name })
-						.from(places)
-						.where(inArray(places.id, ids))
-				: await db
-						.select({ id: loreEntries.id, name: loreEntries.title })
-						.from(loreEntries)
-						.where(inArray(loreEntries.id, ids));
-	return new Map(rows.map((row) => [row.id, row.name]));
-}
 
 // Both directions of an entity's universe-wide relationships, display-ready.
 export async function listEntityRelationships(
@@ -114,28 +96,6 @@ export async function listEntityRelationships(
 		}
 	}
 	return views;
-}
-
-async function entityInUniverse(db: Database, universeId: string, type: EntityType, id: string) {
-	if (type === 'character') {
-		const [row] = await db
-			.select({ id: characters.id })
-			.from(characters)
-			.where(and(eq(characters.id, id), eq(characters.universeId, universeId)));
-		return Boolean(row);
-	}
-	if (type === 'place') {
-		const [row] = await db
-			.select({ id: places.id })
-			.from(places)
-			.where(and(eq(places.id, id), eq(places.universeId, universeId)));
-		return Boolean(row);
-	}
-	const [row] = await db
-		.select({ id: loreEntries.id })
-		.from(loreEntries)
-		.where(and(eq(loreEntries.id, id), eq(loreEntries.universeId, universeId)));
-	return Boolean(row);
 }
 
 export type RelationshipSave = {
@@ -224,13 +184,26 @@ export async function createRelationship(
 			notesMd: save.notesMd?.trim() || null
 		})
 		.returning({ id: entityRelationships.id });
+	// The relationship set is part of both entities' revision snapshots, so
+	// the change lands on both timelines.
+	await recordEntityRevision(db, fromType, save.fromId);
+	await recordEntityRevision(db, relationType.toType as EntityType, save.toId);
 	return { ok: true, id: row.id };
 }
 
 export async function deleteRelationship(db: Database, relationshipId: string, userId: string) {
-	const deleted = await db
+	const [deleted] = await db
 		.delete(entityRelationships)
 		.where(and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.ownerId, userId)))
-		.returning({ id: entityRelationships.id });
-	return deleted.length > 0;
+		.returning({
+			fromType: entityRelationships.fromType,
+			fromId: entityRelationships.fromId,
+			toType: entityRelationships.toType,
+			toId: entityRelationships.toId
+		});
+	if (!deleted) return false;
+	// As with creation, the change registers on both linked timelines.
+	await recordEntityRevision(db, deleted.fromType as EntityType, deleted.fromId);
+	await recordEntityRevision(db, deleted.toType as EntityType, deleted.toId);
+	return true;
 }

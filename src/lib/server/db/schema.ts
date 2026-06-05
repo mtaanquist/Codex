@@ -16,6 +16,7 @@ import {
 	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
 
 // Case-insensitive text, used for the public handle. The citext extension is
 // created in the first migration.
@@ -219,6 +220,9 @@ export const characters = pgTable('characters', {
 	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
 	// Optional grouping; the category's colour drives the badge.
 	categoryId: uuid('category_id').references(() => entityCategories.id),
+	// Freeform quick details ("Status", "Age"), shown as the Details grid
+	// and in the hover popover. Order is the author's.
+	details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 	metadata: jsonb('metadata').notNull().default({}),
 	// Original card data if imported (SillyTavern etc).
 	importedFrom: jsonb('imported_from'),
@@ -289,6 +293,9 @@ export const loreEntries = pgTable('lore_entries', {
 		.notNull()
 		.default('keyword'),
 	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+	// Freeform quick details ("Status", "Age"), shown as the Details grid
+	// and in the hover popover. Order is the author's.
+	details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 	metadata: jsonb('metadata').notNull().default({}),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -333,6 +340,9 @@ export const places = pgTable('places', {
 	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
 	// Optional grouping; the category's colour drives the badge.
 	categoryId: uuid('category_id').references(() => entityCategories.id),
+	// Freeform quick details ("Status", "Age"), shown as the Details grid
+	// and in the hover popover. Order is the author's.
+	details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 	metadata: jsonb('metadata').notNull().default({}),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -524,6 +534,11 @@ export const revisions = pgTable(
 		}).notNull(),
 		entityId: uuid('entity_id').notNull(),
 		bodyMd: text('body_md').notNull(),
+		// Structured fields captured alongside the body for character, place,
+		// and lore revisions: name, aliases or keywords, summary, category,
+		// details, and the relationship set. Null for scenes and outline nodes,
+		// and for rows from before the column existed; those restore body-only.
+		snapshot: jsonb('snapshot').$type<EntitySnapshot>(),
 		// 'autosave' | 'checkpoint' | 'restore'; machine category, not prose.
 		reason: text('reason'),
 		// Optional checkpoint name given by the user.

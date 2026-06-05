@@ -155,12 +155,18 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			id: characters.id,
 			name: characters.name,
 			aliases: characters.aliases,
-			summaryMd: characters.summaryMd
+			summaryMd: characters.summaryMd,
+			details: characters.details
 		})
 		.from(characters)
 		.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true)));
 	const knownPlaces = await db
-		.select({ id: places.id, name: places.name, summaryMd: places.summaryMd })
+		.select({
+			id: places.id,
+			name: places.name,
+			summaryMd: places.summaryMd,
+			details: places.details
+		})
 		.from(places)
 		.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true)));
 	const knownLore = await db
@@ -168,7 +174,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			id: loreEntries.id,
 			name: loreEntries.title,
 			keywords: loreEntries.keywords,
-			summaryMd: loreEntries.summaryMd
+			summaryMd: loreEntries.summaryMd,
+			details: loreEntries.details
 		})
 		.from(loreEntries)
 		.where(and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true)));
@@ -179,7 +186,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			id: entry.id,
 			name: entry.name,
 			aliases: entry.keywords,
-			summaryMd: entry.summaryMd
+			summaryMd: entry.summaryMd,
+			details: entry.details
 		}))
 	];
 

@@ -101,7 +101,9 @@ describe('recordRevision', () => {
 
 	it('always records a checkpoint, even on unchanged text', async () => {
 		expect(
-			await recordRevision(db, 'scene', sceneId, 'Second draft.', 'checkpoint', 'Before edits')
+			await recordRevision(db, 'scene', sceneId, 'Second draft.', 'checkpoint', {
+				label: 'Before edits'
+			})
 		).toEqual({ recorded: true });
 		const rows = await listRevisions(db, 'scene', sceneId);
 		expect(rows[0]).toMatchObject({ reason: 'checkpoint', label: 'Before edits' });
@@ -122,7 +124,7 @@ describe('recordRevision', () => {
 	it('does not coalesce an autosave into a preceding checkpoint', async () => {
 		const id = randomUUID();
 		await recordRevision(db, 'scene', id, 'A.');
-		await recordRevision(db, 'scene', id, 'A.', 'checkpoint', 'Mark');
+		await recordRevision(db, 'scene', id, 'A.', 'checkpoint', { label: 'Mark' });
 		await recordRevision(db, 'scene', id, 'B.');
 		expect(await listRevisions(db, 'scene', id)).toHaveLength(3);
 	});
@@ -137,14 +139,19 @@ describe('save paths record revisions', () => {
 			bodyMd: 'A smuggler with debts.'
 		});
 		expect(await listRevisions(db, 'character', aliceId)).toHaveLength(1);
-		// A name-only save leaves the body unchanged: no new revision.
+		// A name-only save changes the snapshot, so it registers in History
+		// even though the body is untouched; it coalesces into the recent
+		// autosave entry rather than appending.
 		await saveCharacter(db, aliceId, ownerId, {
 			name: 'Alice Vane',
 			aliases: [],
 			summaryMd: null,
 			bodyMd: 'A smuggler with debts.'
 		});
-		expect(await listRevisions(db, 'character', aliceId)).toHaveLength(1);
+		const rows = await listRevisions(db, 'character', aliceId);
+		expect(rows).toHaveLength(1);
+		const revision = await getRevision(db, rows[0].id, 'character', aliceId);
+		expect(revision?.snapshot?.name).toBe('Alice Vane');
 	});
 });
 
@@ -167,8 +174,12 @@ describe('restoreRevision', () => {
 	it('restores the text and stacks a new revision on top', async () => {
 		// Checkpoints never coalesce, so they give a deterministic older revision
 		// to restore regardless of how the autosaves above collapsed.
-		await recordRevision(db, 'scene', sceneId, 'Older body here.', 'checkpoint', 'Older');
-		await recordRevision(db, 'scene', sceneId, 'Newer body now.', 'checkpoint', 'Newer');
+		await recordRevision(db, 'scene', sceneId, 'Older body here.', 'checkpoint', {
+			label: 'Older'
+		});
+		await recordRevision(db, 'scene', sceneId, 'Newer body now.', 'checkpoint', {
+			label: 'Newer'
+		});
 		const timeline = await listRevisions(db, 'scene', sceneId);
 		const older = timeline.find((row) => row.label === 'Older')!;
 		const result = await restoreRevision(db, ownerId, older.id, 'scene', sceneId);

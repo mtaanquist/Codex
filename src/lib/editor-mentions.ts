@@ -14,7 +14,12 @@ export type MentionEntity = {
 	name: string;
 	aliases: string[];
 	summaryMd: string | null;
+	details?: { label: string; value: string }[];
 };
+
+// The tooltip shows the first few quick details; the rest live on the
+// entity's page. Order is the author's, so the top ones are theirs to pick.
+const TOOLTIP_DETAILS = 3;
 
 // Live underlines and hover tooltips for known entities. Lives in the scene
 // editor's mentions compartment, so the future "Underline known entities"
@@ -76,6 +81,25 @@ export function mentionExtensions(entities: MentionEntity[]): Extension {
 					summary.className = 'entity-tip-summary';
 					summary.textContent = entity.summaryMd;
 					dom.appendChild(summary);
+				}
+				const details = entity.details ?? [];
+				if (details.length > 0) {
+					const grid = document.createElement('div');
+					grid.className = 'entity-tip-details';
+					for (const detail of details.slice(0, TOOLTIP_DETAILS)) {
+						const row = document.createElement('div');
+						row.className = 'entity-tip-detail';
+						const label = document.createElement('span');
+						label.className = 'entity-tip-detail-k';
+						label.textContent = detail.label;
+						const value = document.createElement('span');
+						value.className = 'entity-tip-detail-v';
+						value.textContent = detail.value;
+						row.appendChild(label);
+						row.appendChild(value);
+						grid.appendChild(row);
+					}
+					dom.appendChild(grid);
 				}
 				return { dom };
 			}
