@@ -863,11 +863,6 @@
 		display: block;
 		margin-bottom: 12px;
 	}
-	.form-error {
-		color: var(--danger, #b00020);
-		font-size: 13px;
-		margin: 0 0 10px;
-	}
 	.sub-head {
 		font-size: 12.5px;
 		font-weight: 650;

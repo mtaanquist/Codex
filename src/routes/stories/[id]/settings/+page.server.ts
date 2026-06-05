@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
+import { db, isUniqueViolation } from '$lib/server/db';
 import { stories } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
 import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
@@ -23,8 +23,7 @@ import {
 import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib/server/page-setup';
 import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 import { ownedStory } from '$lib/server/story-access';
-import { slugTaken } from '$lib/server/slugs';
-import { isValidSlug } from '$lib/slug';
+import { slugChangeError, slugTakenMessage } from '$lib/server/slugs';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {
@@ -79,19 +78,25 @@ export const actions: Actions = {
 		if (!title) {
 			return fail(400, { action: 'update', message: 'The story needs a title.' });
 		}
-		if (!isValidSlug(slug)) {
-			return fail(400, {
-				action: 'update',
-				message: 'The slug can only use lowercase letters, numbers, and hyphens.'
-			});
+		const message = await slugChangeError(
+			db,
+			'stories',
+			locals.user!.id,
+			slug,
+			story.slug,
+			story.id
+		);
+		if (message) return fail(400, { action: 'update', message });
+		try {
+			await db
+				.update(stories)
+				.set({ title, slug, author, brief, descriptionMd })
+				.where(eq(stories.id, story.id));
+		} catch (err) {
+			// A concurrent write can take the slug between the check and the update.
+			if (!isUniqueViolation(err)) throw err;
+			return fail(400, { action: 'update', message: slugTakenMessage('stories') });
 		}
-		if (slug !== story.slug && (await slugTaken(db, 'stories', locals.user!.id, slug, story.id))) {
-			return fail(400, { action: 'update', message: 'Another story already uses that slug.' });
-		}
-		await db
-			.update(stories)
-			.set({ title, slug, author, brief, descriptionMd })
-			.where(eq(stories.id, story.id));
 		// A changed slug moves this page's own URL.
 		if (slug !== story.slug) redirect(303, `/stories/${slug}/settings`);
 		return { action: 'update', saved: true };
