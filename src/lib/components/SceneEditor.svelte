@@ -21,6 +21,8 @@
 		entities = [],
 		autocompleteMode = 'popup',
 		editingMode = 'markdown',
+		spellCheck = 'off',
+		writingLanguage = '',
 		markers = [],
 		imageUniverseId,
 		compact = false,
@@ -33,6 +35,8 @@
 		entities?: MentionEntity[];
 		autocompleteMode?: AutocompleteMode;
 		editingMode?: EditingMode;
+		spellCheck?: 'on' | 'off';
+		writingLanguage?: string;
 		markers?: SceneMarker[];
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
@@ -171,7 +175,8 @@
 					...proseExtensions({
 						placeholder: 'Start writing...',
 						onDocChanged: scheduleSave,
-						editingMode
+						editingMode,
+						spellCheck: { enabled: spellCheck === 'on', language: writingLanguage }
 					}),
 					mentionsCompartment.of(mentionExtensions(entities)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),

@@ -145,6 +145,8 @@ export const actions: Actions = {
 		const mode = String(data.get('entityAutocomplete') ?? '');
 		const marks = String(data.get('continuousSceneMarks') ?? '');
 		const editing = String(data.get('editingMode') ?? '');
+		const spell = String(data.get('spellCheck') ?? '');
+		const language = String(data.get('writingLanguage') ?? '');
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { scope: 'prefs', message: 'Pick an autocomplete mode.' });
 		}
@@ -154,10 +156,16 @@ export const actions: Actions = {
 		if (editing !== 'markdown' && editing !== 'rich') {
 			return fail(400, { scope: 'prefs', message: 'Pick an editing mode.' });
 		}
+		if (spell !== 'on' && spell !== 'off') {
+			return fail(400, { scope: 'prefs', message: 'Pick a spell-check option.' });
+		}
 		await savePreferences(db, locals.user!.id, {
 			entityAutocomplete: mode,
 			continuousSceneMarks: marks,
-			editingMode: editing
+			editingMode: editing,
+			spellCheck: spell,
+			// The select constrains the tags; normalise drops anything else.
+			writingLanguage: language
 		});
 		return { scope: 'prefs', saved: true };
 	},

@@ -133,6 +133,33 @@ describe('story preference overrides', () => {
 		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
 	});
 
+	it('spell-check and writing language layer, with browser-follow as a real override', async () => {
+		const defaults = await userPreferences(db, userId);
+		expect(defaults.spellCheck).toBe('on');
+		expect(defaults.writingLanguage).toBe('');
+
+		await savePreferences(db, userId, { spellCheck: 'off', writingLanguage: 'da' });
+		expect((await storyPreferences(db, userId, storyId)).writingLanguage).toBe('da');
+
+		// One story written in English with squiggles back on.
+		await saveStoryPreferences(db, storyId, { spellCheck: 'on', writingLanguage: 'en-GB' });
+		const merged = await storyPreferences(db, userId, storyId);
+		expect(merged.spellCheck).toBe('on');
+		expect(merged.writingLanguage).toBe('en-GB');
+
+		// An explicit follow-the-browser override beats the account language.
+		await saveStoryPreferences(db, storyId, { writingLanguage: '' });
+		expect((await storyPreferences(db, userId, storyId)).writingLanguage).toBe('');
+		// Clearing the override falls back to the account language.
+		await saveStoryPreferences(db, storyId, { writingLanguage: null });
+		expect((await storyPreferences(db, userId, storyId)).writingLanguage).toBe('da');
+	});
+
+	it('a malformed language tag falls back to following the browser', async () => {
+		await savePreferences(db, userId, { writingLanguage: 'not a tag' });
+		expect((await userPreferences(db, userId)).writingLanguage).toBe('');
+	});
+
 	it('an unrecognised override value falls back to a sane default', async () => {
 		await db
 			.update(stories)

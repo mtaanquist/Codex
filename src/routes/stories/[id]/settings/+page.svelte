@@ -3,6 +3,7 @@
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
+	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -129,6 +130,37 @@
 				</option>
 				<option value="markdown">Markdown</option>
 				<option value="rich">Rich text</option>
+			</select>
+		</label>
+		<label>
+			Spell-check
+			<select name="spellCheck" value={(data.preferenceOverrides.spellCheck as string) ?? ''}>
+				<option value="">
+					Use my account setting ({data.accountPreferences.spellCheck === 'on' ? 'On' : 'Off'})
+				</option>
+				<option value="on">On</option>
+				<option value="off">Off</option>
+			</select>
+		</label>
+		<label>
+			Writing language
+			<select
+				name="writingLanguage"
+				value={data.preferenceOverrides.writingLanguage === undefined
+					? ''
+					: data.preferenceOverrides.writingLanguage === ''
+						? 'browser'
+						: (data.preferenceOverrides.writingLanguage as string)}
+			>
+				<option value="">
+					Use my account setting ({data.accountPreferences.writingLanguage
+						? writingLanguageLabel(data.accountPreferences.writingLanguage)
+						: 'Follow my browser'})
+				</option>
+				<option value="browser">Follow my browser</option>
+				{#each WRITING_LANGUAGES as language (language.tag)}
+					<option value={language.tag}>{language.label}</option>
+				{/each}
 			</select>
 		</label>
 		<label>
