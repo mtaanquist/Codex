@@ -2,13 +2,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
 	entityCategories,
 	entityMentions,
+	entityRelationships,
 	loreEntries,
 	places,
+	relationTypes,
 	revisions,
 	scenes,
 	stories,
@@ -18,12 +21,13 @@ import {
 import {
 	entityHeat,
 	isValidTimezone,
+	relationshipLinks,
 	storyProgress,
 	writingActivity
 } from '../../src/lib/server/insights';
 import { addDays } from '../../src/lib/insights';
 import type { Database } from '../../src/lib/server/auth';
-import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { ensureBuiltInRelationTypes, ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 let pool: pg.Pool;
 let db: Database;
@@ -54,8 +58,9 @@ beforeAll(async () => {
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
 	await pool.query(
-		'truncate table revisions, entity_mentions, scenes, chapters, lore_entries, places, characters, entity_categories, stories, universes, users cascade'
+		'truncate table entity_relationships, revisions, entity_mentions, scenes, chapters, lore_entries, places, characters, entity_categories, stories, universes, users cascade'
 	);
+	await ensureBuiltInRelationTypes(pool);
 
 	const [owner] = await db
 		.insert(users)
@@ -155,6 +160,21 @@ beforeAll(async () => {
 		}
 	]);
 
+	// Alice lives in Harbor, for the relationship web.
+	const [livesIn] = await db
+		.select({ id: relationTypes.id })
+		.from(relationTypes)
+		.where(eq(relationTypes.key, 'lives_in'));
+	await db.insert(entityRelationships).values({
+		universeId,
+		ownerId: owner.id,
+		fromType: 'character',
+		fromId: aliceId,
+		toType: 'place',
+		toId: harborId,
+		relationTypeId: livesIn.id
+	});
+
 	// Scene 2's history: a baseline from before the 30-day window, two saves
 	// yesterday (only the later one counts for the day), one today. Scene 3
 	// first appears inside the window.
@@ -240,6 +260,23 @@ describe('writingActivity', () => {
 		expect(activity.daily).toHaveLength(30);
 		expect(activity.daily.every((d) => d.words === 0)).toBe(true);
 		expect(activity.streak).toEqual({ current: 0, longest: 0 });
+	});
+});
+
+describe('relationshipLinks', () => {
+	it('returns the universe relationships with their type label and category', async () => {
+		const links = await relationshipLinks(db, universeId);
+		expect(links).toHaveLength(1);
+		expect(links[0]).toMatchObject({
+			fromId: aliceId,
+			toId: harborId,
+			label: 'lives in',
+			category: 'geography'
+		});
+	});
+
+	it('another universe sees nothing', async () => {
+		expect(await relationshipLinks(db, '00000000-0000-0000-0000-000000000000')).toEqual([]);
 	});
 });
 

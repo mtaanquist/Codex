@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
+	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import type { PageData } from './$types';
@@ -24,7 +25,8 @@
 	const NAV = [
 		{ id: 'progress', label: 'Progress' },
 		{ id: 'stories', label: 'Stories' },
-		{ id: 'heatmap', label: 'World heatmap' }
+		{ id: 'heatmap', label: 'World heatmap' },
+		{ id: 'web', label: 'Relationship web' }
 	];
 
 	const STATUS_ORDER = ['outline', 'draft', 'revised', 'final'] as const;
@@ -324,6 +326,21 @@
 							{/if}
 						{/each}
 					{/if}
+				</div>
+
+				<div class="admin-block" id="web">
+					<div class="admin-block-head">
+						<h2 class="admin-block-title">Relationship web</h2>
+						<p class="admin-block-sub">
+							Who connects to whom. Hover a node to read its relationships; click it to open the
+							entry.
+						</p>
+					</div>
+					<RelationshipWeb
+						entities={data.heat}
+						links={data.web}
+						entityHref={(id) => `${planPath}?entity=${id}`}
+					/>
 				</div>
 			</div>
 		</main>

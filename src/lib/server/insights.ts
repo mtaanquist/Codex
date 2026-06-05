@@ -1,9 +1,11 @@
 // Queries behind the universe Insights view. Everything here is derived from
 // data the app already records (scene word counts, the mention index, scene
-// revisions); nothing is stored.
-import { sql } from 'drizzle-orm';
+// revisions, relationships); nothing is stored.
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
+import { entityRelationships, relationTypes } from './db/schema';
 import { dailyNetWords, dayAxis, streaks, type DailyWords } from '../insights';
+import type { WebLink } from '../relationship-web';
 
 export type StoryProgress = {
 	id: string;
@@ -206,6 +208,23 @@ export async function writingActivity(
 			today
 		)
 	};
+}
+
+// The universe's relationships as web links; the entity heat rows double as
+// the node list.
+export async function relationshipLinks(db: Database, universeId: string): Promise<WebLink[]> {
+	const rows = await db
+		.select({
+			id: entityRelationships.id,
+			fromId: entityRelationships.fromId,
+			toId: entityRelationships.toId,
+			label: relationTypes.forwardLabel,
+			category: relationTypes.category
+		})
+		.from(entityRelationships)
+		.innerJoin(relationTypes, eq(entityRelationships.relationTypeId, relationTypes.id))
+		.where(eq(entityRelationships.universeId, universeId));
+	return rows;
 }
 
 /** True when the string names a timezone the runtime knows. */
