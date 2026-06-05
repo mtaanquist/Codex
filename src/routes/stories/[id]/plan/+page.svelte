@@ -4,6 +4,7 @@
 	import EntityEditor from '$lib/components/EntityEditor.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import OutlineNodeEditor from '$lib/components/OutlineNodeEditor.svelte';
+	import SceneBoard from '$lib/components/SceneBoard.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
@@ -221,6 +222,23 @@
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
+			{:else if data.scenes.length > 0}
+				<!-- With nothing selected, the centre is the scene board. -->
+				<SceneBoard
+					scenes={data.scenes}
+					chapters={data.chapters}
+					todoCounts={data.todoCounts}
+					sceneHref={(sceneId) =>
+						`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneId}`}
+					onMove={async (sceneId, status) => {
+						await fetch(`/api/scenes/${sceneId}`, {
+							method: 'PATCH',
+							headers: { 'content-type': 'application/json' },
+							body: JSON.stringify({ status })
+						});
+						await invalidateAll();
+					}}
+				/>
 			{:else if data.characters.length === 0 && data.places.length === 0}
 				<div class="empty">
 					<p>Nothing here yet. Add a character or a place in the sidebar.</p>

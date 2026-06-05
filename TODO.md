@@ -172,10 +172,12 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
       timezone-correct day buckets, streaks, per-story status bars).
       Everything derived at read time; no new tables. Merged 2026-06-05
       (#132), shipped as v2.14.0.
-- [ ] Scene cards board: a board toggle in the story Plan with status lanes
-      (outline/draft/revised/final); dragging a card changes scene status,
-      the first UI for that column. Cards carry chapter, word count, and
-      TODO count.
+- [x] Scene cards board: the story Plan's centre shows the scenes as
+      cards in status lanes (outline/draft/revised/final) when nothing else
+      is open; dragging a card (or its hover arrows, the keyboard path)
+      changes scene status through an owner-guarded PATCH, the first UI for
+      that column. Cards carry chapter, word count, and open-TODO count.
+      Merged 2026-06-05 (#134), shipped as v2.15.0.
 - [ ] Relationship web view: force-directed graph of entity_relationships
       (d3-force simulation, own SVG rendering), filters by entity and
       relation type; joins the Insights view.
