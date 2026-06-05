@@ -8,11 +8,13 @@
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
 	import { proseExtensions, type EditingMode } from '$lib/editor';
+	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
+	import Icon from './Icon.svelte';
 
 	let {
 		sceneId,
@@ -28,6 +30,7 @@
 		imageUniverseId,
 		compact = false,
 		onCrossBoundary,
+		onCreateEntity,
 		onStatus
 	}: {
 		sceneId: string;
@@ -49,6 +52,12 @@
 		// neighbours.
 		compact?: boolean;
 		onCrossBoundary?: (direction: 'up' | 'down') => void;
+		// Create an entity from the right-click selection menu. Resolves to an
+		// error message, or null when it worked.
+		onCreateEntity?: (
+			type: 'character' | 'place' | 'lore_entry',
+			name: string
+		) => Promise<string | null>;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -163,18 +172,89 @@
 		view.dispatch({ effects: markersCompartment.reconfigure(markerHandle.extension) });
 	});
 
-	// Pinning a shared name changes attribution at once: the page data
-	// refresh delivers new pins, and the mentions compartment reloads.
-	// svelte-ignore state_referenced_locally
-	let appliedPins = JSON.stringify(mentionOptions.pins ?? {});
+	// Pinning a shared name or creating an entity changes the underlines at
+	// once: the page data refresh delivers new pins or entities, and the
+	// mentions compartment reloads.
+	function mentionFingerprint() {
+		return JSON.stringify([
+			mentionOptions.pins ?? {},
+			entities.map((entity) => [entity.id, entity.name, entity.aliases])
+		]);
+	}
+	let appliedMentions = mentionFingerprint();
 	$effect(() => {
-		const incoming = JSON.stringify(mentionOptions.pins ?? {});
-		if (!view || incoming === appliedPins) return;
-		appliedPins = incoming;
+		const incoming = mentionFingerprint();
+		if (!view || incoming === appliedMentions) return;
+		appliedMentions = incoming;
 		view.dispatch({
 			effects: mentionsCompartment.reconfigure(mentionExtensions(entities, mentionOptions))
 		});
 	});
+
+	// The right-click selection menu: quick formatting plus create-from-
+	// selection. Only an actual selection hijacks the native menu, so the
+	// browser's spelling suggestions stay reachable on a plain caret click.
+	let selectionMenu = $state<{ x: number; y: number; name: string } | null>(null);
+	let menuBusy = $state(false);
+	let menuError = $state('');
+
+	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
+		const range = editor.state.selection.main;
+		if (range.empty) return false;
+		const name = editor.state.sliceDoc(range.from, range.to).replace(/\s+/g, ' ').trim();
+		if (!name) return false;
+		event.preventDefault();
+		menuError = '';
+		menuBusy = false;
+		selectionMenu = {
+			x: Math.min(event.clientX, window.innerWidth - 240),
+			y: Math.min(event.clientY, window.innerHeight - 230),
+			name
+		};
+		return true;
+	}
+
+	function closeSelectionMenu() {
+		selectionMenu = null;
+	}
+
+	function runFormat(command: (view: EditorView) => boolean) {
+		if (view) command(view);
+		closeSelectionMenu();
+		view?.focus();
+	}
+
+	async function createFromSelection(type: 'character' | 'place' | 'lore_entry') {
+		if (!onCreateEntity || !selectionMenu || menuBusy) return;
+		menuBusy = true;
+		menuError = '';
+		try {
+			const failure = await onCreateEntity(type, selectionMenu.name);
+			if (failure) {
+				menuError = failure;
+				menuBusy = false;
+			} else {
+				closeSelectionMenu();
+			}
+		} catch {
+			menuError = 'Could not create it. Try again.';
+			menuBusy = false;
+		}
+	}
+
+	function onWindowPointerDown(event: MouseEvent) {
+		if (!selectionMenu) return;
+		const target = event.target as HTMLElement | null;
+		if (!target?.closest('.sel-menu')) closeSelectionMenu();
+	}
+
+	function onWindowKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && selectionMenu) {
+			event.preventDefault();
+			closeSelectionMenu();
+			view?.focus();
+		}
+	}
 
 	function scheduleSave() {
 		dirty = true;
@@ -198,7 +278,10 @@
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
 					boundaryKeymap(),
-					imageUniverseId ? imageUploadExtension(imageUniverseId) : []
+					imageUniverseId ? imageUploadExtension(imageUniverseId) : [],
+					EditorView.domEventHandlers({
+						contextmenu: (event, editor) => openSelectionMenu(event, editor)
+					})
 				]
 			})
 		});
@@ -231,6 +314,88 @@
 	<div class="editor-cm" bind:this={editorEl}></div>
 </div>
 
+<svelte:window onmousedown={onWindowPointerDown} onkeydown={onWindowKeydown} />
+
+{#if selectionMenu}
+	<div class="sel-menu" role="menu" style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;">
+		<div class="sel-menu-formats">
+			<button
+				class="sel-format"
+				type="button"
+				role="menuitem"
+				title="Bold (Ctrl+B)"
+				onclick={() => runFormat(toggleBold)}
+			>
+				<Icon name="bold" size={15} />
+			</button>
+			<button
+				class="sel-format"
+				type="button"
+				role="menuitem"
+				title="Italic (Ctrl+I)"
+				onclick={() => runFormat(toggleItalic)}
+			>
+				<Icon name="italic" size={15} />
+			</button>
+			<button
+				class="sel-format"
+				type="button"
+				role="menuitem"
+				title="Quote"
+				onclick={() => runFormat(toggleQuote)}
+			>
+				<Icon name="quote" size={15} />
+			</button>
+			<button
+				class="sel-format"
+				type="button"
+				role="menuitem"
+				title="Bullet list"
+				onclick={() => runFormat(toggleBulletList)}
+			>
+				<Icon name="list" size={15} />
+			</button>
+		</div>
+		{#if onCreateEntity}
+			<div class="sel-menu-label">
+				"{selectionMenu.name.length > 32
+					? `${selectionMenu.name.slice(0, 32)}...`
+					: selectionMenu.name}"
+			</div>
+			<button
+				class="sel-create"
+				type="button"
+				role="menuitem"
+				disabled={menuBusy}
+				onclick={() => createFromSelection('character')}
+			>
+				New character
+			</button>
+			<button
+				class="sel-create"
+				type="button"
+				role="menuitem"
+				disabled={menuBusy}
+				onclick={() => createFromSelection('place')}
+			>
+				New place
+			</button>
+			<button
+				class="sel-create"
+				type="button"
+				role="menuitem"
+				disabled={menuBusy}
+				onclick={() => createFromSelection('lore_entry')}
+			>
+				New lore entry
+			</button>
+			{#if menuError}
+				<p class="sel-menu-error" role="alert">{menuError}</p>
+			{/if}
+		{/if}
+	</div>
+{/if}
+
 <style>
 	.editor-title-input {
 		width: 100%;
@@ -249,5 +414,75 @@
 	}
 	.editor.compact :global(.editor-cm) {
 		min-height: 0;
+	}
+
+	/* The right-click selection menu. */
+	.sel-menu {
+		position: fixed;
+		z-index: 60;
+		min-width: 190px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+	}
+	.sel-menu-formats {
+		display: flex;
+		gap: 2px;
+		padding-bottom: 4px;
+		border-bottom: 1px solid var(--border);
+		margin-bottom: 4px;
+	}
+	.sel-format {
+		border: 0;
+		background: none;
+		color: var(--text-muted);
+		border-radius: 5px;
+		padding: 5px 7px;
+		cursor: pointer;
+		display: inline-flex;
+	}
+	.sel-format:hover {
+		background: var(--accent-soft);
+		color: var(--text);
+	}
+	.sel-menu-label {
+		font-family: var(--font-ui);
+		font-size: 10.5px;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		padding: 4px 7px 2px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 220px;
+	}
+	.sel-create {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		background: none;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: 13px;
+		padding: 6px 7px;
+		border-radius: 5px;
+		cursor: pointer;
+	}
+	.sel-create:hover:not(:disabled) {
+		background: var(--accent-soft);
+	}
+	.sel-create:disabled {
+		color: var(--text-faint);
+		cursor: default;
+	}
+	.sel-menu-error {
+		font-family: var(--font-ui);
+		font-size: 12px;
+		color: var(--danger, #c0564f);
+		margin: 2px 7px 4px;
 	}
 </style>
