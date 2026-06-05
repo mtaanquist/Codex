@@ -232,6 +232,13 @@
 			"when": 1780655319205,
 			"tag": "0032_story-preferences",
 			"breakpoints": true
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1780660236222,
+			"tag": "0033_page-setup",
+			"breakpoints": true
 		}
 	]
 }

@@ -59,6 +59,9 @@ export const users = pgTable('users', {
 	llmConfig: jsonb('llm_config').notNull().default({}),
 	// Theme, content width, autocomplete mode, entity underline toggle, etc.
 	preferences: jsonb('preferences').notNull().default({}),
+	// The account's default print/PDF page setup; stories may override per
+	// key through stories.page_setup.
+	pageSetup: jsonb('page_setup').notNull().default({}),
 	// References plans(id) in the schema design; the constraint is added once
 	// the plans table exists. Null falls back to the default plan.
 	planId: uuid('plan_id'),
@@ -137,6 +140,9 @@ export const stories = pgTable('stories', {
 	// Per-story overrides of the owner's editor preferences; keys absent
 	// here fall back to users.preferences at load time.
 	preferences: jsonb('preferences').notNull().default({}),
+	// Per-story overrides of the owner's print/PDF page setup; keys absent
+	// here fall back to users.page_setup at render time.
+	pageSetup: jsonb('page_setup').notNull().default({}),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()

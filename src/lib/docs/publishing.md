@@ -26,6 +26,14 @@ If you want readers to download your story too, turn on "Let readers download th
 
 The files are prepared shortly after publishing. If they have not appeared, use "Generate again".
 
+## Page setup
+
+Page setup controls how print and PDF output is typeset: page size (including book trim sizes), margins, font and size, paragraph style, the scene-break text, and page numbers or a running title on the PDF. Set your defaults on your account page under Display; a story can override any of them in its own settings.
+
+Changing the page setup does not change a published edition's text. Use "Generate again" under Edition downloads to re-typeset the files with your current setup. The EPUB stays reflowable - reading apps control its page size and fonts - but the paragraph style and scene-break text carry over.
+
+To force a page break inside a chapter, put \page alone on its own line in your prose. It breaks the page in print and PDF and is invisible everywhere else.
+
 ## Your public page
 
 When your profile is set to public, your handle page shows your name, a short bio, any links you add, and your listed stories. You control all of that on your account page, under Profile.

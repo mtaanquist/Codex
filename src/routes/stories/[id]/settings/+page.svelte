@@ -2,9 +2,16 @@
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
+	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// The scene-break override needs a mode select, since a blank text value
+	// is itself a meaningful choice (a plain gap). A full page load follows
+	// every save, so the initial value is the current one.
+	// svelte-ignore state_referenced_locally
+	let sceneBreakMode = $state('sceneBreak' in data.pageSetupOverrides ? 'custom' : '');
 
 	const coverColor = $derived(entityColor(data.story.title));
 
@@ -138,6 +145,133 @@
 			</select>
 		</label>
 		<button type="submit">Save editor settings</button>
+	</form>
+
+	<h2>Page setup</h2>
+	<p class="hint">
+		How this story's print and PDF output is typeset. Anything left on "Use my account setting"
+		follows your account page.
+	</p>
+	<form method="POST" action="?/savePageSetup">
+		{#if form?.action === 'pagesetup' && form.message}
+			<p class="error" role="alert">{form.message}</p>
+		{/if}
+		{#if form?.action === 'pagesetup' && form.saved}
+			<p role="status">Saved.</p>
+		{/if}
+		<label>
+			Page size
+			<select name="pageSize" value={(data.pageSetupOverrides.pageSize as string) ?? ''}>
+				<option value="">
+					Use my account setting ({PAGE_SIZES[data.accountPageSetup.pageSize].label})
+				</option>
+				{#each Object.entries(PAGE_SIZES) as [value, size] (value)}
+					<option {value}>{size.label}</option>
+				{/each}
+			</select>
+		</label>
+		<label>
+			Margins
+			<select name="margins" value={(data.pageSetupOverrides.margins as string) ?? ''}>
+				<option value="">
+					Use my account setting ({PAGE_MARGINS[data.accountPageSetup.margins].label})
+				</option>
+				{#each Object.entries(PAGE_MARGINS) as [value, margin] (value)}
+					<option {value}>{margin.label}</option>
+				{/each}
+			</select>
+		</label>
+		<label>
+			Font
+			<select name="font" value={(data.pageSetupOverrides.font as string) ?? ''}>
+				<option value="">
+					Use my account setting ({PAGE_FONTS[data.accountPageSetup.font].label})
+				</option>
+				{#each Object.entries(PAGE_FONTS) as [value, font] (value)}
+					<option {value}>{font.label}</option>
+				{/each}
+			</select>
+		</label>
+		<label>
+			Font size
+			<select name="fontSize" value={String(data.pageSetupOverrides.fontSize ?? '')}>
+				<option value="">Use my account setting ({data.accountPageSetup.fontSize} pt)</option>
+				{#each FONT_SIZES as size (size)}
+					<option value={String(size)}>{size} pt</option>
+				{/each}
+			</select>
+		</label>
+		<label>
+			Paragraphs
+			<select
+				name="paragraphStyle"
+				value={(data.pageSetupOverrides.paragraphStyle as string) ?? ''}
+			>
+				<option value="">
+					Use my account setting ({data.accountPageSetup.paragraphStyle === 'spaced'
+						? 'Space between paragraphs'
+						: 'First-line indent'})
+				</option>
+				<option value="indent">First-line indent</option>
+				<option value="spaced">Space between paragraphs</option>
+			</select>
+		</label>
+		<label>
+			Scene break
+			<select name="sceneBreakMode" bind:value={sceneBreakMode}>
+				<option value="">
+					Use my account setting ({data.accountPageSetup.sceneBreak || 'plain gap'})
+				</option>
+				<option value="custom">Set for this story</option>
+			</select>
+		</label>
+		{#if sceneBreakMode === 'custom'}
+			<label>
+				Scene break text
+				<input
+					type="text"
+					name="sceneBreak"
+					maxlength="20"
+					value={(data.pageSetupOverrides.sceneBreak as string) ?? ''}
+				/>
+			</label>
+			<p class="hint">The text printed between scenes. Leave blank for a plain gap.</p>
+		{/if}
+		<label>
+			Page numbers (PDF downloads only)
+			<select
+				name="pageNumbers"
+				value={data.pageSetupOverrides.pageNumbers === undefined
+					? ''
+					: data.pageSetupOverrides.pageNumbers
+						? 'on'
+						: 'off'}
+			>
+				<option value="">
+					Use my account setting ({data.accountPageSetup.pageNumbers ? 'On' : 'Off'})
+				</option>
+				<option value="on">On</option>
+				<option value="off">Off</option>
+			</select>
+		</label>
+		<label>
+			Story title at the top of each page (PDF downloads only)
+			<select
+				name="runningHeader"
+				value={data.pageSetupOverrides.runningHeader === undefined
+					? ''
+					: data.pageSetupOverrides.runningHeader
+						? 'on'
+						: 'off'}
+			>
+				<option value="">
+					Use my account setting ({data.accountPageSetup.runningHeader ? 'On' : 'Off'})
+				</option>
+				<option value="on">On</option>
+				<option value="off">Off</option>
+			</select>
+		</label>
+		<button type="submit">Save page setup</button>
 	</form>
 
 	<h2>Cover</h2>

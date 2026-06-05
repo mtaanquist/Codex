@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { renderMarkdown } from '$lib/markdown';
+	import { PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -7,13 +8,29 @@
 	function chapterScenes(chapterId: string | null) {
 		return data.scenes.filter((scene) => scene.chapterId === chapterId);
 	}
+
+	// The page setup parameterizes the stylesheet: typography and scene
+	// breaks via CSS variables on the wrapper, the page geometry via a
+	// dynamic @page rule. All values come from fixed option tables except
+	// the scene-break text, which is escaped for the content property.
+	const setup = $derived(data.pageSetup);
+	const sceneBreakText = $derived(setup.sceneBreak.replaceAll('\\', '\\\\').replaceAll('"', '\\"'));
+	const pageVars = $derived(
+		`font-family: ${PAGE_FONTS[setup.font].css}; font-size: ${setup.fontSize}pt; ` +
+			`--scene-break: "${sceneBreakText}";`
+	);
+	const pageRule = $derived(
+		`@page { size: ${PAGE_SIZES[setup.pageSize].css}; margin: ${PAGE_MARGINS[setup.margins].css}; }`
+	);
 </script>
 
 <svelte:head>
 	<title>{data.story.title} - Print - Codex</title>
+	<!-- eslint-disable-next-line svelte/no-at-html-tags (built from fixed option tables, no user text) -->
+	{@html `<style>${pageRule}</style>`}
 </svelte:head>
 
-<div class="print-page">
+<div class="print-page" class:spaced={setup.paragraphStyle === 'spaced'} style={pageVars}>
 	<div class="print-controls no-print">
 		<p>Use Print and choose "Save as PDF" to export this story.</p>
 		<button type="button" onclick={() => window.print()}>Print</button>
@@ -56,8 +73,6 @@
 		max-width: 42rem;
 		margin: 0 auto;
 		padding: 2rem 1rem;
-		font-family: Georgia, 'Times New Roman', serif;
-		font-size: 12pt;
 		line-height: 1.6;
 		color: #000;
 		background: #fff;
@@ -95,19 +110,22 @@
 		margin: 2rem 0;
 	}
 	.scene-break::after {
-		content: '* * *';
+		content: var(--scene-break, '* * *');
 		color: #444;
 	}
 	.chapter :global(p) {
 		margin: 0 0 0.2rem;
 		text-indent: 1.5em;
 	}
+	.spaced .chapter :global(p) {
+		margin: 0 0 0.8em;
+		text-indent: 0;
+	}
 	.chapter :global(img) {
 		max-width: 100%;
 	}
-
-	@page {
-		margin: 2cm;
+	:global(.page-break) {
+		page-break-after: always;
 	}
 	@media print {
 		.no-print {

@@ -1,5 +1,6 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
+import { DEFAULT_PAGE_SETUP, type PageSetup } from '../page-setup.ts';
 import type { AssetLoader, ExportAsset, ExportStory, StoryContent } from './export.ts';
 import { extensionFor } from './media-types.ts';
 
@@ -16,11 +17,26 @@ function escapeXml(text: string): string {
 		.replaceAll('"', '&quot;');
 }
 
-const STYLE = `body { font-family: serif; line-height: 1.6; }
+// EPUB stays reflowable: the reading device owns page size, margins, and
+// usually fonts. Only the bookish parts of the page setup carry over -
+// paragraph style, the scene-break text, and explicit page breaks.
+function epubStyle(setup: PageSetup): string {
+	const paragraph =
+		setup.paragraphStyle === 'indent'
+			? `p { margin: 0 0 1em; text-indent: 1.25em; }
+p:first-of-type { text-indent: 0; }`
+			: `p { margin: 0 0 1em; text-indent: 0; }`;
+	const sceneBreak = setup.sceneBreak
+		? `hr.scene-break { border: 0; text-align: center; margin: 2em 0; }
+hr.scene-break::after { content: '${setup.sceneBreak.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'; }`
+		: `hr.scene-break { border: 0; margin: 2em 0; }`;
+	return `body { font-family: serif; line-height: 1.6; }
 h1 { text-align: center; margin: 2em 0 1.5em; }
 img { max-width: 100%; }
-p { margin: 0 0 1em; text-indent: 1.25em; }
-p:first-of-type { text-indent: 0; }`;
+${paragraph}
+${sceneBreak}
+.page-break { break-after: page; }`;
+}
 
 function xhtmlDocument(title: string, body: string): string {
 	return `<?xml version="1.0" encoding="utf-8"?>
@@ -35,7 +51,8 @@ export async function buildEpub(
 	story: ExportStory,
 	content: StoryContent,
 	loadAssets: AssetLoader,
-	coverAssetId: string | null
+	coverAssetId: string | null,
+	setup: PageSetup = DEFAULT_PAGE_SETUP
 ): Promise<{ filename: string; bytes: Uint8Array }> {
 	const { chapters: chapterList, scenes: sceneList } = content;
 
@@ -58,7 +75,7 @@ export async function buildEpub(
 				);
 				return renderMarkdown(body, { xhtml: true });
 			})
-			.join('\n<hr/>\n');
+			.join('\n<hr class="scene-break"/>\n');
 	chapterList.forEach((chapter, index) => {
 		const inChapter = sceneList.filter((scene) => scene.chapterId === chapter.id);
 		if (inChapter.length === 0) return;
@@ -127,7 +144,7 @@ ${spineItems.join('\n')}
 </container>`),
 		'OEBPS/content.opf': strToU8(opf),
 		'OEBPS/nav.xhtml': strToU8(nav),
-		'OEBPS/style.css': strToU8(STYLE)
+		'OEBPS/style.css': strToU8(epubStyle(setup))
 	};
 	for (const section of sections) {
 		files[`OEBPS/${section.id}.xhtml`] = strToU8(xhtmlDocument(section.title, section.html));
