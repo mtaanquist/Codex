@@ -25,6 +25,9 @@ test('rich editing: toolbar formats, story override hides the marks', async ({ p
 	const storyId = page.url().match(/stories\/([0-9a-f-]{36})/)![1];
 	const editorUrl = page.url();
 
+	// Spell-check is on by default, following the browser's language.
+	await expect(page.locator('.cm-content')).toHaveAttribute('spellcheck', 'true');
+
 	// Markdown mode: the toolbar wraps the selection in bold marks, which
 	// stay visible as typed.
 	await page.locator('.cm-content').click();
@@ -44,15 +47,19 @@ test('rich editing: toolbar formats, story override hides the marks', async ({ p
 	await expect(page.locator('.cm-content')).toContainText('**The gate held fast.**');
 	await boldSave;
 
-	// Switch this story to rich text through its settings override.
+	// Switch this story to rich text, written in Danish, through its
+	// settings overrides.
 	await page.goto(`/stories/${storyId}/settings`);
 	await page.getByLabel('Editing mode').selectOption('rich');
+	await page.getByLabel('Writing language').selectOption('Dansk');
 	await page.getByRole('button', { name: 'Save editor settings' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 
-	// Back in the editor, unfocused, the marks are hidden...
+	// Back in the editor, unfocused, the marks are hidden and the language
+	// override reached the spell-checker...
 	await page.goto(editorUrl);
 	await expect(page.locator('.cm-content')).toBeVisible();
+	await expect(page.locator('.cm-content')).toHaveAttribute('lang', 'da');
 	await expect(page.locator('.cm-content')).not.toContainText('**');
 	await expect(page.locator('.cm-content')).toContainText('The gate held fast.');
 

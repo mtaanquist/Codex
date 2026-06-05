@@ -4,6 +4,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { ACCENT_PRESETS } from '$lib/appearance';
 	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
+	import { WRITING_LANGUAGES } from '$lib/writing-languages';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -1311,6 +1312,42 @@
 												hide except on the line you are editing, so the page reads like formatted text.
 											</li>
 										</ul>
+									</div>
+								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
+										<span class="behavior-title">Spell-check</span>
+										<select
+											class="select"
+											name="spellCheck"
+											aria-label="Spell-check"
+											value={data.preferences.spellCheck}
+										>
+											<option value="on">On</option>
+											<option value="off">Off</option>
+										</select>
+									</div>
+									<div class="behavior-body">
+										The browser's spell-checker underlines possible misspellings while you write.
+									</div>
+								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
+										<span class="behavior-title">Writing language</span>
+										<select
+											class="select"
+											name="writingLanguage"
+											aria-label="Writing language"
+											value={data.preferences.writingLanguage}
+										>
+											<option value="">Follow my browser</option>
+											{#each WRITING_LANGUAGES as language (language.tag)}
+												<option value={language.tag}>{language.label}</option>
+											{/each}
+										</select>
+									</div>
+									<div class="behavior-body">
+										The language your prose is written in; spell-check uses its dictionary.
 									</div>
 								</div>
 								<div class="behavior-card">

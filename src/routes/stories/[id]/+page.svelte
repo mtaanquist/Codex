@@ -316,6 +316,8 @@
 							entities={data.mentionEntities}
 							autocompleteMode={data.preferences.entityAutocomplete}
 							editingMode={data.preferences.editingMode}
+							spellCheck={data.preferences.spellCheck}
+							writingLanguage={data.preferences.writingLanguage}
 							imageUniverseId={data.universe.id}
 							markers={data.storyDocMarkers[scene.id] ?? []}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
@@ -372,6 +374,8 @@
 						entities={data.mentionEntities}
 						autocompleteMode={data.preferences.entityAutocomplete}
 						editingMode={data.preferences.editingMode}
+						spellCheck={data.preferences.spellCheck}
+						writingLanguage={data.preferences.writingLanguage}
 						imageUniverseId={data.universe.id}
 						markers={data.sceneMarkers}
 						onStatus={(status) => {

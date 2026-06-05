@@ -19,6 +19,11 @@ export type UserPreferences = {
 	// cursor, reading like formatted text. The stored document is markdown
 	// either way.
 	editingMode: 'markdown' | 'rich';
+	// Browser-native spell-check squiggles in the prose editors.
+	spellCheck: 'on' | 'off';
+	// The language the prose is written in, as a BCP 47 tag, driving the
+	// spell-check dictionary. Blank follows the browser's language.
+	writingLanguage: string;
 	// The colour theme and accent applied across the app.
 	theme: Theme;
 	accent: string;
@@ -29,7 +34,9 @@ export type UserPreferences = {
 export const STORY_PREFERENCE_KEYS = [
 	'entityAutocomplete',
 	'continuousSceneMarks',
-	'editingMode'
+	'editingMode',
+	'spellCheck',
+	'writingLanguage'
 ] as const;
 export type StoryPreferenceKey = (typeof STORY_PREFERENCE_KEYS)[number];
 // The raw per-story overrides, for the settings form; an absent key means
@@ -38,6 +45,10 @@ export type StoryPreferenceOverrides = Partial<Pick<UserPreferences, StoryPrefer
 
 // Defaults applied to whatever is stored; unknown values fall back rather
 // than break old sessions when an option is renamed.
+// A plausible BCP 47 tag ("da", "en-GB", "pt-BR"); anything else falls
+// back to following the browser.
+const LANGUAGE_TAG = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
+
 function normalise(raw: Record<string, unknown>): UserPreferences {
 	const mode = raw.entityAutocomplete;
 	const marks = raw.continuousSceneMarks;
@@ -45,6 +56,11 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 		entityAutocomplete: mode === 'ghost' || mode === 'off' ? mode : 'popup',
 		continuousSceneMarks: marks === 'hidden' ? 'hidden' : 'shown',
 		editingMode: raw.editingMode === 'rich' ? 'rich' : 'markdown',
+		spellCheck: raw.spellCheck === 'off' ? 'off' : 'on',
+		writingLanguage:
+			typeof raw.writingLanguage === 'string' && LANGUAGE_TAG.test(raw.writingLanguage)
+				? raw.writingLanguage
+				: '',
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};

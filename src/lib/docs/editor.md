@@ -33,6 +33,10 @@ To flag a spot to come back to, select some text and add a mark. Marks show in t
 
 The History tab on the right keeps past versions of the open scene. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Select "Preview" on a version to read it or compare it with the current text, and "Restore this version" to bring it back. Restoring never deletes history: the version you replaced stays in the list.
 
+## Spelling
+
+The browser's spell-checker underlines possible misspellings as you write. Set the language your prose is written in on your account page, under Display, so the right dictionary is used; "Follow my browser" uses whatever your browser is set to. Turn spell-check off there if the underlines distract you. Both settings can be overridden per story in the story's settings.
+
 ## How it looks
 
 You can change the theme, accent colour, and editor behaviour on your account page, under Display.

@@ -15,6 +15,10 @@ export function proseExtensions(opts: {
 	placeholder: string;
 	onDocChanged: () => void;
 	editingMode?: EditingMode;
+	// Browser-native spell-check; the language tag picks the dictionary,
+	// blank follows the browser. CodeMirror turns spellcheck off by
+	// default, so this opts back in.
+	spellCheck?: { enabled: boolean; language: string };
 }): Extension[] {
 	return [
 		history(),
@@ -23,6 +27,12 @@ export function proseExtensions(opts: {
 		markdown(),
 		markdownStyling(),
 		opts.editingMode === 'rich' ? richModeExtension() : [],
+		opts.spellCheck?.enabled
+			? EditorView.contentAttributes.of({
+					spellcheck: 'true',
+					...(opts.spellCheck.language ? { lang: opts.spellCheck.language } : {})
+				})
+			: [],
 		placeholder(opts.placeholder),
 		EditorView.lineWrapping,
 		EditorView.updateListener.of((update) => {
