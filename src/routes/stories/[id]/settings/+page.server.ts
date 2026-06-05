@@ -91,6 +91,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const mode = String(data.get('entityAutocomplete') ?? '');
 		const marks = String(data.get('continuousSceneMarks') ?? '');
+		const editing = String(data.get('editingMode') ?? '');
 		// An empty value clears the override, so the account setting applies.
 		if (mode !== '' && mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { action: 'prefs', message: 'Pick an autocomplete option.' });
@@ -98,9 +99,13 @@ export const actions: Actions = {
 		if (marks !== '' && marks !== 'shown' && marks !== 'hidden') {
 			return fail(400, { action: 'prefs', message: 'Pick a scene marks option.' });
 		}
+		if (editing !== '' && editing !== 'markdown' && editing !== 'rich') {
+			return fail(400, { action: 'prefs', message: 'Pick an editing mode.' });
+		}
 		await saveStoryPreferences(db, story.id, {
 			entityAutocomplete: mode || null,
-			continuousSceneMarks: marks || null
+			continuousSceneMarks: marks || null,
+			editingMode: editing || null
 		});
 		return { action: 'prefs', saved: true };
 	},

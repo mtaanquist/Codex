@@ -15,6 +15,10 @@ export type UserPreferences = {
 	// Whether scene marks render inside the continuous story view's flow;
 	// some authors treat scenes as atomic splits, not part of the reading.
 	continuousSceneMarks: 'shown' | 'hidden';
+	// Markdown shows the syntax as typed; rich hides it away from the
+	// cursor, reading like formatted text. The stored document is markdown
+	// either way.
+	editingMode: 'markdown' | 'rich';
 	// The colour theme and accent applied across the app.
 	theme: Theme;
 	accent: string;
@@ -22,7 +26,11 @@ export type UserPreferences = {
 
 // The editor-behaviour keys a story may override. Theme and accent stay
 // account-wide: they style the whole app, not one story's editor.
-export const STORY_PREFERENCE_KEYS = ['entityAutocomplete', 'continuousSceneMarks'] as const;
+export const STORY_PREFERENCE_KEYS = [
+	'entityAutocomplete',
+	'continuousSceneMarks',
+	'editingMode'
+] as const;
 export type StoryPreferenceKey = (typeof STORY_PREFERENCE_KEYS)[number];
 // The raw per-story overrides, for the settings form; an absent key means
 // "use the account setting".
@@ -36,6 +44,7 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 	return {
 		entityAutocomplete: mode === 'ghost' || mode === 'off' ? mode : 'popup',
 		continuousSceneMarks: marks === 'hidden' ? 'hidden' : 'shown',
+		editingMode: raw.editingMode === 'rich' ? 'rich' : 'markdown',
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};

@@ -1286,6 +1286,33 @@
 								</div>
 								<div class="behavior-card">
 									<div class="behavior-head">
+										<span class="behavior-title">Editing mode</span>
+										<select
+											class="select"
+											name="editingMode"
+											aria-label="Editing mode"
+											value={data.preferences.editingMode}
+										>
+											<option value="markdown">Markdown</option>
+											<option value="rich">Rich text</option>
+										</select>
+									</div>
+									<div class="behavior-body">
+										How prose looks while you write. Your work is stored as markdown either way.
+										<ul>
+											<li>
+												<strong style="color:var(--text);font-weight:600;">Markdown.</strong> Formatting
+												marks like ** and # stay visible as you type, styled in place.
+											</li>
+											<li>
+												<strong style="color:var(--text);font-weight:600;">Rich text.</strong> The marks
+												hide except on the line you are editing, so the page reads like formatted text.
+											</li>
+										</ul>
+									</div>
+								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
 										<span class="behavior-title">Scene marks in the story view</span>
 										<select
 											class="select"
