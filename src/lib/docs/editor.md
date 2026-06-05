@@ -6,6 +6,17 @@ The editor is where you draft scenes. It saves on its own as you type, so there 
 
 A scene holds one stretch of prose. Chapters group scenes in order. You can move a scene between chapters, and a scene can sit on its own before it has a chapter home.
 
+## Formatting
+
+Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I (Cmd on a Mac) do bold and italic from the keyboard.
+
+There are two ways to see your prose while you write, chosen under Editor behaviour on your account page:
+
+- **Markdown** keeps the formatting marks visible as you type.
+- **Rich text** hides the marks except on the line you are editing, so the page reads like formatted text.
+
+Your work is stored as markdown in both modes; switching is purely about what you see while writing.
+
 ## Mentions
 
 When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary and the entry's first few details without leaving the page.

@@ -315,6 +315,7 @@
 							body={scene.bodyMd}
 							entities={data.mentionEntities}
 							autocompleteMode={data.preferences.entityAutocomplete}
+							editingMode={data.preferences.editingMode}
 							imageUniverseId={data.universe.id}
 							markers={data.storyDocMarkers[scene.id] ?? []}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
@@ -370,6 +371,7 @@
 						body={data.selectedScene.bodyMd}
 						entities={data.mentionEntities}
 						autocompleteMode={data.preferences.entityAutocomplete}
+						editingMode={data.preferences.editingMode}
 						imageUniverseId={data.universe.id}
 						markers={data.sceneMarkers}
 						onStatus={(status) => {

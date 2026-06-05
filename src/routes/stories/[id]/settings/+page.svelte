@@ -24,6 +24,10 @@
 		shown: 'Shown',
 		hidden: 'Hidden'
 	};
+	const EDITING_LABELS: Record<string, string> = {
+		markdown: 'Markdown',
+		rich: 'Rich text'
+	};
 
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
@@ -108,6 +112,16 @@
 				<option value="off">Off</option>
 				<option value="ghost">Inline ghost-text</option>
 				<option value="popup">Popup menu</option>
+			</select>
+		</label>
+		<label>
+			Editing mode
+			<select name="editingMode" value={(data.preferenceOverrides.editingMode as string) ?? ''}>
+				<option value="">
+					Use my account setting ({EDITING_LABELS[data.accountPreferences.editingMode]})
+				</option>
+				<option value="markdown">Markdown</option>
+				<option value="rich">Rich text</option>
 			</select>
 		</label>
 		<label>

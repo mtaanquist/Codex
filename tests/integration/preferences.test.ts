@@ -123,6 +123,16 @@ describe('story preference overrides', () => {
 		expect(await storyPreferenceOverrides(db, storyId)).toEqual({ entityAutocomplete: 'off' });
 	});
 
+	it('the editing mode layers like the other editor keys', async () => {
+		expect((await userPreferences(db, userId)).editingMode).toBe('markdown');
+		await savePreferences(db, userId, { editingMode: 'rich' });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
+		await saveStoryPreferences(db, storyId, { editingMode: 'markdown' });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('markdown');
+		await saveStoryPreferences(db, storyId, { editingMode: null });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
+	});
+
 	it('an unrecognised override value falls back to a sane default', async () => {
 		await db
 			.update(stories)
