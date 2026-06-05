@@ -46,6 +46,7 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
+			insightsHref={resolve('/universes/[id]/insights', { id: data.universe.id })}
 			{form}
 		/>
 		<main class="pane center">

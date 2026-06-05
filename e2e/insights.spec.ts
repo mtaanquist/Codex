@@ -1,0 +1,57 @@
+import { expect, test } from '@playwright/test';
+
+// The universe Insights view: progress stats and the world heatmap render
+// from a fresh universe's first words.
+test('insights: words written show up in progress and the heatmap', async ({ page }) => {
+	await page.goto('/login');
+	await page.getByLabel('Email').fill('e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+	await expect(page).toHaveURL('/');
+
+	const universeName = `Insights Test ${Date.now()}`;
+	await page.getByLabel('New universe').fill(universeName);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
+	const universeId = page.url().match(/universes\/([0-9a-f-]{36})/)![1];
+	await page.getByLabel('New story').fill('First Light');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page.locator('.story-title')).toHaveText('First Light');
+
+	// Write a few words so there is something to count.
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await page.locator('.cm-content').click();
+	const save = page.waitForResponse(
+		(response) =>
+			response.url().includes('/api/scenes/') &&
+			response.request().method() === 'PUT' &&
+			response.ok()
+	);
+	await page.keyboard.type('Five words went down today.');
+	await save;
+
+	// A character no scene mentions, for the cold end of the heatmap.
+	await page.goto(`/universes/${universeId}/plan`);
+	await page.getByPlaceholder('New character name').fill('Heimdall');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page.locator('.ent-row', { hasText: 'Heimdall' })).toBeVisible();
+
+	// The sidebar's Insights button opens the view.
+	await page.getByRole('link', { name: 'Insights', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
+
+	// Progress counts the words; the story row carries them too.
+	await expect(page.locator('.admin-stat', { hasText: 'Total words' })).toContainText('5');
+	await expect(page.getByRole('link', { name: 'First Light' })).toBeVisible();
+	await expect(page.locator('.story-row', { hasText: 'First Light' })).toContainText('5 words');
+
+	// The unmentioned character sits cold on the heatmap, linking to its
+	// plan entry.
+	const tile = page.locator('.heat-tile', { hasText: 'Heimdall' });
+	await expect(tile).toContainText('Not mentioned yet');
+	await tile.click();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
+});

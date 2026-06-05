@@ -30,6 +30,14 @@ You can record how entities relate: who is whose parent, which faction holds whi
 
 An entity joins a story when you create it while working in that story, or when you add it by hand. The story's plan then shows just the characters, places, and lore that belong to it.
 
+## Insights
+
+The universe plan has an Insights button at the top of the sidebar. It opens a page that shows how the writing is going and how much of the world the prose uses.
+
+Progress shows total words, net words written this week, your writing streak, and a chart of words per day for the last 30 days. A day counts towards the streak when you saved any scene that day. Each story below shows its word count and how its scenes split between outline, draft, revised, and final.
+
+The world heatmap lists every character, place, and lore entry, brighter the more often the prose mentions it. A pale tile is an entry no scene mentions yet, and "no entry" marks one with nothing written in its body. Click any tile to open that entry in the plan.
+
 ## History
 
 The History tab on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.

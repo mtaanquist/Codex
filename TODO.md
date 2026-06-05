@@ -157,6 +157,29 @@ Agreed sequence (2026-06-05): the quick details + entity history pair first, the
 > palette, mention disambiguation, perf debts). Next up when work resumes:
 > Phase 8 (overviews and visualization).
 
+## Phase 8 - Overviews and visualization
+
+Scope agreed 2026-06-05: the four data-ready items, releasing as v2.14.0
+(heatmap + dashboard), v2.15.0 (scene board), v2.16.0 (relationship web).
+The timeline waits for the world-calendar design and plotlines/arcs wait
+for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
+
+- [x] Universe Insights view: a new view at universe scope (sidebar seg next
+      to Plan, palette command) on the admin-shell, hosting the entity
+      heatmap (mention counts per entity from the existing index, cold tiles
+      and no-entry flags for the forgotten corners) and the progress
+      dashboard (word totals, net words per day from scene revisions with
+      timezone-correct day buckets, streaks, per-story status bars).
+      Everything derived at read time; no new tables. Merged 2026-06-05
+      (#132), shipped as v2.14.0.
+- [ ] Scene cards board: a board toggle in the story Plan with status lanes
+      (outline/draft/revised/final); dragging a card changes scene status,
+      the first UI for that column. Cards carry chapter, word count, and
+      TODO count.
+- [ ] Relationship web view: force-directed graph of entity_relationships
+      (d3-force simulation, own SVG rendering), filters by entity and
+      relation type; joins the Insights view.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
