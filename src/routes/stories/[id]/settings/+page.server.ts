@@ -7,6 +7,11 @@ import { storyTimeline } from '$lib/server/revisions';
 import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 import { publishStory } from '$lib/server/publish';
 import { listEditionArtifacts, setDownloadsPublic } from '$lib/server/export-artifacts';
+import {
+	createReviewInvitation,
+	listReviewInvitations,
+	revokeReviewInvitation
+} from '$lib/server/review';
 import { queueExportArtifacts } from '$lib/server/jobs';
 import { deleteStory } from '$lib/server/story-delete';
 import { publications, users } from '$lib/server/db/schema';
@@ -50,7 +55,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		assetsConfigured: assetConfig() !== null,
 		archive,
 		edition,
-		artifacts: edition ? await listEditionArtifacts(db, edition.id) : []
+		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
+		reviewInvitations: await listReviewInvitations(db, story.id)
 	};
 };
 
@@ -118,6 +124,39 @@ export const actions: Actions = {
 		const data = await request.formData();
 		await setDownloadsPublic(db, locals.user!.id, edition.id, data.get('downloadsPublic') === 'on');
 		return { action: 'exports', saved: true };
+	},
+	createReviewInvite: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const expiresRaw = String(data.get('expiresDays') ?? '').trim();
+		const expiresDays = expiresRaw === '' ? 0 : Number(expiresRaw);
+		if (!Number.isInteger(expiresDays) || expiresDays < 0 || expiresDays > 365) {
+			return fail(400, {
+				action: 'review',
+				message: 'Leave expiry blank for a link that does not expire, or use 1 to 365 days.'
+			});
+		}
+		const { token } = await createReviewInvitation(db, {
+			storyId: story.id,
+			createdBy: locals.user!.id,
+			email: String(data.get('note') ?? ''),
+			expiresAt: expiresDays > 0 ? new Date(Date.now() + expiresDays * 86_400_000) : null
+		});
+		// The raw token exists only in this response; the row keeps its hash.
+		return { action: 'review', reviewLink: `/review/${token}` };
+	},
+	revokeReviewInvite: async ({ request, params, locals }) => {
+		await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const invitationId = String(data.get('invitationId') ?? '');
+		const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+		if (
+			!UUID.test(invitationId) ||
+			!(await revokeReviewInvitation(db, locals.user!.id, invitationId))
+		) {
+			return fail(400, { action: 'review', message: 'That invitation could not be revoked.' });
+		}
+		return { action: 'review', revoked: true };
 	},
 	setCover: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);

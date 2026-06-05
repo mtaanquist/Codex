@@ -10,6 +10,7 @@ import {
 	loreEntries,
 	places,
 	publications,
+	reviewers,
 	sessions,
 	stories,
 	totpRecoveryCodes,
@@ -127,6 +128,13 @@ export async function purgeAccount(
 			// No universes, but the account may still own stray assets.
 			await tx.delete(assets).where(eq(assets.ownerId, userId));
 		}
+
+		// Reviews this account left on other people's stories: the author keeps
+		// the thread, but the identity is erased.
+		await tx
+			.update(reviewers)
+			.set({ userId: null, displayName: 'Deleted account', email: null })
+			.where(eq(reviewers.userId, userId));
 
 		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));

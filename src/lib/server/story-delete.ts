@@ -12,6 +12,10 @@ import {
 	placeStoryNotes,
 	publicationAssets,
 	publications,
+	reviewComments,
+	reviewers,
+	reviewInvitations,
+	reviewThreads,
 	revisions,
 	sceneMarkers,
 	scenes,
@@ -53,6 +57,35 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		await tx.delete(publicationAssets).where(inArray(publicationAssets.publicationId, pubIds));
 	}
 	await tx.delete(publications).where(eq(publications.storyId, storyId));
+
+	// Review rows before revisions and scenes: threads reference both, and
+	// guests are personal data that goes with the story.
+	const threadRows = await tx
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(eq(reviewThreads.storyId, storyId));
+	if (threadRows.length > 0) {
+		await tx.delete(reviewComments).where(
+			inArray(
+				reviewComments.threadId,
+				threadRows.map((row) => row.id)
+			)
+		);
+	}
+	await tx.delete(reviewThreads).where(eq(reviewThreads.storyId, storyId));
+	const invitationRows = await tx
+		.select({ id: reviewInvitations.id })
+		.from(reviewInvitations)
+		.where(eq(reviewInvitations.storyId, storyId));
+	if (invitationRows.length > 0) {
+		await tx.delete(reviewers).where(
+			inArray(
+				reviewers.invitationId,
+				invitationRows.map((row) => row.id)
+			)
+		);
+	}
+	await tx.delete(reviewInvitations).where(eq(reviewInvitations.storyId, storyId));
 
 	if (sceneIds.length > 0) {
 		await tx.delete(sceneMarkers).where(inArray(sceneMarkers.sceneId, sceneIds));

@@ -8,7 +8,8 @@ describe('docTopics', () => {
 			'getting-started',
 			'editor',
 			'planning',
-			'publishing'
+			'publishing',
+			'reviewing'
 		]);
 		for (const topic of topics) {
 			// Title comes from the article's heading, so a missing file shows here.
