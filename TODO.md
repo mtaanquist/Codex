@@ -124,7 +124,7 @@ format preference deferred to Phase 6 (see the feedback backlog).
 
 Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 
-- [ ] Invite codes: invite_codes table (migration 0026), admin mints codes in Users & access (label, uses, expiry, copy-link), sign-up takes an optional code (or ?code= link) and a valid one sets approved_at immediately; email verification still applies. Redeem is a single guarded UPDATE; register-with-invite runs in one transaction so a duplicate email rolls the use back.
+- [x] Invite codes: invite_codes table (migration 0026), admin mints codes in Users & access (label, uses, expiry, copy-link), sign-up takes an optional code (or ?code= link) and a valid one sets approved_at immediately; email verification still applies. Redeem is a single guarded UPDATE; register-with-invite runs in one transaction so a duplicate email rolls the use back. Merged 2026-06-05 (#107).
 - [ ] Stored export artifacts
 - [ ] Passkeys
 - [ ] Guest review (comments, then suggested edits)
