@@ -145,6 +145,17 @@ Agreed sequence (2026-06-05): the quick details + entity history pair first, the
 - [x] Preference layering: stories.preferences jsonb (migration 0032), storyPreferences merges the user's preferences with per-story overrides at load time. Only the editor-behaviour keys (entityAutocomplete, continuousSceneMarks) are overridable; theme and accent stay account-wide. Story settings gains an Editor section where "Use my account setting" clears the override (jsonb key delete), so later account changes flow through. Merged 2026-06-05 (#121).
 - [x] Rich editing mode + markdown affordances: markdown styles in place in every prose editor (HighlightStyle: bold bold, headings big, marks faint), formatting toolbar on the scene editor (H1-H3, bold, italic, quote, list; Ctrl+B/I everywhere) per the prototype, and an editingMode preference (markdown | rich, user-level with the per-story override) where rich is CodeMirror live-preview: syntax marks hide except on the lines being edited, fully formatted when unfocused, document stays markdown. Continuous-view editors follow the mode but carry no toolbar. Merged 2026-06-05 (#122).
 - [x] Page setup for print/PDF: page_setup jsonb on users (account defaults) and stories (per-key overrides; migration 0033), parameterizing the one stylesheet behind the print route and the worker PDF. Page size incl. trims (5x8, 5.5x8.5, 6x9), margins, font + size, paragraph style, scene-break text, and PDF-only page numbers / running title via Chromium's header-footer layer (geometry rides the pdf options). A \page paragraph forces a break in print/PDF and is inert elsewhere. EPUB stays reflowable; paragraph style, scene-break text, and \page carry over. Account page gains a Page setup block, story settings a Page setup section with use-account-setting inherit per field (scene break gets a mode select since blank is itself a value). Verified against real Chromium (5x8 MediaBox, header/footer, mid-scene break). Merged 2026-06-05 (#124).
+- [x] Spell-check: browser-native squiggles behind a spellCheck preference (default on) with a writingLanguage tag driving the dictionary; account-level with per-story overrides, an explicit follow-the-browser override distinct from inherit. Merged 2026-06-05 (#126).
+- [x] Library and story-settings styling: the library becomes a designed page (topbar, universe cards, avatar menu); story settings adopts the admin-shell with anchor-nav sections (not tabs, so flows and deep links keep working). Merged 2026-06-05 (#128).
+- [x] Command palette (Ctrl+K): owner-scoped fuzzy search over universes/stories/scenes/entities (aliases and keywords included) plus contextual commands (new scene/chapter, write/plan/settings/review, library/account/help), with a Search trigger in the top bars. Merged 2026-06-05 (#129).
+- [x] Mention disambiguation: deterministic attribution for shared names (pin > story members > character > place > lore > primary name) with per-story pins picked from the hover tooltip (mention_pins, migration 0034); editor underlines and the worker index share the rules. Merged 2026-06-05 (#130).
+- [x] Perf debts ride-along: tooltip reads the decoration set; applySceneOrder and updateMarkerAnchors are single batched UPDATEs. Merged 2026-06-05 (#127).
+
+> Phase 7 complete (2026-06-05), shipped as v2.10.0 (quick details + entity
+> history), v2.11.0 (preference layering + rich editing), v2.12.0 (page
+> setup), and v2.13.0 (spell-check, library and settings styling, command
+> palette, mention disambiguation, perf debts). Next up when work resumes:
+> Phase 8 (overviews and visualization).
 
 ## Feedback backlog
 
@@ -152,7 +163,7 @@ From first real use (2026-06-03):
 
 - [x] Scene marks in the continuous view should be hideable: shipped with v1.10 (continuousSceneMarks preference)
 - [x] Editable continuous view: shipped with v1.10 (roadmap step 23b)
-- [ ] Spell-check from a user language preference (Phase 7; browser-native first)
+- [x] Spell-check from a user language preference (Phase 7; browser-native first). Shipped 2026-06-05 (#126): spellCheck on by default + writingLanguage (BCP 47, blank follows the browser), account-level with per-story overrides.
 - [x] Markdown affordances: the shared renderer shipped with v1.12 (exports + print); reading pages pick it up in step 27; in-editor styling and the prototype's toolbar shipped 2026-06-05 with the Phase 7 rich editing item.
 - [x] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration (Phase 7, prerequisite for the rich-editing choice below). Shipped 2026-06-05 with the Phase 7 item above.
 - [x] Default editing format preference (Phase 7; reordered there on 2026-06-04). The editor is CodeMirror over raw markdown today; a writer should be able to choose a softer, Word-like editing surface rather than seeing markdown syntax. A rich/WYSIWYG editing mode behind a preference, settable at user level with a per-story override. Builds on the "markdown affordances" and "preference layering" items above; that is the foundation, this is the user-facing choice on top. Shipped 2026-06-05 with the Phase 7 rich editing item (CodeMirror live-preview, not a separate WYSIWYG editor).
@@ -161,10 +172,10 @@ From first real use (2026-06-03):
 From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
 
 - [x] Page setup for print/PDF (Phase 7, alongside preference layering): page size incl. book trim sizes, margins, font and size, paragraph style (indent vs spaced), scene-break glyph, page numbers and running headers (puppeteer displayHeaderFooter; Chromium lacks @page margin boxes), and explicit in-chapter page breaks (a scene-level flag or markdown marker styled with break-before). All of it parameterizes the one stylesheet the print route and the worker PDF already share; EPUB stays reflowable by design. Known wall: mirrored facing pages (@page :left/:right) are unsupported in Chromium; real bookbinding output would need a different typesetter. (Broadened 2026-06-05 from the original page-breaks note.) Shipped 2026-06-05 with the Phase 7 page setup item.
-- [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts) (Phase 7)
-- [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
-- [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
-- [ ] updateMarkerAnchors issues one UPDATE per anchor in a loop; batch it the same way (markers.ts)
+- [x] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts) (Phase 7). Shipped 2026-06-05: deterministic order (pin > story members > character > place > lore > primary name > id) with per-story pins (mention_pins, migration 0034) picked from the hover tooltip; dotted underline marks ambiguity. (#130)
+- [x] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts). Fixed 2026-06-05 (#127).
+- [x] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts). Fixed 2026-06-05 (#127): one UPDATE over unnested arrays.
+- [x] updateMarkerAnchors issues one UPDATE per anchor in a loop; batch it the same way (markers.ts). Fixed 2026-06-05 (#127).
 
 From a pre-v2.0 self-review (2026-06-04); the cover IDOR and the duplicated media-types map were fixed:
 
