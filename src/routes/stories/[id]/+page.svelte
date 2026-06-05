@@ -13,6 +13,24 @@
 
 	let { data }: { data: PageData } = $props();
 
+	// Picking which entity a shared name means: store the pin, then let the
+	// data refresh re-render the underlines (the editor reconfigures its
+	// mentions when the pins change).
+	async function pinMention(name: string, target: { type: string; id: string }) {
+		const response = await fetch(`/api/stories/${data.story.id}/mention-pins`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ name, targetType: target.type, targetId: target.id })
+		});
+		if (response.ok) await invalidateAll();
+	}
+
+	const mentionOptions = $derived({
+		storyMembers: data.storyMemberIds,
+		pins: data.mentionPins,
+		onPin: pinMention
+	});
+
 	// Focus mode hides the chrome around the prose; Esc leaves it.
 	let focus = $state(false);
 
@@ -314,6 +332,7 @@
 							title={scene.title}
 							body={scene.bodyMd}
 							entities={data.mentionEntities}
+							{mentionOptions}
 							autocompleteMode={data.preferences.entityAutocomplete}
 							editingMode={data.preferences.editingMode}
 							spellCheck={data.preferences.spellCheck}
@@ -372,6 +391,7 @@
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
 						entities={data.mentionEntities}
+						{mentionOptions}
 						autocompleteMode={data.preferences.entityAutocomplete}
 						editingMode={data.preferences.editingMode}
 						spellCheck={data.preferences.spellCheck}

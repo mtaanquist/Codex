@@ -380,6 +380,25 @@ export const placeStoryNotes = pgTable(
 	(table) => [unique('place_story_notes_unique').on(table.placeId, table.storyId)]
 );
 
+// The author's explicit pick when two entities share a name or alias: in
+// this story, this exact text means that entity. Detection orders the rest
+// deterministically; a pin overrides it.
+export const mentionPins = pgTable(
+	'mention_pins',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id, { onDelete: 'cascade' })
+			.notNull(),
+		// The matched text, exactly as it appears in prose.
+		name: text('name').notNull(),
+		targetType: text('target_type', { enum: ['character', 'place', 'lore_entry'] }).notNull(),
+		targetId: uuid('target_id').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [unique('mention_pins_story_name').on(table.storyId, table.name)]
+);
+
 // Derived index of entity occurrences in prose. Rebuilt by the worker when a
 // source's body changes: delete the source's rows, insert fresh ones. The
 // polymorphic source/target columns carry no FKs by design.

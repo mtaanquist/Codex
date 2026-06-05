@@ -2,15 +2,44 @@
 // imports carry explicit .ts extensions.
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, entityMentions, loreEntries, places, scenes, stories } from './db/schema.ts';
+import {
+	characters,
+	characterStoryMemberships,
+	entityMentions,
+	loreEntries,
+	places,
+	placeStoryMemberships,
+	scenes,
+	stories
+} from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
+import { listMentionPins } from './mention-pins.ts';
+
+// Entities declared in the scene's story outrank the rest when a name is
+// shared; see the attribution rules in mention-detect.
+async function storyMemberIds(db: Database, storyId: string): Promise<Set<string>> {
+	const characterRows = await db
+		.select({ id: characterStoryMemberships.characterId })
+		.from(characterStoryMemberships)
+		.where(eq(characterStoryMemberships.storyId, storyId));
+	const placeRows = await db
+		.select({ id: placeStoryMemberships.placeId })
+		.from(placeStoryMemberships)
+		.where(eq(placeStoryMemberships.storyId, storyId));
+	return new Set([...characterRows, ...placeRows].map((row) => row.id));
+}
 
 export async function rebuildSceneMentions(
 	db: Database,
 	sceneId: string
 ): Promise<{ ok: true; count: number } | { ok: false; reason: string }> {
 	const [scene] = await db
-		.select({ id: scenes.id, bodyMd: scenes.bodyMd, universeId: stories.universeId })
+		.select({
+			id: scenes.id,
+			bodyMd: scenes.bodyMd,
+			storyId: scenes.storyId,
+			universeId: stories.universeId
+		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(eq(scenes.id, sceneId));
@@ -51,7 +80,10 @@ export async function rebuildSceneMentions(
 			})
 		)
 	];
-	const found = detectMentions(scene.bodyMd, targets);
+	const found = detectMentions(scene.bodyMd, targets, {
+		storyMembers: await storyMemberIds(db, scene.storyId),
+		pins: await listMentionPins(db, scene.storyId)
+	});
 
 	await db.transaction(async (tx) => {
 		await tx

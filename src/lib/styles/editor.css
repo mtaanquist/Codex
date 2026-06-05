@@ -75,6 +75,41 @@
 	min-width: 0;
 }
 
+/* A mention whose text belongs to more than one entity: dotted underline,
+   and the hover tooltip offers the alternatives. */
+.ref-ambiguous {
+	border-bottom-style: dotted;
+	border-bottom-width: 2px;
+}
+.entity-tip-ambiguous {
+	margin-top: 7px;
+	border-top: 1px solid var(--border);
+	padding-top: 6px;
+}
+.entity-tip-ambiguous-label {
+	font-family: var(--font-ui);
+	font-size: 10.5px;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin-bottom: 4px;
+}
+.entity-tip-pick {
+	display: block;
+	width: 100%;
+	text-align: left;
+	border: 0;
+	background: none;
+	color: var(--accent);
+	font-family: var(--font-ui);
+	font-size: 12.5px;
+	padding: 3px 0;
+	cursor: pointer;
+}
+.entity-tip-pick:hover {
+	text-decoration: underline;
+}
+
 /* Rich mode renders unordered list marks as a typographic bullet. */
 .cm-rich-bullet {
 	color: var(--text-faint);

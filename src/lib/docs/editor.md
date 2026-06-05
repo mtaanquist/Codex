@@ -23,6 +23,8 @@ To force a page break in print and PDF output, put \page alone on its own line. 
 
 When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary and the entry's first few details without leaving the page.
 
+When two entries share a name, the editor picks one: whoever is declared in the story first, then characters before places before lore. Such a mention gets a dotted underline; hover it to see the alternatives, and pick one to make that the meaning of the name everywhere in this story.
+
 If the editor keeps underlining a common word that happens to be a name, open that entry in the planning view and turn off automatic detection for it.
 
 ## Marks
