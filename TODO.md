@@ -130,7 +130,12 @@ Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 - [x] Guest review (comments, then suggested edits)
   - [x] Stage 1 - invitations and threaded comments: review_invitations/reviewers/review_threads/review_comments (migration 0029), magic links with hashed tokens, guest identity via signed cookie (display name only, no account), read-only manuscript at /review/[token] with selection-anchored and whole-scene comments, diff-based re-anchoring (review-anchor.ts; lost anchors degrade to flagged whole-scene), author feedback page at /stories/[id]/review with reply/resolve/reopen, invitations managed in story settings, revoke keeps threads (deliberate deviation from the design line), purge anonymizes a deleted user's reviewer rows. Merged 2026-06-05.
   - [x] Stage 2 - suggested edits: review_suggestions (migration 0030), guests with a can_suggest link propose replacements on exact selections (insertions and deletions included), the author accepts or rejects one at a time on the feedback page; accept re-anchors against the current text (reanchorPoint for insertions), applies to body_md in a status-guarded transaction, records a 'suggestion' revision, and enqueues a mention rebuild; a rewritten passage can only be rejected. Merged 2026-06-05, shipped as v2.9.0.
-- [ ] Continuous backup (WAL/PITR) - only if hourly dumps ever bite
+- [ ] Continuous backup (WAL/PITR) - parked by design, only if hourly dumps ever bite; cheap first step is tightening the dump cadence (see the roadmap note)
+
+> Phase 6 complete (2026-06-05), shipped as v2.6.0 (invite codes + stored
+> exports), v2.7.0 (passkeys), v2.8.0 (review comments), and v2.9.0 (suggested
+> edits). WAL/PITR stays parked per the roadmap's own criterion. Next up when
+> work resumes: Phase 7 (writing and planning).
 
 ## Feedback backlog
 
