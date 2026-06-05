@@ -3,6 +3,7 @@
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
@@ -93,6 +94,7 @@
 			{data.story.title}
 		</a>
 		<span class="spacer"></span>
+		<PaletteButton />
 		<UserMenu />
 	</header>
 

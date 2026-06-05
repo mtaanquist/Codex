@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import { entityColor } from '$lib/entity-color';
 	import type { ActionData, PageData } from './$types';
 
@@ -17,6 +18,7 @@
 			<span class="brand-name">Codex</span>
 		</a>
 		<span class="spacer"></span>
+		<PaletteButton />
 		<UserMenu />
 	</header>
 

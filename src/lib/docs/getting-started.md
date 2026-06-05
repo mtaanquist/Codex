@@ -15,3 +15,7 @@ Codex organises your writing into three layers.
 That is enough to start writing. When you are ready, the planning tools help you keep track of who and what is in your world, and publishing turns a finished story into a public reading page.
 
 Each of those has its own help article. Look for the "?" next to a heading anywhere in the app to open the guide for what you are looking at.
+
+## Jumping around
+
+Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The same box lists commands for where you are, such as creating a scene or opening the story's settings.

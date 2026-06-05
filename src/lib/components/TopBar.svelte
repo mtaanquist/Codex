@@ -3,6 +3,7 @@
 	import Icon from './Icon.svelte';
 	import UserMenu from './UserMenu.svelte';
 	import HelpLink from './HelpLink.svelte';
+	import PaletteButton from './PaletteButton.svelte';
 
 	let {
 		universe,
@@ -54,6 +55,7 @@
 		{#if saveStatus !== 'idle'}
 			<span class="saved" role="status"><span class="dot"></span> {SAVE_LABEL[saveStatus]}</span>
 		{/if}
+		<PaletteButton />
 		<a
 			class="icon-btn"
 			href={resolve('/universes/[id]', { id: universe.id })}
