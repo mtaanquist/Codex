@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reanchorRange } from './review-anchor';
+import { reanchorPoint, reanchorRange } from './review-anchor';
 
 const BASE = 'The quick brown fox jumps over the lazy dog.';
 // Anchor "brown fox" = [10, 19).
@@ -58,5 +58,29 @@ describe('reanchorRange', () => {
 		const current = 'Lo! ' + BASE.slice(0, -1) + '!';
 		const result = reanchorRange(BASE, current, START, END);
 		expect(current.slice(result!.start, result!.end)).toBe('brown fox');
+	});
+});
+
+describe('reanchorPoint', () => {
+	it('maps a position through surrounding edits', () => {
+		const pos = BASE.indexOf('fox');
+		expect(reanchorPoint(BASE, BASE, pos)).toBe(pos);
+		expect(reanchorPoint(BASE, 'Lo! ' + BASE, pos)).toBe(pos + 4);
+		expect(reanchorPoint(BASE, BASE.replace('lazy dog', 'cat'), pos)).toBe(pos);
+	});
+
+	it('survives at the start and end of the text', () => {
+		expect(reanchorPoint(BASE, 'X' + BASE, 0)).not.toBeNull();
+		expect(reanchorPoint(BASE, BASE + '!', BASE.length)).toBe(BASE.length);
+	});
+
+	it('loses a position whose surrounding text was removed', () => {
+		const pos = BASE.indexOf('brown') + 2;
+		expect(reanchorPoint(BASE, BASE.replace('brown fox', 'X'), pos)).toBeNull();
+	});
+
+	it('rejects out-of-bounds positions', () => {
+		expect(reanchorPoint(BASE, BASE, -1)).toBeNull();
+		expect(reanchorPoint(BASE, BASE, BASE.length + 1)).toBeNull();
 	});
 });

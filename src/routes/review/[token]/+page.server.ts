@@ -5,10 +5,12 @@ import { stories } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import {
 	addComment,
+	createSuggestion,
 	createThread,
 	ensureReviewer,
 	invitationByToken,
 	issueReviewerToken,
+	listSuggestions,
 	listThreads,
 	readReviewerToken,
 	reviewerAccess,
@@ -70,6 +72,7 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 		state: 'review' as const,
 		storyTitle: resolved.storyTitle,
 		reviewerName: reviewer.displayName,
+		canSuggest: resolved.invitation.canSuggest,
 		chapters: content.chapters,
 		scenes: content.scenes.map((scene) => ({
 			id: scene.id!,
@@ -77,7 +80,8 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 			title: scene.title,
 			bodyMd: scene.bodyMd
 		})),
-		threads: await listThreads(db, storyId, reanchorRange)
+		threads: await listThreads(db, storyId, reanchorRange),
+		suggestions: await listSuggestions(db, storyId)
 	};
 };
 
@@ -119,6 +123,30 @@ export const actions: Actions = {
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { commented: true };
+	},
+	suggest: async ({ params, request, cookies }) => {
+		const { resolved, access } = await currentReviewer(params.token, cookies.get(REVIEWER_COOKIE));
+		if (resolved.status !== 'ok' || !access) {
+			return fail(403, { message: 'This link no longer works.' });
+		}
+		if (!access.invitation.canSuggest) {
+			return fail(403, { message: 'This review link is for comments only.' });
+		}
+		if (!rateLimit(`review:${access.reviewer.id}`, COMMENT_LIMIT, COMMENT_WINDOW_MS).allowed) {
+			return fail(429, { message: 'Slow down a moment, then try again.' });
+		}
+		const data = await request.formData();
+		const sceneId = String(data.get('sceneId') ?? '');
+		if (!UUID.test(sceneId)) return fail(400, { message: 'That scene does not exist.' });
+		const result = await createSuggestion(db, {
+			storyId: resolved.invitation.storyId,
+			sceneId,
+			reviewerId: access.reviewer.id,
+			range: { start: Number(data.get('start')), end: Number(data.get('end')) },
+			replacement: String(data.get('replacement') ?? '')
+		});
+		if (!result.ok) return fail(400, { message: result.reason });
+		return { suggested: true };
 	},
 	reply: async ({ params, request, cookies }) => {
 		const { resolved, access } = await currentReviewer(params.token, cookies.get(REVIEWER_COOKIE));

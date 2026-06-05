@@ -140,6 +140,7 @@ export const actions: Actions = {
 			storyId: story.id,
 			createdBy: locals.user!.id,
 			email: String(data.get('note') ?? ''),
+			canSuggest: data.get('canSuggest') === 'on',
 			expiresAt: expiresDays > 0 ? new Date(Date.now() + expiresDays * 86_400_000) : null
 		});
 		// The raw token exists only in this response; the row keeps its hash.
