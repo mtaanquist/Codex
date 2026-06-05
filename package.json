@@ -1,7 +1,7 @@
 {
 	"name": "codex",
 	"private": true,
-	"version": "2.15.0",
+	"version": "2.16.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -31,6 +31,7 @@
 		"@sveltejs/adapter-node": "^5.5.4",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@types/d3-force": "^3.0.10",
 		"@types/markdown-it": "^14.1.2",
 		"@types/node": "^25",
 		"@types/nodemailer": "^8.0.0",
@@ -58,6 +59,7 @@
 		"@simplewebauthn/browser": "^13.3.0",
 		"@simplewebauthn/server": "^13.3.1",
 		"codemirror": "^6.0.2",
+		"d3-force": "^3.0.0",
 		"diff": "^9.0.0",
 		"drizzle-orm": "^0.45.2",
 		"fflate": "^0.8.3",
