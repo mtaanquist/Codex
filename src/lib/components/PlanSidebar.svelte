@@ -14,6 +14,7 @@
 		selectedId,
 		planPath,
 		writeHref,
+		insightsHref,
 		form,
 		before,
 		availableCharacters = [],
@@ -27,6 +28,8 @@
 		planPath: string;
 		// Present at story scope only; the universe Plan has no Write view.
 		writeHref?: string;
+		// Present at universe scope only; links to the Insights view.
+		insightsHref?: string;
 		form: { kind?: string; message?: string } | null;
 		// Rendered above the entity groups; the story Plan puts its outline here.
 		before?: Snippet;
@@ -45,6 +48,10 @@
 				<a class="seg-btn" href={writeHref}>Write</a>
 			{/if}
 			<button class="seg-btn active" type="button">Plan</button>
+			{#if insightsHref}
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+				<a class="seg-btn" href={insightsHref}>Insights</a>
+			{/if}
 			<button class="seg-btn" type="button" disabled>Notes</button>
 		</div>
 	</div>

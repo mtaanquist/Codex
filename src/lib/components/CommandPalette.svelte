@@ -117,6 +117,12 @@
 					run: navigate(`/universes/${universeId}/plan`)
 				},
 				{
+					label: 'Universe insights',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate(`/universes/${universeId}/insights`)
+				},
+				{
 					label: 'Universe settings',
 					sublabel: null,
 					kind: 'Go to',
