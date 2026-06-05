@@ -14,6 +14,10 @@ const PUBLIC_PATHS = new Set([
 	'/reset-password',
 	'/cancel-deletion',
 	'/confirm-email-change',
+	// Passkey sign-in runs before a session exists; the endpoints guard
+	// themselves on the signed challenge cookie.
+	'/api/passkeys/signin-options',
+	'/api/passkeys/signin',
 	// Liveness probe for the reverse proxy and orchestrators; no auth.
 	'/healthz'
 ]);
