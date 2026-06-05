@@ -7,6 +7,7 @@ import {
 	rebuildUniverseMentions,
 	reconcileMentions
 } from '../lib/server/mentions.ts';
+import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { backupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
@@ -27,6 +28,7 @@ await boss.start();
 await boss.createQueue('mentions-scene');
 await boss.createQueue('mentions-universe');
 await boss.createQueue('reconcile-mentions');
+await boss.createQueue('export-artifacts');
 await boss.createQueue('run-backup');
 await boss.createQueue('send-email');
 await boss.createQueue('purge-accounts');
@@ -51,6 +53,25 @@ await boss.work<{ universeId: string }>('mentions-universe', async (jobs) => {
 await boss.work('reconcile-mentions', async () => {
 	const reindexed = await reconcileMentions(db);
 	if (reindexed > 0) console.log(`mentions: reconcile reindexed ${reindexed} stale scene(s)`);
+});
+
+// Generates the stored export files (markdown zip, EPUB, PDF) for a freshly
+// published edition. Formats fail independently, so a PDF problem still
+// leaves the zip and EPUB downloadable.
+await boss.work<{ publicationId: string }>('export-artifacts', async (jobs) => {
+	for (const job of jobs) {
+		const result = await generateEditionArtifacts(db, job.data.publicationId);
+		if (!result.ok) {
+			console.warn(`exports: edition ${job.data.publicationId} skipped (${result.reason})`);
+			continue;
+		}
+		console.log(`exports: edition ${job.data.publicationId} -> ${result.stored.join(', ')}`);
+		for (const failure of result.failed) {
+			console.error(
+				`exports: edition ${job.data.publicationId} ${failure.format} failed: ${failure.error}`
+			);
+		}
+	}
 });
 
 await boss.work<{ trigger?: 'scheduled' | 'manual' }>('run-backup', async (jobs) => {

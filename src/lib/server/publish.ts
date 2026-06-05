@@ -168,6 +168,7 @@ export async function publicEdition(db: Database, handle: string, storyId: strin
 			isAdult: publications.isAdult,
 			content: publications.content,
 			versionLabel: publications.versionLabel,
+			downloadsPublic: publications.downloadsPublic,
 			publishedAt: publications.publishedAt,
 			visibility: stories.visibility,
 			coverAssetId: stories.coverAssetId

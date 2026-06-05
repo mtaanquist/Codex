@@ -19,8 +19,9 @@ const PUBLIC_PATHS = new Set([
 ]);
 // Pages a signed-in user has no reason to see; bounce them home instead.
 const AUTH_PATHS = new Set(['/login', '/signup']);
-// Reader pages are public; assets check publication state themselves.
-const PUBLIC_PREFIXES = ['/@', '/assets/'];
+// Reader pages are public; assets and export downloads check publication
+// state themselves.
+const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;

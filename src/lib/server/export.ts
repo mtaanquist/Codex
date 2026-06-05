@@ -11,14 +11,16 @@ import {
 	scenes,
 	stories,
 	universes
-} from './db/schema';
-import { findAssetReferences, rewriteAssetReferences } from '$lib/markdown';
-import { assetConfig, s3AssetStore } from './assets';
-import { extensionFor } from './media-types';
+} from './db/schema.ts';
+import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
+import { assetConfig, s3AssetStore } from './assets.ts';
+import { extensionFor } from './media-types.ts';
 
 // Story export: a zip of markdown files with YAML front matter, in
 // chapter order, with referenced images bundled into assets/ and the
 // links rewritten. Markdown in, markdown out; nothing is trapped.
+// Runs in the worker too (artifact generation), so relative value imports
+// carry explicit .ts extensions and avoid the $lib alias.
 
 export function slugify(text: string | null, fallback: string): string {
 	const slug = (text ?? '')
@@ -72,7 +74,23 @@ export type ExportStory = {
 	descriptionMd: string | null;
 };
 
-export async function gatherStory(db: Database, story: ExportStory) {
+// The content the builders consume: a live story gathered from the database,
+// or a published edition's frozen prose converted to the same shape. Keeping
+// the builders pure over this lets both paths share them.
+export type ExportScene = {
+	// Present for live scenes; frozen editions do not carry scene ids.
+	id?: string;
+	chapterId: string | null;
+	title: string | null;
+	status?: string | null;
+	bodyMd: string;
+};
+export type StoryContent = {
+	chapters: { id: string; title: string | null }[];
+	scenes: ExportScene[];
+};
+
+export async function gatherStory(db: Database, story: ExportStory): Promise<StoryContent> {
 	const chapterList = await db
 		.select({ id: chapters.id, title: chapters.title })
 		.from(chapters)
@@ -93,11 +111,11 @@ export async function gatherStory(db: Database, story: ExportStory) {
 }
 
 export async function buildStoryZip(
-	db: Database,
 	story: ExportStory,
+	content: StoryContent,
 	loadAssets: AssetLoader
 ): Promise<{ filename: string; bytes: Uint8Array }> {
-	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
+	const { chapters: chapterList, scenes: sceneList } = content;
 
 	const referenced = [...new Set(sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd)))];
 	const loaded = await loadAssets(referenced);
