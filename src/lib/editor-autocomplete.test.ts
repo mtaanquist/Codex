@@ -3,10 +3,16 @@ import { completionCandidates, ghostMatch } from './editor-autocomplete';
 import type { MentionEntity } from './editor-mentions';
 
 const entities: MentionEntity[] = [
-	{ id: '1', name: 'Alice Vane', aliases: ['Allie', 'Mrs. Fenwick'], summaryMd: null },
-	{ id: '2', name: 'Bram', aliases: [], summaryMd: null },
-	{ id: '3', name: 'Halden', aliases: [], summaryMd: null },
-	{ id: '4', name: 'Halden Gate', aliases: [], summaryMd: null }
+	{
+		id: '1',
+		type: 'character' as const,
+		name: 'Alice Vane',
+		aliases: ['Allie', 'Mrs. Fenwick'],
+		summaryMd: null
+	},
+	{ id: '2', type: 'character' as const, name: 'Bram', aliases: [], summaryMd: null },
+	{ id: '3', type: 'place' as const, name: 'Halden', aliases: [], summaryMd: null },
+	{ id: '4', type: 'place' as const, name: 'Halden Gate', aliases: [], summaryMd: null }
 ];
 
 describe('completionCandidates', () => {
@@ -31,8 +37,8 @@ describe('completionCandidates', () => {
 
 	it('deduplicates names shared between entities', () => {
 		const twins: MentionEntity[] = [
-			{ id: 'a', name: 'Asha', aliases: [], summaryMd: null },
-			{ id: 'b', name: 'asha', aliases: [], summaryMd: null }
+			{ id: 'a', type: 'character' as const, name: 'Asha', aliases: [], summaryMd: null },
+			{ id: 'b', type: 'character' as const, name: 'asha', aliases: [], summaryMd: null }
 		];
 		expect(completionCandidates(twins, 'as')).toEqual(['Asha']);
 	});

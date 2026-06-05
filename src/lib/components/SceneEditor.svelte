@@ -8,7 +8,7 @@
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
 	import { proseExtensions, type EditingMode } from '$lib/editor';
-	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
+	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
@@ -19,8 +19,11 @@
 		title,
 		body,
 		entities = [],
+		mentionOptions = {},
 		autocompleteMode = 'popup',
 		editingMode = 'markdown',
+		spellCheck = 'off',
+		writingLanguage = '',
 		markers = [],
 		imageUniverseId,
 		compact = false,
@@ -31,8 +34,12 @@
 		title: string | null;
 		body: string;
 		entities?: MentionEntity[];
+		// Disambiguation context and the pin callback for shared names.
+		mentionOptions?: MentionOptions;
 		autocompleteMode?: AutocompleteMode;
 		editingMode?: EditingMode;
+		spellCheck?: 'on' | 'off';
+		writingLanguage?: string;
 		markers?: SceneMarker[];
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
@@ -156,6 +163,19 @@
 		view.dispatch({ effects: markersCompartment.reconfigure(markerHandle.extension) });
 	});
 
+	// Pinning a shared name changes attribution at once: the page data
+	// refresh delivers new pins, and the mentions compartment reloads.
+	// svelte-ignore state_referenced_locally
+	let appliedPins = JSON.stringify(mentionOptions.pins ?? {});
+	$effect(() => {
+		const incoming = JSON.stringify(mentionOptions.pins ?? {});
+		if (!view || incoming === appliedPins) return;
+		appliedPins = incoming;
+		view.dispatch({
+			effects: mentionsCompartment.reconfigure(mentionExtensions(entities, mentionOptions))
+		});
+	});
+
 	function scheduleSave() {
 		dirty = true;
 		clearTimeout(saveTimer);
@@ -171,9 +191,10 @@
 					...proseExtensions({
 						placeholder: 'Start writing...',
 						onDocChanged: scheduleSave,
-						editingMode
+						editingMode,
+						spellCheck: { enabled: spellCheck === 'on', language: writingLanguage }
 					}),
-					mentionsCompartment.of(mentionExtensions(entities)),
+					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
 					boundaryKeymap(),

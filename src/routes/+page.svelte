@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import UserMenu from '$lib/components/UserMenu.svelte';
+	import PaletteButton from '$lib/components/PaletteButton.svelte';
+	import { entityColor } from '$lib/entity-color';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -9,95 +12,192 @@
 	<title>Library - Codex</title>
 </svelte:head>
 
-<main>
-	<header>
-		<h1>Codex</h1>
-		<form method="POST" action="?/signout">
-			<span>{data.user.displayName}</span>
-			<a href={resolve('/account')}>Account</a>
-			<button type="submit">Sign out</button>
-		</form>
+<div class="page-shell">
+	<header class="topbar">
+		<a class="brand" href={resolve('/')}>
+			<span class="brand-name">Codex</span>
+		</a>
+		<span class="spacer"></span>
+		<PaletteButton />
+		<UserMenu />
 	</header>
 
-	<h2>Universes</h2>
-	{#if data.universes.length === 0}
-		<p>No universes yet. A universe holds the worldbuilding your stories share.</p>
-	{:else}
-		{#each data.universes as universe (universe.id)}
-			{@const universeStories = data.stories.filter((story) => story.universeId === universe.id)}
-			<section>
-				<h3>
-					<a href={resolve('/universes/[id]/plan', { id: universe.id })}>{universe.name}</a>
-					<a class="settings" href={resolve('/universes/[id]', { id: universe.id })}>Settings</a>
-				</h3>
-				{#if universeStories.length === 0}
-					<p>No stories yet.</p>
-				{:else}
-					<ul>
-						{#each universeStories as story (story.id)}
-							<li><a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a></li>
-						{/each}
-					</ul>
-				{/if}
+	<main class="library page-body">
+		<div class="lib-head">
+			<h1>Library</h1>
+			<p class="lib-sub">Your universes, and the stories inside them.</p>
+		</div>
+
+		{#if data.universes.length === 0}
+			<section class="lib-card lib-empty-card">
+				<p>No universes yet. A universe holds the worldbuilding your stories share.</p>
 			</section>
-		{/each}
-	{/if}
-
-	<form method="POST" action="?/createUniverse">
-		{#if form?.scope === 'universe' && form.message}
-			<p class="error" role="alert">{form.message}</p>
+		{:else}
+			{#each data.universes as universe (universe.id)}
+				{@const universeStories = data.stories.filter((story) => story.universeId === universe.id)}
+				<section class="lib-card">
+					<div class="lib-card-head">
+						<span class="badge sm" style="background: {entityColor(universe.name)}">
+							{universe.name.slice(0, 1).toUpperCase()}
+						</span>
+						<a class="lib-universe" href={resolve('/universes/[id]/plan', { id: universe.id })}>
+							{universe.name}
+						</a>
+						<a class="lib-settings" href={resolve('/universes/[id]', { id: universe.id })}>
+							Settings
+						</a>
+					</div>
+					{#if universeStories.length === 0}
+						<p class="lib-none">No stories yet.</p>
+					{:else}
+						<ul class="lib-stories">
+							{#each universeStories as story (story.id)}
+								<li>
+									<a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a>
+									{#if story.brief}<span class="lib-brief">{story.brief}</span>{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+			{/each}
 		{/if}
-		<label>
-			New universe
-			<input type="text" name="name" placeholder="Name" required />
-		</label>
-		<button type="submit">Create universe</button>
-	</form>
 
-	<p class="account-link">
-		Display preferences, your public handle, and account settings live on your
-		<a href={resolve('/account')}>account page</a>. New here? Read the
-		<a href={resolve('/docs')}>help</a>.
-	</p>
+		<section class="lib-card">
+			<form class="lib-new" method="POST" action="?/createUniverse">
+				{#if form?.scope === 'universe' && form.message}
+					<p class="lib-error" role="alert">{form.message}</p>
+				{/if}
+				<label class="lib-new-label" for="new-universe">New universe</label>
+				<div class="lib-new-row">
+					<input
+						id="new-universe"
+						class="input"
+						type="text"
+						name="name"
+						placeholder="Name"
+						required
+					/>
+					<button class="btn btn-primary" type="submit">Create universe</button>
+				</div>
+			</form>
+		</section>
 
-	{#if data.isAdmin}
-		<h2>Administration</h2>
-		<p><a href={resolve('/admin')}>Open the site admin panel</a></p>
-	{/if}
-</main>
+		<p class="lib-foot">
+			New here? Read the <a href={resolve('/docs')}>help</a>.
+		</p>
+	</main>
+</div>
 
 <style>
-	main {
-		max-width: 36rem;
-		margin: 4rem auto 0;
-		font-family: system-ui, sans-serif;
+	.library {
+		max-width: 680px;
+		margin: 0 auto;
+		padding: 28px 20px 60px;
+		width: 100%;
 	}
-	header {
+	.lib-head {
+		margin-bottom: 22px;
+	}
+	.lib-head h1 {
+		font-size: 24px;
+		font-weight: 650;
+		letter-spacing: -0.015em;
+		margin: 0 0 4px;
+	}
+	.lib-sub {
+		color: var(--text-muted);
+		font-size: 13.5px;
+		margin: 0;
+	}
+	.lib-card {
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		padding: 16px 18px;
+		margin-bottom: 14px;
+	}
+	.lib-empty-card p {
+		color: var(--text-muted);
+		font-size: 13.5px;
+		margin: 0;
+	}
+	.lib-card-head {
 		display: flex;
-		justify-content: space-between;
+		align-items: center;
+		gap: 10px;
+	}
+	.lib-universe {
+		font-size: 15.5px;
+		font-weight: 650;
+		letter-spacing: -0.01em;
+		color: var(--text);
+		text-decoration: none;
+	}
+	.lib-universe:hover {
+		color: var(--accent);
+	}
+	.lib-settings {
+		margin-left: auto;
+		font-size: 12.5px;
+		color: var(--text-muted);
+		text-decoration: none;
+	}
+	.lib-settings:hover {
+		color: var(--text);
+	}
+	.lib-none {
+		color: var(--text-faint);
+		font-size: 13px;
+		margin: 10px 0 0;
+	}
+	.lib-stories {
+		list-style: none;
+		margin: 10px 0 0;
+		padding: 0;
+	}
+	.lib-stories li {
+		display: flex;
 		align-items: baseline;
+		gap: 10px;
+		padding: 7px 0;
+		border-top: 1px dashed var(--border);
 	}
-	header form {
+	.lib-stories a {
+		color: var(--text);
+		font-size: 13.5px;
+		text-decoration: none;
+	}
+	.lib-stories a:hover {
+		color: var(--accent);
+	}
+	.lib-brief {
+		color: var(--text-faint);
+		font-size: 12.5px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.lib-new-label {
+		display: block;
+		font-size: 12.5px;
+		font-weight: 600;
+		margin-bottom: 7px;
+	}
+	.lib-new-row {
 		display: flex;
-		gap: 0.75rem;
-		align-items: baseline;
+		gap: 8px;
 	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin-bottom: 0.5rem;
+	.lib-new-row .input {
+		flex: 1;
 	}
-	.error {
-		color: #b00020;
+	.lib-error {
+		color: var(--danger, #b00020);
+		font-size: 13px;
+		margin: 0 0 8px;
 	}
-	h3 {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-	}
-	.settings {
-		font-size: 0.8rem;
-		font-weight: normal;
+	.lib-foot {
+		color: var(--text-muted);
+		font-size: 13px;
 	}
 </style>

@@ -46,6 +46,52 @@ describe('detectMentions', () => {
 	});
 });
 
+describe('shared names', () => {
+	const will: MentionTarget = { id: 'c1', type: 'character', names: ['Will'] };
+	const willPlace: MentionTarget = { id: 'p1', type: 'place', names: ['Will'] };
+	const willLore: MentionTarget = { id: 'l1', type: 'lore_entry', names: ['Willow', 'Will'] };
+
+	it('attributes deterministically: characters before places before lore', () => {
+		const found = detectMentions('Will waits.', [willLore, willPlace, will]);
+		expect(found).toHaveLength(1);
+		expect(found[0].targetId).toBe('c1');
+		// The full candidate set rides along, winner first.
+		expect(found[0].candidates?.map((candidate) => candidate.id)).toEqual(['c1', 'p1', 'l1']);
+	});
+
+	it('entities declared in the story outrank the rest', () => {
+		const found = detectMentions('Will waits.', [will, willPlace], {
+			storyMembers: new Set(['p1'])
+		});
+		expect(found[0].targetId).toBe('p1');
+	});
+
+	it('a primary name beats an alias at the same rank', () => {
+		const aliased: MentionTarget = { id: 'c2', type: 'character', names: ['Wren', 'Will'] };
+		const found = detectMentions('Will waits.', [aliased, will]);
+		expect(found[0].targetId).toBe('c1');
+	});
+
+	it('a pin overrides everything', () => {
+		const found = detectMentions('Will waits.', [will, willPlace, willLore], {
+			storyMembers: new Set(['c1']),
+			pins: new Map([['Will', 'l1']])
+		});
+		expect(found[0].targetId).toBe('l1');
+	});
+
+	it('an unambiguous match carries no candidate set', () => {
+		const found = detectMentions('Will waits.', [will]);
+		expect(found[0].candidates).toBeUndefined();
+	});
+
+	it('the same string as name and alias of one entity is not ambiguous', () => {
+		const doubled: MentionTarget = { id: 'c3', type: 'character', names: ['Ash', 'Ash'] };
+		const found = detectMentions('Ash falls.', [doubled]);
+		expect(found[0].candidates).toBeUndefined();
+	});
+});
+
 describe('mentionSnippet', () => {
 	it('clips around the match with ellipses only where text is cut', () => {
 		const body = 'x'.repeat(100) + 'Alice' + 'y'.repeat(100);

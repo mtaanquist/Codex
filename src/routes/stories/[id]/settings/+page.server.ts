@@ -97,6 +97,10 @@ export const actions: Actions = {
 		const mode = String(data.get('entityAutocomplete') ?? '');
 		const marks = String(data.get('continuousSceneMarks') ?? '');
 		const editing = String(data.get('editingMode') ?? '');
+		const spell = String(data.get('spellCheck') ?? '');
+		// The "browser" sentinel distinguishes an explicit follow-the-browser
+		// override from inheriting the account language.
+		const languageRaw = String(data.get('writingLanguage') ?? '');
 		// An empty value clears the override, so the account setting applies.
 		if (mode !== '' && mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { action: 'prefs', message: 'Pick an autocomplete option.' });
@@ -107,10 +111,15 @@ export const actions: Actions = {
 		if (editing !== '' && editing !== 'markdown' && editing !== 'rich') {
 			return fail(400, { action: 'prefs', message: 'Pick an editing mode.' });
 		}
+		if (spell !== '' && spell !== 'on' && spell !== 'off') {
+			return fail(400, { action: 'prefs', message: 'Pick a spell-check option.' });
+		}
 		await saveStoryPreferences(db, story.id, {
 			entityAutocomplete: mode || null,
 			continuousSceneMarks: marks || null,
-			editingMode: editing || null
+			editingMode: editing || null,
+			spellCheck: spell || null,
+			writingLanguage: languageRaw === '' ? null : languageRaw === 'browser' ? '' : languageRaw
 		});
 		return { action: 'prefs', saved: true };
 	},

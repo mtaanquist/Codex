@@ -1,9 +1,10 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, loreEntries, places } from './db/schema';
+import { characters, loreEntries, places } from './db/schema.ts';
 
-// Lookups shared by the relationship and revision modules, split out so
-// neither has to import the other.
+// Lookups shared by the relationship, revision, and mention-pin modules,
+// split out so none has to import the others. The mention-pin path runs in
+// the worker, so the value import above carries its explicit .ts extension.
 
 export type EntityType = 'character' | 'place' | 'lore_entry';
 

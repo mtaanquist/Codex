@@ -7,37 +7,60 @@ import {
 	type ViewUpdate
 } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
-import { detectMentions, type MentionTarget } from './mention-detect';
+import { detectMentions, type MentionContext, type MentionTarget } from './mention-detect';
 
 export type MentionEntity = {
 	id: string;
+	type: MentionTarget['type'];
 	name: string;
 	aliases: string[];
 	summaryMd: string | null;
 	details?: { label: string; value: string }[];
 };
 
+export type MentionOptions = {
+	// Entities declared in the story, outranking the rest on shared names.
+	storyMembers?: string[];
+	// The story's pins: matched text -> entity id.
+	pins?: Record<string, string>;
+	// Called when the author picks which entity an ambiguous name means.
+	onPin?: (name: string, target: { type: MentionTarget['type']; id: string }) => void;
+};
+
 // The tooltip shows the first few quick details; the rest live on the
 // entity's page. Order is the author's, so the top ones are theirs to pick.
 const TOOLTIP_DETAILS = 3;
 
+const TYPE_LABELS: Record<MentionTarget['type'], string> = {
+	character: 'character',
+	place: 'place',
+	lore_entry: 'lore'
+};
+
 // Live underlines and hover tooltips for known entities. Lives in the scene
-// editor's mentions compartment, so the future "Underline known entities"
-// setting can reconfigure it at runtime.
-export function mentionExtensions(entities: MentionEntity[]): Extension {
+// editor's mentions compartment, so pin changes can reconfigure it at
+// runtime.
+export function mentionExtensions(
+	entities: MentionEntity[],
+	options: MentionOptions = {}
+): Extension {
 	const targets: MentionTarget[] = entities.map((entity) => ({
 		id: entity.id,
-		type: 'character',
+		type: entity.type,
 		names: [entity.name, ...entity.aliases]
 	}));
 	const byId = new Map(entities.map((entity) => [entity.id, entity]));
+	const context: MentionContext = {
+		storyMembers: new Set(options.storyMembers ?? []),
+		pins: new Map(Object.entries(options.pins ?? {}))
+	};
 
 	function compute(view: EditorView): DecorationSet {
-		const matches = detectMentions(view.state.doc.toString(), targets);
+		const matches = detectMentions(view.state.doc.toString(), targets, context);
 		return Decoration.set(
 			matches.map((match) =>
 				Decoration.mark({
-					class: 'ref-word',
+					class: match.candidates ? 'ref-word ref-ambiguous' : 'ref-word',
 					attributes: { 'data-entity': match.targetId }
 				}).range(match.position, match.position + match.length)
 			),
@@ -59,15 +82,29 @@ export function mentionExtensions(entities: MentionEntity[]): Extension {
 	);
 
 	const tooltips = hoverTooltip((view, pos) => {
-		const match = detectMentions(view.state.doc.toString(), targets).find(
-			(candidate) => pos >= candidate.position && pos <= candidate.position + candidate.length
-		);
+		// Reads the underline plugin's decorations instead of re-running
+		// detection over the whole document on every hover.
+		const plugin = view.plugin(underlines);
+		if (!plugin) return null;
+		let match: { from: number; to: number; targetId: string } | undefined;
+		plugin.decorations.between(pos, pos, (from, to, decoration) => {
+			match = { from, to, targetId: decoration.spec.attributes?.['data-entity'] ?? '' };
+			return false;
+		});
 		if (!match) return null;
 		const entity = byId.get(match.targetId);
 		if (!entity) return null;
+		const text = view.state.sliceDoc(match.from, match.to);
+		// The same string on another entity makes the mention ambiguous; the
+		// tooltip offers the alternatives.
+		const others = entities.filter(
+			(candidate) =>
+				candidate.id !== entity.id && (candidate.name === text || candidate.aliases.includes(text))
+		);
+		const { from, to } = match;
 		return {
-			pos: match.position,
-			end: match.position + match.length,
+			pos: from,
+			end: to,
 			above: true,
 			create: () => {
 				const dom = document.createElement('div');
@@ -100,6 +137,25 @@ export function mentionExtensions(entities: MentionEntity[]): Extension {
 						grid.appendChild(row);
 					}
 					dom.appendChild(grid);
+				}
+				if (others.length > 0 && options.onPin) {
+					const section = document.createElement('div');
+					section.className = 'entity-tip-ambiguous';
+					const heading = document.createElement('div');
+					heading.className = 'entity-tip-ambiguous-label';
+					heading.textContent = `"${text}" also matches`;
+					section.appendChild(heading);
+					for (const other of others) {
+						const pick = document.createElement('button');
+						pick.type = 'button';
+						pick.className = 'entity-tip-pick';
+						pick.textContent = `${other.name} (${TYPE_LABELS[other.type]}) - use here`;
+						pick.addEventListener('click', () => {
+							options.onPin?.(text, { type: other.type, id: other.id });
+						});
+						section.appendChild(pick);
+					}
+					dom.appendChild(section);
 				}
 				return { dom };
 			}

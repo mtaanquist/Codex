@@ -239,6 +239,13 @@
 			"when": 1780660236222,
 			"tag": "0033_page-setup",
 			"breakpoints": true
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1780672235990,
+			"tag": "0034_mention-pins",
+			"breakpoints": true
 		}
 	]
 }

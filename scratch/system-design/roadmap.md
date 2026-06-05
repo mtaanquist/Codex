@@ -114,6 +114,8 @@ The admin, durability, and access work: anything that hardens the shared instanc
 
 ### Phase 7 - Writing and planning
 
+> Shipped 2026-06-05 as v2.10.0 through v2.13.0; every candidate below landed (rich editing as CodeMirror live-preview, page setup with account defaults + per-story overrides, mention disambiguation as deterministic attribution + per-story pins).
+
 Make the core writing and planning experience better, not just bigger. The thing authors touch every day.
 
 - **Entity quick details and full-fidelity entity history.** Two paired changes the author asked for on 2026-06-04 after real use of the Plan view; do them together. (1) Quick details: freeform key/value attributes (Status, Allegiance, Age, and so on) on characters, places, and lore, stored in an additive `jsonb` column, shown as the design's Details grid and surfaced in the hover popover. (2) Full-snapshot entity revisions: today a `revisions` row stores only the body markdown, so changing aliases, summary, category, or relationships records no History entry (the alias save dedupes on the unchanged body; relationships save through their own endpoint), and Restore only returns the body. Widen an entity revision to snapshot the structured fields too - the new jsonb details, aliases/keywords, summary, category, and the relationship set - so every change registers in History and Restore returns the whole entity. Relationships are a separate many-to-many table, so the snapshot serialises them rather than versioning those rows in place. The jsonb details column is part of what the snapshot must capture, which is why the two travel together.
