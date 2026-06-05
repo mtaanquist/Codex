@@ -128,6 +128,8 @@ Make the core writing and planning experience better, not just bigger. The thing
 
 ### Phase 8 - Overviews and visualization
 
+> Shipped 2026-06-05 as v2.14.0 through v2.16.0: the universe Insights view (entity heatmap + progress dashboard), the scene cards board with status lanes, and the relationship web, plus an author-requested editor selection menu (right-click a selection for quick formatting or create-an-entity-in-place). The timeline view stays parked on the world-calendar design and plotlines/arcs on usage evidence, per the criteria below.
+
 New surfaces that render existing data back to the author: where the world and the work-in-progress become legible at a glance.
 
 - **Entity heatmap at universe scope.** Derived from existing mention and revision data. Shows which entities are central vs forgotten, which parts of the world are under-developed. Nearly free, uses data the tool already has.
