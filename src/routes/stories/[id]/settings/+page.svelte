@@ -82,7 +82,7 @@
 			<span class="brand-name">Codex</span>
 		</a>
 		<span class="divider"></span>
-		<a class="back-link" href={resolve('/stories/[id]', { id: data.story.id })}>
+		<a class="back-link" href={resolve('/stories/[id]', { id: data.story.slug })}>
 			<svg
 				viewBox="0 0 12 12"
 				fill="none"
@@ -145,6 +145,22 @@
 									value={data.story.title}
 									required
 								/>
+							</div>
+							<div class="field">
+								<label for="st-slug">Slug</label>
+								<input
+									id="st-slug"
+									class="input"
+									type="text"
+									name="slug"
+									value={data.story.slug}
+									required
+									spellcheck="false"
+								/>
+								<span class="field-hint">
+									The story's web address: /stories/{data.story.slug}. Lowercase letters, numbers,
+									and hyphens. Changing it moves the address; the old one stops working.
+								</span>
 							</div>
 							<div class="field">
 								<label for="st-author">Author</label>
@@ -680,7 +696,7 @@
 							is needed.
 							{#if data.reviewInvitations.length > 0}
 								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (app path with a suffix) -->
-								<a href={`${resolve('/stories/[id]', { id: data.story.id })}/review`}
+								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/review`}
 									>See the feedback</a
 								>.
 							{/if}
@@ -771,18 +787,19 @@
 						<ul class="exports">
 							<!-- eslint-disable svelte/no-navigation-without-resolve (file downloads and the print view) -->
 							<li>
-								<a href={`${resolve('/stories/[id]', { id: data.story.id })}/export`} download>
+								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/export`} download>
 									Markdown (.zip)
 								</a>
 								- every scene as a markdown file, images bundled
 							</li>
 							<li>
-								<a href={`${resolve('/stories/[id]', { id: data.story.id })}/epub`} download>EPUB</a
+								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/epub`} download
+									>EPUB</a
 								>
 								- for e-readers
 							</li>
 							<li>
-								<a href={`${resolve('/stories/[id]', { id: data.story.id })}/print`}>PDF</a>
+								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/print`}>PDF</a>
 								- opens a print view; choose "Save as PDF" in the print dialog
 							</li>
 							<!-- eslint-enable svelte/no-navigation-without-resolve -->

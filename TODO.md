@@ -198,6 +198,14 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
       system via a shared AuthShell card; labels and actions unchanged so
       the auth e2e flows held. Shipped as v2.17.0.
 
+- [x] Universe settings restyle + URL slugs (author requests, 2026-06-05):
+      /universes/[id] joins the admin-shell (the last bare page), and
+      universes + stories get per-account slugs (migration 0035, backfilled)
+      so URLs read /universes/ardenfall; generated from the name at
+      creation, fixed until edited in settings, ids resolve forever. All
+      nav surfaces emit slugs; fixed three stale local copies of ownedStory
+      the slug work surfaced. Shipped as v2.18.0 (#141, #142).
+
 > Phase 8 complete (2026-06-05), shipped as v2.14.0 (Insights: heatmap +
 > progress dashboard), v2.15.0 (scene cards board), and v2.16.0
 > (relationship web + editor selection menu). The timeline view stays

@@ -1,8 +1,7 @@
-import { error, fail } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { fail } from '@sveltejs/kit';
+import { ownedStory } from '$lib/server/story-access';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { stories } from '$lib/server/db/schema';
 import {
 	addComment,
 	decideSuggestion,
@@ -19,20 +18,11 @@ import { queueSceneMentions } from '$lib/server/jobs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function ownedStory(storyId: string, userId: string) {
-	const [story] = await db
-		.select()
-		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
-	if (!story) error(404, 'Story not found');
-	return story;
-}
-
 export const load: PageServerLoad = async ({ params, locals }) => {
-	const story = await ownedStory(params.id, locals.user!.id);
+	const { story } = await ownedStory(params.id, locals.user!.id);
 	const content = await gatherStory(db, story);
 	return {
-		story: { id: story.id, title: story.title, universeId: story.universeId },
+		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		chapters: content.chapters,
 		scenes: content.scenes.map((scene) => ({
 			id: scene.id!,
@@ -47,7 +37,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 export const actions: Actions = {
 	reply: async ({ params, request, locals }) => {
-		const story = await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
 		if (!UUID.test(threadId)) return fail(400, { message: 'That thread does not exist.' });

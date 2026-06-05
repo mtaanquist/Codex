@@ -1,0 +1,34 @@
+import { expect, test } from '@playwright/test';
+
+// Readable URLs: universes and stories get slugs generated from their
+// names, and the slug is editable in settings.
+test('slugs: created things get readable addresses, editable in settings', async ({ page }) => {
+	await page.goto('/login');
+	await page.getByLabel('Email').fill('e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+	await expect(page).toHaveURL('/');
+
+	// The universe lands on a slugged address derived from its name.
+	const stamp = Date.now();
+	await page.getByLabel('New universe').fill(`Slugfall ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page).toHaveURL(`/universes/slugfall-${stamp}`);
+
+	// So does the story.
+	await page.getByLabel('New story').fill(`Toll Road ${stamp}`);
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page).toHaveURL(`/stories/toll-road-${stamp}`);
+
+	// Editing the slug in settings moves the address.
+	await page.goto(`/stories/toll-road-${stamp}/settings`);
+	await page.getByLabel('Slug').fill(`toll-${stamp}`);
+	await page.locator('#details').getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page).toHaveURL(`/stories/toll-${stamp}/settings`);
+
+	// The old slug is gone; the new one carries the story.
+	const stale = await page.goto(`/stories/toll-road-${stamp}`);
+	expect(stale!.status()).toBe(404);
+	await page.goto(`/stories/toll-${stamp}`);
+	await expect(page.locator('.story-title')).toHaveText(`Toll Road ${stamp}`);
+});

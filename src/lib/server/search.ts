@@ -30,14 +30,19 @@ export async function searchAll(
 	const like = pattern(trimmed);
 
 	const universeRows = await db
-		.select({ id: universes.id, name: universes.name })
+		.select({ id: universes.id, slug: universes.slug, name: universes.name })
 		.from(universes)
 		.where(and(eq(universes.ownerId, userId), ilike(universes.name, like)))
 		.orderBy(asc(universes.name))
 		.limit(PER_TYPE);
 
 	const storyRows = await db
-		.select({ id: stories.id, title: stories.title, universeName: universes.name })
+		.select({
+			id: stories.id,
+			slug: stories.slug,
+			title: stories.title,
+			universeName: universes.name
+		})
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
 		.where(and(eq(stories.ownerId, userId), ilike(stories.title, like)))
@@ -45,7 +50,12 @@ export async function searchAll(
 		.limit(PER_TYPE);
 
 	const sceneRows = await db
-		.select({ id: scenes.id, title: scenes.title, storyId: stories.id, storyTitle: stories.title })
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			storySlug: stories.slug,
+			storyTitle: stories.title
+		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(and(eq(stories.ownerId, userId), ilike(scenes.title, like)))
@@ -56,7 +66,7 @@ export async function searchAll(
 		.select({
 			id: characters.id,
 			name: characters.name,
-			universeId: characters.universeId,
+			universeSlug: universes.slug,
 			universeName: universes.name
 		})
 		.from(characters)
@@ -77,7 +87,7 @@ export async function searchAll(
 		.select({
 			id: places.id,
 			name: places.name,
-			universeId: places.universeId,
+			universeSlug: universes.slug,
 			universeName: universes.name
 		})
 		.from(places)
@@ -90,7 +100,7 @@ export async function searchAll(
 		.select({
 			id: loreEntries.id,
 			title: loreEntries.title,
-			universeId: loreEntries.universeId,
+			universeSlug: universes.slug,
 			universeName: universes.name
 		})
 		.from(loreEntries)
@@ -113,7 +123,7 @@ export async function searchAll(
 				type: 'story',
 				label: row.title,
 				sublabel: row.universeName,
-				href: `/stories/${row.id}`
+				href: `/stories/${row.slug}`
 			})
 		),
 		...sceneRows.map(
@@ -121,7 +131,7 @@ export async function searchAll(
 				type: 'scene',
 				label: row.title ?? 'Untitled scene',
 				sublabel: row.storyTitle,
-				href: `/stories/${row.storyId}?scene=${row.id}`
+				href: `/stories/${row.storySlug}?scene=${row.id}`
 			})
 		),
 		...universeRows.map(
@@ -129,7 +139,7 @@ export async function searchAll(
 				type: 'universe',
 				label: row.name,
 				sublabel: null,
-				href: `/universes/${row.id}/plan`
+				href: `/universes/${row.slug}/plan`
 			})
 		),
 		...characterRows.map(
@@ -137,7 +147,7 @@ export async function searchAll(
 				type: 'character',
 				label: row.name,
 				sublabel: row.universeName,
-				href: `/universes/${row.universeId}/plan?entity=${row.id}`
+				href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
 			})
 		),
 		...placeRows.map(
@@ -145,7 +155,7 @@ export async function searchAll(
 				type: 'place',
 				label: row.name,
 				sublabel: row.universeName,
-				href: `/universes/${row.universeId}/plan?entity=${row.id}`
+				href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
 			})
 		),
 		...loreRows.map(
@@ -153,7 +163,7 @@ export async function searchAll(
 				type: 'lore',
 				label: row.title,
 				sublabel: row.universeName,
-				href: `/universes/${row.universeId}/plan?entity=${row.id}`
+				href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
 			})
 		)
 	];

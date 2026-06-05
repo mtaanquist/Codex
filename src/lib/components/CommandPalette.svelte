@@ -63,8 +63,8 @@
 	const commands = $derived.by((): Item[] => {
 		const path = page.url.pathname;
 		const list: Item[] = [];
-		const storyMatch = path.match(/^\/stories\/([0-9a-f-]{36})/);
-		const universeMatch = path.match(/^\/universes\/([0-9a-f-]{36})/);
+		const storyMatch = path.match(/^\/stories\/([^/]+)/);
+		const universeMatch = path.match(/^\/universes\/([^/]+)/);
 		if (storyMatch) {
 			const storyId = storyMatch[1];
 			list.push(

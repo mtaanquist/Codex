@@ -21,7 +21,7 @@
 		saveStatus = 'idle';
 	});
 
-	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.id }));
+	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.slug }));
 
 	// Right column tabs; History holds the open item's timeline.
 	let rightTab = $state<'reference' | 'history'>('reference');
@@ -95,8 +95,8 @@
 
 <div class="app">
 	<TopBar
-		universe={{ id: data.universe.id, name: data.universe.name }}
-		story={{ id: data.story.id, title: data.story.title }}
+		universe={{ slug: data.universe.slug, name: data.universe.name }}
+		story={{ slug: data.story.slug, title: data.story.title }}
 		{saveStatus}
 		help={{ topic: 'planning', label: 'the planning view' }}
 	/>
@@ -108,7 +108,7 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
-			writeHref={resolve('/stories/[id]', { id: data.story.id })}
+			writeHref={resolve('/stories/[id]', { id: data.story.slug })}
 			{form}
 			availableCharacters={data.availableCharacters}
 			availablePlaces={data.availablePlaces}
@@ -193,7 +193,7 @@
 				{#key data.selectedNode.id}
 					<OutlineNodeEditor
 						node={data.selectedNode}
-						storyId={data.story.id}
+						storySlug={data.story.slug}
 						chapters={data.chapters}
 						scenes={data.scenes}
 						onStatus={(status) => (saveStatus = status)}
@@ -229,7 +229,7 @@
 					chapters={data.chapters}
 					todoCounts={data.todoCounts}
 					sceneHref={(sceneId) =>
-						`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneId}`}
+						`${resolve('/stories/[id]', { id: data.story.slug })}?scene=${sceneId}`}
 					onMove={async (sceneId, status) => {
 						await fetch(`/api/scenes/${sceneId}`, {
 							method: 'PATCH',
@@ -306,7 +306,7 @@
 								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 								<a
 									class="r-line"
-									href={`${resolve('/stories/[id]', { id: data.story.id })}?scene=${sceneRef.sceneId}`}
+									href={`${resolve('/stories/[id]', { id: data.story.slug })}?scene=${sceneRef.sceneId}`}
 								>
 									<span class="r-line-left">
 										<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>

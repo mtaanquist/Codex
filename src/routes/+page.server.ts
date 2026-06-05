@@ -3,6 +3,7 @@ import { asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
+import { uniqueSlug } from '$lib/server/slugs';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page; no data to load for it.
@@ -21,6 +22,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			: await db
 					.select({
 						id: stories.id,
+						slug: stories.slug,
 						title: stories.title,
 						brief: stories.brief,
 						universeId: stories.universeId
@@ -51,10 +53,11 @@ export const actions: Actions = {
 		if (!name) {
 			return fail(400, { scope: 'universe', message: 'Give the universe a name.' });
 		}
+		const slug = await uniqueSlug(db, 'universes', locals.user.id, name, 'universe');
 		const universe = await db.transaction(async (tx) => {
 			const [row] = await tx
 				.insert(universes)
-				.values({ ownerId: locals.user!.id, name })
+				.values({ ownerId: locals.user!.id, name, slug })
 				.returning();
 			// Every universe starts with one lore category; users rename and
 			// extend from there.
@@ -66,6 +69,6 @@ export const actions: Actions = {
 			});
 			return row;
 		});
-		redirect(303, `/universes/${universe.id}`);
+		redirect(303, `/universes/${universe.slug}`);
 	}
 };
