@@ -7,7 +7,8 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page).toHaveURL('/');
 
-	await page.getByRole('link', { name: 'Account', exact: true }).click();
+	await page.getByLabel('Account menu').click();
+	await page.getByRole('menuitem', { name: 'Account settings' }).click();
 	await expect(page).toHaveURL('/account');
 	// The sidebar shows who is signed in.
 	await expect(page.getByRole('complementary').getByText('e2e@example.com')).toBeVisible();
