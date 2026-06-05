@@ -1,8 +1,8 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { stories, universes } from '$lib/server/db/schema';
+import { stories } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
 import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 import { publishStory } from '$lib/server/publish';
@@ -22,16 +22,9 @@ import {
 } from '$lib/server/preferences';
 import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib/server/page-setup';
 import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
-
-async function ownedStory(storyId: string, userId: string) {
-	const [row] = await db
-		.select({ story: stories, universe: universes })
-		.from(stories)
-		.innerJoin(universes, eq(stories.universeId, universes.id))
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
-	if (!row) error(404, 'Story not found');
-	return row;
-}
+import { ownedStory } from '$lib/server/story-access';
+import { slugTaken } from '$lib/server/slugs';
+import { isValidSlug } from '$lib/slug';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {
@@ -79,16 +72,28 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const title = String(data.get('title') ?? '').trim();
+		const slug = String(data.get('slug') ?? '').trim();
 		const author = String(data.get('author') ?? '').trim() || null;
 		const brief = String(data.get('brief') ?? '').trim() || null;
 		const descriptionMd = String(data.get('description') ?? '').trim() || null;
 		if (!title) {
 			return fail(400, { action: 'update', message: 'The story needs a title.' });
 		}
+		if (!isValidSlug(slug)) {
+			return fail(400, {
+				action: 'update',
+				message: 'The slug can only use lowercase letters, numbers, and hyphens.'
+			});
+		}
+		if (slug !== story.slug && (await slugTaken(db, 'stories', locals.user!.id, slug, story.id))) {
+			return fail(400, { action: 'update', message: 'Another story already uses that slug.' });
+		}
 		await db
 			.update(stories)
-			.set({ title, author, brief, descriptionMd })
+			.set({ title, slug, author, brief, descriptionMd })
 			.where(eq(stories.id, story.id));
+		// A changed slug moves this page's own URL.
+		if (slug !== story.slug) redirect(303, `/stories/${slug}/settings`);
 		return { action: 'update', saved: true };
 	},
 	savePreferences: async ({ request, params, locals }) => {
@@ -269,10 +274,10 @@ export const actions: Actions = {
 		return { action: 'cover', saved: true };
 	},
 	delete: async ({ params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
+		const { story, universe } = await ownedStory(params.id, locals.user!.id);
 		// Clears every story-scoped row first; a plain delete 500s on the FKs
 		// the moment the story has any content or a published edition.
 		await deleteStory(db, story.id, locals.user!.id);
-		redirect(303, `/universes/${story.universeId}`);
+		redirect(303, `/universes/${universe.slug}`);
 	}
 };

@@ -6,12 +6,12 @@ import { assetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import {
 	bucketAssetLoader,
 	buildStoryZip,
-	slugify,
 	type AssetLoader,
 	type ExportAsset,
 	type ExportStory,
 	type StoryContent
 } from './export.ts';
+import { slugify } from '../slug.ts';
 import { buildEpub } from './epub.ts';
 import type { EditionContent } from './publish.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';

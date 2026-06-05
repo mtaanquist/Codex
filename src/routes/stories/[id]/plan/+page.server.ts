@@ -243,7 +243,7 @@ export const actions: Actions = {
 		if (!result.ok) {
 			return fail(400, { kind: 'member', message: result.reason });
 		}
-		redirect(303, `/stories/${story.id}/plan?entity=${entityId}`);
+		redirect(303, `/stories/${story.slug}/plan?entity=${entityId}`);
 	},
 	createOutlineNode: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
@@ -253,6 +253,6 @@ export const actions: Actions = {
 			return fail(400, { kind: 'outline', message: 'Give the node a title.' });
 		}
 		const node = await createOutlineNode(db, story.id, title);
-		redirect(303, `/stories/${story.id}/plan?node=${node.id}`);
+		redirect(303, `/stories/${story.slug}/plan?node=${node.id}`);
 	}
 };

@@ -28,7 +28,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await page.locator('.cm-content').click();
 	await page.keyboard.type('The reviewer will have opinions about this gate.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
-	const storyId = page.url().match(/stories\/([0-9a-f-]{36})/)![1];
+	const storyId = page.url().match(/stories\/([^/?]+)/)![1];
 
 	// Create the review link in settings; it is shown once.
 	await page.goto(`/stories/${storyId}/settings`);

@@ -97,58 +97,78 @@ export const sessions = pgTable('sessions', {
 	ip: inet('ip')
 });
 
-export const universes = pgTable('universes', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	ownerId: uuid('owner_id')
-		.references(() => users.id)
-		.notNull(),
-	name: text('name').notNull(),
-	descriptionMd: text('description_md'),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const universes = pgTable(
+	'universes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		name: text('name').notNull(),
+		// URL slug, unique within the owner's account. Generated from the name
+		// at creation; renames leave it alone, editable in settings. Routes
+		// accept the id too, so old links never break. The random default only
+		// backstops direct inserts; the app always supplies a real slug.
+		slug: text('slug')
+			.notNull()
+			.default(sql`substr(md5(random()::text), 1, 12)`),
+		descriptionMd: text('description_md'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [uniqueIndex('universes_owner_slug_idx').on(table.ownerId, table.slug)]
+);
 
-export const stories = pgTable('stories', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	universeId: uuid('universe_id')
-		.references(() => universes.id)
-		.notNull(),
-	ownerId: uuid('owner_id')
-		.references(() => users.id)
-		.notNull(),
-	title: text('title').notNull(),
-	// Pen name shown on covers and public pages; defaults to the owner's
-	// display name at render time when null.
-	author: text('author'),
-	brief: text('brief'),
-	descriptionMd: text('description_md'),
-	// Null if standalone or unordered.
-	positionInSeries: integer('position_in_series'),
-	visibility: text('visibility', { enum: ['private', 'unlisted', 'public'] })
-		.notNull()
-		.default('private'),
-	// Author-flagged adult content; readers avoid it by default.
-	isAdult: boolean('is_adult').notNull().default(false),
-	// References assets(id) once that table exists (phase 4); null renders a
-	// default cover from title and author.
-	coverAssetId: uuid('cover_asset_id'),
-	// Reserved for future LLM integration; inert in v1.
-	llmConfig: jsonb('llm_config').notNull().default({}),
-	// Per-story overrides of the owner's editor preferences; keys absent
-	// here fall back to users.preferences at load time.
-	preferences: jsonb('preferences').notNull().default({}),
-	// Per-story overrides of the owner's print/PDF page setup; keys absent
-	// here fall back to users.page_setup at render time.
-	pageSetup: jsonb('page_setup').notNull().default({}),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const stories = pgTable(
+	'stories',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		universeId: uuid('universe_id')
+			.references(() => universes.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		title: text('title').notNull(),
+		// URL slug, unique within the owner's account; same rules as
+		// universes.slug.
+		slug: text('slug')
+			.notNull()
+			.default(sql`substr(md5(random()::text), 1, 12)`),
+		// Pen name shown on covers and public pages; defaults to the owner's
+		// display name at render time when null.
+		author: text('author'),
+		brief: text('brief'),
+		descriptionMd: text('description_md'),
+		// Null if standalone or unordered.
+		positionInSeries: integer('position_in_series'),
+		visibility: text('visibility', { enum: ['private', 'unlisted', 'public'] })
+			.notNull()
+			.default('private'),
+		// Author-flagged adult content; readers avoid it by default.
+		isAdult: boolean('is_adult').notNull().default(false),
+		// References assets(id) once that table exists (phase 4); null renders a
+		// default cover from title and author.
+		coverAssetId: uuid('cover_asset_id'),
+		// Reserved for future LLM integration; inert in v1.
+		llmConfig: jsonb('llm_config').notNull().default({}),
+		// Per-story overrides of the owner's editor preferences; keys absent
+		// here fall back to users.preferences at load time.
+		preferences: jsonb('preferences').notNull().default({}),
+		// Per-story overrides of the owner's print/PDF page setup; keys absent
+		// here fall back to users.page_setup at render time.
+		pageSetup: jsonb('page_setup').notNull().default({}),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [uniqueIndex('stories_owner_slug_idx').on(table.ownerId, table.slug)]
+);
 
 // Chapters are organisational only; prose lives on scenes.
 export const chapters = pgTable('chapters', {

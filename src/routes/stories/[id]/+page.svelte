@@ -66,7 +66,7 @@
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
 	const viewStory = $derived(data.view === 'story');
-	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.id }));
+	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.slug }));
 
 	// Entering the story view carries the open scene along; leaving it returns
 	// there.
@@ -195,8 +195,8 @@
 
 <div class="app" class:focus-mode={focus}>
 	<TopBar
-		universe={{ id: data.universe.id, name: data.universe.name }}
-		story={{ id: data.story.id, title: data.story.title }}
+		universe={{ slug: data.universe.slug, name: data.universe.name }}
+		story={{ slug: data.story.slug, title: data.story.title }}
 		onEnterFocus={() => (focus = true)}
 		{saveStatus}
 		storyView={{ active: viewStory, toggleHref }}
@@ -207,7 +207,7 @@
 			<div class="left-head">
 				<div class="seg full">
 					<button class="seg-btn active" type="button">Write</button>
-					<a class="seg-btn seg-link" href={resolve('/stories/[id]/plan', { id: data.story.id })}>
+					<a class="seg-btn seg-link" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>
 						Plan
 					</a>
 					<button class="seg-btn" type="button" disabled>Notes</button>
@@ -511,7 +511,7 @@
 								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 								<a
 									class="r-line"
-									href={`${resolve('/stories/[id]/plan', { id: data.story.id })}?entity=${entity.id}`}
+									href={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${entity.id}`}
 								>
 									<span class="r-line-left">
 										<span class="badge dot" style="background: {entityColor(entity.name)}">

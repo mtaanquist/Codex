@@ -22,7 +22,7 @@ test('rich editing: toolbar formats, story override hides the marks', async ({ p
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page).toHaveURL(/scene=/);
-	const storyId = page.url().match(/stories\/([0-9a-f-]{36})/)![1];
+	const storyId = page.url().match(/stories\/([^/?]+)/)![1];
 	const editorUrl = page.url();
 
 	// Spell-check is on by default, following the browser's language.

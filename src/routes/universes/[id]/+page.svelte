@@ -27,7 +27,7 @@
 			<span class="brand-name">Codex</span>
 		</a>
 		<span class="divider"></span>
-		<a class="back-link" href={resolve('/universes/[id]/plan', { id: data.universe.id })}>
+		<a class="back-link" href={resolve('/universes/[id]/plan', { id: data.universe.slug })}>
 			<svg
 				viewBox="0 0 12 12"
 				fill="none"
@@ -94,6 +94,22 @@
 							/>
 						</div>
 						<div class="field">
+							<label for="u-slug">Slug</label>
+							<input
+								id="u-slug"
+								class="input"
+								type="text"
+								name="slug"
+								value={data.universe.slug}
+								required
+								spellcheck="false"
+							/>
+							<span class="field-hint">
+								The universe's web address: /universes/{data.universe.slug}. Lowercase letters,
+								numbers, and hyphens. Changing it moves the address; the old one stops working.
+							</span>
+						</div>
+						<div class="field">
 							<label for="u-description">Description</label>
 							<textarea id="u-description" class="input" name="description" rows="4"
 								>{data.universe.descriptionMd ?? ''}</textarea
@@ -116,7 +132,7 @@
 						<ul class="story-list">
 							{#each data.stories as story (story.id)}
 								<li>
-									<a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a>
+									<a href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a>
 									{#if story.brief}<span class="story-brief">{story.brief}</span>{/if}
 								</li>
 							{/each}

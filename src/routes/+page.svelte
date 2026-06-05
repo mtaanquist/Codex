@@ -50,10 +50,10 @@
 							<span class="badge sm" style="background: {entityColor(universe.name)}">
 								{universe.name.slice(0, 1).toUpperCase()}
 							</span>
-							<a class="lib-universe" href={resolve('/universes/[id]/plan', { id: universe.id })}>
+							<a class="lib-universe" href={resolve('/universes/[id]/plan', { id: universe.slug })}>
 								{universe.name}
 							</a>
-							<a class="lib-settings" href={resolve('/universes/[id]', { id: universe.id })}>
+							<a class="lib-settings" href={resolve('/universes/[id]', { id: universe.slug })}>
 								Settings
 							</a>
 						</div>
@@ -63,7 +63,7 @@
 							<ul class="lib-stories">
 								{#each universeStories as story (story.id)}
 									<li>
-										<a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a>
+										<a href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a>
 										{#if story.brief}<span class="lib-brief">{story.brief}</span>{/if}
 									</li>
 								{/each}

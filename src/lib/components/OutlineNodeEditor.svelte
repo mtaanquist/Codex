@@ -8,7 +8,7 @@
 
 	let {
 		node,
-		storyId,
+		storySlug,
 		chapters = [],
 		scenes = [],
 		onStatus,
@@ -21,7 +21,7 @@
 			linkedSceneId: string | null;
 			linkedChapterId: string | null;
 		};
-		storyId: string;
+		storySlug: string;
 		chapters?: { id: string; title: string | null }[];
 		scenes?: { id: string; title: string | null }[];
 		onStatus: (status: SaveStatus) => void;
@@ -149,7 +149,7 @@
 		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 		<a
 			class="open-link"
-			href={`${resolve('/stories/[id]', { id: storyId })}?scene=${linkedSceneId}`}
+			href={`${resolve('/stories/[id]', { id: storySlug })}?scene=${linkedSceneId}`}
 		>
 			Open the linked scene
 		</a>

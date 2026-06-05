@@ -41,11 +41,11 @@ beforeAll(async () => {
 
 	const [universe] = await db
 		.insert(universes)
-		.values({ ownerId, name: 'The Ashlands' })
+		.values({ ownerId, name: 'The Ashlands', slug: 'the-ashlands' })
 		.returning();
 	const [story] = await db
 		.insert(stories)
-		.values({ universeId: universe.id, ownerId, title: 'Book of Ash' })
+		.values({ universeId: universe.id, ownerId, title: 'Book of Ash', slug: 'book-of-ash' })
 		.returning();
 	await db
 		.insert(scenes)
@@ -87,7 +87,8 @@ describe('searchAll', () => {
 		const results = await searchAll(db, ownerId, 'toll');
 		expect(results).toHaveLength(1);
 		expect(results[0].type).toBe('scene');
-		expect(results[0].href).toMatch(/^\/stories\/[0-9a-f-]{36}\?scene=[0-9a-f-]{36}$/);
+		// Search links carry the story slug; the scene stays a query id.
+		expect(results[0].href).toMatch(/^\/stories\/book-of-ash\?scene=[0-9a-f-]{36}$/);
 		expect(results[0].sublabel).toBe('Book of Ash');
 	});
 
