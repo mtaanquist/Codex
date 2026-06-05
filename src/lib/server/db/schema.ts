@@ -772,6 +772,100 @@ export const totpRecoveryCodes = pgTable(
 	(table) => [index('totp_recovery_codes_user_idx').on(table.userId)]
 );
 
+// Guest review: an author invites someone to review one story by magic link.
+// Only the token's hash is stored; the guest may be an existing user or not
+// and is never forced to create an account. Access is scoped to the one
+// story, comment (and later suggest) only.
+export const reviewInvitations = pgTable(
+	'review_invitations',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		createdBy: uuid('created_by')
+			.references(() => users.id)
+			.notNull(),
+		tokenHash: text('token_hash').unique().notNull(),
+		// Optional note of who the link was sent to; nothing is emailed by Codex.
+		email: text('email'),
+		// false = comments only. Suggestions arrive in a later step; the column
+		// is here from the start so invitations need no migration then.
+		canSuggest: boolean('can_suggest').notNull().default(true),
+		expiresAt: timestamp('expires_at', { withTimezone: true }),
+		// Revoking cuts access; existing threads stay, attributed.
+		revokedAt: timestamp('revoked_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('review_invitations_story_idx').on(table.storyId)]
+);
+
+// Who is reviewing under an invitation: a signed-in user (user_id set) or a
+// guest who gave only a display name. Identity sticks to the browser via a
+// signed cookie, so comments stay attributed across visits.
+export const reviewers = pgTable(
+	'reviewers',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		invitationId: uuid('invitation_id')
+			.references(() => reviewInvitations.id)
+			.notNull(),
+		userId: uuid('user_id').references(() => users.id),
+		displayName: text('display_name').notNull(),
+		email: text('email'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+	},
+	(table) => [index('reviewers_invitation_idx').on(table.invitationId)]
+);
+
+// A comment thread on a scene: anchored to a character range in body_md
+// (null anchors mean a whole-scene comment), pinned to the revision the
+// range was placed against so later edits can re-anchor or flag it.
+export const reviewThreads = pgTable(
+	'review_threads',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		sceneId: uuid('scene_id')
+			.references(() => scenes.id)
+			.notNull(),
+		anchorStart: integer('anchor_start'),
+		anchorEnd: integer('anchor_end'),
+		baseRevisionId: uuid('base_revision_id').references(() => revisions.id),
+		resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+		resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('review_threads_scene_idx').on(table.sceneId),
+		index('review_threads_story_idx').on(table.storyId)
+	]
+);
+
+// Messages in a thread. Exactly one of author_user_id / author_reviewer_id
+// is set: the story's owner replies as a user, an invited guest as a reviewer.
+export const reviewComments = pgTable(
+	'review_comments',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		threadId: uuid('thread_id')
+			.references(() => reviewThreads.id)
+			.notNull(),
+		authorUserId: uuid('author_user_id').references(() => users.id),
+		authorReviewerId: uuid('author_reviewer_id').references(() => reviewers.id),
+		bodyMd: text('body_md').notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('review_comments_thread_idx').on(table.threadId)]
+);
+
 // Registered passkeys (WebAuthn credentials), any number per account. The
 // public key verifies sign-in assertions; sign_count backs clone detection.
 // Sign-in is usernameless: the browser presents a discoverable credential and
