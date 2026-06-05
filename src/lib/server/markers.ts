@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sceneMarkers, scenes, stories } from './db/schema';
 import { findTodoLines } from '$lib/todo-markers';
@@ -69,33 +69,33 @@ export async function deleteMarker(
 }
 
 // The editor maps anchors through edits; the autosave persists where they
-// landed. Only the scene's own markers can move.
+// landed. One UPDATE over unnested arrays; the scene_id condition keeps
+// the write to the scene's own markers.
 export async function updateMarkerAnchors(
 	db: Database,
 	sceneId: string,
 	anchors: { id: string; anchorStart: number; anchorEnd: number }[]
 ): Promise<void> {
 	if (anchors.length === 0) return;
-	const owned = await db
-		.select({ id: sceneMarkers.id })
-		.from(sceneMarkers)
-		.where(
-			and(
-				eq(sceneMarkers.sceneId, sceneId),
-				inArray(
-					sceneMarkers.id,
-					anchors.map((anchor) => anchor.id)
-				)
-			)
+	// array[...] constructors, since a bare array parameter binds as a
+	// record rather than a Postgres array.
+	const column = (values: (string | number)[]) =>
+		sql.join(
+			values.map((value) => sql`${value}`),
+			sql`, `
 		);
-	const known = new Set(owned.map((row) => row.id));
-	for (const anchor of anchors) {
-		if (!known.has(anchor.id)) continue;
-		await db
-			.update(sceneMarkers)
-			.set({ anchorStart: anchor.anchorStart, anchorEnd: anchor.anchorEnd })
-			.where(eq(sceneMarkers.id, anchor.id));
-	}
+	await db.execute(sql`
+		update scene_markers set
+			anchor_start = v.anchor_start,
+			anchor_end = v.anchor_end
+		from (
+			select
+				unnest(array[${column(anchors.map((anchor) => anchor.id))}]::uuid[]) as id,
+				unnest(array[${column(anchors.map((anchor) => anchor.anchorStart))}]::int[]) as anchor_start,
+				unnest(array[${column(anchors.map((anchor) => anchor.anchorEnd))}]::int[]) as anchor_end
+		) as v
+		where scene_markers.id = v.id and scene_markers.scene_id = ${sceneId}
+	`);
 }
 
 // Unresolved markers across a story, for the continuous view's stitched

@@ -59,15 +59,21 @@ export function mentionExtensions(entities: MentionEntity[]): Extension {
 	);
 
 	const tooltips = hoverTooltip((view, pos) => {
-		const match = detectMentions(view.state.doc.toString(), targets).find(
-			(candidate) => pos >= candidate.position && pos <= candidate.position + candidate.length
-		);
+		// Reads the underline plugin's decorations instead of re-running
+		// detection over the whole document on every hover.
+		const plugin = view.plugin(underlines);
+		if (!plugin) return null;
+		let match: { from: number; to: number; targetId: string } | undefined;
+		plugin.decorations.between(pos, pos, (from, to, decoration) => {
+			match = { from, to, targetId: decoration.spec.attributes?.['data-entity'] ?? '' };
+			return false;
+		});
 		if (!match) return null;
 		const entity = byId.get(match.targetId);
 		if (!entity) return null;
 		return {
-			pos: match.position,
-			end: match.position + match.length,
+			pos: match.from,
+			end: match.to,
 			above: true,
 			create: () => {
 				const dom = document.createElement('div');
