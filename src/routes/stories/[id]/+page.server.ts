@@ -5,9 +5,11 @@ import { db } from '$lib/server/db';
 import {
 	chapters,
 	characters,
+	characterStoryMemberships,
 	entityMentions,
 	loreEntries,
 	places,
+	placeStoryMemberships,
 	scenes,
 	stories,
 	universes
@@ -15,6 +17,7 @@ import {
 import { storyPreferences } from '$lib/server/preferences';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
+import { listMentionPins } from '$lib/server/mention-pins';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -180,16 +183,35 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		.from(loreEntries)
 		.where(and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true)));
 	const mentionEntities = [
-		...knownCharacters,
-		...knownPlaces.map((place) => ({ ...place, aliases: [] as string[] })),
+		...knownCharacters.map((character) => ({ ...character, type: 'character' as const })),
+		...knownPlaces.map((place) => ({
+			...place,
+			type: 'place' as const,
+			aliases: [] as string[]
+		})),
 		...knownLore.map((entry) => ({
 			id: entry.id,
+			type: 'lore_entry' as const,
 			name: entry.name,
 			aliases: entry.keywords,
 			summaryMd: entry.summaryMd,
 			details: entry.details
 		}))
 	];
+
+	// Disambiguation context: who is declared in this story, and the
+	// author's pins for shared names.
+	const memberRows = [
+		...(await db
+			.select({ id: characterStoryMemberships.characterId })
+			.from(characterStoryMemberships)
+			.where(eq(characterStoryMemberships.storyId, story.id))),
+		...(await db
+			.select({ id: placeStoryMemberships.placeId })
+			.from(placeStoryMemberships)
+			.where(eq(placeStoryMemberships.storyId, story.id)))
+	];
+	const mentionPins = Object.fromEntries(await listMentionPins(db, story.id));
 
 	// The user's preferences with this story's overrides applied.
 	const preferences = await storyPreferences(db, locals.user!.id, story.id);
@@ -208,6 +230,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		storyTodos,
 		storyDocMarkers,
 		mentionEntities,
+		mentionPins,
+		storyMemberIds: memberRows.map((row) => row.id),
 		inScene,
 		view,
 		storyDoc,
