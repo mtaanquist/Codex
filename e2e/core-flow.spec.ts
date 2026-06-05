@@ -155,6 +155,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// The node editor renames and links the node to a scene; both survive a
 	// reload.
 	await page.locator('.o-title', { hasText: 'The toll' }).click();
+	// Wait for the editor's state binding to be live before typing: a fill
+	// that lands mid-mount gets reset to the stored title, and the autosave
+	// then persists the stale value (flaked on the v2.10.0 release run).
+	await expect(page.getByPlaceholder('Outline node', { exact: true })).toHaveValue('The toll');
 	const nodeSave = page.waitForResponse(
 		(r) => r.url().includes('/api/outline/') && r.request().method() === 'PUT' && r.ok()
 	);
