@@ -30,6 +30,10 @@ You can record how entities relate: who is whose parent, which faction holds whi
 
 An entity joins a story when you create it while working in that story, or when you add it by hand. The story's plan then shows just the characters, places, and lore that belong to it.
 
+## The scene board
+
+A story's plan shows its scenes as cards on a board when nothing else is open. The columns are the four stages a scene can be in: outline, draft, revised, and final. Drag a card to another column to change its stage, or use the arrows that appear on the card. Each card shows the scene's chapter, its word count, and how many TODO markers are still open in it. Click a card's title to open the scene in the editor.
+
 ## Insights
 
 The universe plan has an Insights button at the top of the sidebar. It opens a page that shows how the writing is going and how much of the world the prose uses.
