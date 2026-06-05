@@ -20,6 +20,7 @@
 	function sectionFor(scope: string | undefined): Section | null {
 		switch (scope) {
 			case 'accounts':
+			case 'invites':
 				return 'users';
 			case 'published':
 				return 'published';
@@ -64,6 +65,24 @@
 		if (u.suspendedAt) return 'Suspended';
 		if (!u.approvedAt) return u.emailVerifiedAt ? 'Awaiting approval' : 'Email unconfirmed';
 		return 'Active';
+	}
+
+	function inviteStatus(code: PageData['inviteCodes'][number]): string {
+		if (code.usedCount >= code.maxUses) return 'Used up';
+		if (code.expiresAt && new Date(code.expiresAt) < new Date()) return 'Expired';
+		return 'Active';
+	}
+
+	// Briefly marks a row after its sign-up link is copied.
+	let copiedInviteId = $state<string | null>(null);
+	function copyInviteLink(code: PageData['inviteCodes'][number]) {
+		const link = `${location.origin}/signup?code=${encodeURIComponent(code.code)}`;
+		navigator.clipboard.writeText(link).then(() => {
+			copiedInviteId = code.id;
+			setTimeout(() => {
+				if (copiedInviteId === code.id) copiedInviteId = null;
+			}, 1500);
+		});
 	}
 
 	const pending = $derived(data.users.filter((u) => !u.approvedAt && u.role !== 'admin'));
@@ -647,6 +666,115 @@
 									{/each}
 								</tbody>
 							</table>
+						</div>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">
+								Invite codes <span class="n">{data.inviteCodes.length}</span>
+							</h2>
+							<p class="admin-block-sub">
+								A sign-up with a valid code is approved right away, with no waiting for review.
+								Email confirmation still applies.
+							</p>
+						</div>
+
+						{#if form?.scope === 'invites' && form.message}
+							<div
+								class="status-banner"
+								style="background:var(--danger-soft);border:1px solid color-mix(in oklab, var(--danger) 32%, transparent);"
+							>
+								<span class="x">{form.message}</span>
+							</div>
+						{/if}
+
+						<div class="admin-card">
+							<form method="POST" action="?/createInvite" class="invite-create">
+								<div class="field">
+									<label for="invite-label">For</label>
+									<input
+										id="invite-label"
+										class="input"
+										type="text"
+										name="label"
+										placeholder="Who or what the code is for (optional)"
+									/>
+								</div>
+								<div class="field">
+									<label for="invite-uses">Uses</label>
+									<input
+										id="invite-uses"
+										class="input"
+										type="number"
+										name="maxUses"
+										value="1"
+										min="1"
+										max="1000"
+									/>
+								</div>
+								<div class="field">
+									<label for="invite-expires">Expires after (days)</label>
+									<input
+										id="invite-expires"
+										class="input"
+										type="number"
+										name="expiresDays"
+										value="0"
+										min="0"
+										max="365"
+										title="0 means the code never expires"
+									/>
+								</div>
+								<button type="submit" class="btn btn-primary">Create code</button>
+							</form>
+
+							{#if data.inviteCodes.length > 0}
+								<table class="admin-table">
+									<thead>
+										<tr>
+											<th>Code</th>
+											<th>For</th>
+											<th>Uses</th>
+											<th>Status</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each data.inviteCodes as code (code.id)}
+											<tr>
+												<td><span class="invite-code">{code.code}</span></td>
+												<td class="cell-muted">{code.label ?? '-'}</td>
+												<td class="cell-muted">{code.usedCount}/{code.maxUses}</td>
+												<td class="cell-muted">
+													{inviteStatus(code)}{code.expiresAt && inviteStatus(code) === 'Active'
+														? `, expires ${when(code.expiresAt)}`
+														: ''}
+												</td>
+												<td class="row-actions">
+													<div class="row-actions-inner">
+														<button
+															type="button"
+															class="btn btn-ghost btn-sm"
+															onclick={() => copyInviteLink(code)}
+														>
+															{copiedInviteId === code.id ? 'Copied' : 'Copy link'}
+														</button>
+														<form method="POST" action="?/deleteInvite">
+															<input type="hidden" name="inviteId" value={code.id} />
+															<button
+																type="submit"
+																class="btn btn-ghost btn-sm"
+																style="color:var(--danger);">Delete</button
+															>
+														</form>
+													</div>
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							{/if}
 						</div>
 					</div>
 				</section>

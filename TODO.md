@@ -120,6 +120,16 @@ format preference deferred to Phase 6 (see the feedback backlog).
 > (2026-06-04); the entity quick details (jsonb) + full-fidelity history pair
 > landed in Phase 7. One free /code-review ultra run remains.
 
+## Phase 6 - Backend and access
+
+Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
+
+- [ ] Invite codes: invite_codes table (migration 0026), admin mints codes in Users & access (label, uses, expiry, copy-link), sign-up takes an optional code (or ?code= link) and a valid one sets approved_at immediately; email verification still applies. Redeem is a single guarded UPDATE; register-with-invite runs in one transaction so a duplicate email rolls the use back.
+- [ ] Stored export artifacts
+- [ ] Passkeys
+- [ ] Guest review (comments, then suggested edits)
+- [ ] Continuous backup (WAL/PITR) - only if hourly dumps ever bite
+
 ## Feedback backlog
 
 From first real use (2026-06-03):

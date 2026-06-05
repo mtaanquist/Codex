@@ -685,6 +685,25 @@ export const authTokens = pgTable('auth_tokens', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// Admin-minted sign-up codes. A valid code at sign-up sets approved_at
+// immediately, skipping the manual approval queue; email verification still
+// applies. Stored in clear (unlike auth tokens) so the admin can read a code
+// back out and share it again.
+export const inviteCodes = pgTable('invite_codes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	code: text('code').unique().notNull(),
+	// Free-form note on who or what the code is for.
+	label: text('label'),
+	// Cleared (not blocked) if the minting account is ever deleted, so a code
+	// outlives its creator and the purge path stays simple.
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	maxUses: integer('max_uses').notNull().default(1),
+	usedCount: integer('used_count').notNull().default(0),
+	// Null never expires.
+	expiresAt: timestamp('expires_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // Instance-wide settings the admin manages from the panel (SMTP relay now).
 // One row per setting key; the value is jsonb so each setting shapes its own.
 // Any secret inside the value is stored encrypted (see crypto.ts).

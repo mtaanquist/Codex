@@ -50,8 +50,23 @@ export function verificationEmail(to: string, link: string): EmailMessage {
 export function signupNotificationEmail(
 	to: string,
 	signup: { displayName: string; email: string },
-	reviewLink: string
+	reviewLink: string,
+	invited = false
 ): EmailMessage {
+	// An invited sign-up is already approved, so the operator gets an FYI
+	// rather than a request to act.
+	if (invited) {
+		return {
+			to,
+			subject: 'Someone joined with an invite code',
+			text: [
+				`${signup.displayName} (${signup.email}) has signed up with an invite code and is approved.`,
+				'',
+				'See all accounts here:',
+				reviewLink
+			].join('\n')
+		};
+	}
 	return {
 		to,
 		subject: 'A new account is waiting for review',
