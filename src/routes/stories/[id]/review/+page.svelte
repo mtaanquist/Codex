@@ -8,12 +8,22 @@
 	// Only scenes with feedback render here; the author reads the full prose
 	// in the editor, this page is for working through the threads.
 	const scenesWithThreads = $derived(
-		data.scenes.filter((scene) => data.threads.some((thread) => thread.sceneId === scene.id))
+		data.scenes.filter(
+			(scene) =>
+				data.threads.some((thread) => thread.sceneId === scene.id) ||
+				data.suggestions.some((suggestion) => suggestion.sceneId === scene.id)
+		)
 	);
 	const openCount = $derived(data.threads.filter((thread) => !thread.resolvedAt).length);
+	const pendingSuggestions = $derived(
+		data.suggestions.filter((suggestion) => suggestion.status === 'pending').length
+	);
 
 	function sceneThreads(sceneId: string) {
 		return data.threads.filter((thread) => thread.sceneId === sceneId);
+	}
+	function sceneSuggestions(sceneId: string) {
+		return data.suggestions.filter((suggestion) => suggestion.sceneId === sceneId);
 	}
 
 	function when(date: Date | string): string {
@@ -39,11 +49,13 @@
 	</nav>
 	<h1>Review feedback</h1>
 	<p class="lede">
-		{#if data.threads.length === 0}
-			No comments yet. Invite a reviewer from the story settings; their comments appear here.
+		{#if data.threads.length === 0 && data.suggestions.length === 0}
+			No feedback yet. Invite a reviewer from the story settings; their comments and suggested
+			changes appear here.
 		{:else}
-			{openCount} open {openCount === 1 ? 'thread' : 'threads'}, {data.threads.length} in total. Reply
-			or resolve below; resolved threads stay for the record.
+			{openCount} open {openCount === 1 ? 'thread' : 'threads'}{pendingSuggestions > 0
+				? ` and ${pendingSuggestions} suggested ${pendingSuggestions === 1 ? 'change' : 'changes'} waiting`
+				: ''}. Reply, resolve, accept, or reject below; everything decided stays for the record.
 		{/if}
 	</p>
 	{#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
@@ -93,6 +105,39 @@
 							</form>
 						{/if}
 					</div>
+				</div>
+			{/each}
+
+			{#each sceneSuggestions(scene.id) as suggestion (suggestion.id)}
+				<div class="thread suggestion" class:resolved={suggestion.status !== 'pending'}>
+					<p class="who">
+						{suggestion.reviewerName} suggests - {when(suggestion.createdAt)}
+						{#if suggestion.status === 'accepted'}<span class="badge">Accepted</span>
+						{:else if suggestion.status === 'rejected'}<span class="badge lost">Rejected</span>
+						{:else if suggestion.anchorLost}
+							<span class="badge lost">
+								The text has changed since; this can only be rejected.
+							</span>
+						{/if}
+					</p>
+					{#if suggestion.original}<p class="what prose"><del>{suggestion.original}</del></p>{/if}
+					{#if suggestion.replacement}
+						<p class="what prose"><ins>{suggestion.replacement}</ins></p>
+					{/if}
+					{#if suggestion.status === 'pending'}
+						<div class="actions">
+							{#if !suggestion.anchorLost}
+								<form method="POST" action="?/acceptSuggestion">
+									<input type="hidden" name="suggestionId" value={suggestion.id} />
+									<button type="submit">Accept</button>
+								</form>
+							{/if}
+							<form method="POST" action="?/rejectSuggestion">
+								<input type="hidden" name="suggestionId" value={suggestion.id} />
+								<button type="submit" class="ghost">Reject</button>
+							</form>
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</section>
@@ -211,5 +256,16 @@
 	}
 	.error {
 		color: #b00020;
+	}
+	.suggestion .prose {
+		font-family: Georgia, 'Times New Roman', serif;
+	}
+	.suggestion del {
+		background: #ffe3e3;
+		text-decoration: line-through;
+	}
+	.suggestion ins {
+		background: #d3f9d8;
+		text-decoration: none;
 	}
 </style>

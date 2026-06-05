@@ -44,3 +44,34 @@ export function reanchorRange(
 	if (newStart === -1 || newEnd === -1 || newEnd <= newStart) return null;
 	return { start: newStart, end: newEnd };
 }
+
+// Re-anchors a single position (a pure insertion point). The position
+// survives if it lies in or at the boundary of unchanged text.
+export function reanchorPoint(
+	baseText: string,
+	currentText: string,
+	position: number
+): number | null {
+	if (position < 0 || position > baseText.length) return null;
+	if (baseText === currentText) return position;
+
+	let basePos = 0;
+	let currentPos = 0;
+	for (const part of diffChars(baseText, currentText)) {
+		const length = part.value.length;
+		if (part.added) {
+			currentPos += length;
+			continue;
+		}
+		if (part.removed) {
+			basePos += length;
+			continue;
+		}
+		if (position >= basePos && position <= basePos + length) {
+			return currentPos + (position - basePos);
+		}
+		basePos += length;
+		currentPos += length;
+	}
+	return null;
+}

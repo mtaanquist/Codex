@@ -50,6 +50,31 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await guest.getByPlaceholder('Your comment on this scene').fill('Strong opening, weak hinges.');
 	await guest.getByRole('button', { name: 'Comment', exact: true }).click();
 	await expect(guest.getByText('Strong opening, weak hinges.')).toBeVisible();
+
+	// Suggest a change on a real text selection: select "opinions" in the
+	// manuscript and propose a replacement.
+	await guest.evaluate(() => {
+		const manuscript = document.querySelector('.manuscript');
+		if (!manuscript) throw new Error('no manuscript');
+		// The prose may be split across text nodes by Svelte anchors; find the
+		// node carrying the target word.
+		const walker = document.createTreeWalker(manuscript, NodeFilter.SHOW_TEXT);
+		let node = walker.nextNode();
+		while (node && !(node.textContent ?? '').includes('opinions')) node = walker.nextNode();
+		if (!node) throw new Error('target text not found');
+		const start = node.textContent!.indexOf('opinions');
+		const range = document.createRange();
+		range.setStart(node, start);
+		range.setEnd(node, start + 'opinions'.length);
+		const selection = window.getSelection()!;
+		selection.removeAllRanges();
+		selection.addRange(range);
+	});
+	await guest.locator('.manuscript').dispatchEvent('mouseup');
+	await guest.getByRole('button', { name: 'Suggest a change' }).click();
+	await guest.getByLabel('Suggested text').fill('reservations');
+	await guest.getByRole('button', { name: 'Suggest', exact: true }).click();
+	await expect(guest.locator('.suggestion ins')).toHaveText('reservations');
 	await guestContext.close();
 
 	// Author: the thread is on the feedback page; reply and resolve.
@@ -61,6 +86,14 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await expect(page.getByText('Noted; oiling the hinges.')).toBeVisible();
 	await page.getByRole('button', { name: 'Resolve' }).click();
 	await expect(page.getByText('Resolved', { exact: true })).toBeVisible();
+
+	// Accept the suggested change: the prose updates in place.
+	await expect(page.locator('.suggestion ins')).toHaveText('reservations');
+	await page.getByRole('button', { name: 'Accept' }).click();
+	await expect(page.getByText('Accepted')).toBeVisible();
+	await expect(page.locator('.manuscript')).toContainText(
+		'The reviewer will have reservations about this gate.'
+	);
 
 	// A revoked link stops working for new visits.
 	await page.goto(`/stories/${storyId}/settings`);
