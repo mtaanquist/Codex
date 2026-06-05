@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { publicEdition, type EditionContent } from '$lib/server/publish';
+import { listEditionArtifacts } from '$lib/server/export-artifacts';
 
 // The reader view of one frozen edition. Adult work sits behind a
 // confirmation link; the page then carries noindex either way.
@@ -20,6 +21,14 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			author: edition.author
 		};
 	}
+	// Reader-facing downloads, only when the author switched them on. The
+	// markdown zip is owner-only and never offered here.
+	const downloads = edition.downloadsPublic
+		? (await listEditionArtifacts(db, edition.id))
+				.filter((artifact) => artifact.format !== 'markdown')
+				.map((artifact) => ({ id: artifact.id, format: artifact.format }))
+		: [];
+
 	return {
 		handle,
 		storyId: params.story,
@@ -31,6 +40,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		versionLabel: edition.versionLabel,
 		publishedAt: edition.publishedAt,
 		coverAssetId: edition.coverAssetId,
+		downloads,
 		content: edition.content as EditionContent
 	};
 };

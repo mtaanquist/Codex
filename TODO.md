@@ -111,21 +111,41 @@ format preference deferred to Phase 6 (see the feedback backlog).
       article lookup; e2e browses the index and opens an article. Lint, check,
       unit (232), build, and e2e pass.
 
+> Phase 5 complete; shipped as v2.5.0 (2026-06-04). The held v2.5 review
+> (ultrareview) found six issues - single-use TOTP/replay, password re-auth on
+> 2FA disable/regenerate, one-shot enrolment confirm, an avatar-upload race, a
+> reverting theme toggle, and a duplicate-link crash on /@handle - all fixed
+> before the tag (migration 0024 adds user_totp.last_used_step). Post-v2.5 the
+> roadmap's candidate pool was regrouped into themed phases 6-10 + future
+> (2026-06-04); the entity quick details (jsonb) + full-fidelity history pair
+> landed in Phase 7. One free /code-review ultra run remains.
+
+## Phase 6 - Backend and access
+
+Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
+
+- [x] Invite codes: invite_codes table (migration 0026), admin mints codes in Users & access (label, uses, expiry, copy-link), sign-up takes an optional code (or ?code= link) and a valid one sets approved_at immediately; email verification still applies. Redeem is a single guarded UPDATE; register-with-invite runs in one transaction so a duplicate email rolls the use back. Merged 2026-06-05 (#107).
+- [x] Stored export artifacts: export_artifacts table (migration 0027), the worker generates markdown zip, EPUB, and PDF from the frozen edition on publish (export-artifacts queue) and keeps them in the asset bucket; PDF renders the shared print HTML through headless Chromium (puppeteer-core + chromium in the image). Settings shows the files with "Generate again" and a per-edition reader-downloads toggle (downloads_public); readers get EPUB/PDF on the public page, the markdown zip stays owner-only. Merged 2026-06-05 (#109).
+- [ ] Passkeys
+- [ ] Guest review (comments, then suggested edits)
+- [ ] Continuous backup (WAL/PITR) - only if hourly dumps ever bite
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
 
 - [x] Scene marks in the continuous view should be hideable: shipped with v1.10 (continuousSceneMarks preference)
 - [x] Editable continuous view: shipped with v1.10 (roadmap step 23b)
-- [ ] Spell-check from a user language preference (Phase 6 candidate; browser-native first)
-- [ ] Markdown affordances: the shared renderer shipped with v1.12 (exports + print); reading pages pick it up in step 27; in-editor styling and the prototype's toolbar remain as polish
-- [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration
-- [ ] Default editing format preference (deferred to Phase 6 on 2026-06-04). The editor is CodeMirror over raw markdown today; a writer should be able to choose a softer, Word-like editing surface rather than seeing markdown syntax. A rich/WYSIWYG editing mode behind a preference, settable at user level with a per-story override. Builds on the "markdown affordances" and "preference layering" items above; that is the foundation, this is the user-facing choice on top
+- [ ] Spell-check from a user language preference (Phase 7; browser-native first)
+- [ ] Markdown affordances: the shared renderer shipped with v1.12 (exports + print); reading pages pick it up in step 27; in-editor styling and the prototype's toolbar remain as polish (Phase 7)
+- [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration (Phase 7, prerequisite for the rich-editing choice below)
+- [ ] Default editing format preference (Phase 7; reordered there on 2026-06-04). The editor is CodeMirror over raw markdown today; a writer should be able to choose a softer, Word-like editing surface rather than seeing markdown syntax. A rich/WYSIWYG editing mode behind a preference, settable at user level with a per-story override. Builds on the "markdown affordances" and "preference layering" items above; that is the foundation, this is the user-facing choice on top
 - [x] Entity colours with meaning: shipped with v1.2 (characters/places join categories; badge takes the category colour)
 
 From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
 
-- [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts)
+- [ ] Page setup for print/PDF (Phase 7, alongside preference layering): page size incl. book trim sizes, margins, font and size, paragraph style (indent vs spaced), scene-break glyph, page numbers and running headers (puppeteer displayHeaderFooter; Chromium lacks @page margin boxes), and explicit in-chapter page breaks (a scene-level flag or markdown marker styled with break-before). All of it parameterizes the one stylesheet the print route and the worker PDF already share; EPUB stays reflowable by design. Known wall: mirrored facing pages (@page :left/:right) are unsupported in Chromium; real bookbinding output would need a different typesetter. (Broadened 2026-06-05 from the original page-breaks note.)
+- [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts) (Phase 7)
 - [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
 - [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
 - [ ] updateMarkerAnchors issues one UPDATE per anchor in a loop; batch it the same way (markers.ts)
@@ -133,8 +153,8 @@ From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed
 From a pre-v2.0 self-review (2026-06-04); the cover IDOR and the duplicated media-types map were fixed:
 
 - [x] The worker-indexed find-usages e2e assertion was timing-flaky on loaded CI runners. Widened the toPass window to 60s, then (v2.1) marked the journey test slow and switched to set-membership assertions, then gated test start on worker readiness (global-setup waits for the worker's "started" log before any test relies on the async index, and captures its output to a file). Recurred across the v2.0.1 and v2.1 release runs each time, so chased to the readiness race rather than re-running.
-- [ ] For the v2.5 review: worker job enqueue is best-effort and silently drops on failure (jobs.ts), so a dropped mention rebuild leaves the index stale until the next save. Fine for a single-operator tool, but worth deciding whether a periodic reconciliation or a durable enqueue is wanted before the hosted launch. This was the suspected deeper cause behind the find-usages e2e flake.
-- [ ] Entity History is body-only: changing an alias or relationship records no revision, and Restore only returns the body (the alias save dedupes on the unchanged body; relationships save through their own endpoint). Author wants full-snapshot entity revisions, deferred to Phase 6 to land with the jsonb quick details (the snapshot must capture them). See the Phase 6 candidate in the roadmap.
+- [x] Worker job enqueue is best-effort and silently drops on failure (jobs.ts), so a dropped mention rebuild left the index stale until the next save. Fixed 2026-06-04: scenes gained a mentions_indexed_at watermark (migration 0025), set inside rebuildSceneMentions; a five-minute reconcile-mentions sweep in the worker re-indexes any scene whose body or whose universe's entities changed after the watermark, so a dropped rebuild self-heals within minutes regardless of cause. The fast-path enqueue stays for low latency.
+- [ ] Entity History is body-only: changing an alias or relationship records no revision, and Restore only returns the body (the alias save dedupes on the unchanged body; relationships save through their own endpoint). Author wants full-snapshot entity revisions, in Phase 7 alongside the jsonb quick details (the snapshot must capture them). See the Phase 7 candidate in the roadmap.
 - [x] CI never ran the Docker image, so a broken worker import closure shipped silently (caught by hand at v1.6: src/lib was missing from the image since step 14). Fixed in v1.6.1 with a docker-smoke CI job that builds the image and boots compose with a worker check
 
 Later phases tracked in the roadmap until they get close.

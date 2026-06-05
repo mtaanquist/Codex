@@ -6,6 +6,7 @@ import {
 	characters,
 	entityCategories,
 	entityRelationships,
+	exportArtifacts,
 	loreEntries,
 	places,
 	publications,
@@ -80,11 +81,17 @@ export async function purgeAccount(
 	userId: string,
 	store: AssetObjectStore | null
 ): Promise<void> {
-	// Capture the bucket keys before the rows go.
+	// Capture the bucket keys before the rows go, including the stored export
+	// files of the account's editions (their rows cascade with publications).
 	const assetRows = await db
 		.select({ storageKey: assets.storageKey })
 		.from(assets)
 		.where(eq(assets.ownerId, userId));
+	const artifactRows = await db
+		.select({ storageKey: exportArtifacts.storageKey })
+		.from(exportArtifacts)
+		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
+		.where(eq(publications.ownerId, userId));
 
 	await db.transaction(async (tx) => {
 		// Stories first: this clears scenes, chapters, markers, revisions,
@@ -129,5 +136,6 @@ export async function purgeAccount(
 
 	if (store) {
 		for (const asset of assetRows) await store.remove(asset.storageKey).catch(() => {});
+		for (const artifact of artifactRows) await store.remove(artifact.storageKey).catch(() => {});
 	}
 }

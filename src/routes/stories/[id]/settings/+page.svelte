@@ -7,6 +7,18 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const coverColor = $derived(entityColor(data.story.title));
+
+	const FORMAT_LABELS: Record<string, string> = {
+		markdown: 'Markdown (.zip)',
+		epub: 'EPUB',
+		pdf: 'PDF'
+	};
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
 </script>
 
 <svelte:head>
@@ -124,6 +136,55 @@
 				again.
 			</p>
 		</form>
+
+		{#if data.edition}
+			<h2>Edition downloads</h2>
+			{#if form?.action === 'exports' && form.message}
+				<p class="error" role="alert">{form.message}</p>
+			{/if}
+			{#if form?.action === 'exports' && 'queued' in form && form.queued}
+				<p role="status">
+					Export run queued. The files appear below in a moment; reload to see them.
+				</p>
+			{/if}
+			{#if form?.action === 'exports' && 'saved' in form && form.saved}
+				<p role="status">Saved.</p>
+			{/if}
+			{#if data.artifacts.length > 0}
+				<ul class="exports">
+					{#each data.artifacts as artifact (artifact.id)}
+						<li>
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (file download) -->
+							<a href="/artifacts/{artifact.id}" download>
+								{FORMAT_LABELS[artifact.format] ?? artifact.format}
+							</a>
+							- {formatBytes(artifact.byteSize)}, generated {new Date(
+								artifact.createdAt
+							).toLocaleString()}
+						</li>
+					{/each}
+				</ul>
+			{:else if data.assetsConfigured}
+				<p>
+					The download files for this edition have not been generated yet. They are created shortly
+					after publishing; if they do not appear, run the generation again.
+				</p>
+			{:else}
+				<p>Stored downloads need the ASSET_S3_* variables set; see .env.example.</p>
+			{/if}
+			{#if data.assetsConfigured}
+				<form method="POST" action="?/regenerateExports">
+					<button type="submit">Generate again</button>
+				</form>
+				<form method="POST" action="?/setDownloads">
+					<label class="inline">
+						<input type="checkbox" name="downloadsPublic" checked={data.edition.downloadsPublic} />
+						Let readers download this edition (EPUB and PDF) from its public page
+					</label>
+					<button type="submit">Save</button>
+				</form>
+			{/if}
+		{/if}
 	{/if}
 
 	<h2>Export</h2>

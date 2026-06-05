@@ -1,6 +1,6 @@
 // Mention index rebuilds. Runs in the worker (plain Node), so relative value
 // imports carry explicit .ts extensions.
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { characters, entityMentions, loreEntries, places, scenes, stories } from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
@@ -69,6 +69,11 @@ export async function rebuildSceneMentions(
 				}))
 			);
 		}
+		// Stamp the watermark in the same transaction. Raw SQL so it does not trip
+		// the scene's updated_at $onUpdate, which would make every scene look
+		// perpetually stale. now() marks "indexed as of this instant"; a later
+		// body or entity change moves past it and the reconcile sweep catches it.
+		await tx.execute(sql`update scenes set mentions_indexed_at = now() where id = ${scene.id}`);
 	});
 	return { ok: true, count: found.length };
 }
@@ -85,4 +90,39 @@ export async function rebuildUniverseMentions(db: Database, universeId: string):
 		await rebuildSceneMentions(db, row.id);
 	}
 	return sceneRows.length;
+}
+
+// Scenes whose mention index is behind: never indexed, or indexed before the
+// scene's body last changed, or before any character/place/lore in its universe
+// last changed (an alias edit that should add or drop mentions). This is the
+// backstop for a dropped rebuild job, which would otherwise leave the index
+// stale until the next manual save. Ordered oldest-first so the longest-stale
+// scenes are caught first; bounded so one sweep cannot run unbounded.
+export async function listStaleMentionScenes(db: Database, limit = 200): Promise<string[]> {
+	const result = await db.execute(sql`
+		select s.id
+		from scenes s
+		join stories st on st.id = s.story_id
+		where s.mentions_indexed_at is null
+			or s.mentions_indexed_at < s.updated_at
+			or s.mentions_indexed_at < greatest(
+				coalesce((select max(updated_at) from characters where universe_id = st.universe_id), to_timestamp(0)),
+				coalesce((select max(updated_at) from places where universe_id = st.universe_id), to_timestamp(0)),
+				coalesce((select max(updated_at) from lore_entries where universe_id = st.universe_id), to_timestamp(0))
+			)
+		order by s.mentions_indexed_at asc nulls first
+		limit ${limit}
+	`);
+	return result.rows.map((row) => (row as { id: string }).id);
+}
+
+// Re-indexes every stale scene found in one bounded pass. Returns how many were
+// rebuilt, so the worker can log a non-empty sweep. Idempotent: a scene already
+// in step with its content is left alone.
+export async function reconcileMentions(db: Database, limit = 200): Promise<number> {
+	const ids = await listStaleMentionScenes(db, limit);
+	for (const id of ids) {
+		await rebuildSceneMentions(db, id);
+	}
+	return ids.length;
 }

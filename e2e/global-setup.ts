@@ -60,6 +60,13 @@ export default async function globalSetup() {
 		 on conflict (email) do update set password_hash = excluded.password_hash`,
 		['tfa-e2e@example.com', passwordHash]
 	);
+	// A standing invite code for the invited sign-up journey; resetting the use
+	// count keeps repeated runs valid.
+	await pool.query(
+		`insert into invite_codes (code, label, max_uses, used_count)
+		 values ('E2EI-NVIT-CODE', 'e2e tests', 5, 0)
+		 on conflict (code) do update set used_count = 0, max_uses = 5, expires_at = null`
+	);
 	// Clear any two-factor left over from a previous run so the journey starts
 	// from "off" every time.
 	await pool.query(

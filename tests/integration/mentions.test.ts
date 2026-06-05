@@ -12,7 +12,12 @@ import {
 	universes,
 	users
 } from '../../src/lib/server/db/schema';
-import { rebuildSceneMentions, rebuildUniverseMentions } from '../../src/lib/server/mentions';
+import {
+	listStaleMentionScenes,
+	rebuildSceneMentions,
+	rebuildUniverseMentions,
+	reconcileMentions
+} from '../../src/lib/server/mentions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -170,5 +175,42 @@ describe('rebuildUniverseMentions', () => {
 		const count = await rebuildUniverseMentions(db, universeId);
 		expect(count).toBe(1);
 		expect(await mentionRows(sceneId)).toHaveLength(2);
+	});
+});
+
+describe('reconcile', () => {
+	// Timestamps are forced with the database's own now() so the comparison does
+	// not depend on app-vs-database clock skew.
+	it('treats a freshly indexed scene as up to date', async () => {
+		await pool.query(`update scenes set updated_at = now() - interval '5 seconds' where id = $1`, [
+			sceneId
+		]);
+		await rebuildSceneMentions(db, sceneId);
+		expect(await listStaleMentionScenes(db)).not.toContain(sceneId);
+	});
+
+	it('reindexes a scene whose body changed after indexing (a dropped job)', async () => {
+		// The body changed and updated_at moved past the watermark, but no rebuild
+		// ran - exactly what a dropped enqueue leaves behind.
+		await pool.query(
+			`update scenes set body_md = 'Alice and Alice and Alice.', updated_at = now() where id = $1`,
+			[sceneId]
+		);
+		expect(await listStaleMentionScenes(db)).toContain(sceneId);
+
+		const reindexed = await reconcileMentions(db);
+		expect(reindexed).toBeGreaterThanOrEqual(1);
+		expect(await mentionRows(sceneId)).toHaveLength(3);
+		expect(await listStaleMentionScenes(db)).not.toContain(sceneId);
+	});
+
+	it('reindexes a scene when an entity in its universe changes after indexing', async () => {
+		// An alias edit whose universe rebuild was dropped: the scene body is
+		// unchanged, but a character it could mention changed after the watermark.
+		await pool.query(`update characters set updated_at = now() where id = $1`, [aliceId]);
+		expect(await listStaleMentionScenes(db)).toContain(sceneId);
+
+		await reconcileMentions(db);
+		expect(await listStaleMentionScenes(db)).not.toContain(sceneId);
 	});
 });

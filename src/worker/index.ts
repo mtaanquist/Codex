@@ -2,7 +2,12 @@ import { PgBoss } from 'pg-boss';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
-import { rebuildSceneMentions, rebuildUniverseMentions } from '../lib/server/mentions.ts';
+import {
+	rebuildSceneMentions,
+	rebuildUniverseMentions,
+	reconcileMentions
+} from '../lib/server/mentions.ts';
+import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { backupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
@@ -22,6 +27,8 @@ boss.on('error', (error) => {
 await boss.start();
 await boss.createQueue('mentions-scene');
 await boss.createQueue('mentions-universe');
+await boss.createQueue('reconcile-mentions');
+await boss.createQueue('export-artifacts');
 await boss.createQueue('run-backup');
 await boss.createQueue('send-email');
 await boss.createQueue('purge-accounts');
@@ -38,6 +45,32 @@ await boss.work<{ universeId: string }>('mentions-universe', async (jobs) => {
 	for (const job of jobs) {
 		const count = await rebuildUniverseMentions(db, job.data.universeId);
 		console.log(`mentions: universe ${job.data.universeId} -> ${count} scenes reindexed`);
+	}
+});
+
+// Backstop for any rebuild job that was dropped (a failed enqueue, or a worker
+// restart mid-job): re-index scenes whose mention watermark has fallen behind.
+await boss.work('reconcile-mentions', async () => {
+	const reindexed = await reconcileMentions(db);
+	if (reindexed > 0) console.log(`mentions: reconcile reindexed ${reindexed} stale scene(s)`);
+});
+
+// Generates the stored export files (markdown zip, EPUB, PDF) for a freshly
+// published edition. Formats fail independently, so a PDF problem still
+// leaves the zip and EPUB downloadable.
+await boss.work<{ publicationId: string }>('export-artifacts', async (jobs) => {
+	for (const job of jobs) {
+		const result = await generateEditionArtifacts(db, job.data.publicationId);
+		if (!result.ok) {
+			console.warn(`exports: edition ${job.data.publicationId} skipped (${result.reason})`);
+			continue;
+		}
+		console.log(`exports: edition ${job.data.publicationId} -> ${result.stored.join(', ')}`);
+		for (const failure of result.failed) {
+			console.error(
+				`exports: edition ${job.data.publicationId} ${failure.format} failed: ${failure.error}`
+			);
+		}
 	}
 });
 
@@ -74,6 +107,10 @@ await boss.work('purge-accounts', async () => {
 
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule('purge-accounts', '30 * * * *', {}, { tz: 'UTC' });
+
+// Sweep for stale mention indexes every five minutes, so a dropped rebuild
+// self-heals within minutes instead of waiting for the next save.
+await boss.schedule('reconcile-mentions', '*/5 * * * *', {}, { tz: 'UTC' });
 
 // Nightly off-site backups, only when the bucket is configured. The
 // schedule lives in pg-boss, so it is cleared when configuration goes away.

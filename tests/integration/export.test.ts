@@ -5,7 +5,7 @@ import { strFromU8, unzipSync } from 'fflate';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { chapters, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
-import { buildStoryZip, type ExportStory } from '../../src/lib/server/export';
+import { buildStoryZip, gatherStory, type ExportStory } from '../../src/lib/server/export';
 import { buildEpub } from '../../src/lib/server/epub';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -75,7 +75,7 @@ afterAll(async () => {
 
 describe('buildStoryZip', () => {
 	it('lays out front-mattered files, bundles assets, and rewrites links', async () => {
-		const { filename, bytes } = await buildStoryZip(db, story, loader);
+		const { filename, bytes } = await buildStoryZip(story, await gatherStory(db, story), loader);
 		expect(filename).toBe('book-of-ash.zip');
 		const entries = unzipSync(bytes);
 		const names = Object.keys(entries).sort();
@@ -99,7 +99,7 @@ describe('buildStoryZip', () => {
 
 describe('buildEpub', () => {
 	it('produces a structurally sound EPUB with rendered chapters', async () => {
-		const { filename, bytes } = await buildEpub(db, story, loader, null);
+		const { filename, bytes } = await buildEpub(story, await gatherStory(db, story), loader, null);
 		expect(filename).toContain('.epub');
 		const entries = unzipSync(bytes);
 

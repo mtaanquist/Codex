@@ -6,8 +6,10 @@ import { stories, universes } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
 import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 import { publishStory } from '$lib/server/publish';
+import { listEditionArtifacts, setDownloadsPublic } from '$lib/server/export-artifacts';
+import { queueExportArtifacts } from '$lib/server/jobs';
 import { deleteStory } from '$lib/server/story-delete';
-import { users } from '$lib/server/db/schema';
+import { publications, users } from '$lib/server/db/schema';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -19,6 +21,20 @@ async function ownedStory(storyId: string, userId: string) {
 	return row;
 }
 
+// The current edition, if the story has been published.
+async function currentEdition(storyId: string) {
+	const [edition] = await db
+		.select({
+			id: publications.id,
+			versionLabel: publications.versionLabel,
+			downloadsPublic: publications.downloadsPublic,
+			publishedAt: publications.publishedAt
+		})
+		.from(publications)
+		.where(and(eq(publications.storyId, storyId), eq(publications.isCurrent, true)));
+	return edition ?? null;
+}
+
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 	const timeline = await storyTimeline(db, story.id, 30);
@@ -26,7 +42,16 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
 		.from(users)
 		.where(eq(users.id, locals.user!.id));
-	return { story, universe, timeline, assetsConfigured: assetConfig() !== null, archive };
+	const edition = await currentEdition(story.id);
+	return {
+		story,
+		universe,
+		timeline,
+		assetsConfigured: assetConfig() !== null,
+		archive,
+		edition,
+		artifacts: edition ? await listEditionArtifacts(db, edition.id) : []
+	};
 };
 
 export const actions: Actions = {
@@ -65,7 +90,34 @@ export const actions: Actions = {
 		if (!result.ok) {
 			return fail(400, { action: 'publish', message: result.reason });
 		}
+		// The worker stores the edition's download files; best-effort, since the
+		// settings page offers "generate again" if they never appear.
+		if (assetConfig()) await queueExportArtifacts(result.publicationId);
 		return { action: 'publish', published: true };
+	},
+	regenerateExports: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const edition = await currentEdition(story.id);
+		if (!edition) {
+			return fail(400, { action: 'exports', message: 'Publish an edition first.' });
+		}
+		if (!assetConfig()) {
+			return fail(400, { action: 'exports', message: 'Assets are not configured on this server.' });
+		}
+		if (!(await queueExportArtifacts(edition.id))) {
+			return fail(500, { action: 'exports', message: 'Could not queue the export run.' });
+		}
+		return { action: 'exports', queued: true };
+	},
+	setDownloads: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const edition = await currentEdition(story.id);
+		if (!edition) {
+			return fail(400, { action: 'exports', message: 'Publish an edition first.' });
+		}
+		const data = await request.formData();
+		await setDownloadsPublic(db, locals.user!.id, edition.id, data.get('downloadsPublic') === 'on');
+		return { action: 'exports', saved: true };
 	},
 	setCover: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);

@@ -190,7 +190,11 @@ export const scenes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => new Date()),
+		// When the mention index was last rebuilt for this scene. Null means never.
+		// The reconcile sweep re-indexes any scene whose body or whose universe's
+		// entities changed after this, so a dropped rebuild job self-heals.
+		mentionsIndexedAt: timestamp('mentions_indexed_at', { withTimezone: true })
 	},
 	(table) => [index('scenes_characters_present_gin').using('gin', table.charactersPresent)]
 );
@@ -555,6 +559,9 @@ export const publications = pgTable(
 		content: jsonb('content').notNull(),
 		// Optional, e.g. 'Edition 2'.
 		versionLabel: text('version_label'),
+		// Owner's choice: when true, readers can download the edition's EPUB and
+		// PDF artifacts from the public story page.
+		downloadsPublic: boolean('downloads_public').notNull().default(false),
 		isCurrent: boolean('is_current').notNull().default(true),
 		// Set by an admin takedown; hides the edition without deleting the source.
 		removedAt: timestamp('removed_at', { withTimezone: true }),
@@ -587,6 +594,29 @@ export const publicationAssets = pgTable(
 		primaryKey({ columns: [table.publicationId, table.assetId] }),
 		index('publication_assets_asset_idx').on(table.assetId)
 	]
+);
+
+// Export files generated in the worker when an edition publishes (markdown
+// zip, EPUB, PDF), stored in the asset bucket like release assets on a tag.
+// Derived data: every row can be regenerated from the edition's frozen
+// content, so rows simply replace on regeneration.
+export const exportArtifacts = pgTable(
+	'export_artifacts',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		publicationId: uuid('publication_id')
+			.references(() => publications.id, { onDelete: 'cascade' })
+			.notNull(),
+		format: text('format', { enum: ['markdown', 'epub', 'pdf'] }).notNull(),
+		// Key in the storage bucket; deterministic per publication and format so
+		// regeneration overwrites in place.
+		storageKey: text('storage_key').notNull(),
+		filename: text('filename').notNull(),
+		contentType: text('content_type').notNull(),
+		byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [unique('export_artifacts_one_per_format').on(table.publicationId, table.format)]
 );
 
 // Uploaded files, stored in an S3-compatible bucket (separate from the
@@ -678,6 +708,25 @@ export const authTokens = pgTable('auth_tokens', {
 	tokenHash: text('token_hash').notNull(),
 	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 	consumedAt: timestamp('consumed_at', { withTimezone: true }),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Admin-minted sign-up codes. A valid code at sign-up sets approved_at
+// immediately, skipping the manual approval queue; email verification still
+// applies. Stored in clear (unlike auth tokens) so the admin can read a code
+// back out and share it again.
+export const inviteCodes = pgTable('invite_codes', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	code: text('code').unique().notNull(),
+	// Free-form note on who or what the code is for.
+	label: text('label'),
+	// Cleared (not blocked) if the minting account is ever deleted, so a code
+	// outlives its creator and the purge path stays simple.
+	createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+	maxUses: integer('max_uses').notNull().default(1),
+	usedCount: integer('used_count').notNull().default(0),
+	// Null never expires.
+	expiresAt: timestamp('expires_at', { withTimezone: true }),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
