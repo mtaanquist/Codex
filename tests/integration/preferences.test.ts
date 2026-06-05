@@ -4,14 +4,21 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { users } from '../../src/lib/server/db/schema';
-import { savePreferences, userPreferences } from '../../src/lib/server/preferences';
+import { stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	savePreferences,
+	saveStoryPreferences,
+	storyPreferenceOverrides,
+	storyPreferences,
+	userPreferences
+} from '../../src/lib/server/preferences';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 let pool: pg.Pool;
 let db: Database;
 let userId: string;
+let storyId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -27,6 +34,15 @@ beforeEach(async () => {
 		.values({ email: 'prefs@example.com', displayName: 'P', passwordHash: 'x', role: 'user' })
 		.returning({ id: users.id });
 	userId = user.id;
+	const [universe] = await db
+		.insert(universes)
+		.values({ ownerId: userId, name: 'U' })
+		.returning({ id: universes.id });
+	const [story] = await db
+		.insert(stories)
+		.values({ universeId: universe.id, ownerId: userId, title: 'S' })
+		.returning({ id: stories.id });
+	storyId = story.id;
 });
 
 afterAll(async () => {
@@ -61,5 +77,67 @@ describe('appearance preferences', () => {
 		const prefs = await userPreferences(db, userId);
 		expect(prefs.theme).toBe('system');
 		expect(prefs.accent).toBe('#5b8cff');
+	});
+});
+
+describe('story preference overrides', () => {
+	it('a story override wins over the account setting', async () => {
+		await savePreferences(db, userId, { entityAutocomplete: 'ghost' });
+		await saveStoryPreferences(db, storyId, { entityAutocomplete: 'off' });
+		const prefs = await storyPreferences(db, userId, storyId);
+		expect(prefs.entityAutocomplete).toBe('off');
+		// Keys without an override fall through to the account.
+		expect(prefs.continuousSceneMarks).toBe('shown');
+	});
+
+	it('clearing an override falls back to the account setting again', async () => {
+		await savePreferences(db, userId, { continuousSceneMarks: 'hidden' });
+		await saveStoryPreferences(db, storyId, { continuousSceneMarks: 'shown' });
+		expect((await storyPreferences(db, userId, storyId)).continuousSceneMarks).toBe('shown');
+
+		await saveStoryPreferences(db, storyId, { continuousSceneMarks: null });
+		expect((await storyPreferences(db, userId, storyId)).continuousSceneMarks).toBe('hidden');
+		expect(await storyPreferenceOverrides(db, storyId)).toEqual({});
+	});
+
+	it('a partial save leaves the other override alone', async () => {
+		await saveStoryPreferences(db, storyId, {
+			entityAutocomplete: 'ghost',
+			continuousSceneMarks: 'hidden'
+		});
+		await saveStoryPreferences(db, storyId, { entityAutocomplete: null });
+		expect(await storyPreferenceOverrides(db, storyId)).toEqual({
+			continuousSceneMarks: 'hidden'
+		});
+	});
+
+	it('only editor-behaviour keys can override; theme in story data is ignored', async () => {
+		await db
+			.update(stories)
+			.set({ preferences: { theme: 'dark', entityAutocomplete: 'off' } })
+			.where(eq(stories.id, storyId));
+		const prefs = await storyPreferences(db, userId, storyId);
+		expect(prefs.entityAutocomplete).toBe('off');
+		// The account theme stands; the story column cannot restyle the app.
+		expect(prefs.theme).toBe('system');
+		expect(await storyPreferenceOverrides(db, storyId)).toEqual({ entityAutocomplete: 'off' });
+	});
+
+	it('the editing mode layers like the other editor keys', async () => {
+		expect((await userPreferences(db, userId)).editingMode).toBe('markdown');
+		await savePreferences(db, userId, { editingMode: 'rich' });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
+		await saveStoryPreferences(db, storyId, { editingMode: 'markdown' });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('markdown');
+		await saveStoryPreferences(db, storyId, { editingMode: null });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
+	});
+
+	it('an unrecognised override value falls back to a sane default', async () => {
+		await db
+			.update(stories)
+			.set({ preferences: { entityAutocomplete: 'telepathy' } })
+			.where(eq(stories.id, storyId));
+		expect((await storyPreferences(db, userId, storyId)).entityAutocomplete).toBe('popup');
 	});
 });

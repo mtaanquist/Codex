@@ -141,15 +141,20 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const mode = String(data.get('entityAutocomplete') ?? '');
 		const marks = String(data.get('continuousSceneMarks') ?? '');
+		const editing = String(data.get('editingMode') ?? '');
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { scope: 'prefs', message: 'Pick an autocomplete mode.' });
 		}
 		if (marks !== 'shown' && marks !== 'hidden') {
 			return fail(400, { scope: 'prefs', message: 'Pick a scene marks option.' });
 		}
+		if (editing !== 'markdown' && editing !== 'rich') {
+			return fail(400, { scope: 'prefs', message: 'Pick an editing mode.' });
+		}
 		await savePreferences(db, locals.user!.id, {
 			entityAutocomplete: mode,
-			continuousSceneMarks: marks
+			continuousSceneMarks: marks,
+			editingMode: editing
 		});
 		return { scope: 'prefs', saved: true };
 	},

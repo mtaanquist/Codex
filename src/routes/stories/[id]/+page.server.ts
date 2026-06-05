@@ -12,7 +12,7 @@ import {
 	stories,
 	universes
 } from '$lib/server/db/schema';
-import { userPreferences } from '$lib/server/preferences';
+import { storyPreferences } from '$lib/server/preferences';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 
@@ -191,7 +191,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}))
 	];
 
-	const preferences = await userPreferences(db, locals.user!.id);
+	// The user's preferences with this story's overrides applied.
+	const preferences = await storyPreferences(db, locals.user!.id, story.id);
 
 	return {
 		story,

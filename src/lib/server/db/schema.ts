@@ -134,6 +134,9 @@ export const stories = pgTable('stories', {
 	coverAssetId: uuid('cover_asset_id'),
 	// Reserved for future LLM integration; inert in v1.
 	llmConfig: jsonb('llm_config').notNull().default({}),
+	// Per-story overrides of the owner's editor preferences; keys absent
+	// here fall back to users.preferences at load time.
+	preferences: jsonb('preferences').notNull().default({}),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()

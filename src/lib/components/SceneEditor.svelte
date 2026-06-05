@@ -7,11 +7,12 @@
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
-	import { proseExtensions } from '$lib/editor';
+	import { proseExtensions, type EditingMode } from '$lib/editor';
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
+	import EditorToolbar from './EditorToolbar.svelte';
 
 	let {
 		sceneId,
@@ -19,6 +20,7 @@
 		body,
 		entities = [],
 		autocompleteMode = 'popup',
+		editingMode = 'markdown',
 		markers = [],
 		imageUniverseId,
 		compact = false,
@@ -30,12 +32,14 @@
 		body: string;
 		entities?: MentionEntity[];
 		autocompleteMode?: AutocompleteMode;
+		editingMode?: EditingMode;
 		markers?: SceneMarker[];
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
 		imageUniverseId?: string;
 		// The continuous story view stitches one editor per scene: no title
-		// input, and vertical arrows at the edges hand focus to neighbours.
+		// input, no toolbar, and vertical arrows at the edges hand focus to
+		// neighbours.
 		compact?: boolean;
 		onCrossBoundary?: (direction: 'up' | 'down') => void;
 		onStatus: (status: SaveStatus) => void;
@@ -164,7 +168,11 @@
 			state: EditorState.create({
 				doc: body,
 				extensions: [
-					...proseExtensions({ placeholder: 'Start writing...', onDocChanged: scheduleSave }),
+					...proseExtensions({
+						placeholder: 'Start writing...',
+						onDocChanged: scheduleSave,
+						editingMode
+					}),
 					mentionsCompartment.of(mentionExtensions(entities)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
@@ -187,6 +195,10 @@
 
 <div class="editor" class:compact>
 	{#if !compact}
+		<EditorToolbar
+			view={() => view}
+			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
+		/>
 		<input
 			class="editor-title-input"
 			type="text"
