@@ -1363,3 +1363,25 @@ a.nav-item {
 	gap: 8px;
 	margin-top: 13px;
 }
+
+/* Invite codes (admin Users section) */
+.invite-create {
+	display: flex;
+	align-items: flex-end;
+	gap: 12px;
+	margin-bottom: var(--space-4);
+}
+.invite-create .field {
+	margin-bottom: 0;
+}
+.invite-create .field:first-child {
+	flex: 1;
+}
+.invite-create input[type='number'] {
+	width: 90px;
+}
+.invite-code {
+	font-family: var(--font-mono);
+	font-size: 13px;
+	letter-spacing: 0.04em;
+}

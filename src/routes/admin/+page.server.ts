@@ -11,6 +11,7 @@ import {
 } from '$lib/server/admin';
 import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
 import { queueBackup } from '$lib/server/jobs';
+import { createInviteCode, deleteInviteCode, listInviteCodes } from '$lib/server/invites';
 import { listPublications, takedownPublication } from '$lib/server/publish';
 import { saveSmtp, smtpView } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
@@ -41,6 +42,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		meId: locals.user!.id,
 		stats: await instanceStats(db),
 		users: await listAllUsers(db),
+		inviteCodes: await listInviteCodes(db),
 		published: await listPublications(db, 50),
 		backupsConfigured: backupConfig() !== null,
 		backupRuns: await listRecentBackupRuns(db, 5),
@@ -111,6 +113,38 @@ export const actions: Actions = {
 			await disableTotp(db, id);
 			return true;
 		});
+	},
+	createInvite: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const maxUses = Number(data.get('maxUses') ?? 1);
+		const expiresDays = Number(data.get('expiresDays') ?? 0);
+		if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000) {
+			return fail(400, {
+				scope: 'invites',
+				message: 'Uses must be a whole number from 1 to 1000.'
+			});
+		}
+		if (!Number.isInteger(expiresDays) || expiresDays < 0 || expiresDays > 365) {
+			return fail(400, { scope: 'invites', message: 'Expiry must be 0 to 365 days.' });
+		}
+		await createInviteCode(db, {
+			createdBy: locals.user!.id,
+			label: String(data.get('label') ?? ''),
+			maxUses,
+			// 0 days means the code never expires.
+			expiresAt: expiresDays > 0 ? new Date(Date.now() + expiresDays * 86_400_000) : null
+		});
+		return { scope: 'invites', done: true };
+	},
+	deleteInvite: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const inviteId = String(data.get('inviteId') ?? '');
+		if (!UUID.test(inviteId) || !(await deleteInviteCode(db, inviteId))) {
+			return fail(400, { scope: 'invites', message: 'That invite code does not exist.' });
+		}
+		return { scope: 'invites', done: true };
 	},
 	takedown: async ({ request, locals }) => {
 		requireAdmin(locals);

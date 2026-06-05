@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 </script>
 
 <svelte:head>
@@ -13,8 +13,13 @@
 	<h1>Codex</h1>
 	{#if form?.sent}
 		<p class="notice" role="status">
-			Check your email. We have sent a link to confirm your address. Once you have confirmed it, an
-			administrator reviews your account before you can sign in.
+			{#if form.invited}
+				Check your email. We have sent a link to confirm your address. Once you have confirmed it,
+				you can sign in.
+			{:else}
+				Check your email. We have sent a link to confirm your address. Once you have confirmed it,
+				an administrator reviews your account before you can sign in.
+			{/if}
 		</p>
 		<p><a href={resolve('/login')}>Back to sign in</a></p>
 	{:else}
@@ -41,6 +46,17 @@
 				Password
 				<input type="password" name="password" required minlength="8" autocomplete="new-password" />
 			</label>
+			<label>
+				Invite code (optional)
+				<input
+					type="text"
+					name="inviteCode"
+					value={form?.inviteCode ?? data.prefillCode}
+					autocomplete="off"
+					spellcheck="false"
+				/>
+				<span class="hint">If you have an invite code, enter it to skip the approval wait.</span>
+			</label>
 			<button type="submit">Create account</button>
 		</form>
 		<p><a href={resolve('/login')}>Already have an account? Sign in</a></p>
@@ -65,6 +81,10 @@
 	}
 	.error {
 		color: #b00020;
+	}
+	.hint {
+		font-size: 0.8125rem;
+		color: #666;
 	}
 	.notice {
 		line-height: 1.5;
