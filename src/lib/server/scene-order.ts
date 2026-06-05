@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
 
@@ -48,26 +48,51 @@ export async function applySceneOrder(
 		return { ok: false, reason: 'order must list each scene of the story exactly once' };
 	}
 
-	await db.transaction(async (tx) => {
-		let globalPosition = 0;
-		for (const chapter of order.chapters) {
-			let positionInChapter = 0;
-			for (const sceneId of chapter.sceneIds) {
-				globalPosition += 1;
-				positionInChapter += 1;
-				await tx
-					.update(scenes)
-					.set({ chapterId: chapter.id, positionInChapter, globalPosition })
-					.where(eq(scenes.id, sceneId));
-			}
-		}
-		for (const sceneId of order.orphanSceneIds) {
+	// One UPDATE over unnested arrays instead of a statement per scene; a
+	// single statement is also atomic, so no transaction is needed.
+	const ids: string[] = [];
+	const targetChapters: (string | null)[] = [];
+	const chapterPositions: (number | null)[] = [];
+	const globalPositions: number[] = [];
+	let globalPosition = 0;
+	for (const chapter of order.chapters) {
+		chapter.sceneIds.forEach((sceneId, index) => {
 			globalPosition += 1;
-			await tx
-				.update(scenes)
-				.set({ chapterId: null, positionInChapter: null, globalPosition })
-				.where(eq(scenes.id, sceneId));
-		}
-	});
+			ids.push(sceneId);
+			targetChapters.push(chapter.id);
+			chapterPositions.push(index + 1);
+			globalPositions.push(globalPosition);
+		});
+	}
+	for (const sceneId of order.orphanSceneIds) {
+		globalPosition += 1;
+		ids.push(sceneId);
+		targetChapters.push(null);
+		chapterPositions.push(null);
+		globalPositions.push(globalPosition);
+	}
+	if (ids.length > 0) {
+		// array[...] constructors, since a bare array parameter binds as a
+		// record rather than a Postgres array.
+		const column = (values: (string | number | null)[]) =>
+			sql.join(
+				values.map((value) => sql`${value}`),
+				sql`, `
+			);
+		await db.execute(sql`
+			update scenes set
+				chapter_id = v.chapter_id,
+				position_in_chapter = v.position_in_chapter,
+				global_position = v.global_position
+			from (
+				select
+					unnest(array[${column(ids)}]::uuid[]) as id,
+					unnest(array[${column(targetChapters)}]::uuid[]) as chapter_id,
+					unnest(array[${column(chapterPositions)}]::int[]) as position_in_chapter,
+					unnest(array[${column(globalPositions)}]::int[]) as global_position
+			) as v
+			where scenes.id = v.id
+		`);
+	}
 	return { ok: true };
 }
