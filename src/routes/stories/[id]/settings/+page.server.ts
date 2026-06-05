@@ -15,6 +15,11 @@ import {
 import { queueExportArtifacts } from '$lib/server/jobs';
 import { deleteStory } from '$lib/server/story-delete';
 import { publications, users } from '$lib/server/db/schema';
+import {
+	saveStoryPreferences,
+	storyPreferenceOverrides,
+	userPreferences
+} from '$lib/server/preferences';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -56,7 +61,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		archive,
 		edition,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
-		reviewInvitations: await listReviewInvitations(db, story.id)
+		reviewInvitations: await listReviewInvitations(db, story.id),
+		// For the Editor section: which keys this story overrides, and the
+		// account values the inherit options fall back to.
+		preferenceOverrides: await storyPreferenceOverrides(db, story.id),
+		accountPreferences: await userPreferences(db, locals.user!.id)
 	};
 };
 
@@ -76,6 +85,24 @@ export const actions: Actions = {
 			.set({ title, author, brief, descriptionMd })
 			.where(eq(stories.id, story.id));
 		return { action: 'update', saved: true };
+	},
+	savePreferences: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const mode = String(data.get('entityAutocomplete') ?? '');
+		const marks = String(data.get('continuousSceneMarks') ?? '');
+		// An empty value clears the override, so the account setting applies.
+		if (mode !== '' && mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
+			return fail(400, { action: 'prefs', message: 'Pick an autocomplete option.' });
+		}
+		if (marks !== '' && marks !== 'shown' && marks !== 'hidden') {
+			return fail(400, { action: 'prefs', message: 'Pick a scene marks option.' });
+		}
+		await saveStoryPreferences(db, story.id, {
+			entityAutocomplete: mode || null,
+			continuousSceneMarks: marks || null
+		});
+		return { action: 'prefs', saved: true };
 	},
 	setVisibility: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);

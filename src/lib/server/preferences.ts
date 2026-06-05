@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import type { Database } from './auth';
-import { users } from './db/schema';
+import { stories, users } from './db/schema';
 import type { AutocompleteMode } from '$lib/editor-autocomplete';
 import {
 	DEFAULT_ACCENT,
@@ -20,14 +20,17 @@ export type UserPreferences = {
 	accent: string;
 };
 
-// The user's preferences with defaults applied; unknown values fall back
-// rather than break old sessions when an option is renamed.
-export async function userPreferences(db: Database, userId: string): Promise<UserPreferences> {
-	const [row] = await db
-		.select({ preferences: users.preferences })
-		.from(users)
-		.where(eq(users.id, userId));
-	const raw = (row?.preferences ?? {}) as Record<string, unknown>;
+// The editor-behaviour keys a story may override. Theme and accent stay
+// account-wide: they style the whole app, not one story's editor.
+export const STORY_PREFERENCE_KEYS = ['entityAutocomplete', 'continuousSceneMarks'] as const;
+export type StoryPreferenceKey = (typeof STORY_PREFERENCE_KEYS)[number];
+// The raw per-story overrides, for the settings form; an absent key means
+// "use the account setting".
+export type StoryPreferenceOverrides = Partial<Pick<UserPreferences, StoryPreferenceKey>>;
+
+// Defaults applied to whatever is stored; unknown values fall back rather
+// than break old sessions when an option is renamed.
+function normalise(raw: Record<string, unknown>): UserPreferences {
 	const mode = raw.entityAutocomplete;
 	const marks = raw.continuousSceneMarks;
 	return {
@@ -36,6 +39,46 @@ export async function userPreferences(db: Database, userId: string): Promise<Use
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};
+}
+
+export async function userPreferences(db: Database, userId: string): Promise<UserPreferences> {
+	const [row] = await db
+		.select({ preferences: users.preferences })
+		.from(users)
+		.where(eq(users.id, userId));
+	return normalise((row?.preferences ?? {}) as Record<string, unknown>);
+}
+
+// The story's raw overrides, restricted to the overridable keys so stray
+// data in the column cannot leak into other preferences.
+export async function storyPreferenceOverrides(
+	db: Database,
+	storyId: string
+): Promise<Record<string, unknown>> {
+	const [row] = await db
+		.select({ preferences: stories.preferences })
+		.from(stories)
+		.where(eq(stories.id, storyId));
+	const raw = (row?.preferences ?? {}) as Record<string, unknown>;
+	return Object.fromEntries(
+		STORY_PREFERENCE_KEYS.filter((key) => key in raw).map((key) => [key, raw[key]])
+	);
+}
+
+// The effective preferences while working in a story: the user's, with the
+// story's overrides on top.
+export async function storyPreferences(
+	db: Database,
+	userId: string,
+	storyId: string
+): Promise<UserPreferences> {
+	const [row] = await db
+		.select({ preferences: users.preferences })
+		.from(users)
+		.where(eq(users.id, userId));
+	const userRaw = (row?.preferences ?? {}) as Record<string, unknown>;
+	const overrides = await storyPreferenceOverrides(db, storyId);
+	return normalise({ ...userRaw, ...overrides });
 }
 
 export async function savePreferences(
@@ -50,4 +93,26 @@ export async function savePreferences(
 			preferences: sql`${users.preferences} || ${JSON.stringify(patch)}::jsonb`
 		})
 		.where(eq(users.id, userId));
+}
+
+// Sets or clears a story's overrides: a value writes the key, null removes
+// it so the story falls back to the account setting again.
+export async function saveStoryPreferences(
+	db: Database,
+	storyId: string,
+	patch: Partial<Record<StoryPreferenceKey, string | null>>
+) {
+	const set: Record<string, string> = {};
+	const clear: string[] = [];
+	for (const key of STORY_PREFERENCE_KEYS) {
+		const value = patch[key];
+		if (value === undefined) continue;
+		if (value === null) clear.push(key);
+		else set[key] = value;
+	}
+	let expression: SQL = sql`${stories.preferences} || ${JSON.stringify(set)}::jsonb`;
+	for (const key of clear) {
+		expression = sql`(${expression}) - ${key}::text`;
+	}
+	await db.update(stories).set({ preferences: expression }).where(eq(stories.id, storyId));
 }

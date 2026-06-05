@@ -14,6 +14,17 @@
 		pdf: 'PDF'
 	};
 
+	// Mirrors the option labels on the account page's Editor behavior cards.
+	const AUTOCOMPLETE_LABELS: Record<string, string> = {
+		off: 'Off',
+		ghost: 'Inline ghost-text',
+		popup: 'Popup menu'
+	};
+	const MARKS_LABELS: Record<string, string> = {
+		shown: 'Shown',
+		hidden: 'Hidden'
+	};
+
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -71,6 +82,48 @@
 			<textarea name="description" rows="4">{data.story.descriptionMd ?? ''}</textarea>
 		</label>
 		<button type="submit">Save</button>
+	</form>
+
+	<h2>Editor</h2>
+	<p class="hint">
+		These apply to this story only. "Use my account setting" follows whatever is set on your account
+		page, now and when you change it there.
+	</p>
+	<form method="POST" action="?/savePreferences">
+		{#if form?.action === 'prefs' && form.message}
+			<p class="error" role="alert">{form.message}</p>
+		{/if}
+		{#if form?.action === 'prefs' && form.saved}
+			<p role="status">Saved.</p>
+		{/if}
+		<label>
+			Entity autocomplete
+			<select
+				name="entityAutocomplete"
+				value={(data.preferenceOverrides.entityAutocomplete as string) ?? ''}
+			>
+				<option value="">
+					Use my account setting ({AUTOCOMPLETE_LABELS[data.accountPreferences.entityAutocomplete]})
+				</option>
+				<option value="off">Off</option>
+				<option value="ghost">Inline ghost-text</option>
+				<option value="popup">Popup menu</option>
+			</select>
+		</label>
+		<label>
+			Scene marks in the story view
+			<select
+				name="continuousSceneMarks"
+				value={(data.preferenceOverrides.continuousSceneMarks as string) ?? ''}
+			>
+				<option value="">
+					Use my account setting ({MARKS_LABELS[data.accountPreferences.continuousSceneMarks]})
+				</option>
+				<option value="shown">Shown</option>
+				<option value="hidden">Hidden</option>
+			</select>
+		</label>
+		<button type="submit">Save editor settings</button>
 	</form>
 
 	<h2>Cover</h2>
