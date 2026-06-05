@@ -1,0 +1,74 @@
+import { expect, test } from '@playwright/test';
+
+// The full review loop: the author makes a story and a review link, an
+// anonymous guest opens it, gives a name, and comments on a scene, then the
+// author reads the thread, replies, and resolves it.
+test('guest review: invite, comment as a guest, reply and resolve as the author', async ({
+	page,
+	browser
+}) => {
+	// Author: a fresh story with one scene of prose.
+	await page.goto('/login');
+	await page.getByLabel('Email').fill('e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+	await expect(page).toHaveURL('/');
+
+	const universeName = `Review Test ${Date.now()}`;
+	await page.getByLabel('New universe').fill(universeName);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
+	await page.getByLabel('New story').fill('Margin Notes');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Margin Notes');
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('The reviewer will have opinions about this gate.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	const storyId = page.url().match(/stories\/([0-9a-f-]{36})/)![1];
+
+	// Create the review link in settings; it is shown once.
+	await page.goto(`/stories/${storyId}/settings`);
+	await page.getByLabel('Who is this link for? (optional)').fill('e2e guest');
+	await page.getByRole('button', { name: 'Create review link' }).click();
+	const link = await page.locator('.review-link code').textContent();
+	expect(link).toMatch(/^\/review\//);
+
+	// Guest: a clean context with no session.
+	const guestContext = await browser.newContext();
+	const guest = await guestContext.newPage();
+	await guest.goto(link!);
+	await guest.getByLabel('Your name').fill('Margin Walker');
+	await guest.getByRole('button', { name: 'Start reviewing' }).click();
+	await expect(guest.getByText('Reviewing as Margin Walker')).toBeVisible();
+	await expect(guest.locator('.manuscript')).toContainText('opinions about this gate');
+
+	await guest.getByRole('button', { name: 'Comment on this scene' }).click();
+	await guest.getByPlaceholder('Your comment on this scene').fill('Strong opening, weak hinges.');
+	await guest.getByRole('button', { name: 'Comment', exact: true }).click();
+	await expect(guest.getByText('Strong opening, weak hinges.')).toBeVisible();
+	await guestContext.close();
+
+	// Author: the thread is on the feedback page; reply and resolve.
+	await page.goto(`/stories/${storyId}/review`);
+	await expect(page.getByText('Strong opening, weak hinges.')).toBeVisible();
+	await expect(page.getByText('Margin Walker -')).toBeVisible();
+	await page.getByLabel('Reply').fill('Noted; oiling the hinges.');
+	await page.getByRole('button', { name: 'Reply', exact: true }).click();
+	await expect(page.getByText('Noted; oiling the hinges.')).toBeVisible();
+	await page.getByRole('button', { name: 'Resolve' }).click();
+	await expect(page.getByText('Resolved', { exact: true })).toBeVisible();
+
+	// A revoked link stops working for new visits.
+	await page.goto(`/stories/${storyId}/settings`);
+	await page.getByRole('button', { name: 'Revoke' }).click();
+	await expect(page.getByText('Revoked')).toBeVisible();
+	const lateContext = await browser.newContext();
+	const late = await lateContext.newPage();
+	await late.goto(link!);
+	await expect(late.getByRole('heading', { name: 'This review has ended' })).toBeVisible();
+	await lateContext.close();
+});

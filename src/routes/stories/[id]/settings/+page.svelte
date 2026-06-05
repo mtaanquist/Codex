@@ -19,6 +19,20 @@
 		if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
+
+	function inviteStatus(invitation: PageData['reviewInvitations'][number]): string {
+		if (invitation.revokedAt) return 'Revoked';
+		if (invitation.expiresAt && new Date(invitation.expiresAt) < new Date()) return 'Expired';
+		return 'Active';
+	}
+
+	let copiedReviewLink = $state(false);
+	function copyReviewLink(path: string) {
+		navigator.clipboard.writeText(`${location.origin}${path}`).then(() => {
+			copiedReviewLink = true;
+			setTimeout(() => (copiedReviewLink = false), 1500);
+		});
+	}
 </script>
 
 <svelte:head>
@@ -187,6 +201,59 @@
 		{/if}
 	{/if}
 
+	<h2>Review</h2>
+	<p>
+		Invite someone to read this story and leave comments. They follow a link; no account is needed.
+		{#if data.reviewInvitations.length > 0}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (app path with a suffix) -->
+			<a href={`${resolve('/stories/[id]', { id: data.story.id })}/review`}>See the feedback</a>.
+		{/if}
+	</p>
+	<form method="POST" action="?/createReviewInvite" class="invite-form">
+		{#if form?.action === 'review' && form.message}
+			<p class="error" role="alert">{form.message}</p>
+		{/if}
+		<label>
+			Who is this link for? (optional)
+			<input type="text" name="note" placeholder="e.g. Sam, my writing group" />
+		</label>
+		<label>
+			Expires after (days)
+			<input type="number" name="expiresDays" min="1" max="365" placeholder="Never" />
+		</label>
+		<button type="submit">Create review link</button>
+	</form>
+	{#if form?.action === 'review' && 'reviewLink' in form && form.reviewLink}
+		<p role="status" class="review-link">
+			Share this link; it is shown only once:
+			<code>{form.reviewLink}</code>
+			<button type="button" onclick={() => copyReviewLink(form.reviewLink as string)}>
+				{copiedReviewLink ? 'Copied' : 'Copy link'}
+			</button>
+		</p>
+	{/if}
+	{#if data.reviewInvitations.length > 0}
+		<ul class="invitations">
+			{#each data.reviewInvitations as invitation (invitation.id)}
+				<li>
+					<span>
+						{invitation.email ?? 'Review link'} - {inviteStatus(invitation)}, created {new Date(
+							invitation.createdAt
+						).toLocaleDateString()}{invitation.guests.length > 0
+							? ` - joined: ${invitation.guests.map((guest) => guest.displayName).join(', ')}`
+							: ''}
+					</span>
+					{#if inviteStatus(invitation) === 'Active'}
+						<form method="POST" action="?/revokeReviewInvite">
+							<input type="hidden" name="invitationId" value={invitation.id} />
+							<button type="submit" class="danger-ghost">Revoke</button>
+						</form>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+
 	<h2>Export</h2>
 	<ul class="exports">
 		<!-- eslint-disable svelte/no-navigation-without-resolve (file downloads and the print view) -->
@@ -288,5 +355,31 @@
 	.danger {
 		color: var(--danger, #b00020);
 		margin-top: 1.5rem;
+	}
+	.invite-form input[type='number'] {
+		max-width: 8rem;
+	}
+	.review-link code {
+		word-break: break-all;
+	}
+	.invitations {
+		list-style: none;
+		padding: 0;
+	}
+	.invitations li {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.25rem 0;
+	}
+	.invitations form {
+		margin-left: auto;
+	}
+	.danger-ghost {
+		background: transparent;
+		border: 0;
+		color: var(--danger, #b00020);
+		cursor: pointer;
+		padding: 0;
 	}
 </style>
