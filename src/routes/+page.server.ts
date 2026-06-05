@@ -5,7 +5,11 @@ import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const user = locals.user!;
+	// Signed-out visitors get the landing page; no data to load for it.
+	if (!locals.user) {
+		return { user: null, universes: [], stories: [], isAdmin: false };
+	}
+	const user = locals.user;
 	const list = await db
 		.select()
 		.from(universes)
@@ -40,6 +44,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
 	createUniverse: async ({ request, locals }) => {
+		// The route is public for the landing page; the action is not.
+		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
 		const name = String(data.get('name') ?? '').trim();
 		if (!name) {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import AuthShell from '$lib/components/AuthShell.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -43,54 +44,58 @@
 	<title>Sign in - Codex</title>
 </svelte:head>
 
-<main>
-	<h1>Codex</h1>
+<AuthShell title="Sign in">
 	<form method="POST">
-		<p>Sign in with your email and password.</p>
+		<p class="auth-lede">Sign in with your email and password.</p>
 		{#if form?.message}
-			<p class="error" role="alert">{form.message}</p>
+			<p class="form-error" role="alert">{form.message}</p>
 		{/if}
-		<label>
-			Email
-			<input type="email" name="email" value={form?.email ?? ''} required autocomplete="email" />
-		</label>
-		<label>
-			Password
-			<input type="password" name="password" required autocomplete="current-password webauthn" />
-		</label>
-		<button type="submit">Sign in</button>
+		<div class="field">
+			<label for="login-email">Email</label>
+			<input
+				id="login-email"
+				class="input"
+				type="email"
+				name="email"
+				value={form?.email ?? ''}
+				required
+				autocomplete="email"
+			/>
+		</div>
+		<div class="field">
+			<label for="login-password">Password</label>
+			<input
+				id="login-password"
+				class="input"
+				type="password"
+				name="password"
+				required
+				autocomplete="current-password webauthn"
+			/>
+		</div>
+		<button class="btn btn-primary" type="submit">Sign in</button>
 	</form>
 	{#if passkeyError}
-		<p class="error" role="alert">{passkeyError}</p>
+		<p class="form-error auth-note" role="alert">{passkeyError}</p>
 	{/if}
-	<button type="button" class="passkey" disabled={passkeyBusy} onclick={signInWithPasskey}>
-		{passkeyBusy ? 'Waiting for your device...' : 'Use a passkey instead'}
-	</button>
-	<p><a href={resolve('/forgot-password')}>Forgot password?</a></p>
-	<p><a href={resolve('/signup')}>Create an account</a></p>
-</main>
+	<p class="auth-note">
+		<button
+			class="btn btn-secondary passkey"
+			type="button"
+			disabled={passkeyBusy}
+			onclick={signInWithPasskey}
+		>
+			{passkeyBusy ? 'Waiting for your device...' : 'Use a passkey instead'}
+		</button>
+	</p>
+	<div class="auth-links">
+		<a href={resolve('/forgot-password')}>Forgot password?</a>
+		<a href={resolve('/signup')}>Create an account</a>
+	</div>
+</AuthShell>
 
 <style>
-	main {
-		max-width: 20rem;
-		margin: 15vh auto 0;
-		font-family: system-ui, sans-serif;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-	.error {
-		color: #b00020;
-	}
 	.passkey {
 		width: 100%;
-		margin-top: 1rem;
 	}
 </style>

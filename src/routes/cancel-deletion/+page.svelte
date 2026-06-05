@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import AuthShell from '$lib/components/AuthShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -9,33 +10,19 @@
 	<title>Cancel deletion - Codex</title>
 </svelte:head>
 
-<main>
-	<h1>Codex</h1>
+<AuthShell title="Cancel deletion">
 	{#if data.cancelled}
-		<p class="notice" role="status">
+		<p class="auth-note" role="status">
 			Your account deletion is cancelled and your account is active again. You can sign in as usual.
 			Any pages you had published stay unpublished; publish them again when you are ready.
 		</p>
 	{:else}
-		<p class="error" role="alert">
+		<p class="form-error auth-note" role="alert">
 			This cancellation link is not valid. It may have already been used, expired, or the deletion
 			may have already run. If you still have access, sign in to check.
 		</p>
 	{/if}
-	<p><a href={resolve('/login')}>Go to sign in</a></p>
-</main>
-
-<style>
-	main {
-		max-width: 24rem;
-		margin: 15vh auto 0;
-		font-family: system-ui, sans-serif;
-	}
-	.notice,
-	.error {
-		line-height: 1.5;
-	}
-	.error {
-		color: #b00020;
-	}
-</style>
+	<div class="auth-links">
+		<a href={resolve('/login')}>Go to sign in</a>
+	</div>
+</AuthShell>

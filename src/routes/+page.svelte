@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import Landing from '$lib/components/Landing.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import { entityColor } from '$lib/entity-color';
@@ -9,85 +10,95 @@
 </script>
 
 <svelte:head>
-	<title>Library - Codex</title>
+	<title>{data.user ? 'Library - Codex' : 'Codex - A writing tool'}</title>
 </svelte:head>
 
-<div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="spacer"></span>
-		<PaletteButton />
-		<UserMenu />
-	</header>
+{#if !data.user}
+	<Landing />
+{:else}
+	{@render library()}
+{/if}
 
-	<main class="library page-body">
-		<div class="lib-head">
-			<h1>Library</h1>
-			<p class="lib-sub">Your universes, and the stories inside them.</p>
-		</div>
+{#snippet library()}
+	<div class="page-shell">
+		<header class="topbar">
+			<a class="brand" href={resolve('/')}>
+				<span class="brand-name">Codex</span>
+			</a>
+			<span class="spacer"></span>
+			<PaletteButton />
+			<UserMenu />
+		</header>
 
-		{#if data.universes.length === 0}
-			<section class="lib-card lib-empty-card">
-				<p>No universes yet. A universe holds the worldbuilding your stories share.</p>
-			</section>
-		{:else}
-			{#each data.universes as universe (universe.id)}
-				{@const universeStories = data.stories.filter((story) => story.universeId === universe.id)}
-				<section class="lib-card">
-					<div class="lib-card-head">
-						<span class="badge sm" style="background: {entityColor(universe.name)}">
-							{universe.name.slice(0, 1).toUpperCase()}
-						</span>
-						<a class="lib-universe" href={resolve('/universes/[id]/plan', { id: universe.id })}>
-							{universe.name}
-						</a>
-						<a class="lib-settings" href={resolve('/universes/[id]', { id: universe.id })}>
-							Settings
-						</a>
-					</div>
-					{#if universeStories.length === 0}
-						<p class="lib-none">No stories yet.</p>
-					{:else}
-						<ul class="lib-stories">
-							{#each universeStories as story (story.id)}
-								<li>
-									<a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a>
-									{#if story.brief}<span class="lib-brief">{story.brief}</span>{/if}
-								</li>
-							{/each}
-						</ul>
-					{/if}
+		<main class="library page-body">
+			<div class="lib-head">
+				<h1>Library</h1>
+				<p class="lib-sub">Your universes, and the stories inside them.</p>
+			</div>
+
+			{#if data.universes.length === 0}
+				<section class="lib-card lib-empty-card">
+					<p>No universes yet. A universe holds the worldbuilding your stories share.</p>
 				</section>
-			{/each}
-		{/if}
+			{:else}
+				{#each data.universes as universe (universe.id)}
+					{@const universeStories = data.stories.filter(
+						(story) => story.universeId === universe.id
+					)}
+					<section class="lib-card">
+						<div class="lib-card-head">
+							<span class="badge sm" style="background: {entityColor(universe.name)}">
+								{universe.name.slice(0, 1).toUpperCase()}
+							</span>
+							<a class="lib-universe" href={resolve('/universes/[id]/plan', { id: universe.id })}>
+								{universe.name}
+							</a>
+							<a class="lib-settings" href={resolve('/universes/[id]', { id: universe.id })}>
+								Settings
+							</a>
+						</div>
+						{#if universeStories.length === 0}
+							<p class="lib-none">No stories yet.</p>
+						{:else}
+							<ul class="lib-stories">
+								{#each universeStories as story (story.id)}
+									<li>
+										<a href={resolve('/stories/[id]', { id: story.id })}>{story.title}</a>
+										{#if story.brief}<span class="lib-brief">{story.brief}</span>{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</section>
+				{/each}
+			{/if}
 
-		<section class="lib-card">
-			<form class="lib-new" method="POST" action="?/createUniverse">
-				{#if form?.scope === 'universe' && form.message}
-					<p class="lib-error" role="alert">{form.message}</p>
-				{/if}
-				<label class="lib-new-label" for="new-universe">New universe</label>
-				<div class="lib-new-row">
-					<input
-						id="new-universe"
-						class="input"
-						type="text"
-						name="name"
-						placeholder="Name"
-						required
-					/>
-					<button class="btn btn-primary" type="submit">Create universe</button>
-				</div>
-			</form>
-		</section>
+			<section class="lib-card">
+				<form class="lib-new" method="POST" action="?/createUniverse">
+					{#if form?.scope === 'universe' && form.message}
+						<p class="lib-error" role="alert">{form.message}</p>
+					{/if}
+					<label class="lib-new-label" for="new-universe">New universe</label>
+					<div class="lib-new-row">
+						<input
+							id="new-universe"
+							class="input"
+							type="text"
+							name="name"
+							placeholder="Name"
+							required
+						/>
+						<button class="btn btn-primary" type="submit">Create universe</button>
+					</div>
+				</form>
+			</section>
 
-		<p class="lib-foot">
-			New here? Read the <a href={resolve('/docs')}>help</a>.
-		</p>
-	</main>
-</div>
+			<p class="lib-foot">
+				New here? Read the <a href={resolve('/docs')}>help</a>.
+			</p>
+		</main>
+	</div>
+{/snippet}
 
 <style>
 	.library {
