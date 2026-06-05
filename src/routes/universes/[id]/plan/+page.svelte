@@ -17,7 +17,7 @@
 		saveStatus = 'idle';
 	});
 
-	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.id }));
+	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.slug }));
 
 	// Right column tabs; History holds the open entity's timeline.
 	let rightTab = $state<'reference' | 'history'>('reference');
@@ -34,7 +34,7 @@
 
 <div class="app">
 	<TopBar
-		universe={{ id: data.universe.id, name: data.universe.name }}
+		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		{saveStatus}
 		help={{ topic: 'planning', label: 'the planning view' }}
 	/>
@@ -46,7 +46,7 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
-			insightsHref={resolve('/universes/[id]/insights', { id: data.universe.id })}
+			insightsHref={resolve('/universes/[id]/insights', { id: data.universe.slug })}
 			{form}
 		/>
 		<main class="pane center">

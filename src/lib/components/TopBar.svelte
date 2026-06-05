@@ -13,9 +13,9 @@
 		storyView,
 		help
 	}: {
-		universe: { id: string; name: string };
+		universe: { slug: string; name: string };
 		// Absent on universe-scoped pages; the universe becomes the crumb.
-		story?: { id: string; title: string };
+		story?: { slug: string; title: string };
 		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 		storyView?: { active: boolean; toggleHref: string };
@@ -38,15 +38,15 @@
 	</a>
 	<nav class="crumbs">
 		{#if story}
-			<a class="crumb" href={resolve('/universes/[id]/plan', { id: universe.id })}>
+			<a class="crumb" href={resolve('/universes/[id]/plan', { id: universe.slug })}>
 				{universe.name}
 			</a>
 			<span class="sep"><Icon name="chevron" size={13} /></span>
-			<a class="crumb current" href={resolve('/stories/[id]/settings', { id: story.id })}>
+			<a class="crumb current" href={resolve('/stories/[id]/settings', { id: story.slug })}>
 				{story.title}
 			</a>
 		{:else}
-			<a class="crumb current" href={resolve('/universes/[id]', { id: universe.id })}>
+			<a class="crumb current" href={resolve('/universes/[id]', { id: universe.slug })}>
 				{universe.name}
 			</a>
 		{/if}
@@ -58,7 +58,7 @@
 		<PaletteButton />
 		<a
 			class="icon-btn"
-			href={resolve('/universes/[id]', { id: universe.id })}
+			href={resolve('/universes/[id]', { id: universe.slug })}
 			title="Universe settings"
 		>
 			<Icon name="gear" />

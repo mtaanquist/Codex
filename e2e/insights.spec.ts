@@ -13,7 +13,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
-	const universeId = page.url().match(/universes\/([0-9a-f-]{36})/)![1];
+	const universeId = page.url().match(/universes\/([^/?]+)/)![1];
 	await page.getByLabel('New story').fill('First Light');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('First Light');

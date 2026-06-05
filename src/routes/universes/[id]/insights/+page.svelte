@@ -42,7 +42,7 @@
 		lore_entry: 'Lore'
 	};
 
-	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.id }));
+	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.slug }));
 	const universeColor = $derived(entityColor(data.universe.name));
 
 	const totalWords = $derived(data.stories.reduce((sum, story) => sum + story.words, 0));
@@ -226,7 +226,7 @@
 							{#each data.stories as story (story.id)}
 								<div class="story-row">
 									<div class="story-row-head">
-										<a class="story-row-title" href={resolve('/stories/[id]', { id: story.id })}>
+										<a class="story-row-title" href={resolve('/stories/[id]', { id: story.slug })}>
 											{story.title}
 										</a>
 										<span class="story-row-meta">

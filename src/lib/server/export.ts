@@ -1,4 +1,5 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
+import { slugify } from '../slug.ts';
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
@@ -21,16 +22,6 @@ import { extensionFor } from './media-types.ts';
 // links rewritten. Markdown in, markdown out; nothing is trapped.
 // Runs in the worker too (artifact generation), so relative value imports
 // carry explicit .ts extensions and avoid the $lib alias.
-
-export function slugify(text: string | null, fallback: string): string {
-	const slug = (text ?? '')
-		.toLowerCase()
-		.normalize('NFKD')
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-		.slice(0, 60);
-	return slug || fallback;
-}
 
 function frontMatter(fields: Record<string, string | string[] | null | undefined>): string {
 	const lines = ['---'];

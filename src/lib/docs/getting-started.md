@@ -19,3 +19,7 @@ Each of those has its own help article. Look for the "?" next to a heading anywh
 ## Jumping around
 
 Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The same box lists commands for where you are, such as creating a scene or opening the story's settings.
+
+## Web addresses
+
+Universes and stories get readable addresses made from their names, such as /universes/ardenfall or /stories/the-toll, so you can edit the address bar to move around. Renaming something keeps its address; change it deliberately with the Slug field in its settings. The old address stops working when you do.

@@ -43,9 +43,9 @@
 <main class="feedback">
 	<nav>
 		<a href={resolve('/')}>Library</a> /
-		<a href={resolve('/stories/[id]', { id: data.story.id })}>{data.story.title}</a> /
+		<a href={resolve('/stories/[id]', { id: data.story.slug })}>{data.story.title}</a> /
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (app path with a suffix) -->
-		<a href={`${resolve('/stories/[id]', { id: data.story.id })}/settings`}>Settings</a>
+		<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/settings`}>Settings</a>
 	</nav>
 	<h1>Review feedback</h1>
 	<p class="lede">

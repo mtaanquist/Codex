@@ -9,6 +9,7 @@ import type { WebLink } from '../relationship-web';
 
 export type StoryProgress = {
 	id: string;
+	slug: string;
 	title: string;
 	sceneCount: number;
 	words: number;
@@ -40,7 +41,7 @@ const WORDS_SQL = (column: string) =>
 
 export async function storyProgress(db: Database, universeId: string): Promise<StoryProgress[]> {
 	const result = await db.execute(sql`
-		select st.id, st.title,
+		select st.id, st.title, st.slug,
 			count(s.id)::int as scene_count,
 			coalesce(sum(s.word_count), 0)::int as words,
 			count(s.id) filter (where s.status = 'outline')::int as outline,
@@ -56,6 +57,7 @@ export async function storyProgress(db: Database, universeId: string): Promise<S
 	return result.rows.map((row) => {
 		const r = row as {
 			id: string;
+			slug: string;
 			title: string;
 			scene_count: number;
 			words: number;
@@ -66,6 +68,7 @@ export async function storyProgress(db: Database, universeId: string): Promise<S
 		};
 		return {
 			id: r.id,
+			slug: r.slug,
 			title: r.title,
 			sceneCount: r.scene_count,
 			words: r.words,

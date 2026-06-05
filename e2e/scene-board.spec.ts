@@ -16,7 +16,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await page.getByLabel('New story').fill('Lanes');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Lanes');
-	const storyId = page.url().match(/stories\/([0-9a-f-]{36})/)![1];
+	const storyId = page.url().match(/stories\/([^/?]+)/)![1];
 
 	// One scene with a title and a few words.
 	await page.getByRole('button', { name: 'New chapter' }).click();
