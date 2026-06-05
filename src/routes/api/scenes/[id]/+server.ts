@@ -6,6 +6,8 @@ import { scenes, stories } from '$lib/server/db/schema';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { updateMarkerAnchors } from '$lib/server/markers';
 import { recordRevision } from '$lib/server/revisions';
+import { setSceneStatus } from '$lib/server/scene-status';
+import { isSceneStatus } from '$lib/scene-status';
 import { wordCount } from '$lib/word-count';
 
 // Debounced autosave target for the scene editor.
@@ -49,4 +51,16 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	await queueSceneMentions(row.id);
 
 	return json({ savedAt: new Date().toISOString(), wordCount: count });
+};
+
+// Status changes come from the scene board, separate from the autosave: no
+// revision, no mention rebuild, just the ladder position.
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	const payload = (await request.json()) as { status?: unknown };
+	if (!isSceneStatus(payload.status)) {
+		error(400, 'status must be one of outline, draft, revised, final');
+	}
+	const changed = await setSceneStatus(db, locals.user!.id, params.id, payload.status);
+	if (!changed) error(404, 'Scene not found');
+	return json({ ok: true });
 };

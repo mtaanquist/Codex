@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -8,6 +8,7 @@ import {
 	loreStoryNotes,
 	outlineNodes,
 	placeStoryNotes,
+	sceneMarkers,
 	scenes
 } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
@@ -150,11 +151,33 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		.from(chapters)
 		.where(eq(chapters.storyId, story.id))
 		.orderBy(asc(chapters.position));
+	// Full rows for the scene board; the outline node editor only reads
+	// id and title from these.
 	const sceneList = await db
-		.select({ id: scenes.id, title: scenes.title })
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			status: scenes.status,
+			wordCount: scenes.wordCount,
+			chapterId: scenes.chapterId
+		})
 		.from(scenes)
 		.where(eq(scenes.storyId, story.id))
 		.orderBy(asc(scenes.globalPosition));
+	// Open TODOs per scene, shown on the board cards.
+	const todoRows = await db
+		.select({ sceneId: sceneMarkers.sceneId, todos: count() })
+		.from(sceneMarkers)
+		.innerJoin(scenes, eq(sceneMarkers.sceneId, scenes.id))
+		.where(
+			and(
+				eq(scenes.storyId, story.id),
+				eq(sceneMarkers.kind, 'todo'),
+				isNull(sceneMarkers.resolvedAt)
+			)
+		)
+		.groupBy(sceneMarkers.sceneId);
+	const todoCounts = Object.fromEntries(todoRows.map((row) => [row.sceneId, row.todos]));
 
 	// The open item's timeline, and the previewed revision if the URL
 	// names one. Selection above already enforced ownership.
@@ -191,6 +214,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedNode,
 		chapters: chapterList,
 		scenes: sceneList,
+		todoCounts,
 		revisionTarget,
 		revisionRows,
 		revisionPreview
