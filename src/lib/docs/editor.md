@@ -19,6 +19,10 @@ Your work is stored as markdown in both modes; switching is purely about what yo
 
 To force a page break in print and PDF output, put \page alone on its own line. It does nothing on screen or in the reading pages.
 
+## The selection menu
+
+Select a word or phrase and right-click it for a small menu. The top row formats the selection: bold, italic, quote, bullet list. Below it you can create a new character, place, or lore entry named after the selection, without leaving the page; the new name underlines in the text right away, and you can fill in its details from the planning view later. Lore entries created this way file under your first lore category. Right-clicking without a selection opens the browser's own menu, with its spelling suggestions.
+
 ## Mentions
 
 When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary and the entry's first few details without leaving the page.

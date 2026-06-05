@@ -31,6 +31,25 @@
 		onPin: pinMention
 	});
 
+	// The editor's create-from-selection menu; the refreshed page data
+	// reconfigures the underlines, so the new name lights up in place.
+	async function createEntity(
+		type: 'character' | 'place' | 'lore_entry',
+		name: string
+	): Promise<string | null> {
+		const response = await fetch(`/api/stories/${data.story.id}/entities`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ type, name })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			return body?.message ?? 'Could not create it.';
+		}
+		await invalidateAll();
+		return null;
+	}
+
 	// Focus mode hides the chrome around the prose; Esc leaves it.
 	let focus = $state(false);
 
@@ -339,6 +358,7 @@
 							writingLanguage={data.preferences.writingLanguage}
 							imageUniverseId={data.universe.id}
 							markers={data.storyDocMarkers[scene.id] ?? []}
+							onCreateEntity={createEntity}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
 							onStatus={(status) => {
 								saveStatus = status;
@@ -398,6 +418,7 @@
 						writingLanguage={data.preferences.writingLanguage}
 						imageUniverseId={data.universe.id}
 						markers={data.sceneMarkers}
+						onCreateEntity={createEntity}
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.
