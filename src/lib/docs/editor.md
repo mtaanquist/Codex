@@ -17,6 +17,8 @@ There are two ways to see your prose while you write, chosen under Editor behavi
 
 Your work is stored as markdown in both modes; switching is purely about what you see while writing.
 
+To force a page break in print and PDF output, put \page alone on its own line. It does nothing on screen or in the reading pages.
+
 ## Mentions
 
 When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary and the entry's first few details without leaving the page.

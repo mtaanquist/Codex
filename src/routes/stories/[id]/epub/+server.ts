@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
 import { bucketAssetLoader, gatherStory } from '$lib/server/export';
 import { buildEpub } from '$lib/server/epub';
+import { storyPageSetup } from '$lib/server/page-setup';
 
 // Downloads the story as an EPUB.
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -12,7 +13,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		story,
 		content,
 		bucketAssetLoader(db),
-		story.coverAssetId
+		story.coverAssetId,
+		await storyPageSetup(db, story.id)
 	);
 	return new Response(new Uint8Array(bytes), {
 		headers: {

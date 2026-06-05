@@ -22,6 +22,8 @@ import { users } from '$lib/server/db/schema';
 import { verifyPassword } from '$lib/server/password';
 import { queueEmail } from '$lib/server/jobs';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
+import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
+import { normalisePageSetup } from '$lib/page-setup';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
 import { isAccentColor, isTheme, normaliseAccent } from '$lib/appearance';
 import { secretsAvailable } from '$lib/server/crypto';
@@ -72,6 +74,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		origin: env.ORIGIN ?? url.origin,
 		profile,
 		preferences: await userPreferences(db, user.id),
+		pageSetup: await userPageSetup(db, user.id),
 		sessions: await listSessions(db, user.id, sessionId),
 		graceDays: DELETION_GRACE_DAYS,
 		twoFactor: {
@@ -157,6 +160,23 @@ export const actions: Actions = {
 			editingMode: editing
 		});
 		return { scope: 'prefs', saved: true };
+	},
+	savePageSetup: async ({ request, locals }) => {
+		const data = await request.formData();
+		// Selects constrain the values; normalise drops anything else back to
+		// the defaults rather than erroring.
+		const setup = normalisePageSetup({
+			pageSize: String(data.get('pageSize') ?? ''),
+			margins: String(data.get('margins') ?? ''),
+			font: String(data.get('font') ?? ''),
+			fontSize: Number(data.get('fontSize')),
+			paragraphStyle: String(data.get('paragraphStyle') ?? ''),
+			sceneBreak: String(data.get('sceneBreak') ?? ''),
+			pageNumbers: data.get('pageNumbers') === 'on',
+			runningHeader: data.get('runningHeader') === 'on'
+		});
+		await saveUserPageSetup(db, locals.user!.id, setup);
+		return { scope: 'pagesetup', saved: true };
 	},
 	saveAppearance: async ({ request, locals }) => {
 		const data = await request.formData();
