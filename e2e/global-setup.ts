@@ -60,6 +60,18 @@ export default async function globalSetup() {
 		 on conflict (email) do update set password_hash = excluded.password_hash`,
 		['tfa-e2e@example.com', passwordHash]
 	);
+	// A separate account for the passkey journey, kept clean of credentials so
+	// the register-then-sign-in flow starts fresh every run.
+	await pool.query(
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at)
+		 values ($1, 'Passkey Tester', $2, 'user', now(), now())
+		 on conflict (email) do update set password_hash = excluded.password_hash`,
+		['passkey-e2e@example.com', passwordHash]
+	);
+	await pool.query(
+		`delete from webauthn_credentials where user_id = (select id from users where email = $1)`,
+		['passkey-e2e@example.com']
+	);
 	// A standing invite code for the invited sign-up journey; resetting the use
 	// count keeps repeated runs valid.
 	await pool.query(

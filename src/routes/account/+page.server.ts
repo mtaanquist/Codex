@@ -34,6 +34,7 @@ import {
 	regenerateRecoveryCodes,
 	totpStatus
 } from '$lib/server/two-factor';
+import { listPasskeys, removePasskey } from '$lib/server/passkeys';
 import QRCode from 'qrcode';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -79,7 +80,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			available: totpAvailable,
 			recoveryRemaining: totp.status === 'on' ? await recoveryCodesRemaining(db, user.id) : 0
 		},
-		totpSetup
+		totpSetup,
+		passkeys: await listPasskeys(db, user.id),
+		passkeysAvailable: secretsAvailable()
 	};
 };
 
@@ -200,6 +203,22 @@ export const actions: Actions = {
 		const codes = await regenerateRecoveryCodes(db, locals.user!.id);
 		if (!codes) return fail(400, { scope: 'totp', message: 'Two-factor authentication is off.' });
 		return { scope: 'totp', recoveryCodes: codes };
+	},
+	removePasskey: async ({ request, locals }) => {
+		const data = await request.formData();
+		// Removing a sign-in credential is guarded by the password, the same as
+		// turning two-factor off: a borrowed session must not weaken sign-in.
+		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+			return fail(400, { scope: 'passkeys', message: 'That password is not right.' });
+		}
+		const id = String(data.get('passkeyId') ?? '');
+		if (
+			!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ||
+			!(await removePasskey(db, locals.user!.id, id))
+		) {
+			return fail(400, { scope: 'passkeys', message: 'That passkey could not be removed.' });
+		}
+		return { scope: 'passkeys', removed: true };
 	},
 	signout: async ({ locals, cookies }) => {
 		if (locals.session) await revokeSession(db, locals.session.id);

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
+	import { invalidateAll } from '$app/navigation';
 	import { ACCENT_PRESETS } from '$lib/appearance';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import UserMenu from '$lib/components/UserMenu.svelte';
@@ -20,6 +21,7 @@
 			case 'sessions':
 			case 'delete':
 			case 'totp':
+			case 'passkeys':
 				return 'security';
 			case 'prefs':
 			case 'appearance':
@@ -71,6 +73,47 @@
 
 	function seen(date: Date): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+	}
+
+	// Adding a passkey is a browser ceremony, not a form post: fetch the
+	// creation options, hand them to the authenticator, post the result back.
+	let passkeyName = $state('');
+	let passkeyError = $state<string | null>(null);
+	let passkeyAdded = $state(false);
+	let passkeyBusy = $state(false);
+	async function addPasskey() {
+		passkeyBusy = true;
+		passkeyError = null;
+		passkeyAdded = false;
+		try {
+			const optionsResponse = await fetch('/api/passkeys/register-options', { method: 'POST' });
+			if (!optionsResponse.ok) {
+				throw new Error((await optionsResponse.json()).message ?? 'Could not start.');
+			}
+			const { startRegistration } = await import('@simplewebauthn/browser');
+			const response = await startRegistration({ optionsJSON: await optionsResponse.json() });
+			const verifyResponse = await fetch('/api/passkeys/register', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ response, name: passkeyName })
+			});
+			if (!verifyResponse.ok) {
+				throw new Error((await verifyResponse.json()).message ?? 'Could not verify.');
+			}
+			passkeyName = '';
+			passkeyAdded = true;
+			await invalidateAll();
+		} catch (err) {
+			// A dismissed browser prompt arrives as NotAllowedError; say it plainly.
+			passkeyError =
+				err instanceof Error && err.name === 'NotAllowedError'
+					? 'The passkey prompt was closed before finishing.'
+					: err instanceof Error
+						? err.message
+						: 'Something went wrong adding the passkey.';
+		} finally {
+			passkeyBusy = false;
+		}
 	}
 
 	function onDate(date: Date): string {
@@ -916,6 +959,86 @@
 											<button type="submit" class="btn btn-ghost btn-sm">Regenerate</button>
 										</form>
 									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Passkeys</h2>
+							<p class="admin-block-sub">
+								Sign in with your device's screen lock or a security key instead of typing your
+								password. You can add a passkey on each device you write from.
+							</p>
+						</div>
+						<div class="admin-card">
+							{#if !data.passkeysAvailable}
+								<p class="tfa-sub">
+									Passkeys need APP_SECRET set on the server. Ask whoever runs this instance.
+								</p>
+							{:else}
+								{#if data.passkeys.length > 0}
+									<div class="attn-list" style="margin-bottom:var(--space-4);">
+										{#each data.passkeys as passkey (passkey.id)}
+											<div class="user-row">
+												<div class="user-row-identity">
+													<p class="user-row-name">{passkey.name ?? 'Passkey'}</p>
+													<p class="user-row-email">
+														Added {onDate(passkey.createdAt)}{passkey.lastUsedAt
+															? ` - last used ${seen(passkey.lastUsedAt)}`
+															: ''}
+													</p>
+												</div>
+												<div class="user-row-actions">
+													<form method="POST" action="?/removePasskey" class="tfa-guard">
+														<input type="hidden" name="passkeyId" value={passkey.id} />
+														<input
+															type="password"
+															name="password"
+															placeholder="Current password"
+															autocomplete="current-password"
+															aria-label="Current password"
+															required
+														/>
+														<button type="submit" class="btn btn-ghost btn-sm">Remove</button>
+													</form>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+								{#if form?.scope === 'passkeys' && form.message}
+									<p class="field-hint" role="alert" style="color:var(--danger);">{form.message}</p>
+								{:else if form?.scope === 'passkeys' && 'removed' in form && form.removed}
+									<p class="field-hint" role="status" style="color:var(--status-final);">
+										Passkey removed.
+									</p>
+								{/if}
+								{#if passkeyError}
+									<p class="field-hint" role="alert" style="color:var(--danger);">{passkeyError}</p>
+								{:else if passkeyAdded}
+									<p class="field-hint" role="status" style="color:var(--status-final);">
+										Passkey added.
+									</p>
+								{/if}
+								<div class="settings-actions" style="justify-content:flex-start;">
+									<input
+										class="input"
+										type="text"
+										placeholder="Name this passkey, e.g. laptop"
+										aria-label="Passkey name"
+										bind:value={passkeyName}
+										style="max-width:240px;"
+									/>
+									<button
+										type="button"
+										class="btn btn-primary"
+										disabled={passkeyBusy}
+										onclick={addPasskey}
+									>
+										{passkeyBusy ? 'Waiting for your device...' : 'Add passkey'}
+									</button>
 								</div>
 							{/if}
 						</div>

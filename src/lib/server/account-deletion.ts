@@ -16,7 +16,8 @@ import {
 	universes,
 	userTotp,
 	users,
-	authTokens
+	authTokens,
+	webauthnCredentials
 } from './db/schema.ts';
 import { deleteStoryWithin } from './story-delete.ts';
 import { consumeToken, issueToken } from './tokens.ts';
@@ -130,6 +131,7 @@ export async function purgeAccount(
 		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));
 		await tx.delete(userTotp).where(eq(userTotp.userId, userId));
+		await tx.delete(webauthnCredentials).where(eq(webauthnCredentials.userId, userId));
 		await tx.delete(sessions).where(eq(sessions.userId, userId));
 		await tx.delete(users).where(eq(users.id, userId));
 	});
