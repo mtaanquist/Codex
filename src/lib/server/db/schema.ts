@@ -771,3 +771,27 @@ export const totpRecoveryCodes = pgTable(
 	},
 	(table) => [index('totp_recovery_codes_user_idx').on(table.userId)]
 );
+
+// Registered passkeys (WebAuthn credentials), any number per account. The
+// public key verifies sign-in assertions; sign_count backs clone detection.
+// Sign-in is usernameless: the browser presents a discoverable credential and
+// the row's user_id says whose it is.
+export const webauthnCredentials = pgTable(
+	'webauthn_credentials',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		// base64url of the raw credential id, as the authenticator reports it.
+		credentialId: text('credential_id').unique().notNull(),
+		publicKey: text('public_key').notNull(),
+		signCount: bigint('sign_count', { mode: 'number' }).notNull().default(0),
+		transports: text('transports').array(),
+		// User label, e.g. 'phone' or 'security key'.
+		name: text('name'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		lastUsedAt: timestamp('last_used_at', { withTimezone: true })
+	},
+	(table) => [index('webauthn_credentials_user_idx').on(table.userId)]
+);
