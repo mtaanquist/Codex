@@ -190,6 +190,22 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
       a right-click without a selection keeps the browser's own menu.
       Merged 2026-06-05 (#137), shipped as v2.16.0.
 
+- [x] Public face (author request, 2026-06-05): a landing page at / for
+      signed-out visitors (ported from the prototype's landing.html; the
+      landing CSS was already in the D1 port) and every auth screen
+      (login + TOTP step, signup, forgot/reset password, verify-email,
+      confirm-email-change, cancel-deletion) restyled onto the design
+      system via a shared AuthShell card; labels and actions unchanged so
+      the auth e2e flows held. Shipped as v2.17.0.
+
+> Phase 8 complete (2026-06-05), shipped as v2.14.0 (Insights: heatmap +
+> progress dashboard), v2.15.0 (scene cards board), and v2.16.0
+> (relationship web + editor selection menu). The timeline view stays
+> parked on the world-calendar design, and plotlines/arcs on usage
+> evidence, per the roadmap's own criteria. Next up when work resumes:
+> Phase 9 (AI and interop) - or the timeline's calendar design talk,
+> whichever the author wants first.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):

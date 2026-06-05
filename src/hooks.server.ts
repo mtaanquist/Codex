@@ -4,6 +4,8 @@ import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 import { logEvent } from '$lib/server/log';
 
 const PUBLIC_PATHS = new Set([
+	// The landing page; the root route shows the library once signed in.
+	'/',
 	'/login',
 	// The two-factor challenge runs before a session exists; it guards itself on
 	// the signed challenge cookie.

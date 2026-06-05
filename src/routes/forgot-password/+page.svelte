@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import AuthShell from '$lib/components/AuthShell.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -9,44 +10,32 @@
 	<title>Reset your password - Codex</title>
 </svelte:head>
 
-<main>
-	<h1>Codex</h1>
+<AuthShell title="Reset your password">
 	{#if form?.sent}
-		<p class="notice" role="status">
+		<p class="auth-note" role="status">
 			If an account uses that email address, we have sent a link to reset its password. The link is
 			good for one hour.
 		</p>
-		<p><a href={resolve('/login')}>Back to sign in</a></p>
 	{:else}
 		<form method="POST">
-			<p>Enter your email address and we will send you a link to reset your password.</p>
-			<label>
-				Email
-				<input type="email" name="email" required autocomplete="email" />
-			</label>
-			<button type="submit">Send reset link</button>
+			<p class="auth-lede">
+				Enter your email address and we will send you a link to reset your password.
+			</p>
+			<div class="field">
+				<label for="forgot-email">Email</label>
+				<input
+					id="forgot-email"
+					class="input"
+					type="email"
+					name="email"
+					required
+					autocomplete="email"
+				/>
+			</div>
+			<button class="btn btn-primary" type="submit">Send reset link</button>
 		</form>
-		<p><a href={resolve('/login')}>Back to sign in</a></p>
 	{/if}
-</main>
-
-<style>
-	main {
-		max-width: 22rem;
-		margin: 15vh auto 0;
-		font-family: system-ui, sans-serif;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-	.notice {
-		line-height: 1.5;
-	}
-</style>
+	<div class="auth-links">
+		<a href={resolve('/login')}>Back to sign in</a>
+	</div>
+</AuthShell>

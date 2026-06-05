@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import AuthShell from '$lib/components/AuthShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -9,29 +10,15 @@
 	<title>Confirm email change - Codex</title>
 </svelte:head>
 
-<main>
-	<h1>Codex</h1>
+<AuthShell title="Confirm email change">
 	{#if data.ok}
-		<p class="notice" role="status">
+		<p class="auth-note" role="status">
 			Your email address is updated. Use the new address to sign in from now on.
 		</p>
 	{:else}
-		<p class="error" role="alert">{data.reason}</p>
+		<p class="form-error auth-note" role="alert">{data.reason}</p>
 	{/if}
-	<p><a href={resolve('/login')}>Go to sign in</a></p>
-</main>
-
-<style>
-	main {
-		max-width: 24rem;
-		margin: 15vh auto 0;
-		font-family: system-ui, sans-serif;
-	}
-	.notice,
-	.error {
-		line-height: 1.5;
-	}
-	.error {
-		color: #b00020;
-	}
-</style>
+	<div class="auth-links">
+		<a href={resolve('/login')}>Go to sign in</a>
+	</div>
+</AuthShell>
