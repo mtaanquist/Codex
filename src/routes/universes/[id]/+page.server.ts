@@ -1,11 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { asc, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
+import { db, isUniqueViolation } from '$lib/server/db';
 import { stories, universes } from '$lib/server/db/schema';
 import { ownedUniverse } from '$lib/server/universe-access';
-import { slugTaken, uniqueSlug } from '$lib/server/slugs';
-import { isValidSlug } from '$lib/slug';
+import { slugChangeError, slugTakenMessage, uniqueSlug } from '$lib/server/slugs';
 import { universeTimeline } from '$lib/server/revisions';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -27,11 +26,19 @@ export const actions: Actions = {
 		if (!title) {
 			return fail(400, { action: 'createStory', message: 'Give the story a title.' });
 		}
-		const slug = await uniqueSlug(db, 'stories', locals.user!.id, title, 'story');
-		const [story] = await db
-			.insert(stories)
-			.values({ universeId: universe.id, ownerId: locals.user!.id, title, slug })
-			.returning();
+		const create = (slug: string) =>
+			db
+				.insert(stories)
+				.values({ universeId: universe.id, ownerId: locals.user!.id, title, slug })
+				.returning();
+		let story;
+		try {
+			[story] = await create(await uniqueSlug(db, 'stories', locals.user!.id, title, 'story'));
+		} catch (err) {
+			// A concurrent create took the slug between the pick and the insert.
+			if (!isUniqueViolation(err)) throw err;
+			[story] = await create(await uniqueSlug(db, 'stories', locals.user!.id, title, 'story'));
+		}
 		redirect(303, `/stories/${story.slug}`);
 	},
 	update: async ({ request, params, locals }) => {
@@ -43,22 +50,25 @@ export const actions: Actions = {
 		if (!name) {
 			return fail(400, { action: 'update', message: 'The universe needs a name.' });
 		}
-		if (!isValidSlug(slug)) {
-			return fail(400, {
-				action: 'update',
-				message: 'The slug can only use lowercase letters, numbers, and hyphens.'
-			});
+		const message = await slugChangeError(
+			db,
+			'universes',
+			locals.user!.id,
+			slug,
+			universe.slug,
+			universe.id
+		);
+		if (message) return fail(400, { action: 'update', message });
+		try {
+			await db
+				.update(universes)
+				.set({ name, slug, descriptionMd })
+				.where(eq(universes.id, universe.id));
+		} catch (err) {
+			// A concurrent write can take the slug between the check and the update.
+			if (!isUniqueViolation(err)) throw err;
+			return fail(400, { action: 'update', message: slugTakenMessage('universes') });
 		}
-		if (
-			slug !== universe.slug &&
-			(await slugTaken(db, 'universes', locals.user!.id, slug, universe.id))
-		) {
-			return fail(400, { action: 'update', message: 'Another universe already uses that slug.' });
-		}
-		await db
-			.update(universes)
-			.set({ name, slug, descriptionMd })
-			.where(eq(universes.id, universe.id));
 		// A changed slug moves this page's own URL.
 		if (slug !== universe.slug) redirect(303, `/universes/${slug}`);
 		return { action: 'update', saved: true };

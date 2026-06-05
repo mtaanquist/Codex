@@ -657,6 +657,22 @@
 	line-height: 1.5;
 	margin: 7px 0 0;
 }
+/* Form status lines on the settings pages. */
+.form-error {
+	color: var(--danger, #c0564f);
+	font-size: 13px;
+	margin: 0 0 10px;
+}
+.form-saved {
+	color: var(--text-muted);
+	font-size: 13px;
+	margin: 0 0 10px;
+}
+.block-empty {
+	color: var(--text-muted);
+	font-size: 13px;
+	margin: 0;
+}
 .input,
 .textarea,
 .select {

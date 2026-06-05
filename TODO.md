@@ -206,6 +206,18 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
       nav surfaces emit slugs; fixed three stale local copies of ownedStory
       the slug work surfaced. Shipped as v2.18.0 (#141, #142).
 
+- [x] Slug edge fixes from the v2.18.0 self-review (2026-06-06): plan
+      create-entity actions redirect back to the slug URL instead of the
+      id; uniqueSlug suffixes a uuid-shaped base so the slug stays
+      routable; create/rename slug races caught (unique violation returns
+      the taken message or retries the suffix instead of a 500); slug
+      validation shared between the two settings actions (slugChangeError);
+      id-or-slug resolver coverage in the integration suite; palette refs
+      renamed and the form status styles promoted to pages.css. The 0035
+      backfill's lack of accent folding stays as-is (slugs are valid and
+      editable; rewriting shipped rows would break links). Merged
+      2026-06-06 (#144).
+
 > Phase 8 complete (2026-06-05), shipped as v2.14.0 (Insights: heatmap +
 > progress dashboard), v2.15.0 (scene cards board), and v2.16.0
 > (relationship web + editor selection menu). The timeline view stays

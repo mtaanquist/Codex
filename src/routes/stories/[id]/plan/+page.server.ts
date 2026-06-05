@@ -227,7 +227,7 @@ export const actions: Actions = {
 		return {
 			universeId: universe.id,
 			ownerId: locals.user!.id,
-			planPath: `/stories/${story.id}/plan`,
+			planPath: `/stories/${story.slug}/plan`,
 			storyId: story.id
 		};
 	}),

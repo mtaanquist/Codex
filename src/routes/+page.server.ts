@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
+import { db, isUniqueViolation } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { uniqueSlug } from '$lib/server/slugs';
 
@@ -53,22 +53,30 @@ export const actions: Actions = {
 		if (!name) {
 			return fail(400, { scope: 'universe', message: 'Give the universe a name.' });
 		}
-		const slug = await uniqueSlug(db, 'universes', locals.user.id, name, 'universe');
-		const universe = await db.transaction(async (tx) => {
-			const [row] = await tx
-				.insert(universes)
-				.values({ ownerId: locals.user!.id, name, slug })
-				.returning();
-			// Every universe starts with one lore category; users rename and
-			// extend from there.
-			await tx.insert(entityCategories).values({
-				universeId: row.id,
-				ownerId: locals.user!.id,
-				name: 'Lore',
-				sortOrder: 0
+		const create = (slug: string) =>
+			db.transaction(async (tx) => {
+				const [row] = await tx
+					.insert(universes)
+					.values({ ownerId: locals.user!.id, name, slug })
+					.returning();
+				// Every universe starts with one lore category; users rename and
+				// extend from there.
+				await tx.insert(entityCategories).values({
+					universeId: row.id,
+					ownerId: locals.user!.id,
+					name: 'Lore',
+					sortOrder: 0
+				});
+				return row;
 			});
-			return row;
-		});
+		let universe;
+		try {
+			universe = await create(await uniqueSlug(db, 'universes', locals.user.id, name, 'universe'));
+		} catch (err) {
+			// A concurrent create took the slug between the pick and the insert.
+			if (!isUniqueViolation(err)) throw err;
+			universe = await create(await uniqueSlug(db, 'universes', locals.user.id, name, 'universe'));
+		}
 		redirect(303, `/universes/${universe.slug}`);
 	}
 };

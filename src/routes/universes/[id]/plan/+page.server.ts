@@ -100,6 +100,6 @@ export const actions: Actions = planActions(async ({ params, locals }) => {
 	return {
 		universeId: universe.id,
 		ownerId: locals.user!.id,
-		planPath: `/universes/${universe.id}/plan`
+		planPath: `/universes/${universe.slug}/plan`
 	};
 });

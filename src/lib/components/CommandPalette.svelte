@@ -34,17 +34,17 @@
 	function navigate(href: string): () => Promise<void> {
 		return async () => {
 			closePalette();
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths built from owned ids and fixed routes
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths built from owned refs (slug or id) and fixed routes
 			await goto(href);
 		};
 	}
 
 	// Posts one of the story page's form actions (new chapter, new scene)
 	// and follows the redirect or refreshes, depending on what it returns.
-	function storyAction(storyId: string, action: string): () => Promise<void> {
+	function storyAction(storyRef: string, action: string): () => Promise<void> {
 		return async () => {
 			closePalette();
-			const response = await fetch(`/stories/${storyId}?/${action}`, {
+			const response = await fetch(`/stories/${storyRef}?/${action}`, {
 				method: 'POST',
 				headers: { 'x-sveltekit-action': 'true' },
 				body: new FormData()
@@ -66,67 +66,67 @@
 		const storyMatch = path.match(/^\/stories\/([^/]+)/);
 		const universeMatch = path.match(/^\/universes\/([^/]+)/);
 		if (storyMatch) {
-			const storyId = storyMatch[1];
+			const storyRef = storyMatch[1];
 			list.push(
 				{
 					label: 'New scene',
 					sublabel: null,
 					kind: 'Command',
-					run: storyAction(storyId, 'createScene')
+					run: storyAction(storyRef, 'createScene')
 				},
 				{
 					label: 'New chapter',
 					sublabel: null,
 					kind: 'Command',
-					run: storyAction(storyId, 'createChapter')
+					run: storyAction(storyRef, 'createChapter')
 				},
-				{ label: 'Write', sublabel: null, kind: 'Go to', run: navigate(`/stories/${storyId}`) },
+				{ label: 'Write', sublabel: null, kind: 'Go to', run: navigate(`/stories/${storyRef}`) },
 				{
 					label: 'Story view',
 					sublabel: 'The whole story as one document',
 					kind: 'Go to',
-					run: navigate(`/stories/${storyId}?view=story`)
+					run: navigate(`/stories/${storyRef}?view=story`)
 				},
 				{
 					label: 'Plan this story',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyId}/plan`)
+					run: navigate(`/stories/${storyRef}/plan`)
 				},
 				{
 					label: 'Story settings',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyId}/settings`)
+					run: navigate(`/stories/${storyRef}/settings`)
 				},
 				{
 					label: 'Review feedback',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyId}/review`)
+					run: navigate(`/stories/${storyRef}/review`)
 				}
 			);
 		}
 		if (universeMatch) {
-			const universeId = universeMatch[1];
+			const universeRef = universeMatch[1];
 			list.push(
 				{
 					label: 'Plan this universe',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeId}/plan`)
+					run: navigate(`/universes/${universeRef}/plan`)
 				},
 				{
 					label: 'Universe insights',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeId}/insights`)
+					run: navigate(`/universes/${universeRef}/insights`)
 				},
 				{
 					label: 'Universe settings',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeId}`)
+					run: navigate(`/universes/${universeRef}`)
 				}
 			);
 		}
