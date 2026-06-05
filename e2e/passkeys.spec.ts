@@ -24,7 +24,8 @@ test('passkeys: register, sign in with one, remove it', async ({ page }) => {
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page).toHaveURL('/');
 
-	await page.getByRole('link', { name: 'Account', exact: true }).click();
+	await page.getByLabel('Account menu').click();
+	await page.getByRole('menuitem', { name: 'Account settings' }).click();
 	await page.getByRole('button', { name: 'Security' }).click();
 
 	await page.getByLabel('Passkey name').fill('e2e device');
@@ -40,7 +41,8 @@ test('passkeys: register, sign in with one, remove it', async ({ page }) => {
 
 	// Remove it so the next run registers cleanly; removal re-confirms the
 	// password.
-	await page.getByRole('link', { name: 'Account', exact: true }).click();
+	await page.getByLabel('Account menu').click();
+	await page.getByRole('menuitem', { name: 'Account settings' }).click();
 	await page.getByRole('button', { name: 'Security' }).click();
 	const row = page.locator('.user-row', { hasText: 'e2e device' });
 	await row.getByLabel('Current password').fill('e2e-password');

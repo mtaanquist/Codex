@@ -3,7 +3,6 @@ import { asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
-import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!;
@@ -16,7 +15,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 		list.length === 0
 			? []
 			: await db
-					.select({ id: stories.id, title: stories.title, universeId: stories.universeId })
+					.select({
+						id: stories.id,
+						title: stories.title,
+						brief: stories.brief,
+						universeId: stories.universeId
+					})
 					.from(stories)
 					.where(
 						inArray(
@@ -57,12 +61,5 @@ export const actions: Actions = {
 			return row;
 		});
 		redirect(303, `/universes/${universe.id}`);
-	},
-	signout: async ({ locals, cookies }) => {
-		if (locals.session) {
-			await revokeSession(db, locals.session.id);
-		}
-		cookies.delete(SESSION_COOKIE, { path: '/' });
-		redirect(303, '/login');
 	}
 };
