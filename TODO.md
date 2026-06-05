@@ -178,9 +178,17 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
       changes scene status through an owner-guarded PATCH, the first UI for
       that column. Cards carry chapter, word count, and open-TODO count.
       Merged 2026-06-05 (#134), shipped as v2.15.0.
-- [ ] Relationship web view: force-directed graph of entity_relationships
-      (d3-force simulation, own SVG rendering), filters by entity and
-      relation type; joins the Insights view.
+- [x] Relationship web view: force-directed graph of entity_relationships
+      (d3-force simulation run synchronously to rest, own SVG rendering),
+      category filter chips and a focus-on-entity select, hover labels,
+      click-through to the plan; joins the Insights view. Merged 2026-06-05
+      (#136), shipped as v2.16.0.
+- [x] Editor selection menu (author request, 2026-06-05): select a phrase
+      and right-click for quick formatting (bold/italic/quote/list) plus
+      create-a-character/place/lore-entry named after the selection, in
+      place with no navigation; mention underlines reconfigure at once and
+      a right-click without a selection keeps the browser's own menu.
+      Merged 2026-06-05 (#137), shipped as v2.16.0.
 
 ## Feedback backlog
 
