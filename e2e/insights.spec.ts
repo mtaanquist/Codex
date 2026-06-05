@@ -39,6 +39,16 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.locator('.ent-row', { hasText: 'Heimdall' })).toBeVisible();
 
+	// A sibling pair, for the relationship web.
+	await page.getByPlaceholder('New character name').fill('Freya');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await page.locator('.ent-row', { hasText: 'Heimdall' }).click();
+	await page.getByRole('button', { name: '+ Add relationship' }).click();
+	await page.getByLabel('Relation').selectOption({ label: 'sibling of' });
+	await page.getByLabel('Related entity').selectOption({ label: 'Freya' });
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(page.locator('.rel-row', { hasText: 'Freya' })).toBeVisible();
+
 	// The sidebar's Insights button opens the view.
 	await page.getByRole('link', { name: 'Insights', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
@@ -48,10 +58,16 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await expect(page.getByRole('link', { name: 'First Light' })).toBeVisible();
 	await expect(page.locator('.story-row', { hasText: 'First Light' })).toContainText('5 words');
 
-	// The unmentioned character sits cold on the heatmap, linking to its
-	// plan entry.
+	// The unmentioned character sits cold on the heatmap.
 	const tile = page.locator('.heat-tile', { hasText: 'Heimdall' });
 	await expect(tile).toContainText('Not mentioned yet');
+
+	// The relationship web draws the sibling pair.
+	const web = page.locator('svg.web');
+	await expect(web.locator('.web-name', { hasText: 'Heimdall' })).toBeVisible();
+	await expect(web.locator('.web-name', { hasText: 'Freya' })).toBeVisible();
+
+	// The heat tile links to the plan entry.
 	await tile.click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 });

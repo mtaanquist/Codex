@@ -42,6 +42,8 @@ Progress shows total words, net words written this week, your writing streak, an
 
 The world heatmap lists every character, place, and lore entry, brighter the more often the prose mentions it. A pale tile is an entry no scene mentions yet, and "no entry" marks one with nothing written in its body. Click any tile to open that entry in the plan.
 
+The relationship web draws every recorded relationship as a map: entities are dots, sized by how connected they are, and the lines between them are the relationships. Hover a dot to read its connections, click it to open the entry. The buttons above filter by kind of relationship, and the select narrows the web to one entity and its direct connections.
+
 ## History
 
 The History tab on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.
