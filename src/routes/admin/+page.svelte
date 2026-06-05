@@ -720,10 +720,9 @@
 										class="input"
 										type="number"
 										name="expiresDays"
-										value="0"
-										min="0"
+										placeholder="Never"
+										min="1"
 										max="365"
-										title="0 means the code never expires"
 									/>
 								</div>
 								<button type="submit" class="btn btn-primary">Create code</button>
