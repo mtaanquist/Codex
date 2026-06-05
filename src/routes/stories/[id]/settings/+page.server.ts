@@ -20,6 +20,8 @@ import {
 	storyPreferenceOverrides,
 	userPreferences
 } from '$lib/server/preferences';
+import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib/server/page-setup';
+import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 
 async function ownedStory(storyId: string, userId: string) {
 	const [row] = await db
@@ -65,7 +67,10 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		// For the Editor section: which keys this story overrides, and the
 		// account values the inherit options fall back to.
 		preferenceOverrides: await storyPreferenceOverrides(db, story.id),
-		accountPreferences: await userPreferences(db, locals.user!.id)
+		accountPreferences: await userPreferences(db, locals.user!.id),
+		// Same shape for the Page setup section.
+		pageSetupOverrides: await storyPageSetupOverrides(db, story.id),
+		accountPageSetup: await userPageSetup(db, locals.user!.id)
 	};
 };
 
@@ -108,6 +113,41 @@ export const actions: Actions = {
 			editingMode: editing || null
 		});
 		return { action: 'prefs', saved: true };
+	},
+	savePageSetup: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		// An empty value clears the override, so the account setting applies.
+		// Enum values outside the option tables clear too, rather than storing
+		// junk for the normaliser to clean up later.
+		const enumValue = (name: string, table: Record<string, unknown>) => {
+			const value = String(data.get(name) ?? '');
+			return value !== '' && value in table ? value : null;
+		};
+		const triState = (name: string) => {
+			const value = String(data.get(name) ?? '');
+			return value === 'on' ? true : value === 'off' ? false : null;
+		};
+		const fontSizeRaw = String(data.get('fontSize') ?? '');
+		const fontSize = FONT_SIZES.includes(Number(fontSizeRaw) as (typeof FONT_SIZES)[number])
+			? Number(fontSizeRaw)
+			: null;
+		await saveStoryPageSetup(db, story.id, {
+			pageSize: enumValue('pageSize', PAGE_SIZES),
+			margins: enumValue('margins', PAGE_MARGINS),
+			font: enumValue('font', PAGE_FONTS),
+			fontSize,
+			paragraphStyle: enumValue('paragraphStyle', { indent: true, spaced: true }),
+			sceneBreak:
+				String(data.get('sceneBreakMode') ?? '') === 'custom'
+					? String(data.get('sceneBreak') ?? '')
+							.trim()
+							.slice(0, 20)
+					: null,
+			pageNumbers: triState('pageNumbers'),
+			runningHeader: triState('runningHeader')
+		});
+		return { action: 'pagesetup', saved: true };
 	},
 	setVisibility: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);

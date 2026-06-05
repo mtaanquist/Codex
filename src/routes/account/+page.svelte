@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
 	import { ACCENT_PRESETS } from '$lib/appearance';
+	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -25,6 +26,7 @@
 				return 'security';
 			case 'prefs':
 			case 'appearance':
+			case 'pagesetup':
 				return 'display';
 			default:
 				return null;
@@ -1340,6 +1342,123 @@
 										>
 									{/if}
 									<button type="submit" class="btn btn-primary">Save preferences</button>
+								</div>
+							</form>
+						</div>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Page setup</h2>
+							<p class="admin-block-sub">
+								How print and PDF output is typeset. These are your defaults; a story can override
+								them in its own settings.
+							</p>
+						</div>
+						<div class="settings-group">
+							<form method="POST" action="?/savePageSetup">
+								<div class="field">
+									<label for="ps-size">Page size</label>
+									<select
+										id="ps-size"
+										class="select"
+										name="pageSize"
+										value={data.pageSetup.pageSize}
+									>
+										{#each Object.entries(PAGE_SIZES) as [value, size] (value)}
+											<option {value}>{size.label}</option>
+										{/each}
+									</select>
+								</div>
+								<div class="field">
+									<label for="ps-margins">Margins</label>
+									<select
+										id="ps-margins"
+										class="select"
+										name="margins"
+										value={data.pageSetup.margins}
+									>
+										{#each Object.entries(PAGE_MARGINS) as [value, margin] (value)}
+											<option {value}>{margin.label}</option>
+										{/each}
+									</select>
+								</div>
+								<div class="field">
+									<label for="ps-font">Font</label>
+									<select id="ps-font" class="select" name="font" value={data.pageSetup.font}>
+										{#each Object.entries(PAGE_FONTS) as [value, font] (value)}
+											<option {value}>{font.label}</option>
+										{/each}
+									</select>
+								</div>
+								<div class="field">
+									<label for="ps-fontsize">Font size</label>
+									<select
+										id="ps-fontsize"
+										class="select"
+										name="fontSize"
+										value={String(data.pageSetup.fontSize)}
+									>
+										{#each FONT_SIZES as size (size)}
+											<option value={String(size)}>{size} pt</option>
+										{/each}
+									</select>
+								</div>
+								<div class="field">
+									<label for="ps-paragraphs">Paragraphs</label>
+									<select
+										id="ps-paragraphs"
+										class="select"
+										name="paragraphStyle"
+										value={data.pageSetup.paragraphStyle}
+									>
+										<option value="indent">First-line indent</option>
+										<option value="spaced">Space between paragraphs</option>
+									</select>
+								</div>
+								<div class="field">
+									<label for="ps-scenebreak">Scene break</label>
+									<input
+										id="ps-scenebreak"
+										class="input"
+										type="text"
+										name="sceneBreak"
+										maxlength="20"
+										value={data.pageSetup.sceneBreak}
+									/>
+									<p class="field-hint">
+										The text printed between scenes. Leave blank for a plain gap.
+									</p>
+								</div>
+								<div class="field">
+									<label class="check-row">
+										<input
+											type="checkbox"
+											name="pageNumbers"
+											checked={data.pageSetup.pageNumbers}
+										/>
+										Page numbers (PDF downloads only)
+									</label>
+									<label class="check-row">
+										<input
+											type="checkbox"
+											name="runningHeader"
+											checked={data.pageSetup.runningHeader}
+										/>
+										Story title at the top of each page (PDF downloads only)
+									</label>
+								</div>
+								<div class="settings-actions">
+									{#if form?.scope === 'pagesetup' && form.message}
+										<span class="field-hint" role="alert" style="color:var(--danger);"
+											>{form.message}</span
+										>
+									{:else if form?.scope === 'pagesetup' && form.saved}
+										<span class="field-hint" role="status" style="color:var(--status-final);"
+											>Saved.</span
+										>
+									{/if}
+									<button type="submit" class="btn btn-primary">Save page setup</button>
 								</div>
 							</form>
 						</div>

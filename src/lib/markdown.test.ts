@@ -18,6 +18,20 @@ describe('renderMarkdown', () => {
 		const html = renderMarkdown('![gate](/assets/0b154c2d-13ef-4f3c-9a85-2f1c0a9d8e11)');
 		expect(html).toContain('<img src="/assets/0b154c2d-13ef-4f3c-9a85-2f1c0a9d8e11"');
 	});
+
+	it('turns a \\page paragraph into a page-break element', () => {
+		const html = renderMarkdown('Before.\n\n\\page\n\nAfter.');
+		expect(html).toContain('<div class="page-break"></div>');
+		expect(html).not.toContain('\\page');
+		expect(html).toContain('<p>Before.</p>');
+		expect(html).toContain('<p>After.</p>');
+	});
+
+	it('leaves \\page alone when it is not a whole paragraph', () => {
+		const html = renderMarkdown('The \\page marker mid-sentence.');
+		expect(html).not.toContain('page-break');
+		expect(html).toContain('\\page marker');
+	});
 });
 
 describe('asset references', () => {

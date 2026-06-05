@@ -15,6 +15,8 @@ import {
 import { buildEpub } from './epub.ts';
 import type { EditionContent } from './publish.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
+import { DEFAULT_PAGE_SETUP, pageCss, pdfRenderOptions, type PageSetup } from '../page-setup.ts';
+import { storyPageSetup } from './page-setup.ts';
 
 // Stored export artifacts: when an edition publishes, the worker generates
 // its markdown zip, EPUB, and PDF from the frozen content and keeps them in
@@ -57,27 +59,16 @@ function escapeHtml(text: string): string {
 		.replaceAll('"', '&quot;');
 }
 
-// The print stylesheet, kept in step with the browser print route
-// (src/routes/stories/[id]/print): title page, a fresh page per chapter,
-// and "* * *" scene breaks.
-const PDF_CSS = `body { font-family: Georgia, 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; color: #000; margin: 0; }
-.title-page { text-align: center; margin: 4rem 0 6rem; page-break-after: always; }
-.title-page h1 { font-size: 28pt; font-weight: 600; }
-.author { margin-top: 1rem; font-size: 14pt; }
-.chapter { page-break-before: always; }
-.chapter h2 { text-align: center; font-size: 18pt; margin: 3rem 0 2rem; }
-.scene-break { border: 0; text-align: center; margin: 2rem 0; }
-.scene-break::after { content: '* * *'; color: #444; }
-.chapter p { margin: 0 0 0.2rem; text-indent: 1.5em; }
-img { max-width: 100%; }
-@page { margin: 2cm; }`;
-
-// A complete print-ready HTML document for the PDF renderer. Images are
-// inlined as data URIs so the headless browser never needs the network.
+// A complete print-ready HTML document for the PDF renderer, styled by the
+// page setup ($lib/page-setup builds the stylesheet the browser print route
+// shares). Page geometry rides the pdf options instead of an @page rule,
+// since Chromium's header/footer layer needs it there. Images are inlined
+// as data URIs so the headless browser never needs the network.
 export function buildEditionHtml(
 	meta: { title: string; author: string | null },
 	content: StoryContent,
-	images: Map<string, ExportAsset>
+	images: Map<string, ExportAsset>,
+	setup: PageSetup = DEFAULT_PAGE_SETUP
 ): string {
 	const dataUri = (id: string) => {
 		const asset = images.get(id);
@@ -108,7 +99,7 @@ export function buildEditionHtml(
 
 	return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"/><title>${escapeHtml(meta.title)}</title><style>${PDF_CSS}</style></head>
+<head><meta charset="utf-8"/><title>${escapeHtml(meta.title)}</title><style>${pageCss(setup, { includePageRule: false })}</style></head>
 <body>
 <header class="title-page"><h1>${escapeHtml(meta.title)}</h1>${
 		meta.author ? `<p class="author">${escapeHtml(meta.author)}</p>` : ''
@@ -130,7 +121,13 @@ function chromiumPath(): string | null {
 // the system browser (installed in the Docker image; CHROMIUM_PATH points
 // elsewhere when needed). Loaded lazily so nothing outside the worker's PDF
 // path pays for it.
-export async function renderEditionPdf(html: string): Promise<Uint8Array> {
+export async function renderEditionPdf(
+	html: string,
+	options: Record<string, unknown> = {
+		format: 'a4',
+		margin: { top: '2cm', bottom: '2cm', left: '2cm', right: '2cm' }
+	}
+): Promise<Uint8Array> {
 	const executablePath = chromiumPath();
 	if (!executablePath) {
 		throw new Error('no Chromium found; set CHROMIUM_PATH or install the chromium package');
@@ -145,7 +142,7 @@ export async function renderEditionPdf(html: string): Promise<Uint8Array> {
 	try {
 		const page = await browser.newPage();
 		await page.setContent(html, { waitUntil: 'load' });
-		const pdf = await page.pdf({ format: 'a4' });
+		const pdf = await page.pdf(options);
 		return new Uint8Array(pdf);
 	} finally {
 		await browser.close();
@@ -161,7 +158,7 @@ export type GenerateResult =
 export type ArtifactDeps = {
 	store?: AssetObjectStore;
 	loadAssets?: AssetLoader;
-	renderPdf?: (html: string) => Promise<Uint8Array>;
+	renderPdf?: (html: string, options?: Record<string, unknown>) => Promise<Uint8Array>;
 	prefix?: string;
 };
 
@@ -184,6 +181,7 @@ export async function generateEditionArtifacts(
 	const [edition] = await db
 		.select({
 			id: publications.id,
+			storyId: publications.storyId,
 			title: publications.title,
 			author: publications.author,
 			descriptionMd: publications.descriptionMd,
@@ -196,6 +194,11 @@ export async function generateEditionArtifacts(
 		.where(eq(publications.id, publicationId));
 	if (!edition) return { ok: false, reason: 'publication not found' };
 	if (edition.removedAt) return { ok: false, reason: 'edition was taken down' };
+
+	// Formatting is not content: artifacts always typeset with the current
+	// page setup, so "Generate again" picks up setup changes without a new
+	// edition.
+	const setup = await storyPageSetup(db, edition.storyId);
 
 	const story: ExportStory = {
 		id: edition.id,
@@ -223,7 +226,7 @@ export async function generateEditionArtifacts(
 		{
 			format: 'epub',
 			build: async () => {
-				const epub = await buildEpub(story, content, loadAssets, edition.coverAssetId);
+				const epub = await buildEpub(story, content, loadAssets, edition.coverAssetId, setup);
 				return { ...epub, contentType: 'application/epub+zip' };
 			}
 		},
@@ -237,11 +240,12 @@ export async function generateEditionArtifacts(
 				const html = buildEditionHtml(
 					{ title: edition.title, author: edition.author },
 					content,
-					images
+					images,
+					setup
 				);
 				return {
 					filename: `${slug}.pdf`,
-					bytes: await renderPdf(html),
+					bytes: await renderPdf(html, pdfRenderOptions(setup, edition.title)),
 					contentType: 'application/pdf'
 				};
 			}
