@@ -8,12 +8,17 @@
 
 	const scenes = $derived(data.state === 'review' ? data.scenes : []);
 	const threads = $derived(data.state === 'review' ? data.threads : []);
+	const suggestions = $derived(data.state === 'review' ? data.suggestions : []);
+	const canSuggest = $derived(data.state === 'review' && data.canSuggest);
 
 	function chapterScenes(chapterId: string | null) {
 		return scenes.filter((scene) => scene.chapterId === chapterId);
 	}
 	function sceneThreads(sceneId: string): Thread[] {
 		return threads.filter((thread) => thread.sceneId === sceneId);
+	}
+	function sceneSuggestions(sceneId: string) {
+		return suggestions.filter((suggestion) => suggestion.sceneId === sceneId);
 	}
 
 	// The manuscript renders as text nodes and highlight marks; a scene's
@@ -37,9 +42,14 @@
 	}
 
 	let manuscriptEls: Record<string, HTMLElement> = {};
-	let pending = $state<{ sceneId: string; start: number; end: number; excerpt: string } | null>(
-		null
-	);
+	let pending = $state<{
+		sceneId: string;
+		start: number;
+		end: number;
+		excerpt: string;
+		selectedText: string;
+		mode: 'comment' | 'suggest';
+	} | null>(null);
 	// Whole-scene comment form target; mutually exclusive with a selection.
 	let commentingScene = $state<string | null>(null);
 
@@ -59,8 +69,15 @@
 		const end = textOffset(container, range.endContainer, range.endOffset);
 		if (end <= start) return;
 		const scene = scenes.find((entry) => entry.id === sceneId);
-		const excerpt = scene ? scene.bodyMd.slice(start, end) : '';
-		pending = { sceneId, start, end, excerpt: excerpt.slice(0, 120) };
+		const selectedText = scene ? scene.bodyMd.slice(start, end) : '';
+		pending = {
+			sceneId,
+			start,
+			end,
+			excerpt: selectedText.slice(0, 120),
+			selectedText,
+			mode: 'comment'
+		};
 		commentingScene = null;
 	}
 
@@ -117,8 +134,10 @@
 		<header>
 			<h1>{data.storyTitle}</h1>
 			<p class="byline">
-				Reviewing as {data.reviewerName}. Select any passage to comment on it, or comment on a whole
-				scene. The author sees your comments and can reply.
+				Reviewing as {data.reviewerName}. Select any passage to comment on it{data.canSuggest
+					? ' or to suggest a change to it'
+					: ''}, or comment on a whole scene. The author sees everything you leave here and can
+				reply.
 			</p>
 			{#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
 		</header>
@@ -168,14 +187,45 @@
 		</div>
 
 		{#if pending?.sceneId === scene.id}
-			<form method="POST" action="?/comment" class="comment-box">
+			<form
+				method="POST"
+				action={pending.mode === 'suggest' ? '?/suggest' : '?/comment'}
+				class="comment-box"
+			>
 				<p class="excerpt">On: "{pending.excerpt}{pending.excerpt.length >= 120 ? '...' : ''}"</p>
+				{#if canSuggest}
+					<div class="row mode-row">
+						<button
+							type="button"
+							class:ghost={pending.mode !== 'comment'}
+							onclick={() => (pending = pending && { ...pending, mode: 'comment' })}
+						>
+							Comment
+						</button>
+						<button
+							type="button"
+							class:ghost={pending.mode !== 'suggest'}
+							onclick={() => (pending = pending && { ...pending, mode: 'suggest' })}
+						>
+							Suggest a change
+						</button>
+					</div>
+				{/if}
 				<input type="hidden" name="sceneId" value={scene.id} />
 				<input type="hidden" name="start" value={pending.start} />
 				<input type="hidden" name="end" value={pending.end} />
-				<textarea name="body" rows="3" placeholder="Your comment" required></textarea>
+				{#if pending.mode === 'suggest'}
+					<p class="excerpt">Edit the text below; the author can accept or reject the change.</p>
+					<textarea name="replacement" rows="3" aria-label="Suggested text"
+						>{pending.selectedText}</textarea
+					>
+				{:else}
+					<textarea name="body" rows="3" placeholder="Your comment" required></textarea>
+				{/if}
 				<div class="row">
-					<button type="submit">Comment</button>
+					<button type="submit">
+						{pending.mode === 'suggest' ? 'Suggest' : 'Comment'}
+					</button>
 					<button type="button" class="ghost" onclick={() => (pending = null)}>Cancel</button>
 				</div>
 			</form>
@@ -222,6 +272,21 @@
 						<button type="submit">Reply</button>
 					</form>
 				{/if}
+			</div>
+		{/each}
+
+		{#each sceneSuggestions(scene.id) as suggestion (suggestion.id)}
+			<div class="thread suggestion" class:resolved={suggestion.status !== 'pending'}>
+				<p class="who">
+					{suggestion.reviewerName} suggested - {when(suggestion.createdAt)}
+					{#if suggestion.status === 'accepted'}<span class="badge">Accepted</span>
+					{:else if suggestion.status === 'rejected'}<span class="badge lost">Rejected</span>
+					{:else if suggestion.anchorLost}
+						<span class="badge lost">The text has changed since</span>
+					{/if}
+				</p>
+				{#if suggestion.original}<p class="what"><del>{suggestion.original}</del></p>{/if}
+				{#if suggestion.replacement}<p class="what"><ins>{suggestion.replacement}</ins></p>{/if}
 			</div>
 		{/each}
 	</article>
@@ -353,6 +418,20 @@
 	}
 	.scene-comment {
 		margin-top: 0.5rem;
+	}
+	.mode-row {
+		margin-bottom: 0.5rem;
+	}
+	.suggestion del {
+		background: #ffe3e3;
+		text-decoration: line-through;
+	}
+	.suggestion ins {
+		background: #d3f9d8;
+		text-decoration: none;
+	}
+	.suggestion .what {
+		font-family: Georgia, 'Times New Roman', serif;
 	}
 	button {
 		font-family: system-ui, sans-serif;

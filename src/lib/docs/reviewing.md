@@ -16,13 +16,17 @@ The link opens the story as one read-only manuscript. The reviewer gives a name 
 - They can also comment on a whole scene.
 - They see earlier comments on the story and can reply to them.
 
-Reviewers only ever see this one story. They cannot edit your text, and they cannot see your other stories, characters, or notes.
+If the link allows suggested edits, selecting a passage also offers "Suggest a change": the reviewer edits the selected text and sends it as a proposal. You choose per link whether to allow this when you create it.
+
+Reviewers only ever see this one story. They never change your text directly - a suggestion only touches the prose if you accept it - and they cannot see your other stories, characters, or notes.
 
 ## Working through the feedback
 
 Open "See the feedback" in the Review section (or visit the story's review page) to read every thread. Reply to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
 
-Comments point at the exact words they were made on. If you edit the text afterwards, the comment follows the passage when it can; if the passage itself was rewritten, the comment is kept and marked so you know it referred to older text.
+Suggested changes appear on the same page, showing the original text and the proposed text. Accept one to apply it to the scene (a history entry records it), or reject it. You decide one at a time, in any order.
+
+Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text, and a suggestion can no longer be accepted, only rejected.
 
 ## Ending a review
 

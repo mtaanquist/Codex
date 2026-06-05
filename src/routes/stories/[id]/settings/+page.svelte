@@ -221,6 +221,10 @@
 			Expires after (days)
 			<input type="number" name="expiresDays" min="1" max="365" placeholder="Never" />
 		</label>
+		<label class="inline">
+			<input type="checkbox" name="canSuggest" checked />
+			Allow suggested edits (you accept or reject each one; comments are always allowed)
+		</label>
 		<button type="submit">Create review link</button>
 	</form>
 	{#if form?.action === 'review' && 'reviewLink' in form && form.reviewLink}

@@ -20,7 +20,7 @@ export type RevisionEntityType =
 	| 'chapter'
 	| 'note';
 
-export type RevisionReason = 'autosave' | 'checkpoint' | 'restore';
+export type RevisionReason = 'autosave' | 'checkpoint' | 'restore' | 'suggestion';
 
 // Consecutive autosaves within this window roll the same revision row forward
 // instead of appending, so a writing burst leaves one timeline entry rather

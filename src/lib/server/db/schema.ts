@@ -866,6 +866,43 @@ export const reviewComments = pgTable(
 	(table) => [index('review_comments_thread_idx').on(table.threadId)]
 );
 
+// A reviewer's proposed edit: replace [range_start, range_end) of the scene's
+// body with the replacement text (equal offsets insert, an empty replacement
+// deletes). Never applied directly: the author accepts or rejects one at a
+// time, and accepting re-anchors the range against the current text first.
+export const reviewSuggestions = pgTable(
+	'review_suggestions',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		sceneId: uuid('scene_id')
+			.references(() => scenes.id)
+			.notNull(),
+		reviewerId: uuid('reviewer_id')
+			.references(() => reviewers.id)
+			.notNull(),
+		// The text the range was placed against.
+		baseRevisionId: uuid('base_revision_id')
+			.references(() => revisions.id)
+			.notNull(),
+		rangeStart: integer('range_start').notNull(),
+		rangeEnd: integer('range_end').notNull(),
+		replacement: text('replacement').notNull().default(''),
+		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
+			.notNull()
+			.default('pending'),
+		decidedByUserId: uuid('decided_by_user_id').references(() => users.id),
+		decidedAt: timestamp('decided_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('review_suggestions_scene_idx').on(table.sceneId),
+		index('review_suggestions_story_idx').on(table.storyId)
+	]
+);
+
 // Registered passkeys (WebAuthn credentials), any number per account. The
 // public key verifies sign-in assertions; sign_count backs clone detection.
 // Sign-in is usernameless: the browser presents a discoverable credential and

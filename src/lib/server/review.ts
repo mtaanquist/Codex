@@ -5,6 +5,7 @@ import {
 	reviewComments,
 	reviewInvitations,
 	reviewers,
+	reviewSuggestions,
 	reviewThreads,
 	revisions,
 	scenes,
@@ -13,6 +14,9 @@ import {
 } from './db/schema';
 import { hashToken } from './tokens';
 import { signToken, verifyToken } from './crypto';
+import { recordRevision } from './revisions';
+import { reanchorPoint, reanchorRange } from '../review-anchor';
+import { wordCount } from '../word-count';
 
 // Guest review, stage one: invitations, guest identity, and threaded
 // comments. An author invites someone to one story by magic link; the guest
@@ -28,7 +32,13 @@ export const REVIEWER_COOKIE = 'reviewer';
 
 export async function createReviewInvitation(
 	db: Database,
-	input: { storyId: string; createdBy: string; email?: string; expiresAt?: Date | null }
+	input: {
+		storyId: string;
+		createdBy: string;
+		email?: string;
+		canSuggest?: boolean;
+		expiresAt?: Date | null;
+	}
 ): Promise<{ id: string; token: string }> {
 	const token = randomBytes(32).toString('base64url');
 	const [row] = await db
@@ -38,6 +48,7 @@ export async function createReviewInvitation(
 			createdBy: input.createdBy,
 			tokenHash: hashToken(token),
 			email: input.email?.trim() || null,
+			canSuggest: input.canSuggest ?? true,
 			expiresAt: input.expiresAt ?? null
 		})
 		.returning({ id: reviewInvitations.id });
@@ -400,4 +411,193 @@ export async function listThreads(
 				}))
 		};
 	});
+}
+
+const MAX_REPLACEMENT_LENGTH = 20000;
+
+// A reviewer proposes replacing [start, end) of the scene's current text with
+// the replacement (equal offsets insert, an empty replacement deletes). The
+// range is pinned to a base revision so the author's later edits re-anchor.
+export async function createSuggestion(
+	db: Database,
+	input: {
+		storyId: string;
+		sceneId: string;
+		reviewerId: string;
+		range: { start: number; end: number };
+		replacement: string;
+	}
+): Promise<{ ok: true; suggestionId: string } | { ok: false; reason: string }> {
+	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
+		return { ok: false, reason: 'That suggestion is too long.' };
+	}
+	const [scene] = await db
+		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
+		.from(scenes)
+		.where(and(eq(scenes.id, input.sceneId), eq(scenes.storyId, input.storyId)));
+	if (!scene) return { ok: false, reason: 'That scene does not exist.' };
+	const { start, end } = input.range;
+	if (!Number.isInteger(start) || !Number.isInteger(end)) {
+		return { ok: false, reason: 'That selection no longer matches the text.' };
+	}
+	if (start < 0 || end > scene.bodyMd.length || start > end) {
+		return { ok: false, reason: 'That selection no longer matches the text.' };
+	}
+	if (scene.bodyMd.slice(start, end) === input.replacement) {
+		return { ok: false, reason: 'That suggestion changes nothing.' };
+	}
+
+	const baseRevisionId = await ensureBaseRevision(db, scene.id, scene.bodyMd);
+	const [row] = await db
+		.insert(reviewSuggestions)
+		.values({
+			storyId: input.storyId,
+			sceneId: input.sceneId,
+			reviewerId: input.reviewerId,
+			baseRevisionId,
+			rangeStart: start,
+			rangeEnd: end,
+			replacement: input.replacement
+		})
+		.returning({ id: reviewSuggestions.id });
+	return { ok: true, suggestionId: row.id };
+}
+
+export type SuggestionView = {
+	id: string;
+	sceneId: string;
+	reviewerName: string;
+	// What the suggestion replaces, as proposed against its base text.
+	original: string;
+	replacement: string;
+	status: 'pending' | 'accepted' | 'rejected';
+	// Where it lands in the current text; null when the passage has since
+	// been rewritten, which also blocks accepting it.
+	anchor: { start: number; end: number } | null;
+	anchorLost: boolean;
+	createdAt: Date;
+	decidedAt: Date | null;
+};
+
+// Re-anchors the proposed range onto the current text: a real range maps
+// through reanchorRange, a pure insertion point through reanchorPoint.
+function mapSuggestionRange(
+	baseText: string,
+	currentText: string,
+	start: number,
+	end: number
+): { start: number; end: number } | null {
+	if (start === end) {
+		const point = reanchorPoint(baseText, currentText, start);
+		return point === null ? null : { start: point, end: point };
+	}
+	return reanchorRange(baseText, currentText, start, end);
+}
+
+export async function listSuggestions(db: Database, storyId: string): Promise<SuggestionView[]> {
+	const rows = await db
+		.select({
+			suggestion: reviewSuggestions,
+			baseBody: revisions.bodyMd,
+			currentBody: scenes.bodyMd,
+			reviewerName: reviewers.displayName
+		})
+		.from(reviewSuggestions)
+		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
+		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
+		.innerJoin(reviewers, eq(reviewSuggestions.reviewerId, reviewers.id))
+		.where(eq(reviewSuggestions.storyId, storyId))
+		.orderBy(asc(reviewSuggestions.createdAt));
+	return rows.map((row) => {
+		const { rangeStart, rangeEnd } = row.suggestion;
+		// Decided suggestions keep their record but no longer point anywhere.
+		const anchor =
+			row.suggestion.status === 'pending'
+				? mapSuggestionRange(row.baseBody, row.currentBody, rangeStart, rangeEnd)
+				: null;
+		return {
+			id: row.suggestion.id,
+			sceneId: row.suggestion.sceneId,
+			reviewerName: row.reviewerName,
+			original: row.baseBody.slice(rangeStart, rangeEnd),
+			replacement: row.suggestion.replacement,
+			status: row.suggestion.status,
+			anchor,
+			anchorLost: row.suggestion.status === 'pending' && anchor === null,
+			createdAt: row.suggestion.createdAt,
+			decidedAt: row.suggestion.decidedAt
+		};
+	});
+}
+
+// The author's decision. Rejection only records it; acceptance re-anchors
+// the range against the current text and applies the replacement, recording
+// a revision and leaving the mention index to the caller's enqueue. A
+// passage that was rewritten since cannot be accepted, only rejected.
+export async function decideSuggestion(
+	db: Database,
+	userId: string,
+	suggestionId: string,
+	accept: boolean
+): Promise<{ ok: true; sceneId: string | null } | { ok: false; reason: string }> {
+	const [row] = await db
+		.select({
+			suggestion: reviewSuggestions,
+			baseBody: revisions.bodyMd,
+			scene: { id: scenes.id, bodyMd: scenes.bodyMd },
+			ownerId: stories.ownerId
+		})
+		.from(reviewSuggestions)
+		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
+		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
+		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
+		.where(eq(reviewSuggestions.id, suggestionId));
+	if (!row || row.ownerId !== userId) {
+		return { ok: false, reason: 'That suggestion does not exist.' };
+	}
+	if (row.suggestion.status !== 'pending') {
+		return { ok: false, reason: 'That suggestion was already decided.' };
+	}
+
+	if (!accept) {
+		await db
+			.update(reviewSuggestions)
+			.set({ status: 'rejected', decidedByUserId: userId, decidedAt: sql`now()` })
+			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+		return { ok: true, sceneId: null };
+	}
+
+	const anchor = mapSuggestionRange(
+		row.baseBody,
+		row.scene.bodyMd,
+		row.suggestion.rangeStart,
+		row.suggestion.rangeEnd
+	);
+	if (!anchor) {
+		return {
+			ok: false,
+			reason: 'The text this suggestion applies to has changed; it can only be rejected.'
+		};
+	}
+	const newBody =
+		row.scene.bodyMd.slice(0, anchor.start) +
+		row.suggestion.replacement +
+		row.scene.bodyMd.slice(anchor.end);
+
+	await db.transaction(async (tx) => {
+		// Guard the status inside the transaction so two decisions cannot both
+		// apply; the loser matches no pending row and changes nothing.
+		const decided = await tx
+			.update(reviewSuggestions)
+			.set({ status: 'accepted', decidedByUserId: userId, decidedAt: sql`now()` })
+			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')))
+			.returning({ id: reviewSuggestions.id });
+		if (decided.length === 0) throw new Error('suggestion already decided');
+		await tx
+			.update(scenes)
+			.set({ bodyMd: newBody, wordCount: wordCount(newBody) })
+			.where(eq(scenes.id, row.scene.id));
+	});
+	await recordRevision(db, 'scene', row.scene.id, newBody, 'suggestion');
+	return { ok: true, sceneId: row.scene.id };
 }

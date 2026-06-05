@@ -15,6 +15,7 @@ import {
 	reviewComments,
 	reviewers,
 	reviewInvitations,
+	reviewSuggestions,
 	reviewThreads,
 	revisions,
 	sceneMarkers,
@@ -58,8 +59,9 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 	}
 	await tx.delete(publications).where(eq(publications.storyId, storyId));
 
-	// Review rows before revisions and scenes: threads reference both, and
-	// guests are personal data that goes with the story.
+	// Review rows before revisions and scenes: threads and suggestions
+	// reference both, and guests are personal data that goes with the story.
+	await tx.delete(reviewSuggestions).where(eq(reviewSuggestions.storyId, storyId));
 	const threadRows = await tx
 		.select({ id: reviewThreads.id })
 		.from(reviewThreads)
