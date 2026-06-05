@@ -142,6 +142,7 @@ Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 Agreed sequence (2026-06-05): the quick details + entity history pair first, then preference layering (prerequisite for the rich-editing choice and page setup), with the self-contained items (spell-check, settings styling, command palette, markdown affordances, mention disambiguation) slotting in between. Started 2026-06-05.
 
 - [x] Entity quick details + full-fidelity entity history: details jsonb on characters/places/lore (migration 0031) edited as the design's Details grid and shown in the hover tooltip (first three), plus snapshot jsonb on revisions capturing name, aliases/keywords, summary, category, details, and the relationship set, so every change registers in History (relationship changes land on both linked timelines) and Restore returns the whole entity, skipping parts whose category/type/target was deleted since; pre-snapshot rows restore body-only. Details ride the account export front matter. Merged 2026-06-05 (#117).
+- [ ] Preference layering: stories.preferences jsonb (migration 0032), storyPreferences merges the user's preferences with per-story overrides at load time. Only the editor-behaviour keys (entityAutocomplete, continuousSceneMarks) are overridable; theme and accent stay account-wide. Story settings gains an Editor section where "Use my account setting" clears the override (jsonb key delete), so later account changes flow through.
 
 ## Feedback backlog
 
@@ -151,7 +152,7 @@ From first real use (2026-06-03):
 - [x] Editable continuous view: shipped with v1.10 (roadmap step 23b)
 - [ ] Spell-check from a user language preference (Phase 7; browser-native first)
 - [ ] Markdown affordances: the shared renderer shipped with v1.12 (exports + print); reading pages pick it up in step 27; in-editor styling and the prototype's toolbar remain as polish (Phase 7)
-- [ ] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration (Phase 7, prerequisite for the rich-editing choice below)
+- [x] Preference layering: user-level preferences with per-story overrides merged at render time (same pattern as llm_config); story-level column is an additive migration (Phase 7, prerequisite for the rich-editing choice below). Shipped 2026-06-05 with the Phase 7 item above.
 - [ ] Default editing format preference (Phase 7; reordered there on 2026-06-04). The editor is CodeMirror over raw markdown today; a writer should be able to choose a softer, Word-like editing surface rather than seeing markdown syntax. A rich/WYSIWYG editing mode behind a preference, settable at user level with a per-story override. Builds on the "markdown affordances" and "preference layering" items above; that is the foundation, this is the user-facing choice on top
 - [x] Entity colours with meaning: shipped with v1.2 (characters/places join categories; badge takes the category colour)
 

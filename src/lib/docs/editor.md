@@ -23,3 +23,5 @@ The History tab on the right keeps past versions of the open scene. Use "Checkpo
 ## How it looks
 
 You can change the theme, accent colour, and editor behaviour on your account page, under Display.
+
+A story can override the editor behaviour settings for itself: open the story's settings and use the Editor section. Anything left on "Use my account setting" keeps following your account page.

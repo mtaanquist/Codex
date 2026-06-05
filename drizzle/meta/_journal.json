@@ -225,6 +225,13 @@
 			"when": 1780652421502,
 			"tag": "0031_entity-details-and-revision-snapshots",
 			"breakpoints": true
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1780655319205,
+			"tag": "0032_story-preferences",
+			"breakpoints": true
 		}
 	]
 }
