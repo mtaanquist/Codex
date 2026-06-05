@@ -130,7 +130,18 @@ Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 - [x] Guest review (comments, then suggested edits)
   - [x] Stage 1 - invitations and threaded comments: review_invitations/reviewers/review_threads/review_comments (migration 0029), magic links with hashed tokens, guest identity via signed cookie (display name only, no account), read-only manuscript at /review/[token] with selection-anchored and whole-scene comments, diff-based re-anchoring (review-anchor.ts; lost anchors degrade to flagged whole-scene), author feedback page at /stories/[id]/review with reply/resolve/reopen, invitations managed in story settings, revoke keeps threads (deliberate deviation from the design line), purge anonymizes a deleted user's reviewer rows. Merged 2026-06-05.
   - [x] Stage 2 - suggested edits: review_suggestions (migration 0030), guests with a can_suggest link propose replacements on exact selections (insertions and deletions included), the author accepts or rejects one at a time on the feedback page; accept re-anchors against the current text (reanchorPoint for insertions), applies to body_md in a status-guarded transaction, records a 'suggestion' revision, and enqueues a mention rebuild; a rewritten passage can only be rejected. Merged 2026-06-05, shipped as v2.9.0.
-- [ ] Continuous backup (WAL/PITR) - only if hourly dumps ever bite
+- [ ] Continuous backup (WAL/PITR) - parked by design, only if hourly dumps ever bite; cheap first step is tightening the dump cadence (see the roadmap note)
+
+> Phase 6 complete (2026-06-05), shipped as v2.6.0 (invite codes + stored
+> exports), v2.7.0 (passkeys), v2.8.0 (review comments), and v2.9.0 (suggested
+> edits). WAL/PITR stays parked per the roadmap's own criterion. Next up when
+> work resumes: Phase 7 (writing and planning).
+
+## Phase 7 - Writing and planning
+
+Agreed sequence (2026-06-05): the quick details + entity history pair first, then preference layering (prerequisite for the rich-editing choice and page setup), with the self-contained items (spell-check, settings styling, command palette, markdown affordances, mention disambiguation) slotting in between. Started 2026-06-05.
+
+- [x] Entity quick details + full-fidelity entity history: details jsonb on characters/places/lore (migration 0031) edited as the design's Details grid and shown in the hover tooltip (first three), plus snapshot jsonb on revisions capturing name, aliases/keywords, summary, category, details, and the relationship set, so every change registers in History (relationship changes land on both linked timelines) and Restore returns the whole entity, skipping parts whose category/type/target was deleted since; pre-snapshot rows restore body-only. Details ride the account export front matter. Merged 2026-06-05 (#117).
 
 ## Feedback backlog
 
@@ -156,7 +167,7 @@ From a pre-v2.0 self-review (2026-06-04); the cover IDOR and the duplicated medi
 
 - [x] The worker-indexed find-usages e2e assertion was timing-flaky on loaded CI runners. Widened the toPass window to 60s, then (v2.1) marked the journey test slow and switched to set-membership assertions, then gated test start on worker readiness (global-setup waits for the worker's "started" log before any test relies on the async index, and captures its output to a file). Recurred across the v2.0.1 and v2.1 release runs each time, so chased to the readiness race rather than re-running.
 - [x] Worker job enqueue is best-effort and silently drops on failure (jobs.ts), so a dropped mention rebuild left the index stale until the next save. Fixed 2026-06-04: scenes gained a mentions_indexed_at watermark (migration 0025), set inside rebuildSceneMentions; a five-minute reconcile-mentions sweep in the worker re-indexes any scene whose body or whose universe's entities changed after the watermark, so a dropped rebuild self-heals within minutes regardless of cause. The fast-path enqueue stays for low latency.
-- [ ] Entity History is body-only: changing an alias or relationship records no revision, and Restore only returns the body (the alias save dedupes on the unchanged body; relationships save through their own endpoint). Author wants full-snapshot entity revisions, in Phase 7 alongside the jsonb quick details (the snapshot must capture them). See the Phase 7 candidate in the roadmap.
+- [x] Entity History is body-only: changing an alias or relationship records no revision, and Restore only returns the body (the alias save dedupes on the unchanged body; relationships save through their own endpoint). Author wants full-snapshot entity revisions, in Phase 7 alongside the jsonb quick details (the snapshot must capture them). Fixed 2026-06-05 with the Phase 7 quick details + history item (#117).
 - [x] CI never ran the Docker image, so a broken worker import closure shipped silently (caught by hand at v1.6: src/lib was missing from the image since step 14). Fixed in v1.6.1 with a docker-smoke CI job that builds the image and boots compose with a worker check
 
 Later phases tracked in the roadmap until they get close.

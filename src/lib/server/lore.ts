@@ -1,7 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { recordRevision } from './revisions';
+import { recordEntityRevision } from './revisions';
 import { entityCategories, loreEntries, loreStoryNotes, stories } from './db/schema';
+import type { EntityDetail } from '$lib/entity-snapshot';
 
 export type LoreSave = {
 	// The entry's title; arrives as "name" from the shared entity editor.
@@ -9,6 +10,8 @@ export type LoreSave = {
 	keywords: string[];
 	summaryMd: string | null;
 	bodyMd: string;
+	// Quick details; undefined leaves them unchanged.
+	details?: EntityDetail[];
 	categoryId?: string;
 	// When present, the per-story "In this book" notes are upserted too.
 	storyId?: string;
@@ -67,10 +70,13 @@ export async function saveLoreEntry(
 			keywords,
 			categoryId,
 			summaryMd: save.summaryMd?.trim() || null,
-			bodyMd: save.bodyMd
+			bodyMd: save.bodyMd,
+			...(save.details !== undefined ? { details: save.details } : {})
 		})
 		.where(eq(loreEntries.id, entry.id));
-	await recordRevision(db, 'lore_entry', entry.id, save.bodyMd);
+	// Full snapshot, so keyword, summary, category, and detail changes
+	// register in History even when the body is untouched.
+	await recordEntityRevision(db, 'lore_entry', entry.id);
 
 	if (save.storyId !== undefined) {
 		const [story] = await db

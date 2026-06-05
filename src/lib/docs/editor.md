@@ -8,13 +8,17 @@ A scene holds one stretch of prose. Chapters group scenes in order. You can move
 
 ## Mentions
 
-When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary without leaving the page.
+When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary and the entry's first few details without leaving the page.
 
 If the editor keeps underlining a common word that happens to be a name, open that entry in the planning view and turn off automatic detection for it.
 
 ## Marks
 
 To flag a spot to come back to, select some text and add a mark. Marks show in the margin and in the story's to-do list, and you can tick one off when it is done. Typing "TODO:" on a line is also picked up as a reminder; deleting the line clears it.
+
+## History
+
+The History tab on the right keeps past versions of the open scene. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Select "Preview" on a version to read it or compare it with the current text, and "Restore this version" to bring it back. Restoring never deletes history: the version you replaced stays in the list.
 
 ## How it looks
 

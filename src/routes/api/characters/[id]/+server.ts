@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { saveCharacter } from '$lib/server/characters';
 import { queueUniverseMentions } from '$lib/server/jobs';
+import { cleanDetails } from '$lib/entity-snapshot';
 
 // Debounced autosave target for the character editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
@@ -11,6 +12,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		aliases?: unknown;
 		summaryMd?: unknown;
 		bodyMd?: unknown;
+		details?: unknown;
 		categoryId?: unknown;
 		storyId?: unknown;
 		storyNotesMd?: unknown;
@@ -27,6 +29,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		aliases,
 		summaryMd: typeof payload.summaryMd === 'string' ? payload.summaryMd : null,
 		bodyMd: payload.bodyMd,
+		details: payload.details !== undefined ? cleanDetails(payload.details) : undefined,
 		categoryId:
 			payload.categoryId === null
 				? null

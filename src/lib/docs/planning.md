@@ -14,6 +14,10 @@ Give a character their nicknames and variants as aliases. Type one and press Ent
 
 Your changes save on their own as you work, so there is no save button.
 
+## Details
+
+Details are short facts about an entry, each with a label and a value: Status, Age, Allegiance, whatever fits. Select "Add detail" to add a row, and fill in both fields; rows missing either are not kept. The first three details show when you hover a mention in the editor, in the order they appear here, so put the most useful ones on top.
+
 ## The outline
 
 Each story has its own outline, separate from the chapters you have drafted. Use it to plan what happens before or instead of writing it straight through. An outline point can link to the scene that realises it.
@@ -25,3 +29,9 @@ You can record how entities relate: who is whose parent, which faction holds whi
 ## Bringing entities into a story
 
 An entity joins a story when you create it while working in that story, or when you add it by hand. The story's plan then shows just the characters, places, and lore that belong to it.
+
+## History
+
+The History tab on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.
+
+Select "Preview" on a version to read it; the panel above the text lists the fields as they were then. "Restore this version" brings the whole entry back to that state, including its relationships. Restoring never deletes history: the version you replaced stays in the list, so you can return to it the same way.

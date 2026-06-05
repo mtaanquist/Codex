@@ -1,15 +1,24 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	characters,
+	entityCategories,
+	entityRelationships,
 	loreEntries,
 	outlineNodes,
 	places,
+	relationTypes,
 	revisions,
 	scenes,
 	stories
 } from './db/schema';
 import { wordCount } from '$lib/word-count';
+import {
+	snapshotsEqual,
+	type EntitySnapshot,
+	type SnapshotRelationship
+} from '$lib/entity-snapshot';
+import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
 
 export type RevisionEntityType =
 	| 'scene'
@@ -27,24 +36,27 @@ export type RevisionReason = 'autosave' | 'checkpoint' | 'restore' | 'suggestion
 // than one per pause. A gap longer than this starts a fresh autosave entry.
 const AUTOSAVE_COALESCE_MS = 2 * 60 * 1000;
 
-// Records a revision. An autosave skips when the body is unchanged, and
-// otherwise coalesces into the latest entry when that entry is a recent
-// autosave (rolling its body and timestamp forward); past the window, or when
-// the latest entry is a checkpoint, it appends a new row. Checkpoints always
-// insert: the point of one is the marker, even on unchanged text.
+// Records a revision. An autosave skips when nothing changed (body, and for
+// entities the structured snapshot), and otherwise coalesces into the latest
+// entry when that entry is a recent autosave (rolling its content and
+// timestamp forward); past the window, or when the latest entry is a
+// checkpoint, it appends a new row. Checkpoints always insert: the point of
+// one is the marker, even on unchanged text.
 export async function recordRevision(
 	db: Database,
 	entityType: RevisionEntityType,
 	entityId: string,
 	bodyMd: string,
 	reason: RevisionReason = 'autosave',
-	label?: string
+	options: { label?: string; snapshot?: EntitySnapshot | null } = {}
 ): Promise<{ recorded: boolean }> {
+	const snapshot = options.snapshot ?? null;
 	if (reason === 'autosave') {
 		const [latest] = await db
 			.select({
 				id: revisions.id,
 				bodyMd: revisions.bodyMd,
+				snapshot: revisions.snapshot,
 				reason: revisions.reason,
 				createdAt: revisions.createdAt
 			})
@@ -52,7 +64,9 @@ export async function recordRevision(
 			.where(and(eq(revisions.entityType, entityType), eq(revisions.entityId, entityId)))
 			.orderBy(desc(revisions.createdAt))
 			.limit(1);
-		if (latest && latest.bodyMd === bodyMd) return { recorded: false };
+		if (latest && latest.bodyMd === bodyMd && snapshotsEqual(latest.snapshot, snapshot)) {
+			return { recorded: false };
+		}
 		if (
 			latest &&
 			latest.reason === 'autosave' &&
@@ -60,7 +74,7 @@ export async function recordRevision(
 		) {
 			await db
 				.update(revisions)
-				.set({ bodyMd, createdAt: sql`now()` })
+				.set({ bodyMd, snapshot, createdAt: sql`now()` })
 				.where(eq(revisions.id, latest.id));
 			return { recorded: true };
 		}
@@ -69,10 +83,163 @@ export async function recordRevision(
 		entityType,
 		entityId,
 		bodyMd,
+		snapshot,
 		reason,
-		label: label?.trim() || null
+		label: options.label?.trim() || null
 	});
 	return { recorded: true };
+}
+
+export function isSnapshotType(type: RevisionEntityType): type is EntityType {
+	return type === 'character' || type === 'place' || type === 'lore_entry';
+}
+
+// Serializes the entity's universe-wide relationship rows (both directions),
+// ordered by row id so equal sets compare equal. Display strings are
+// captured as they are now, so a preview stays readable after the type or
+// target is renamed or removed; the ids are what restore works from.
+async function snapshotRelationships(
+	db: Database,
+	universeId: string,
+	type: EntityType,
+	id: string
+): Promise<SnapshotRelationship[]> {
+	const rows = await db
+		.select({
+			relationTypeId: entityRelationships.relationTypeId,
+			fromType: entityRelationships.fromType,
+			fromId: entityRelationships.fromId,
+			toType: entityRelationships.toType,
+			toId: entityRelationships.toId,
+			notesMd: entityRelationships.notesMd,
+			forwardLabel: relationTypes.forwardLabel,
+			reverseLabel: relationTypes.reverseLabel,
+			bidirectional: relationTypes.bidirectional
+		})
+		.from(entityRelationships)
+		.innerJoin(relationTypes, eq(entityRelationships.relationTypeId, relationTypes.id))
+		.where(
+			and(
+				eq(entityRelationships.universeId, universeId),
+				isNull(entityRelationships.storyId),
+				or(
+					and(eq(entityRelationships.fromType, type), eq(entityRelationships.fromId, id)),
+					and(eq(entityRelationships.toType, type), eq(entityRelationships.toId, id))
+				)
+			)
+		)
+		.orderBy(asc(entityRelationships.id));
+
+	const serialized = rows.map((row): SnapshotRelationship => {
+		const isFrom = row.fromType === type && row.fromId === id;
+		return {
+			relationTypeId: row.relationTypeId,
+			role: isFrom ? 'from' : 'to',
+			otherType: (isFrom ? row.toType : row.fromType) as EntityType,
+			otherId: isFrom ? row.toId : row.fromId,
+			notesMd: row.notesMd,
+			label: isFrom || row.bidirectional ? row.forwardLabel : (row.reverseLabel ?? ''),
+			otherName: ''
+		};
+	});
+	for (const otherType of ['character', 'place', 'lore_entry'] as const) {
+		const ids = serialized
+			.filter((relationship) => relationship.otherType === otherType)
+			.map((relationship) => relationship.otherId);
+		const names = await namesByType(db, otherType, ids);
+		for (const relationship of serialized) {
+			if (relationship.otherType === otherType) {
+				relationship.otherName = names.get(relationship.otherId) ?? 'Unknown';
+			}
+		}
+	}
+	return serialized;
+}
+
+async function categoryNameById(db: Database, categoryId: string | null): Promise<string | null> {
+	if (!categoryId) return null;
+	const [row] = await db
+		.select({ name: entityCategories.name })
+		.from(entityCategories)
+		.where(eq(entityCategories.id, categoryId));
+	return row?.name ?? null;
+}
+
+// The entity's current state, snapshot-shaped, plus the context callers
+// need: the body for the revision row, the universe and owner for mention
+// rebuilds and relationship rows.
+export async function buildEntitySnapshot(
+	db: Database,
+	type: EntityType,
+	id: string
+): Promise<{
+	snapshot: EntitySnapshot;
+	bodyMd: string;
+	universeId: string;
+	ownerId: string;
+} | null> {
+	let bodyMd: string;
+	let universeId: string;
+	let ownerId: string;
+	let base: Pick<EntitySnapshot, 'name' | 'aliases' | 'keywords' | 'summaryMd' | 'categoryId'>;
+	let details: EntitySnapshot['details'];
+
+	if (type === 'character') {
+		const [row] = await db.select().from(characters).where(eq(characters.id, id));
+		if (!row) return null;
+		({ bodyMd, universeId, ownerId } = row);
+		base = {
+			name: row.name,
+			aliases: row.aliases,
+			summaryMd: row.summaryMd,
+			categoryId: row.categoryId
+		};
+		details = row.details;
+	} else if (type === 'place') {
+		const [row] = await db.select().from(places).where(eq(places.id, id));
+		if (!row) return null;
+		({ bodyMd, universeId, ownerId } = row);
+		base = { name: row.name, summaryMd: row.summaryMd, categoryId: row.categoryId };
+		details = row.details;
+	} else {
+		const [row] = await db.select().from(loreEntries).where(eq(loreEntries.id, id));
+		if (!row) return null;
+		({ bodyMd, universeId, ownerId } = row);
+		base = {
+			name: row.title,
+			keywords: row.keywords,
+			summaryMd: row.summaryMd,
+			categoryId: row.categoryId
+		};
+		details = row.details;
+	}
+
+	const snapshot: EntitySnapshot = {
+		...base,
+		categoryName: await categoryNameById(db, base.categoryId),
+		details,
+		relationships: await snapshotRelationships(db, universeId, type, id)
+	};
+	return { snapshot, bodyMd, universeId, ownerId };
+}
+
+// Captures a full revision of the entity's current state: the body plus the
+// structured snapshot, under the usual autosave coalescing rules. This is
+// what makes alias, summary, category, detail, and relationship changes
+// register in History even when the body itself is untouched.
+export async function recordEntityRevision(
+	db: Database,
+	type: EntityType,
+	id: string,
+	reason: RevisionReason = 'autosave',
+	label?: string
+): Promise<{ recorded: boolean }> {
+	const built = await buildEntitySnapshot(db, type, id);
+	if (!built) return { recorded: false };
+	return await recordRevision(db, type, id, built.bodyMd, reason, {
+		label,
+		snapshot: built.snapshot
+	});
 }
 
 export type RevisionRow = {
@@ -174,7 +341,7 @@ export async function ownedEntityBody(
 	return null;
 }
 
-// A manual checkpoint of the entity's current text, with an optional name.
+// A manual checkpoint of the entity's current state, with an optional name.
 export async function createCheckpoint(
 	db: Database,
 	userId: string,
@@ -184,19 +351,153 @@ export async function createCheckpoint(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
 	const entity = await ownedEntityBody(db, userId, entityType, entityId);
 	if (!entity) return { ok: false, reason: 'entity not found' };
-	await recordRevision(db, entityType, entityId, entity.bodyMd, 'checkpoint', label);
+	if (isSnapshotType(entityType)) {
+		await recordEntityRevision(db, entityType, entityId, 'checkpoint', label);
+	} else {
+		await recordRevision(db, entityType, entityId, entity.bodyMd, 'checkpoint', { label });
+	}
 	return { ok: true };
 }
 
-// Restore never overwrites history: the entity gets the revision's text and
-// a new 'restore' revision lands on top of the timeline.
+// Returns the snapshot's category id when it can still be applied: null
+// passes through (clearing is a real state), an id only if the category
+// still exists in the universe; a deleted one leaves the current category.
+async function restorableCategory(
+	db: Database,
+	universeId: string,
+	snapshot: EntitySnapshot
+): Promise<{ categoryId: string | null } | Record<string, never>> {
+	if (snapshot.categoryId === null) return { categoryId: null };
+	const [row] = await db
+		.select({ id: entityCategories.id })
+		.from(entityCategories)
+		.where(
+			and(eq(entityCategories.id, snapshot.categoryId), eq(entityCategories.universeId, universeId))
+		);
+	return row ? { categoryId: row.id } : {};
+}
+
+// Reconciles the entity's universe-wide relationship rows to the snapshot's
+// set: rows not in the snapshot go, missing ones are recreated when their
+// relation type and target still exist, and ones whose type or target is
+// gone are skipped. Returns the other entities whose relationship set
+// changed, so their timelines register the change too.
+async function reconcileRelationships(
+	db: Database,
+	context: { universeId: string; ownerId: string },
+	type: EntityType,
+	id: string,
+	desired: SnapshotRelationship[]
+): Promise<{ type: EntityType; id: string }[]> {
+	const keyOf = (relationship: Omit<SnapshotRelationship, 'label' | 'otherName'>) =>
+		[
+			relationship.relationTypeId,
+			relationship.role,
+			relationship.otherType,
+			relationship.otherId,
+			relationship.notesMd ?? ''
+		].join('|');
+
+	const currentRows = await db
+		.select()
+		.from(entityRelationships)
+		.where(
+			and(
+				eq(entityRelationships.universeId, context.universeId),
+				isNull(entityRelationships.storyId),
+				or(
+					and(eq(entityRelationships.fromType, type), eq(entityRelationships.fromId, id)),
+					and(eq(entityRelationships.toType, type), eq(entityRelationships.toId, id))
+				)
+			)
+		);
+	const current = currentRows.map((row) => {
+		const isFrom = row.fromType === type && row.fromId === id;
+		return {
+			row,
+			otherType: (isFrom ? row.toType : row.fromType) as EntityType,
+			otherId: isFrom ? row.toId : row.fromId,
+			key: keyOf({
+				relationTypeId: row.relationTypeId,
+				role: isFrom ? 'from' : 'to',
+				otherType: (isFrom ? row.toType : row.fromType) as EntityType,
+				otherId: isFrom ? row.toId : row.fromId,
+				notesMd: row.notesMd
+			})
+		};
+	});
+
+	const touched = new Map<string, { type: EntityType; id: string }>();
+	const desiredKeys = new Set(desired.map(keyOf));
+	for (const entry of current) {
+		if (desiredKeys.has(entry.key)) continue;
+		await db.delete(entityRelationships).where(eq(entityRelationships.id, entry.row.id));
+		touched.set(`${entry.otherType}:${entry.otherId}`, {
+			type: entry.otherType,
+			id: entry.otherId
+		});
+	}
+
+	const currentKeys = new Set(current.map((entry) => entry.key));
+	for (const relationship of desired) {
+		if (currentKeys.has(keyOf(relationship))) continue;
+		const [relationType] = await db
+			.select()
+			.from(relationTypes)
+			.where(
+				and(
+					eq(relationTypes.id, relationship.relationTypeId),
+					or(isNull(relationTypes.universeId), eq(relationTypes.universeId, context.universeId))
+				)
+			);
+		if (!relationType) continue;
+		const fromType = relationship.role === 'from' ? type : relationship.otherType;
+		const toType = relationship.role === 'from' ? relationship.otherType : type;
+		if (relationType.fromType !== fromType || relationType.toType !== toType) continue;
+		if (
+			!(await entityInUniverse(
+				db,
+				context.universeId,
+				relationship.otherType,
+				relationship.otherId
+			))
+		) {
+			continue;
+		}
+		await db.insert(entityRelationships).values({
+			universeId: context.universeId,
+			ownerId: context.ownerId,
+			fromType,
+			fromId: relationship.role === 'from' ? id : relationship.otherId,
+			toType,
+			toId: relationship.role === 'from' ? relationship.otherId : id,
+			relationTypeId: relationship.relationTypeId,
+			notesMd: relationship.notesMd
+		});
+		touched.set(`${relationship.otherType}:${relationship.otherId}`, {
+			type: relationship.otherType,
+			id: relationship.otherId
+		});
+	}
+	return [...touched.values()];
+}
+
+// Restore never overwrites history: the entity gets the revision's content
+// and a new 'restore' revision lands on top of the timeline. An entity
+// revision with a snapshot restores the whole entity - name, aliases or
+// keywords, summary, category, details, and the relationship set - while
+// older body-only rows restore the body and leave the rest as it is. Parts
+// of a snapshot that point at things deleted since (a category, a relation
+// type, a related entity) are skipped rather than recreated.
 export async function restoreRevision(
 	db: Database,
 	userId: string,
 	revisionId: string,
 	entityType: RevisionEntityType,
 	entityId: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<
+	{ ok: true; universeId?: string; mentionsAffected?: boolean } | { ok: false; reason: string }
+> {
 	const entity = await ownedEntityBody(db, userId, entityType, entityId);
 	if (!entity) return { ok: false, reason: 'entity not found' };
 	const revision = await getRevision(db, revisionId, entityType, entityId);
@@ -207,26 +508,104 @@ export async function restoreRevision(
 			.update(scenes)
 			.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
 			.where(eq(scenes.id, entityId));
-	} else if (entityType === 'outline_node') {
+		await recordRevision(db, entityType, entityId, revision.bodyMd, 'restore');
+		return { ok: true };
+	}
+	if (entityType === 'outline_node') {
 		await db
 			.update(outlineNodes)
 			.set({ bodyMd: revision.bodyMd })
 			.where(eq(outlineNodes.id, entityId));
-	} else if (entityType === 'character') {
-		await db.update(characters).set({ bodyMd: revision.bodyMd }).where(eq(characters.id, entityId));
-	} else if (entityType === 'place') {
-		await db.update(places).set({ bodyMd: revision.bodyMd }).where(eq(places.id, entityId));
-	} else if (entityType === 'lore_entry') {
-		await db
-			.update(loreEntries)
-			.set({ bodyMd: revision.bodyMd })
-			.where(eq(loreEntries.id, entityId));
-	} else {
+		await recordRevision(db, entityType, entityId, revision.bodyMd, 'restore');
+		return { ok: true };
+	}
+	if (!isSnapshotType(entityType)) {
 		return { ok: false, reason: 'that cannot be restored' };
 	}
 
-	await recordRevision(db, entityType, entityId, revision.bodyMd, 'restore');
-	return { ok: true };
+	const before = await buildEntitySnapshot(db, entityType, entityId);
+	if (!before) return { ok: false, reason: 'entity not found' };
+	const snapshot = revision.snapshot;
+	const category = snapshot ? await restorableCategory(db, before.universeId, snapshot) : {};
+
+	if (entityType === 'character') {
+		await db
+			.update(characters)
+			.set({
+				bodyMd: revision.bodyMd,
+				...(snapshot
+					? {
+							name: snapshot.name,
+							aliases: snapshot.aliases ?? [],
+							summaryMd: snapshot.summaryMd,
+							details: snapshot.details,
+							...category
+						}
+					: {})
+			})
+			.where(eq(characters.id, entityId));
+	} else if (entityType === 'place') {
+		await db
+			.update(places)
+			.set({
+				bodyMd: revision.bodyMd,
+				...(snapshot
+					? {
+							name: snapshot.name,
+							summaryMd: snapshot.summaryMd,
+							details: snapshot.details,
+							...category
+						}
+					: {})
+			})
+			.where(eq(places.id, entityId));
+	} else {
+		// Lore always has a category, so a cleared or deleted one keeps the
+		// current category rather than setting null.
+		const loreCategory =
+			'categoryId' in category && category.categoryId !== null
+				? { categoryId: category.categoryId }
+				: {};
+		await db
+			.update(loreEntries)
+			.set({
+				bodyMd: revision.bodyMd,
+				...(snapshot
+					? {
+							title: snapshot.name,
+							keywords: snapshot.keywords ?? [],
+							summaryMd: snapshot.summaryMd,
+							details: snapshot.details,
+							...loreCategory
+						}
+					: {})
+			})
+			.where(eq(loreEntries.id, entityId));
+	}
+
+	if (snapshot) {
+		const touched = await reconcileRelationships(
+			db,
+			{ universeId: before.universeId, ownerId: before.ownerId },
+			entityType,
+			entityId,
+			snapshot.relationships
+		);
+		for (const other of touched) {
+			await recordEntityRevision(db, other.type, other.id);
+		}
+	}
+
+	await recordEntityRevision(db, entityType, entityId, 'restore');
+	const mentionsAffected = snapshot
+		? JSON.stringify([snapshot.name, snapshot.aliases ?? [], snapshot.keywords ?? []]) !==
+			JSON.stringify([
+				before.snapshot.name,
+				before.snapshot.aliases ?? [],
+				before.snapshot.keywords ?? []
+			])
+		: false;
+	return { ok: true, universeId: before.universeId, mentionsAffected };
 }
 
 export type TimelineRow = RevisionRow & {

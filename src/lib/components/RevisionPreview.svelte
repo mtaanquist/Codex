@@ -2,10 +2,13 @@
 	import { diffLines } from 'diff';
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
+	import type { EntitySnapshot } from '$lib/entity-snapshot';
 
 	// The centre column while a past revision is open: banner, the
 	// revision's text (read-only), and a toggle that diffs it against what
-	// is live now. Restore swaps the live text and stacks a new revision.
+	// is live now. Entity revisions also carry a snapshot of the structured
+	// fields, shown above the text. Restore swaps the live content and
+	// stacks a new revision.
 	let {
 		revision,
 		currentBody,
@@ -18,12 +21,16 @@
 			label: string | null;
 			createdAt: Date;
 			bodyMd: string;
+			snapshot?: EntitySnapshot | null;
 		};
 		currentBody: string;
 		entityType: string;
 		entityId: string;
 		exitHref: string;
 	} = $props();
+
+	const snapshot = $derived(revision.snapshot ?? null);
+	const snapshotTags = $derived(snapshot?.aliases ?? snapshot?.keywords ?? []);
 
 	let showDiff = $state(false);
 	let restoring = $state(false);
@@ -65,6 +72,47 @@
 	</div>
 </div>
 
+{#if snapshot}
+	<div class="snap">
+		<div class="snap-row">
+			<span class="snap-k">Name</span>
+			<span class="snap-v">{snapshot.name}</span>
+		</div>
+		{#if snapshotTags.length > 0}
+			<div class="snap-row">
+				<span class="snap-k">{snapshot.aliases ? 'Aliases' : 'Keywords'}</span>
+				<span class="snap-v">{snapshotTags.join(', ')}</span>
+			</div>
+		{/if}
+		{#if snapshot.categoryName}
+			<div class="snap-row">
+				<span class="snap-k">Category</span>
+				<span class="snap-v">{snapshot.categoryName}</span>
+			</div>
+		{/if}
+		{#if snapshot.summaryMd}
+			<div class="snap-row">
+				<span class="snap-k">Summary</span>
+				<span class="snap-v">{snapshot.summaryMd}</span>
+			</div>
+		{/if}
+		{#each snapshot.details as detail, index (index)}
+			<div class="snap-row">
+				<span class="snap-k">{detail.label}</span>
+				<span class="snap-v">{detail.value}</span>
+			</div>
+		{/each}
+		{#each snapshot.relationships as relationship, index (index)}
+			<div class="snap-row">
+				<span class="snap-k">{relationship.label || 'Related'}</span>
+				<span class="snap-v">
+					{relationship.otherName}{relationship.notesMd ? ` - ${relationship.notesMd}` : ''}
+				</span>
+			</div>
+		{/each}
+	</div>
+{/if}
+
 {#if showDiff}
 	<div class="prose-historical diff-view">
 		{#each parts as part, index (index)}<span
@@ -84,6 +132,33 @@
 {/if}
 
 <style>
+	.snap {
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		padding: 10px 14px;
+		margin-bottom: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.snap-row {
+		display: flex;
+		gap: 10px;
+		font-size: 13px;
+		line-height: 1.5;
+	}
+	.snap-k {
+		flex: 0 0 110px;
+		font-size: 11px;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		padding-top: 2px;
+	}
+	.snap-v {
+		color: var(--text);
+		min-width: 0;
+	}
 	.diff-view {
 		white-space: pre-wrap;
 		line-height: 1.7;
