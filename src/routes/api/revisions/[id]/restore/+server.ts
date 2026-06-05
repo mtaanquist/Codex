@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { queueSceneMentions } from '$lib/server/jobs';
+import { queueSceneMentions, queueUniverseMentions } from '$lib/server/jobs';
 import { restoreRevision, type RevisionEntityType } from '$lib/server/revisions';
 
 const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'outline_node'] as const;
@@ -27,6 +27,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!result.ok) error(404, result.reason);
 	if (entityType === 'scene') {
 		await queueSceneMentions(payload.entityId);
+	}
+	// A restored name or alias set can add or remove mentions anywhere in
+	// the universe.
+	if (result.mentionsAffected && result.universeId) {
+		await queueUniverseMentions(result.universeId);
 	}
 	return json({ ok: true });
 };

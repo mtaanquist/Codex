@@ -32,14 +32,25 @@ export function slugify(text: string | null, fallback: string): string {
 	return slug || fallback;
 }
 
-function frontMatter(fields: Record<string, string | null | undefined>): string {
+function frontMatter(fields: Record<string, string | string[] | null | undefined>): string {
 	const lines = ['---'];
 	for (const [key, value] of Object.entries(fields)) {
 		if (value === null || value === undefined || value === '') continue;
+		if (Array.isArray(value)) {
+			if (value.length === 0) continue;
+			lines.push(`${key}:`);
+			for (const item of value) lines.push(`  - ${JSON.stringify(item)}`);
+			continue;
+		}
 		lines.push(`${key}: ${JSON.stringify(value)}`);
 	}
 	lines.push('---', '');
 	return lines.join('\n');
+}
+
+// Quick details flatten to "Label: value" lines in the front matter list.
+function detailLines(details: { label: string; value: string }[]): string[] {
+	return details.map((detail) => `${detail.label}: ${detail.value}`);
 }
 
 export type ExportAsset = { id: string; contentType: string; bytes: Uint8Array };
@@ -164,7 +175,7 @@ export async function buildStoryZip(
 type Doc = {
 	dir: string;
 	name: string;
-	front: Record<string, string | null | undefined>;
+	front: Record<string, string | string[] | null | undefined>;
 	body: string;
 	coverId?: string | null;
 };
@@ -217,7 +228,8 @@ export async function buildAccountExport(
 				front: {
 					name: c.name,
 					aliases: c.aliases.length ? c.aliases.join(', ') : null,
-					category: categoryName(c.categoryId)
+					category: categoryName(c.categoryId),
+					details: detailLines(c.details)
 				},
 				body: joinBody(c.summaryMd, c.bodyMd)
 			});
@@ -232,7 +244,11 @@ export async function buildAccountExport(
 			docs.push({
 				dir: `${uDir}/places`,
 				name: `${slugify(p.name, p.id)}.md`,
-				front: { name: p.name, category: categoryName(p.categoryId) },
+				front: {
+					name: p.name,
+					category: categoryName(p.categoryId),
+					details: detailLines(p.details)
+				},
 				body: joinBody(p.summaryMd, p.bodyMd)
 			});
 		}
@@ -249,7 +265,8 @@ export async function buildAccountExport(
 				front: {
 					title: l.title,
 					keywords: l.keywords.length ? l.keywords.join(', ') : null,
-					category: categoryName(l.categoryId)
+					category: categoryName(l.categoryId),
+					details: detailLines(l.details)
 				},
 				body: joinBody(l.summaryMd, l.bodyMd)
 			});

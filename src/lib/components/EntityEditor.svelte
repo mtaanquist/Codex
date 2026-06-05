@@ -49,6 +49,7 @@
 			categoryId?: string | null;
 			summaryMd: string | null;
 			bodyMd: string;
+			details?: { label: string; value: string }[];
 		};
 		categories?: { id: string; name: string; color: string | null }[];
 		relationTypes?: RelationTypeOption[];
@@ -92,6 +93,8 @@
 	let categoryValue = $state(entity.categoryId ?? '');
 	// svelte-ignore state_referenced_locally
 	let summary = $state(entity.summaryMd ?? '');
+	// svelte-ignore state_referenced_locally
+	let details = $state((entity.details ?? []).map((detail) => ({ ...detail })));
 	// svelte-ignore state_referenced_locally
 	let notes = $state(storyNotesMd ?? '');
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -168,7 +171,8 @@
 			const payload: Record<string, unknown> = {
 				name,
 				summaryMd: summary,
-				bodyMd: view.state.doc.toString()
+				bodyMd: view.state.doc.toString(),
+				details
 			};
 			if (storyId) {
 				payload.storyId = storyId;
@@ -399,6 +403,53 @@
 		{/if}
 	{/if}
 
+	<div class="section-label">Details</div>
+	<p class="field-hint">Short facts shown with this entry, like Status or Age.</p>
+	{#if details.length > 0}
+		<div class="fields">
+			{#each details as detail, index (index)}
+				<div class="field">
+					<input
+						class="detail-k"
+						type="text"
+						placeholder="Label"
+						bind:value={detail.label}
+						oninput={scheduleSave}
+						aria-label="Detail label"
+					/>
+					<div class="detail-v-row">
+						<input
+							class="detail-v"
+							type="text"
+							placeholder="Value"
+							bind:value={detail.value}
+							oninput={scheduleSave}
+							aria-label="Detail value"
+						/>
+						<button
+							class="detail-remove"
+							type="button"
+							title="Remove detail"
+							onclick={() => {
+								details.splice(index, 1);
+								scheduleSave();
+							}}
+						>
+							&times;
+						</button>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+	<button
+		type="button"
+		class="chip dashed detail-add-chip"
+		onclick={() => details.push({ label: '', value: '' })}
+	>
+		+ Add detail
+	</button>
+
 	{#if storyId}
 		<div class="section-label">In this book</div>
 		{#if membership}
@@ -496,6 +547,53 @@
 		color: var(--text);
 	}
 	.rel-add-chip {
+		margin-top: 10px;
+	}
+	/* Editable cells inside the design system's .fields grid: the inputs
+	   carry the .k / .v typography. */
+	.detail-k,
+	.detail-v {
+		width: 100%;
+		border: 0;
+		background: none;
+		color: var(--text);
+		outline: none;
+		padding: 0;
+	}
+	.detail-k {
+		font-size: 11px;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		margin-bottom: 4px;
+	}
+	.detail-k::placeholder,
+	.detail-v::placeholder {
+		color: var(--text-faint);
+		text-transform: none;
+		letter-spacing: normal;
+	}
+	.detail-v {
+		font-size: 14px;
+	}
+	.detail-v-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.detail-remove {
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		font-size: 14px;
+		line-height: 1;
+		padding: 0 2px;
+		cursor: pointer;
+	}
+	.detail-remove:hover {
+		color: var(--text);
+	}
+	.detail-add-chip {
 		margin-top: 10px;
 	}
 	.rel-error {

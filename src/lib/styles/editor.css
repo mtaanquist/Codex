@@ -49,6 +49,31 @@
 	line-height: 1.5;
 	margin-top: 3px;
 }
+.entity-tip-details {
+	margin-top: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.entity-tip-detail {
+	display: flex;
+	gap: 8px;
+	font-family: var(--font-ui);
+	font-size: 12px;
+	line-height: 1.5;
+}
+.entity-tip-detail-k {
+	flex: 0 0 auto;
+	font-size: 10.5px;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	padding-top: 1px;
+}
+.entity-tip-detail-v {
+	color: var(--text-muted);
+	min-width: 0;
+}
 
 /* Entity autocomplete: ghost text and the completion popup. */
 .cm-ghost-text {
