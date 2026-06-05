@@ -118,7 +118,9 @@ export const actions: Actions = {
 		requireAdmin(locals);
 		const data = await request.formData();
 		const maxUses = Number(data.get('maxUses') ?? 1);
-		const expiresDays = Number(data.get('expiresDays') ?? 0);
+		// Blank means the code never expires.
+		const expiresRaw = String(data.get('expiresDays') ?? '').trim();
+		const expiresDays = expiresRaw === '' ? 0 : Number(expiresRaw);
 		if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000) {
 			return fail(400, {
 				scope: 'invites',
@@ -126,13 +128,15 @@ export const actions: Actions = {
 			});
 		}
 		if (!Number.isInteger(expiresDays) || expiresDays < 0 || expiresDays > 365) {
-			return fail(400, { scope: 'invites', message: 'Expiry must be 0 to 365 days.' });
+			return fail(400, {
+				scope: 'invites',
+				message: 'Leave expiry blank for a code that never expires, or use 1 to 365 days.'
+			});
 		}
 		await createInviteCode(db, {
 			createdBy: locals.user!.id,
 			label: String(data.get('label') ?? ''),
 			maxUses,
-			// 0 days means the code never expires.
 			expiresAt: expiresDays > 0 ? new Date(Date.now() + expiresDays * 86_400_000) : null
 		});
 		return { scope: 'invites', done: true };
