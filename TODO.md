@@ -144,7 +144,7 @@ From first real use (2026-06-03):
 
 From the pre-v1.0 code review (2026-06-03); the four fixable findings were fixed:
 
-- [ ] Author-controlled page breaks in print/PDF: the title page and per-chapter breaks are automatic; an explicit in-chapter break (a scene-level "starts a new page" flag or a markdown marker styled with break-before) is additive when a real book needs it (noted 2026-06-05 while building stored exports)
+- [ ] Page setup for print/PDF (Phase 7, alongside preference layering): page size incl. book trim sizes, margins, font and size, paragraph style (indent vs spaced), scene-break glyph, page numbers and running headers (puppeteer displayHeaderFooter; Chromium lacks @page margin boxes), and explicit in-chapter page breaks (a scene-level flag or markdown marker styled with break-before). All of it parameterizes the one stylesheet the print route and the worker PDF already share; EPUB stays reflowable by design. Known wall: mirrored facing pages (@page :left/:right) are unsupported in Chromium; real bookbinding output would need a different typesetter. (Broadened 2026-06-05 from the original page-breaks note.)
 - [ ] Mention attribution is first-match when two entities share an identical name or alias; needs a dedupe/disambiguation design (mention-detect.ts) (Phase 7)
 - [ ] Hover tooltip re-runs full-document detection per hover; read from the existing decoration set instead (editor-mentions.ts)
 - [ ] applySceneOrder issues one UPDATE per scene; batch into a single statement when stories grow (scene-order.ts)
