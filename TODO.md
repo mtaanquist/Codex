@@ -215,7 +215,8 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
       id-or-slug resolver coverage in the integration suite; palette refs
       renamed and the form status styles promoted to pages.css. The 0035
       backfill's lack of accent folding stays as-is (slugs are valid and
-      editable; rewriting shipped rows would break links).
+      editable; rewriting shipped rows would break links). Merged
+      2026-06-06 (#144).
 
 > Phase 8 complete (2026-06-05), shipped as v2.14.0 (Insights: heatmap +
 > progress dashboard), v2.15.0 (scene cards board), and v2.16.0
