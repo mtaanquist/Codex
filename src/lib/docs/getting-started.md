@@ -16,6 +16,10 @@ That is enough to start writing. When you are ready, the planning tools help you
 
 Each of those has its own help article. Look for the "?" next to a heading anywhere in the app to open the guide for what you are looking at.
 
+## Deleting things
+
+Right-click a scene in a story's sidebar to delete it; it sits in the story's "Deleted scenes" list until you restore it or delete it forever. Deleting a universe (from its settings) keeps it in a "Deleted universes" list on the library for 30 days, restorable with one click; after that it is gone for good, along with everything in it. Stories delete immediately and permanently from their settings, so export first if in doubt.
+
 ## Jumping around
 
 Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose: matches in scene text show a snippet and open the scene. The same box lists commands for where you are, such as creating a scene or opening the story's settings.

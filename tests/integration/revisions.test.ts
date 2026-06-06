@@ -221,10 +221,16 @@ describe('timelines', () => {
 		expect([...times].sort((a, b) => b - a)).toEqual(times);
 	});
 
-	it('universe timeline lists entity revisions', async () => {
+	it('universe timeline spans entities and scenes, with story context', async () => {
 		const rows = await universeTimeline(db, universeId);
-		expect(rows.length).toBeGreaterThan(0);
-		expect(rows.every((row) => row.entityType === 'character')).toBe(true);
-		expect(rows[0].entityName).toBe('Alice Vane');
+		const types = new Set(rows.map((row) => row.entityType));
+		expect(types).toEqual(new Set(['character', 'scene']));
+		const character = rows.find((row) => row.entityType === 'character');
+		expect(character?.entityName).toBe('Alice Vane');
+		expect(character?.storyTitle ?? null).toBe(null);
+		const scene = rows.find((row) => row.entityType === 'scene');
+		expect(scene?.entityName).toBe('Opening');
+		expect(scene?.storyTitle).toBeTruthy();
+		expect(scene?.storySlug).toBeTruthy();
 	});
 });

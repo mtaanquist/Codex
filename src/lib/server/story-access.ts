@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from './db';
 import { stories, universes } from './db/schema';
 import type { Database } from './auth';
@@ -15,7 +15,7 @@ export async function ownedStory(ref: string, userId: string, dbc: Database = db
 		.select({ story: stories, universe: universes })
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
-		.where(and(byRef, eq(stories.ownerId, userId)));
+		.where(and(byRef, eq(stories.ownerId, userId), isNull(universes.deletedAt)));
 	if (!row) error(404, 'Story not found');
 	return row;
 }

@@ -285,12 +285,19 @@ their own releases.
       as v2.21.0. The suite refactor it forced - one shared signed-in
       session instead of sixteen logins against a fifteen-per-window rate
       limit - landed first as #153.
-- [ ] Universe settings (universe.html): header eyebrow + title, Contents
+- [x] Universe settings (universe.html): header eyebrow + title, Contents
       stat tiles, an Entity categories manager (first of its kind in the
-      app), History with filters/day grouping/checkpoint actions, a
-      universe markdown export, Stories section moving to the dashboard,
-      and the danger zone becoming a cascade soft-delete with a 30-day
-      restore window (author's call). Lorebook JSON export stays in Phase 9. Ships as v2.22.0.
+      app, with guarded deletes), History with filters/day grouping/kind
+      chips/checkpoint preview+restore (scenes joined the universe
+      timeline), a universe markdown export (extracted from the account
+      builder), Stories section moved to the dashboard, and the danger
+      zone became a cascade soft-delete with a 30-day restore window
+      (author's call): universes.deleted_at (migration 0038), a Deleted
+      universes block on the library with restore/delete-forever, and an
+      hourly worker purge sweep. The shared cascade fixed two account
+      purge leaks (custom relation types, entity revisions). Lorebook
+      JSON export stays in Phase 9. Merged 2026-06-06 (#156), shipped as
+      v2.22.0.
 
 ## Feedback backlog
 

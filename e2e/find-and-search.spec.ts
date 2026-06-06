@@ -9,6 +9,11 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Findfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Findfall ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
 	await page.getByLabel('New story').fill(`Needles ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 
