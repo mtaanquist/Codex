@@ -241,36 +241,44 @@ export const scenes = pgTable(
 
 // Characters belong to the universe, not a story; per-story context layers on
 // through character_story_notes.
-export const characters = pgTable('characters', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	universeId: uuid('universe_id')
-		.references(() => universes.id)
-		.notNull(),
-	ownerId: uuid('owner_id')
-		.references(() => users.id)
-		.notNull(),
-	name: text('name').notNull(),
-	// Nicknames and variants; used for mention detection.
-	aliases: text('aliases').array().notNull().default([]),
-	// One or two lines; shown in hover popovers.
-	summaryMd: text('summary_md'),
-	bodyMd: text('body_md').notNull().default(''),
-	// Set false for common-word names ("Will", "Art").
-	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
-	// Optional grouping; the category's colour drives the badge.
-	categoryId: uuid('category_id').references(() => entityCategories.id),
-	// Freeform quick details ("Status", "Age"), shown as the Details grid
-	// and in the hover popover. Order is the author's.
-	details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
-	metadata: jsonb('metadata').notNull().default({}),
-	// Original card data if imported (SillyTavern etc).
-	importedFrom: jsonb('imported_from'),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const characters = pgTable(
+	'characters',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		universeId: uuid('universe_id')
+			.references(() => universes.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		name: text('name').notNull(),
+		// Nicknames and variants; used for mention detection.
+		aliases: text('aliases').array().notNull().default([]),
+		// One or two lines; shown in hover popovers.
+		summaryMd: text('summary_md'),
+		bodyMd: text('body_md').notNull().default(''),
+		// Set false for common-word names ("Will", "Art").
+		autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+		// Optional grouping; the category's colour drives the badge.
+		categoryId: uuid('category_id').references(() => entityCategories.id),
+		// Freeform quick details ("Status", "Age"), shown as the Details grid
+		// and in the hover popover. Order is the author's.
+		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
+		metadata: jsonb('metadata').notNull().default({}),
+		// Original card data if imported (SillyTavern etc).
+		importedFrom: jsonb('imported_from'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [
+		// The palette search filters by owner and substring-matches the name.
+		index('characters_owner_idx').on(table.ownerId),
+		index('characters_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops'))
+	]
+);
 
 export const characterStoryNotes = pgTable(
 	'character_story_notes',
@@ -310,38 +318,46 @@ export const entityCategories = pgTable('entity_categories', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-export const loreEntries = pgTable('lore_entries', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	universeId: uuid('universe_id')
-		.references(() => universes.id)
-		.notNull(),
-	ownerId: uuid('owner_id')
-		.references(() => users.id)
-		.notNull(),
-	categoryId: uuid('category_id')
-		.references(() => entityCategories.id)
-		.notNull(),
-	title: text('title').notNull(),
-	summaryMd: text('summary_md'),
-	bodyMd: text('body_md').notNull().default(''),
-	// In-editor search, mention detection, and (eventually) LLM context
-	// injection.
-	keywords: text('keywords').array().notNull().default([]),
-	// Reserved for future LLM context injection; inert in v1.
-	activationMode: text('activation_mode', { enum: ['always', 'keyword', 'manual'] })
-		.notNull()
-		.default('keyword'),
-	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
-	// Freeform quick details ("Status", "Age"), shown as the Details grid
-	// and in the hover popover. Order is the author's.
-	details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
-	metadata: jsonb('metadata').notNull().default({}),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const loreEntries = pgTable(
+	'lore_entries',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		universeId: uuid('universe_id')
+			.references(() => universes.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		categoryId: uuid('category_id')
+			.references(() => entityCategories.id)
+			.notNull(),
+		title: text('title').notNull(),
+		summaryMd: text('summary_md'),
+		bodyMd: text('body_md').notNull().default(''),
+		// In-editor search, mention detection, and (eventually) LLM context
+		// injection.
+		keywords: text('keywords').array().notNull().default([]),
+		// Reserved for future LLM context injection; inert in v1.
+		activationMode: text('activation_mode', { enum: ['always', 'keyword', 'manual'] })
+			.notNull()
+			.default('keyword'),
+		autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+		// Freeform quick details ("Status", "Age"), shown as the Details grid
+		// and in the hover popover. Order is the author's.
+		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
+		metadata: jsonb('metadata').notNull().default({}),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [
+		// The palette search filters by owner and substring-matches the title.
+		index('lore_entries_owner_idx').on(table.ownerId),
+		index('lore_entries_title_trgm_idx').using('gin', table.title.op('gin_trgm_ops'))
+	]
+);
 
 export const loreStoryNotes = pgTable(
 	'lore_story_notes',
@@ -363,32 +379,40 @@ export const loreStoryNotes = pgTable(
 	(table) => [unique('lore_story_notes_unique').on(table.loreEntryId, table.storyId)]
 );
 
-export const places = pgTable('places', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	universeId: uuid('universe_id')
-		.references(() => universes.id)
-		.notNull(),
-	ownerId: uuid('owner_id')
-		.references(() => users.id)
-		.notNull(),
-	name: text('name').notNull(),
-	// One or two lines; shown in hover popovers.
-	summaryMd: text('summary_md'),
-	bodyMd: text('body_md').notNull().default(''),
-	// Set false for common-word names.
-	autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
-	// Optional grouping; the category's colour drives the badge.
-	categoryId: uuid('category_id').references(() => entityCategories.id),
-	// Freeform quick details ("Status", "Age"), shown as the Details grid
-	// and in the hover popover. Order is the author's.
-	details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
-	metadata: jsonb('metadata').notNull().default({}),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const places = pgTable(
+	'places',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		universeId: uuid('universe_id')
+			.references(() => universes.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		name: text('name').notNull(),
+		// One or two lines; shown in hover popovers.
+		summaryMd: text('summary_md'),
+		bodyMd: text('body_md').notNull().default(''),
+		// Set false for common-word names.
+		autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
+		// Optional grouping; the category's colour drives the badge.
+		categoryId: uuid('category_id').references(() => entityCategories.id),
+		// Freeform quick details ("Status", "Age"), shown as the Details grid
+		// and in the hover popover. Order is the author's.
+		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
+		metadata: jsonb('metadata').notNull().default({}),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [
+		// The palette search filters by owner and substring-matches the name.
+		index('places_owner_idx').on(table.ownerId),
+		index('places_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops'))
+	]
+);
 
 export const placeStoryNotes = pgTable(
 	'place_story_notes',

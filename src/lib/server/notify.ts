@@ -113,22 +113,26 @@ export async function listNotifications(
 	db: Database,
 	userId: string
 ): Promise<{ unread: number; items: NotificationItem[] }> {
-	const rows = await db
-		.select()
-		.from(notifications)
-		.where(and(eq(notifications.userId, userId), eq(notifications.inApp, true)))
-		.orderBy(desc(notifications.createdAt))
-		.limit(BELL_LIMIT);
-	const [count] = await db
-		.select({ unread: sql<number>`count(*)::int` })
-		.from(notifications)
-		.where(
-			and(
-				eq(notifications.userId, userId),
-				eq(notifications.inApp, true),
-				isNull(notifications.readAt)
+	// The list and the unread count are independent; the bell loads on every
+	// page, so run them together rather than back to back.
+	const [rows, [count]] = await Promise.all([
+		db
+			.select()
+			.from(notifications)
+			.where(and(eq(notifications.userId, userId), eq(notifications.inApp, true)))
+			.orderBy(desc(notifications.createdAt))
+			.limit(BELL_LIMIT),
+		db
+			.select({ unread: sql<number>`count(*)::int` })
+			.from(notifications)
+			.where(
+				and(
+					eq(notifications.userId, userId),
+					eq(notifications.inApp, true),
+					isNull(notifications.readAt)
+				)
 			)
-		);
+	]);
 	return {
 		unread: count?.unread ?? 0,
 		items: rows.map((row) => ({

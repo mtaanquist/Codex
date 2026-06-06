@@ -91,6 +91,31 @@ describe('saveCharacter', () => {
 		expect(after.name).toBe(before.name);
 	});
 
+	it('rejects a story the saver owns but in another universe', async () => {
+		const [other] = await db
+			.insert(universes)
+			.values({ ownerId, name: 'Other universe' })
+			.returning();
+		const [foreign] = await db
+			.insert(stories)
+			.values({ universeId: other.id, ownerId, title: 'Foreign' })
+			.returning();
+		const result = await saveCharacter(db, characterId, ownerId, {
+			name: 'Alice',
+			aliases: [],
+			summaryMd: null,
+			bodyMd: '',
+			storyId: foreign.id,
+			storyNotesMd: 'cross-universe'
+		});
+		expect(result).toEqual({ ok: false, reason: 'story not found' });
+		const notes = await db
+			.select()
+			.from(characterStoryNotes)
+			.where(eq(characterStoryNotes.storyId, foreign.id));
+		expect(notes).toHaveLength(0);
+	});
+
 	it('upserts the per-story notes', async () => {
 		const first = await saveCharacter(db, characterId, ownerId, {
 			name: 'Alice Vane',

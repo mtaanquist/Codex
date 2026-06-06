@@ -70,7 +70,13 @@ export async function saveLoreEntry(
 		const [story] = await db
 			.select({ id: stories.id })
 			.from(stories)
-			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
+			.where(
+				and(
+					eq(stories.id, save.storyId),
+					eq(stories.ownerId, userId),
+					eq(stories.universeId, entry.universeId)
+				)
+			);
 		if (!story) return { ok: false, reason: 'story not found' };
 	}
 
