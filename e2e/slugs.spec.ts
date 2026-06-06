@@ -31,4 +31,15 @@ test('slugs: created things get readable addresses, editable in settings', async
 	expect(stale!.status()).toBe(404);
 	await page.goto(`/stories/toll-${stamp}`);
 	await expect(page.locator('.story-title')).toHaveText(`Toll Road ${stamp}`);
+
+	// Plan actions redirect back to the slug address, not the id.
+	await page.goto(`/stories/toll-${stamp}/plan`);
+	await page.getByPlaceholder('New character name').fill('Slug Tester');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page).toHaveURL(new RegExp(`/stories/toll-${stamp}/plan\\?entity=`));
+
+	await page.goto(`/universes/slugfall-${stamp}/plan`);
+	await page.getByPlaceholder('New place name').fill('Sluggate');
+	await page.getByRole('button', { name: 'Add place' }).click();
+	await expect(page).toHaveURL(new RegExp(`/universes/slugfall-${stamp}/plan\\?entity=`));
 });

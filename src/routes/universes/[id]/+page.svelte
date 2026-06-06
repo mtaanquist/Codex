@@ -202,21 +202,6 @@
 </div>
 
 <style>
-	.form-saved {
-		color: var(--text-muted);
-		font-size: 13px;
-		margin: 0 0 10px;
-	}
-	.form-error {
-		color: var(--danger, #c0564f);
-		font-size: 13px;
-		margin: 0 0 10px;
-	}
-	.block-empty {
-		color: var(--text-muted);
-		font-size: 13px;
-		margin: 0;
-	}
 	.story-list {
 		list-style: none;
 		margin: 0 0 16px;
