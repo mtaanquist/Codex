@@ -33,6 +33,25 @@ import { queueSceneMentions } from '$lib/server/jobs';
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 
+	// The sidebar's book switcher: every story in the universe, with the
+	// chapter and word counts its menu rows show.
+	const siblingResult = await db.execute(sql`
+		select st.id, st.slug, st.title,
+			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
+			coalesce(
+				(select sum(s.word_count)::int from scenes s
+					where s.story_id = st.id and s.deleted_at is null),
+				0
+			) as words
+		from stories st
+		where st.universe_id = ${universe.id}
+		order by st.position_in_series asc nulls last, st.created_at asc
+	`);
+	const storySiblings = siblingResult.rows.map((row) => {
+		const r = row as { id: string; slug: string; title: string; chapters: number; words: number };
+		return { id: r.id, slug: r.slug, title: r.title, chapters: r.chapters, words: r.words };
+	});
+
 	const chapterList = await db
 		.select()
 		.from(chapters)
@@ -256,6 +275,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		universe,
 		user: locals.user!,
 		preferences,
+		storySiblings,
 		chapters: chapterList,
 		scenes: sceneList,
 		selectedScene,

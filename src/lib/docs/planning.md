@@ -18,10 +18,6 @@ Your changes save on their own as you work, so there is no save button.
 
 Details are short facts about an entry, each with a label and a value: Status, Age, Allegiance, whatever fits. Select "Add detail" to add a row, and fill in both fields; rows missing either are not kept. The first three details show when you hover a mention in the editor, in the order they appear here, so put the most useful ones on top.
 
-## The outline
-
-Each story has its own outline, separate from the chapters you have drafted. Use it to plan what happens before or instead of writing it straight through. An outline point can link to the scene that realises it.
-
 ## Relationships
 
 You can record how entities relate: who is whose parent, which faction holds which city. Select "Add relationship", pick a type, choose the other entity, and add a note if you like; the reverse shows on the other entry's page automatically. Click a related entity to jump to it.
@@ -32,7 +28,11 @@ An entity joins a story when you create it while working in that story, or when 
 
 ## The scene board
 
-A story's plan shows its scenes as cards on a board when nothing else is open. The columns are the four stages a scene can be in: outline, draft, revised, and final. Drag a card to another column to change its stage, or use the arrows that appear on the card. Each card shows the scene's chapter, its word count, and how many TODO markers are still open in it. Click a card's title to open the scene in the editor.
+A story's plan shows its scenes as cards on a board when nothing else is open. The columns are the four stages a scene can be in: outline, draft, revised, and final. Drag a card to another column to change its stage, or use the arrows that appear on the card. Each card shows the scene's chapter, its word count, and how many TODO markers are still open in it. Click a card's title to open the scene in the editor. To plan a scene before writing it, create it, set its card to the outline column, and put the beats in the scene body.
+
+## The story board
+
+A universe's plan shows its stories the same way when nothing else is open: each story sits in the column matching how far along it is, judged from its scenes. This board is an overview, so the cards are not draggable; a story moves columns as its scenes do. Click a card's title to open the story.
 
 ## Insights
 

@@ -8,7 +8,6 @@ import {
 	chapters,
 	characters,
 	entityMentions,
-	outlineNodes,
 	revisions,
 	sceneMarkers,
 	scenes,
@@ -68,7 +67,7 @@ beforeAll(async () => {
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
 	await pool.query(
-		'truncate table entity_mentions, scene_markers, revisions, outline_nodes, scenes, chapters, characters, stories, universes, users cascade'
+		'truncate table entity_mentions, scene_markers, revisions, scenes, chapters, characters, stories, universes, users cascade'
 	);
 
 	const [owner] = await db
@@ -187,10 +186,6 @@ describe('destroyScene', () => {
 	it('removes the scene and everything it owns', async () => {
 		await db.insert(sceneMarkers).values({ sceneId: s1, ownerId, kind: 'todo' });
 		await recordRevision(db, 'scene', s1, 'Aldric walks in.');
-		const [node] = await db
-			.insert(outlineNodes)
-			.values({ storyId, title: 'Opening', position: 1, linkedSceneId: s1 })
-			.returning();
 
 		expect(await destroyScene(db, ownerId, s1)).toBe(true);
 		expect(await db.select().from(scenes).where(eq(scenes.id, s1))).toHaveLength(0);
@@ -198,11 +193,6 @@ describe('destroyScene', () => {
 			0
 		);
 		expect(await db.select().from(revisions).where(eq(revisions.entityId, s1))).toHaveLength(0);
-		const [after] = await db
-			.select({ linkedSceneId: outlineNodes.linkedSceneId })
-			.from(outlineNodes)
-			.where(eq(outlineNodes.id, node.id));
-		expect(after.linkedSceneId).toBe(null);
 	});
 });
 

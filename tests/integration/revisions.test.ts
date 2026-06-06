@@ -7,7 +7,6 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
-	outlineNodes,
 	revisions,
 	scenes,
 	stories,
@@ -35,7 +34,6 @@ let universeId: string;
 let storyId: string;
 let sceneId: string;
 let aliceId: string;
-let nodeId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -43,7 +41,7 @@ beforeAll(async () => {
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
 	await pool.query(
-		'truncate table revisions, outline_nodes, scenes, chapters, characters, stories, universes, users cascade'
+		'truncate table revisions, scenes, chapters, characters, stories, universes, users cascade'
 	);
 
 	const [owner] = await db
@@ -70,11 +68,6 @@ beforeAll(async () => {
 		.values({ universeId, ownerId, name: 'Alice', bodyMd: 'A smuggler.' })
 		.returning();
 	aliceId = alice.id;
-	const [node] = await db
-		.insert(outlineNodes)
-		.values({ storyId, position: 1, title: 'Act one', bodyMd: 'Beats.' })
-		.returning();
-	nodeId = node.id;
 });
 
 afterAll(async () => {
@@ -157,14 +150,16 @@ describe('save paths record revisions', () => {
 
 describe('createCheckpoint', () => {
 	it('snapshots the current body with a label and checks ownership', async () => {
-		const ok = await createCheckpoint(db, ownerId, 'outline_node', nodeId, 'Plotted');
+		const ok = await createCheckpoint(db, ownerId, 'scene', sceneId, 'Plotted');
 		expect(ok).toMatchObject({ ok: true });
-		const rows = await listRevisions(db, 'outline_node', nodeId);
+		const rows = await listRevisions(db, 'scene', sceneId);
 		expect(rows[0]).toMatchObject({ reason: 'checkpoint', label: 'Plotted' });
-		const revision = await getRevision(db, rows[0].id, 'outline_node', nodeId);
-		expect(revision?.bodyMd).toBe('Beats.');
+		const revision = await getRevision(db, rows[0].id, 'scene', sceneId);
+		// The checkpoint snapshots the stored scene body, untouched by the
+		// revision rows the earlier cases recorded.
+		expect(revision?.bodyMd).toBe('First draft.');
 
-		expect(await createCheckpoint(db, strangerId, 'outline_node', nodeId)).toMatchObject({
+		expect(await createCheckpoint(db, strangerId, 'scene', sceneId)).toMatchObject({
 			ok: false
 		});
 	});
@@ -210,12 +205,11 @@ describe('restoreRevision', () => {
 });
 
 describe('timelines', () => {
-	it('story timeline spans scenes and outline nodes with names', async () => {
+	it('story timeline lists scene revisions with names', async () => {
 		const rows = await storyTimeline(db, storyId);
 		const types = new Set(rows.map((row) => row.entityType));
-		expect(types).toEqual(new Set(['scene', 'outline_node']));
+		expect(types).toEqual(new Set(['scene']));
 		expect(rows.find((row) => row.entityType === 'scene')?.entityName).toBe('Opening');
-		expect(rows.find((row) => row.entityType === 'outline_node')?.entityName).toBe('Act one');
 		// Newest first.
 		const times = rows.map((row) => row.createdAt.getTime());
 		expect([...times].sort((a, b) => b - a)).toEqual(times);

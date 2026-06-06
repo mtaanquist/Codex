@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 
@@ -16,8 +15,8 @@
 		writeHref,
 		boardHref,
 		boardActive = false,
+		boardLabel = 'Scene board',
 		form,
-		before,
 		availableCharacters = [],
 		availablePlaces = []
 	}: {
@@ -29,22 +28,22 @@
 		planPath: string;
 		// Present at story scope only; the universe Plan has no Write view.
 		writeHref?: string;
-		// Present at story scope only; returns to the scene board after
-		// something else filled the centre.
+		// Returns to the board after something else filled the centre: the
+		// scene board at story scope, the story board at universe scope.
 		boardHref?: string;
 		boardActive?: boolean;
+		boardLabel?: string;
 		form: { kind?: string; message?: string } | null;
-		// Rendered above the entity groups; the story Plan puts its outline here.
-		before?: Snippet;
 		// Universe entities not in the story yet: browsable below the members,
 		// and picking one in the select declares it a member. Story scope only.
 		availableCharacters?: { id: string; name: string }[];
 		availablePlaces?: { id: string; name: string }[];
 	} = $props();
 
-	// The universe lists start folded; members are the working set.
-	let showUniverseCharacters = $state(false);
-	let showUniversePlaces = $state(false);
+	// The universe lists start open so the wider cast stays in view; the
+	// fold is there to reclaim the space when the lists grow long.
+	let showUniverseCharacters = $state(true);
+	let showUniversePlaces = $state(true);
 </script>
 
 <aside class="pane left">
@@ -62,11 +61,9 @@
 		{#if boardHref}
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 			<a class="board-row" class:active={boardActive} href={boardHref}>
-				<Icon name="chapter" size={13} /> Scene board
+				<Icon name="chapter" size={13} />
+				{boardLabel}
 			</a>
-		{/if}
-		{#if before}
-			{@render before()}
 		{/if}
 		<div class="group-label">
 			<span class="gl-left">Characters</span>
@@ -322,22 +319,30 @@
 		background: var(--bg-active);
 		border-color: var(--accent-line, var(--accent));
 	}
+	/* Styled like the group labels above it, so the universe-wide list
+	   reads as a real section rather than an afterthought. */
 	.uni-toggle {
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		width: 100%;
-		margin-top: 6px;
-		padding: 5px 10px;
+		padding: 14px 8px 6px;
 		border: 0;
 		background: none;
 		color: var(--text-faint);
-		font-size: 12px;
+		font-size: 11px;
+		font-weight: 650;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
 		cursor: pointer;
 		text-align: left;
 	}
 	.uni-toggle:hover {
 		color: var(--text);
+	}
+	.uni-toggle .count {
+		font-weight: 550;
+		letter-spacing: 0;
 	}
 	.uni-toggle .tw {
 		display: grid;
