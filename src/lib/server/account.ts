@@ -214,8 +214,13 @@ export async function requestEmailChange(
 	const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
 	if (taken) return { ok: false, reason: 'That email address is already in use.' };
 
-	await db.update(users).set({ pendingEmail: email }).where(eq(users.id, userId));
-	const token = await issueToken(db, userId, 'email_change', EMAIL_CHANGE_TTL_MINUTES);
+	// Revoke any earlier pending change before issuing the new one, so an older
+	// link cannot later confirm whatever address is pending at that moment.
+	const token = await db.transaction(async (tx) => {
+		await revokeTokens(tx, userId, 'email_change');
+		await tx.update(users).set({ pendingEmail: email }).where(eq(users.id, userId));
+		return issueToken(tx, userId, 'email_change', EMAIL_CHANGE_TTL_MINUTES);
+	});
 	return { ok: true, token, newEmail: email };
 }
 
