@@ -9,13 +9,22 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	const NAV = [
+	// One section at a time, like the account page; categories and history
+	// can both grow long.
+	type Section = 'details' | 'categories' | 'history' | 'export';
+	const NAV: { id: Section; label: string }[] = [
 		{ id: 'details', label: 'Details' },
 		{ id: 'categories', label: 'Entity categories' },
 		{ id: 'history', label: 'History' },
-		{ id: 'export', label: 'Export' },
-		{ id: 'danger', label: 'Danger zone' }
+		{ id: 'export', label: 'Export and deletion' }
 	];
+	let active = $state<Section>('details');
+	// A failed or saved POST reloads the page; land back on the section the
+	// form lives in.
+	$effect(() => {
+		if (form?.action === 'categories') active = 'categories';
+		else if (form?.action === 'update') active = 'details';
+	});
 
 	const universeColor = $derived(entityColor(data.universe.name));
 
@@ -177,7 +186,14 @@
 			<nav class="admin-nav">
 				<div class="admin-nav-label">Universe settings</div>
 				{#each NAV as item (item.id)}
-					<a class="nav-item" href="#{item.id}">{item.label}</a>
+					<button
+						class="nav-item"
+						class:active={active === item.id}
+						type="button"
+						onclick={() => (active = item.id)}
+					>
+						{item.label}
+					</button>
 				{/each}
 			</nav>
 		</aside>
@@ -190,332 +206,340 @@
 					<p class="admin-lede">The world your stories share, and everything about it.</p>
 				</div>
 
-				<div class="admin-block" id="details">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">About this universe</h2>
-						<p class="admin-block-sub">
-							The universe is the container that holds your shared worldbuilding. Every story you
-							write belongs to one.
-						</p>
+				<section class="admin-section" class:active={active === 'details'}>
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">About this universe</h2>
+							<p class="admin-block-sub">
+								The universe is the container that holds your shared worldbuilding. Every story you
+								write belongs to one.
+							</p>
+						</div>
+						<form method="POST" action="?/update">
+							{#if form?.action === 'update' && form.message}
+								<p class="form-error" role="alert">{form.message}</p>
+							{/if}
+							{#if form?.action === 'update' && form.saved}
+								<p class="form-saved" role="status">Saved.</p>
+							{/if}
+							<div class="field">
+								<label for="u-name">Name</label>
+								<input
+									id="u-name"
+									class="input"
+									type="text"
+									name="name"
+									value={data.universe.name}
+									required
+								/>
+							</div>
+							<div class="field">
+								<label for="u-slug">Slug</label>
+								<input
+									id="u-slug"
+									class="input"
+									type="text"
+									name="slug"
+									value={data.universe.slug}
+									required
+									spellcheck="false"
+								/>
+								<span class="field-hint">
+									The universe's web address: /universes/{data.universe.slug}. Lowercase letters,
+									numbers, and hyphens. Changing it moves the address; the old one stops working.
+								</span>
+							</div>
+							<div class="field">
+								<label for="u-description">Description</label>
+								<textarea id="u-description" class="input" name="description" rows="6"
+									>{data.universe.descriptionMd ?? ''}</textarea
+								>
+								<span class="field-hint">Markdown is fine. Shown on the library card.</span>
+							</div>
+							<div class="settings-actions">
+								<button class="btn btn-primary" type="submit">Save changes</button>
+							</div>
+						</form>
 					</div>
-					<form method="POST" action="?/update">
-						{#if form?.action === 'update' && form.message}
-							<p class="form-error" role="alert">{form.message}</p>
-						{/if}
-						{#if form?.action === 'update' && form.saved}
-							<p class="form-saved" role="status">Saved.</p>
-						{/if}
-						<div class="field">
-							<label for="u-name">Name</label>
-							<input
-								id="u-name"
-								class="input"
-								type="text"
-								name="name"
-								value={data.universe.name}
-								required
-							/>
-						</div>
-						<div class="field">
-							<label for="u-slug">Slug</label>
-							<input
-								id="u-slug"
-								class="input"
-								type="text"
-								name="slug"
-								value={data.universe.slug}
-								required
-								spellcheck="false"
-							/>
-							<span class="field-hint">
-								The universe's web address: /universes/{data.universe.slug}. Lowercase letters,
-								numbers, and hyphens. Changing it moves the address; the old one stops working.
-							</span>
-						</div>
-						<div class="field">
-							<label for="u-description">Description</label>
-							<textarea id="u-description" class="input" name="description" rows="6"
-								>{data.universe.descriptionMd ?? ''}</textarea
-							>
-							<span class="field-hint">Markdown is fine. Shown on the library card.</span>
-						</div>
-						<div class="settings-actions">
-							<button class="btn btn-primary" type="submit">Save changes</button>
-						</div>
-					</form>
-				</div>
 
-				<div class="admin-block">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Contents</h2>
-						<p class="admin-block-sub">What this universe currently contains.</p>
-					</div>
-					<div class="stat-grid">
-						<div class="stat-tile">
-							<div class="n">{data.contents.stories.toLocaleString('en-US')}</div>
-							<div class="l">{data.contents.stories === 1 ? 'story' : 'stories'}</div>
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Contents</h2>
+							<p class="admin-block-sub">What this universe currently contains.</p>
 						</div>
-						<div class="stat-tile">
-							<div class="n">{data.contents.characters.toLocaleString('en-US')}</div>
-							<div class="l">{data.contents.characters === 1 ? 'character' : 'characters'}</div>
-						</div>
-						<div class="stat-tile">
-							<div class="n">{data.contents.places.toLocaleString('en-US')}</div>
-							<div class="l">{data.contents.places === 1 ? 'place' : 'places'}</div>
-						</div>
-						<div class="stat-tile">
-							<div class="n">{data.contents.lore.toLocaleString('en-US')}</div>
-							<div class="l">{data.contents.lore === 1 ? 'lore entry' : 'lore entries'}</div>
-						</div>
-						<div class="stat-tile">
-							<div class="n">{data.contents.words.toLocaleString('en-US')}</div>
-							<div class="l">total words</div>
-						</div>
-					</div>
-				</div>
-
-				<div class="admin-block" id="categories">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Entity categories</h2>
-						<p class="admin-block-sub">
-							Categories group your lore entries and colour their sidebar dots, mention underlines,
-							and badges. A category can only be deleted once nothing uses it.
-						</p>
-					</div>
-					<form method="POST" action="?/saveCategories">
-						{#if form?.action === 'categories' && form.message}
-							<p class="form-error" role="alert">{form.message}</p>
-						{/if}
-						{#if form?.action === 'categories' && form.saved}
-							<p class="form-saved" role="status">Saved.</p>
-						{/if}
-						<div class="category-list">
-							{#each drafts as draft, index (draft.key)}
-								<div class="category-row">
-									<span class="category-tools">
-										<button
-											class="tool-btn turn-up"
-											type="button"
-											title="Move category up"
-											disabled={index === 0}
-											onclick={() => moveDraft(index, -1)}
-										>
-											<Icon name="chevron" size={12} />
-										</button>
-										<button
-											class="tool-btn turn-down"
-											type="button"
-											title="Move category down"
-											disabled={index === drafts.length - 1}
-											onclick={() => moveDraft(index, 1)}
-										>
-											<Icon name="chevron" size={12} />
-										</button>
-									</span>
-									<input
-										class="category-swatch-input"
-										type="color"
-										title="Category colour"
-										value={swatchValue(draft)}
-										oninput={(e) => {
-											draft.color = e.currentTarget.value;
-											draft.colorTouched = true;
-										}}
-									/>
-									<input
-										class="category-name-input"
-										type="text"
-										aria-label="Category name"
-										bind:value={draft.name}
-										required
-									/>
-									<span class="category-count">
-										{draft.entries.toLocaleString('en-US')}
-										{draft.entries === 1 ? 'entry' : 'entries'}
-									</span>
-									<button
-										class="category-delete"
-										type="button"
-										title={draft.entries > 0
-											? 'Move or delete its entries first'
-											: 'Delete category'}
-										disabled={draft.entries > 0}
-										onclick={() => (drafts = drafts.filter((row) => row !== draft))}
-									>
-										<Icon name="plus" size={13} />
-									</button>
-								</div>
-							{/each}
-						</div>
-						<button
-							class="card-add category-add"
-							type="button"
-							onclick={() =>
-								(drafts = [
-									...drafts,
-									{
-										key: nextKey++,
-										id: null,
-										name: '',
-										color: null,
-										colorTouched: false,
-										entries: 0
-									}
-								])}
-						>
-							<span class="plus">+</span><span>Add category</span>
-						</button>
-						<input type="hidden" name="categories" value={categoriesPayload} />
-						<div class="settings-actions">
-							<button class="btn btn-primary" type="submit">Save categories</button>
-						</div>
-					</form>
-				</div>
-
-				<div class="admin-block" id="history">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">History</h2>
-						<p class="admin-block-sub">
-							Every change across every story, character, place, and lore entry in this universe.
-							For a single item's history, open it and use its History tab.
-						</p>
-					</div>
-					<div class="revision-filters">
-						<span class="revision-filter-label">Filter</span>
-						{#each FILTERS as filter (filter.id)}
-							<button
-								class="revision-filter-chip"
-								class:active={historyFilter === filter.id}
-								type="button"
-								onclick={() => (historyFilter = filter.id)}
-							>
-								{filter.label}
-							</button>
-						{/each}
-					</div>
-					{#if filteredTimeline.length === 0}
-						<p class="block-empty">Nothing recorded yet. Changes appear here as you work.</p>
-					{:else}
-						<div class="revision-panel">
-							{#each timelineGroups as group (group.label)}
-								<div class="revision-group-label">{group.label}</div>
-								{#each group.rows as row (row.id)}
-									<div class="revision-entry">
-										<span
-											class="revision-dot"
-											class:revision-dot-checkpoint={row.reason === 'checkpoint'}
-											class:revision-dot-autosave={row.reason !== 'checkpoint'}
-										></span>
-										<div class="revision-main">
-											<div class="revision-source">
-												<span class="revision-source-kind">
-													{KIND_LABELS[row.entityType] ?? row.entityType}
-												</span>
-												{row.entityName ?? 'Untitled'}
-											</div>
-											<div class="revision-meta">
-												<span class="revision-time">{entryTime(row)}</span>
-												<span class="revision-kind">{row.storyTitle ?? 'Universe'}</span>
-												{#if row.label}
-													<span class="revision-note revision-note-checkpoint">
-														"{row.label}"
-													</span>
-												{:else if row.reason && row.reason !== 'autosave'}
-													<span class="revision-note">{row.reason}</span>
-												{/if}
-											</div>
-											{#if row.reason === 'checkpoint'}
-												<div class="revision-actions">
-													<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
-													<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
-													<!-- eslint-enable svelte/no-navigation-without-resolve -->
-													<button
-														class="btn btn-secondary btn-sm"
-														type="button"
-														disabled={restoring === row.id}
-														onclick={() => restoreRow(row)}
-													>
-														{restoring === row.id ? 'Restoring...' : 'Restore'}
-													</button>
-												</div>
-											{/if}
-										</div>
-									</div>
-								{/each}
-							{/each}
-							<div class="revision-footer">
-								{data.revisionCount.toLocaleString('en-US')} revisions across this universe
+						<div class="stat-grid">
+							<div class="stat-tile">
+								<div class="n">{data.contents.stories.toLocaleString('en-US')}</div>
+								<div class="l">{data.contents.stories === 1 ? 'story' : 'stories'}</div>
+							</div>
+							<div class="stat-tile">
+								<div class="n">{data.contents.characters.toLocaleString('en-US')}</div>
+								<div class="l">{data.contents.characters === 1 ? 'character' : 'characters'}</div>
+							</div>
+							<div class="stat-tile">
+								<div class="n">{data.contents.places.toLocaleString('en-US')}</div>
+								<div class="l">{data.contents.places === 1 ? 'place' : 'places'}</div>
+							</div>
+							<div class="stat-tile">
+								<div class="n">{data.contents.lore.toLocaleString('en-US')}</div>
+								<div class="l">{data.contents.lore === 1 ? 'lore entry' : 'lore entries'}</div>
+							</div>
+							<div class="stat-tile">
+								<div class="n">{data.contents.words.toLocaleString('en-US')}</div>
+								<div class="l">total words</div>
 							</div>
 						</div>
-					{/if}
-				</div>
-
-				<div class="admin-block" id="export">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Export universe</h2>
-						<p class="admin-block-sub">
-							Everything in this universe, bundled into a single archive.
-						</p>
 					</div>
-					<div class="danger-row">
-						<div class="danger-row-text">
-							<h3 class="danger-row-title">Markdown archive</h3>
-							<p class="danger-row-body">
-								A zip of markdown files organised into folders: characters, places, lore, and one
-								folder per story, each with YAML front matter and bundled images.
+				</section>
+
+				<section class="admin-section" class:active={active === 'categories'}>
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Entity categories</h2>
+							<p class="admin-block-sub">
+								Categories group your lore entries and colour their sidebar dots, mention
+								underlines, and badges. A category can only be deleted once nothing uses it.
 							</p>
 						</div>
-						<div class="danger-row-actions">
-							<!-- eslint-disable svelte/no-navigation-without-resolve (download endpoint) -->
-							<a class="btn btn-secondary" href="/universes/{data.universe.slug}/export" download>
-								Download .zip
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						</div>
-					</div>
-				</div>
-
-				<div class="admin-block danger" id="danger">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Danger zone</h2>
-						<p class="admin-block-sub">
-							Deleting a universe removes every story, character, place, and lore entry inside it.
-						</p>
-					</div>
-					<div class="danger-row">
-						<div class="danger-row-text">
-							<h3 class="danger-row-title">Delete this universe</h3>
-							<p class="danger-row-body">
-								All {data.contents.stories.toLocaleString('en-US')}
-								{data.contents.stories === 1 ? 'story' : 'stories'},
-								{data.contents.characters.toLocaleString('en-US')}
-								{data.contents.characters === 1 ? 'character' : 'characters'},
-								{data.contents.places.toLocaleString('en-US')}
-								{data.contents.places === 1 ? 'place' : 'places'}, and
-								{data.contents.lore.toLocaleString('en-US')}
-								{data.contents.lore === 1 ? 'lore entry' : 'lore entries'} go with it. The universe sits
-								in your library's deleted list for {data.trashDays} days, where you can restore it; after
-								that everything is deleted for good. Export an archive first if in doubt.
-							</p>
-						</div>
-						<div class="danger-row-actions">
-							<form
-								method="POST"
-								action="?/delete"
-								onsubmit={(e) => {
-									if (
-										!confirm(
-											`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
-										)
-									)
-										e.preventDefault();
-								}}
+						<form method="POST" action="?/saveCategories">
+							{#if form?.action === 'categories' && form.message}
+								<p class="form-error" role="alert">{form.message}</p>
+							{/if}
+							{#if form?.action === 'categories' && form.saved}
+								<p class="form-saved" role="status">Saved.</p>
+							{/if}
+							<div class="category-list">
+								{#each drafts as draft, index (draft.key)}
+									<div class="category-row">
+										<span class="category-tools">
+											<button
+												class="tool-btn turn-up"
+												type="button"
+												title="Move category up"
+												disabled={index === 0}
+												onclick={() => moveDraft(index, -1)}
+											>
+												<Icon name="chevron" size={12} />
+											</button>
+											<button
+												class="tool-btn turn-down"
+												type="button"
+												title="Move category down"
+												disabled={index === drafts.length - 1}
+												onclick={() => moveDraft(index, 1)}
+											>
+												<Icon name="chevron" size={12} />
+											</button>
+										</span>
+										<input
+											class="category-swatch-input"
+											type="color"
+											title="Category colour"
+											value={swatchValue(draft)}
+											oninput={(e) => {
+												draft.color = e.currentTarget.value;
+												draft.colorTouched = true;
+											}}
+										/>
+										<input
+											class="category-name-input"
+											type="text"
+											aria-label="Category name"
+											bind:value={draft.name}
+											required
+										/>
+										<span class="category-count">
+											{draft.entries.toLocaleString('en-US')}
+											{draft.entries === 1 ? 'entry' : 'entries'}
+										</span>
+										<button
+											class="category-delete"
+											type="button"
+											title={draft.entries > 0
+												? 'Move or delete its entries first'
+												: 'Delete category'}
+											disabled={draft.entries > 0}
+											onclick={() => (drafts = drafts.filter((row) => row !== draft))}
+										>
+											<Icon name="plus" size={13} />
+										</button>
+									</div>
+								{/each}
+							</div>
+							<button
+								class="card-add category-add"
+								type="button"
+								onclick={() =>
+									(drafts = [
+										...drafts,
+										{
+											key: nextKey++,
+											id: null,
+											name: '',
+											color: null,
+											colorTouched: false,
+											entries: 0
+										}
+									])}
 							>
-								<button class="btn btn-danger" type="submit">Delete universe</button>
-							</form>
+								<span class="plus">+</span><span>Add category</span>
+							</button>
+							<input type="hidden" name="categories" value={categoriesPayload} />
+							<div class="settings-actions">
+								<button class="btn btn-primary" type="submit">Save categories</button>
+							</div>
+						</form>
+					</div>
+				</section>
+
+				<section class="admin-section" class:active={active === 'history'}>
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">History</h2>
+							<p class="admin-block-sub">
+								Every change across every story, character, place, and lore entry in this universe.
+								For a single item's history, open it and use its History tab.
+							</p>
+						</div>
+						<div class="revision-filters">
+							<span class="revision-filter-label">Filter</span>
+							{#each FILTERS as filter (filter.id)}
+								<button
+									class="revision-filter-chip"
+									class:active={historyFilter === filter.id}
+									type="button"
+									onclick={() => (historyFilter = filter.id)}
+								>
+									{filter.label}
+								</button>
+							{/each}
+						</div>
+						{#if filteredTimeline.length === 0}
+							<p class="block-empty">Nothing recorded yet. Changes appear here as you work.</p>
+						{:else}
+							<div class="revision-panel">
+								{#each timelineGroups as group (group.label)}
+									<div class="revision-group-label">{group.label}</div>
+									{#each group.rows as row (row.id)}
+										<div class="revision-entry">
+											<span
+												class="revision-dot"
+												class:revision-dot-checkpoint={row.reason === 'checkpoint'}
+												class:revision-dot-autosave={row.reason !== 'checkpoint'}
+											></span>
+											<div class="revision-main">
+												<div class="revision-source">
+													<span class="revision-source-kind">
+														{KIND_LABELS[row.entityType] ?? row.entityType}
+													</span>
+													{row.entityName ?? 'Untitled'}
+												</div>
+												<div class="revision-meta">
+													<span class="revision-time">{entryTime(row)}</span>
+													<span class="revision-kind">{row.storyTitle ?? 'Universe'}</span>
+													{#if row.label}
+														<span class="revision-note revision-note-checkpoint">
+															"{row.label}"
+														</span>
+													{:else if row.reason && row.reason !== 'autosave'}
+														<span class="revision-note">{row.reason}</span>
+													{/if}
+												</div>
+												{#if row.reason === 'checkpoint'}
+													<div class="revision-actions">
+														<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
+														<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
+														<!-- eslint-enable svelte/no-navigation-without-resolve -->
+														<button
+															class="btn btn-secondary btn-sm"
+															type="button"
+															disabled={restoring === row.id}
+															onclick={() => restoreRow(row)}
+														>
+															{restoring === row.id ? 'Restoring...' : 'Restore'}
+														</button>
+													</div>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								{/each}
+								<div class="revision-footer">
+									{data.revisionCount.toLocaleString('en-US')} revisions across this universe
+								</div>
+							</div>
+						{/if}
+					</div>
+				</section>
+
+				<section class="admin-section" class:active={active === 'export'}>
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Export universe</h2>
+							<p class="admin-block-sub">
+								Everything in this universe, bundled into a single archive.
+							</p>
+						</div>
+						<div class="danger-row">
+							<div class="danger-row-text">
+								<h3 class="danger-row-title">Markdown archive</h3>
+								<p class="danger-row-body">
+									A zip of markdown files organised into folders: characters, places, lore, and one
+									folder per story, each with YAML front matter and bundled images.
+								</p>
+							</div>
+							<div class="danger-row-actions">
+								<!-- eslint-disable svelte/no-navigation-without-resolve (download endpoint) -->
+								<a class="btn btn-secondary" href="/universes/{data.universe.slug}/export" download>
+									Download .zip
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							</div>
 						</div>
 					</div>
-				</div>
+
+					<div class="admin-block danger">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Danger zone</h2>
+							<p class="admin-block-sub">
+								Deleting a universe removes every story, character, place, and lore entry inside it.
+							</p>
+						</div>
+						<div class="danger-row">
+							<div class="danger-row-text">
+								<h3 class="danger-row-title">Delete this universe</h3>
+								<p class="danger-row-body">
+									All {data.contents.stories.toLocaleString('en-US')}
+									{data.contents.stories === 1 ? 'story' : 'stories'},
+									{data.contents.characters.toLocaleString('en-US')}
+									{data.contents.characters === 1 ? 'character' : 'characters'},
+									{data.contents.places.toLocaleString('en-US')}
+									{data.contents.places === 1 ? 'place' : 'places'}, and
+									{data.contents.lore.toLocaleString('en-US')}
+									{data.contents.lore === 1 ? 'lore entry' : 'lore entries'} go with it. The universe
+									sits in your library's deleted list for {data.trashDays} days, where you can restore
+									it; after that everything is deleted for good. Export an archive first if in doubt.
+								</p>
+							</div>
+							<div class="danger-row-actions">
+								<form
+									method="POST"
+									action="?/delete"
+									onsubmit={(e) => {
+										if (
+											!confirm(
+												`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
+											)
+										)
+											e.preventDefault();
+									}}
+								>
+									<button class="btn btn-danger" type="submit">Delete universe</button>
+								</form>
+							</div>
+						</div>
+					</div>
+				</section>
 			</div>
 		</main>
 	</div>
