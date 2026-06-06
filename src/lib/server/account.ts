@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sessions, users } from './db/schema';
 import { hashPassword, verifyPassword } from './password';
-import { consumeToken, issueToken } from './tokens';
+import { consumeToken, issueToken, revokeTokens } from './tokens';
 
 const MIN_PASSWORD = 8;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -167,7 +167,10 @@ export async function changePassword(
 	}
 	const passwordHash = await hashPassword(newPassword);
 	await db.transaction(async (tx) => {
-		await tx.update(users).set({ passwordHash }).where(eq(users.id, userId));
+		// Changing the password also ends any in-flight email change; if it
+		// was wanted, requesting it again costs one form.
+		await tx.update(users).set({ passwordHash, pendingEmail: null }).where(eq(users.id, userId));
+		await revokeTokens(tx, userId, 'email_change');
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })

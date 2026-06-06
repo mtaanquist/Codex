@@ -187,6 +187,20 @@ describe('changePassword', () => {
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(await verifyPassword(row.passwordHash, 'current-password')).toBe(true);
 	});
+
+	it('ends an in-flight email change along with the password', async () => {
+		const current = await newSession();
+		const change = await requestEmailChange(db, userId, 'current-password', 'new@example.com');
+		expect(change.ok).toBe(true);
+		if (!change.ok) return;
+
+		expect(
+			(await changePassword(db, userId, current, 'current-password', 'a-new-password')).ok
+		).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.pendingEmail).toBeNull();
+		expect((await confirmEmailChange(db, change.token)).ok).toBe(false);
+	});
 });
 
 describe('email change', () => {
