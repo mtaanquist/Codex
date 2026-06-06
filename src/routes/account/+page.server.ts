@@ -147,6 +147,7 @@ export const actions: Actions = {
 		const editing = String(data.get('editingMode') ?? '');
 		const spell = String(data.get('spellCheck') ?? '');
 		const language = String(data.get('writingLanguage') ?? '');
+		const streak = String(data.get('sessionStreak') ?? '');
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { scope: 'prefs', message: 'Pick an autocomplete mode.' });
 		}
@@ -159,13 +160,17 @@ export const actions: Actions = {
 		if (spell !== 'on' && spell !== 'off') {
 			return fail(400, { scope: 'prefs', message: 'Pick a spell-check option.' });
 		}
+		if (streak !== 'shown' && streak !== 'hidden') {
+			return fail(400, { scope: 'prefs', message: 'Pick a streak option.' });
+		}
 		await savePreferences(db, locals.user!.id, {
 			entityAutocomplete: mode,
 			continuousSceneMarks: marks,
 			editingMode: editing,
 			spellCheck: spell,
 			// The select constrains the tags; normalise drops anything else.
-			writingLanguage: language
+			writingLanguage: language,
+			sessionStreak: streak
 		});
 		return { scope: 'prefs', saved: true };
 	},

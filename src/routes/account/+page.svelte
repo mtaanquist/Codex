@@ -1370,6 +1370,24 @@
 										reads as one uninterrupted manuscript.
 									</div>
 								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
+										<span class="behavior-title">Writing streak</span>
+										<select
+											class="select"
+											name="sessionStreak"
+											aria-label="Writing streak"
+											value={data.preferences.sessionStreak}
+										>
+											<option value="shown">Shown</option>
+											<option value="hidden">Hidden</option>
+										</select>
+									</div>
+									<div class="behavior-body">
+										The Session tab's streak card: the week's writing days and the run you are on.
+										Hide it if the scorekeeping is not for you.
+									</div>
+								</div>
 								<div class="settings-actions">
 									{#if form?.scope === 'prefs' && form.message}
 										<span class="field-hint" role="alert" style="color:var(--danger);"

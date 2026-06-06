@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { ownedUniverse } from '$lib/server/universe-access';
 import { isValidTimezone, writingActivity } from '$lib/server/insights';
+import { userPreferences } from '$lib/server/preferences';
 import { isUuid } from '$lib/slug';
 
 // The right pane's Session card: today's words, the last week's writing
@@ -32,10 +33,14 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		storyWords = story.daily.at(-1)?.words ?? 0;
 	}
 
+	// The streak card is optional scorekeeping; a null streak tells the
+	// panel to leave it out entirely.
+	const preferences = await userPreferences(db, locals.user!.id);
+
 	return json({
 		words: activity.daily.at(-1)?.words ?? 0,
 		storyWords,
 		week,
-		streak: activity.streak
+		streak: preferences.sessionStreak === 'hidden' ? null : activity.streak
 	});
 };

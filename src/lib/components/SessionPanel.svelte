@@ -17,7 +17,8 @@
 		words: number;
 		storyWords: number | null;
 		week: { label: string; active: boolean; isToday: boolean }[];
-		streak: { current: number; longest: number };
+		// Null when the account hides the streak card.
+		streak: { current: number; longest: number } | null;
 	};
 	let session = $state<SessionData | null>(null);
 	let failed = $state(false);
@@ -67,22 +68,26 @@
 				{/if}
 			</div>
 		</div>
-		<div class="r-card">
-			<h5>Streak</h5>
-			<div class="streak-row">
-				{#each session.week as day, index (index)}
-					<div class="streak-day" class:on={day.active} class:today={day.isToday}>
-						{day.label}
-					</div>
-				{/each}
+		{#if session.streak}
+			<div class="r-card">
+				<h5>Streak</h5>
+				<div class="streak-row">
+					{#each session.week as day, index (index)}
+						<div class="streak-day" class:on={day.active} class:today={day.isToday}>
+							{day.label}
+						</div>
+					{/each}
+				</div>
+				<div class="goal-meta">
+					<span>
+						{session.streak.current === 0
+							? 'No streak yet'
+							: `${session.streak.current}-day streak`}
+					</span>
+					<span>longest {session.streak.longest}</span>
+				</div>
 			</div>
-			<div class="goal-meta">
-				<span>
-					{session.streak.current === 0 ? 'No streak yet' : `${session.streak.current}-day streak`}
-				</span>
-				<span>longest {session.streak.longest}</span>
-			</div>
-		</div>
+		{/if}
 		<div class="r-card">
 			<!-- eslint-disable svelte/no-navigation-without-resolve (app path from a slug) -->
 			<a class="session-insights" href={`/universes/${universeSlug}/insights`}>
