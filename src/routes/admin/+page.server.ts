@@ -16,7 +16,7 @@ import { listPublications, takedownPublication } from '$lib/server/publish';
 import { saveSmtp, smtpView } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
-import { purgeAccount } from '$lib/server/account-deletion';
+import { adminCancelDeletion, purgeAccount } from '$lib/server/account-deletion';
 import { disableTotp } from '$lib/server/two-factor';
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
@@ -104,6 +104,12 @@ export const actions: Actions = {
 	unsuspend: async ({ request, locals }) => {
 		requireAdmin(locals);
 		return onUser(request, 'accounts', (id) => setUserSuspended(db, id, false));
+	},
+	cancelDeletion: async ({ request, locals }) => {
+		requireAdmin(locals);
+		// Rescue an account from a pending self-deletion. Clears only the
+		// schedule; a suspension stays its own decision.
+		return onUser(request, 'accounts', (id) => adminCancelDeletion(db, id));
 	},
 	resetTotp: async ({ request, locals }) => {
 		requireAdmin(locals);

@@ -63,6 +63,7 @@
 	}
 
 	function userStatus(u: PageData['users'][number]): string {
+		if (u.deletionScheduledAt) return 'Deletion scheduled';
 		if (u.suspendedAt) return 'Suspended';
 		if (!u.approvedAt) return u.emailVerifiedAt ? 'Awaiting approval' : 'Email unconfirmed';
 		return 'Active';
@@ -605,6 +606,25 @@
 																<input type="hidden" name="userId" value={account.id} />
 																<button type="submit" class="btn btn-ghost btn-sm"
 																	>Allow publishing</button
+																>
+															</form>
+														{/if}
+														{#if account.deletionScheduledAt}
+															<form
+																method="POST"
+																action="?/cancelDeletion"
+																onsubmit={(event) => {
+																	if (
+																		!confirm(
+																			`Cancel the scheduled deletion of ${account.email}? The account becomes active again.`
+																		)
+																	)
+																		event.preventDefault();
+																}}
+															>
+																<input type="hidden" name="userId" value={account.id} />
+																<button type="submit" class="btn btn-ghost btn-sm"
+																	>Cancel deletion</button
 																>
 															</form>
 														{/if}

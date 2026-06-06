@@ -4,6 +4,7 @@ import type { AssetObjectStore } from './assets';
 import {
 	assets,
 	exportArtifacts,
+	notifications,
 	publications,
 	reviewers,
 	sessions,
@@ -22,17 +23,16 @@ const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
 
 export const DELETION_GRACE_DAYS = GRACE_DAYS;
 
-// Schedules self-service deletion: the account is deactivated at once (sign-in
-// blocked, live sessions dropped) and its public editions taken down right
-// away, with the hard purge deferred by the grace window. Returns a one-time
-// cancellation token for the emailed link.
+// Schedules self-service deletion: the account is deactivated at once (the
+// sign-in and session gates block on the schedule itself, and live sessions
+// drop) and its public editions taken down right away, with the hard purge
+// deferred by the grace window. suspendedAt stays untouched - that column
+// belongs to admin suspension, so cancelling a deletion can never lift one.
+// Returns a one-time cancellation token for the emailed link.
 export async function scheduleAccountDeletion(db: Database, userId: string): Promise<string> {
 	await db.transaction(async (tx) => {
 		const scheduled = new Date(Date.now() + GRACE_MS);
-		await tx
-			.update(users)
-			.set({ deletionScheduledAt: scheduled, suspendedAt: sql`now()` })
-			.where(eq(users.id, userId));
+		await tx.update(users).set({ deletionScheduledAt: scheduled }).where(eq(users.id, userId));
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })
@@ -47,16 +47,26 @@ export async function scheduleAccountDeletion(db: Database, userId: string): Pro
 	return issueToken(db, userId, 'deletion_cancel', GRACE_DAYS * 24 * 60);
 }
 
-// Cancels a scheduled deletion if the token is valid, reactivating the account.
-// Editions stay down (the user can republish); restoring them is not automatic.
+// Cancels a scheduled deletion if the token is valid, reactivating the account
+// unless an admin suspension stands. Editions stay down (the user can
+// republish); restoring them is not automatic.
 export async function cancelAccountDeletion(db: Database, token: string): Promise<boolean> {
 	const userId = await consumeToken(db, 'deletion_cancel', token);
 	if (!userId) return false;
-	await db
-		.update(users)
-		.set({ deletionScheduledAt: null, suspendedAt: null })
-		.where(eq(users.id, userId));
+	await db.update(users).set({ deletionScheduledAt: null }).where(eq(users.id, userId));
 	return true;
+}
+
+// The admin's way to rescue an account from a pending deletion (the user's
+// own way is the emailed link). Clears only the schedule; a suspension is
+// its own decision.
+export async function adminCancelDeletion(db: Database, userId: string): Promise<boolean> {
+	const [row] = await db
+		.update(users)
+		.set({ deletionScheduledAt: null })
+		.where(and(eq(users.id, userId), isNotNull(users.deletionScheduledAt)))
+		.returning({ id: users.id });
+	return Boolean(row);
 }
 
 // Accounts whose grace window has elapsed and are due for the hard purge.
@@ -112,6 +122,7 @@ export async function purgeAccount(
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));
 		await tx.delete(userTotp).where(eq(userTotp.userId, userId));
 		await tx.delete(webauthnCredentials).where(eq(webauthnCredentials.userId, userId));
+		await tx.delete(notifications).where(eq(notifications.userId, userId));
 		await tx.delete(sessions).where(eq(sessions.userId, userId));
 		await tx.delete(users).where(eq(users.id, userId));
 	});
