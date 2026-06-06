@@ -69,6 +69,24 @@
 	// The deleted-scenes list starts closed; its count shows in the header.
 	let trashOpen = $state(false);
 
+	// Right-click menu for sidebar rows: chapter tools or the scene delete.
+	// Same pattern as the editor's selection menu.
+	type RowMenuTarget =
+		| { kind: 'chapter'; id: string; index: number }
+		| { kind: 'scene'; id: string };
+	let rowMenu = $state<{ x: number; y: number; target: RowMenuTarget } | null>(null);
+
+	function openRowMenu(event: MouseEvent, target: RowMenuTarget) {
+		event.preventDefault();
+		rowMenu = { x: event.clientX, y: event.clientY, target };
+	}
+
+	function onWindowPointerDown(event: MouseEvent) {
+		if (!rowMenu) return;
+		const target = event.target as HTMLElement | null;
+		if (!target?.closest('.row-menu')) rowMenu = null;
+	}
+
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
 	const viewStory = $derived(data.view === 'story');
@@ -191,8 +209,14 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape') focus = false;
+		if (e.key !== 'Escape') return;
+		if (rowMenu) {
+			rowMenu = null;
+			return;
+		}
+		focus = false;
 	}}
+	onpointerdown={onWindowPointerDown}
 />
 
 <svelte:head>
@@ -204,17 +228,6 @@
 	{#if selectedSceneId}
 		<input type="hidden" name="openSceneId" value={selectedSceneId} />
 	{/if}
-{/snippet}
-
-<!-- One-click delete to the story's trash; restore lives at the sidebar foot. -->
-{#snippet sceneDelete(sceneId: string)}
-	<form class="scene-del" method="POST" action="?/deleteScene">
-		<input type="hidden" name="sceneId" value={sceneId} />
-		{@render openSceneField()}
-		<button class="tool-btn danger" type="submit" title="Delete scene">
-			<Icon name="trash" size={12} />
-		</button>
-	</form>
 {/snippet}
 
 <div class="app" class:focus-mode={focus}>
@@ -271,75 +284,25 @@
 										<button class="tool-btn" type="submit" title="Save chapter name">Save</button>
 									</form>
 								{:else}
-									<div class="chapter-head">
-										<button
-											class="chapter-row"
-											class:scene-target={dropTarget?.chapterId === chapter.id &&
-												dropTarget.index === list.length &&
-												!open}
-											type="button"
-											onclick={() =>
-												collapsed.has(chapter.id)
-													? collapsed.delete(chapter.id)
-													: collapsed.add(chapter.id)}
-											ondragover={(e) => overChapterHeader(e, chapter.id)}
-											ondrop={commitDrop}
-										>
-											<span class="tw" class:open><Icon name="chevron" size={12} /></span>
-											<span class="chapter-name">{chapter.title ?? `Chapter ${index + 1}`}</span>
-											<span class="chapter-meta">{list.length}</span>
-										</button>
-										<div class="chapter-tools">
-											<button
-												class="tool-btn"
-												type="button"
-												title="Rename chapter"
-												onclick={() => (renamingChapterId = chapter.id)}
-											>
-												<Icon name="pencil" size={12} />
-											</button>
-											<form method="POST" action="?/moveChapter">
-												<input type="hidden" name="chapterId" value={chapter.id} />
-												<input type="hidden" name="direction" value="up" />
-												{@render openSceneField()}
-												<button
-													class="tool-btn turn-up"
-													type="submit"
-													title="Move chapter up"
-													disabled={index === 0}
-												>
-													<Icon name="chevron" size={12} />
-												</button>
-											</form>
-											<form method="POST" action="?/moveChapter">
-												<input type="hidden" name="chapterId" value={chapter.id} />
-												<input type="hidden" name="direction" value="down" />
-												{@render openSceneField()}
-												<button
-													class="tool-btn turn-down"
-													type="submit"
-													title="Move chapter down"
-													disabled={index === data.chapters.length - 1}
-												>
-													<Icon name="chevron" size={12} />
-												</button>
-											</form>
-											<form
-												method="POST"
-												action="?/deleteChapter"
-												onsubmit={(e) => {
-													if (!confirm('Delete this chapter? Its scenes move to Unfiled scenes.'))
-														e.preventDefault();
-												}}
-											>
-												<input type="hidden" name="chapterId" value={chapter.id} />
-												{@render openSceneField()}
-												<button class="tool-btn danger" type="submit" title="Delete chapter">
-													<Icon name="trash" size={12} />
-												</button>
-											</form>
-										</div>
-									</div>
+									<button
+										class="chapter-row"
+										class:scene-target={dropTarget?.chapterId === chapter.id &&
+											dropTarget.index === list.length &&
+											!open}
+										type="button"
+										onclick={() =>
+											collapsed.has(chapter.id)
+												? collapsed.delete(chapter.id)
+												: collapsed.add(chapter.id)}
+										oncontextmenu={(e) =>
+											openRowMenu(e, { kind: 'chapter', id: chapter.id, index })}
+										ondragover={(e) => overChapterHeader(e, chapter.id)}
+										ondrop={commitDrop}
+									>
+										<span class="tw" class:open><Icon name="chevron" size={12} /></span>
+										<span class="chapter-name">{chapter.title ?? `Chapter ${index + 1}`}</span>
+										<span class="chapter-meta">{list.length}</span>
+									</button>
 								{/if}
 								{#if open}
 									<div class="scenes">
@@ -347,30 +310,28 @@
 											{#if dropTarget?.chapterId === chapter.id && dropTarget.index === si}
 												<div class="drop-line scene"></div>
 											{/if}
-											<div class="scene-line">
-												<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-												<a
-													class="scene-row"
-													class:active={scene.id === data.selectedScene?.id}
-													href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
-													draggable="true"
-													ondragstart={(e) => {
-														draggingSceneId = scene.id;
-														e.dataTransfer?.setData('text/plain', scene.id);
-													}}
-													ondragover={(e) => overScene(e, chapter.id, si)}
-													ondrop={commitDrop}
-													ondragend={endDrag}
-												>
-													<span class="scene-status st-{scene.status}" title={scene.status}></span>
-													<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
-													{#if scene.wordCount > 0}
-														<span class="scene-words">{words(scene.wordCount)}</span>
-													{/if}
-												</a>
-												<!-- eslint-enable svelte/no-navigation-without-resolve -->
-												{@render sceneDelete(scene.id)}
-											</div>
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a
+												class="scene-row"
+												class:active={scene.id === data.selectedScene?.id}
+												href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+												draggable="true"
+												oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
+												ondragstart={(e) => {
+													draggingSceneId = scene.id;
+													e.dataTransfer?.setData('text/plain', scene.id);
+												}}
+												ondragover={(e) => overScene(e, chapter.id, si)}
+												ondrop={commitDrop}
+												ondragend={endDrag}
+											>
+												<span class="scene-status st-{scene.status}" title={scene.status}></span>
+												<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+												{#if scene.wordCount > 0}
+													<span class="scene-words">{words(scene.wordCount)}</span>
+												{/if}
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
 										{#if dropTarget?.chapterId === chapter.id && dropTarget.index === list.length && open}
 											<div class="drop-line scene"></div>
@@ -387,41 +348,37 @@
 						{/each}
 						{#if orphanScenes.length > 0}
 							<div class="chapter">
-								<div class="chapter-head unfiled-head">
-									<span class="chapter-row as-label">
-										<span class="chapter-name">Unfiled scenes</span>
-										<span class="chapter-meta">{orphanScenes.length}</span>
-									</span>
-								</div>
+								<span class="chapter-row as-label unfiled-head">
+									<span class="chapter-name">Unfiled scenes</span>
+									<span class="chapter-meta">{orphanScenes.length}</span>
+								</span>
 								<div class="scenes">
 									{#each orphanScenes as scene, si (scene.id)}
 										{#if dropTarget?.chapterId === null && dropTarget.index === si}
 											<div class="drop-line scene"></div>
 										{/if}
-										<div class="scene-line">
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-											<a
-												class="scene-row"
-												class:active={scene.id === data.selectedScene?.id}
-												href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
-												draggable="true"
-												ondragstart={(e) => {
-													draggingSceneId = scene.id;
-													e.dataTransfer?.setData('text/plain', scene.id);
-												}}
-												ondragover={(e) => overScene(e, null, si)}
-												ondrop={commitDrop}
-												ondragend={endDrag}
-											>
-												<span class="scene-status st-{scene.status}" title={scene.status}></span>
-												<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
-												{#if scene.wordCount > 0}
-													<span class="scene-words">{words(scene.wordCount)}</span>
-												{/if}
-											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
-											{@render sceneDelete(scene.id)}
-										</div>
+										<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+										<a
+											class="scene-row"
+											class:active={scene.id === data.selectedScene?.id}
+											href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+											draggable="true"
+											oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
+											ondragstart={(e) => {
+												draggingSceneId = scene.id;
+												e.dataTransfer?.setData('text/plain', scene.id);
+											}}
+											ondragover={(e) => overScene(e, null, si)}
+											ondrop={commitDrop}
+											ondragend={endDrag}
+										>
+											<span class="scene-status st-{scene.status}" title={scene.status}></span>
+											<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+											{#if scene.wordCount > 0}
+												<span class="scene-words">{words(scene.wordCount)}</span>
+											{/if}
+										</a>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
 									{/each}
 									{#if dropTarget?.chapterId === null && dropTarget.index === orphanScenes.length}
 										<div class="drop-line scene"></div>
@@ -701,7 +658,117 @@
 	{/if}
 </div>
 
+{#if rowMenu}
+	{@const target = rowMenu.target}
+	<div class="row-menu" role="menu" style="left: {rowMenu.x}px; top: {rowMenu.y}px;">
+		{#if target.kind === 'chapter'}
+			<button
+				class="row-menu-item"
+				type="button"
+				role="menuitem"
+				onclick={() => {
+					renamingChapterId = target.id;
+					rowMenu = null;
+				}}
+			>
+				<Icon name="pencil" size={13} /> Rename chapter
+			</button>
+			<form method="POST" action="?/moveChapter">
+				<input type="hidden" name="chapterId" value={target.id} />
+				<input type="hidden" name="direction" value="up" />
+				{@render openSceneField()}
+				<button
+					class="row-menu-item turn-up"
+					type="submit"
+					role="menuitem"
+					disabled={target.index === 0}
+				>
+					<Icon name="chevron" size={13} /> Move up
+				</button>
+			</form>
+			<form method="POST" action="?/moveChapter">
+				<input type="hidden" name="chapterId" value={target.id} />
+				<input type="hidden" name="direction" value="down" />
+				{@render openSceneField()}
+				<button
+					class="row-menu-item turn-down"
+					type="submit"
+					role="menuitem"
+					disabled={target.index === data.chapters.length - 1}
+				>
+					<Icon name="chevron" size={13} /> Move down
+				</button>
+			</form>
+			<form
+				method="POST"
+				action="?/deleteChapter"
+				onsubmit={(e) => {
+					if (!confirm('Delete this chapter? Its scenes move to Unfiled scenes.'))
+						e.preventDefault();
+				}}
+			>
+				<input type="hidden" name="chapterId" value={target.id} />
+				{@render openSceneField()}
+				<button class="row-menu-item danger" type="submit" role="menuitem">
+					<Icon name="trash" size={13} /> Delete chapter
+				</button>
+			</form>
+		{:else}
+			<form method="POST" action="?/deleteScene">
+				<input type="hidden" name="sceneId" value={target.id} />
+				{@render openSceneField()}
+				<button class="row-menu-item danger" type="submit" role="menuitem">
+					<Icon name="trash" size={13} /> Delete scene
+				</button>
+			</form>
+		{/if}
+	</div>
+{/if}
+
 <style>
+	/* The sidebar rows' right-click menu; same look as the editor's
+	   selection menu. */
+	.row-menu {
+		position: fixed;
+		z-index: 60;
+		min-width: 170px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+	}
+	.row-menu-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		background: none;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: 13px;
+		padding: 6px 7px;
+		border-radius: 5px;
+		cursor: pointer;
+	}
+	.row-menu-item:hover:not(:disabled) {
+		background: var(--accent-soft);
+	}
+	.row-menu-item:disabled {
+		color: var(--text-faint);
+		cursor: default;
+	}
+	.row-menu-item.danger:hover:not(:disabled) {
+		color: var(--danger, #c0564f);
+	}
+	.row-menu-item.turn-up :global(svg) {
+		transform: rotate(-90deg);
+	}
+	.row-menu-item.turn-down :global(svg) {
+		transform: rotate(90deg);
+	}
 	.chapter-row {
 		width: 100%;
 		border: 0;
