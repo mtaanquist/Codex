@@ -108,7 +108,7 @@ describe('buildAccountExport', () => {
 		expect(zip.names).toContain('universes/mythos/stories/halden/story.md');
 
 		const sceneFile = zip.names.find(
-			(n) => n.includes('/stories/halden/chapters/') && n.endsWith('.md')
+			(n) => n.includes('/stories/halden/chapters/') && !n.endsWith('chapter.md')
 		);
 		expect(sceneFile).toBeTruthy();
 		// The asset link is rewritten to the bundled, depth-relative path.

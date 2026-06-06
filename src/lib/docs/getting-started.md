@@ -20,6 +20,12 @@ Each of those has its own help article. Look for the "?" next to a heading anywh
 
 Right-click a scene in a story's sidebar to delete it; it sits in the story's "Deleted scenes" list until you restore it or delete it forever. Deleting a universe (from its settings) keeps it in a "Deleted universes" list on the library for 30 days, restorable with one click; after that it is gone for good, along with everything in it. Stories delete immediately and permanently from their settings, so export first if in doubt.
 
+## Moving work in and out
+
+Everything you write can leave as markdown: each story's settings offer a zip of its scenes, a universe's settings bundle the whole world, and your account page has a download of everything you own.
+
+A story export zip can also come back in. Open the universe's settings, go to "Import and export", and upload the zip under "Import a story". You get a preview first: how many chapters, scenes, and words are coming, and how each story note will be handled. A note whose character, place, or lore entry already exists in the universe (matched by name) attaches to it; a name with no match creates a new entry; a name shared by more than one entry is skipped, and the preview says so. Nothing is written until you press "Import story", and the import always creates a new story, even if one with the same title exists.
+
 ## Jumping around
 
 Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose: matches in scene text show a snippet, and opening one selects the match in the editor. The same box lists commands for where you are, such as creating a scene, switching focus mode on, or reading the whole story as one document.
