@@ -42,12 +42,30 @@ async function currentEdition(storyId: string) {
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
-	const timeline = await storyTimeline(db, story.id, 30);
-	const [archive] = await db
-		.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
-		.from(users)
-		.where(eq(users.id, locals.user!.id));
-	const edition = await currentEdition(story.id);
+	// These reads are independent; only the artifact list depends on the
+	// edition, so run the rest together and fetch artifacts after.
+	const [
+		timeline,
+		[archive],
+		edition,
+		reviewInvitations,
+		preferenceOverrides,
+		accountPreferences,
+		pageSetupOverrides,
+		accountPageSetup
+	] = await Promise.all([
+		storyTimeline(db, story.id, 30),
+		db
+			.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
+			.from(users)
+			.where(eq(users.id, locals.user!.id)),
+		currentEdition(story.id),
+		listReviewInvitations(db, story.id),
+		storyPreferenceOverrides(db, story.id),
+		userPreferences(db, locals.user!.id),
+		storyPageSetupOverrides(db, story.id),
+		userPageSetup(db, locals.user!.id)
+	]);
 	return {
 		story,
 		universe,
@@ -56,14 +74,14 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		archive,
 		edition,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
-		reviewInvitations: await listReviewInvitations(db, story.id),
+		reviewInvitations,
 		// For the Editor section: which keys this story overrides, and the
 		// account values the inherit options fall back to.
-		preferenceOverrides: await storyPreferenceOverrides(db, story.id),
-		accountPreferences: await userPreferences(db, locals.user!.id),
+		preferenceOverrides,
+		accountPreferences,
 		// Same shape for the Page setup section.
-		pageSetupOverrides: await storyPageSetupOverrides(db, story.id),
-		accountPageSetup: await userPageSetup(db, locals.user!.id)
+		pageSetupOverrides,
+		accountPageSetup
 	};
 };
 

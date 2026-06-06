@@ -124,8 +124,12 @@ await boss.work<{ userId: string }>(NOTIFICATION_DIGEST_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const digest = await buildUserDigest(db, job.data.userId, origin);
 		if (!digest) continue;
-		await sendEmail(db, digest.email);
+		// Mark the rows emailed before sending: a job retry after a crash then
+		// finds nothing to send rather than mailing the digest twice. The cost
+		// is that a hard send failure drops one digest, which the next
+		// notification re-forms; an un-recallable duplicate is the worse outcome.
 		await markEmailed(db, digest.ids);
+		await sendEmail(db, digest.email);
 		console.log(`notify: digest of ${digest.ids.length} sent to user ${job.data.userId}`);
 	}
 });
@@ -134,8 +138,11 @@ await boss.work<{ reviewerId: string }>(REVIEWER_DIGEST_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const digest = await buildReviewerDigest(db, job.data.reviewerId, origin);
 		if (!digest) continue;
-		await sendEmail(db, digest.email);
+		// Advance the watermark before sending, for the same reason as the user
+		// digest above: a retry must not re-send, even at the cost of dropping a
+		// digest on a hard send failure.
 		await markReviewerNotified(db, digest.reviewerId, digest.upTo);
+		await sendEmail(db, digest.email);
 		console.log(`notify: reviewer digest sent for ${job.data.reviewerId}`);
 	}
 });
