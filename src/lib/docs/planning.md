@@ -6,7 +6,7 @@ The planning view holds everything your stories draw on: characters, places, and
 
 Create an entry and give it a name and a short summary. The summary is what shows when someone hovers a mention in the editor. Add longer notes in the body.
 
-Lore entries are grouped into categories you define, such as "Factions" or "Magic". A category's colour is the colour its entries are underlined in.
+Lore entries are grouped into categories you define, such as "Factions" or "Magic". A category's colour is the colour its entries are underlined in. Manage categories in the universe settings: rename them, pick their colours, reorder them, and add or delete them. A category can only be deleted once nothing uses it.
 
 ## Aliases
 

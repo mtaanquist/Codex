@@ -185,11 +185,34 @@ export async function buildAccountExport(
 	const universeList = await db
 		.select()
 		.from(universes)
-		.where(eq(universes.ownerId, userId))
+		.where(and(eq(universes.ownerId, userId), isNull(universes.deletedAt)))
 		.orderBy(asc(universes.createdAt));
 
 	for (const universe of universeList) {
 		const uDir = `universes/${slugify(universe.name, universe.id)}`;
+		docs.push(...(await gatherUniverseDocs(db, universe, uDir)));
+	}
+	return packDocs(docs, loadAssets, 'codex-export.zip');
+}
+
+/** One universe's archive: characters/, places/, lore/, and a folder per
+ * story, rooted at the top of the zip. */
+export async function buildUniverseExport(
+	db: Database,
+	universe: typeof universes.$inferSelect,
+	loadAssets: AssetLoader
+): Promise<{ filename: string; bytes: Uint8Array }> {
+	const docs = await gatherUniverseDocs(db, universe, '.');
+	return packDocs(docs, loadAssets, `${slugify(universe.name, universe.id)}.zip`);
+}
+
+async function gatherUniverseDocs(
+	db: Database,
+	universe: typeof universes.$inferSelect,
+	uDir: string
+): Promise<Doc[]> {
+	const docs: Doc[] = [];
+	{
 		docs.push({
 			dir: uDir,
 			name: 'universe.md',
@@ -297,7 +320,14 @@ export async function buildAccountExport(
 				.forEach((s, si) => addScene(s, si, `${sDir}/unfiled`));
 		}
 	}
+	return docs;
+}
 
+async function packDocs(
+	docs: Doc[],
+	loadAssets: AssetLoader,
+	filename: string
+): Promise<{ filename: string; bytes: Uint8Array }> {
 	// Collect every referenced and cover asset, load once, then write each doc
 	// with links rewritten relative to its own depth.
 	const referenced = new Set<string>();
@@ -312,12 +342,15 @@ export async function buildAccountExport(
 
 	const files: Zippable = {};
 	for (const doc of docs) {
-		const up = '../'.repeat(doc.dir.split('/').filter(Boolean).length);
+		// A '.' base (the single-universe export) roots files at the top of
+		// the zip; drop it from paths and depth alike.
+		const parts = doc.dir.split('/').filter((part) => part && part !== '.');
+		const up = '../'.repeat(parts.length);
 		const linkFor = (id: string) =>
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`;
 		const front = { ...doc.front };
 		if (doc.coverId && assetPath.has(doc.coverId)) front.cover = linkFor(doc.coverId);
-		files[`${doc.dir}/${doc.name}`] = strToU8(
+		files[[...parts, doc.name].join('/')] = strToU8(
 			frontMatter(front) + rewriteAssetReferences(doc.body, linkFor)
 		);
 	}
@@ -325,9 +358,9 @@ export async function buildAccountExport(
 		files[assetPath.get(asset.id)!] = asset.bytes;
 	}
 	if (docs.length === 0)
-		files['README.md'] = strToU8('# Codex export\n\nThis account has no content yet.\n');
+		files['README.md'] = strToU8('# Codex export\n\nThere is no content here yet.\n');
 
-	return { filename: 'codex-export.zip', bytes: zipSync(files) };
+	return { filename, bytes: zipSync(files) };
 }
 
 function joinBody(summaryMd: string | null, bodyMd: string): string {

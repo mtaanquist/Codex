@@ -1,22 +1,29 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { uniqueSlug } from '$lib/server/slugs';
 import { relativeTime, storyStatus } from '$lib/dashboard';
+import {
+	destroyUniverse,
+	listTrashedUniverses,
+	restoreUniverse
+} from '$lib/server/universe-lifecycle';
+import { assetConfig, s3AssetStore } from '$lib/server/assets';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page; no data to load for it.
 	if (!locals.user) {
-		return { user: null, universes: [], stories: [], isAdmin: false };
+		return { user: null, universes: [], stories: [], isAdmin: false, trashedUniverses: [] };
 	}
 	const user = locals.user;
 	const list = await db
 		.select()
 		.from(universes)
-		.where(eq(universes.ownerId, user.id))
+		.where(and(eq(universes.ownerId, user.id), isNull(universes.deletedAt)))
 		.orderBy(desc(universes.updatedAt));
+	const trashedUniverses = await listTrashedUniverses(db, user.id);
 
 	// One row per story with everything its card shows: chapter and word
 	// totals, scene status counts for the pill, outline nodes for stories
@@ -34,6 +41,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			count(s.id) filter (where s.status = 'final')::int as final,
 			greatest(st.updated_at, max(s.updated_at)) as edited_at
 		from stories st
+		join universes u on u.id = st.universe_id and u.deleted_at is null
 		left join scenes s on s.story_id = st.id and s.deleted_at is null
 		where st.owner_id = ${user.id}
 		group by st.id
@@ -83,7 +91,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		user,
 		universes: list,
 		stories: storyList,
-		isAdmin: user.role === 'admin'
+		isAdmin: user.role === 'admin',
+		trashedUniverses
 	};
 };
 
@@ -152,5 +161,27 @@ export const actions: Actions = {
 			[story] = await create(await uniqueSlug(db, 'stories', locals.user.id, title, 'story'));
 		}
 		redirect(303, `/stories/${story.slug}`);
+	},
+	restoreUniverse: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const ok = await restoreUniverse(db, locals.user.id, String(data.get('universeId') ?? ''));
+		if (!ok) return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
+		return { scope: 'trash', restored: true };
+	},
+	destroyUniverse: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const result = await destroyUniverse(db, locals.user.id, String(data.get('universeId') ?? ''));
+		if (!result.ok) {
+			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
+		}
+		// Best-effort object sweep; an orphaned image is never a blocker.
+		const config = assetConfig();
+		if (config) {
+			const store = s3AssetStore(config);
+			for (const key of result.assetKeys) await store.remove(key).catch(() => {});
+		}
+		return { scope: 'trash', destroyed: true };
 	}
 };

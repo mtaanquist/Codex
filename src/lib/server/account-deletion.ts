@@ -1,18 +1,12 @@
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import type { AssetObjectStore } from './assets';
 import {
 	assets,
-	characters,
-	entityCategories,
-	entityRelationships,
 	exportArtifacts,
-	loreEntries,
-	places,
 	publications,
 	reviewers,
 	sessions,
-	stories,
 	totpRecoveryCodes,
 	universes,
 	userTotp,
@@ -20,7 +14,7 @@ import {
 	authTokens,
 	webauthnCredentials
 } from './db/schema.ts';
-import { deleteStoryWithin } from './story-delete.ts';
+import { purgeUniverseWithin } from './universe-lifecycle.ts';
 import { consumeToken, issueToken } from './tokens.ts';
 
 const GRACE_DAYS = 7;
@@ -96,38 +90,16 @@ export async function purgeAccount(
 		.where(eq(publications.ownerId, userId));
 
 	await db.transaction(async (tx) => {
-		// Stories first: this clears scenes, chapters, markers, revisions,
-		// outline, memberships, story notes, publications, and mention rows.
-		const storyRows = await tx
-			.select({ id: stories.id })
-			.from(stories)
-			.innerJoin(universes, eq(stories.universeId, universes.id))
-			.where(eq(universes.ownerId, userId));
-		for (const story of storyRows) await deleteStoryWithin(tx, story.id);
-
+		// Each universe purges through the shared cascade (stories first, then
+		// entities, history, categories, relation types, and assets).
 		const universeRows = await tx
 			.select({ id: universes.id })
 			.from(universes)
 			.where(eq(universes.ownerId, userId));
-		const universeIds = universeRows.map((row) => row.id);
-		if (universeIds.length > 0) {
-			// Universe-wide relationships (story-scoped ones went with the stories).
-			await tx
-				.delete(entityRelationships)
-				.where(inArray(entityRelationships.universeId, universeIds));
-			// Assets reference the universe, and stories' cover references are
-			// already gone, so the rows can be removed before the universe.
-			await tx.delete(assets).where(eq(assets.ownerId, userId));
-			// Entities before their categories (characters/places reference them).
-			await tx.delete(characters).where(inArray(characters.universeId, universeIds));
-			await tx.delete(places).where(inArray(places.universeId, universeIds));
-			await tx.delete(loreEntries).where(inArray(loreEntries.universeId, universeIds));
-			await tx.delete(entityCategories).where(inArray(entityCategories.universeId, universeIds));
-			await tx.delete(universes).where(inArray(universes.id, universeIds));
-		} else {
-			// No universes, but the account may still own stray assets.
-			await tx.delete(assets).where(eq(assets.ownerId, userId));
-		}
+		for (const universe of universeRows) await purgeUniverseWithin(tx, universe.id);
+
+		// Account-level assets (avatars) sit outside any universe.
+		await tx.delete(assets).where(eq(assets.ownerId, userId));
 
 		// Reviews this account left on other people's stories: the author keeps
 		// the thread, but the identity is erased.

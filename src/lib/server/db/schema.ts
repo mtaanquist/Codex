@@ -113,6 +113,9 @@ export const universes = pgTable(
 			.notNull()
 			.default(sql`substr(md5(random()::text), 1, 12)`),
 		descriptionMd: text('description_md'),
+		// Soft delete: a deleted universe sits in the dashboard's trash for the
+		// restore window, then the worker purges it for good. Null means live.
+		deletedAt: timestamp('deleted_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()

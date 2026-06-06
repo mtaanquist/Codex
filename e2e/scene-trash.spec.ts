@@ -12,6 +12,11 @@ test('scene trash and chapter tools', async ({ page }) => {
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Trashfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Trashfall ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
 	await page.getByLabel('New story').fill(`Bins ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/bins-${stamp}`);

@@ -995,6 +995,20 @@
 	border-top: 1px solid var(--border);
 	position: relative;
 }
+.revision-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 99px;
+	flex: none;
+	margin-top: 6px;
+}
+.revision-dot-checkpoint {
+	background: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.revision-dot-autosave {
+	background: var(--text-faint);
+}
 .revision-entry:hover {
 	background: var(--bg-hover);
 }

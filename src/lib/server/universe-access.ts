@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from './db';
 import { universes } from './db/schema';
 import type { Database } from './auth';
@@ -13,7 +13,7 @@ export async function ownedUniverse(ref: string, userId: string, dbc: Database =
 	const [universe] = await dbc
 		.select()
 		.from(universes)
-		.where(and(byRef, eq(universes.ownerId, userId)));
+		.where(and(byRef, eq(universes.ownerId, userId), isNull(universes.deletedAt)));
 	if (!universe) error(404, 'Universe not found');
 	return universe;
 }
