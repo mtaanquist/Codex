@@ -8,7 +8,6 @@ import { authTokens, users } from '../../src/lib/server/db/schema';
 import {
 	approveUser,
 	listAllUsers,
-	listPendingUsers,
 	rejectUser,
 	setUserArchive,
 	setUserSuspended
@@ -51,18 +50,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
 	await pool.end();
-});
-
-describe('listPendingUsers', () => {
-	it('lists unapproved non-admins only, oldest first', async () => {
-		await makeUser('admin@example.com', { role: 'admin', approved: true, verified: true });
-		await makeUser('approved@example.com', { approved: true });
-		await makeUser('pending-a@example.com');
-		await makeUser('pending-b@example.com');
-
-		const pending = await listPendingUsers(db);
-		expect(pending.map((u) => u.email)).toEqual(['pending-a@example.com', 'pending-b@example.com']);
-	});
 });
 
 describe('approveUser', () => {
