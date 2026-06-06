@@ -1,14 +1,19 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	assets,
 	chapters,
 	characters,
+	characterStoryNotes,
 	entityCategories,
+	entityRelationships,
 	loreEntries,
+	loreStoryNotes,
 	places,
+	placeStoryNotes,
+	relationTypes,
 	scenes,
 	stories,
 	universes
@@ -16,6 +21,7 @@ import {
 import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
 import { assetConfig, s3AssetStore } from './assets.ts';
 import { extensionFor } from './media-types.ts';
+import { namesByType, type EntityType } from './entity-lookups.ts';
 
 // Story export: a zip of markdown files with YAML front matter, in
 // chapter order, with referenced images bundled into assets/ and the
@@ -87,9 +93,19 @@ export type ExportScene = {
 	status?: string | null;
 	bodyMd: string;
 };
+// A story-scoped note overlay on a universe entity. The id only seeds the
+// filename slug when the name does not.
+export type ExportNote = {
+	id: string;
+	kind: 'character' | 'place' | 'lore';
+	name: string;
+	notesMd: string;
+};
 export type StoryContent = {
 	chapters: { id: string; title: string | null }[];
 	scenes: ExportScene[];
+	// Absent for frozen editions: notes are working material, not manuscript.
+	notes?: ExportNote[];
 };
 
 export async function gatherStory(db: Database, story: ExportStory): Promise<StoryContent> {
@@ -109,17 +125,51 @@ export async function gatherStory(db: Database, story: ExportStory): Promise<Sto
 		.from(scenes)
 		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
-	return { chapters: chapterList, scenes: sceneList };
+	return { chapters: chapterList, scenes: sceneList, notes: await gatherStoryNotes(db, story.id) };
 }
+
+async function gatherStoryNotes(db: Database, storyId: string): Promise<ExportNote[]> {
+	const characterNotes = await db
+		.select({ id: characters.id, name: characters.name, notesMd: characterStoryNotes.notesMd })
+		.from(characterStoryNotes)
+		.innerJoin(characters, eq(characterStoryNotes.characterId, characters.id))
+		.where(and(eq(characterStoryNotes.storyId, storyId), ne(characterStoryNotes.notesMd, '')))
+		.orderBy(asc(characters.name));
+	const placeNotes = await db
+		.select({ id: places.id, name: places.name, notesMd: placeStoryNotes.notesMd })
+		.from(placeStoryNotes)
+		.innerJoin(places, eq(placeStoryNotes.placeId, places.id))
+		.where(and(eq(placeStoryNotes.storyId, storyId), ne(placeStoryNotes.notesMd, '')))
+		.orderBy(asc(places.name));
+	const loreNotes = await db
+		.select({ id: loreEntries.id, name: loreEntries.title, notesMd: loreStoryNotes.notesMd })
+		.from(loreStoryNotes)
+		.innerJoin(loreEntries, eq(loreStoryNotes.loreEntryId, loreEntries.id))
+		.where(and(eq(loreStoryNotes.storyId, storyId), ne(loreStoryNotes.notesMd, '')))
+		.orderBy(asc(loreEntries.title));
+	return [
+		...characterNotes.map((note) => ({ ...note, kind: 'character' as const })),
+		...placeNotes.map((note) => ({ ...note, kind: 'place' as const })),
+		...loreNotes.map((note) => ({ ...note, kind: 'lore' as const }))
+	];
+}
+
+// Subdirectory per note kind, matching the universe archive's layout.
+const NOTE_DIRS = { character: 'characters', place: 'places', lore: 'lore' } as const;
 
 export async function buildStoryZip(
 	story: ExportStory,
 	content: StoryContent,
 	loadAssets: AssetLoader
 ): Promise<{ filename: string; bytes: Uint8Array }> {
-	const { chapters: chapterList, scenes: sceneList } = content;
+	const { chapters: chapterList, scenes: sceneList, notes: noteList = [] } = content;
 
-	const referenced = [...new Set(sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd)))];
+	const referenced = [
+		...new Set([
+			...sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd)),
+			...noteList.flatMap((note) => findAssetReferences(note.notesMd))
+		])
+	];
 	const loaded = await loadAssets(referenced);
 	const assetPath = new Map(
 		loaded.map((asset) => [asset.id, `assets/${asset.id}.${extensionFor(asset.contentType)}`])
@@ -154,6 +204,17 @@ export async function buildStoryZip(
 		.filter((scene) => scene.chapterId === null)
 		.forEach((scene, sceneIndex) => sceneFile(scene, sceneIndex, 'unfiled'));
 
+	for (const note of noteList) {
+		const dir = `notes/${NOTE_DIRS[note.kind]}`;
+		const up = '../'.repeat(dir.split('/').length);
+		const body = rewriteAssetReferences(note.notesMd, (id) =>
+			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
+		);
+		files[`${root}/${dir}/${slugify(note.name, note.id)}.md`] = strToU8(
+			frontMatter({ name: note.name, kind: note.kind }) + body
+		);
+	}
+
 	for (const asset of loaded) {
 		files[`${root}/${assetPath.get(asset.id)!}`] = asset.bytes;
 	}
@@ -162,24 +223,62 @@ export async function buildStoryZip(
 }
 
 // One document destined for the account archive, gathered before any assets
-// are loaded so references can be rewritten in a second pass.
+// are loaded so references can be rewritten in a second pass. Docs without
+// front matter (relationships, reviews) carry their heading in the body.
 type Doc = {
 	dir: string;
 	name: string;
-	front: Record<string, string | string[] | null | undefined>;
+	front?: Record<string, string | string[] | null | undefined>;
 	body: string;
 	coverId?: string | null;
 };
 
+// Review threads for the account export, gathered by an injected loader so
+// the review module (whose import closure is not worker-safe) stays out of
+// this file's; the worker imports the builders for edition artifacts.
+export type ExportReviewThread = {
+	sceneTitle: string | null;
+	resolved: boolean;
+	// The text the thread points at in the current scene body; null for
+	// whole-scene comments and for anchors that no longer fit.
+	excerpt: string | null;
+	anchorLost: boolean;
+	comments: { authorName: string; isOwner: boolean; createdAt: Date; body: string }[];
+};
+export type ReviewLoader = (storyId: string) => Promise<ExportReviewThread[]>;
+
+function reviewsMarkdown(threads: ExportReviewThread[]): string {
+	const lines = ['# Review feedback', ''];
+	for (const thread of threads) {
+		const state = thread.resolved ? 'resolved' : 'open';
+		lines.push(`## ${thread.sceneTitle ?? 'Untitled scene'} (${state})`, '');
+		if (thread.excerpt) {
+			for (const excerptLine of thread.excerpt.split('\n')) lines.push(`> ${excerptLine}`);
+		} else if (thread.anchorLost) {
+			lines.push('> The text this thread pointed at has since changed.');
+		} else {
+			lines.push('> On the whole scene.');
+		}
+		lines.push('');
+		for (const comment of thread.comments) {
+			const role = comment.isOwner ? 'author' : 'reviewer';
+			const date = comment.createdAt.toISOString().slice(0, 10);
+			lines.push(`${comment.authorName} (${role}), ${date}:`, '', comment.body.trim(), '');
+		}
+	}
+	return lines.join('\n');
+}
+
 // Everything one account owns, as a single markdown archive: every universe
-// with its characters, places, and lore, and every story's chapters and
-// scenes, with referenced images and covers bundled and links rewritten. This
-// is the "export first" safety net before account deletion. Story-scoped note
-// overlays are not yet included (the universe-level entries are).
+// with its characters, places, lore, and relationships, and every story's
+// chapters, scenes, and story notes, with referenced images and covers
+// bundled and links rewritten. This is the "export first" safety net before
+// account deletion, so review feedback rides along when a loader is given.
 export async function buildAccountExport(
 	db: Database,
 	userId: string,
-	loadAssets: AssetLoader
+	loadAssets: AssetLoader,
+	loadReviews?: ReviewLoader
 ): Promise<{ filename: string; bytes: Uint8Array }> {
 	const docs: Doc[] = [];
 	const universeList = await db
@@ -190,7 +289,7 @@ export async function buildAccountExport(
 
 	for (const universe of universeList) {
 		const uDir = `universes/${slugify(universe.name, universe.id)}`;
-		docs.push(...(await gatherUniverseDocs(db, universe, uDir)));
+		docs.push(...(await gatherUniverseDocs(db, universe, uDir, loadReviews)));
 	}
 	return packDocs(docs, loadAssets, 'codex-export.zip');
 }
@@ -209,7 +308,8 @@ export async function buildUniverseExport(
 async function gatherUniverseDocs(
 	db: Database,
 	universe: typeof universes.$inferSelect,
-	uDir: string
+	uDir: string,
+	loadReviews?: ReviewLoader
 ): Promise<Doc[]> {
 	const docs: Doc[] = [];
 	{
@@ -300,7 +400,11 @@ async function gatherUniverseDocs(
 				body: story.descriptionMd ?? '',
 				coverId: story.coverAssetId
 			});
-			const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
+			const {
+				chapters: chapterList,
+				scenes: sceneList,
+				notes: noteList = []
+			} = await gatherStory(db, story);
 			const addScene = (scene: (typeof sceneList)[number], index: number, dir: string) => {
 				docs.push({
 					dir,
@@ -318,9 +422,83 @@ async function gatherUniverseDocs(
 			sceneList
 				.filter((s) => s.chapterId === null)
 				.forEach((s, si) => addScene(s, si, `${sDir}/unfiled`));
+			for (const note of noteList) {
+				docs.push({
+					dir: `${sDir}/notes/${NOTE_DIRS[note.kind]}`,
+					name: `${slugify(note.name, note.id)}.md`,
+					front: { name: note.name, kind: note.kind },
+					body: note.notesMd
+				});
+			}
+			if (loadReviews) {
+				const threads = await loadReviews(story.id);
+				if (threads.length > 0) {
+					docs.push({ dir: sDir, name: 'reviews.md', body: reviewsMarkdown(threads) });
+				}
+			}
+		}
+
+		const relationshipsMd = await gatherRelationships(db, universe.id);
+		if (relationshipsMd) {
+			docs.push({ dir: uDir, name: 'relationships.md', body: relationshipsMd });
 		}
 	}
 	return docs;
+}
+
+// Every relationship in the universe, once each in its forward direction,
+// as one readable markdown list.
+async function gatherRelationships(db: Database, universeId: string): Promise<string | null> {
+	const rows = await db
+		.select({
+			fromType: entityRelationships.fromType,
+			fromId: entityRelationships.fromId,
+			toType: entityRelationships.toType,
+			toId: entityRelationships.toId,
+			notesMd: entityRelationships.notesMd,
+			label: relationTypes.forwardLabel
+		})
+		.from(entityRelationships)
+		.innerJoin(relationTypes, eq(entityRelationships.relationTypeId, relationTypes.id))
+		.where(and(eq(entityRelationships.universeId, universeId), isNull(entityRelationships.storyId)))
+		.orderBy(asc(relationTypes.sortOrder), asc(entityRelationships.createdAt));
+	if (rows.length === 0) return null;
+
+	const names: Record<EntityType, Map<string, string>> = {
+		character: new Map(),
+		place: new Map(),
+		lore_entry: new Map()
+	};
+	for (const type of ['character', 'place', 'lore_entry'] as const) {
+		const ids = [
+			...new Set(
+				rows.flatMap((row) => [
+					...(row.fromType === type ? [row.fromId] : []),
+					...(row.toType === type ? [row.toId] : [])
+				])
+			)
+		];
+		names[type] = await namesByType(db, type, ids);
+	}
+
+	const kindLabel: Record<EntityType, string> = {
+		character: 'character',
+		place: 'place',
+		lore_entry: 'lore'
+	};
+	const side = (type: string, id: string) => {
+		const entityType = type as EntityType;
+		return `${names[entityType].get(id) ?? 'Unknown'} (${kindLabel[entityType]})`;
+	};
+	const lines = ['# Relationships', ''];
+	for (const row of rows) {
+		lines.push(
+			`- ${side(row.fromType, row.fromId)} - ${row.label} - ${side(row.toType, row.toId)}`
+		);
+		const note = row.notesMd?.trim();
+		if (note) for (const noteLine of note.split('\n')) lines.push(`  ${noteLine}`);
+	}
+	return lines.join('\n') + '\n';
 }
 
 async function packDocs(
@@ -348,10 +526,14 @@ async function packDocs(
 		const up = '../'.repeat(parts.length);
 		const linkFor = (id: string) =>
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`;
-		const front = { ...doc.front };
-		if (doc.coverId && assetPath.has(doc.coverId)) front.cover = linkFor(doc.coverId);
+		let head = '';
+		if (doc.front) {
+			const front = { ...doc.front };
+			if (doc.coverId && assetPath.has(doc.coverId)) front.cover = linkFor(doc.coverId);
+			head = frontMatter(front);
+		}
 		files[[...parts, doc.name].join('/')] = strToU8(
-			frontMatter(front) + rewriteAssetReferences(doc.body, linkFor)
+			head + rewriteAssetReferences(doc.body, linkFor)
 		);
 	}
 	for (const asset of loaded) {

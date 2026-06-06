@@ -22,12 +22,25 @@ is the shipped record, newest sections last.
      story and account exports; decide whether review threads and
      revision history join the account export. (Outline nodes were on
      this list until the Outline view retired in v2.26.0.)
-- [ ] 5. Review notifications (capability review, 2026-06-06). Reviewer
-     comments and author replies are silent in both directions; both
-     sides poll. Email the author on new comments/suggestions and the
-     reviewer (when they joined with an account or left an email) on
-     author replies, batched so a busy thread sends one digest, through
-     the existing email worker.
+- [ ] 5. Notifications (capability review, 2026-06-06; scope agreed
+     2026-06-06). Reviewer comments and author replies are silent in
+     both directions; both sides poll. Build the small generic core
+     rather than one-off emails: a notifications table (user, kind,
+     payload with story/thread refs, read_at), a bell in the top navbar
+     with an unread badge and a dropdown (click marks read and jumps to
+     the thread, mark-all-read), and a per-kind preference matrix in
+     users.preferences with in-app and email toggles, both defaulting
+     on, rendered as a grid on the account page. The worker fans out
+     each event: in-app row written immediately if that toggle is on,
+     email queued into the existing batched digest if that one is.
+     Initial kinds: review activity on your stories (author side),
+     replies to your review comments (reviewers with accounts), and new
+     account awaiting approval (admins only; replaces the operator
+     email). Transactional email (verification, password reset,
+     deletion cancellation) stays outside the matrix, never
+     toggleable. Guest reviewers with an email but no account stay
+     email-only with an opt-out link in the digest, no settings UI.
+     Its own release, after item 4.
 
 After these: the next-phase candidates recorded in the roadmap from the
 2026-06-06 capability review (Notes tab ship-or-hide, goals and

@@ -1116,7 +1116,8 @@
 							<h2 class="admin-block-title">Your data</h2>
 							<p class="admin-block-sub">
 								Download everything you have written - every universe, story, scene, and
-								worldbuilding entry, with your images - as a folder of markdown files.
+								worldbuilding entry, with relationships, story notes, review feedback, and your
+								images - as a folder of markdown files.
 							</p>
 						</div>
 						<div class="admin-card">

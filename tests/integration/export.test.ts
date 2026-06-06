@@ -1,10 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { strFromU8, unzipSync } from 'fflate';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { chapters, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	chapters,
+	characters,
+	characterStoryNotes,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import { buildStoryZip, gatherStory, type ExportStory } from '../../src/lib/server/export';
 import { buildEpub } from '../../src/lib/server/epub';
 import type { Database } from '../../src/lib/server/auth';
@@ -94,6 +103,40 @@ describe('buildStoryZip', () => {
 		expect(sceneFile).toContain('title: "Departure"');
 		expect(sceneFile).toContain(`![gate](../../assets/${ASSET_ID}.png)`);
 		expect(Buffer.from(entries[`book-of-ash/assets/${ASSET_ID}.png`]).equals(PNG)).toBe(true);
+	});
+
+	it('includes story notes with asset links rewritten, skipping empty ones', async () => {
+		const [storyRow] = await db.select().from(stories).where(eq(stories.id, story.id));
+		const [alice] = await db
+			.insert(characters)
+			.values({
+				universeId: storyRow.universeId,
+				ownerId: storyRow.ownerId,
+				name: 'Alice Vane'
+			})
+			.returning();
+		const [bert] = await db
+			.insert(characters)
+			.values({ universeId: storyRow.universeId, ownerId: storyRow.ownerId, name: 'Bert' })
+			.returning();
+		await db.insert(characterStoryNotes).values([
+			{
+				characterId: alice.id,
+				storyId: story.id,
+				notesMd: `Limps in this book.\n\n![scar](/assets/${ASSET_ID})`
+			},
+			// An empty overlay row (created by opening the entity) exports nothing.
+			{ characterId: bert.id, storyId: story.id, notesMd: '' }
+		]);
+
+		const { bytes } = await buildStoryZip(story, await gatherStory(db, story), loader);
+		const entries = unzipSync(bytes);
+		const note = strFromU8(entries['book-of-ash/notes/characters/alice-vane.md']);
+		expect(note).toContain('name: "Alice Vane"');
+		expect(note).toContain('kind: "character"');
+		expect(note).toContain('Limps in this book.');
+		expect(note).toContain(`![scar](../../assets/${ASSET_ID}.png)`);
+		expect(Object.keys(entries).some((name) => name.includes('bert'))).toBe(false);
 	});
 });
 

@@ -778,7 +778,7 @@
 								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/export`} download>
 									Markdown (.zip)
 								</a>
-								- every scene as a markdown file, images bundled
+								- every scene and story note as a markdown file, images bundled
 							</li>
 							<li>
 								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/epub`} download
