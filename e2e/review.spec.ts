@@ -79,7 +79,30 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await expect(guest.locator('.suggestion ins')).toHaveText('reservations');
 	await guestContext.close();
 
-	// Author: the thread is on the feedback page; reply and resolve.
+	// Author: the bell heard about both; the comment notification leads to
+	// the feedback page. Counts are not asserted because a long-lived local
+	// database may carry unread rows from earlier runs.
+	await page.goto('/');
+	await page.getByRole('button', { name: /^Notifications/ }).click();
+	const bellMenu = page.locator('.bell-menu');
+	await expect(bellMenu).toContainText('Margin Walker commented on "Margin Notes"');
+	await expect(bellMenu).toContainText('Margin Walker suggested an edit on "Margin Notes"');
+	await expect(bellMenu).toContainText('Strong opening, weak hinges.');
+	await bellMenu
+		.locator('.bell-item', { hasText: 'Margin Walker commented on "Margin Notes"' })
+		.first()
+		.click();
+	await expect(page).toHaveURL(`/stories/${storyId}/review`);
+
+	// Mark everything read; the badge goes quiet. The feedback page has no
+	// topbar, so this happens back on the library.
+	await page.goto('/');
+	await page.getByRole('button', { name: /^Notifications/ }).click();
+	await page.getByRole('button', { name: 'Mark all read' }).click();
+	await expect(page.locator('.bell-badge')).toHaveCount(0);
+	await page.keyboard.press('Escape');
+
+	// The thread is on the feedback page; reply and resolve.
 	await page.goto(`/stories/${storyId}/review`);
 	await expect(page.getByText('Strong opening, weak hinges.')).toBeVisible();
 	await expect(page.getByText('Margin Walker -')).toBeVisible();

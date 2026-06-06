@@ -5,8 +5,8 @@ import { db } from '$lib/server/db';
 import { registerUser } from '$lib/server/signup';
 import { issueToken } from '$lib/server/tokens';
 import { queueEmail } from '$lib/server/jobs';
-import { signupNotificationEmail, verificationEmail } from '$lib/server/email';
-import { adminEmails } from '$lib/server/admin';
+import { verificationEmail } from '$lib/server/email';
+import { notifyAdmins } from '$lib/server/notify';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
 
@@ -54,19 +54,16 @@ export const actions: Actions = {
 			const link = `${origin}/verify-email?token=${token}`;
 			await queueEmail(verificationEmail(cleanEmail, link));
 
-			// Let the operator know there is someone to review (or, with an invite
-			// code, that someone joined).
-			const reviewLink = `${origin}/admin`;
-			for (const admin of await adminEmails(db)) {
-				await queueEmail(
-					signupNotificationEmail(
-						admin,
-						{ displayName: displayName.trim(), email: cleanEmail },
-						reviewLink,
-						result.invited
-					)
-				);
-			}
+			// Let the admins know there is someone to review (or, with an invite
+			// code, that someone joined). Goes through the notification matrix:
+			// the bell always, email per preference.
+			await notifyAdmins(db, 'account_pending', {
+				title: result.invited
+					? `${displayName.trim()} joined with an invite code`
+					: `${displayName.trim()} signed up and waits for approval`,
+				detail: cleanEmail,
+				href: '/admin'
+			});
 		}
 
 		// A duplicate email only gets this far when the code was absent or valid

@@ -3,6 +3,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Landing from '$lib/components/Landing.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import NotificationBell from '$lib/components/NotificationBell.svelte';
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -77,6 +78,7 @@
 			</a>
 			<span class="spacer"></span>
 			<PaletteButton />
+			<NotificationBell />
 			<UserMenu />
 		</header>
 

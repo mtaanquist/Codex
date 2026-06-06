@@ -26,6 +26,7 @@ import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
 import { normalisePageSetup } from '$lib/page-setup';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
 import { isAccentColor, isTheme, normaliseAccent } from '$lib/appearance';
+import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
 import { secretsAvailable } from '$lib/server/crypto';
 import {
 	beginEnrollment,
@@ -173,6 +174,25 @@ export const actions: Actions = {
 			sessionStreak: streak
 		});
 		return { scope: 'prefs', saved: true };
+	},
+	saveNotifications: async ({ request, locals }) => {
+		const data = await request.formData();
+		// Only the rows the form showed are written; the admin-only kind keeps
+		// its stored value for everyone else.
+		const visible = NOTIFICATION_KINDS.filter(
+			(kind) => locals.user!.role === 'admin' || !ADMIN_KINDS.includes(kind)
+		);
+		const matrix: NotificationMatrix = {
+			...(await userPreferences(db, locals.user!.id)).notifications
+		};
+		for (const kind of visible) {
+			matrix[kind] = {
+				inApp: data.get(`inapp_${kind}`) === 'on',
+				email: data.get(`email_${kind}`) === 'on'
+			};
+		}
+		await savePreferences(db, locals.user!.id, { notifications: matrix });
+		return { scope: 'notifyprefs', saved: true };
 	},
 	savePageSetup: async ({ request, locals }) => {
 		const data = await request.formData();

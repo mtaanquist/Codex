@@ -16,6 +16,9 @@ const PUBLIC_PATHS = new Set([
 	'/reset-password',
 	'/cancel-deletion',
 	'/confirm-email-change',
+	// A guest reviewer's unsubscribe link; it guards itself on the signed
+	// token it carries.
+	'/review-email-opt-out',
 	// Passkey sign-in runs before a session exists; the endpoints guard
 	// themselves on the signed challenge cookie.
 	'/api/passkeys/signin-options',

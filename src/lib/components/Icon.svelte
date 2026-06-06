@@ -6,6 +6,7 @@
 		// Marks a link that leaves the current view.
 		'arrow-out': ['M7 17 17 7', 'M8 7h9v9'],
 		plus: ['M12 5v14', 'M5 12h14'],
+		bell: ['M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
 		expand: [
 			'M8 3H5a2 2 0 0 0-2 2v3',
 			'M21 8V5a2 2 0 0 0-2-2h-3',

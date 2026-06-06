@@ -28,6 +28,10 @@ Suggested changes appear on the same page, showing the original text and the pro
 
 Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text, and a suggestion can no longer be accepted, only rejected.
 
+## Hearing about activity
+
+New comments and suggestions show up under the bell in the top bar, and an email gathers them up (a busy hour sends one message, not one per comment). Reviewers hear back the same way: a reviewer signed in to an account gets the bell and email, and a guest who left an email address gets the email with a link to stop further messages. Choose which of these reach you, and where, under Notifications on your account page.
+
 ## Ending a review
 
 Revoke a link in the Review section to stop it working. The comments you already received stay. Deleting the story removes its review threads and reviewers with it.

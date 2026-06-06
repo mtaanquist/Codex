@@ -10,6 +10,12 @@ import {
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { backupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import {
+	buildReviewerDigest,
+	buildUserDigest,
+	markEmailed,
+	markReviewerNotified
+} from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
 import {
 	listUniversesDueForPurge,
@@ -38,6 +44,8 @@ await boss.createQueue('run-backup');
 await boss.createQueue('send-email');
 await boss.createQueue('purge-accounts');
 await boss.createQueue('purge-universes');
+await boss.createQueue('notification-digest');
+await boss.createQueue('reviewer-digest');
 
 await boss.work<{ sceneId: string }>('mentions-scene', async (jobs) => {
 	for (const job of jobs) {
@@ -93,6 +101,30 @@ await boss.work<EmailMessage>('send-email', async (jobs) => {
 	for (const job of jobs) {
 		await sendEmail(db, job.data);
 		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
+	}
+});
+
+// Notification digests: one email per recipient gathering everything that
+// arrived since the last one. Links in the email need an absolute origin.
+const origin = process.env.ORIGIN ?? 'http://localhost:5173';
+
+await boss.work<{ userId: string }>('notification-digest', async (jobs) => {
+	for (const job of jobs) {
+		const digest = await buildUserDigest(db, job.data.userId, origin);
+		if (!digest) continue;
+		await sendEmail(db, digest.email);
+		await markEmailed(db, digest.ids);
+		console.log(`notify: digest of ${digest.ids.length} sent to user ${job.data.userId}`);
+	}
+});
+
+await boss.work<{ reviewerId: string }>('reviewer-digest', async (jobs) => {
+	for (const job of jobs) {
+		const digest = await buildReviewerDigest(db, job.data.reviewerId, origin);
+		if (!digest) continue;
+		await sendEmail(db, digest.email);
+		await markReviewerNotified(db, digest.reviewerId, digest.upTo);
+		console.log(`notify: reviewer digest sent for ${job.data.reviewerId}`);
 	}
 });
 

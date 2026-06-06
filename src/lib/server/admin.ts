@@ -107,11 +107,6 @@ export async function rejectUser(db: Database, userId: string): Promise<boolean>
 }
 
 // Admin addresses to notify when someone signs up.
-export async function adminEmails(db: Database): Promise<string[]> {
-	const rows = await db.select({ email: users.email }).from(users).where(eq(users.role, 'admin'));
-	return rows.map((row) => row.email);
-}
-
 export type AdminUser = {
 	id: string;
 	email: string;
