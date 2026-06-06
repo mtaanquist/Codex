@@ -31,7 +31,9 @@
 	const mentionOptions = $derived({
 		storyMembers: data.storyMemberIds,
 		pins: data.mentionPins,
-		onPin: pinMention
+		onPin: pinMention,
+		entityHref: (entity: { id: string }) =>
+			`/universes/${data.universe.slug}/plan?entity=${entity.id}`
 	});
 
 	// The editor's create-from-selection menu; the refreshed page data

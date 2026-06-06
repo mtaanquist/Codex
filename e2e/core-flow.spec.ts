@@ -13,6 +13,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
+	await page.getByLabel('Editing mode').selectOption('rich');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.goto('/');
@@ -265,11 +266,15 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	);
 	await page.keyboard.type(' Mrs. Fenwick waited.');
 	// The body mentions the lore keyword "gate", the place "Halden", and the
-	// alias: all three underline.
+	// alias: all three underline. Hovering opens the entity card with the
+	// kind line, the summary, and the way to the full page.
 	await expect(page.locator('.ref-word')).toHaveText(['gate', 'Halden', 'Mrs. Fenwick']);
 	await page.locator('.ref-word', { hasText: 'Mrs. Fenwick' }).hover();
-	await expect(page.locator('.entity-tip-name')).toHaveText('Alice Vane');
-	await expect(page.locator('.entity-tip-summary')).toHaveText('A toll-road smuggler.');
+	await expect(page.locator('.entity-card .pop-name')).toHaveText('Alice Vane');
+	// Alice joined the Factions category above; the kind line carries it.
+	await expect(page.locator('.entity-card .pop-role')).toHaveText('Character · Factions');
+	await expect(page.locator('.entity-card .pop-summary')).toHaveText('A toll-road smuggler.');
+	await expect(page.locator('.entity-card .pop-open')).toHaveAttribute('href', /\/plan\?entity=/);
 	await fenwickSave;
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
@@ -311,6 +316,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
 		'Alice Vane'
 	);
+	// The design's popup: a coloured badge, the kind, and the key footer.
+	await expect(page.locator('.cm-tooltip-autocomplete .ac-badge').first()).toHaveText('A');
+	await expect(page.locator('.cm-tooltip-autocomplete .cm-completionDetail').first()).toHaveText(
+		'character'
+	);
+	await expect(page.locator('.cm-tooltip-autocomplete .ac-foot')).toBeVisible();
 	const acceptSave = page.waitForResponse(
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);

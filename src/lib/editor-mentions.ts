@@ -8,6 +8,7 @@ import {
 } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { detectMentions, type MentionContext, type MentionTarget } from './mention-detect';
+import { entityColor, entityLetter } from './entity-color';
 
 export type MentionEntity = {
 	id: string;
@@ -16,6 +17,12 @@ export type MentionEntity = {
 	aliases: string[];
 	summaryMd: string | null;
 	details?: { label: string; value: string }[];
+	// The category's colour and name, when the entity has one; the colour
+	// drives the badge, the name rides the kind line on the hover card.
+	color?: string | null;
+	categoryName?: string | null;
+	// A few related entities for the hover card's chips.
+	related?: { name: string; color: string | null }[];
 };
 
 export type MentionOptions = {
@@ -25,17 +32,40 @@ export type MentionOptions = {
 	pins?: Record<string, string>;
 	// Called when the author picks which entity an ambiguous name means.
 	onPin?: (name: string, target: { type: MentionTarget['type']; id: string }) => void;
+	// Where "Open full details" points for an entity.
+	entityHref?: (entity: { type: MentionTarget['type']; id: string }) => string;
 };
 
-// The tooltip shows the first few quick details; the rest live on the
-// entity's page. Order is the author's, so the top ones are theirs to pick.
+// The hover card shows the first few quick details and related entities;
+// the rest live on the entity's page. Detail order is the author's, so
+// the top ones are theirs to pick.
 const TOOLTIP_DETAILS = 3;
+const TOOLTIP_RELATED = 4;
 
 const TYPE_LABELS: Record<MentionTarget['type'], string> = {
 	character: 'character',
 	place: 'place',
 	lore_entry: 'lore'
 };
+
+const KIND_LABELS: Record<MentionTarget['type'], string> = {
+	character: 'Character',
+	place: 'Place',
+	lore_entry: 'Lore'
+};
+
+function el(tag: string, className: string, text?: string): HTMLElement {
+	const node = document.createElement(tag);
+	node.className = className;
+	if (text !== undefined) node.textContent = text;
+	return node;
+}
+
+function badge(name: string, color: string | null | undefined, size: 'sm' | 'dot'): HTMLElement {
+	const node = el('span', `badge ${size}`, entityLetter(name));
+	node.style.background = color ?? entityColor(name);
+	return node;
+}
 
 // Live underlines and hover tooltips for known entities. Lives in the scene
 // editor's mentions compartment, so pin changes can reconfigure it at
@@ -107,49 +137,60 @@ export function mentionExtensions(
 			end: to,
 			above: true,
 			create: () => {
-				const dom = document.createElement('div');
-				dom.className = 'entity-tip';
-				const name = document.createElement('div');
-				name.className = 'entity-tip-name';
-				name.textContent = entity.name;
-				dom.appendChild(name);
+				// The prototype's RPG-style entity card: badge and kind line,
+				// summary, fact chips, related chips, and the way to the full
+				// page. The pop-* classes are the ported design system's.
+				const dom = el('div', 'entity-card');
+				const head = el('div', 'pop-head');
+				head.appendChild(badge(entity.name, entity.color, 'sm'));
+				const id = el('div', 'pop-id');
+				id.appendChild(el('div', 'pop-name', entity.name));
+				const kind = entity.categoryName
+					? `${KIND_LABELS[entity.type]} · ${entity.categoryName}`
+					: KIND_LABELS[entity.type];
+				id.appendChild(el('div', 'pop-role', kind));
+				head.appendChild(id);
+				dom.appendChild(head);
 				if (entity.summaryMd) {
-					const summary = document.createElement('div');
-					summary.className = 'entity-tip-summary';
-					summary.textContent = entity.summaryMd;
-					dom.appendChild(summary);
+					dom.appendChild(el('div', 'pop-summary', entity.summaryMd));
 				}
 				const details = entity.details ?? [];
 				if (details.length > 0) {
-					const grid = document.createElement('div');
-					grid.className = 'entity-tip-details';
+					const fields = el('div', 'pop-fields');
 					for (const detail of details.slice(0, TOOLTIP_DETAILS)) {
-						const row = document.createElement('div');
-						row.className = 'entity-tip-detail';
-						const label = document.createElement('span');
-						label.className = 'entity-tip-detail-k';
-						label.textContent = detail.label;
-						const value = document.createElement('span');
-						value.className = 'entity-tip-detail-v';
-						value.textContent = detail.value;
-						row.appendChild(label);
-						row.appendChild(value);
-						grid.appendChild(row);
+						const field = el('div', 'pop-field');
+						field.appendChild(el('span', 'pop-field-k', detail.label));
+						field.appendChild(el('span', 'pop-field-v', detail.value));
+						fields.appendChild(field);
 					}
-					dom.appendChild(grid);
+					dom.appendChild(fields);
+				}
+				const related = entity.related ?? [];
+				if (related.length > 0) {
+					const chips = el('div', 'pop-related');
+					for (const other of related.slice(0, TOOLTIP_RELATED)) {
+						const chip = el('span', 'pop-chip');
+						chip.appendChild(badge(other.name, other.color, 'dot'));
+						chip.appendChild(document.createTextNode(` ${other.name}`));
+						chips.appendChild(chip);
+					}
+					dom.appendChild(chips);
+				}
+				if (options.entityHref) {
+					const open = el('a', 'pop-open', 'Open full details') as HTMLAnchorElement;
+					open.href = options.entityHref({ type: entity.type, id: entity.id });
+					dom.appendChild(open);
 				}
 				if (others.length > 0 && options.onPin) {
-					const section = document.createElement('div');
-					section.className = 'entity-tip-ambiguous';
-					const heading = document.createElement('div');
-					heading.className = 'entity-tip-ambiguous-label';
-					heading.textContent = `"${text}" also matches`;
-					section.appendChild(heading);
+					const section = el('div', 'entity-tip-ambiguous');
+					section.appendChild(el('div', 'entity-tip-ambiguous-label', `"${text}" also matches`));
 					for (const other of others) {
-						const pick = document.createElement('button');
+						const pick = el(
+							'button',
+							'entity-tip-pick',
+							`${other.name} (${TYPE_LABELS[other.type]}) - use here`
+						) as HTMLButtonElement;
 						pick.type = 'button';
-						pick.className = 'entity-tip-pick';
-						pick.textContent = `${other.name} (${TYPE_LABELS[other.type]}) - use here`;
 						pick.addEventListener('click', () => {
 							options.onPin?.(text, { type: other.type, id: other.id });
 						});

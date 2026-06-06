@@ -1,8 +1,9 @@
-import { autocompletion, type CompletionSource } from '@codemirror/autocomplete';
+import { autocompletion, type Completion, type CompletionSource } from '@codemirror/autocomplete';
 import { Decoration, EditorView, keymap, ViewPlugin, WidgetType } from '@codemirror/view';
 import { Prec, type Extension } from '@codemirror/state';
 import type { ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { MentionEntity } from './editor-mentions';
+import { entityColor, entityLetter } from './entity-color';
 
 export type AutocompleteMode = 'off' | 'popup' | 'ghost';
 
@@ -37,6 +38,29 @@ export function completionCandidates(entities: MentionEntity[], prefix: string):
 	);
 }
 
+// The popup's rows carry the entity behind each name, so a shared name
+// shows once per entity with the kind telling them apart.
+export function completionEntries(
+	entities: MentionEntity[],
+	prefix: string
+): { label: string; entity: MentionEntity }[] {
+	if (prefix.length < MIN_PREFIX) return [];
+	const lower = prefix.toLowerCase();
+	const seen = new Set<string>();
+	const entries: { label: string; entity: MentionEntity }[] = [];
+	for (const entity of entities) {
+		for (const raw of [entity.name, ...entity.aliases]) {
+			const name = raw.trim();
+			if (name.length <= prefix.length || !name.toLowerCase().startsWith(lower)) continue;
+			const key = `${entity.id}\n${name.toLowerCase()}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			entries.push({ label: name, entity });
+		}
+	}
+	return entries.sort((a, b) => a.label.localeCompare(b.label));
+}
+
 // The ghost-text match: the longest tail of the text before the cursor
 // that starts at a word boundary and matches exactly one name. Ambiguity
 // means no ghost at all; the popup mode is the place for choices.
@@ -62,21 +86,86 @@ export function ghostMatch(
 	return null;
 }
 
+const POPUP_KINDS: Record<MentionEntity['type'], string> = {
+	character: 'character',
+	place: 'place',
+	lore_entry: 'lore'
+};
+
 function popupExtension(entities: MentionEntity[]): Extension {
+	// The badge renderer gets only the completion back, so the entity rides
+	// alongside in a lookup.
+	const byCompletion = new WeakMap<Completion, MentionEntity>();
 	const source: CompletionSource = (context) => {
 		const word = context.matchBefore(/[\p{L}\p{N}_]+/u);
 		if (!word) return null;
 		const prefix = context.state.sliceDoc(word.from, word.to);
 		if (prefix.length < MIN_PREFIX && !context.explicit) return null;
-		const options = completionCandidates(entities, prefix).map((label) => ({
-			label,
-			type: 'text' as const
-		}));
+		const options = completionEntries(entities, prefix).map(({ label, entity }) => {
+			const completion: Completion = {
+				label,
+				type: 'text',
+				detail: POPUP_KINDS[entity.type]
+			};
+			byCompletion.set(completion, entity);
+			return completion;
+		});
 		if (options.length === 0) return null;
 		return { from: word.from, options, validFor: /^[\p{L}\p{N}_]*$/u };
 	};
-	return autocompletion({ override: [source], icons: false });
+	return [
+		autocompletion({
+			override: [source],
+			icons: false,
+			tooltipClass: () => 'ac-popup',
+			// The coloured badge in front of each name, like the design's.
+			addToOptions: [
+				{
+					position: 10,
+					render: (completion) => {
+						const entity = byCompletion.get(completion);
+						if (!entity) return null;
+						const badge = document.createElement('span');
+						badge.className = 'ac-badge';
+						badge.textContent = entityLetter(entity.name);
+						badge.style.background = entity.color ?? entityColor(entity.name);
+						return badge;
+					}
+				}
+			]
+		}),
+		popupFooter
+	];
 }
+
+// The design's key-hint footer. CodeMirror owns the tooltip element, so a
+// plugin tacks the footer on once the popup is in the DOM.
+const popupFooter = ViewPlugin.fromClass(
+	class {
+		constructor(readonly view: EditorView) {}
+		update() {
+			requestAnimationFrame(() => {
+				const tooltip = this.view.dom.querySelector('.cm-tooltip-autocomplete.ac-popup');
+				if (!tooltip || tooltip.querySelector('.ac-foot')) return;
+				const foot = document.createElement('div');
+				foot.className = 'ac-foot';
+				const hint = (key: string, label: string) => {
+					const wrap = document.createElement('span');
+					const kbd = document.createElement('span');
+					kbd.className = 'ac-key';
+					kbd.textContent = key;
+					wrap.appendChild(kbd);
+					wrap.appendChild(document.createTextNode(label));
+					return wrap;
+				};
+				foot.appendChild(hint('↑↓', ' navigate'));
+				foot.appendChild(hint('⏎', ' select'));
+				foot.appendChild(hint('esc', ''));
+				tooltip.appendChild(foot);
+			});
+		}
+	}
+);
 
 class GhostWidget extends WidgetType {
 	constructor(readonly text: string) {

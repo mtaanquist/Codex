@@ -16,10 +16,10 @@ Right-click a scene in the sidebar and choose "Delete scene". A deleted scene go
 
 Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I (Cmd on a Mac) do bold and italic from the keyboard.
 
-There are two ways to see your prose while you write, chosen under Editor behaviour on your account page:
+There are two ways to see your prose while you write, chosen under Editor behaviour on your account page (and per story in its settings):
 
+- **Rich text**, the default, hides the marks except on the line you are editing, so the page reads like formatted text.
 - **Markdown** keeps the formatting marks visible as you type.
-- **Rich text** hides the marks except on the line you are editing, so the page reads like formatted text.
 
 Your work is stored as markdown in both modes; switching is purely about what you see while writing.
 

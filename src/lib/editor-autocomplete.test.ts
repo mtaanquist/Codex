@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { completionCandidates, ghostMatch } from './editor-autocomplete';
+import { completionCandidates, completionEntries, ghostMatch } from './editor-autocomplete';
 import type { MentionEntity } from './editor-mentions';
 
 const entities: MentionEntity[] = [
@@ -41,6 +41,36 @@ describe('completionCandidates', () => {
 			{ id: 'b', type: 'character' as const, name: 'asha', aliases: [], summaryMd: null }
 		];
 		expect(completionCandidates(twins, 'as')).toEqual(['Asha']);
+	});
+});
+
+describe('completionEntries', () => {
+	it('carries the entity behind each name', () => {
+		const entries = completionEntries(entities, 'al');
+		expect(entries.map((entry) => [entry.label, entry.entity.id])).toEqual([
+			['Alice Vane', '1'],
+			['Allie', '1']
+		]);
+	});
+
+	it('offers a shared name once per entity, not once overall', () => {
+		const twins: MentionEntity[] = [
+			{ id: 'a', type: 'character' as const, name: 'Ashreach', aliases: [], summaryMd: null },
+			{ id: 'b', type: 'lore_entry' as const, name: 'Ashreach', aliases: [], summaryMd: null }
+		];
+		expect(completionEntries(twins, 'as').map((entry) => entry.entity.id)).toEqual(['a', 'b']);
+	});
+
+	it('deduplicates within one entity when an alias repeats the name', () => {
+		const echo: MentionEntity[] = [
+			{ id: 'a', type: 'character' as const, name: 'Bram', aliases: ['bram '], summaryMd: null }
+		];
+		expect(completionEntries(echo, 'br')).toHaveLength(1);
+	});
+
+	it('requires two characters and drops fully typed names', () => {
+		expect(completionEntries(entities, 'A')).toEqual([]);
+		expect(completionEntries(entities, 'Bram')).toEqual([]);
 	});
 });
 

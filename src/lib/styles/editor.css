@@ -28,51 +28,21 @@
 	background: var(--accent-soft) !important;
 }
 
-/* Entity hover tooltip (CodeMirror hoverTooltip). */
-.cm-tooltip:has(.entity-tip) {
+/* Entity hover card (CodeMirror hoverTooltip): the design's entity
+   popover, positioned by CodeMirror. The pop-* internals live in
+   theme.css with the rest of the design system. */
+.cm-tooltip:has(.entity-card) {
 	background: var(--bg-elevated);
-	border: 1px solid var(--border);
-	border-radius: var(--radius, 9px);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-lg, 14px);
 	box-shadow: var(--shadow);
-	padding: 8px 11px;
-	max-width: 280px;
-}
-.entity-tip-name {
+	padding: 15px 16px 13px;
+	width: 320px;
 	font-family: var(--font-ui);
-	font-size: 13px;
-	font-weight: 650;
+	animation: popIn 0.13s ease;
 }
-.entity-tip-summary {
-	font-family: var(--font-ui);
-	color: var(--text-muted);
-	font-size: 12.5px;
-	line-height: 1.5;
-	margin-top: 3px;
-}
-.entity-tip-details {
-	margin-top: 6px;
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-.entity-tip-detail {
-	display: flex;
-	gap: 8px;
-	font-family: var(--font-ui);
-	font-size: 12px;
-	line-height: 1.5;
-}
-.entity-tip-detail-k {
-	flex: 0 0 auto;
-	font-size: 10.5px;
-	letter-spacing: 0.07em;
-	text-transform: uppercase;
-	color: var(--text-faint);
-	padding-top: 1px;
-}
-.entity-tip-detail-v {
-	color: var(--text-muted);
-	min-width: 0;
+.entity-card .pop-open {
+	text-decoration: none;
 }
 
 /* A mention whose text belongs to more than one entity: dotted underline,
@@ -120,17 +90,52 @@
 	color: var(--text-faint);
 	pointer-events: none;
 }
-.cm-tooltip.cm-tooltip-autocomplete {
+/* The completion popup, dressed as the design's ac-menu: badge, name,
+   kind, and a key-hint footer. CodeMirror renders and positions the
+   tooltip; the ac-badge/ac-foot/ac-key internals live in theme.css. */
+.cm-tooltip.cm-tooltip-autocomplete.ac-popup {
 	background: var(--bg-elevated);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-sm, 6px);
+	border: 1px solid var(--border-strong);
+	border-radius: 11px;
 	box-shadow: var(--shadow);
 	font-family: var(--font-ui);
-	font-size: 13px;
+	width: 240px;
+	padding: 5px;
+	animation: popIn 0.1s ease;
 }
-.cm-tooltip-autocomplete ul li[aria-selected] {
+.ac-popup ul li {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 7px 8px;
+	border-radius: 7px;
+	color: var(--text);
+}
+.ac-popup ul li[aria-selected] {
 	background: var(--accent-soft);
 	color: var(--text);
+}
+.ac-popup .cm-completionLabel {
+	flex: 1;
+	font-size: 13.5px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ac-popup .cm-completionDetail {
+	font-size: 10.5px;
+	color: var(--text-faint);
+	letter-spacing: 0.04em;
+	flex: none;
+	font-style: normal;
+	margin: 0;
+}
+.ac-popup ul li[aria-selected] .cm-completionDetail {
+	color: var(--text-muted);
+}
+.ac-popup .cm-completionMatchedText {
+	text-decoration: none;
+	font-weight: 650;
 }
 
 /* The find-and-replace panel (Ctrl+F). CodeMirror renders a bare form; this
