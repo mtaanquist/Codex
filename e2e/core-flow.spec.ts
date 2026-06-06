@@ -22,6 +22,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);

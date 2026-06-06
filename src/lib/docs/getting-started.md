@@ -8,8 +8,8 @@ Codex organises your writing into three layers.
 
 ## Your first story
 
-1. On the library page, type a name under "New universe" and create it. Every new universe starts with one lore category called "Lore"; you can rename it later.
-2. Open the universe and create a story inside it.
+1. On the library page, press "New universe", give it a name, and create it. Every new universe starts with one lore category called "Lore"; you can rename it later.
+2. Back on the library, use the "New story in this universe" card under the universe to create a story.
 3. Open the story and add a scene. The scene editor is where your prose goes.
 
 That is enough to start writing. When you are ready, the planning tools help you keep track of who and what is in your world, and publishing turns a finished story into a public reading page.

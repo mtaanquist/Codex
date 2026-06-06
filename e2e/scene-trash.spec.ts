@@ -9,6 +9,7 @@ test('scene trash and chapter tools', async ({ page }) => {
 	await page.goto('/');
 
 	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Trashfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await page.getByLabel('New story').fill(`Bins ${stamp}`);

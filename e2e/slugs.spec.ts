@@ -7,6 +7,7 @@ test('slugs: created things get readable addresses, editable in settings', async
 
 	// The universe lands on a slugged address derived from its name.
 	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Slugfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page).toHaveURL(`/universes/slugfall-${stamp}`);
