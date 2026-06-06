@@ -622,6 +622,113 @@
 	border-radius: 99px;
 	flex: none;
 }
+/* Chapter management and the scene trash: hover tools on chapter heads and
+   scene rows, an inline rename field, and the deleted-scenes list. */
+.chapter-head {
+	display: flex;
+	align-items: center;
+}
+.chapter-head .chapter-row {
+	flex: 1;
+	min-width: 0;
+}
+.chapter-row.as-label {
+	cursor: default;
+}
+.chapter-tools {
+	display: none;
+	align-items: center;
+	gap: 1px;
+	flex: none;
+	padding-right: 4px;
+}
+.chapter-head:hover .chapter-tools,
+.chapter-head:focus-within .chapter-tools {
+	display: flex;
+}
+.tool-btn {
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: var(--text-faint);
+	cursor: pointer;
+	font-size: 11px;
+}
+.tool-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text);
+}
+.tool-btn.danger:hover {
+	color: var(--danger);
+}
+.tool-btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.tool-btn.turn-up svg {
+	transform: rotate(-90deg);
+}
+.tool-btn.turn-down svg {
+	transform: rotate(90deg);
+}
+.chapter-rename {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+}
+.chapter-rename-input {
+	flex: 1;
+	min-width: 0;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 4px 8px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+}
+.chapter-rename .tool-btn {
+	width: auto;
+	padding: 0 8px;
+}
+.scene-line {
+	display: flex;
+	align-items: center;
+}
+.scene-line .scene-row {
+	flex: 1;
+	min-width: 0;
+}
+.scene-del {
+	display: none;
+	flex: none;
+}
+.scene-line:hover .scene-del,
+.scene-line:focus-within .scene-del {
+	display: block;
+}
+.trash .chapter-name {
+	color: var(--text-muted);
+}
+.trash-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 4px 4px 10px;
+	border-radius: 8px;
+}
+.trash-row:hover {
+	background: var(--bg-hover);
+}
+.trash-row .scene-name {
+	color: var(--text-muted);
+}
+
 /* Status dots keyed to the schema's scene statuses (the prototype used a
    three-state set; the data model has four). */
 .st-outline {

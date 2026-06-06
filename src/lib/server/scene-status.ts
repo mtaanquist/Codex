@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes, stories } from './db/schema';
 import type { SceneStatus } from '../scene-status';
@@ -14,7 +14,7 @@ export async function setSceneStatus(
 		.select({ id: scenes.id })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId)));
+		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
 	if (!row) return false;
 	await db.update(scenes).set({ status }).where(eq(scenes.id, row.id));
 	return true;

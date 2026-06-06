@@ -1,6 +1,6 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	assets,
@@ -107,7 +107,7 @@ export async function gatherStory(db: Database, story: ExportStory): Promise<Sto
 			bodyMd: scenes.bodyMd
 		})
 		.from(scenes)
-		.where(eq(scenes.storyId, story.id))
+		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
 	return { chapters: chapterList, scenes: sceneList };
 }

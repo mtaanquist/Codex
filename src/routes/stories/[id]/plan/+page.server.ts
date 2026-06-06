@@ -162,7 +162,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			chapterId: scenes.chapterId
 		})
 		.from(scenes)
-		.where(eq(scenes.storyId, story.id))
+		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
 	// Open TODOs per scene, shown on the board cards.
 	const todoRows = await db
@@ -172,6 +172,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		.where(
 			and(
 				eq(scenes.storyId, story.id),
+				isNull(scenes.deletedAt),
 				eq(sceneMarkers.kind, 'todo'),
 				isNull(sceneMarkers.resolvedAt)
 			)
