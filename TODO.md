@@ -26,6 +26,19 @@ suggestion-accept row lock, export path dedup, entity save ordering,
 shared mention contexts, the parallel editor load, and single sources
 of truth for queue names, enums, and helpers.
 
+A second full-codebase review (2026-06-07, same 7-finder + verify
+method) found 18 issues, filed as #202-#218 with severity labels and
+all fixed across five PRs (#219-#223): the import zip-bomb caps and the
+stale image-paste position (#219); the scanner-consumable reviewer
+opt-out, the unrevoked email-change token, and the accept revision left
+outside its transaction (#220); the missing per-IP login limit and the
+unset ADDRESS_HEADER behind the proxy (#221); the palette-search and
+page-load query batching, entity-search indexes (migration 0042), the
+cross-universe story-note leak, and the digest re-send on retry (#222);
+and the cleanup pass - createCategory colour validation, dead
+listPendingUsers, shared entity-save guards, a shared action-error
+helper, and a single UUID_BODY fragment (#223). Not yet released.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings
