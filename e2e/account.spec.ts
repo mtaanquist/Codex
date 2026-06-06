@@ -1,11 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('account settings: rename and see the current session', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	await page.getByLabel('Account menu').click();
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();

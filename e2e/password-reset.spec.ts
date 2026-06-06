@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// These journeys start signed out; skip the shared session.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 // The reset link carries a token only ever stored hashed, so an end-to-end
 // click-through cannot reconstruct it; the token logic is covered by the
 // integration tests. These cover the two user-visible paths that need no token.

@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// These journeys start signed out; skip the shared session.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 // The full passkey journey against a CDP virtual authenticator: register a
 // passkey from the account page, sign out, sign back in with it (no email or
 // password typed), then remove it so repeated runs start clean. Chromium

@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// These journeys start signed out; skip the shared session.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 // The public face: signed-out visitors get the landing page, its calls to
 // action lead into the styled auth screens, and signing in lands in the
 // library as before.
