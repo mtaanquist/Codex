@@ -26,6 +26,14 @@ export type ImportPlan = {
 
 export class StoryZipError extends Error {}
 
+// A zip's central directory reports each entry's uncompressed size before we
+// spend memory decompressing it, so a malicious archive (a small file that
+// expands to gigabytes, or one with millions of entries) is rejected up front
+// rather than after it has exhausted the process.
+const MAX_ENTRIES = 5000;
+const MAX_ENTRY_BYTES = 50 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
+
 type FrontMatter = Record<string, string | string[]>;
 
 // The exporter writes a constrained front matter subset: JSON-quoted scalar
@@ -104,9 +112,26 @@ export function rewriteBundledAssetLinks(
 
 export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	let entries: Record<string, Uint8Array>;
+	let count = 0;
+	let total = 0;
 	try {
-		entries = unzipSync(bytes);
-	} catch {
+		entries = unzipSync(bytes, {
+			filter(file) {
+				if (++count > MAX_ENTRIES) {
+					throw new StoryZipError('This archive has too many files to import.');
+				}
+				if (file.originalSize > MAX_ENTRY_BYTES) {
+					throw new StoryZipError('This archive contains a file that is too large to import.');
+				}
+				total += file.originalSize;
+				if (total > MAX_TOTAL_BYTES) {
+					throw new StoryZipError('This archive is too large to import once unpacked.');
+				}
+				return true;
+			}
+		});
+	} catch (err) {
+		if (err instanceof StoryZipError) throw err;
 		throw new StoryZipError('This file is not a zip archive.');
 	}
 
