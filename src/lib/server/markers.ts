@@ -9,7 +9,7 @@ async function ownedScene(db: Database, sceneId: string, userId: string) {
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd, storyId: scenes.storyId })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId)));
+		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
 	return row ?? null;
 }
 
@@ -155,7 +155,7 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 	const sceneRows = await db
 		.select({ id: scenes.id, title: scenes.title, bodyMd: scenes.bodyMd })
 		.from(scenes)
-		.where(eq(scenes.storyId, storyId))
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
 	const markerRows = await db
 		.select({

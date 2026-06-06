@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -17,6 +17,16 @@ import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisi
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 import { listMentionPins } from '$lib/server/mention-pins';
 import { ownedStory } from '$lib/server/story-access';
+import {
+	deleteChapter,
+	destroyScene,
+	listTrashedScenes,
+	moveChapter,
+	renameChapter,
+	restoreScene,
+	trashScene
+} from '$lib/server/scene-lifecycle';
+import { queueSceneMentions } from '$lib/server/jobs';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
@@ -36,7 +46,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			globalPosition: scenes.globalPosition
 		})
 		.from(scenes)
-		.where(eq(scenes.storyId, story.id))
+		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
 
 	// The story view renders every scene as one continuous document.
@@ -51,7 +61,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				bodyMd: scenes.bodyMd
 			})
 			.from(scenes)
-			.where(eq(scenes.storyId, story.id))
+			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 			.orderBy(asc(scenes.globalPosition));
 	}
 
@@ -61,7 +71,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		const [row] = await db
 			.select()
 			.from(scenes)
-			.where(and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id)));
+			.where(
+				and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id), isNull(scenes.deletedAt))
+			);
 		selectedScene = row ?? null;
 	}
 
@@ -205,7 +217,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// The user's preferences with this story's overrides applied.
 	const preferences = await storyPreferences(db, locals.user!.id, story.id);
 
+	const trashedScenes = await listTrashedScenes(db, story.id);
+
 	return {
+		trashedScenes,
 		story,
 		universe,
 		user: locals.user!,
@@ -266,5 +281,68 @@ export const actions: Actions = {
 			})
 			.returning({ id: scenes.id });
 		redirect(303, `/stories/${story.slug}?scene=${scene.id}`);
+	},
+	renameChapter: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const chapterId = String(data.get('chapterId') ?? '');
+		const ok = await renameChapter(db, locals.user!.id, chapterId, String(data.get('title') ?? ''));
+		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
+		// Keep the open scene open across the reload.
+		redirect(303, sceneReturnPath(story.slug, data));
+	},
+	moveChapter: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const chapterId = String(data.get('chapterId') ?? '');
+		const direction = data.get('direction') === 'up' ? ('up' as const) : ('down' as const);
+		const ok = await moveChapter(db, locals.user!.id, chapterId, direction);
+		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
+		redirect(303, sceneReturnPath(story.slug, data));
+	},
+	deleteChapter: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const chapterId = String(data.get('chapterId') ?? '');
+		const ok = await deleteChapter(db, locals.user!.id, chapterId);
+		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
+		redirect(303, sceneReturnPath(story.slug, data));
+	},
+	deleteScene: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const sceneId = String(data.get('sceneId') ?? '');
+		const ok = await trashScene(db, locals.user!.id, sceneId);
+		if (!ok) return fail(404, { message: 'That scene does not exist.' });
+		// Deleting the open scene closes it; deleting another keeps it open.
+		const open = String(data.get('openSceneId') ?? '');
+		redirect(
+			303,
+			open && open !== sceneId ? `/stories/${story.slug}?scene=${open}` : `/stories/${story.slug}`
+		);
+	},
+	restoreScene: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const sceneId = String(data.get('sceneId') ?? '');
+		const ok = await restoreScene(db, locals.user!.id, sceneId);
+		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
+		await queueSceneMentions(sceneId);
+		redirect(303, `/stories/${story.slug}?scene=${sceneId}`);
+	},
+	destroyScene: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const sceneId = String(data.get('sceneId') ?? '');
+		const ok = await destroyScene(db, locals.user!.id, sceneId);
+		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
+		redirect(303, sceneReturnPath(story.slug, data));
 	}
 };
+
+// Where a sidebar action lands after the reload: back on the open scene when
+// the form carried one, the story page otherwise.
+function sceneReturnPath(slug: string, data: FormData): string {
+	const open = String(data.get('openSceneId') ?? '');
+	return open ? `/stories/${slug}?scene=${open}` : `/stories/${slug}`;
+}

@@ -4,7 +4,13 @@ The editor is where you draft scenes. It saves on its own as you type, so there 
 
 ## Scenes and chapters
 
-A scene holds one stretch of prose. Chapters group scenes in order. You can move a scene between chapters, and a scene can sit on its own before it has a chapter home.
+A scene holds one stretch of prose. Chapters group scenes in order. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
+
+Point at a chapter in the sidebar and small buttons appear: rename it, move it up or down, or delete it. Deleting a chapter keeps its scenes; they move to the unfiled list.
+
+## Deleting scenes
+
+Point at a scene in the sidebar and a delete button appears. A deleted scene goes to "Deleted scenes" at the bottom of the sidebar, where you can restore it or delete it forever. Restoring puts the scene back at the end of its chapter, or in the unfiled list if the chapter is gone. While a scene sits in the trash it does not count anywhere: not in word counts, search, exports, or the story view.
 
 ## Formatting
 

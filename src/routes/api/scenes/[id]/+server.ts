@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { scenes, stories } from '$lib/server/db/schema';
@@ -16,7 +16,9 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		.select({ id: scenes.id })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, params.id), eq(stories.ownerId, locals.user!.id)));
+		.where(
+			and(eq(scenes.id, params.id), eq(stories.ownerId, locals.user!.id), isNull(scenes.deletedAt))
+		);
 	if (!row) error(404, 'Scene not found');
 
 	const payload = (await request.json()) as {

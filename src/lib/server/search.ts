@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { characters, loreEntries, places, scenes, stories, universes } from './db/schema';
 
@@ -58,7 +58,7 @@ export async function searchAll(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(stories.ownerId, userId), ilike(scenes.title, like)))
+		.where(and(eq(stories.ownerId, userId), ilike(scenes.title, like), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.title))
 		.limit(PER_TYPE);
 

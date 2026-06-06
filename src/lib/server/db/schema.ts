@@ -224,7 +224,10 @@ export const scenes = pgTable(
 		// When the mention index was last rebuilt for this scene. Null means never.
 		// The reconcile sweep re-indexes any scene whose body or whose universe's
 		// entities changed after this, so a dropped rebuild job self-heals.
-		mentionsIndexedAt: timestamp('mentions_indexed_at', { withTimezone: true })
+		mentionsIndexedAt: timestamp('mentions_indexed_at', { withTimezone: true }),
+		// Soft delete: a deleted scene sits in the story's trash until restored
+		// or deleted for good. Null means live; every live query filters on it.
+		deletedAt: timestamp('deleted_at', { withTimezone: true })
 	},
 	(table) => [index('scenes_characters_present_gin').using('gin', table.charactersPresent)]
 );
