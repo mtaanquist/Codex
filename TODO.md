@@ -299,6 +299,18 @@ their own releases.
       JSON export stays in Phase 9. Merged 2026-06-06 (#156), shipped as
       v2.22.0.
 
+- [x] Session pane + plan flow fixes (author feedback, 2026-06-06): the
+      Insights segment navigated away while its siblings switch views in
+      place, so it left the left pane; the right column gained a Session
+      tab (story write, story plan, universe plan) with today's words
+      (story-scoped on story screens), the week's writing days, the
+      streak, and an "All insights" link - the prototype's Session panel
+      on real data, fetched lazily through a new session endpoint. The
+      story plan gained a pinned "Scene board" row to get the board back
+      after opening an entity, and folded "In the universe" lists showing
+      non-member characters and places. Merged 2026-06-06 (#160), shipped
+      as v2.23.0.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
