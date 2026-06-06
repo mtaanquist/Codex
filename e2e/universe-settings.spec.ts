@@ -66,7 +66,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	expect(archive.headers()['content-type']).toBe('application/zip');
 
 	// The trash round trip: delete, restore from the library, delete forever.
-	await page.getByRole('button', { name: 'Export and deletion' }).click();
+	await page.getByRole('button', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
 	await expect(page).toHaveURL('/');
 	const trashRow = page.locator('.trash-uni', { hasText: name });
@@ -78,7 +78,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 
 	// Gone for good.
 	await page.goto(`/universes/settle-${stamp}`);
-	await page.getByRole('button', { name: 'Export and deletion' }).click();
+	await page.getByRole('button', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
 	await expect(page).toHaveURL('/');
 	await page

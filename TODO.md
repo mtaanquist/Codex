@@ -8,13 +8,22 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 The work queue as of 2026-06-06 (v2.27.0). Everything below this section
 is the shipped record, newest sections last.
 
-- [ ] 3. Markdown import (capability review, 2026-06-06). Every export
-     path exists and no import path does; a writer cannot migrate a
-     novel in. Start with round-tripping our own story export ZIP
-     (front matter + chapter folders + scene files) into a new story;
-     that format is already defined and tested from the export side.
-     Bring a proposal for name collisions with existing entities and
-     chapters before building.
+- [ ] 3. Markdown import (capability review, 2026-06-06; collision
+     design agreed 2026-06-06). Imports our own story export ZIP into a
+     chosen universe, always as a new story, from universe settings
+     next to Export. Always two steps: upload, preview (counts plus
+     every collision and its resolution), confirm. Collision rules:
+     duplicate story titles allowed (slug auto-suffixes, preview says
+     so); chapters/scenes cannot collide (fresh story, order from NN-
+     prefixes, bad statuses fall back with a preview line); notes match
+     entities by trimmed case-insensitive name + kind - one match
+     attaches and declares membership, no match creates a minimal
+     entity (author's call: never drop authored words; preview lists
+     creations), ambiguous names skip the note with a flag; aliases
+     never match. Assets re-upload as new ids; unconfigured storage
+     imports with links untouched and a warning. Re-import makes a
+     sibling story, never a merge. Out of scope: universe/account
+     archive import, foreign markdown, import into existing stories.
 - [x] 4. Export completeness (capability review, 2026-06-06). Story
      notes ride in the story, universe, and account exports as per-story
      notes/ folders; relationships as a relationships.md per universe;

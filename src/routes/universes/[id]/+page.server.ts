@@ -8,6 +8,24 @@ import { uniqueSlug } from '$lib/server/slugs';
 import { universeTimeline, universeRevisionCount } from '$lib/server/revisions';
 import { listCategories, saveCategories, universeContents } from '$lib/server/categories';
 import { trashUniverse, UNIVERSE_TRASH_DAYS } from '$lib/server/universe-lifecycle';
+import { parseStoryZip, StoryZipError, type ImportPlan } from '$lib/import-markdown';
+import { previewImport, runImport } from '$lib/server/import-story';
+
+// The uploaded story archive, parsed, or a fail() the action returns as-is.
+async function planFromUpload(data: FormData) {
+	const file = data.get('archive');
+	if (!(file instanceof File) || file.size === 0) {
+		return { fail: fail(400, { action: 'import' as const, message: 'Choose a zip file first.' }) };
+	}
+	try {
+		return { plan: parseStoryZip(new Uint8Array(await file.arrayBuffer())) };
+	} catch (err) {
+		if (err instanceof StoryZipError) {
+			return { fail: fail(400, { action: 'import' as const, message: err.message }) };
+		}
+		throw err;
+	}
+}
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -88,5 +106,23 @@ export const actions: Actions = {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		await trashUniverse(db, locals.user!.id, universe.id);
 		redirect(303, '/');
+	},
+	previewImport: async ({ request, params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		const upload = await planFromUpload(await request.formData());
+		if (upload.fail) return upload.fail;
+		return {
+			action: 'import' as const,
+			preview: await previewImport(db, universe, upload.plan as ImportPlan)
+		};
+	},
+	runImport: async ({ request, params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		const upload = await planFromUpload(await request.formData());
+		if (upload.fail) return upload.fail;
+		return {
+			action: 'import' as const,
+			imported: await runImport(db, universe, upload.plan as ImportPlan)
+		};
 	}
 };
