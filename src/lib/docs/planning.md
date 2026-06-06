@@ -8,6 +8,10 @@ Create an entry and give it a name and a short summary. The summary is what show
 
 Lore entries are grouped into categories you define, such as "Factions" or "Magic". A category's colour is the colour its entries are underlined in. Manage categories in the universe settings: rename them, pick their colours, reorder them, and add or delete them. A category can only be deleted once nothing uses it.
 
+## Renaming
+
+Renaming an entry does not rewrite your prose by itself: the old name simply stops being recognised as a mention. After a rename, the entry's page offers to replace the old name across your scenes, telling you how many places it would touch. The replacement matches the exact name as a whole word, leaves aliases alone, and records a checkpoint in each changed scene's History so you can undo it.
+
 ## Aliases
 
 Give a character their nicknames and variants as aliases. Type one and press Enter to add it; click the cross on an alias to remove it. The editor uses them to detect mentions, so "the Captain" can point at the same person as her name. Lore entries take keywords the same way.

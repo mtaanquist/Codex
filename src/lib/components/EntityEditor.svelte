@@ -38,6 +38,7 @@
 		storyNotesMd,
 		membership = null,
 		entityHref,
+		universeRef,
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -63,6 +64,9 @@
 		membership?: { member: boolean; mentioned: boolean } | null;
 		// Builds the Plan link for a related entity, scoped to story or universe.
 		entityHref?: (entityId: string) => string;
+		// When set, a settled rename offers to replace the old name across the
+		// universe's prose (the universe slug for the API path).
+		universeRef?: string;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -163,6 +167,56 @@
 		if (response.ok) await invalidateAll();
 	}
 
+	// Rename propagation: once a rename settles (a save lands and no edit
+	// followed), offer to sweep the old name out of the universe's prose.
+	// The baseline is the name this editor opened with, or the last one a
+	// sweep or dismissal accepted.
+	// svelte-ignore state_referenced_locally
+	let renameFrom = $state(entity.name);
+	let renameOffer = $state<{ from: string; scenes: number; occurrences: number } | null>(null);
+	let renameBusy = $state(false);
+
+	async function checkRename() {
+		const from = renameFrom;
+		const to = name.trim();
+		if (!universeRef || !to || to === from) return;
+		const response = await fetch(
+			`/api/universes/${universeRef}/prose-replace?q=${encodeURIComponent(from)}`
+		);
+		if (!response.ok) return;
+		const counts = (await response.json()) as { scenes: number; occurrences: number };
+		if (counts.occurrences === 0) {
+			// Nothing to sweep; the new name becomes the baseline quietly.
+			renameFrom = to;
+			renameOffer = null;
+			return;
+		}
+		renameOffer = { from, ...counts };
+	}
+
+	async function applyRename() {
+		if (!renameOffer || renameBusy) return;
+		renameBusy = true;
+		try {
+			const response = await fetch(`/api/universes/${universeRef}/prose-replace`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ find: renameOffer.from, replace: name.trim() })
+			});
+			if (!response.ok) return;
+			renameFrom = name.trim();
+			renameOffer = null;
+			await invalidateAll();
+		} finally {
+			renameBusy = false;
+		}
+	}
+
+	function dismissRename() {
+		renameFrom = name.trim();
+		renameOffer = null;
+	}
+
 	async function save() {
 		if (!view) return;
 		dirty = false;
@@ -194,6 +248,8 @@
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
 			onStatus(dirty ? 'saving' : 'saved');
+			// Only a settled rename makes the offer; mid-typing saves skip it.
+			if (!dirty) void checkRename();
 		} catch {
 			dirty = true;
 			onStatus('error');
@@ -249,6 +305,22 @@
 			oninput={scheduleSave}
 		/>
 	</div>
+
+	{#if renameOffer}
+		<div class="rename-offer" role="status">
+			<span class="rename-text">
+				Renamed from "{renameOffer.from}". Replace it in the text? {renameOffer.occurrences}
+				place{renameOffer.occurrences === 1 ? '' : 's'} in {renameOffer.scenes}
+				scene{renameOffer.scenes === 1 ? '' : 's'}.
+			</span>
+			<span class="rename-actions">
+				<button class="btn btn-primary" type="button" disabled={renameBusy} onclick={applyRename}>
+					Replace
+				</button>
+				<button class="btn btn-secondary" type="button" onclick={dismissRename}>Dismiss</button>
+			</span>
+		</div>
+	{/if}
 
 	{#if kind === 'character'}
 		<div class="section-label">Aliases</div>
@@ -480,6 +552,28 @@
 </div>
 
 <style>
+	.rename-offer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+		margin: 10px 0 0;
+		padding: 10px 12px;
+		border: 1px solid var(--accent-line, var(--accent));
+		border-radius: var(--radius, 9px);
+		background: var(--accent-soft);
+		font-size: 13px;
+	}
+	.rename-text {
+		flex: 1;
+		min-width: 200px;
+	}
+	.rename-actions {
+		display: inline-flex;
+		gap: 8px;
+		flex: none;
+	}
 	.detail-title-input {
 		flex: 1;
 		min-width: 0;
