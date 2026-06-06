@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { clearMentionPin, setMentionPin } from '$lib/server/mention-pins';
@@ -41,7 +42,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		payload.targetId
 	);
 	if (!result.ok) {
-		error(result.reason.includes('not found') ? 404 : 400, result.reason);
+		throwActionError(result);
 	}
 	await requeue(params.id);
 	return json({ ok: true });

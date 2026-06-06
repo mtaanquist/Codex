@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { saveCharacter } from '$lib/server/characters';
@@ -40,7 +41,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		storyNotesMd: typeof payload.storyNotesMd === 'string' ? payload.storyNotesMd : undefined
 	});
 	if (!result.ok) {
-		error(result.reason.includes('not found') ? 404 : 400, result.reason);
+		throwActionError(result);
 	}
 	// Name or alias changes can add or remove mentions anywhere in the universe.
 	if (result.mentionsAffected) {

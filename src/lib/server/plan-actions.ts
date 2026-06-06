@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from './db';
+import { CATEGORY_PALETTE } from '$lib/entity-color';
 import {
 	characters,
 	characterStoryMemberships,
@@ -102,6 +103,9 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 			const color = String(data.get('color') ?? '') || null;
 			if (!name) {
 				return fail(400, { kind: 'category', message: 'Give the category a name.' });
+			}
+			if (color !== null && !CATEGORY_PALETTE.includes(color)) {
+				return fail(400, { kind: 'category', message: 'Pick a colour from the list.' });
 			}
 			await db.insert(entityCategories).values({
 				universeId: scope.universeId,

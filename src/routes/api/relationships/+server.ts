@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { createRelationship } from '$lib/server/relationships';
@@ -30,7 +31,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		notesMd: typeof payload.notesMd === 'string' ? payload.notesMd : undefined
 	});
 	if (!result.ok) {
-		error(result.reason.includes('not found') ? 404 : 400, result.reason);
+		throwActionError(result);
 	}
 	return json({ id: result.id }, { status: 201 });
 };

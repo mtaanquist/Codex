@@ -1,5 +1,6 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { isSceneStatus, type SceneStatus } from './scene-status';
+import { UUID_BODY } from './slug';
 
 // Parses our own story export zip back into a plan the importer can write:
 // story metadata, chapters and scenes in NN- prefix order, story notes, and
@@ -95,11 +96,10 @@ function orderOf(name: string): number {
 	return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
-const ASSET_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9]+$/;
+const ASSET_FILE = new RegExp(`^(${UUID_BODY})\\.[A-Za-z0-9]+$`);
 // A bundled asset link as the exporter writes it: ../ steps up to a relative
 // assets/ folder, the original asset id as the file name.
-const BUNDLED_ASSET_LINK =
-	/(?:\.\.\/)*assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9]+/g;
+const BUNDLED_ASSET_LINK = new RegExp(`(?:\\.\\./)*assets/(${UUID_BODY})\\.[A-Za-z0-9]+`, 'g');
 
 // Rewrites bundled asset links through the importer's old-id -> new-path map;
 // a null mapping leaves the link untouched.

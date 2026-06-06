@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { authTokens, stories, universes, users, userTotp } from './db/schema.ts';
 import { hashPassword } from './password.ts';
@@ -53,30 +53,6 @@ export async function createFirstAdmin(
 		}
 		throw err;
 	}
-}
-
-export type PendingUser = {
-	id: string;
-	email: string;
-	displayName: string;
-	emailVerifiedAt: Date | null;
-	createdAt: Date;
-};
-
-// Accounts waiting on the operator: signed up but not yet approved. Verified
-// or not is surfaced so the operator can see who has confirmed their email.
-export async function listPendingUsers(db: Database): Promise<PendingUser[]> {
-	return db
-		.select({
-			id: users.id,
-			email: users.email,
-			displayName: users.displayName,
-			emailVerifiedAt: users.emailVerifiedAt,
-			createdAt: users.createdAt
-		})
-		.from(users)
-		.where(and(isNull(users.approvedAt), ne(users.role, 'admin')))
-		.orderBy(asc(users.createdAt));
 }
 
 // Approves a pending account. Scoped to still-pending non-admin rows so a

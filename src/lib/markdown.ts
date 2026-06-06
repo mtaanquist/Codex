@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it';
+import { UUID_BODY } from './slug.ts';
 
 // A paragraph containing exactly \page becomes an explicit page break:
 // styled with a forced break in print and PDF, an inert empty element
@@ -39,7 +40,7 @@ export function renderMarkdown(markdown: string, options: { xhtml?: boolean } = 
 
 // Asset references in prose look like /assets/<uuid>; exports bundle the
 // files and rewrite the links to a relative assets/ folder.
-const ASSET_REFERENCE = /\/assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
+const ASSET_REFERENCE = new RegExp(`/assets/(${UUID_BODY})`, 'g');
 
 export function findAssetReferences(markdown: string): string[] {
 	const ids = new Set<string>();
