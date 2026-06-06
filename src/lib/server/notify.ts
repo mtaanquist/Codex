@@ -3,19 +3,16 @@ import type { Database } from './auth';
 import { notifications, reviewComments, reviewers, stories, users } from './db/schema';
 import { normaliseNotifications } from './preferences';
 import { queueNotificationDigest, queueReviewerDigest } from './jobs';
-import type { NotificationItem, NotificationKind, NotificationPayload } from '$lib/notifications';
+import {
+	teaser,
+	type NotificationItem,
+	type NotificationKind,
+	type NotificationPayload
+} from '$lib/notifications';
 
 // The fan-out behind every notification: one event in, per-user rows out,
 // each stamped with the channels that user's preference matrix allows. The
 // email side rides the worker's batched digest; nothing sends from here.
-
-const DETAIL_MAX = 120;
-
-// A comment body cut down to a one-line teaser for the bell and the digest.
-export function detailSnippet(body: string): string {
-	const line = body.replace(/\s+/g, ' ').trim();
-	return line.length > DETAIL_MAX ? `${line.slice(0, DETAIL_MAX)}...` : line;
-}
 
 export async function notifyUsers(
 	db: Database,
@@ -79,7 +76,7 @@ export async function notifyReviewActivity(
 	if (!story) return;
 	await notifyUsers(db, [story.ownerId], 'review_activity', {
 		title: `${reviewerName} ${what} on "${story.title}"`,
-		detail: body ? detailSnippet(body) : undefined,
+		detail: body ? teaser(body) : undefined,
 		href: `/stories/${story.slug}/review`
 	});
 }

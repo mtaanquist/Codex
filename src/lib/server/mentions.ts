@@ -29,9 +29,68 @@ async function storyMemberIds(db: Database, storyId: string): Promise<Set<string
 	return new Set([...characterRows, ...placeRows].map((row) => row.id));
 }
 
+// Everything a rebuild needs that is scene-independent: the universe's
+// detection targets, plus per-story members and pins cached as they are
+// first seen. Universe-wide rebuilds and the reconcile sweep build one of
+// these per universe so the loop does not re-fetch the whole entity set for
+// every scene (review finding #192).
+export type MentionRebuildContext = {
+	universeId: string;
+	targets: MentionTarget[];
+	stories: Map<string, { members: Set<string>; pins: Awaited<ReturnType<typeof listMentionPins>> }>;
+};
+
+export async function universeMentionContext(
+	db: Database,
+	universeId: string
+): Promise<MentionRebuildContext> {
+	const cast = await db
+		.select({ id: characters.id, name: characters.name, aliases: characters.aliases })
+		.from(characters)
+		.where(and(eq(characters.universeId, universeId), eq(characters.autoDetectMentions, true)));
+	const placeRows = await db
+		.select({ id: places.id, name: places.name })
+		.from(places)
+		.where(and(eq(places.universeId, universeId), eq(places.autoDetectMentions, true)));
+	const loreRows = await db
+		.select({ id: loreEntries.id, title: loreEntries.title, keywords: loreEntries.keywords })
+		.from(loreEntries)
+		.where(and(eq(loreEntries.universeId, universeId), eq(loreEntries.autoDetectMentions, true)));
+	const targets: MentionTarget[] = [
+		...cast.map(
+			(character): MentionTarget => ({
+				id: character.id,
+				type: 'character',
+				names: [character.name, ...character.aliases]
+			})
+		),
+		...placeRows.map(
+			(place): MentionTarget => ({ id: place.id, type: 'place', names: [place.name] })
+		),
+		...loreRows.map(
+			(entry): MentionTarget => ({
+				id: entry.id,
+				type: 'lore_entry',
+				names: [entry.title, ...entry.keywords]
+			})
+		)
+	];
+	return { universeId, targets, stories: new Map() };
+}
+
+async function storyContext(db: Database, context: MentionRebuildContext, storyId: string) {
+	let ctx = context.stories.get(storyId);
+	if (!ctx) {
+		ctx = { members: await storyMemberIds(db, storyId), pins: await listMentionPins(db, storyId) };
+		context.stories.set(storyId, ctx);
+	}
+	return ctx;
+}
+
 export async function rebuildSceneMentions(
 	db: Database,
-	sceneId: string
+	sceneId: string,
+	context?: MentionRebuildContext
 ): Promise<{ ok: true; count: number } | { ok: false; reason: string }> {
 	const [scene] = await db
 		.select({
@@ -57,44 +116,16 @@ export async function rebuildSceneMentions(
 		return { ok: true, count: 0 };
 	}
 
-	const cast = await db
-		.select({ id: characters.id, name: characters.name, aliases: characters.aliases })
-		.from(characters)
-		.where(
-			and(eq(characters.universeId, scene.universeId), eq(characters.autoDetectMentions, true))
-		);
-	const placeRows = await db
-		.select({ id: places.id, name: places.name })
-		.from(places)
-		.where(and(eq(places.universeId, scene.universeId), eq(places.autoDetectMentions, true)));
-	const loreRows = await db
-		.select({ id: loreEntries.id, title: loreEntries.title, keywords: loreEntries.keywords })
-		.from(loreEntries)
-		.where(
-			and(eq(loreEntries.universeId, scene.universeId), eq(loreEntries.autoDetectMentions, true))
-		);
-	const targets: MentionTarget[] = [
-		...cast.map(
-			(character): MentionTarget => ({
-				id: character.id,
-				type: 'character',
-				names: [character.name, ...character.aliases]
-			})
-		),
-		...placeRows.map(
-			(place): MentionTarget => ({ id: place.id, type: 'place', names: [place.name] })
-		),
-		...loreRows.map(
-			(entry): MentionTarget => ({
-				id: entry.id,
-				type: 'lore_entry',
-				names: [entry.title, ...entry.keywords]
-			})
-		)
-	];
-	const found = detectMentions(scene.bodyMd, targets, {
-		storyMembers: await storyMemberIds(db, scene.storyId),
-		pins: await listMentionPins(db, scene.storyId)
+	// A caller-supplied context only applies to its own universe; a single
+	// scene rebuild builds a fresh one.
+	const shared =
+		context?.universeId === scene.universeId
+			? context
+			: await universeMentionContext(db, scene.universeId);
+	const { members, pins } = await storyContext(db, shared, scene.storyId);
+	const found = detectMentions(scene.bodyMd, shared.targets, {
+		storyMembers: members,
+		pins
 	});
 
 	await db.transaction(async (tx) => {
@@ -130,8 +161,11 @@ export async function rebuildUniverseMentions(db: Database, universeId: string):
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(eq(stories.universeId, universeId));
+	// One entity fetch for the whole sweep; only the per-scene body read and
+	// mention write stay in the loop.
+	const context = await universeMentionContext(db, universeId);
 	for (const row of sceneRows) {
-		await rebuildSceneMentions(db, row.id);
+		await rebuildSceneMentions(db, row.id, context);
 	}
 	return sceneRows.length;
 }
@@ -142,9 +176,12 @@ export async function rebuildUniverseMentions(db: Database, universeId: string):
 // backstop for a dropped rebuild job, which would otherwise leave the index
 // stale until the next manual save. Ordered oldest-first so the longest-stale
 // scenes are caught first; bounded so one sweep cannot run unbounded.
-export async function listStaleMentionScenes(db: Database, limit = 200): Promise<string[]> {
+export async function listStaleMentionScenes(
+	db: Database,
+	limit = 200
+): Promise<{ id: string; universeId: string }[]> {
 	const result = await db.execute(sql`
-		select s.id
+		select s.id, st.universe_id
 		from scenes s
 		join stories st on st.id = s.story_id
 		where s.mentions_indexed_at is null
@@ -157,16 +194,26 @@ export async function listStaleMentionScenes(db: Database, limit = 200): Promise
 		order by s.mentions_indexed_at asc nulls first
 		limit ${limit}
 	`);
-	return result.rows.map((row) => (row as { id: string }).id);
+	return result.rows.map((row) => {
+		const r = row as { id: string; universe_id: string };
+		return { id: r.id, universeId: r.universe_id };
+	});
 }
 
 // Re-indexes every stale scene found in one bounded pass. Returns how many were
 // rebuilt, so the worker can log a non-empty sweep. Idempotent: a scene already
 // in step with its content is left alone.
 export async function reconcileMentions(db: Database, limit = 200): Promise<number> {
-	const ids = await listStaleMentionScenes(db, limit);
-	for (const id of ids) {
-		await rebuildSceneMentions(db, id);
+	const stale = await listStaleMentionScenes(db, limit);
+	// One shared context per universe in the batch.
+	const contexts = new Map<string, MentionRebuildContext>();
+	for (const scene of stale) {
+		let context = contexts.get(scene.universeId);
+		if (!context) {
+			context = await universeMentionContext(db, scene.universeId);
+			contexts.set(scene.universeId, context);
+		}
+		await rebuildSceneMentions(db, scene.id, context);
 	}
-	return ids.length;
+	return stale.length;
 }

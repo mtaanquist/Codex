@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { isUuid } from '$lib/slug';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
@@ -239,9 +240,8 @@ export const actions: Actions = {
 		await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const invitationId = String(data.get('invitationId') ?? '');
-		const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 		if (
-			!UUID.test(invitationId) ||
+			!isUuid(invitationId) ||
 			!(await revokeReviewInvitation(db, locals.user!.id, invitationId))
 		) {
 			return fail(400, { action: 'review', message: 'That invitation could not be revoked.' });

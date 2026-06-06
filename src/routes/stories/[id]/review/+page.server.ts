@@ -1,4 +1,5 @@
 import { fail } from '@sveltejs/kit';
+import { isUuid } from '$lib/slug';
 import { ownedStory } from '$lib/server/story-access';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
@@ -12,12 +13,11 @@ import {
 import { gatherStory } from '$lib/server/export';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
-import { detailSnippet, notifyThreadReviewers } from '$lib/server/notify';
+import { notifyThreadReviewers } from '$lib/server/notify';
+import { teaser } from '$lib/notifications';
 
 // The author's side of a review: every thread guests have left on the
 // story, against the current text, with reply and resolve.
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { story } = await ownedStory(params.id, locals.user!.id);
@@ -41,7 +41,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
-		if (!UUID.test(threadId)) return fail(400, { message: 'That thread does not exist.' });
+		if (!isUuid(threadId)) return fail(400, { message: 'That thread does not exist.' });
 		const result = await addComment(db, {
 			storyId: story.id,
 			threadId,
@@ -53,7 +53,7 @@ export const actions: Actions = {
 		// so the notification informs without navigating.
 		await notifyThreadReviewers(db, threadId, {
 			title: `${locals.user!.displayName} replied to your comment on "${story.title}"`,
-			detail: detailSnippet(String(data.get('body') ?? ''))
+			detail: teaser(String(data.get('body') ?? ''))
 		});
 		return { done: true };
 	},
@@ -61,7 +61,7 @@ export const actions: Actions = {
 		await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
-		if (!UUID.test(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, true))) {
+		if (!isUuid(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, true))) {
 			return fail(400, { message: 'That thread could not be resolved.' });
 		}
 		return { done: true };
@@ -70,7 +70,7 @@ export const actions: Actions = {
 		await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
-		if (!UUID.test(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, false))) {
+		if (!isUuid(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, false))) {
 			return fail(400, { message: 'That thread could not be reopened.' });
 		}
 		return { done: true };
@@ -79,7 +79,7 @@ export const actions: Actions = {
 		await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
-		if (!UUID.test(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
+		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const result = await decideSuggestion(db, locals.user!.id, suggestionId, true);
 		if (!result.ok) return fail(400, { message: result.reason });
 		// The body changed; keep the mention index in step.
@@ -90,7 +90,7 @@ export const actions: Actions = {
 		await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
-		if (!UUID.test(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
+		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const result = await decideSuggestion(db, locals.user!.id, suggestionId, false);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };

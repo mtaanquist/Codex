@@ -33,3 +33,13 @@ export type NotificationItem = {
 	read: boolean;
 	createdAt: string;
 };
+
+// A comment body cut down to a one-line teaser for the bell, the digest
+// emails, and anywhere else a snippet stands in for the full text. One
+// helper, one length, so the same comment never truncates differently in
+// two surfaces.
+const TEASER_MAX = 120;
+export function teaser(body: string, max = TEASER_MAX): string {
+	const line = body.replace(/\s+/g, ' ').trim();
+	return line.length > max ? `${line.slice(0, max)}...` : line;
+}

@@ -11,6 +11,7 @@ import {
 } from './db/schema.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import type { EmailMessage } from './email.ts';
+import { teaser } from '../notifications.ts';
 
 // The email half of notifications, run from the worker: a scheduled digest
 // gathers everything unsent for one recipient and composes one email. Runs
@@ -139,7 +140,7 @@ export async function buildReviewerDigest(
 		.orderBy(asc(reviewComments.createdAt));
 	if (replies.length === 0) return null;
 
-	const lines = replies.map((reply) => `- ${reply.authorName}: "${oneLine(reply.body)}"`);
+	const lines = replies.map((reply) => `- ${reply.authorName}: "${teaser(reply.body)}"`);
 	const subject =
 		replies.length === 1
 			? `${replies[0].authorName} replied on "${invitation.title}"`
@@ -174,10 +175,4 @@ export async function markReviewerNotified(
 		.update(reviewers)
 		.set({ lastNotifiedAt: new Date(upTo.getTime() + 1) })
 		.where(eq(reviewers.id, reviewerId));
-}
-
-const DETAIL_MAX = 160;
-function oneLine(body: string): string {
-	const line = body.replace(/\s+/g, ' ').trim();
-	return line.length > DETAIL_MAX ? `${line.slice(0, DETAIL_MAX)}...` : line;
 }
