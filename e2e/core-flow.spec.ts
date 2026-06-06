@@ -5,11 +5,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// budget is too tight on a loaded CI runner and was silently capping the
 	// 60s indexing wait below. Tripling it to 90s gives that wait its room.
 	test.slow();
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	// Repeated runs share the seeded user, so pin the preferences to their
 	// defaults before exercising them later. They live on the account page now.
@@ -26,6 +22,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
@@ -473,7 +470,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Publish edition' }).click();
 	await expect(page.getByRole('status')).toContainText('Edition published.');
 
-	const anonymous = await browser.newContext();
+	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const reader = await anonymous.newPage();
 	await reader.goto('/@e2e-tester');
 	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
@@ -611,10 +608,15 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
 });
 
-test('wrong password is rejected', async ({ page }) => {
+// A signed-out browser of its own: the shared session would bounce off
+// /login before the form ever rendered.
+test('wrong password is rejected', async ({ browser }) => {
+	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+	const page = await anonymous.newPage();
 	await page.goto('/login');
 	await page.getByLabel('Email').fill('e2e@example.com');
 	await page.getByLabel('Password').fill('not-the-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page.getByRole('alert')).toHaveText('Wrong email or password.');
+	await anonymous.close();
 });

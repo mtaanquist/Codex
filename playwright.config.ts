@@ -9,6 +9,17 @@ export default defineConfig({
 	// not read as a failure.
 	expect: { timeout: 10_000 },
 	use: { baseURL: 'http://localhost:4173' },
+	// One login for the whole run: the setup project signs in as the e2e
+	// user and saves the session; specs that need a signed-out browser (or
+	// a different account) opt out with their own storageState.
+	projects: [
+		{ name: 'setup', testMatch: /auth\.setup\.ts/ },
+		{
+			name: 'main',
+			dependencies: ['setup'],
+			use: { storageState: 'e2e/.auth/e2e.json' }
+		}
+	],
 	webServer: {
 		command: 'npm run build && npm run preview',
 		port: 4173,

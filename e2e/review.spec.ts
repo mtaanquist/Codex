@@ -8,13 +8,10 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	browser
 }) => {
 	// Author: a fresh story with one scene of prose.
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	const universeName = `Review Test ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
@@ -38,7 +35,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	expect(link).toMatch(/^\/review\//);
 
 	// Guest: a clean context with no session.
-	const guestContext = await browser.newContext();
+	const guestContext = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const guest = await guestContext.newPage();
 	await guest.goto(link!);
 	await guest.getByLabel('Your name').fill('Margin Walker');
@@ -99,7 +96,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await page.goto(`/stories/${storyId}/settings`);
 	await page.getByRole('button', { name: 'Revoke' }).click();
 	await expect(page.getByText('Revoked')).toBeVisible();
-	const lateContext = await browser.newContext();
+	const lateContext = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const late = await lateContext.newPage();
 	await late.goto(link!);
 	await expect(late.getByRole('heading', { name: 'This review has ended' })).toBeVisible();

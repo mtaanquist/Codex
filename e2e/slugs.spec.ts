@@ -3,14 +3,11 @@ import { expect, test } from '@playwright/test';
 // Readable URLs: universes and stories get slugs generated from their
 // names, and the slug is editable in settings.
 test('slugs: created things get readable addresses, editable in settings', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	// The universe lands on a slugged address derived from its name.
 	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Slugfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page).toHaveURL(`/universes/slugfall-${stamp}`);

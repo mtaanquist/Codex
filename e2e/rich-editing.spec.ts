@@ -5,13 +5,10 @@ import { expect, test } from '@playwright/test';
 // the syntax marks away from the cursor while the stored prose stays
 // markdown.
 test('rich editing: toolbar formats, story override hides the marks', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	const universeName = `Rich Test ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);

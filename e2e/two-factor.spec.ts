@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { totpCode } from '../src/lib/server/totp';
 
+// These journeys start signed out; skip the shared session.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 // Enrols in two-factor through the account page using a code computed from the
 // setup key the page shows, confirms the recovery codes appear, then turns it
 // off so the dedicated seed user is left as it started. The sign-in challenge

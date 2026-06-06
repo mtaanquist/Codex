@@ -3,13 +3,10 @@ import { expect, test } from '@playwright/test';
 // Item 2 of the capability review: find/replace inside the editor, and
 // body-text search from the command palette.
 test('find in the editor and search the prose from the palette', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Findfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await page.getByLabel('New story').fill(`Needles ${stamp}`);

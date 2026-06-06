@@ -3,13 +3,10 @@ import { expect, test } from '@playwright/test';
 // The command palette: Ctrl+K opens it anywhere, search jumps to what it
 // finds, and the contextual commands act on the open story.
 test('command palette: search jumps to a story, commands create a scene', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	const universeName = `Palette Test ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);

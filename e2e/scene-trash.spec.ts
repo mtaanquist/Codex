@@ -6,13 +6,10 @@ import { expect, test } from '@playwright/test';
 test('scene trash and chapter tools', async ({ page }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Trashfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await page.getByLabel('New story').fill(`Bins ${stamp}`);
