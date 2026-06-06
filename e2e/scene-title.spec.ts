@@ -65,4 +65,13 @@ test('opening a story resumes the last-edited scene', async ({ page }) => {
 	// Landing on the bare story URL opens that scene again.
 	await page.goto(`/stories/bookmarks-${stamp}`);
 	await expect(page.locator('.editor-title-input')).toHaveValue('Second thoughts');
+
+	// The sidebar filter narrows the tree by name; clearing restores it.
+	await page.getByLabel('Filter chapters and scenes...').fill('second');
+	await expect(page.locator('.scene-row')).toHaveCount(1);
+	await expect(page.locator('.scene-row .scene-name')).toHaveText('Second thoughts');
+	await page.getByLabel('Filter chapters and scenes...').fill('zzz-no-such-scene');
+	await expect(page.locator('.search-empty')).toBeVisible();
+	await page.getByRole('button', { name: 'Clear' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(2);
 });

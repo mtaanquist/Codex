@@ -4,7 +4,7 @@ The planning view holds everything your stories draw on: characters, places, and
 
 ## Characters, places, and lore
 
-Create an entry and give it a name and a short summary. The summary is what shows when someone hovers a mention in the editor. Add longer notes in the body.
+Create an entry and give it a name and a short summary. The summary is what shows when someone hovers a mention in the editor. Add longer notes in the body. The field at the top of the sidebar filters every list by name as you type.
 
 Lore entries are grouped into categories you define, such as "Factions" or "Magic". A category's colour is the colour its entries are underlined in. Manage categories in the universe settings: rename them, pick their colours, reorder them, and add or delete them. A category can only be deleted once nothing uses it.
 
@@ -36,7 +36,7 @@ A universe's plan shows its stories the same way when nothing else is open: each
 
 ## Insights
 
-Open Insights from the Session tab in the right column (the "All insights" link), or search for it with Ctrl+K. The page shows how the writing is going and how much of the world the prose uses. The Session tab itself keeps the short version in view while you work: words written today, the week's writing days, and your streak.
+Open Insights from the Session tab in the right column (the "All insights" link), or search for it with Ctrl+K. The page shows how the writing is going and how much of the world the prose uses. The Session tab itself keeps the short version in view while you work: words written today, the week's writing days, and your streak. If the streak is not for you, hide its card under Editor behaviour on your account page.
 
 Progress shows total words, net words written this week, your writing streak, and a chart of words per day for the last 30 days. A day counts towards the streak when you saved any scene that day. Each story below shows its word count and how its scenes split between outline, draft, revised, and final.
 
