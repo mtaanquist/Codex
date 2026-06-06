@@ -29,6 +29,39 @@ export async function issueToken(
 	return token;
 }
 
+// Checks a token without spending it: valid, unexpired, unconsumed. The
+// confirmation pages peek on GET and only consume on the POSTed confirm, so
+// an email link-scanner's prefetch cannot burn or trigger the action.
+export async function peekToken(
+	db: Database,
+	kind: TokenKind,
+	token: string
+): Promise<string | null> {
+	const [row] = await db
+		.select({ userId: authTokens.userId })
+		.from(authTokens)
+		.where(
+			and(
+				eq(authTokens.tokenHash, hashToken(token)),
+				eq(authTokens.kind, kind),
+				isNull(authTokens.consumedAt),
+				gt(authTokens.expiresAt, sql`now()`)
+			)
+		);
+	return row?.userId ?? null;
+}
+
+// Revokes every outstanding token of one kind for a user, e.g. a pending
+// email change when the password is reset.
+export async function revokeTokens(db: Database, userId: string, kind: TokenKind): Promise<void> {
+	await db
+		.update(authTokens)
+		.set({ consumedAt: sql`now()` })
+		.where(
+			and(eq(authTokens.userId, userId), eq(authTokens.kind, kind), isNull(authTokens.consumedAt))
+		);
+}
+
 // Consumes a token, returning its user id when it is valid, unexpired, and
 // unused. The consume is the same statement as the lookup, so a token cannot
 // be replayed even under a race: the second caller matches no unconsumed row.

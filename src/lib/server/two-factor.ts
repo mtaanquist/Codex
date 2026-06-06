@@ -186,6 +186,18 @@ export async function regenerateRecoveryCodes(
 
 // Turns two-factor off entirely. Used by the account owner and by an admin
 // resetting a locked-out user.
+// Abandons an UNCONFIRMED enrolment only: the scope on confirmed_at is the
+// server-side guard, so this can never strip live two-factor (that path is
+// disableTotp, behind a password re-check). Returns whether a pending row
+// was actually cleared.
+export async function cancelPendingEnrollment(db: Database, userId: string): Promise<boolean> {
+	const cleared = await db
+		.delete(userTotp)
+		.where(and(eq(userTotp.userId, userId), isNull(userTotp.confirmedAt)))
+		.returning({ userId: userTotp.userId });
+	return cleared.length > 0;
+}
+
 export async function disableTotp(db: Database, userId: string): Promise<void> {
 	await db.transaction(async (tx) => {
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));

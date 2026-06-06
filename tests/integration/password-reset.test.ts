@@ -6,7 +6,9 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import { requestPasswordReset, resetPassword } from '../../src/lib/server/password-reset';
-import { verifyPassword } from '../../src/lib/server/password';
+import { confirmEmailChange, requestEmailChange } from '../../src/lib/server/account';
+import { peekToken } from '../../src/lib/server/tokens';
+import { hashPassword as hashFor, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -82,5 +84,27 @@ describe('resetPassword', () => {
 		const token = (await requestPasswordReset(db, 'reset@example.com')) as string;
 		expect((await resetPassword(db, token, 'a-good-password')).ok).toBe(true);
 		expect((await resetPassword(db, token, 'another-password')).ok).toBe(false);
+	});
+});
+
+describe('password recovery ends an in-flight email change', () => {
+	it('reset clears pendingEmail and kills the confirmation token', async () => {
+		// The "attacker started an email change, victim resets" chain.
+		await db
+			.update(users)
+			.set({ passwordHash: await hashFor('correct horse') })
+			.where(eq(users.id, userId));
+		const change = await requestEmailChange(db, userId, 'correct horse', 'attacker@evil.example');
+		expect(change.ok).toBe(true);
+		if (!change.ok) return;
+
+		const reset = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		expect((await resetPassword(db, reset, 'brand-new-password')).ok).toBe(true);
+
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.pendingEmail).toBeNull();
+		expect(await peekToken(db, 'email_change', change.token)).toBeNull();
+		expect((await confirmEmailChange(db, change.token)).ok).toBe(false);
+		expect(row.email).toBe('reset@example.com');
 	});
 });
