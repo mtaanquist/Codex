@@ -2,6 +2,8 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { focusMode } from '$lib/focus-mode.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
@@ -51,14 +53,41 @@
 		return null;
 	}
 
-	// Focus mode hides the chrome around the prose; Esc leaves it.
-	let focus = $state(false);
+	// Focus mode hides the chrome around the prose; Esc leaves it, and so
+	// does leaving the page. Shared state, so the palette can toggle it.
+	$effect(() => () => {
+		focusMode.on = false;
+	});
 
 	let saveStatus = $state<SaveStatus>('idle');
 	const selectedSceneId = $derived(data.selectedScene?.id);
 	$effect(() => {
 		void selectedSceneId;
 		saveStatus = 'idle';
+	});
+
+	// A palette jump to a text match carries the searched text; the editor
+	// selects the first occurrence so the eye lands on it.
+	const findText = $derived(page.url.searchParams.get('find'));
+
+	// The mention index rebuilds in the background after a save, so the
+	// Reference tab can trail the text by a couple of seconds. While the
+	// open scene's index watermark is behind its last edit (the worker's
+	// own staleness test), keep refreshing until it catches up - bounded,
+	// so a stopped worker does not leave the page polling forever.
+	const MENTION_POLL_MS = 2000;
+	const MENTION_POLL_LIMIT = 10;
+	let mentionPolls = 0;
+	$effect(() => {
+		const scene = data.selectedScene;
+		if (!scene) return;
+		const stale = !scene.mentionsIndexedAt || scene.mentionsIndexedAt < scene.updatedAt;
+		if (!stale || mentionPolls >= MENTION_POLL_LIMIT) return;
+		const timer = setTimeout(() => {
+			mentionPolls += 1;
+			void invalidateAll();
+		}, MENTION_POLL_MS);
+		return () => clearTimeout(timer);
 	});
 
 	// Chapters start expanded; collapsing is per-visit state.
@@ -215,7 +244,7 @@
 			rowMenu = null;
 			return;
 		}
-		focus = false;
+		focusMode.on = false;
 	}}
 	onpointerdown={onWindowPointerDown}
 />
@@ -231,11 +260,11 @@
 	{/if}
 {/snippet}
 
-<div class="app" class:focus-mode={focus}>
+<div class="app" class:focus-mode={focusMode.on}>
 	<TopBar
 		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		story={{ slug: data.story.slug, title: data.story.title }}
-		onEnterFocus={() => (focus = true)}
+		onEnterFocus={() => (focusMode.on = true)}
 		{saveStatus}
 		storyView={{ active: viewStory, toggleHref }}
 		help={{ topic: 'editor', label: 'the editor' }}
@@ -522,6 +551,7 @@
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
+						{findText}
 						entities={data.mentionEntities}
 						{mentionOptions}
 						autocompleteMode={data.preferences.entityAutocomplete}
@@ -534,7 +564,10 @@
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.
-							if (status === 'saved') void invalidateAll();
+							if (status === 'saved') {
+								mentionPolls = 0;
+								void invalidateAll();
+							}
 						}}
 					/>
 				{/key}
@@ -654,14 +687,14 @@
 		</aside>
 	</div>
 
-	{#if focus}
+	{#if focusMode.on}
 		<div class="focus-controls">
 			<ThemeToggle />
 			<button
 				class="icon-btn"
 				type="button"
 				title="Exit focus (Esc)"
-				onclick={() => (focus = false)}
+				onclick={() => (focusMode.on = false)}
 			>
 				<Icon name="compress" />
 			</button>
@@ -762,14 +795,14 @@
 		font-size: 13px;
 		padding: 6px 7px;
 		border-radius: 5px;
-		cursor: pointer;
+		/* Native context menus keep the arrow cursor; match them. */
+		cursor: default;
 	}
 	.row-menu-item:hover:not(:disabled) {
 		background: var(--accent-soft);
 	}
 	.row-menu-item:disabled {
 		color: var(--text-faint);
-		cursor: default;
 	}
 	.row-menu-item.danger:hover:not(:disabled) {
 		color: var(--danger, #c0564f);
@@ -785,6 +818,14 @@
 		border: 0;
 		background: none;
 		text-align: left;
+	}
+	/* The button reset above outranks the theme's hover by cascade order,
+	   so restate it. */
+	.chapter-row:hover {
+		background: var(--bg-hover);
+	}
+	.chapter-row.as-label:hover {
+		background: none;
 	}
 	.scene-row {
 		text-decoration: none;

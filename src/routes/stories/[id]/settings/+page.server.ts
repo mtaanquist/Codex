@@ -23,7 +23,7 @@ import {
 import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib/server/page-setup';
 import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 import { ownedStory } from '$lib/server/story-access';
-import { slugChangeError, slugTakenMessage } from '$lib/server/slugs';
+import { uniqueSlug } from '$lib/server/slugs';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {
@@ -71,31 +71,29 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const title = String(data.get('title') ?? '').trim();
-		const slug = String(data.get('slug') ?? '').trim();
 		const author = String(data.get('author') ?? '').trim() || null;
 		const brief = String(data.get('brief') ?? '').trim() || null;
 		const descriptionMd = String(data.get('description') ?? '').trim() || null;
 		if (!title) {
 			return fail(400, { action: 'update', message: 'The story needs a title.' });
 		}
-		const message = await slugChangeError(
-			db,
-			'stories',
-			locals.user!.id,
-			slug,
-			story.slug,
-			story.id
-		);
-		if (message) return fail(400, { action: 'update', message });
-		try {
+		// The slug follows the title: a rename moves the story's URL, an
+		// unchanged title leaves it alone.
+		const save = async (slug: string) => {
 			await db
 				.update(stories)
 				.set({ title, slug, author, brief, descriptionMd })
 				.where(eq(stories.id, story.id));
+			return slug;
+		};
+		const freshSlug = () => uniqueSlug(db, 'stories', locals.user!.id, title, 'story');
+		let slug;
+		try {
+			slug = await save(title === story.title ? story.slug : await freshSlug());
 		} catch (err) {
-			// A concurrent write can take the slug between the check and the update.
+			// A concurrent create took the slug between the pick and the update.
 			if (!isUniqueViolation(err)) throw err;
-			return fail(400, { action: 'update', message: slugTakenMessage('stories') });
+			slug = await save(await freshSlug());
 		}
 		// A changed slug moves this page's own URL.
 		if (slug !== story.slug) redirect(303, `/stories/${slug}/settings`);

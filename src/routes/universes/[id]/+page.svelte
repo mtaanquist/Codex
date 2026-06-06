@@ -232,21 +232,9 @@
 									value={data.universe.name}
 									required
 								/>
-							</div>
-							<div class="field">
-								<label for="u-slug">Slug</label>
-								<input
-									id="u-slug"
-									class="input"
-									type="text"
-									name="slug"
-									value={data.universe.slug}
-									required
-									spellcheck="false"
-								/>
 								<span class="field-hint">
-									The universe's web address: /universes/{data.universe.slug}. Lowercase letters,
-									numbers, and hyphens. Changing it moves the address; the old one stops working.
+									The web address follows the name: /universes/{data.universe.slug}. Renaming moves
+									the address; the old one stops working.
 								</span>
 							</div>
 							<div class="field">

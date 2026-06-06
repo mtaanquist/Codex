@@ -27,11 +27,14 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await expect(page).toHaveURL(/scene=/);
 	await page.getByPlaceholder('Untitled scene').fill('The crossing');
 	await page.locator('.cm-content').click();
+	// Leaving the title field flushes a title-only save, so wait for the
+	// save that actually carries the prose.
 	const save = page.waitForResponse(
 		(response) =>
 			response.url().includes('/api/scenes/') &&
 			response.request().method() === 'PUT' &&
-			response.ok()
+			response.ok() &&
+			(response.request().postData() ?? '').includes('Across they went.')
 	);
 	await page.keyboard.type('Across they went.');
 	await save;

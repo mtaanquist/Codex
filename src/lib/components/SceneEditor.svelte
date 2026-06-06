@@ -28,6 +28,7 @@
 		writingLanguage = '',
 		markers = [],
 		imageUniverseId,
+		findText = null,
 		compact = false,
 		onCrossBoundary,
 		onCreateEntity,
@@ -47,6 +48,8 @@
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
 		imageUniverseId?: string;
+		// Text a search jump arrived with; the first occurrence gets selected.
+		findText?: string | null;
 		// The continuous story view stitches one editor per scene: no title
 		// input, no toolbar, and vertical arrows at the edges hand focus to
 		// neighbours.
@@ -172,6 +175,19 @@
 		view.dispatch({ effects: markersCompartment.reconfigure(markerHandle.extension) });
 	});
 
+	// A search jump selects the first occurrence of the text it arrived
+	// with, so the match is visible rather than somewhere off-screen.
+	$effect(() => {
+		if (!findText || !view) return;
+		const at = view.state.doc.toString().toLowerCase().indexOf(findText.toLowerCase());
+		if (at < 0) return;
+		view.dispatch({
+			selection: { anchor: at, head: at + findText.length },
+			scrollIntoView: true
+		});
+		view.focus();
+	});
+
 	// Pinning a shared name or creating an entity changes the underlines at
 	// once: the page data refresh delivers new pins or entities, and the
 	// mentions compartment reloads.
@@ -262,6 +278,37 @@
 		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
 	}
 
+	// Leaving the title field commits the rename at once instead of waiting
+	// out the debounce, so a rename right before a reload is already saved.
+	function flushTitle() {
+		if (!dirty) return;
+		clearTimeout(saveTimer);
+		enqueueSave();
+	}
+
+	// A reload or tab close inside the debounce window would silently drop
+	// the last edit: component teardown does not run on browser unload, so
+	// the pending save is flushed here with a request that outlives the
+	// page. Bodies past the keepalive cap reject, which the debounced saves
+	// already covered up to the last pause.
+	function flushOnPageHide() {
+		if (!dirty || !view) return;
+		clearTimeout(saveTimer);
+		dirty = false;
+		void fetch(`/api/scenes/${sceneId}`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			keepalive: true,
+			body: JSON.stringify({
+				title: titleValue,
+				bodyMd: view.state.doc.toString(),
+				markers: markerHandle.anchors(view)
+			})
+		}).catch(() => {
+			dirty = true;
+		});
+	}
+
 	onMount(() => {
 		view = new EditorView({
 			parent: editorEl,
@@ -309,12 +356,17 @@
 			placeholder="Untitled scene"
 			bind:value={titleValue}
 			oninput={scheduleSave}
+			onchange={flushTitle}
 		/>
 	{/if}
 	<div class="editor-cm" bind:this={editorEl}></div>
 </div>
 
-<svelte:window onmousedown={onWindowPointerDown} onkeydown={onWindowKeydown} />
+<svelte:window
+	onmousedown={onWindowPointerDown}
+	onkeydown={onWindowKeydown}
+	onpagehide={flushOnPageHide}
+/>
 
 {#if selectionMenu}
 	<div class="sel-menu" role="menu" style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;">
@@ -440,7 +492,8 @@
 		color: var(--text-muted);
 		border-radius: 5px;
 		padding: 5px 7px;
-		cursor: pointer;
+		/* Native context menus keep the arrow cursor; match them. */
+		cursor: default;
 		display: inline-flex;
 	}
 	.sel-format:hover {
@@ -470,14 +523,13 @@
 		font-size: 13px;
 		padding: 6px 7px;
 		border-radius: 5px;
-		cursor: pointer;
+		cursor: default;
 	}
 	.sel-create:hover:not(:disabled) {
 		background: var(--accent-soft);
 	}
 	.sel-create:disabled {
 		color: var(--text-faint);
-		cursor: default;
 	}
 	.sel-menu-error {
 		font-family: var(--font-ui);
