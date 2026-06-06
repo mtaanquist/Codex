@@ -11,6 +11,11 @@ const CHALLENGE_MAX_AGE_SECONDS = 10 * 60;
 // without locking the whole instance out; ample for a human retyping.
 const LOGIN_LIMIT = 15;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+// A coarser per-address cap so one host cannot spray a common password across
+// many accounts, where each account's own counter stays low. Wide enough for a
+// shared network behind one proxy; needs ADDRESS_HEADER set (see the README)
+// for the address to be the real client rather than the proxy.
+const LOGIN_IP_LIMIT = 50;
 
 export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
@@ -24,13 +29,18 @@ export const actions: Actions = {
 			return fail(400, { email, message: 'Enter your email and password.' });
 		}
 
-		const limit = rateLimit(`login:${email}`, LOGIN_LIMIT, LOGIN_WINDOW_MS);
-		if (!limit.allowed) {
+		const tooMany = () => {
 			logEvent('warn', 'login.rate_limited', { email });
 			return fail(429, {
 				email,
 				message: 'Too many sign-in attempts. Wait a few minutes and try again.'
 			});
+		};
+		if (!rateLimit(`login:ip:${getClientAddress()}`, LOGIN_IP_LIMIT, LOGIN_WINDOW_MS).allowed) {
+			return tooMany();
+		}
+		if (!rateLimit(`login:${email}`, LOGIN_LIMIT, LOGIN_WINDOW_MS).allowed) {
+			return tooMany();
 		}
 
 		const result = await verifyCredentials(db, email, password);
