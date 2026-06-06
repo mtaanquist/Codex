@@ -139,6 +139,23 @@ New surfaces that render existing data back to the author: where the world and t
 - **Timeline view.** Requires "what is a date in your world" design work first; potentially dependent on a first-class calendar model.
 - **Plotlines and arcs as first-class entities.** Promoted from scene tags / metadata jsonb if real use shows it is needed; pairs with the board and timeline surfaces above.
 
+### Next-phase candidates - from the 2026-06-06 capability review
+
+A general capability review after v2.18.1 sorted its findings in two: five
+gaps that read as oversights were pulled into the then-current phase (see
+`TODO.md`), and the rest land here to be scoped when the next phase is
+planned. None are committed yet; each needs a scoping conversation first.
+
+- **Notes tab: ship it or hide it.** The sidebar shows a permanently disabled Notes segment in every story and universe view. The design and schema exist (freeform notes scoped to universe, story, or scene); either build the view or remove the dead button until it is built. A visibly disabled control reads as broken.
+- **Writing goals and deadlines.** Insights has streaks and daily words but nothing to write toward: a per-day word target, a story-level deadline or target length, progress against them on the dashboard.
+- **TTRPG positioning decision.** The product statement names TTRPG campaigns, but there are no GM-only/secret notes, session logs, or stat-block affordances. Decide whether that audience is real before building for it - or narrow the pitch.
+- **Scene split/merge, duplicate, and cross-container moves.** No way to split a scene at the cursor, merge two scenes, duplicate a scene or story, or move content between stories and universes. Split/merge is the highest-value slice; the moves need ownership and mention-index design.
+- **Draft comparison UI.** Revision diffs exist in the preview banner; a side-by-side comparison of two revisions (and a clearer way to find "what changed between drafts") does not.
+- **Front and back matter.** Prologues, epilogues, dedications, and author's notes are currently faked as scenes; exports and EPUB would treat real front/back matter differently.
+- **Self-host walkthrough.** README covers the image and first-admin bootstrap; env vars, backup/restore drill, SMTP, S3 setup, and non-Caddy reverse-proxy examples live only in `.env.example` and the code. A docs/SELF-HOSTING.md would close it.
+- **Write-path rate limits and a shared limiter.** Auth, search, and guest review are rate-limited; autosave and asset upload are not. The in-memory limiter also gives N independent buckets across N replicas, so a shared store (or a deliberate single-replica stance) is a prerequisite for scaling the hosted service.
+- **Help docs coverage.** Articles are accurate but cover roughly 70% of the app: account/profile, security (2FA, passkeys, sessions), appearance/page-setup defaults, and a keyboard shortcuts reference have no articles.
+
 ### Phase 9 - AI and interop
 
 The large, deliberately-deferred work: machine assistance and exchange with the AI-roleplay tooling ecosystem.
@@ -149,6 +166,7 @@ The large, deliberately-deferred work: machine assistance and exchange with the 
 
 ### Phase 10 - Monetization
 
+- **Public landing pages under the handle.** GitHub-shaped public URLs: a story or universe page at `/@handle/<slug>` for anyone the author wants to show it to, extending the existing `/@handle` public archive (which serves published stories by uuid today). The v2.18 slug work was scoped per-account precisely so this nests without collisions or migrations: `(owner_id, slug)` unique is exactly the invariant `/@handle/<slug>` needs, and the handle is already the public username. The app's own flat `/universes/<slug>` and `/stories/<slug>` addresses stay private and session-scoped; only the `@[handle]` routes learn to resolve slugs (uuids keep working). Work item, when it comes: loosen the `[story=uuid]` matcher, resolve `(handle, slug)` against published stories, and decide what a universe's public page shows.
 - **Quota enforcement and billing.** The plan and entitlement model exists from the start (see `schema.md`); what is deferred is enforcing it (rejecting saves or creates that exceed an entitlement, and maintaining `storage_used_bytes`) and, much further out, charging money for a hosted tier. Billing would add a subscription layer that sets a user's `plan_id`; no payment processing is planned for the foreseeable future.
 
 ### Future - deferred hard

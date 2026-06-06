@@ -226,6 +226,42 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
 > Phase 9 (AI and interop) - or the timeline's calendar design talk,
 > whichever the author wants first.
 
+## Capability review follow-ups (2026-06-06)
+
+A general capability review (six survey passes over routes, design docs,
+content lifecycle, sharing, ops, and help docs, contested claims verified
+against the code) found five gaps that read as oversights rather than
+deferrals. Agreed 2026-06-06: these close out the current phase; the
+softer findings went to the roadmap as candidates for the next phase.
+
+- [ ] 1. Chapter management + scene delete. Chapters are created untitled
+     and nothing can set a title, reorder, or delete them (the UI shows
+     "Chapter N" forever; exports too); scenes cannot be deleted at all
+     short of deleting the story. Add: chapter rename (title editable),
+     chapter reorder, chapter delete (decide: scenes drop to orphans or
+     deletion blocked while occupied), scene delete with confirm and a
+     revision-aware cascade (mentions, markers, outline links).
+- [ ] 2. Find/replace + full-text prose search. @codemirror/search is not
+     installed and search.ts matches only titles/names/aliases/keywords.
+     Add in-editor find/replace, and prose search across a story's scenes
+     (Postgres FTS or trigram over scenes.body_md) surfaced through the
+     existing search API and palette.
+- [ ] 3. Markdown import. Every export path exists and no import path
+     does; a writer cannot migrate a novel in. Start with round-tripping
+     our own story export ZIP (front matter + chapter folders + scene
+     files) into a new story; that format is already defined and tested
+     from the export side.
+- [ ] 4. Export completeness. Outline node text, story notes, and
+     relationships are authored content but appear in no export, leaving
+     the "authored content stays exportable" principle partially met.
+     Add them to the story and account exports; decide whether review
+     threads and revision history join the account export.
+- [ ] 5. Review notifications. Reviewer comments and author replies are
+     silent in both directions; both sides poll. Email the author on new
+     comments/suggestions and the reviewer (when they joined with an
+     account or left an email) on author replies, batched so a busy
+     thread sends one digest, through the existing email worker.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
