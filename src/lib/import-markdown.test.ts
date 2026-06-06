@@ -113,6 +113,21 @@ describe('parseStoryZip', () => {
 		expect(() => parseStoryZip(strToU8('not a zip'))).toThrow(StoryZipError);
 		expect(() => parseStoryZip(zip({ 'readme.md': 'hello' }))).toThrow(StoryZipError);
 	});
+
+	it('rejects an archive with too many entries before unpacking', () => {
+		const files: Record<string, string> = { 'story.md': 'x' };
+		for (let i = 0; i < 5001; i++) files[`unfiled/${i}-s.md`] = 'x';
+		expect(() => parseStoryZip(zip(files))).toThrow(/too many files/);
+	});
+
+	it('rejects an oversized entry before decompressing it', () => {
+		// Compresses to almost nothing, but the central directory reports the
+		// full size, so the cap trips without expanding it in memory.
+		const big = new Uint8Array(51 * 1024 * 1024);
+		expect(() => parseStoryZip(zip({ 'story.md': 'x', 'unfiled/01-s.md': big }))).toThrow(
+			/too large/
+		);
+	});
 });
 
 describe('rewriteBundledAssetLinks', () => {
