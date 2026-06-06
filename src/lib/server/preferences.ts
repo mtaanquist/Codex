@@ -55,7 +55,9 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 	return {
 		entityAutocomplete: mode === 'ghost' || mode === 'off' ? mode : 'popup',
 		continuousSceneMarks: marks === 'hidden' ? 'hidden' : 'shown',
-		editingMode: raw.editingMode === 'rich' ? 'rich' : 'markdown',
+		// Rich is the default: markdown renders formatted with the syntax
+		// hidden away from the cursor, which is what most writers expect.
+		editingMode: raw.editingMode === 'markdown' ? 'markdown' : 'rich',
 		spellCheck: raw.spellCheck === 'off' ? 'off' : 'on',
 		writingLanguage:
 			typeof raw.writingLanguage === 'string' && LANGUAGE_TAG.test(raw.writingLanguage)

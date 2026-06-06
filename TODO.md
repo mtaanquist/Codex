@@ -330,13 +330,16 @@ shipping as its own PR.
       category; slugs follow names (slug fields removed from universe and
       story settings, renames move the address). Merged 2026-06-06
       (#163). Both batches shipped as v2.24.0.
-- [ ] Editor design alignment: mention autocomplete popup per the
-      prototype (avatar chips, kind label, navigate/select/esc footer);
-      entity hover card per the prototype (avatar header, fact chips,
-      related entities, "Open full details"); the formatting toolbar
-      pinned to the editor top; markdown renders styled (bold, headings)
-      with the markers still visible - full Obsidian-style live preview
-      is scoped as a next-phase item.
+- [x] Editor design alignment: mention autocomplete popup per the
+      prototype (coloured badges, kind labels, key-hint footer; shared
+      names show once per entity); entity hover card per the prototype
+      (badge + kind line with category, summary, detail chips, related
+      chips from a one-pass relationship summary, "Open full details");
+      the formatting toolbar became the prototype's full-width sticky
+      bar at the pane top. The Obsidian-style live preview the feedback
+      asked for already existed as the rich editing mode - it just was
+      not the default, so the default flipped to rich (stored
+      preferences stand). Merged 2026-06-06 (#165), shipped as v2.25.0.
 - [ ] Plan-page alignment: story plan right-pane pills identical between
       the board and entity views (empty message instead of vanishing);
       same pill parity on the universe plan; the universe plan center

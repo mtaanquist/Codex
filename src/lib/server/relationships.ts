@@ -1,6 +1,13 @@
-import { and, asc, eq, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, entityRelationships, loreEntries, places, relationTypes } from './db/schema';
+import {
+	characters,
+	entityCategories,
+	entityRelationships,
+	loreEntries,
+	places,
+	relationTypes
+} from './db/schema';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
 import { recordEntityRevision } from './revisions';
@@ -96,6 +103,89 @@ export async function listEntityRelationships(
 		}
 	}
 	return views;
+}
+
+// The editor's hover card shows a few related entities as chips. One pass
+// over the universe's relationships builds every entity's list at once,
+// with each related entity's name and badge colour (its category's, when
+// it has one).
+export async function relatedEntitySummaries(
+	db: Database,
+	universeId: string
+): Promise<Map<string, { name: string; color: string | null }[]>> {
+	const rows = await db
+		.select({
+			fromType: entityRelationships.fromType,
+			fromId: entityRelationships.fromId,
+			toType: entityRelationships.toType,
+			toId: entityRelationships.toId
+		})
+		.from(entityRelationships)
+		.where(
+			and(
+				eq(entityRelationships.universeId, universeId),
+				// Universe-wide truth only; story-scoped rows are a later step.
+				isNull(entityRelationships.storyId)
+			)
+		)
+		.orderBy(asc(entityRelationships.createdAt));
+	if (rows.length === 0) return new Map();
+
+	const idsByType: Record<EntityType, Set<string>> = {
+		character: new Set(),
+		place: new Set(),
+		lore_entry: new Set()
+	};
+	for (const row of rows) {
+		idsByType[row.fromType as EntityType].add(row.fromId);
+		idsByType[row.toType as EntityType].add(row.toId);
+	}
+	const summaries = new Map<string, { name: string; color: string | null }>();
+	for (const type of ['character', 'place', 'lore_entry'] as const) {
+		const ids = [...idsByType[type]];
+		if (ids.length === 0) continue;
+		const found =
+			type === 'character'
+				? await db
+						.select({ id: characters.id, name: characters.name, color: entityCategories.color })
+						.from(characters)
+						.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
+						.where(inArray(characters.id, ids))
+				: type === 'place'
+					? await db
+							.select({ id: places.id, name: places.name, color: entityCategories.color })
+							.from(places)
+							.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
+							.where(inArray(places.id, ids))
+					: await db
+							.select({
+								id: loreEntries.id,
+								name: loreEntries.title,
+								color: entityCategories.color
+							})
+							.from(loreEntries)
+							.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
+							.where(inArray(loreEntries.id, ids));
+		for (const row of found) summaries.set(row.id, { name: row.name, color: row.color });
+	}
+
+	const related = new Map<string, { name: string; color: string | null }[]>();
+	const seen = new Set<string>();
+	const add = (id: string, otherId: string) => {
+		// Two relationships between the same pair make one chip.
+		if (seen.has(`${id}:${otherId}`)) return;
+		seen.add(`${id}:${otherId}`);
+		const other = summaries.get(otherId);
+		if (!other) return;
+		const list = related.get(id) ?? [];
+		list.push(other);
+		related.set(id, list);
+	};
+	for (const row of rows) {
+		add(row.fromId, row.toId);
+		add(row.toId, row.fromId);
+	}
+	return related;
 }
 
 export type RelationshipSave = {

@@ -124,13 +124,14 @@ describe('story preference overrides', () => {
 	});
 
 	it('the editing mode layers like the other editor keys', async () => {
-		expect((await userPreferences(db, userId)).editingMode).toBe('markdown');
-		await savePreferences(db, userId, { editingMode: 'rich' });
-		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
-		await saveStoryPreferences(db, storyId, { editingMode: 'markdown' });
+		// Rich is the default; raw markdown is the opt-in.
+		expect((await userPreferences(db, userId)).editingMode).toBe('rich');
+		await savePreferences(db, userId, { editingMode: 'markdown' });
 		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('markdown');
-		await saveStoryPreferences(db, storyId, { editingMode: null });
+		await saveStoryPreferences(db, storyId, { editingMode: 'rich' });
 		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('rich');
+		await saveStoryPreferences(db, storyId, { editingMode: null });
+		expect((await storyPreferences(db, userId, storyId)).editingMode).toBe('markdown');
 	});
 
 	it('spell-check and writing language layer, with browser-follow as a real override', async () => {
