@@ -1,12 +1,10 @@
 import { unzipSync, strFromU8 } from 'fflate';
+import { isSceneStatus, type SceneStatus } from './scene-status';
 
 // Parses our own story export zip back into a plan the importer can write:
 // story metadata, chapters and scenes in NN- prefix order, story notes, and
 // bundled assets. Pure over the zip bytes; tolerant of the gaps older zips
 // have (no chapter.md, say) but strict about being a story export at all.
-
-export const SCENE_STATUSES = ['outline', 'draft', 'revised', 'final'] as const;
-export type SceneStatus = (typeof SCENE_STATUSES)[number];
 
 export type ImportedScene = { title: string | null; status: SceneStatus | null; bodyMd: string };
 export type ImportedChapter = { title: string | null; scenes: ImportedScene[] };
@@ -142,8 +140,8 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 		const rawStatus = scalar(doc.fields, 'status');
 		let status: SceneStatus | null = null;
 		if (rawStatus !== null) {
-			if ((SCENE_STATUSES as readonly string[]).includes(rawStatus)) {
-				status = rawStatus as SceneStatus;
+			if (isSceneStatus(rawStatus)) {
+				status = rawStatus;
 			} else {
 				problems.push(`${rel}: unknown status "${rawStatus}"; the scene starts as a draft.`);
 			}

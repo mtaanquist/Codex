@@ -16,7 +16,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
-import type { NotificationPayload } from '../../notifications.ts';
+import { NOTIFICATION_KINDS, type NotificationPayload } from '../../notifications.ts';
+import { SCENE_STATUSES } from '../../scene-status.ts';
 
 // Case-insensitive text, used for the public handle. The citext extension is
 // created in the first migration.
@@ -212,9 +213,7 @@ export const scenes = pgTable(
 		storyTime: text('story_time'),
 		// References characters.id once that table exists; GIN indexed.
 		charactersPresent: uuid('characters_present').array(),
-		status: text('status', { enum: ['outline', 'draft', 'revised', 'final'] })
-			.notNull()
-			.default('draft'),
+		status: text('status', { enum: SCENE_STATUSES }).notNull().default('draft'),
 		// One line of what happens; shown in the sidebar and outline.
 		summaryMd: text('summary_md'),
 		// Updated on save.
@@ -962,9 +961,7 @@ export const notifications = pgTable(
 		userId: uuid('user_id')
 			.references(() => users.id)
 			.notNull(),
-		kind: text('kind', {
-			enum: ['review_activity', 'review_reply', 'account_pending']
-		}).notNull(),
+		kind: text('kind', { enum: NOTIFICATION_KINDS }).notNull(),
 		payload: jsonb('payload').$type<NotificationPayload>().notNull(),
 		// Shown in the bell at all; false means the row only exists to feed
 		// the email digest.

@@ -8,13 +8,24 @@ import type { EmailMessage } from './email';
 // (see mentions.ts reconcileMentions) re-indexes any scene whose watermark has
 // fallen behind, so the index self-heals within minutes.
 
-export const MENTIONS_SCENE_QUEUE = 'mentions-scene';
-export const MENTIONS_UNIVERSE_QUEUE = 'mentions-universe';
-export const BACKUP_QUEUE = 'run-backup';
-export const EMAIL_QUEUE = 'send-email';
-export const EXPORT_ARTIFACTS_QUEUE = 'export-artifacts';
-export const NOTIFICATION_DIGEST_QUEUE = 'notification-digest';
-export const REVIEWER_DIGEST_QUEUE = 'reviewer-digest';
+export {
+	MENTIONS_SCENE_QUEUE,
+	MENTIONS_UNIVERSE_QUEUE,
+	BACKUP_QUEUE,
+	EMAIL_QUEUE,
+	EXPORT_ARTIFACTS_QUEUE,
+	NOTIFICATION_DIGEST_QUEUE,
+	REVIEWER_DIGEST_QUEUE
+} from './queues.ts';
+import {
+	MENTIONS_SCENE_QUEUE,
+	MENTIONS_UNIVERSE_QUEUE,
+	BACKUP_QUEUE,
+	EMAIL_QUEUE,
+	EXPORT_ARTIFACTS_QUEUE,
+	NOTIFICATION_DIGEST_QUEUE,
+	REVIEWER_DIGEST_QUEUE
+} from './queues.ts';
 
 // How long a digest waits before sending, so a busy thread lands as one
 // email instead of one per comment.

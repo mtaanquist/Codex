@@ -33,198 +33,169 @@ import { queueSceneMentions } from '$lib/server/jobs';
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 
-	// The sidebar's book switcher: every story in the universe, with the
-	// chapter and word counts its menu rows show.
-	const siblingResult = await db.execute(sql`
-		select st.id, st.slug, st.title,
-			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
-			coalesce(
-				(select sum(s.word_count)::int from scenes s
-					where s.story_id = st.id and s.deleted_at is null),
-				0
-			) as words
-		from stories st
-		where st.universe_id = ${universe.id}
-		order by st.position_in_series asc nulls last, st.created_at asc
-	`);
-	const storySiblings = siblingResult.rows.map((row) => {
-		const r = row as { id: string; slug: string; title: string; chapters: number; words: number };
-		return { id: r.id, slug: r.slug, title: r.title, chapters: r.chapters, words: r.words };
-	});
-
-	const chapterList = await db
-		.select()
-		.from(chapters)
-		.where(eq(chapters.storyId, story.id))
-		.orderBy(asc(chapters.position));
-	const sceneList = await db
-		.select({
-			id: scenes.id,
-			chapterId: scenes.chapterId,
-			title: scenes.title,
-			status: scenes.status,
-			wordCount: scenes.wordCount,
-			globalPosition: scenes.globalPosition
-		})
-		.from(scenes)
-		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
-		.orderBy(asc(scenes.globalPosition));
-
-	// The story view renders every scene as one continuous document.
 	const view = url.searchParams.get('view') === 'story' ? ('story' as const) : ('scene' as const);
-	let storyDoc = null;
-	if (view === 'story') {
-		storyDoc = await db
-			.select({
-				id: scenes.id,
-				chapterId: scenes.chapterId,
-				title: scenes.title,
-				bodyMd: scenes.bodyMd
-			})
-			.from(scenes)
-			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
-			.orderBy(asc(scenes.globalPosition));
-	}
-
 	const selectedId = view === 'scene' ? url.searchParams.get('scene') : null;
-	let selectedScene = null;
-	if (selectedId) {
-		const [row] = await db
-			.select()
-			.from(scenes)
-			.where(
-				and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id), isNull(scenes.deletedAt))
-			);
-		selectedScene = row ?? null;
-	} else if (view === 'scene') {
-		// Opening the story without naming a scene resumes the one edited last.
+
+	// The open scene: the named one, or - opening the story bare - the one
+	// edited last.
+	const selectScene = async () => {
+		if (view !== 'scene') return null;
+		if (selectedId) {
+			const [row] = await db
+				.select()
+				.from(scenes)
+				.where(
+					and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id), isNull(scenes.deletedAt))
+				);
+			return row ?? null;
+		}
 		const [row] = await db
 			.select()
 			.from(scenes)
 			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 			.orderBy(desc(scenes.updatedAt))
 			.limit(1);
-		selectedScene = row ?? null;
-	}
+		return row ?? null;
+	};
 
-	// The open scene's timeline, and the revision being previewed if the
-	// URL names one. Both ride the scene's ownership check above.
-	let sceneRevisions: RevisionRow[] = [];
-	let revisionPreview = null;
-	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
-	if (selectedScene) {
-		sceneRevisions = await listRevisions(db, 'scene', selectedScene.id);
-		sceneMarkers = await listSceneMarkers(db, selectedScene.id);
-		const revisionId = url.searchParams.get('revision');
-		if (revisionId) {
-			revisionPreview = (await getRevision(db, revisionId, 'scene', selectedScene.id)) ?? null;
-		}
-	}
-
-	// Everything still to do across the story, for the right panel.
-	const storyTodos = await listStoryTodos(db, story.id);
-
-	// Marker highlights for the continuous view's stitched editors.
-	const storyDocMarkers = view === 'story' ? await listStoryMarkersByScene(db, story.id) : {};
-
-	// Who is mentioned in the open scene, read from the worker-built index.
-	let inScene: { id: string; name: string; count: number }[] = [];
-	if (selectedScene) {
-		const mentionedCharacters = await db
+	// Everything below needs only the story and universe ids, so it runs as
+	// one parallel wave instead of a dozen serial round-trips - this is the
+	// hottest navigation path in the app (review finding #193).
+	const [
+		siblingResult,
+		chapterList,
+		sceneList,
+		storyDoc,
+		selectedScene,
+		storyTodos,
+		storyDocMarkers,
+		knownCharacters,
+		knownPlaces,
+		knownLore,
+		relatedByEntity,
+		characterMembers,
+		placeMembers,
+		pinList,
+		preferences,
+		trashedScenes
+	] = await Promise.all([
+		// The sidebar's book switcher: every story in the universe, with the
+		// chapter and word counts its menu rows show.
+		db.execute(sql`
+			select st.id, st.slug, st.title,
+				(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
+				coalesce(
+					(select sum(s.word_count)::int from scenes s
+						where s.story_id = st.id and s.deleted_at is null),
+					0
+				) as words
+			from stories st
+			where st.universe_id = ${universe.id}
+			order by st.position_in_series asc nulls last, st.created_at asc
+		`),
+		db
+			.select()
+			.from(chapters)
+			.where(eq(chapters.storyId, story.id))
+			.orderBy(asc(chapters.position)),
+		db
+			.select({
+				id: scenes.id,
+				chapterId: scenes.chapterId,
+				title: scenes.title,
+				status: scenes.status,
+				wordCount: scenes.wordCount,
+				globalPosition: scenes.globalPosition
+			})
+			.from(scenes)
+			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
+			.orderBy(asc(scenes.globalPosition)),
+		// The story view renders every scene as one continuous document.
+		view === 'story'
+			? db
+					.select({
+						id: scenes.id,
+						chapterId: scenes.chapterId,
+						title: scenes.title,
+						bodyMd: scenes.bodyMd
+					})
+					.from(scenes)
+					.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
+					.orderBy(asc(scenes.globalPosition))
+			: Promise.resolve(null),
+		selectScene(),
+		// Everything still to do across the story, for the right panel.
+		listStoryTodos(db, story.id),
+		// Marker highlights for the continuous view's stitched editors.
+		view === 'story'
+			? listStoryMarkersByScene(db, story.id)
+			: Promise.resolve({} as Awaited<ReturnType<typeof listStoryMarkersByScene>>),
+		// Known entities feed the editor's live underlines, the autocomplete,
+		// and the hover cards: category colour and name drive the badges, the
+		// related lists become the card's chips.
+		db
 			.select({
 				id: characters.id,
 				name: characters.name,
-				count: sql<number>`count(*)::int`
+				aliases: characters.aliases,
+				summaryMd: characters.summaryMd,
+				details: characters.details,
+				color: entityCategories.color,
+				categoryName: entityCategories.name
 			})
-			.from(entityMentions)
-			.innerJoin(characters, eq(entityMentions.targetId, characters.id))
-			.where(
-				and(
-					eq(entityMentions.sourceType, 'scene'),
-					eq(entityMentions.sourceId, selectedScene.id),
-					eq(entityMentions.targetType, 'character')
-				)
-			)
-			.groupBy(characters.id, characters.name);
-		const mentionedPlaces = await db
+			.from(characters)
+			.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
+			.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true))),
+		db
 			.select({
 				id: places.id,
 				name: places.name,
-				count: sql<number>`count(*)::int`
+				summaryMd: places.summaryMd,
+				details: places.details,
+				color: entityCategories.color,
+				categoryName: entityCategories.name
 			})
-			.from(entityMentions)
-			.innerJoin(places, eq(entityMentions.targetId, places.id))
-			.where(
-				and(
-					eq(entityMentions.sourceType, 'scene'),
-					eq(entityMentions.sourceId, selectedScene.id),
-					eq(entityMentions.targetType, 'place')
-				)
-			)
-			.groupBy(places.id, places.name);
-		const mentionedLore = await db
+			.from(places)
+			.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
+			.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true))),
+		db
 			.select({
 				id: loreEntries.id,
 				name: loreEntries.title,
-				count: sql<number>`count(*)::int`
+				keywords: loreEntries.keywords,
+				summaryMd: loreEntries.summaryMd,
+				details: loreEntries.details,
+				color: entityCategories.color,
+				categoryName: entityCategories.name
 			})
-			.from(entityMentions)
-			.innerJoin(loreEntries, eq(entityMentions.targetId, loreEntries.id))
+			.from(loreEntries)
+			.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
 			.where(
-				and(
-					eq(entityMentions.sourceType, 'scene'),
-					eq(entityMentions.sourceId, selectedScene.id),
-					eq(entityMentions.targetType, 'lore_entry')
-				)
-			)
-			.groupBy(loreEntries.id, loreEntries.title);
-		inScene = [...mentionedCharacters, ...mentionedPlaces, ...mentionedLore].sort((a, b) =>
-			a.name.localeCompare(b.name)
-		);
-	}
+				and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true))
+			),
+		relatedEntitySummaries(db, universe.id),
+		// Disambiguation context: who is declared in this story, and the
+		// author's pins for shared names.
+		db
+			.select({ id: characterStoryMemberships.characterId })
+			.from(characterStoryMemberships)
+			.where(eq(characterStoryMemberships.storyId, story.id)),
+		db
+			.select({ id: placeStoryMemberships.placeId })
+			.from(placeStoryMemberships)
+			.where(eq(placeStoryMemberships.storyId, story.id)),
+		listMentionPins(db, story.id),
+		// The user's preferences with this story's overrides applied.
+		storyPreferences(db, locals.user!.id, story.id),
+		listTrashedScenes(db, story.id)
+	]);
 
-	// Known entities feed the editor's live underlines, the autocomplete,
-	// and the hover cards: category colour and name drive the badges, the
-	// related lists become the card's chips.
-	const knownCharacters = await db
-		.select({
-			id: characters.id,
-			name: characters.name,
-			aliases: characters.aliases,
-			summaryMd: characters.summaryMd,
-			details: characters.details,
-			color: entityCategories.color,
-			categoryName: entityCategories.name
-		})
-		.from(characters)
-		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-		.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true)));
-	const knownPlaces = await db
-		.select({
-			id: places.id,
-			name: places.name,
-			summaryMd: places.summaryMd,
-			details: places.details,
-			color: entityCategories.color,
-			categoryName: entityCategories.name
-		})
-		.from(places)
-		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-		.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true)));
-	const knownLore = await db
-		.select({
-			id: loreEntries.id,
-			name: loreEntries.title,
-			keywords: loreEntries.keywords,
-			summaryMd: loreEntries.summaryMd,
-			details: loreEntries.details,
-			color: entityCategories.color,
-			categoryName: entityCategories.name
-		})
-		.from(loreEntries)
-		.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-		.where(and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true)));
-	const relatedByEntity = await relatedEntitySummaries(db, universe.id);
+	const storySiblings = siblingResult.rows.map((row) => {
+		const r = row as { id: string; slug: string; title: string; chapters: number; words: number };
+		return { id: r.id, slug: r.slug, title: r.title, chapters: r.chapters, words: r.words };
+	});
+	const memberRows = [...characterMembers, ...placeMembers];
+	const mentionPins = Object.fromEntries(pinList);
 	const mentionEntities = [
 		...knownCharacters.map((character) => ({
 			...character,
@@ -250,24 +221,50 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}))
 	];
 
-	// Disambiguation context: who is declared in this story, and the
-	// author's pins for shared names.
-	const memberRows = [
-		...(await db
-			.select({ id: characterStoryMemberships.characterId })
-			.from(characterStoryMemberships)
-			.where(eq(characterStoryMemberships.storyId, story.id))),
-		...(await db
-			.select({ id: placeStoryMemberships.placeId })
-			.from(placeStoryMemberships)
-			.where(eq(placeStoryMemberships.storyId, story.id)))
-	];
-	const mentionPins = Object.fromEntries(await listMentionPins(db, story.id));
-
-	// The user's preferences with this story's overrides applied.
-	const preferences = await storyPreferences(db, locals.user!.id, story.id);
-
-	const trashedScenes = await listTrashedScenes(db, story.id);
+	// The scene-keyed wave: timeline, markers, preview, and who is mentioned
+	// in the open scene (read from the worker-built index).
+	let sceneRevisions: RevisionRow[] = [];
+	let revisionPreview = null;
+	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
+	let inScene: { id: string; name: string; count: number }[] = [];
+	if (selectedScene) {
+		const revisionId = url.searchParams.get('revision');
+		const mentionCounts = (
+			table: typeof characters | typeof places | typeof loreEntries,
+			targetType: 'character' | 'place' | 'lore_entry'
+		) =>
+			db
+				.select({
+					id: table.id,
+					name: 'name' in table ? table.name : loreEntries.title,
+					count: sql<number>`count(*)::int`
+				})
+				.from(entityMentions)
+				.innerJoin(table, eq(entityMentions.targetId, table.id))
+				.where(
+					and(
+						eq(entityMentions.sourceType, 'scene'),
+						eq(entityMentions.sourceId, selectedScene.id),
+						eq(entityMentions.targetType, targetType)
+					)
+				)
+				.groupBy(table.id, 'name' in table ? table.name : loreEntries.title);
+		const [revs, markers, preview, mentionedCharacters, mentionedPlaces, mentionedLore] =
+			await Promise.all([
+				listRevisions(db, 'scene', selectedScene.id),
+				listSceneMarkers(db, selectedScene.id),
+				revisionId ? getRevision(db, revisionId, 'scene', selectedScene.id) : Promise.resolve(null),
+				mentionCounts(characters, 'character'),
+				mentionCounts(places, 'place'),
+				mentionCounts(loreEntries, 'lore_entry')
+			]);
+		sceneRevisions = revs;
+		sceneMarkers = markers;
+		revisionPreview = preview ?? null;
+		inScene = [...mentionedCharacters, ...mentionedPlaces, ...mentionedLore].sort((a, b) =>
+			a.name.localeCompare(b.name)
+		);
+	}
 
 	return {
 		trashedScenes,
