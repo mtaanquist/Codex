@@ -288,6 +288,13 @@
 			"when": 1780776630737,
 			"tag": "0040_notifications",
 			"breakpoints": true
+		},
+		{
+			"idx": 41,
+			"version": "7",
+			"when": 1780779853915,
+			"tag": "0041_split-suspension-from-deletion",
+			"breakpoints": true
 		}
 	]
 }

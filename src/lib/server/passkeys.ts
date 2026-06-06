@@ -180,7 +180,9 @@ export async function finishPasskeySignIn(
 
 	if (!row.user.emailVerifiedAt) return { status: 'unverified' };
 	if (!row.user.approvedAt) return { status: 'unapproved' };
-	if (row.user.suspendedAt) return { status: 'suspended' };
+	// Same gates as the password path: admin suspension or a pending
+	// self-deletion both deactivate the account.
+	if (row.user.suspendedAt || row.user.deletionScheduledAt) return { status: 'suspended' };
 	return {
 		status: 'ok',
 		user: {

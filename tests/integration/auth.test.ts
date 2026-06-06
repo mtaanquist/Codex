@@ -82,6 +82,12 @@ describe('verifyCredentials', () => {
 		const result = await verifyCredentials(db, 'suspended@example.com', 'correct horse');
 		expect(result.status).toBe('suspended');
 	});
+
+	it('blocks an account with a pending deletion the same way', async () => {
+		await seedUser('leaving@example.com', { deletionScheduledAt: new Date() });
+		const result = await verifyCredentials(db, 'leaving@example.com', 'correct horse');
+		expect(result.status).toBe('suspended');
+	});
 });
 
 describe('sessions', () => {

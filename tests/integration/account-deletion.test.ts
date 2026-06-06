@@ -13,6 +13,7 @@ import {
 	entityMentions,
 	entityRelationships,
 	loreEntries,
+	notifications,
 	places,
 	publicationAssets,
 	publications,
@@ -27,13 +28,15 @@ import {
 } from '../../src/lib/server/db/schema';
 import type { AssetObjectStore } from '../../src/lib/server/assets';
 import {
+	adminCancelDeletion,
 	cancelAccountDeletion,
 	listAccountsDueForPurge,
 	purgeAccount,
 	scheduleAccountDeletion
 } from '../../src/lib/server/account-deletion';
+import { setUserSuspended } from '../../src/lib/server/admin';
 import { issueToken } from '../../src/lib/server/tokens';
-import type { Database } from '../../src/lib/server/auth';
+import { createSession, validateSession, type Database } from '../../src/lib/server/auth';
 import { ensureBuiltInRelationTypes, ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 let pool: pg.Pool;
@@ -155,7 +158,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, assets, stories, universes, auth_tokens, sessions, users cascade'
+		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, assets, stories, universes, auth_tokens, sessions, notifications, users cascade'
 	);
 	await ensureBuiltInRelationTypes(pool);
 	removedKeys.length = 0;
@@ -172,11 +175,24 @@ describe('purgeAccount', () => {
 		await seedFullAccount(victim);
 		await seedFullAccount(bystander);
 		await issueToken(db, victim, 'email_verify', 60);
+		// Notifications joined the schema after the cascade was written; an
+		// account with one must still purge (regression: the FK aborted it).
+		for (const userId of [victim, bystander]) {
+			await db
+				.insert(notifications)
+				.values({ userId, kind: 'review_activity', payload: { title: 'A comment' } });
+		}
 
 		await purgeAccount(db, victim, stubStore);
 
 		// The victim is gone, root and branch.
 		expect(await db.select().from(users).where(eq(users.id, victim))).toHaveLength(0);
+		expect(
+			await db.select().from(notifications).where(eq(notifications.userId, victim))
+		).toHaveLength(0);
+		expect(
+			await db.select().from(notifications).where(eq(notifications.userId, bystander))
+		).toHaveLength(1);
 		for (const table of [universes, stories, characters, places, loreEntries, assets]) {
 			const rows = await db.select().from(table).where(eq(table.ownerId, victim));
 			expect(rows).toHaveLength(0);
@@ -205,9 +221,15 @@ describe('scheduleAccountDeletion and cancel', () => {
 		const token = await scheduleAccountDeletion(db, userId);
 		const [scheduled] = await db.select().from(users).where(eq(users.id, userId));
 		expect(scheduled.deletionScheduledAt).not.toBeNull();
-		expect(scheduled.suspendedAt).not.toBeNull();
+		// The schedule itself blocks sign-in; the shared suspension column
+		// stays free for admin use (regression: cancel used to lift it).
+		expect(scheduled.suspendedAt).toBeNull();
 		const live = await db.select().from(publications).where(eq(publications.ownerId, userId));
 		expect(live.every((p) => p.removedAt !== null)).toBe(true);
+
+		// A session opened while the deletion is pending dies at validation.
+		const blocked = await createSession(db, userId);
+		expect(await validateSession(db, blocked.id)).toBeNull();
 
 		expect(await cancelAccountDeletion(db, token)).toBe(true);
 		const [restored] = await db.select().from(users).where(eq(users.id, userId));
@@ -215,6 +237,30 @@ describe('scheduleAccountDeletion and cancel', () => {
 		expect(restored.suspendedAt).toBeNull();
 		// The token is single-use.
 		expect(await cancelAccountDeletion(db, token)).toBe(false);
+	});
+
+	it('cancelling a deletion never lifts an admin-imposed suspension', async () => {
+		const userId = await makeUser('abuser@example.com');
+		const token = await scheduleAccountDeletion(db, userId);
+		expect(await setUserSuspended(db, userId, true)).toBe(true);
+
+		expect(await cancelAccountDeletion(db, token)).toBe(true);
+		const [after] = await db.select().from(users).where(eq(users.id, userId));
+		expect(after.deletionScheduledAt).toBeNull();
+		expect(after.suspendedAt).not.toBeNull();
+	});
+
+	it('adminCancelDeletion clears the schedule and nothing else', async () => {
+		const userId = await makeUser('rescued@example.com');
+		await scheduleAccountDeletion(db, userId);
+		await setUserSuspended(db, userId, true);
+
+		expect(await adminCancelDeletion(db, userId)).toBe(true);
+		const [after] = await db.select().from(users).where(eq(users.id, userId));
+		expect(after.deletionScheduledAt).toBeNull();
+		expect(after.suspendedAt).not.toBeNull();
+		// Nothing scheduled: nothing to cancel.
+		expect(await adminCancelDeletion(db, userId)).toBe(false);
 	});
 });
 

@@ -49,7 +49,9 @@ export async function verifyCredentials(
 	}
 	if (!user.emailVerifiedAt) return { status: 'unverified' };
 	if (!user.approvedAt) return { status: 'unapproved' };
-	if (user.suspendedAt) return { status: 'suspended' };
+	// A pending self-deletion deactivates the account the same way a
+	// suspension does; the emailed cancellation link is the way back in.
+	if (user.suspendedAt || user.deletionScheduledAt) return { status: 'suspended' };
 	return {
 		status: 'ok',
 		user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role }
@@ -90,8 +92,9 @@ export async function validateSession(db: Database, sessionId: string) {
 			)
 		);
 	if (!row) return null;
-	// A suspended account loses its live sessions on the next request.
-	if (row.user.suspendedAt) return null;
+	// A suspended or deletion-scheduled account loses its live sessions on
+	// the next request.
+	if (row.user.suspendedAt || row.user.deletionScheduledAt) return null;
 
 	if (Date.now() - row.session.lastSeenAt.getTime() > LAST_SEEN_REFRESH_MS) {
 		await db
