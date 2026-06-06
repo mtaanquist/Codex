@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { recordRevision } from './revisions';
 import { chapters, outlineNodes, scenes, stories } from './db/schema';
@@ -105,7 +105,13 @@ export async function saveOutlineNode(
 			const [scene] = await db
 				.select({ id: scenes.id })
 				.from(scenes)
-				.where(and(eq(scenes.id, linkedSceneId), eq(scenes.storyId, node.storyId)));
+				.where(
+					and(
+						eq(scenes.id, linkedSceneId),
+						eq(scenes.storyId, node.storyId),
+						isNull(scenes.deletedAt)
+					)
+				);
 			if (!scene) return { ok: false, reason: 'linked scene not found' };
 		}
 		if (linkedChapterId) {

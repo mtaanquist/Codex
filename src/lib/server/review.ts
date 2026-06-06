@@ -237,7 +237,9 @@ export async function createThread(
 	const [scene] = await db
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
 		.from(scenes)
-		.where(and(eq(scenes.id, input.sceneId), eq(scenes.storyId, input.storyId)));
+		.where(
+			and(eq(scenes.id, input.sceneId), eq(scenes.storyId, input.storyId), isNull(scenes.deletedAt))
+		);
 	if (!scene) return { ok: false, reason: 'That scene does not exist.' };
 	if (
 		input.anchor &&
@@ -434,7 +436,9 @@ export async function createSuggestion(
 	const [scene] = await db
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
 		.from(scenes)
-		.where(and(eq(scenes.id, input.sceneId), eq(scenes.storyId, input.storyId)));
+		.where(
+			and(eq(scenes.id, input.sceneId), eq(scenes.storyId, input.storyId), isNull(scenes.deletedAt))
+		);
 	if (!scene) return { ok: false, reason: 'That scene does not exist.' };
 	const { start, end } = input.range;
 	if (!Number.isInteger(start) || !Number.isInteger(end)) {

@@ -49,7 +49,7 @@ export async function storyProgress(db: Database, universeId: string): Promise<S
 			count(s.id) filter (where s.status = 'revised')::int as revised,
 			count(s.id) filter (where s.status = 'final')::int as final
 		from stories st
-		left join scenes s on s.story_id = st.id
+		left join scenes s on s.story_id = st.id and s.deleted_at is null
 		where st.universe_id = ${universeId}
 		group by st.id
 		order by st.position_in_series asc, st.created_at asc
@@ -153,7 +153,7 @@ export async function writingActivity(
 					r.body_md,
 					r.created_at
 				from revisions r
-				join scenes s on s.id = r.entity_id
+				join scenes s on s.id = r.entity_id and s.deleted_at is null
 				join stories st on st.id = s.story_id
 				where r.entity_type = 'scene'
 					and st.universe_id = ${universeId}
@@ -169,7 +169,7 @@ export async function writingActivity(
 		from (
 			select distinct on (r.entity_id) r.entity_id, r.body_md
 			from revisions r
-			join scenes s on s.id = r.entity_id
+			join scenes s on s.id = r.entity_id and s.deleted_at is null
 			join stories st on st.id = s.story_id
 			where r.entity_type = 'scene'
 				and st.universe_id = ${universeId}
@@ -180,7 +180,7 @@ export async function writingActivity(
 	const yearRows = await db.execute(sql`
 		select distinct ((r.created_at at time zone ${timezone})::date)::text as day
 		from revisions r
-		join scenes s on s.id = r.entity_id
+		join scenes s on s.id = r.entity_id and s.deleted_at is null
 		join stories st on st.id = s.story_id
 		where r.entity_type = 'scene'
 			and st.universe_id = ${universeId}

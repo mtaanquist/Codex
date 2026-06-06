@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
 
@@ -20,10 +20,11 @@ export async function applySceneOrder(
 		.select({ id: chapters.id })
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId));
+	// Trashed scenes sit outside the order until restored.
 	const sceneRows = await db
 		.select({ id: scenes.id })
 		.from(scenes)
-		.where(eq(scenes.storyId, storyId));
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
 
 	const chapterIds = new Set(chapterRows.map((row) => row.id));
 	const orderedChapterIds = new Set(order.chapters.map((chapter) => chapter.id));
