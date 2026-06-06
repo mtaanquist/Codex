@@ -622,29 +622,11 @@
 	border-radius: 99px;
 	flex: none;
 }
-/* Chapter management and the scene trash: hover tools on chapter heads and
-   scene rows, an inline rename field, and the deleted-scenes list. */
-.chapter-head {
-	display: flex;
-	align-items: center;
-}
-.chapter-head .chapter-row {
-	flex: 1;
-	min-width: 0;
-}
+/* Chapter management and the scene trash: an inline rename field, the
+   deleted-scenes list, and small buttons on its rows. The chapter and
+   scene actions themselves live in the sidebar's right-click menu. */
 .chapter-row.as-label {
 	cursor: default;
-}
-.chapter-tools {
-	display: none;
-	align-items: center;
-	gap: 1px;
-	flex: none;
-	padding-right: 4px;
-}
-.chapter-head:hover .chapter-tools,
-.chapter-head:focus-within .chapter-tools {
-	display: flex;
 }
 .tool-btn {
 	display: grid;
@@ -669,12 +651,6 @@
 	opacity: 0.35;
 	cursor: default;
 }
-.tool-btn.turn-up svg {
-	transform: rotate(-90deg);
-}
-.tool-btn.turn-down svg {
-	transform: rotate(90deg);
-}
 .chapter-rename {
 	display: flex;
 	align-items: center;
@@ -695,22 +671,6 @@
 .chapter-rename .tool-btn {
 	width: auto;
 	padding: 0 8px;
-}
-.scene-line {
-	display: flex;
-	align-items: center;
-}
-.scene-line .scene-row {
-	flex: 1;
-	min-width: 0;
-}
-.scene-del {
-	display: none;
-	flex: none;
-}
-.scene-line:hover .scene-del,
-.scene-line:focus-within .scene-del {
-	display: block;
 }
 .trash .chapter-name {
 	color: var(--text-muted);
