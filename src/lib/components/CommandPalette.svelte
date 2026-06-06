@@ -28,7 +28,8 @@
 		scene: 'Scene',
 		character: 'Character',
 		place: 'Place',
-		lore: 'Lore'
+		lore: 'Lore',
+		passage: 'In the text'
 	};
 
 	function navigate(href: string): () => Promise<void> {

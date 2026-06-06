@@ -18,7 +18,7 @@ Each of those has its own help article. Look for the "?" next to a heading anywh
 
 ## Jumping around
 
-Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The same box lists commands for where you are, such as creating a scene or opening the story's settings.
+Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose: matches in scene text show a snippet and open the scene. The same box lists commands for where you are, such as creating a scene or opening the story's settings.
 
 ## Web addresses
 

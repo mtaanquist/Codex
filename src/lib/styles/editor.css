@@ -133,6 +133,80 @@
 	color: var(--text);
 }
 
+/* The find-and-replace panel (Ctrl+F). CodeMirror renders a bare form; this
+   dresses it in the app's tokens. */
+.editor-cm .cm-panels {
+	background: var(--bg-elevated);
+	border-color: var(--border);
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: 12.5px;
+	border-radius: var(--radius, 9px);
+	box-shadow: var(--shadow);
+}
+.editor-cm .cm-panels.cm-panels-bottom {
+	border-top: 1px solid var(--border);
+}
+.editor-cm .cm-panel.cm-search {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 5px;
+	padding: 8px 10px;
+}
+.editor-cm .cm-panel.cm-search input[type='checkbox'] {
+	accent-color: var(--accent);
+	margin: 0 3px 0 6px;
+}
+.editor-cm .cm-panel.cm-search label {
+	display: inline-flex;
+	align-items: center;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.editor-cm .cm-textfield {
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: 12.5px;
+	padding: 4px 8px;
+}
+.editor-cm .cm-textfield:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+.editor-cm .cm-button {
+	background: var(--bg);
+	background-image: none;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: 12px;
+	padding: 4px 9px;
+	cursor: pointer;
+}
+.editor-cm .cm-button:hover {
+	background: var(--bg-hover);
+}
+.editor-cm .cm-panel.cm-search [name='close'] {
+	color: var(--text-faint);
+	font-size: 16px;
+	cursor: pointer;
+	margin-left: auto;
+	background: none;
+	border: 0;
+}
+.editor-cm .cm-searchMatch {
+	background: color-mix(in oklab, var(--accent) 22%, transparent);
+	border-radius: 2px;
+}
+.editor-cm .cm-searchMatch-selected {
+	background: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
 /* TODO markers: highlighted selections and TODO: lines. */
 .cm-line.todo-line {
 	background: color-mix(in oklab, var(--cat-amber, #b8860b) 14%, transparent);
