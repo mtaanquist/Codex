@@ -8,6 +8,7 @@ test('rich editing: toolbar formats, story override hides the marks', async ({ p
 	await page.goto('/');
 
 	const universeName = `Rich Test ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);

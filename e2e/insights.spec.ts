@@ -6,6 +6,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await page.goto('/');
 
 	const universeName = `Insights Test ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);

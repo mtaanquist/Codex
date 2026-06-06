@@ -11,6 +11,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await page.goto('/');
 
 	const universeName = `Review Test ${Date.now()}`;
+	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);

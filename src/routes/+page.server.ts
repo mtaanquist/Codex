@@ -1,9 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
 import { entityCategories, stories, universes } from '$lib/server/db/schema';
 import { uniqueSlug } from '$lib/server/slugs';
+import { relativeTime, storyStatus } from '$lib/dashboard';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page; no data to load for it.
@@ -16,25 +17,67 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.from(universes)
 		.where(eq(universes.ownerId, user.id))
 		.orderBy(desc(universes.updatedAt));
-	const storyList =
-		list.length === 0
-			? []
-			: await db
-					.select({
-						id: stories.id,
-						slug: stories.slug,
-						title: stories.title,
-						brief: stories.brief,
-						universeId: stories.universeId
-					})
-					.from(stories)
-					.where(
-						inArray(
-							stories.universeId,
-							list.map((universe) => universe.id)
-						)
-					)
-					.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
+
+	// One row per story with everything its card shows: chapter and word
+	// totals, scene status counts for the pill, outline nodes for stories
+	// with no prose yet, and when anything in it was last touched.
+	const result = await db.execute(sql`
+		select st.id, st.slug, st.title, st.brief, st.universe_id,
+			st.position_in_series, st.created_at,
+			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
+			(select count(*)::int from outline_nodes o where o.story_id = st.id) as outline_nodes,
+			count(s.id)::int as scene_count,
+			coalesce(sum(s.word_count), 0)::int as words,
+			count(s.id) filter (where s.status = 'outline')::int as outline,
+			count(s.id) filter (where s.status = 'draft')::int as draft,
+			count(s.id) filter (where s.status = 'revised')::int as revised,
+			count(s.id) filter (where s.status = 'final')::int as final,
+			greatest(st.updated_at, max(s.updated_at)) as edited_at
+		from stories st
+		left join scenes s on s.story_id = st.id and s.deleted_at is null
+		where st.owner_id = ${user.id}
+		group by st.id
+		order by st.position_in_series asc nulls last, st.created_at asc
+	`);
+	const storyList = result.rows.map((row) => {
+		const r = row as {
+			id: string;
+			slug: string;
+			title: string;
+			brief: string | null;
+			universe_id: string;
+			chapters: number;
+			outline_nodes: number;
+			scene_count: number;
+			words: number;
+			outline: number;
+			draft: number;
+			revised: number;
+			final: number;
+			edited_at: string | Date;
+		};
+		const editedAt = new Date(r.edited_at);
+		return {
+			id: r.id,
+			slug: r.slug,
+			title: r.title,
+			brief: r.brief,
+			universeId: r.universe_id,
+			chapters: r.chapters,
+			outlineNodes: r.outline_nodes,
+			words: r.words,
+			editedAt: editedAt.toISOString(),
+			editedLabel: relativeTime(editedAt, new Date()),
+			status: storyStatus({
+				sceneCount: r.scene_count,
+				words: r.words,
+				outline: r.outline,
+				draft: r.draft,
+				revised: r.revised,
+				final: r.final
+			})
+		};
+	});
 
 	return {
 		user,
@@ -78,5 +121,36 @@ export const actions: Actions = {
 			universe = await create(await uniqueSlug(db, 'universes', locals.user.id, name, 'universe'));
 		}
 		redirect(303, `/universes/${universe.slug}`);
+	},
+	// The dashboard's per-universe new-story card.
+	createStory: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const universeId = String(data.get('universeId') ?? '');
+		const title = String(data.get('title') ?? '').trim();
+		if (!title) {
+			return fail(400, { scope: 'story', universeId, message: 'Give the story a title.' });
+		}
+		const [universe] = await db
+			.select({ id: universes.id })
+			.from(universes)
+			.where(and(eq(universes.id, universeId), eq(universes.ownerId, locals.user.id)));
+		if (!universe) {
+			return fail(404, { scope: 'story', universeId, message: 'That universe does not exist.' });
+		}
+		const create = (slug: string) =>
+			db
+				.insert(stories)
+				.values({ universeId: universe.id, ownerId: locals.user!.id, title, slug })
+				.returning();
+		let story;
+		try {
+			[story] = await create(await uniqueSlug(db, 'stories', locals.user.id, title, 'story'));
+		} catch (err) {
+			// A concurrent create took the slug between the pick and the insert.
+			if (!isUniqueViolation(err)) throw err;
+			[story] = await create(await uniqueSlug(db, 'stories', locals.user.id, title, 'story'));
+		}
+		redirect(303, `/stories/${story.slug}`);
 	}
 };
