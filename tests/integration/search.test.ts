@@ -50,6 +50,19 @@ beforeAll(async () => {
 	await db
 		.insert(scenes)
 		.values({ storyId: story.id, globalPosition: 1, title: 'The toll-gate at dusk' });
+	await db.insert(scenes).values({
+		storyId: story.id,
+		globalPosition: 2,
+		title: 'Embers',
+		bodyMd: 'The brazier guttered. Marra counted the obsidian coins twice before the gate opened.'
+	});
+	await db.insert(scenes).values({
+		storyId: story.id,
+		globalPosition: 3,
+		title: 'Cut',
+		bodyMd: 'A trashed line about obsidian that must never surface.',
+		deletedAt: new Date()
+	});
 	await db.insert(characters).values({
 		universeId: universe.id,
 		ownerId,
@@ -96,5 +109,14 @@ describe('searchAll', () => {
 		expect(await searchAll(db, strangerId, 'ash')).toEqual([]);
 		expect(await searchAll(db, ownerId, '%')).toEqual([]);
 		expect(await searchAll(db, ownerId, '  ')).toEqual([]);
+	});
+
+	it('finds prose passages with a snippet, skipping trashed scenes', async () => {
+		const results = await searchAll(db, ownerId, 'OBSIDIAN');
+		const passages = results.filter((result) => result.type === 'passage');
+		expect(passages).toHaveLength(1);
+		expect(passages[0].label).toContain('obsidian coins');
+		expect(passages[0].sublabel).toBe('Embers - Book of Ash');
+		expect(passages[0].href).toMatch(/^\/stories\/book-of-ash\?scene=[0-9a-f-]{36}$/);
 	});
 });

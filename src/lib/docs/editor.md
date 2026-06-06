@@ -25,6 +25,10 @@ Your work is stored as markdown in both modes; switching is purely about what yo
 
 To force a page break in print and PDF output, put \page alone on its own line. It does nothing on screen or in the reading pages.
 
+## Find and replace
+
+Press Ctrl+F (Cmd+F on a Mac) in the editor to search the open scene. The panel finds as you type; Enter jumps to the next match, and the replace field swaps one match or all of them. Press Escape to close it. To search across every scene, use Ctrl+K instead.
+
 ## The selection menu
 
 Select a word or phrase and right-click it for a small menu. The top row formats the selection: bold, italic, quote, bullet list. Below it you can create a new character, place, or lore entry named after the selection, without leaving the page; the new name underlines in the text right away, and you can fill in its details from the planning view later. Lore entries created this way file under your first lore category. Right-clicking without a selection opens the browser's own menu, with its spelling suggestions.

@@ -1,6 +1,7 @@
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { search, searchKeymap } from '@codemirror/search';
 import { markdown } from '@codemirror/lang-markdown';
 import { markdownStyling, richModeExtension } from './editor-richtext';
 import { formatKeymap } from './editor-format';
@@ -22,8 +23,10 @@ export function proseExtensions(opts: {
 }): Extension[] {
 	return [
 		history(),
-		keymap.of([...defaultKeymap, ...historyKeymap]),
+		keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
 		formatKeymap(),
+		// Find and replace within the scene; Ctrl+F opens the panel.
+		search(),
 		markdown(),
 		markdownStyling(),
 		opts.editingMode === 'rich' ? richModeExtension() : [],

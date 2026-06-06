@@ -6,7 +6,7 @@ import { characters, loreEntries, places, scenes, stories, universes } from './d
 // matched by substring, each result carrying the link that opens it.
 
 export type SearchResult = {
-	type: 'universe' | 'story' | 'scene' | 'character' | 'place' | 'lore';
+	type: 'universe' | 'story' | 'scene' | 'character' | 'place' | 'lore' | 'passage';
 	label: string;
 	sublabel: string | null;
 	href: string;
@@ -60,6 +60,23 @@ export async function searchAll(
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(and(eq(stories.ownerId, userId), ilike(scenes.title, like), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.title))
+		.limit(PER_TYPE);
+
+	// Matches inside the prose itself, shown as a snippet around the first
+	// hit. The pattern escapes ILIKE wildcards, so the match is a literal
+	// substring and strpos on the lowercased text always finds it.
+	const passageRows = await db
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			storySlug: stories.slug,
+			storyTitle: stories.title,
+			snippet: sql<string>`substr(${scenes.bodyMd}, greatest(strpos(lower(${scenes.bodyMd}), lower(${trimmed})) - 40, 1), ${trimmed.length + 80})`
+		})
+		.from(scenes)
+		.innerJoin(stories, eq(scenes.storyId, stories.id))
+		.where(and(eq(stories.ownerId, userId), ilike(scenes.bodyMd, like), isNull(scenes.deletedAt)))
+		.orderBy(asc(stories.title), asc(scenes.globalPosition))
 		.limit(PER_TYPE);
 
 	const characterRows = await db
@@ -131,6 +148,14 @@ export async function searchAll(
 				type: 'scene',
 				label: row.title ?? 'Untitled scene',
 				sublabel: row.storyTitle,
+				href: `/stories/${row.storySlug}?scene=${row.id}`
+			})
+		),
+		...passageRows.map(
+			(row): SearchResult => ({
+				type: 'passage',
+				label: row.snippet.replace(/\s+/g, ' ').trim(),
+				sublabel: `${row.title ?? 'Untitled scene'} - ${row.storyTitle}`,
 				href: `/stories/${row.storySlug}?scene=${row.id}`
 			})
 		),
