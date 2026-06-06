@@ -7,7 +7,6 @@ import {
 	entityMentions,
 	entityRelationships,
 	loreStoryNotes,
-	outlineNodes,
 	placeStoryMemberships,
 	placeStoryNotes,
 	publicationAssets,
@@ -39,10 +38,6 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		.select({ id: chapters.id })
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId));
-	const nodeRows = await tx
-		.select({ id: outlineNodes.id })
-		.from(outlineNodes)
-		.where(eq(outlineNodes.storyId, storyId));
 	const pubRows = await tx
 		.select({ id: publications.id })
 		.from(publications)
@@ -52,7 +47,7 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 	const pubIds = pubRows.map((row) => row.id);
 	// Revisions and mentions are polymorphic (no FK); match by the ids of
 	// this story's revisable items and scenes.
-	const revisableIds = [...sceneIds, ...chapterRows.map((r) => r.id), ...nodeRows.map((r) => r.id)];
+	const revisableIds = [...sceneIds, ...chapterRows.map((r) => r.id)];
 
 	if (pubIds.length > 0) {
 		await tx.delete(publicationAssets).where(inArray(publicationAssets.publicationId, pubIds));
@@ -103,8 +98,6 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 
 	// Outline nodes self-reference via parent_id; drop the links before
 	// deleting so the rows can go in any order.
-	await tx.update(outlineNodes).set({ parentId: null }).where(eq(outlineNodes.storyId, storyId));
-	await tx.delete(outlineNodes).where(eq(outlineNodes.storyId, storyId));
 
 	// Scenes reference chapters, so scenes first.
 	await tx.delete(scenes).where(eq(scenes.storyId, storyId));

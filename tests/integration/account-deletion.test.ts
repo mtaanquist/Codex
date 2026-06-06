@@ -13,7 +13,6 @@ import {
 	entityMentions,
 	entityRelationships,
 	loreEntries,
-	outlineNodes,
 	places,
 	publicationAssets,
 	publications,
@@ -56,7 +55,7 @@ async function makeUser(email: string) {
 }
 
 // A full account: a universe with a category, all three entity kinds, a
-// story with a chapter and scene, a marker, a revision, a mention, an outline
+// story with a chapter and scene, a marker, a revision, a mention,
 // node, a membership, a story-scoped and a universe-wide relationship, a
 // publication with an asset reference, plus a session and a stray asset.
 async function seedFullAccount(ownerId: string) {
@@ -106,7 +105,6 @@ async function seedFullAccount(ownerId: string) {
 		position: 0,
 		surroundingText: 'Alice.'
 	});
-	await db.insert(outlineNodes).values({ storyId: story.id, position: 1, title: 'Act 1' });
 	await db.insert(characterStoryMemberships).values({ characterId: alice.id, storyId: story.id });
 	const [livesIn] = await db.select().from(relationTypes).where(eq(relationTypes.key, 'lives_in'));
 	for (const storyId of [story.id, null]) {
@@ -157,7 +155,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, outline_nodes, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, assets, stories, universes, auth_tokens, sessions, users cascade'
+		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, assets, stories, universes, auth_tokens, sessions, users cascade'
 	);
 	await ensureBuiltInRelationTypes(pool);
 	removedKeys.length = 0;

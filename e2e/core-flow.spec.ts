@@ -138,52 +138,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 
-	// Plan view: create a character, fill the editor, and it persists.
+	// Plan view: with nothing selected the centre shows the scene board.
 	await page.getByRole('link', { name: 'Plan' }).click();
 	await expect(page).toHaveURL(/\/plan$/);
+	await expect(page.getByRole('region', { name: 'Draft scenes' })).toBeVisible();
 
-	// Outline: two nodes, the second indented under the first.
-	await page.getByPlaceholder('New outline node').fill('Act one');
-	await page.getByRole('button', { name: 'Add node' }).click();
-	await expect(page).toHaveURL(/node=/);
-	await page.getByPlaceholder('New outline node').fill('The toll');
-	await page.getByRole('button', { name: 'Add node' }).click();
-	const tollRow = page.locator('.o-row', { hasText: 'The toll' });
-	await tollRow.hover();
-	const indentMove = page.waitForResponse((r) => r.url().includes('/move') && r.ok());
-	await tollRow.getByTitle('Indent').click();
-	await indentMove;
-	await expect(page.locator('.o-row').nth(1)).toHaveAttribute('style', /padding-left: 22px/);
-
-	// The node editor renames and links the node to a scene; both survive a
-	// reload.
-	await page.locator('.o-title', { hasText: 'The toll' }).click();
-	// Wait for the editor's state binding to be live before typing: a fill
-	// that lands mid-mount gets reset to the stored title, and the autosave
-	// then persists the stale value (flaked on the v2.10.0 release run).
-	await expect(page.getByPlaceholder('Outline node', { exact: true })).toHaveValue('The toll');
-	const nodeSave = page.waitForResponse(
-		(r) => r.url().includes('/api/outline/') && r.request().method() === 'PUT' && r.ok()
-	);
-	await page.getByPlaceholder('Outline node', { exact: true }).fill('The toll-gate');
-	await page.getByLabel('Linked to').selectOption({ label: 'Departure from Halden' });
-	await nodeSave;
-	await page.reload();
-	await expect(page.getByPlaceholder('Outline node', { exact: true })).toHaveValue('The toll-gate');
-	await expect(page.getByRole('link', { name: 'Open the linked scene' })).toBeVisible();
-
-	// A third root node dragged above the first keeps its place.
-	await page.getByPlaceholder('New outline node').fill('Act two');
-	await page.getByRole('button', { name: 'Add node' }).click();
-	const outlineOrderSave = page.waitForResponse(
-		(r) => r.url().includes('/outline-order') && r.ok()
-	);
-	await page
-		.locator('.o-row', { hasText: 'Act two' })
-		.dragTo(page.locator('.o-row', { hasText: 'Act one' }), { targetPosition: { x: 60, y: 4 } });
-	await outlineOrderSave;
-	await expect(page.locator('.o-row').first()).toContainText('Act two');
-
+	// Create a character, fill the editor, and it persists.
 	await page.getByPlaceholder('New character name').fill('Alice');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page).toHaveURL(/entity=/);
@@ -604,7 +564,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await universeSection.getByRole('link', { name: 'Book of Ash' }).click();
 	await page.getByRole('link', { name: 'Plan' }).click();
 	await expect(page.locator('.ent-row', { hasText: 'Alice Vane' })).toHaveCount(1);
-	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+	// Corvin is not a member yet; he shows only in the open universe list.
+	await expect(page.locator('.ent-row:not(.uni-row)', { hasText: 'Corvin' })).toHaveCount(0);
 	await page.getByLabel('Add an existing character').selectOption({ label: 'Corvin' });
 	await page.getByRole('button', { name: 'Add to this story' }).click();
 	await expect(page).toHaveURL(/entity=/);
@@ -615,11 +576,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	);
 	await page.getByRole('button', { name: 'Remove from this story' }).click();
 	await memberOff;
-	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(0);
+	// Corvin is not a member yet; he shows only in the open universe list.
+	await expect(page.locator('.ent-row:not(.uni-row)', { hasText: 'Corvin' })).toHaveCount(0);
 
-	// Deleting a story that has chapters, scenes, an outline, markers,
-	// revisions, and a published edition succeeds rather than 500ing on the
-	// foreign keys, and lands back on the universe.
+	// Deleting a story that has chapters, scenes, markers, revisions, and a
+	// published edition succeeds rather than 500ing on the foreign keys, and
+	// lands back on the universe.
 	await page.goto(`${proseSceneUrl.split('?')[0]}/settings`);
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);

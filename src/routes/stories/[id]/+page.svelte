@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
@@ -113,10 +113,13 @@
 		rowMenu = { x: event.clientX, y: event.clientY, target };
 	}
 
+	// The book switcher's menu, toggled from the sidebar header.
+	let storyMenuOpen = $state(false);
+
 	function onWindowPointerDown(event: MouseEvent) {
-		if (!rowMenu) return;
 		const target = event.target as HTMLElement | null;
-		if (!target?.closest('.row-menu')) rowMenu = null;
+		if (storyMenuOpen && !target?.closest('.outline-head')) storyMenuOpen = false;
+		if (rowMenu && !target?.closest('.row-menu')) rowMenu = null;
 	}
 
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
@@ -242,6 +245,10 @@
 <svelte:window
 	onkeydown={(e) => {
 		if (e.key !== 'Escape') return;
+		if (storyMenuOpen) {
+			storyMenuOpen = false;
+			return;
+		}
 		if (rowMenu) {
 			rowMenu = null;
 			return;
@@ -285,13 +292,49 @@
 			<div class="left-scroll">
 				<div class="outline">
 					<div class="outline-head">
-						<div class="story-switch">
+						<!-- The book switcher: with more than one story in the
+						     universe, the header opens a menu to jump between them. -->
+						<button
+							class="story-switch"
+							type="button"
+							disabled={data.storySiblings.length < 2}
+							onclick={() => (storyMenuOpen = !storyMenuOpen)}
+						>
 							<span class="story-book"><Icon name="book" size={15} /></span>
 							<span class="story-id">
 								<span class="story-title">{data.story.title}</span>
 								<span class="story-universe">{data.universe.name}</span>
 							</span>
-						</div>
+							{#if data.storySiblings.length > 1}
+								<span class="story-caret" class:open={storyMenuOpen}>
+									<Icon name="chevron" size={13} />
+								</span>
+							{/if}
+						</button>
+						{#if storyMenuOpen}
+							<div class="story-menu">
+								{#each data.storySiblings as sibling (sibling.id)}
+									<button
+										type="button"
+										class:active={sibling.id === data.story.id}
+										onclick={async () => {
+											storyMenuOpen = false;
+											if (sibling.id !== data.story.id) {
+												// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from an owned slug
+												await goto(`/stories/${sibling.slug}`);
+											}
+										}}
+									>
+										<span class="sm-title">{sibling.title}</span>
+										<span class="sm-sub">
+											{sibling.chapters} chapter{sibling.chapters === 1 ? '' : 's'} · {words(
+												sibling.words
+											) || '0'} words
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 					<div class="chapters">
 						{#each data.chapters as chapter, index (chapter.id)}

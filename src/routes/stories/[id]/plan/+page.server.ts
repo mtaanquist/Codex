@@ -6,14 +6,12 @@ import {
 	chapters,
 	characterStoryNotes,
 	loreStoryNotes,
-	outlineNodes,
 	placeStoryNotes,
 	sceneMarkers,
 	scenes
 } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
 import { planActions } from '$lib/server/plan-actions';
-import { createOutlineNode, listOutline } from '$lib/server/outline';
 import {
 	declareMembership,
 	membershipStatus,
@@ -135,24 +133,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
-	// The story's outline, and the chapters and scenes a node can link to.
-	const outline = await listOutline(db, story.id);
-	const nodeId = url.searchParams.get('node');
-	let selectedNode = null;
-	if (nodeId && !selected) {
-		const [nodeRow] = await db
-			.select()
-			.from(outlineNodes)
-			.where(and(eq(outlineNodes.id, nodeId), eq(outlineNodes.storyId, story.id)));
-		selectedNode = nodeRow ?? null;
-	}
 	const chapterList = await db
 		.select({ id: chapters.id, title: chapters.title })
 		.from(chapters)
 		.where(eq(chapters.storyId, story.id))
 		.orderBy(asc(chapters.position));
-	// Full rows for the scene board; the outline node editor only reads
-	// id and title from these.
+	// Full rows for the scene board.
 	const sceneList = await db
 		.select({
 			id: scenes.id,
@@ -184,9 +170,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// names one. Selection above already enforced ownership.
 	const revisionTarget: { type: RevisionEntityType; id: string } | null = selected
 		? { type: selectedKind === 'lore' ? 'lore_entry' : selectedKind, id: selected.id }
-		: selectedNode
-			? { type: 'outline_node', id: selectedNode.id }
-			: null;
+		: null;
 	let revisionRows: RevisionRow[] = [];
 	let revisionPreview = null;
 	if (revisionTarget) {
@@ -211,8 +195,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		relationTypes,
 		relationships,
 		membership,
-		outline,
-		selectedNode,
 		chapters: chapterList,
 		scenes: sceneList,
 		todoCounts,
@@ -245,15 +227,5 @@ export const actions: Actions = {
 			return fail(400, { kind: 'member', message: result.reason });
 		}
 		redirect(303, `/stories/${story.slug}/plan?entity=${entityId}`);
-	},
-	createOutlineNode: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const title = String(data.get('title') ?? '').trim();
-		if (!title) {
-			return fail(400, { kind: 'outline', message: 'Give the node a title.' });
-		}
-		const node = await createOutlineNode(db, story.id, title);
-		redirect(303, `/stories/${story.slug}/plan?node=${node.id}`);
 	}
 };

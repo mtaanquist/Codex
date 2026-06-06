@@ -340,13 +340,17 @@ shipping as its own PR.
       asked for already existed as the rich editing mode - it just was
       not the default, so the default flipped to rich (stored
       preferences stand). Merged 2026-06-06 (#165), shipped as v2.25.0.
-- [ ] Plan-page alignment: story plan right-pane pills identical between
-      the board and entity views (empty message instead of vanishing);
-      same pill parity on the universe plan; the universe plan center
-      gets a read-only kanban of stories by derived status; "In the
-      universe" lists made more prominent; a book switcher in the Write
-      view per the prototype; the Outline view retires (scene status +
-      the future Notes tab cover it; data dropped, pre-production).
+- [x] Plan-page alignment: both plan pages keep the same
+      Reference/History/Session pills with an empty-state hint; the
+      universe plan's empty centre became a read-only story board by
+      derived status with a pinned "Story board" row; "In the universe"
+      lists start open, styled as real sections; the write page's
+      sidebar header became the prototype's book switcher; the Outline
+      view retired (migration 0039 drops outline_nodes + its revisions;
+      module, routes, editor, docs all removed - scene status + the
+      future Notes tab cover it); the admin shell rail widened to the
+      editor's 264px so screens stop shifting (follow-up feedback).
+      Merged 2026-06-06 (#167), shipped as v2.26.0.
 - [ ] Preferences and left-menu search: a user preference to hide the
       daily goal/streak in the Session pane; a search field per left-menu
       tab like the prototype's.

@@ -59,11 +59,7 @@
 		</div>
 		{#if story.brief}<p class="story-card-brief">{story.brief}</p>{/if}
 		<div class="story-card-meta">
-			{#if story.words === 0 && story.outlineNodes > 0}
-				<span>{count(story.outlineNodes, 'outline node')}</span>
-			{:else}
-				<span>{count(story.chapters, 'chapter')}</span>
-			{/if}
+			<span>{count(story.chapters, 'chapter')}</span>
 			<span class="story-card-meta-sep">·</span>
 			<span>{count(story.words, 'word')}</span>
 			<span class="story-card-meta-sep">·</span>
