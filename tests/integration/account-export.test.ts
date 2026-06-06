@@ -123,6 +123,44 @@ describe('buildAccountExport', () => {
 		expect(entries(bytes).names).toEqual(['README.md']);
 	});
 
+	it('keeps colliding names apart instead of overwriting files', async () => {
+		const [universe] = await db.insert(universes).values({ ownerId, name: 'Mythos' }).returning();
+		// Two characters whose names slugify identically.
+		await db.insert(characters).values([
+			{ universeId: universe.id, ownerId, name: 'Jon', bodyMd: 'The first Jon.' },
+			{ universeId: universe.id, ownerId, name: 'J\u00f6n', bodyMd: 'The other Jon.' }
+		]);
+		// Two stories with the same title, as the importer deliberately creates.
+		for (const n of [1, 2]) {
+			const [story] = await db
+				.insert(stories)
+				.values({ universeId: universe.id, ownerId, title: 'Halden' })
+				.returning();
+			await db.insert(scenes).values({
+				storyId: story.id,
+				globalPosition: 1,
+				title: 'Only scene',
+				bodyMd: `Copy number ${n}.`
+			});
+		}
+
+		const { bytes } = await buildAccountExport(db, ownerId, stubLoader);
+		const zip = entries(bytes);
+
+		expect(zip.text('universes/mythos/characters/jon.md')).toContain('The first Jon.');
+		expect(zip.text('universes/mythos/characters/jon-2.md')).toContain('The other Jon.');
+		const storyFiles = zip.names.filter((n) => n.endsWith('/story.md'));
+		expect(storyFiles).toContain('universes/mythos/stories/halden/story.md');
+		expect(storyFiles).toContain('universes/mythos/stories/halden-2/story.md');
+		// Both manuscripts survive, not interleaved into one folder.
+		expect(zip.text('universes/mythos/stories/halden/unfiled/01-only-scene.md')).toContain(
+			'Copy number 1.'
+		);
+		expect(zip.text('universes/mythos/stories/halden-2/unfiled/01-only-scene.md')).toContain(
+			'Copy number 2.'
+		);
+	});
+
 	it('archives story notes, relationships, and review feedback', async () => {
 		const [universe] = await db.insert(universes).values({ ownerId, name: 'Mythos' }).returning();
 		const [alice] = await db
