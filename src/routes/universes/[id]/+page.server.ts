@@ -4,7 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
 import { universes } from '$lib/server/db/schema';
 import { ownedUniverse } from '$lib/server/universe-access';
-import { slugChangeError, slugTakenMessage } from '$lib/server/slugs';
+import { uniqueSlug } from '$lib/server/slugs';
 import { universeTimeline, universeRevisionCount } from '$lib/server/revisions';
 import { listCategories, saveCategories, universeContents } from '$lib/server/categories';
 import { trashUniverse, UNIVERSE_TRASH_DAYS } from '$lib/server/universe-lifecycle';
@@ -26,29 +26,27 @@ export const actions: Actions = {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		const data = await request.formData();
 		const name = String(data.get('name') ?? '').trim();
-		const slug = String(data.get('slug') ?? '').trim();
 		const descriptionMd = String(data.get('description') ?? '').trim() || null;
 		if (!name) {
 			return fail(400, { action: 'update', message: 'The universe needs a name.' });
 		}
-		const message = await slugChangeError(
-			db,
-			'universes',
-			locals.user!.id,
-			slug,
-			universe.slug,
-			universe.id
-		);
-		if (message) return fail(400, { action: 'update', message });
-		try {
+		// The slug follows the name: a rename moves the universe's URL, an
+		// unchanged name leaves it alone.
+		const save = async (slug: string) => {
 			await db
 				.update(universes)
 				.set({ name, slug, descriptionMd })
 				.where(eq(universes.id, universe.id));
+			return slug;
+		};
+		const freshSlug = () => uniqueSlug(db, 'universes', locals.user!.id, name, 'universe');
+		let slug;
+		try {
+			slug = await save(name === universe.name ? universe.slug : await freshSlug());
 		} catch (err) {
-			// A concurrent write can take the slug between the check and the update.
+			// A concurrent create took the slug between the pick and the update.
 			if (!isUniqueViolation(err)) throw err;
-			return fail(400, { action: 'update', message: slugTakenMessage('universes') });
+			slug = await save(await freshSlug());
 		}
 		// A changed slug moves this page's own URL.
 		if (slug !== universe.slug) redirect(303, `/universes/${slug}`);

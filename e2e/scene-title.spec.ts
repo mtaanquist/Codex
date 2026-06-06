@@ -32,3 +32,37 @@ test('scene title survives a reload', async ({ page }) => {
 		await expect(page.locator('.editor-title-input')).toHaveValue('The Hook');
 	}).toPass({ timeout: 15_000 });
 });
+
+// Opening a story without naming a scene resumes the one edited last.
+test('opening a story resumes the last-edited scene', async ({ page }) => {
+	await page.goto('/');
+
+	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
+	await page.getByLabel('New universe').fill(`Resumefall ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Resumefall ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
+	await page.getByLabel('New story').fill(`Bookmarks ${stamp}`);
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page).toHaveURL(`/stories/bookmarks-${stamp}`);
+
+	// Two scenes; the second one gets the most recent edit.
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(2);
+	const saved = page.waitForResponse(
+		(response) => response.url().includes('/api/scenes/') && response.request().method() === 'PUT'
+	);
+	await page.locator('.editor-title-input').fill('Second thoughts');
+	await saved;
+
+	// Landing on the bare story URL opens that scene again.
+	await page.goto(`/stories/bookmarks-${stamp}`);
+	await expect(page.locator('.editor-title-input')).toHaveValue('Second thoughts');
+});

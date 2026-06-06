@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 // Readable URLs: universes and stories get slugs generated from their
-// names, and the slug is editable in settings.
-test('slugs: created things get readable addresses, editable in settings', async ({ page }) => {
+// names, and a rename in settings moves the address along with it.
+test('slugs: created things get readable addresses that follow renames', async ({ page }) => {
 	await page.goto('/');
 
 	// The universe lands on a slugged address derived from its name.
@@ -22,9 +22,9 @@ test('slugs: created things get readable addresses, editable in settings', async
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/toll-road-${stamp}`);
 
-	// Editing the slug in settings moves the address.
+	// Renaming the story in settings moves the address with the title.
 	await page.goto(`/stories/toll-road-${stamp}/settings`);
-	await page.getByLabel('Slug').fill(`toll-${stamp}`);
+	await page.locator('#st-title').fill(`Toll ${stamp}`);
 	await page.locator('#details').getByRole('button', { name: 'Save', exact: true }).click();
 	await expect(page).toHaveURL(`/stories/toll-${stamp}/settings`);
 
@@ -32,7 +32,7 @@ test('slugs: created things get readable addresses, editable in settings', async
 	const stale = await page.goto(`/stories/toll-road-${stamp}`);
 	expect(stale!.status()).toBe(404);
 	await page.goto(`/stories/toll-${stamp}`);
-	await expect(page.locator('.story-title')).toHaveText(`Toll Road ${stamp}`);
+	await expect(page.locator('.story-title')).toHaveText(`Toll ${stamp}`);
 
 	// Plan actions redirect back to the slug address, not the id.
 	await page.goto(`/stories/toll-${stamp}/plan`);
@@ -44,4 +44,12 @@ test('slugs: created things get readable addresses, editable in settings', async
 	await page.getByPlaceholder('New place name').fill('Sluggate');
 	await page.getByRole('button', { name: 'Add place' }).click();
 	await expect(page).toHaveURL(new RegExp(`/universes/slugfall-${stamp}/plan\\?entity=`));
+
+	// Renaming the universe moves its address too.
+	await page.goto(`/universes/slugfall-${stamp}`);
+	await page.locator('#u-name').fill(`Slugged ${stamp}`);
+	await page.getByRole('button', { name: 'Save changes' }).click();
+	await expect(page).toHaveURL(`/universes/slugged-${stamp}`);
+	const staleUniverse = await page.goto(`/universes/slugfall-${stamp}/plan`);
+	expect(staleUniverse!.status()).toBe(404);
 });

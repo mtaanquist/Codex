@@ -35,6 +35,14 @@ test('command palette: search jumps to a story, commands create a scene', async 
 	await page.getByRole('option', { name: 'Command New scene' }).click();
 	await expect(page).toHaveURL(/scene=/);
 
+	// Focus mode toggles from the palette; Escape leaves it.
+	await page.keyboard.press('ControlOrMeta+k');
+	await page.getByLabel('Search everything').fill('focus');
+	await page.getByRole('option', { name: 'Command Focus mode' }).click();
+	await expect(page.locator('.app.focus-mode')).toHaveCount(1);
+	await page.keyboard.press('Escape');
+	await expect(page.locator('.app.focus-mode')).toHaveCount(0);
+
 	// Escape closes the palette without acting.
 	await page.keyboard.press('ControlOrMeta+k');
 	await expect(page.getByLabel('Search everything')).toBeVisible();

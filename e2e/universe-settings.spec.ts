@@ -20,16 +20,20 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await expect(page.locator('.stat-tile')).toHaveCount(5);
 	await expect(page.locator('.stat-tile').first()).toContainText('stories');
 
-	// Categories: rename the seeded one, add a second, save, both persist.
+	// Categories: rename a seeded one, add a third, save, all persist.
+	// New universes seed "Lore" and "Faction".
 	await page.getByRole('button', { name: 'Entity categories' }).click();
-	await expect(page.locator('.category-name-input')).toHaveCount(1);
-	await page.locator('.category-name-input').fill('Mythos');
-	await page.getByRole('button', { name: 'Add category' }).click();
-	await page.locator('.category-name-input').nth(1).fill('Factions');
-	await page.getByRole('button', { name: 'Save categories' }).click();
 	await expect(page.locator('.category-name-input')).toHaveCount(2);
+	await expect(page.locator('.category-name-input').nth(0)).toHaveValue('Lore');
+	await expect(page.locator('.category-name-input').nth(1)).toHaveValue('Faction');
+	await page.locator('.category-name-input').first().fill('Mythos');
+	await page.getByRole('button', { name: 'Add category' }).click();
+	await page.locator('.category-name-input').nth(2).fill('Spells');
+	await page.getByRole('button', { name: 'Save categories' }).click();
+	await expect(page.locator('.category-name-input')).toHaveCount(3);
 	await expect(page.locator('.category-name-input').nth(0)).toHaveValue('Mythos');
-	await expect(page.locator('.category-name-input').nth(1)).toHaveValue('Factions');
+	await expect(page.locator('.category-name-input').nth(1)).toHaveValue('Faction');
+	await expect(page.locator('.category-name-input').nth(2)).toHaveValue('Spells');
 
 	// History: a worldbuilding change shows up with its kind chip. Creating
 	// alone records nothing; the first edit does.

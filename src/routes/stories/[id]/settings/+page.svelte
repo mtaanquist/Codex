@@ -145,21 +145,9 @@
 									value={data.story.title}
 									required
 								/>
-							</div>
-							<div class="field">
-								<label for="st-slug">Slug</label>
-								<input
-									id="st-slug"
-									class="input"
-									type="text"
-									name="slug"
-									value={data.story.slug}
-									required
-									spellcheck="false"
-								/>
 								<span class="field-hint">
-									The story's web address: /stories/{data.story.slug}. Lowercase letters, numbers,
-									and hyphens. Changing it moves the address; the old one stops working.
+									The web address follows the title: /stories/{data.story.slug}. Renaming moves the
+									address; the old one stops working.
 								</span>
 							</div>
 							<div class="field">

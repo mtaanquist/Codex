@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -74,6 +74,15 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			.where(
 				and(eq(scenes.id, selectedId), eq(scenes.storyId, story.id), isNull(scenes.deletedAt))
 			);
+		selectedScene = row ?? null;
+	} else if (view === 'scene') {
+		// Opening the story without naming a scene resumes the one edited last.
+		const [row] = await db
+			.select()
+			.from(scenes)
+			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
+			.orderBy(desc(scenes.updatedAt))
+			.limit(1);
 		selectedScene = row ?? null;
 	}
 

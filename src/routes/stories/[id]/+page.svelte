@@ -2,6 +2,8 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { focusMode } from '$lib/focus-mode.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
@@ -51,8 +53,11 @@
 		return null;
 	}
 
-	// Focus mode hides the chrome around the prose; Esc leaves it.
-	let focus = $state(false);
+	// Focus mode hides the chrome around the prose; Esc leaves it, and so
+	// does leaving the page. Shared state, so the palette can toggle it.
+	$effect(() => () => {
+		focusMode.on = false;
+	});
 
 	let saveStatus = $state<SaveStatus>('idle');
 	const selectedSceneId = $derived(data.selectedScene?.id);
@@ -60,6 +65,10 @@
 		void selectedSceneId;
 		saveStatus = 'idle';
 	});
+
+	// A palette jump to a text match carries the searched text; the editor
+	// selects the first occurrence so the eye lands on it.
+	const findText = $derived(page.url.searchParams.get('find'));
 
 	// The mention index rebuilds in the background after a save, so the
 	// Reference tab can trail the text by a couple of seconds. While the
@@ -235,7 +244,7 @@
 			rowMenu = null;
 			return;
 		}
-		focus = false;
+		focusMode.on = false;
 	}}
 	onpointerdown={onWindowPointerDown}
 />
@@ -251,11 +260,11 @@
 	{/if}
 {/snippet}
 
-<div class="app" class:focus-mode={focus}>
+<div class="app" class:focus-mode={focusMode.on}>
 	<TopBar
 		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		story={{ slug: data.story.slug, title: data.story.title }}
-		onEnterFocus={() => (focus = true)}
+		onEnterFocus={() => (focusMode.on = true)}
 		{saveStatus}
 		storyView={{ active: viewStory, toggleHref }}
 		help={{ topic: 'editor', label: 'the editor' }}
@@ -542,6 +551,7 @@
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
+						{findText}
 						entities={data.mentionEntities}
 						{mentionOptions}
 						autocompleteMode={data.preferences.entityAutocomplete}
@@ -677,14 +687,14 @@
 		</aside>
 	</div>
 
-	{#if focus}
+	{#if focusMode.on}
 		<div class="focus-controls">
 			<ThemeToggle />
 			<button
 				class="icon-btn"
 				type="button"
 				title="Exit focus (Esc)"
-				onclick={() => (focus = false)}
+				onclick={() => (focusMode.on = false)}
 			>
 				<Icon name="compress" />
 			</button>
