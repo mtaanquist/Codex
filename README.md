@@ -38,7 +38,7 @@ services:
     # Applies pending database migrations, then serves.
     command: sh -c "node scripts/migrate.ts && node build"
     ports:
-      - '3000:3000'
+      - '${APP_PORT:-3000}:3000'
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       ORIGIN: ${ORIGIN}
@@ -89,7 +89,10 @@ Put the three values in an `.env` file next to it:
   without it those features are unavailable, and changing it later makes
   stored secrets unreadable.
 
-Then `docker compose up -d` and open the app on port 3000 behind your
+Optionally set `APP_PORT` to publish the app on a different host port;
+it defaults to 3000.
+
+Then `docker compose up -d` and open the app on its port behind your
 reverse proxy. Run both the app and the worker: mentions, email,
 publishing exports, and backups all happen in the worker.
 
