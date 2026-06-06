@@ -19,6 +19,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await page.getByLabel('New story').fill('First Light');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('First Light');
+	const storyRef = page.url().match(/stories\/([^/?]+)/)![1];
 
 	// Write a few words so there is something to count.
 	await page.getByRole('button', { name: 'New chapter' }).click();
@@ -51,8 +52,12 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(page.locator('.rel-row', { hasText: 'Freya' })).toBeVisible();
 
-	// The sidebar's Insights button opens the view.
-	await page.getByRole('link', { name: 'Insights', exact: true }).click();
+	// The right pane's Session tab carries the short version, and links to
+	// the full view.
+	await page.getByRole('button', { name: 'Session' }).click();
+	await expect(page.locator('.sess-n').first()).not.toHaveText('0');
+	await expect(page.locator('.streak-day.today')).toBeVisible();
+	await page.getByRole('link', { name: 'All insights' }).click();
 	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
 
 	// Progress counts the words; the story row carries them too.
@@ -71,5 +76,11 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 
 	// The heat tile links to the plan entry.
 	await tile.click();
+	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
+
+	// The story plan lists the universe's other entities behind a fold.
+	await page.goto(`/stories/${storyRef}/plan`);
+	await page.getByRole('button', { name: 'In the universe' }).first().click();
+	await page.locator('.uni-row', { hasText: 'Heimdall' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 });

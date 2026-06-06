@@ -36,7 +36,7 @@ A story's plan shows its scenes as cards on a board when nothing else is open. T
 
 ## Insights
 
-The universe plan has an Insights button at the top of the sidebar. It opens a page that shows how the writing is going and how much of the world the prose uses.
+Open Insights from the Session tab in the right column (the "All insights" link), or search for it with Ctrl+K. The page shows how the writing is going and how much of the world the prose uses. The Session tab itself keeps the short version in view while you work: words written today, the week's writing days, and your streak.
 
 Progress shows total words, net words written this week, your writing streak, and a chart of words per day for the last 30 days. A day counts towards the streak when you saved any scene that day. Each story below shows its word count and how its scenes split between outline, draft, revised, and final.
 

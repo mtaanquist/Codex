@@ -255,6 +255,15 @@ describe('writingActivity', () => {
 		expect(activity.streak).toEqual({ current: 2, longest: 2 });
 	});
 
+	it('narrows to one story when asked', async () => {
+		// The revisions all belong to story A, so its filter matches the
+		// universe total and story B sees nothing.
+		const storyA = await writingActivity(db, universeId, 'UTC', 1, storyAId);
+		expect(storyA.daily.at(-1)?.words).toBe(70);
+		const storyB = await writingActivity(db, universeId, 'UTC', 1, storyBId);
+		expect(storyB.daily.at(-1)?.words).toBe(0);
+	});
+
 	it('an unknown universe yields an empty, zero-filled window', async () => {
 		const activity = await writingActivity(db, '00000000-0000-0000-0000-000000000000', 'UTC');
 		expect(activity.daily).toHaveLength(30);

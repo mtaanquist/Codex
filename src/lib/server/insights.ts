@@ -135,8 +135,13 @@ export async function writingActivity(
 	db: Database,
 	universeId: string,
 	timezone: string,
-	days = 30
+	days = 30,
+	// Narrows the word counts to one story; streaks stay as computed over
+	// whatever the filter covers, so callers wanting a universe streak pass
+	// no story.
+	storyId?: string
 ): Promise<WritingActivity> {
+	const storyFilter = storyId ? sql` and st.id = ${storyId}` : sql``;
 	// The last revision per scene per day carries the scene's end-of-day word
 	// count; the inner distinct-on picks the row, the outer counts its words
 	// so bodies of discarded rows are never counted.
@@ -157,7 +162,7 @@ export async function writingActivity(
 				join stories st on st.id = s.story_id
 				where r.entity_type = 'scene'
 					and st.universe_id = ${universeId}
-					and (r.created_at at time zone ${timezone})::date > (now() at time zone ${timezone})::date - ${days}::int
+					and (r.created_at at time zone ${timezone})::date > (now() at time zone ${timezone})::date - ${days}::int${storyFilter}
 			) x
 			order by x.entity_id, x.day, x.created_at desc
 		) picked
@@ -173,7 +178,7 @@ export async function writingActivity(
 			join stories st on st.id = s.story_id
 			where r.entity_type = 'scene'
 				and st.universe_id = ${universeId}
-				and (r.created_at at time zone ${timezone})::date <= (now() at time zone ${timezone})::date - ${days}::int
+				and (r.created_at at time zone ${timezone})::date <= (now() at time zone ${timezone})::date - ${days}::int${storyFilter}
 			order by r.entity_id, r.created_at desc
 		) picked
 	`);
@@ -184,7 +189,7 @@ export async function writingActivity(
 		join stories st on st.id = s.story_id
 		where r.entity_type = 'scene'
 			and st.universe_id = ${universeId}
-			and r.created_at >= now() - interval '366 days'
+			and r.created_at >= now() - interval '366 days'${storyFilter}
 	`);
 	const todayResult = await db.execute(
 		sql`select ((now() at time zone ${timezone})::date)::text as today`
