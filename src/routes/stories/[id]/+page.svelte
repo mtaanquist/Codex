@@ -61,6 +61,26 @@
 		saveStatus = 'idle';
 	});
 
+	// The mention index rebuilds in the background after a save, so the
+	// Reference tab can trail the text by a couple of seconds. While the
+	// open scene's index watermark is behind its last edit (the worker's
+	// own staleness test), keep refreshing until it catches up - bounded,
+	// so a stopped worker does not leave the page polling forever.
+	const MENTION_POLL_MS = 2000;
+	const MENTION_POLL_LIMIT = 10;
+	let mentionPolls = 0;
+	$effect(() => {
+		const scene = data.selectedScene;
+		if (!scene) return;
+		const stale = !scene.mentionsIndexedAt || scene.mentionsIndexedAt < scene.updatedAt;
+		if (!stale || mentionPolls >= MENTION_POLL_LIMIT) return;
+		const timer = setTimeout(() => {
+			mentionPolls += 1;
+			void invalidateAll();
+		}, MENTION_POLL_MS);
+		return () => clearTimeout(timer);
+	});
+
 	// Chapters start expanded; collapsing is per-visit state.
 	let collapsed = new SvelteSet<string>();
 
@@ -534,7 +554,10 @@
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.
-							if (status === 'saved') void invalidateAll();
+							if (status === 'saved') {
+								mentionPolls = 0;
+								void invalidateAll();
+							}
 						}}
 					/>
 				{/key}
@@ -762,14 +785,14 @@
 		font-size: 13px;
 		padding: 6px 7px;
 		border-radius: 5px;
-		cursor: pointer;
+		/* Native context menus keep the arrow cursor; match them. */
+		cursor: default;
 	}
 	.row-menu-item:hover:not(:disabled) {
 		background: var(--accent-soft);
 	}
 	.row-menu-item:disabled {
 		color: var(--text-faint);
-		cursor: default;
 	}
 	.row-menu-item.danger:hover:not(:disabled) {
 		color: var(--danger, #c0564f);
@@ -785,6 +808,14 @@
 		border: 0;
 		background: none;
 		text-align: left;
+	}
+	/* The button reset above outranks the theme's hover by cascade order,
+	   so restate it. */
+	.chapter-row:hover {
+		background: var(--bg-hover);
+	}
+	.chapter-row.as-label:hover {
+		background: none;
 	}
 	.scene-row {
 		text-decoration: none;
