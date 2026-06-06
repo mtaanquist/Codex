@@ -14,7 +14,12 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: universeName })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
 	await page.getByLabel('New story').fill('Margin Notes');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Margin Notes');

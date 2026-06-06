@@ -11,6 +11,11 @@ import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { backupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
+import {
+	listUniversesDueForPurge,
+	purgeUniverseWithin,
+	universeAssetKeys
+} from '../lib/server/universe-lifecycle.ts';
 import { assetConfig, s3AssetStore } from '../lib/server/assets.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
@@ -32,6 +37,7 @@ await boss.createQueue('export-artifacts');
 await boss.createQueue('run-backup');
 await boss.createQueue('send-email');
 await boss.createQueue('purge-accounts');
+await boss.createQueue('purge-universes');
 
 await boss.work<{ sceneId: string }>('mentions-scene', async (jobs) => {
 	for (const job of jobs) {
@@ -105,8 +111,29 @@ await boss.work('purge-accounts', async () => {
 	}
 });
 
+// Trashed universes past their restore window go for good.
+await boss.work('purge-universes', async () => {
+	const due = await listUniversesDueForPurge(db);
+	if (due.length === 0) return;
+	const config = assetConfig();
+	const store = config ? s3AssetStore(config) : null;
+	for (const universeId of due) {
+		try {
+			const keys = await universeAssetKeys(db, universeId);
+			await db.transaction((tx) => purgeUniverseWithin(tx, universeId));
+			if (store) for (const key of keys) await store.remove(key).catch(() => {});
+			console.log(`purge: universe ${universeId} deleted`);
+		} catch (error) {
+			console.error(`purge: universe ${universeId} failed`, error);
+		}
+	}
+});
+
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule('purge-accounts', '30 * * * *', {}, { tz: 'UTC' });
+
+// And the universe trash sweep, offset from the account one.
+await boss.schedule('purge-universes', '45 * * * *', {}, { tz: 'UTC' });
 
 // Sweep for stale mention indexes every five minutes, so a dropped rebuild
 // self-heals within minutes instead of waiting for the next save.

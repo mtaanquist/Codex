@@ -206,6 +206,48 @@
 					</section>
 				{/each}
 
+				{#if data.trashedUniverses.length > 0}
+					<section class="universe-section">
+						<h2 class="universe-mark recent-mark">Deleted universes</h2>
+						{#if form?.scope === 'trash' && form.message}
+							<p class="form-error" role="alert">{form.message}</p>
+						{/if}
+						<div class="trash-list">
+							{#each data.trashedUniverses as item (item.id)}
+								<div class="trash-uni">
+									<span class="trash-uni-name">{item.name}</span>
+									<span class="trash-uni-when">
+										{item.daysLeft > 0
+											? `kept for ${item.daysLeft} more ${item.daysLeft === 1 ? 'day' : 'days'}`
+											: 'about to be deleted for good'}
+									</span>
+									<form method="POST" action="?/restoreUniverse">
+										<input type="hidden" name="universeId" value={item.id} />
+										<button class="btn btn-ghost btn-sm" type="submit">Restore</button>
+									</form>
+									<form
+										method="POST"
+										action="?/destroyUniverse"
+										onsubmit={(e) => {
+											if (
+												!confirm(
+													`Delete "${item.name}" forever? Everything in it goes and cannot be restored after this.`
+												)
+											)
+												e.preventDefault();
+										}}
+									>
+										<input type="hidden" name="universeId" value={item.id} />
+										<button class="btn btn-ghost btn-sm trash-forever" type="submit">
+											Delete forever
+										</button>
+									</form>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
 				<p class="lib-foot">
 					New here? Read the <a href={resolve('/docs')}>help</a>.
 				</p>
@@ -241,6 +283,32 @@
 	}
 	.card-add-form .btn {
 		align-self: flex-start;
+	}
+	.trash-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.trash-uni {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 12px;
+		border: 1px dashed var(--border);
+		border-radius: var(--radius, 9px);
+	}
+	.trash-uni-name {
+		font-weight: 600;
+		font-size: 13.5px;
+		color: var(--text-muted);
+	}
+	.trash-uni-when {
+		flex: 1;
+		color: var(--text-faint);
+		font-size: 12.5px;
+	}
+	.trash-forever:hover {
+		color: var(--danger, #c0564f);
 	}
 	.lib-foot {
 		color: var(--text-faint);

@@ -1,46 +1,27 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
-import { stories, universes } from '$lib/server/db/schema';
+import { universes } from '$lib/server/db/schema';
 import { ownedUniverse } from '$lib/server/universe-access';
-import { slugChangeError, slugTakenMessage, uniqueSlug } from '$lib/server/slugs';
-import { universeTimeline } from '$lib/server/revisions';
+import { slugChangeError, slugTakenMessage } from '$lib/server/slugs';
+import { universeTimeline, universeRevisionCount } from '$lib/server/revisions';
+import { listCategories, saveCategories, universeContents } from '$lib/server/categories';
+import { trashUniverse, UNIVERSE_TRASH_DAYS } from '$lib/server/universe-lifecycle';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
-	const storyList = await db
-		.select()
-		.from(stories)
-		.where(eq(stories.universeId, universe.id))
-		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
-	const timeline = await universeTimeline(db, universe.id, 30);
-	return { universe, stories: storyList, timeline };
+	return {
+		universe,
+		contents: await universeContents(db, universe.id),
+		categories: await listCategories(db, universe.id),
+		timeline: await universeTimeline(db, universe.id, 100),
+		revisionCount: await universeRevisionCount(db, universe.id),
+		trashDays: UNIVERSE_TRASH_DAYS
+	};
 };
 
 export const actions: Actions = {
-	createStory: async ({ request, params, locals }) => {
-		const universe = await ownedUniverse(params.id, locals.user!.id);
-		const data = await request.formData();
-		const title = String(data.get('title') ?? '').trim();
-		if (!title) {
-			return fail(400, { action: 'createStory', message: 'Give the story a title.' });
-		}
-		const create = (slug: string) =>
-			db
-				.insert(stories)
-				.values({ universeId: universe.id, ownerId: locals.user!.id, title, slug })
-				.returning();
-		let story;
-		try {
-			[story] = await create(await uniqueSlug(db, 'stories', locals.user!.id, title, 'story'));
-		} catch (err) {
-			// A concurrent create took the slug between the pick and the insert.
-			if (!isUniqueViolation(err)) throw err;
-			[story] = await create(await uniqueSlug(db, 'stories', locals.user!.id, title, 'story'));
-		}
-		redirect(303, `/stories/${story.slug}`);
-	},
 	update: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		const data = await request.formData();
@@ -73,19 +54,41 @@ export const actions: Actions = {
 		if (slug !== universe.slug) redirect(303, `/universes/${slug}`);
 		return { action: 'update', saved: true };
 	},
+	saveCategories: async ({ request, params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		const data = await request.formData();
+		let rows;
+		try {
+			rows = JSON.parse(String(data.get('categories') ?? '')) as unknown;
+		} catch {
+			return fail(400, { action: 'categories', message: 'Could not read the category list.' });
+		}
+		if (
+			!Array.isArray(rows) ||
+			rows.some(
+				(row) =>
+					typeof row !== 'object' ||
+					row === null ||
+					typeof (row as { name?: unknown }).name !== 'string'
+			)
+		) {
+			return fail(400, { action: 'categories', message: 'Could not read the category list.' });
+		}
+		const result = await saveCategories(
+			db,
+			{ universeId: universe.id, ownerId: locals.user!.id },
+			(rows as { id?: unknown; name: string; color?: unknown }[]).map((row) => ({
+				id: typeof row.id === 'string' ? row.id : null,
+				name: row.name,
+				color: typeof row.color === 'string' && row.color !== '' ? row.color : null
+			}))
+		);
+		if (!result.ok) return fail(400, { action: 'categories', message: result.reason });
+		return { action: 'categories', saved: true };
+	},
 	delete: async ({ params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
-		const ownedStories = await db
-			.select({ id: stories.id })
-			.from(stories)
-			.where(eq(stories.universeId, universe.id));
-		if (ownedStories.length > 0) {
-			return fail(400, {
-				action: 'delete',
-				message: 'Delete the stories in this universe first.'
-			});
-		}
-		await db.delete(universes).where(eq(universes.id, universe.id));
+		await trashUniverse(db, locals.user!.id, universe.id);
 		redirect(303, '/');
 	}
 };

@@ -612,6 +612,9 @@ export type TimelineRow = RevisionRow & {
 	entityType: RevisionEntityType;
 	entityId: string;
 	entityName: string | null;
+	// Set for scene rows in the universe timeline; entities carry null.
+	storyTitle?: string | null;
+	storySlug?: string | null;
 };
 
 function mergeTimelines(lists: TimelineRow[][], limit: number): TimelineRow[] {
@@ -660,12 +663,37 @@ export async function storyTimeline(
 	return mergeTimelines([sceneRows, nodeRows], limit);
 }
 
-// Recent changes across a universe's entities, for its settings page.
+// Recent changes across a universe's scenes and entities, for its settings
+// page.
 export async function universeTimeline(
 	db: Database,
 	universeId: string,
 	limit = 50
 ): Promise<TimelineRow[]> {
+	const sceneRows = await db
+		.select({
+			id: revisions.id,
+			reason: revisions.reason,
+			label: revisions.label,
+			createdAt: revisions.createdAt,
+			entityType: revisions.entityType,
+			entityId: revisions.entityId,
+			entityName: scenes.title,
+			storyTitle: stories.title,
+			storySlug: stories.slug
+		})
+		.from(revisions)
+		.innerJoin(scenes, eq(revisions.entityId, scenes.id))
+		.innerJoin(stories, eq(scenes.storyId, stories.id))
+		.where(
+			and(
+				eq(revisions.entityType, 'scene'),
+				eq(stories.universeId, universeId),
+				isNull(scenes.deletedAt)
+			)
+		)
+		.orderBy(desc(revisions.createdAt))
+		.limit(limit);
 	const characterRows = await db
 		.select({
 			id: revisions.id,
@@ -711,5 +739,22 @@ export async function universeTimeline(
 		.where(and(eq(revisions.entityType, 'lore_entry'), eq(loreEntries.universeId, universeId)))
 		.orderBy(desc(revisions.createdAt))
 		.limit(limit);
-	return mergeTimelines([characterRows, placeRows, loreRows], limit);
+	return mergeTimelines([sceneRows, characterRows, placeRows, loreRows], limit);
+}
+
+// The footer's total: every revision recorded across the universe.
+export async function universeRevisionCount(db: Database, universeId: string): Promise<number> {
+	const result = await db.execute(sql`
+		select count(*)::int as total from revisions r
+		where (r.entity_type = 'scene' and r.entity_id in (
+				select s.id from scenes s join stories st on st.id = s.story_id
+				where st.universe_id = ${universeId}))
+			or (r.entity_type = 'character' and r.entity_id in (
+				select id from characters where universe_id = ${universeId}))
+			or (r.entity_type = 'place' and r.entity_id in (
+				select id from places where universe_id = ${universeId}))
+			or (r.entity_type = 'lore_entry' and r.entity_id in (
+				select id from lore_entries where universe_id = ${universeId}))
+	`);
+	return (result.rows[0] as { total: number }).total;
 }

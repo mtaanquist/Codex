@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
+	import Icon from '$lib/components/Icon.svelte';
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -9,12 +11,130 @@
 
 	const NAV = [
 		{ id: 'details', label: 'Details' },
-		{ id: 'stories', label: 'Stories' },
+		{ id: 'categories', label: 'Entity categories' },
 		{ id: 'history', label: 'History' },
+		{ id: 'export', label: 'Export' },
 		{ id: 'danger', label: 'Danger zone' }
 	];
 
 	const universeColor = $derived(entityColor(data.universe.name));
+
+	// The category editor works on a local copy.
+	type CategoryDraft = {
+		key: number;
+		id: string | null;
+		name: string;
+		color: string | null;
+		colorTouched: boolean;
+		entries: number;
+	};
+	let nextKey = 0;
+	// The plain form POST reloads the page, so the initial value is the
+	// fresh one every time this component mounts.
+	// svelte-ignore state_referenced_locally
+	let drafts = $state<CategoryDraft[]>(
+		data.categories.map((category) => ({
+			key: nextKey++,
+			id: category.id,
+			name: category.name,
+			color: category.color,
+			colorTouched: false,
+			entries: category.entries
+		}))
+	);
+
+	// What the save action receives: original colours unless the swatch was
+	// actually touched, so legacy token values survive an unrelated save.
+	const categoriesPayload = $derived(
+		JSON.stringify(drafts.map((draft) => ({ id: draft.id, name: draft.name, color: draft.color })))
+	);
+
+	function swatchValue(draft: CategoryDraft): string {
+		return draft.color && /^#[0-9a-f]{6}$/i.test(draft.color) ? draft.color : '#7d8aa3';
+	}
+
+	function moveDraft(index: number, direction: -1 | 1) {
+		const to = index + direction;
+		if (to < 0 || to >= drafts.length) return;
+		[drafts[index], drafts[to]] = [drafts[to], drafts[index]];
+	}
+
+	// The history filters work over the loaded rows.
+	let historyFilter = $state<'all' | 'checkpoints' | 'week' | 'world'>('all');
+	const FILTERS = [
+		{ id: 'all', label: 'All' },
+		{ id: 'checkpoints', label: 'Checkpoints only' },
+		{ id: 'week', label: 'Last 7 days' },
+		{ id: 'world', label: 'Worldbuilding only' }
+	] as const;
+
+	const KIND_LABELS: Record<string, string> = {
+		scene: 'Scene',
+		character: 'Character',
+		place: 'Place',
+		lore_entry: 'Lore'
+	};
+
+	const filteredTimeline = $derived(
+		data.timeline.filter((row) => {
+			if (historyFilter === 'checkpoints') return row.reason === 'checkpoint';
+			if (historyFilter === 'world') return row.entityType !== 'scene';
+			if (historyFilter === 'week') {
+				return row.createdAt.getTime() > Date.now() - 7 * 86_400_000;
+			}
+			return true;
+		})
+	);
+
+	// Rows grouped under Today / Yesterday / the day's date.
+	const timelineGroups = $derived.by(() => {
+		const groups: { label: string; rows: typeof data.timeline }[] = [];
+		const today = new Date().toDateString();
+		const yesterday = new Date(Date.now() - 86_400_000).toDateString();
+		for (const row of filteredTimeline) {
+			const day = row.createdAt.toDateString();
+			const label =
+				day === today
+					? 'Today'
+					: day === yesterday
+						? 'Yesterday'
+						: row.createdAt.toLocaleDateString(undefined, {
+								day: 'numeric',
+								month: 'long',
+								year: 'numeric'
+							});
+			const last = groups[groups.length - 1];
+			if (last && last.label === label) last.rows.push(row);
+			else groups.push({ label, rows: [row] });
+		}
+		return groups;
+	});
+
+	function entryTime(row: (typeof data.timeline)[number]): string {
+		return row.createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+	}
+
+	function previewHref(row: (typeof data.timeline)[number]): string {
+		if (row.entityType === 'scene' && row.storySlug) {
+			return `/stories/${row.storySlug}?scene=${row.entityId}&revision=${row.id}`;
+		}
+		return `/universes/${data.universe.slug}/plan?entity=${row.entityId}&revision=${row.id}`;
+	}
+
+	let restoring = $state<string | null>(null);
+	async function restoreRow(row: (typeof data.timeline)[number]) {
+		restoring = row.id;
+		try {
+			const response = await fetch(`/api/revisions/${row.id}/restore`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ entityType: row.entityType, entityId: row.entityId })
+			});
+			if (response.ok) await invalidateAll();
+		} finally {
+			restoring = null;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -66,14 +186,17 @@
 			<div class="admin-main-inner">
 				<div class="admin-head">
 					<p class="admin-eyebrow">Universe</p>
-					<h1 class="admin-title">{data.universe.name}</h1>
+					<h1 class="admin-title">{data.universe.name} - settings</h1>
 					<p class="admin-lede">The world your stories share, and everything about it.</p>
 				</div>
 
 				<div class="admin-block" id="details">
 					<div class="admin-block-head">
-						<h2 class="admin-block-title">Details</h2>
-						<p class="admin-block-sub">The universe's name and what it is about.</p>
+						<h2 class="admin-block-title">About this universe</h2>
+						<p class="admin-block-sub">
+							The universe is the container that holds your shared worldbuilding. Every story you
+							write belongs to one.
+						</p>
 					</div>
 					<form method="POST" action="?/update">
 						{#if form?.action === 'update' && form.message}
@@ -111,50 +234,140 @@
 						</div>
 						<div class="field">
 							<label for="u-description">Description</label>
-							<textarea id="u-description" class="input" name="description" rows="4"
+							<textarea id="u-description" class="input" name="description" rows="6"
 								>{data.universe.descriptionMd ?? ''}</textarea
 							>
+							<span class="field-hint">Markdown is fine. Shown on the library card.</span>
 						</div>
 						<div class="settings-actions">
-							<button class="btn btn-primary" type="submit">Save</button>
+							<button class="btn btn-primary" type="submit">Save changes</button>
 						</div>
 					</form>
 				</div>
 
-				<div class="admin-block" id="stories">
+				<div class="admin-block">
 					<div class="admin-block-head">
-						<h2 class="admin-block-title">Stories</h2>
-						<p class="admin-block-sub">The stories written in this universe.</p>
+						<h2 class="admin-block-title">Contents</h2>
+						<p class="admin-block-sub">What this universe currently contains.</p>
 					</div>
-					{#if data.stories.length === 0}
-						<p class="block-empty">No stories yet.</p>
-					{:else}
-						<ul class="story-list">
-							{#each data.stories as story (story.id)}
-								<li>
-									<a href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a>
-									{#if story.brief}<span class="story-brief">{story.brief}</span>{/if}
-								</li>
-							{/each}
-						</ul>
-					{/if}
-					<form class="new-story" method="POST" action="?/createStory">
-						{#if form?.action === 'createStory' && form.message}
+					<div class="stat-grid">
+						<div class="stat-tile">
+							<div class="n">{data.contents.stories.toLocaleString('en-US')}</div>
+							<div class="l">{data.contents.stories === 1 ? 'story' : 'stories'}</div>
+						</div>
+						<div class="stat-tile">
+							<div class="n">{data.contents.characters.toLocaleString('en-US')}</div>
+							<div class="l">{data.contents.characters === 1 ? 'character' : 'characters'}</div>
+						</div>
+						<div class="stat-tile">
+							<div class="n">{data.contents.places.toLocaleString('en-US')}</div>
+							<div class="l">{data.contents.places === 1 ? 'place' : 'places'}</div>
+						</div>
+						<div class="stat-tile">
+							<div class="n">{data.contents.lore.toLocaleString('en-US')}</div>
+							<div class="l">{data.contents.lore === 1 ? 'lore entry' : 'lore entries'}</div>
+						</div>
+						<div class="stat-tile">
+							<div class="n">{data.contents.words.toLocaleString('en-US')}</div>
+							<div class="l">total words</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="admin-block" id="categories">
+					<div class="admin-block-head">
+						<h2 class="admin-block-title">Entity categories</h2>
+						<p class="admin-block-sub">
+							Categories group your lore entries and colour their sidebar dots, mention underlines,
+							and badges. A category can only be deleted once nothing uses it.
+						</p>
+					</div>
+					<form method="POST" action="?/saveCategories">
+						{#if form?.action === 'categories' && form.message}
 							<p class="form-error" role="alert">{form.message}</p>
 						{/if}
-						<div class="field">
-							<label for="u-new-story">New story</label>
-							<div class="new-story-row">
-								<input
-									id="u-new-story"
-									class="input"
-									type="text"
-									name="title"
-									placeholder="Title"
-									required
-								/>
-								<button class="btn btn-primary" type="submit">Create story</button>
-							</div>
+						{#if form?.action === 'categories' && form.saved}
+							<p class="form-saved" role="status">Saved.</p>
+						{/if}
+						<div class="category-list">
+							{#each drafts as draft, index (draft.key)}
+								<div class="category-row">
+									<span class="category-tools">
+										<button
+											class="tool-btn turn-up"
+											type="button"
+											title="Move category up"
+											disabled={index === 0}
+											onclick={() => moveDraft(index, -1)}
+										>
+											<Icon name="chevron" size={12} />
+										</button>
+										<button
+											class="tool-btn turn-down"
+											type="button"
+											title="Move category down"
+											disabled={index === drafts.length - 1}
+											onclick={() => moveDraft(index, 1)}
+										>
+											<Icon name="chevron" size={12} />
+										</button>
+									</span>
+									<input
+										class="category-swatch-input"
+										type="color"
+										title="Category colour"
+										value={swatchValue(draft)}
+										oninput={(e) => {
+											draft.color = e.currentTarget.value;
+											draft.colorTouched = true;
+										}}
+									/>
+									<input
+										class="category-name-input"
+										type="text"
+										aria-label="Category name"
+										bind:value={draft.name}
+										required
+									/>
+									<span class="category-count">
+										{draft.entries.toLocaleString('en-US')}
+										{draft.entries === 1 ? 'entry' : 'entries'}
+									</span>
+									<button
+										class="category-delete"
+										type="button"
+										title={draft.entries > 0
+											? 'Move or delete its entries first'
+											: 'Delete category'}
+										disabled={draft.entries > 0}
+										onclick={() => (drafts = drafts.filter((row) => row !== draft))}
+									>
+										<Icon name="plus" size={13} />
+									</button>
+								</div>
+							{/each}
+						</div>
+						<button
+							class="card-add category-add"
+							type="button"
+							onclick={() =>
+								(drafts = [
+									...drafts,
+									{
+										key: nextKey++,
+										id: null,
+										name: '',
+										color: null,
+										colorTouched: false,
+										entries: 0
+									}
+								])}
+						>
+							<span class="plus">+</span><span>Add category</span>
+						</button>
+						<input type="hidden" name="categories" value={categoriesPayload} />
+						<div class="settings-actions">
+							<button class="btn btn-primary" type="submit">Save categories</button>
 						</div>
 					</form>
 				</div>
@@ -163,38 +376,145 @@
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">History</h2>
 						<p class="admin-block-sub">
-							Recent changes to this universe's characters, places, and lore.
+							Every change across every story, character, place, and lore entry in this universe.
+							For a single item's history, open it and use its History tab.
 						</p>
 					</div>
-					{#if data.timeline.length === 0}
+					<div class="revision-filters">
+						<span class="revision-filter-label">Filter</span>
+						{#each FILTERS as filter (filter.id)}
+							<button
+								class="revision-filter-chip"
+								class:active={historyFilter === filter.id}
+								type="button"
+								onclick={() => (historyFilter = filter.id)}
+							>
+								{filter.label}
+							</button>
+						{/each}
+					</div>
+					{#if filteredTimeline.length === 0}
 						<p class="block-empty">Nothing recorded yet. Changes appear here as you work.</p>
 					{:else}
-						<ul class="timeline">
-							{#each data.timeline as row (row.id)}
-								<li>
-									<span class="t-name">{row.entityName ?? 'Untitled'}</span>
-									<span class="t-what">
-										{row.label ??
-											(row.reason === 'checkpoint' ? 'checkpoint' : (row.reason ?? 'autosave'))}
-									</span>
-									<span class="t-when">{row.createdAt.toLocaleString()}</span>
-								</li>
+						<div class="revision-panel">
+							{#each timelineGroups as group (group.label)}
+								<div class="revision-group-label">{group.label}</div>
+								{#each group.rows as row (row.id)}
+									<div class="revision-entry">
+										<span
+											class="revision-dot"
+											class:revision-dot-checkpoint={row.reason === 'checkpoint'}
+											class:revision-dot-autosave={row.reason !== 'checkpoint'}
+										></span>
+										<div class="revision-main">
+											<div class="revision-source">
+												<span class="revision-source-kind">
+													{KIND_LABELS[row.entityType] ?? row.entityType}
+												</span>
+												{row.entityName ?? 'Untitled'}
+											</div>
+											<div class="revision-meta">
+												<span class="revision-time">{entryTime(row)}</span>
+												<span class="revision-kind">{row.storyTitle ?? 'Universe'}</span>
+												{#if row.label}
+													<span class="revision-note revision-note-checkpoint">
+														"{row.label}"
+													</span>
+												{:else if row.reason && row.reason !== 'autosave'}
+													<span class="revision-note">{row.reason}</span>
+												{/if}
+											</div>
+											{#if row.reason === 'checkpoint'}
+												<div class="revision-actions">
+													<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
+													<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
+													<!-- eslint-enable svelte/no-navigation-without-resolve -->
+													<button
+														class="btn btn-secondary btn-sm"
+														type="button"
+														disabled={restoring === row.id}
+														onclick={() => restoreRow(row)}
+													>
+														{restoring === row.id ? 'Restoring...' : 'Restore'}
+													</button>
+												</div>
+											{/if}
+										</div>
+									</div>
+								{/each}
 							{/each}
-						</ul>
+							<div class="revision-footer">
+								{data.revisionCount.toLocaleString('en-US')} revisions across this universe
+							</div>
+						</div>
 					{/if}
+				</div>
+
+				<div class="admin-block" id="export">
+					<div class="admin-block-head">
+						<h2 class="admin-block-title">Export universe</h2>
+						<p class="admin-block-sub">
+							Everything in this universe, bundled into a single archive.
+						</p>
+					</div>
+					<div class="danger-row">
+						<div class="danger-row-text">
+							<h3 class="danger-row-title">Markdown archive</h3>
+							<p class="danger-row-body">
+								A zip of markdown files organised into folders: characters, places, lore, and one
+								folder per story, each with YAML front matter and bundled images.
+							</p>
+						</div>
+						<div class="danger-row-actions">
+							<!-- eslint-disable svelte/no-navigation-without-resolve (download endpoint) -->
+							<a class="btn btn-secondary" href="/universes/{data.universe.slug}/export" download>
+								Download .zip
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						</div>
+					</div>
 				</div>
 
 				<div class="admin-block danger" id="danger">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">Danger zone</h2>
-						<p class="admin-block-sub">A universe can only be deleted once its stories are gone.</p>
+						<p class="admin-block-sub">
+							Deleting a universe removes every story, character, place, and lore entry inside it.
+						</p>
 					</div>
-					<form method="POST" action="?/delete">
-						{#if form?.action === 'delete' && form.message}
-							<p class="form-error" role="alert">{form.message}</p>
-						{/if}
-						<button class="btn btn-danger" type="submit">Delete universe</button>
-					</form>
+					<div class="danger-row">
+						<div class="danger-row-text">
+							<h3 class="danger-row-title">Delete this universe</h3>
+							<p class="danger-row-body">
+								All {data.contents.stories.toLocaleString('en-US')}
+								{data.contents.stories === 1 ? 'story' : 'stories'},
+								{data.contents.characters.toLocaleString('en-US')}
+								{data.contents.characters === 1 ? 'character' : 'characters'},
+								{data.contents.places.toLocaleString('en-US')}
+								{data.contents.places === 1 ? 'place' : 'places'}, and
+								{data.contents.lore.toLocaleString('en-US')}
+								{data.contents.lore === 1 ? 'lore entry' : 'lore entries'} go with it. The universe sits
+								in your library's deleted list for {data.trashDays} days, where you can restore it; after
+								that everything is deleted for good. Export an archive first if in doubt.
+							</p>
+						</div>
+						<div class="danger-row-actions">
+							<form
+								method="POST"
+								action="?/delete"
+								onsubmit={(e) => {
+									if (
+										!confirm(
+											`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
+										)
+									)
+										e.preventDefault();
+								}}
+							>
+								<button class="btn btn-danger" type="submit">Delete universe</button>
+							</form>
+						</div>
+					</div>
 				</div>
 			</div>
 		</main>
@@ -202,64 +522,55 @@
 </div>
 
 <style>
-	.story-list {
-		list-style: none;
-		margin: 0 0 16px;
+	.category-tools {
+		display: inline-flex;
+		gap: 1px;
+		flex: none;
+	}
+	.category-tools .tool-btn.turn-up :global(svg) {
+		transform: rotate(-90deg);
+	}
+	.category-tools .tool-btn.turn-down :global(svg) {
+		transform: rotate(90deg);
+	}
+	.category-swatch-input {
+		width: 26px;
+		height: 26px;
 		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: none;
+		cursor: pointer;
+		flex: none;
 	}
-	.story-list li {
-		display: flex;
-		align-items: baseline;
-		gap: 10px;
-		padding: 8px 0;
-		border-bottom: 1px dashed var(--border);
-	}
-	.story-list a {
-		color: var(--text);
-		font-size: 14px;
-		font-weight: 600;
-		text-decoration: none;
-	}
-	.story-list a:hover {
-		color: var(--accent);
-	}
-	.story-brief {
+	.category-delete {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border: 0;
+		border-radius: 6px;
+		background: none;
 		color: var(--text-faint);
-		font-size: 12.5px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		cursor: pointer;
+		flex: none;
 	}
-	.new-story-row {
-		display: flex;
-		gap: 8px;
+	.category-delete :global(svg) {
+		transform: rotate(45deg);
 	}
-	.new-story-row .input {
-		flex: 1;
+	.category-delete:hover:not(:disabled) {
+		color: var(--danger, #c0564f);
+		background: var(--bg-hover);
 	}
-	.timeline {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	.category-delete:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
-	.timeline li {
-		display: flex;
-		gap: 12px;
-		align-items: baseline;
-		padding: 6px 0;
-		border-bottom: 1px dashed var(--border);
-		font-size: 13px;
-	}
-	.t-name {
-		font-weight: 600;
-	}
-	.t-what {
-		color: var(--text-muted);
-	}
-	.t-when {
-		margin-left: auto;
-		color: var(--text-faint);
-		font-size: 12px;
-		white-space: nowrap;
+	.category-add {
+		margin-top: 10px;
+		min-height: 42px;
+		width: 100%;
+		cursor: pointer;
+		font-family: inherit;
 	}
 </style>

@@ -13,6 +13,11 @@ test('slugs: created things get readable addresses, editable in settings', async
 	await expect(page).toHaveURL(`/universes/slugfall-${stamp}`);
 
 	// So does the story.
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Slugfall ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
 	await page.getByLabel('New story').fill(`Toll Road ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/toll-road-${stamp}`);

@@ -32,7 +32,9 @@ export async function searchAll(
 	const universeRows = await db
 		.select({ id: universes.id, slug: universes.slug, name: universes.name })
 		.from(universes)
-		.where(and(eq(universes.ownerId, userId), ilike(universes.name, like)))
+		.where(
+			and(eq(universes.ownerId, userId), ilike(universes.name, like), isNull(universes.deletedAt))
+		)
 		.orderBy(asc(universes.name))
 		.limit(PER_TYPE);
 
@@ -45,7 +47,9 @@ export async function searchAll(
 		})
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
-		.where(and(eq(stories.ownerId, userId), ilike(stories.title, like)))
+		.where(
+			and(eq(stories.ownerId, userId), ilike(stories.title, like), isNull(universes.deletedAt))
+		)
 		.orderBy(asc(stories.title))
 		.limit(PER_TYPE);
 
@@ -58,7 +62,15 @@ export async function searchAll(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(stories.ownerId, userId), ilike(scenes.title, like), isNull(scenes.deletedAt)))
+		.innerJoin(universes, eq(stories.universeId, universes.id))
+		.where(
+			and(
+				eq(stories.ownerId, userId),
+				ilike(scenes.title, like),
+				isNull(scenes.deletedAt),
+				isNull(universes.deletedAt)
+			)
+		)
 		.orderBy(asc(scenes.title))
 		.limit(PER_TYPE);
 
@@ -75,7 +87,15 @@ export async function searchAll(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(stories.ownerId, userId), ilike(scenes.bodyMd, like), isNull(scenes.deletedAt)))
+		.innerJoin(universes, eq(stories.universeId, universes.id))
+		.where(
+			and(
+				eq(stories.ownerId, userId),
+				ilike(scenes.bodyMd, like),
+				isNull(scenes.deletedAt),
+				isNull(universes.deletedAt)
+			)
+		)
 		.orderBy(asc(stories.title), asc(scenes.globalPosition))
 		.limit(PER_TYPE);
 
@@ -91,6 +111,7 @@ export async function searchAll(
 		.where(
 			and(
 				eq(characters.ownerId, userId),
+				isNull(universes.deletedAt),
 				or(
 					ilike(characters.name, like),
 					sql`array_to_string(${characters.aliases}, ' ') ilike ${like}`
@@ -109,7 +130,7 @@ export async function searchAll(
 		})
 		.from(places)
 		.innerJoin(universes, eq(places.universeId, universes.id))
-		.where(and(eq(places.ownerId, userId), ilike(places.name, like)))
+		.where(and(eq(places.ownerId, userId), ilike(places.name, like), isNull(universes.deletedAt)))
 		.orderBy(asc(places.name))
 		.limit(PER_TYPE);
 
@@ -125,6 +146,7 @@ export async function searchAll(
 		.where(
 			and(
 				eq(loreEntries.ownerId, userId),
+				isNull(universes.deletedAt),
 				or(
 					ilike(loreEntries.title, like),
 					sql`array_to_string(${loreEntries.keywords}, ' ') ilike ${like}`

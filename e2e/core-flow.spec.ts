@@ -25,8 +25,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText(universeName);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: universeName })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
 	await page.getByLabel('New story').fill('Book of Ash');
 	await page.getByRole('button', { name: 'Create story' }).click();
 
