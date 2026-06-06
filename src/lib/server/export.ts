@@ -157,6 +157,21 @@ async function gatherStoryNotes(db: Database, storyId: string): Promise<ExportNo
 // Subdirectory per note kind, matching the universe archive's layout.
 const NOTE_DIRS = { character: 'characters', place: 'places', lore: 'lore' } as const;
 
+// Distinct names within one directory: slugify's fallback only covers an
+// EMPTY slug, so same-slugging names ("Jon" and "Jon.") would otherwise
+// silently overwrite each other in the zip. First taker keeps the bare
+// name; the rest suffix -2, -3, ...
+function uniqueNamer(): (base: string) => string {
+	const used = new Set<string>();
+	return (base) => {
+		let name = base;
+		let n = 2;
+		while (used.has(name)) name = `${base}-${n++}`;
+		used.add(name);
+		return name;
+	};
+}
+
 export async function buildStoryZip(
 	story: ExportStory,
 	content: StoryContent,
@@ -207,13 +222,18 @@ export async function buildStoryZip(
 		.filter((scene) => scene.chapterId === null)
 		.forEach((scene, sceneIndex) => sceneFile(scene, sceneIndex, 'unfiled'));
 
+	const noteNamers = {
+		character: uniqueNamer(),
+		place: uniqueNamer(),
+		lore: uniqueNamer()
+	};
 	for (const note of noteList) {
 		const dir = `notes/${NOTE_DIRS[note.kind]}`;
 		const up = '../'.repeat(dir.split('/').length);
 		const body = rewriteAssetReferences(note.notesMd, (id) =>
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
 		);
-		files[`${root}/${dir}/${slugify(note.name, note.id)}.md`] = strToU8(
+		files[`${root}/${dir}/${noteNamers[note.kind](slugify(note.name, note.id))}.md`] = strToU8(
 			frontMatter({ name: note.name, kind: note.kind }) + body
 		);
 	}
@@ -338,10 +358,11 @@ async function gatherUniverseDocs(
 			.from(characters)
 			.where(eq(characters.universeId, universe.id))
 			.orderBy(asc(characters.name));
+		const characterName = uniqueNamer();
 		for (const c of characterList) {
 			docs.push({
 				dir: `${uDir}/characters`,
-				name: `${slugify(c.name, c.id)}.md`,
+				name: `${characterName(slugify(c.name, c.id))}.md`,
 				front: {
 					name: c.name,
 					aliases: c.aliases.length ? c.aliases.join(', ') : null,
@@ -357,10 +378,11 @@ async function gatherUniverseDocs(
 			.from(places)
 			.where(eq(places.universeId, universe.id))
 			.orderBy(asc(places.name));
+		const placeName = uniqueNamer();
 		for (const p of placeList) {
 			docs.push({
 				dir: `${uDir}/places`,
-				name: `${slugify(p.name, p.id)}.md`,
+				name: `${placeName(slugify(p.name, p.id))}.md`,
 				front: {
 					name: p.name,
 					category: categoryName(p.categoryId),
@@ -375,10 +397,11 @@ async function gatherUniverseDocs(
 			.from(loreEntries)
 			.where(eq(loreEntries.universeId, universe.id))
 			.orderBy(asc(loreEntries.title));
+		const loreName = uniqueNamer();
 		for (const l of loreList) {
 			docs.push({
 				dir: `${uDir}/lore`,
-				name: `${slugify(l.title, l.id)}.md`,
+				name: `${loreName(slugify(l.title, l.id))}.md`,
 				front: {
 					title: l.title,
 					keywords: l.keywords.length ? l.keywords.join(', ') : null,
@@ -394,8 +417,9 @@ async function gatherUniverseDocs(
 			.from(stories)
 			.where(eq(stories.universeId, universe.id))
 			.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
+		const storyFolder = uniqueNamer();
 		for (const story of storyList) {
-			const sDir = `${uDir}/stories/${slugify(story.title, story.id)}`;
+			const sDir = `${uDir}/stories/${storyFolder(slugify(story.title, story.id))}`;
 			docs.push({
 				dir: sDir,
 				name: 'story.md',
@@ -426,10 +450,15 @@ async function gatherUniverseDocs(
 			sceneList
 				.filter((s) => s.chapterId === null)
 				.forEach((s, si) => addScene(s, si, `${sDir}/unfiled`));
+			const storyNoteNamers = {
+				character: uniqueNamer(),
+				place: uniqueNamer(),
+				lore: uniqueNamer()
+			};
 			for (const note of noteList) {
 				docs.push({
 					dir: `${sDir}/notes/${NOTE_DIRS[note.kind]}`,
-					name: `${slugify(note.name, note.id)}.md`,
+					name: `${storyNoteNamers[note.kind](slugify(note.name, note.id))}.md`,
 					front: { name: note.name, kind: note.kind },
 					body: note.notesMd
 				});

@@ -50,6 +50,17 @@ export async function savePlace(
 		if (!category) return { ok: false, reason: 'category not found' };
 	}
 
+	// Validate the optional story BEFORE anything is written: the old
+	// ordering persisted the save, then reported failure and skipped the
+	// mention reindex (review finding #191).
+	if (save.storyId !== undefined) {
+		const [story] = await db
+			.select({ id: stories.id })
+			.from(stories)
+			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
+		if (!story) return { ok: false, reason: 'story not found' };
+	}
+
 	await db
 		.update(places)
 		.set({
@@ -65,14 +76,9 @@ export async function savePlace(
 	await recordEntityRevision(db, 'place', place.id);
 
 	if (save.storyId !== undefined) {
-		const [story] = await db
-			.select({ id: stories.id })
-			.from(stories)
-			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
-		if (!story) return { ok: false, reason: 'story not found' };
 		await db
 			.insert(placeStoryNotes)
-			.values({ placeId: place.id, storyId: story.id, notesMd: save.storyNotesMd ?? '' })
+			.values({ placeId: place.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
 			.onConflictDoUpdate({
 				target: [placeStoryNotes.placeId, placeStoryNotes.storyId],
 				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
