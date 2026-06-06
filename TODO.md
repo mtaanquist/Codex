@@ -234,13 +234,17 @@ against the code) found five gaps that read as oversights rather than
 deferrals. Agreed 2026-06-06: these close out the current phase; the
 softer findings went to the roadmap as candidates for the next phase.
 
-- [ ] 1. Chapter management + scene delete. Chapters are created untitled
-     and nothing can set a title, reorder, or delete them (the UI shows
-     "Chapter N" forever; exports too); scenes cannot be deleted at all
-     short of deleting the story. Add: chapter rename (title editable),
-     chapter reorder, chapter delete (decide: scenes drop to orphans or
-     deletion blocked while occupied), scene delete with confirm and a
-     revision-aware cascade (mentions, markers, outline links).
+- [x] 1. Chapter management + scene delete. Chapters gained hover tools
+     (inline rename, move up/down, delete; deleted chapters drop their
+     scenes to a new "Unfiled scenes" list, author's call 2026-06-06), and
+     scenes gained a trash (scenes.deleted_at, migration 0036): one click
+     deletes into a "Deleted scenes" sidebar section with restore and a
+     confirmed delete-forever that cascades markers, mentions, revisions,
+     review threads, and outline links. Trashed scenes leave every live
+     read (board, story view, exports, search, todos, insights, ordering,
+     APIs) and the mention rebuilder clears trashed scenes so a queued
+     rebuild cannot resurrect them. Merged 2026-06-06 (#147), shipped as
+     v2.19.0.
 - [ ] 2. Find/replace + full-text prose search. @codemirror/search is not
      installed and search.ts matches only titles/names/aliases/keywords.
      Add in-editor find/replace, and prose search across a story's scenes
