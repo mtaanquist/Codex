@@ -28,6 +28,7 @@
 		writingLanguage = '',
 		markers = [],
 		imageUniverseId,
+		findText = null,
 		compact = false,
 		onCrossBoundary,
 		onCreateEntity,
@@ -47,6 +48,8 @@
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
 		imageUniverseId?: string;
+		// Text a search jump arrived with; the first occurrence gets selected.
+		findText?: string | null;
 		// The continuous story view stitches one editor per scene: no title
 		// input, no toolbar, and vertical arrows at the edges hand focus to
 		// neighbours.
@@ -170,6 +173,19 @@
 		if (!view || incoming === current) return;
 		markerHandle = markerExtensions(markers, markSelection);
 		view.dispatch({ effects: markersCompartment.reconfigure(markerHandle.extension) });
+	});
+
+	// A search jump selects the first occurrence of the text it arrived
+	// with, so the match is visible rather than somewhere off-screen.
+	$effect(() => {
+		if (!findText || !view) return;
+		const at = view.state.doc.toString().toLowerCase().indexOf(findText.toLowerCase());
+		if (at < 0) return;
+		view.dispatch({
+			selection: { anchor: at, head: at + findText.length },
+			scrollIntoView: true
+		});
+		view.focus();
 	});
 
 	// Pinning a shared name or creating an entity changes the underlines at

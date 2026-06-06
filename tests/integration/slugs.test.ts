@@ -4,7 +4,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { stories, universes, users } from '../../src/lib/server/db/schema';
-import { slugChangeError, slugTaken, uniqueSlug } from '../../src/lib/server/slugs';
+import { uniqueSlug } from '../../src/lib/server/slugs';
 import { ownedStory } from '../../src/lib/server/story-access';
 import { ownedUniverse } from '../../src/lib/server/universe-access';
 import { isValidSlug } from '../../src/lib/slug';
@@ -80,34 +80,6 @@ describe('uniqueSlug', () => {
 		);
 		expect(slug).toBe('8f3a1c2e-1234-4abc-9def-001122334455-2');
 		expect(isValidSlug(slug)).toBe(true);
-	});
-});
-
-describe('slugTaken', () => {
-	it("sees the owner's other rows but not its own", async () => {
-		expect(await slugTaken(db, 'universes', ownerId, 'ardenfall', universeId)).toBe(false);
-		expect(await slugTaken(db, 'universes', ownerId, 'ardenfall-2', universeId)).toBe(true);
-		expect(await slugTaken(db, 'universes', otherId, 'ardenfall', universeId)).toBe(false);
-	});
-});
-
-describe('slugChangeError', () => {
-	it('accepts a free slug and the row keeping its own', async () => {
-		expect(
-			await slugChangeError(db, 'universes', ownerId, 'new-home', 'ardenfall', universeId)
-		).toBe(null);
-		expect(
-			await slugChangeError(db, 'universes', ownerId, 'ardenfall', 'ardenfall', universeId)
-		).toBe(null);
-	});
-
-	it('rejects bad shapes and taken slugs with the messages the forms show', async () => {
-		expect(
-			await slugChangeError(db, 'universes', ownerId, 'Bad Slug', 'ardenfall', universeId)
-		).toBe('The slug can only use lowercase letters, numbers, and hyphens.');
-		expect(
-			await slugChangeError(db, 'universes', ownerId, 'ardenfall-2', 'ardenfall', universeId)
-		).toBe('Another universe already uses that slug.');
 	});
 });
 

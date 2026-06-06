@@ -217,9 +217,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL(/entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Halden');
 
-	// Lore entries live under the seeded category; keywords drive mentions.
-	await page.getByPlaceholder('New Lore entry').fill('Toll-pass');
-	await page.getByRole('button', { name: 'Add entry' }).click();
+	// Lore entries live under their category; each seeded category ("Lore",
+	// "Faction") has its own add form, so scope to the Lore one.
+	const loreForm = page.locator('form', { has: page.getByPlaceholder('New Lore entry') });
+	await loreForm.getByPlaceholder('New Lore entry').fill('Toll-pass');
+	await loreForm.getByRole('button', { name: 'Add entry' }).click();
 	await expect(page).toHaveURL(/entity=/);
 	const loreSave = page.waitForResponse(
 		(r) => r.url().includes('/api/lore/') && r.request().method() === 'PUT' && r.ok()

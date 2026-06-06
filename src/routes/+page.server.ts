@@ -111,14 +111,12 @@ export const actions: Actions = {
 					.insert(universes)
 					.values({ ownerId: locals.user!.id, name, slug })
 					.returning();
-				// Every universe starts with one lore category; users rename and
-				// extend from there.
-				await tx.insert(entityCategories).values({
-					universeId: row.id,
-					ownerId: locals.user!.id,
-					name: 'Lore',
-					sortOrder: 0
-				});
+				// Every universe starts with a couple of categories; users rename
+				// and extend from there.
+				await tx.insert(entityCategories).values([
+					{ universeId: row.id, ownerId: locals.user!.id, name: 'Lore', sortOrder: 0 },
+					{ universeId: row.id, ownerId: locals.user!.id, name: 'Faction', sortOrder: 1 }
+				]);
 				return row;
 			});
 		let universe;

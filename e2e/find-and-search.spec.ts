@@ -60,4 +60,9 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await passage.click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText(`pin${stamp}`);
+
+	// The jump selects the match in the editor, so the eye lands on it.
+	await expect
+		.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+		.toBe(`pin${stamp}`);
 });

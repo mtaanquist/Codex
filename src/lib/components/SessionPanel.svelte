@@ -2,6 +2,8 @@
 	// The right pane's Session tab: today's words, the week's writing days,
 	// and the streak, with the full Insights view a click away. Data loads
 	// when the panel first shows, not with the page.
+	import Icon from './Icon.svelte';
+
 	let {
 		universeSlug,
 		storyId = null
@@ -83,15 +85,20 @@
 		</div>
 		<div class="r-card">
 			<!-- eslint-disable svelte/no-navigation-without-resolve (app path from a slug) -->
-			<a class="session-insights" href={`/universes/${universeSlug}/insights`}>All insights</a>
+			<a class="session-insights" href={`/universes/${universeSlug}/insights`}>
+				All insights <Icon name="arrow-out" size={12} />
+			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			<span class="session-insights-hint">Opens the full insights page.</span>
 		</div>
 	{/if}
 </div>
 
 <style>
 	.session-insights {
-		display: block;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-size: 13px;
 		font-weight: 600;
 		color: var(--accent);
@@ -99,5 +106,11 @@
 	}
 	.session-insights:hover {
 		text-decoration: underline;
+	}
+	.session-insights-hint {
+		display: block;
+		margin-top: 4px;
+		font-size: 11.5px;
+		color: var(--text-faint);
 	}
 </style>

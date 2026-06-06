@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { deserialize } from '$app/forms';
 	import { closePalette, openPalette, palette } from '$lib/palette.svelte';
+	import { focusMode } from '$lib/focus-mode.svelte';
 	import type { SearchResult } from '$lib/server/search';
 
 	// The command palette: Ctrl+K (or the topbar button) opens it; type to
@@ -66,6 +67,18 @@
 		const list: Item[] = [];
 		const storyMatch = path.match(/^\/stories\/([^/]+)/);
 		const universeMatch = path.match(/^\/universes\/([^/]+)/);
+		// Focus mode only exists on the write page itself.
+		if (/^\/stories\/[^/]+$/.test(path)) {
+			list.push({
+				label: focusMode.on ? 'Leave focus mode' : 'Focus mode',
+				sublabel: 'Just the prose, nothing else',
+				kind: 'Command',
+				run: () => {
+					focusMode.on = !focusMode.on;
+					closePalette();
+				}
+			});
+		}
 		if (storyMatch) {
 			const storyRef = storyMatch[1];
 			list.push(
@@ -83,8 +96,8 @@
 				},
 				{ label: 'Write', sublabel: null, kind: 'Go to', run: navigate(`/stories/${storyRef}`) },
 				{
-					label: 'Story view',
-					sublabel: 'The whole story as one document',
+					label: 'Read the whole story',
+					sublabel: 'Every scene as one continuous document',
 					kind: 'Go to',
 					run: navigate(`/stories/${storyRef}?view=story`)
 				},
@@ -149,7 +162,13 @@
 			label: result.label,
 			sublabel: result.sublabel,
 			kind: TYPE_LABELS[result.type] ?? result.type,
-			run: navigate(result.href)
+			// A text match carries the search along, so the editor can select
+			// the occurrence it lands on.
+			run: navigate(
+				result.type === 'passage'
+					? `${result.href}&find=${encodeURIComponent(query.trim())}`
+					: result.href
+			)
 		}))
 	]);
 
