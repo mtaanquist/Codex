@@ -514,17 +514,16 @@
 .chapter {
 	border-radius: 8px;
 }
+/* Chapters collapse on click and act on right-click; only scenes drag,
+   so the grab cursor stays off here. */
 .chapter-row {
 	display: flex;
 	align-items: center;
 	gap: 7px;
 	padding: 7px 10px;
 	border-radius: 8px;
-	cursor: grab;
+	cursor: pointer;
 	user-select: none;
-}
-.chapter-row:active {
-	cursor: grabbing;
 }
 .chapter-row:hover {
 	background: var(--bg-hover);
