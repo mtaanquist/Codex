@@ -3,11 +3,7 @@ import { expect, test } from '@playwright/test';
 // The scene board: a story's plan shows its scenes in status lanes, and
 // moving a card changes the scene's status for good.
 test('scene board: a card moves along the status ladder and stays there', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill('e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await expect(page).toHaveURL('/');
+	await page.goto('/');
 
 	const universeName = `Board Test ${Date.now()}`;
 	await page.getByLabel('New universe').fill(universeName);

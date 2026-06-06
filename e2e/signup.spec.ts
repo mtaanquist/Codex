@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// These journeys start signed out; skip the shared session.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 // A fixed address keeps repeated local runs idempotent: a second sign-up with
 // the same email is treated as success (no enumeration), and the account stays
 // unverified, so the sign-in gate below still holds.

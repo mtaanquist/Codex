@@ -33,3 +33,4 @@ scratch/app-design/
 # OS noise
 .DS_Store
 Thumbs.db
+e2e/.auth/
