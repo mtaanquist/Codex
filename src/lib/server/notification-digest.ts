@@ -79,11 +79,19 @@ export function reviewerOptOutToken(reviewerId: string): string {
 	return signToken(`${OPT_OUT_PREFIX}${reviewerId}`);
 }
 
-// Consumes an opt-out link; returns whether it pointed at a real reviewer.
-export async function applyReviewerOptOut(db: Database, token: string): Promise<boolean> {
+// The reviewer id a valid opt-out link points at, or null. Read-only, so the
+// opt-out page can check the link on GET without spending it (a mail scanner's
+// prefetch must not silently opt the reviewer out).
+export function reviewerOptOutTarget(token: string): string | null {
 	const payload = verifyToken(token);
-	if (!payload?.startsWith(OPT_OUT_PREFIX)) return false;
-	const reviewerId = payload.slice(OPT_OUT_PREFIX.length);
+	if (!payload?.startsWith(OPT_OUT_PREFIX)) return null;
+	return payload.slice(OPT_OUT_PREFIX.length);
+}
+
+// Applies an opt-out link; returns whether it pointed at a real reviewer.
+export async function applyReviewerOptOut(db: Database, token: string): Promise<boolean> {
+	const reviewerId = reviewerOptOutTarget(token);
+	if (!reviewerId) return false;
 	const updated = await db
 		.update(reviewers)
 		.set({ emailOptOutAt: new Date() })

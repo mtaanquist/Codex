@@ -624,10 +624,13 @@ export async function decideSuggestion(
 				.update(scenes)
 				.set({ bodyMd: newBody, wordCount: wordCount(newBody) })
 				.where(eq(scenes.id, row.scene.id));
+			// Record the revision in the same transaction so the body change and
+			// its snapshot commit together; a failure here rolls the accept back
+			// rather than leaving an unsnapshotted edit.
+			await recordRevision(tx, 'scene', row.scene.id, newBody, 'suggestion');
 			return { ok: true, newBody };
 		}
 	);
 	if (!applied.ok) return applied;
-	await recordRevision(db, 'scene', row.scene.id, applied.newBody, 'suggestion');
 	return { ok: true, sceneId: row.scene.id };
 }
