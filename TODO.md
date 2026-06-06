@@ -269,6 +269,29 @@ softer findings went to the roadmap as candidates for the next phase.
      account or left an email) on author replies, batched so a busy
      thread sends one digest, through the existing email worker.
 
+## Design alignment (author feedback, 2026-06-06)
+
+Playing with the app surfaced two screens that had drifted from the
+app-design prototype; both ported from the design files, shipping as
+their own releases.
+
+- [x] Library dashboard (dashboard.html): page header with totals and a
+      New universe button, Recent row, universe sections with description
+      and Edit universe, story cards with a derived status pill and
+      chapters/words/edited meta, dashed new-story card per universe (new
+      root createStory action). storyStatus/relativeTime helpers unit
+      tested; new dashboard e2e spec. Standalones section skipped (every
+      story has a universe by schema). Merged 2026-06-06 (#154), shipped
+      as v2.21.0. The suite refactor it forced - one shared signed-in
+      session instead of sixteen logins against a fifteen-per-window rate
+      limit - landed first as #153.
+- [ ] Universe settings (universe.html): header eyebrow + title, Contents
+      stat tiles, an Entity categories manager (first of its kind in the
+      app), History with filters/day grouping/checkpoint actions, a
+      universe markdown export, Stories section moving to the dashboard,
+      and the danger zone becoming a cascade soft-delete with a 30-day
+      restore window (author's call). Lorebook JSON export stays in Phase 9. Ships as v2.22.0.
+
 ## Feedback backlog
 
 From first real use (2026-06-03):
