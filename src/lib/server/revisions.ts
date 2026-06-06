@@ -5,7 +5,6 @@ import {
 	entityCategories,
 	entityRelationships,
 	loreEntries,
-	outlineNodes,
 	places,
 	relationTypes,
 	revisions,
@@ -25,7 +24,6 @@ export type RevisionEntityType =
 	| 'character'
 	| 'place'
 	| 'lore_entry'
-	| 'outline_node'
 	| 'chapter'
 	| 'note';
 
@@ -292,8 +290,8 @@ export async function getRevision(
 }
 
 // Loads the current body of any revisable entity, with an ownership check
-// appropriate to its type. Scenes and outline nodes own nothing directly,
-// so ownership flows through the story.
+// appropriate to its type. Scenes own nothing directly, so ownership flows
+// through the story.
 export async function ownedEntityBody(
 	db: Database,
 	userId: string,
@@ -306,14 +304,6 @@ export async function ownedEntityBody(
 			.from(scenes)
 			.innerJoin(stories, eq(scenes.storyId, stories.id))
 			.where(and(eq(scenes.id, entityId), eq(stories.ownerId, userId)));
-		return row ?? null;
-	}
-	if (entityType === 'outline_node') {
-		const [row] = await db
-			.select({ bodyMd: outlineNodes.bodyMd })
-			.from(outlineNodes)
-			.innerJoin(stories, eq(outlineNodes.storyId, stories.id))
-			.where(and(eq(outlineNodes.id, entityId), eq(stories.ownerId, userId)));
 		return row ?? null;
 	}
 	if (entityType === 'character') {
@@ -511,14 +501,6 @@ export async function restoreRevision(
 		await recordRevision(db, entityType, entityId, revision.bodyMd, 'restore');
 		return { ok: true };
 	}
-	if (entityType === 'outline_node') {
-		await db
-			.update(outlineNodes)
-			.set({ bodyMd: revision.bodyMd })
-			.where(eq(outlineNodes.id, entityId));
-		await recordRevision(db, entityType, entityId, revision.bodyMd, 'restore');
-		return { ok: true };
-	}
 	if (!isSnapshotType(entityType)) {
 		return { ok: false, reason: 'that cannot be restored' };
 	}
@@ -624,7 +606,7 @@ function mergeTimelines(lists: TimelineRow[][], limit: number): TimelineRow[] {
 		.slice(0, limit);
 }
 
-// Recent changes across a story's prose and outline, for its settings page.
+// Recent changes across a story's prose, for its settings page.
 export async function storyTimeline(
 	db: Database,
 	storyId: string,
@@ -645,22 +627,7 @@ export async function storyTimeline(
 		.where(and(eq(revisions.entityType, 'scene'), eq(scenes.storyId, storyId)))
 		.orderBy(desc(revisions.createdAt))
 		.limit(limit);
-	const nodeRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: outlineNodes.title
-		})
-		.from(revisions)
-		.innerJoin(outlineNodes, eq(revisions.entityId, outlineNodes.id))
-		.where(and(eq(revisions.entityType, 'outline_node'), eq(outlineNodes.storyId, storyId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	return mergeTimelines([sceneRows, nodeRows], limit);
+	return mergeTimelines([sceneRows], limit);
 }
 
 // Recent changes across a universe's scenes and entities, for its settings

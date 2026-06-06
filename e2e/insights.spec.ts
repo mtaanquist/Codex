@@ -80,7 +80,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 
 	// The story plan lists the universe's other entities behind a fold.
 	await page.goto(`/stories/${storyRef}/plan`);
-	await page.getByRole('button', { name: 'In the universe' }).first().click();
+	// The "In the universe" list starts open; the row is right there.
 	await page.locator('.uni-row', { hasText: 'Heimdall' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 });

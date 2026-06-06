@@ -3,7 +3,6 @@ import type { Database } from './auth';
 import {
 	chapters,
 	entityMentions,
-	outlineNodes,
 	reviewComments,
 	reviewSuggestions,
 	reviewThreads,
@@ -97,7 +96,7 @@ export async function restoreScene(
 }
 
 /** Deletes a trashed scene for good: markers, mentions, revisions, review
- * threads and suggestions, outline links, then the row. */
+ * threads and suggestions, then the row. */
 export async function destroyScene(
 	db: Database,
 	userId: string,
@@ -125,10 +124,6 @@ export async function destroyScene(
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 		await tx.delete(revisions).where(eq(revisions.entityId, scene.id));
-		await tx
-			.update(outlineNodes)
-			.set({ linkedSceneId: null })
-			.where(eq(outlineNodes.linkedSceneId, scene.id));
 		await tx.delete(scenes).where(eq(scenes.id, scene.id));
 	});
 	return true;
@@ -217,10 +212,6 @@ export async function deleteChapter(
 			.update(scenes)
 			.set({ chapterId: null, positionInChapter: null })
 			.where(eq(scenes.chapterId, chapter.id));
-		await tx
-			.update(outlineNodes)
-			.set({ linkedChapterId: null })
-			.where(eq(outlineNodes.linkedChapterId, chapter.id));
 		await tx.delete(chapters).where(eq(chapters.id, chapter.id));
 		const rest = await tx
 			.select({ id: chapters.id })

@@ -26,13 +26,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const trashedUniverses = await listTrashedUniverses(db, user.id);
 
 	// One row per story with everything its card shows: chapter and word
-	// totals, scene status counts for the pill, outline nodes for stories
-	// with no prose yet, and when anything in it was last touched.
+	// totals, scene status counts for the pill, and when anything in it
+	// was last touched.
 	const result = await db.execute(sql`
 		select st.id, st.slug, st.title, st.brief, st.universe_id,
 			st.position_in_series, st.created_at,
 			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
-			(select count(*)::int from outline_nodes o where o.story_id = st.id) as outline_nodes,
 			count(s.id)::int as scene_count,
 			coalesce(sum(s.word_count), 0)::int as words,
 			count(s.id) filter (where s.status = 'outline')::int as outline,
@@ -55,7 +54,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 			brief: string | null;
 			universe_id: string;
 			chapters: number;
-			outline_nodes: number;
 			scene_count: number;
 			words: number;
 			outline: number;
@@ -72,7 +70,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 			brief: r.brief,
 			universeId: r.universe_id,
 			chapters: r.chapters,
-			outlineNodes: r.outline_nodes,
 			words: r.words,
 			editedAt: editedAt.toISOString(),
 			editedLabel: relativeTime(editedAt, new Date()),

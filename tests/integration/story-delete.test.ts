@@ -13,7 +13,6 @@ import {
 	entityMentions,
 	entityRelationships,
 	loreEntries,
-	outlineNodes,
 	placeStoryMemberships,
 	places,
 	publicationAssets,
@@ -44,7 +43,7 @@ beforeAll(async () => {
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
 	await pool.query(
-		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, outline_nodes, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, stories, universes, users cascade'
+		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, stories, universes, users cascade'
 	);
 	await ensureBuiltInRelationTypes(pool);
 
@@ -105,11 +104,6 @@ beforeAll(async () => {
 		position: 0,
 		surroundingText: 'Alice.'
 	});
-	const [node] = await db
-		.insert(outlineNodes)
-		.values({ storyId, position: 1, title: 'Act 1' })
-		.returning();
-	await db.insert(outlineNodes).values({ storyId, parentId: node.id, position: 1, title: 'Beat' });
 	await db.insert(characterStoryNotes).values({ characterId: alice.id, storyId, notesMd: 'note' });
 	await db.insert(characterStoryMemberships).values({ characterId: alice.id, storyId });
 	await db.insert(placeStoryMemberships).values({ placeId: place.id, storyId });
@@ -177,9 +171,6 @@ describe('deleteStory', () => {
 		expect(await db.select().from(stories).where(eq(stories.id, storyId))).toHaveLength(0);
 		expect(await db.select().from(chapters).where(eq(chapters.storyId, storyId))).toHaveLength(0);
 		expect(await db.select().from(scenes).where(eq(scenes.storyId, storyId))).toHaveLength(0);
-		expect(
-			await db.select().from(outlineNodes).where(eq(outlineNodes.storyId, storyId))
-		).toHaveLength(0);
 		expect(
 			await db.select().from(publications).where(eq(publications.storyId, storyId))
 		).toHaveLength(0);

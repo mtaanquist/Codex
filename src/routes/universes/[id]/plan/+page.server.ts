@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { storyStatus } from '$lib/dashboard';
 import { ownedUniverse } from '$lib/server/universe-access';
 import { planActions } from '$lib/server/plan-actions';
 import {
@@ -54,6 +56,62 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		);
 	}
 
+	// With nothing selected the centre shows the story board: each story
+	// in a lane for its derived status, the same derivation as the
+	// library's pill.
+	let storyBoard: {
+		id: string;
+		slug: string;
+		title: string;
+		status: ReturnType<typeof storyStatus>;
+		words: number;
+		sceneCount: number;
+	}[] = [];
+	if (!selected) {
+		const result = await db.execute(sql`
+			select st.id, st.slug, st.title,
+				count(s.id)::int as scene_count,
+				coalesce(sum(s.word_count), 0)::int as words,
+				count(s.id) filter (where s.status = 'outline')::int as outline,
+				count(s.id) filter (where s.status = 'draft')::int as draft,
+				count(s.id) filter (where s.status = 'revised')::int as revised,
+				count(s.id) filter (where s.status = 'final')::int as final
+			from stories st
+			left join scenes s on s.story_id = st.id and s.deleted_at is null
+			where st.universe_id = ${universe.id}
+			group by st.id
+			order by st.position_in_series asc nulls last, st.created_at asc
+		`);
+		storyBoard = result.rows.map((row) => {
+			const r = row as {
+				id: string;
+				slug: string;
+				title: string;
+				scene_count: number;
+				words: number;
+				outline: number;
+				draft: number;
+				revised: number;
+				final: number;
+			};
+			return {
+				id: r.id,
+				slug: r.slug,
+				title: r.title,
+				words: r.words,
+				sceneCount: r.scene_count,
+				status: storyStatus({
+					sceneCount: r.scene_count,
+					words: r.words,
+					outline: r.outline,
+					draft: r.draft,
+					revised: r.revised,
+					final: r.final
+				})
+			};
+		});
+	}
+
 	const relationTypes = await listRelationTypes(db, universe.id);
 	let relationships: RelationshipView[] = [];
 	if (selected) {
@@ -83,6 +141,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		universe,
 		user: locals.user!,
 		...lists,
+		storyBoard,
 		selected,
 		selectedKind,
 		appearsIn,

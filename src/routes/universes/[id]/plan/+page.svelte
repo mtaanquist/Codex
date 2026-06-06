@@ -5,6 +5,7 @@
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
+	import StoryBoard from '$lib/components/StoryBoard.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -47,6 +48,9 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
+			boardHref={planPath}
+			boardActive={!data.selected}
+			boardLabel="Story board"
 			{form}
 		/>
 		<main class="pane center">
@@ -77,6 +81,15 @@
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}
+			{:else if data.storyBoard.length > 0}
+				<!-- Nothing selected: the universe's stories as a board, each in
+				     the lane of its derived status. -->
+				<StoryBoard
+					stories={data.storyBoard.map((story) => ({
+						...story,
+						href: resolve('/stories/[id]', { id: story.slug })
+					}))}
+				/>
 			{:else if data.characters.length === 0 && data.places.length === 0}
 				<div class="empty">
 					<p>Nothing here yet. Add a character or a place in the sidebar.</p>
@@ -89,25 +102,25 @@
 		</main>
 		<aside class="pane right">
 			<div class="right-head">
+				<!-- The same three pills whether the centre shows the board or an
+				     entity, so the pane never changes shape underfoot. -->
 				<div class="rtabs">
-					{#if data.revisionTarget}
-						<button
-							class="rtab"
-							class:active={rightTab === 'reference'}
-							type="button"
-							onclick={() => (rightTab = 'reference')}
-						>
-							Reference
-						</button>
-						<button
-							class="rtab"
-							class:active={rightTab === 'history'}
-							type="button"
-							onclick={() => (rightTab = 'history')}
-						>
-							History
-						</button>
-					{/if}
+					<button
+						class="rtab"
+						class:active={rightTab === 'reference'}
+						type="button"
+						onclick={() => (rightTab = 'reference')}
+					>
+						Reference
+					</button>
+					<button
+						class="rtab"
+						class:active={rightTab === 'history'}
+						type="button"
+						onclick={() => (rightTab = 'history')}
+					>
+						History
+					</button>
 					<button
 						class="rtab"
 						class:active={rightTab === 'session'}
@@ -120,14 +133,20 @@
 			</div>
 			{#if rightTab === 'session'}
 				<SessionPanel universeSlug={data.universe.slug} />
-			{:else if data.revisionTarget && rightTab === 'history'}
-				<RevisionHistory
-					entityType={data.revisionTarget.type}
-					entityId={data.revisionTarget.id}
-					revisions={data.revisionRows}
-					previewId={data.revisionPreview?.id}
-					previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
-				/>
+			{:else if rightTab === 'history'}
+				{#if data.revisionTarget}
+					<RevisionHistory
+						entityType={data.revisionTarget.type}
+						entityId={data.revisionTarget.id}
+						revisions={data.revisionRows}
+						previewId={data.revisionPreview?.id}
+						previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+					/>
+				{:else}
+					<div class="right-scroll">
+						<div class="empty">Select a character or place to see its history.</div>
+					</div>
+				{/if}
 			{:else}
 				<div class="right-scroll">
 					{#if data.selected && data.relationships.length > 0}
