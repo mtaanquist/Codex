@@ -71,6 +71,14 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await page.getByRole('link', { name: 'Scene board' }).click();
 	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
 
+	// The plan sidebar's filter narrows the entity lists by name.
+	await page.getByLabel('Filter characters, places, lore...').fill('ferry');
+	await expect(page.locator('.ent-row')).toHaveCount(1);
+	await expect(page.locator('.ent-row .name')).toHaveText('Ferry');
+	await page.getByLabel('Filter characters, places, lore...').fill('zzz-nobody');
+	await expect(page.locator('.search-empty')).toBeVisible();
+	await page.getByRole('button', { name: 'Clear' }).click();
+
 	// The universe plan shows the story board: this story sits in the lane
 	// of its derived status, and its card opens the story.
 	const universeSlug = `board-test-${universeName.split(' ').pop()}`;

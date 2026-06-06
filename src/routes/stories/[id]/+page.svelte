@@ -11,6 +11,7 @@
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
+	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData } from './$types';
 
@@ -148,6 +149,20 @@
 	function chapterScenes(chapterId: string) {
 		return data.scenes.filter((scene) => scene.chapterId === chapterId);
 	}
+
+	// The sidebar filter: a matching chapter keeps all its scenes, otherwise
+	// only matching scenes show, and a chapter with nothing left hides.
+	// While filtering, chapters stay open and dragging is off.
+	let sidebarQuery = $state('');
+	const sceneQuery = $derived(sidebarQuery.trim().toLowerCase());
+	function nameMatches(title: string | null, fallback: string) {
+		return (title ?? fallback).toLowerCase().includes(sceneQuery);
+	}
+	const visibleOrphans = $derived(
+		sceneQuery === ''
+			? orphanScenes
+			: orphanScenes.filter((scene) => nameMatches(scene.title, 'Untitled scene'))
+	);
 
 	function docScenes(chapterId: string | null) {
 		return (data.storyDoc ?? []).filter((scene) => scene.chapterId === chapterId);
@@ -288,6 +303,7 @@
 					</a>
 					<button class="seg-btn" type="button" disabled>Notes</button>
 				</div>
+				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>
 			<div class="left-scroll">
 				<div class="outline">
@@ -338,97 +354,107 @@
 					</div>
 					<div class="chapters">
 						{#each data.chapters as chapter, index (chapter.id)}
-							{@const list = chapterScenes(chapter.id)}
-							{@const open = !collapsed.has(chapter.id)}
-							<div class="chapter">
-								{#if renamingChapterId === chapter.id}
-									<form class="chapter-rename" method="POST" action="?/renameChapter">
-										<input type="hidden" name="chapterId" value={chapter.id} />
-										{@render openSceneField()}
-										<!-- svelte-ignore a11y_autofocus (the field only appears on the rename click) -->
-										<input
-											class="chapter-rename-input"
-											name="title"
-											value={chapter.title ?? ''}
-											placeholder={`Chapter ${index + 1}`}
-											autofocus
-											onkeydown={(e) => {
-												if (e.key === 'Escape') renamingChapterId = null;
-											}}
-										/>
-										<button class="tool-btn" type="submit" title="Save chapter name">Save</button>
-									</form>
-								{:else}
-									<button
-										class="chapter-row"
-										class:scene-target={dropTarget?.chapterId === chapter.id &&
-											dropTarget.index === list.length &&
-											!open}
-										type="button"
-										onclick={() =>
-											collapsed.has(chapter.id)
-												? collapsed.delete(chapter.id)
-												: collapsed.add(chapter.id)}
-										oncontextmenu={(e) =>
-											openRowMenu(e, { kind: 'chapter', id: chapter.id, index })}
-										ondragover={(e) => overChapterHeader(e, chapter.id)}
-										ondrop={commitDrop}
-									>
-										<span class="tw" class:open><Icon name="chevron" size={12} /></span>
-										<span class="chapter-name">{chapter.title ?? `Chapter ${index + 1}`}</span>
-										<span class="chapter-meta">{list.length}</span>
-									</button>
-								{/if}
-								{#if open}
-									<div class="scenes">
-										{#each list as scene, si (scene.id)}
-											{#if dropTarget?.chapterId === chapter.id && dropTarget.index === si}
+							{@const chapterMatch =
+								sceneQuery === '' || nameMatches(chapter.title, `Chapter ${index + 1}`)}
+							{@const list = chapterMatch
+								? chapterScenes(chapter.id)
+								: chapterScenes(chapter.id).filter((scene) =>
+										nameMatches(scene.title, 'Untitled scene')
+									)}
+							{@const open = sceneQuery !== '' || !collapsed.has(chapter.id)}
+							{#if chapterMatch || list.length > 0}
+								<div class="chapter">
+									{#if renamingChapterId === chapter.id}
+										<form class="chapter-rename" method="POST" action="?/renameChapter">
+											<input type="hidden" name="chapterId" value={chapter.id} />
+											{@render openSceneField()}
+											<!-- svelte-ignore a11y_autofocus (the field only appears on the rename click) -->
+											<input
+												class="chapter-rename-input"
+												name="title"
+												value={chapter.title ?? ''}
+												placeholder={`Chapter ${index + 1}`}
+												autofocus
+												onkeydown={(e) => {
+													if (e.key === 'Escape') renamingChapterId = null;
+												}}
+											/>
+											<button class="tool-btn" type="submit" title="Save chapter name">Save</button>
+										</form>
+									{:else}
+										<button
+											class="chapter-row"
+											class:scene-target={dropTarget?.chapterId === chapter.id &&
+												dropTarget.index === list.length &&
+												!open}
+											type="button"
+											onclick={() =>
+												collapsed.has(chapter.id)
+													? collapsed.delete(chapter.id)
+													: collapsed.add(chapter.id)}
+											oncontextmenu={(e) =>
+												openRowMenu(e, { kind: 'chapter', id: chapter.id, index })}
+											ondragover={(e) => overChapterHeader(e, chapter.id)}
+											ondrop={commitDrop}
+										>
+											<span class="tw" class:open><Icon name="chevron" size={12} /></span>
+											<span class="chapter-name">{chapter.title ?? `Chapter ${index + 1}`}</span>
+											<span class="chapter-meta">{list.length}</span>
+										</button>
+									{/if}
+									{#if open}
+										<div class="scenes">
+											{#each list as scene, si (scene.id)}
+												{#if dropTarget?.chapterId === chapter.id && dropTarget.index === si}
+													<div class="drop-line scene"></div>
+												{/if}
+												<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+												<a
+													class="scene-row"
+													class:active={scene.id === data.selectedScene?.id}
+													href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+													draggable="true"
+													oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
+													ondragstart={(e) => {
+														draggingSceneId = scene.id;
+														e.dataTransfer?.setData('text/plain', scene.id);
+													}}
+													ondragover={(e) => overScene(e, chapter.id, si)}
+													ondrop={commitDrop}
+													ondragend={endDrag}
+												>
+													<span class="scene-status st-{scene.status}" title={scene.status}></span>
+													<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+													{#if scene.wordCount > 0}
+														<span class="scene-words">{words(scene.wordCount)}</span>
+													{/if}
+												</a>
+												<!-- eslint-enable svelte/no-navigation-without-resolve -->
+											{/each}
+											{#if dropTarget?.chapterId === chapter.id && dropTarget.index === list.length && open}
 												<div class="drop-line scene"></div>
 											{/if}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-											<a
-												class="scene-row"
-												class:active={scene.id === data.selectedScene?.id}
-												href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
-												draggable="true"
-												oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
-												ondragstart={(e) => {
-													draggingSceneId = scene.id;
-													e.dataTransfer?.setData('text/plain', scene.id);
-												}}
-												ondragover={(e) => overScene(e, chapter.id, si)}
-												ondrop={commitDrop}
-												ondragend={endDrag}
-											>
-												<span class="scene-status st-{scene.status}" title={scene.status}></span>
-												<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
-												{#if scene.wordCount > 0}
-													<span class="scene-words">{words(scene.wordCount)}</span>
-												{/if}
-											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
-										{/each}
-										{#if dropTarget?.chapterId === chapter.id && dropTarget.index === list.length && open}
-											<div class="drop-line scene"></div>
-										{/if}
-										<form method="POST" action="?/createScene">
-											<input type="hidden" name="chapterId" value={chapter.id} />
-											<button class="outline-add scene" type="submit">
-												<Icon name="plus" size={12} /> New scene
-											</button>
-										</form>
-									</div>
-								{/if}
-							</div>
+											{#if sceneQuery === ''}
+												<form method="POST" action="?/createScene">
+													<input type="hidden" name="chapterId" value={chapter.id} />
+													<button class="outline-add scene" type="submit">
+														<Icon name="plus" size={12} /> New scene
+													</button>
+												</form>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							{/if}
 						{/each}
-						{#if orphanScenes.length > 0}
+						{#if visibleOrphans.length > 0}
 							<div class="chapter">
 								<span class="chapter-row as-label unfiled-head">
 									<span class="chapter-name">Unfiled scenes</span>
-									<span class="chapter-meta">{orphanScenes.length}</span>
+									<span class="chapter-meta">{visibleOrphans.length}</span>
 								</span>
 								<div class="scenes">
-									{#each orphanScenes as scene, si (scene.id)}
+									{#each visibleOrphans as scene, si (scene.id)}
 										{#if dropTarget?.chapterId === null && dropTarget.index === si}
 											<div class="drop-line scene"></div>
 										{/if}
@@ -437,7 +463,7 @@
 											class="scene-row"
 											class:active={scene.id === data.selectedScene?.id}
 											href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
-											draggable="true"
+											draggable={sceneQuery === ''}
 											oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
 											ondragstart={(e) => {
 												draggingSceneId = scene.id;
@@ -455,18 +481,23 @@
 										</a>
 										<!-- eslint-enable svelte/no-navigation-without-resolve -->
 									{/each}
-									{#if dropTarget?.chapterId === null && dropTarget.index === orphanScenes.length}
+									{#if dropTarget?.chapterId === null && dropTarget.index === visibleOrphans.length}
 										<div class="drop-line scene"></div>
 									{/if}
 								</div>
 							</div>
 						{/if}
-						<form method="POST" action="?/createChapter">
-							<button class="outline-add" type="submit">
-								<Icon name="plus" size={13} /> New chapter
-							</button>
-						</form>
-						{#if data.trashedScenes.length > 0}
+						{#if sceneQuery !== '' && visibleOrphans.length === 0 && !data.chapters.some((chapter, index) => nameMatches(chapter.title, `Chapter ${index + 1}`) || chapterScenes(chapter.id).some( (scene) => nameMatches(scene.title, 'Untitled scene') ))}
+							<div class="search-empty">No chapters or scenes match.</div>
+						{/if}
+						{#if sceneQuery === ''}
+							<form method="POST" action="?/createChapter">
+								<button class="outline-add" type="submit">
+									<Icon name="plus" size={13} /> New chapter
+								</button>
+							</form>
+						{/if}
+						{#if sceneQuery === '' && data.trashedScenes.length > 0}
 							<div class="chapter trash">
 								<button class="chapter-row" type="button" onclick={() => (trashOpen = !trashOpen)}>
 									<span class="tw" class:open={trashOpen}><Icon name="chevron" size={12} /></span>

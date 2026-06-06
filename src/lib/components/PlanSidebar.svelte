@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import SidebarSearch from './SidebarSearch.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 
 	// The left pane of a Plan view, shared by the story and universe scopes.
@@ -44,6 +45,32 @@
 	// fold is there to reclaim the space when the lists grow long.
 	let showUniverseCharacters = $state(true);
 	let showUniversePlaces = $state(true);
+
+	// The filter narrows every list by name; while it is active the create
+	// forms step aside and the folded lists open to show their matches.
+	let query = $state('');
+	const q = $derived(query.trim().toLowerCase());
+	function nameMatch(name: string) {
+		return name.toLowerCase().includes(q);
+	}
+	const visibleCharacters = $derived(
+		q === '' ? characters : characters.filter((row) => nameMatch(row.name))
+	);
+	const visiblePlaces = $derived(q === '' ? places : places.filter((row) => nameMatch(row.name)));
+	const visibleAvailableCharacters = $derived(
+		q === '' ? availableCharacters : availableCharacters.filter((row) => nameMatch(row.name))
+	);
+	const visibleAvailablePlaces = $derived(
+		q === '' ? availablePlaces : availablePlaces.filter((row) => nameMatch(row.name))
+	);
+	const anyMatch = $derived(
+		q === '' ||
+			visibleCharacters.length > 0 ||
+			visiblePlaces.length > 0 ||
+			visibleAvailableCharacters.length > 0 ||
+			visibleAvailablePlaces.length > 0 ||
+			lore.some((entry) => nameMatch(entry.name))
+	);
 </script>
 
 <aside class="pane left">
@@ -56,6 +83,7 @@
 			<button class="seg-btn active" type="button">Plan</button>
 			<button class="seg-btn" type="button" disabled>Notes</button>
 		</div>
+		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>
 	<div class="left-scroll">
 		{#if boardHref}
@@ -67,9 +95,9 @@
 		{/if}
 		<div class="group-label">
 			<span class="gl-left">Characters</span>
-			<span class="count">{characters.length}</span>
+			<span class="count">{visibleCharacters.length}</span>
 		</div>
-		{#each characters as character (character.id)}
+		{#each visibleCharacters as character (character.id)}
 			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 			<a
 				class="ent-row"
@@ -86,28 +114,31 @@
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
-		<form method="POST" action="?/createCharacter" class="new-entity">
-			{#if form?.kind === 'character' && form.message}
-				<p class="error" role="alert">{form.message}</p>
-			{/if}
-			<input type="text" name="name" placeholder="New character name" required />
-			<button class="outline-add" type="submit">
-				<Icon name="plus" size={13} /> Add character
-			</button>
-		</form>
-		{#if availableCharacters.length > 0}
+		{#if q === ''}
+			<form method="POST" action="?/createCharacter" class="new-entity">
+				{#if form?.kind === 'character' && form.message}
+					<p class="error" role="alert">{form.message}</p>
+				{/if}
+				<input type="text" name="name" placeholder="New character name" required />
+				<button class="outline-add" type="submit">
+					<Icon name="plus" size={13} /> Add character
+				</button>
+			</form>
+		{/if}
+		{#if visibleAvailableCharacters.length > 0}
 			<button
 				class="uni-toggle"
 				type="button"
 				onclick={() => (showUniverseCharacters = !showUniverseCharacters)}
 			>
-				<span class="tw" class:open={showUniverseCharacters}><Icon name="chevron" size={11} /></span
+				<span class="tw" class:open={q !== '' || showUniverseCharacters}
+					><Icon name="chevron" size={11} /></span
 				>
 				In the universe
-				<span class="count">{availableCharacters.length}</span>
+				<span class="count">{visibleAvailableCharacters.length}</span>
 			</button>
-			{#if showUniverseCharacters}
-				{#each availableCharacters as candidate (candidate.id)}
+			{#if q !== '' || showUniverseCharacters}
+				{#each visibleAvailableCharacters as candidate (candidate.id)}
 					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 					<a
 						class="ent-row uni-row"
@@ -122,25 +153,27 @@
 					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
 			{/if}
-			<form method="POST" action="?/declareMember" class="new-entity">
-				<input type="hidden" name="kind" value="character" />
-				<select name="entityId" aria-label="Add an existing character" required>
-					<option value="">From the universe...</option>
-					{#each availableCharacters as candidate (candidate.id)}
-						<option value={candidate.id}>{candidate.name}</option>
-					{/each}
-				</select>
-				<button class="outline-add" type="submit">
-					<Icon name="plus" size={13} /> Add to this story
-				</button>
-			</form>
+			{#if q === ''}
+				<form method="POST" action="?/declareMember" class="new-entity">
+					<input type="hidden" name="kind" value="character" />
+					<select name="entityId" aria-label="Add an existing character" required>
+						<option value="">From the universe...</option>
+						{#each availableCharacters as candidate (candidate.id)}
+							<option value={candidate.id}>{candidate.name}</option>
+						{/each}
+					</select>
+					<button class="outline-add" type="submit">
+						<Icon name="plus" size={13} /> Add to this story
+					</button>
+				</form>
+			{/if}
 		{/if}
 
 		<div class="group-label">
 			<span class="gl-left">Places</span>
-			<span class="count">{places.length}</span>
+			<span class="count">{visiblePlaces.length}</span>
 		</div>
-		{#each places as place (place.id)}
+		{#each visiblePlaces as place (place.id)}
 			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 			<a
 				class="ent-row"
@@ -154,27 +187,31 @@
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
-		<form method="POST" action="?/createPlace" class="new-entity">
-			{#if form?.kind === 'place' && form.message}
-				<p class="error" role="alert">{form.message}</p>
-			{/if}
-			<input type="text" name="name" placeholder="New place name" required />
-			<button class="outline-add" type="submit">
-				<Icon name="plus" size={13} /> Add place
-			</button>
-		</form>
-		{#if availablePlaces.length > 0}
+		{#if q === ''}
+			<form method="POST" action="?/createPlace" class="new-entity">
+				{#if form?.kind === 'place' && form.message}
+					<p class="error" role="alert">{form.message}</p>
+				{/if}
+				<input type="text" name="name" placeholder="New place name" required />
+				<button class="outline-add" type="submit">
+					<Icon name="plus" size={13} /> Add place
+				</button>
+			</form>
+		{/if}
+		{#if visibleAvailablePlaces.length > 0}
 			<button
 				class="uni-toggle"
 				type="button"
 				onclick={() => (showUniversePlaces = !showUniversePlaces)}
 			>
-				<span class="tw" class:open={showUniversePlaces}><Icon name="chevron" size={11} /></span>
+				<span class="tw" class:open={q !== '' || showUniversePlaces}
+					><Icon name="chevron" size={11} /></span
+				>
 				In the universe
-				<span class="count">{availablePlaces.length}</span>
+				<span class="count">{visibleAvailablePlaces.length}</span>
 			</button>
-			{#if showUniversePlaces}
-				{#each availablePlaces as candidate (candidate.id)}
+			{#if q !== '' || showUniversePlaces}
+				{#each visibleAvailablePlaces as candidate (candidate.id)}
 					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 					<a
 						class="ent-row uni-row"
@@ -189,76 +226,89 @@
 					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
 			{/if}
-			<form method="POST" action="?/declareMember" class="new-entity">
-				<input type="hidden" name="kind" value="place" />
-				<select name="entityId" aria-label="Add an existing place" required>
-					<option value="">From the universe...</option>
-					{#each availablePlaces as candidate (candidate.id)}
-						<option value={candidate.id}>{candidate.name}</option>
-					{/each}
-				</select>
-				<button class="outline-add" type="submit">
-					<Icon name="plus" size={13} /> Add to this story
-				</button>
-			</form>
+			{#if q === ''}
+				<form method="POST" action="?/declareMember" class="new-entity">
+					<input type="hidden" name="kind" value="place" />
+					<select name="entityId" aria-label="Add an existing place" required>
+						<option value="">From the universe...</option>
+						{#each availablePlaces as candidate (candidate.id)}
+							<option value={candidate.id}>{candidate.name}</option>
+						{/each}
+					</select>
+					<button class="outline-add" type="submit">
+						<Icon name="plus" size={13} /> Add to this story
+					</button>
+				</form>
+			{/if}
 		{/if}
 		{#if form?.kind === 'member' && form.message}
 			<p class="error new-entity" role="alert">{form.message}</p>
 		{/if}
 
 		{#each categories as category (category.id)}
-			{@const entries = lore.filter((entry) => entry.categoryId === category.id)}
-			<div class="group-label">
-				<span class="gl-left">
-					{#if category.color}<span class="cat-dot" style="background: {category.color}"
-						></span>{/if}
-					{category.name}
-				</span>
-				<span class="count">{entries.length}</span>
-			</div>
-			{#each entries as entry (entry.id)}
-				<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-				<a
-					class="ent-row"
-					class:active={entry.id === selectedId}
-					href={`${planPath}?entity=${entry.id}`}
-				>
-					<span class="badge dot" style="background: {category.color ?? entityColor(entry.name)}">
-						{entityLetter(entry.name)}
+			{@const entries = lore.filter(
+				(entry) => entry.categoryId === category.id && (q === '' || nameMatch(entry.name))
+			)}
+			{#if q === '' || entries.length > 0}
+				<div class="group-label">
+					<span class="gl-left">
+						{#if category.color}<span class="cat-dot" style="background: {category.color}"
+							></span>{/if}
+						{category.name}
 					</span>
-					<span class="name">{entry.name}</span>
-				</a>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
-			{/each}
-			<form method="POST" action="?/createLoreEntry" class="new-entity">
-				<input type="hidden" name="categoryId" value={category.id} />
-				<input type="text" name="name" placeholder="New {category.name} entry" required />
-				<button class="outline-add" type="submit">
-					<Icon name="plus" size={13} /> Add entry
-				</button>
-			</form>
+					<span class="count">{entries.length}</span>
+				</div>
+				{#each entries as entry (entry.id)}
+					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+					<a
+						class="ent-row"
+						class:active={entry.id === selectedId}
+						href={`${planPath}?entity=${entry.id}`}
+					>
+						<span class="badge dot" style="background: {category.color ?? entityColor(entry.name)}">
+							{entityLetter(entry.name)}
+						</span>
+						<span class="name">{entry.name}</span>
+					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{/each}
+				{#if q === ''}
+					<form method="POST" action="?/createLoreEntry" class="new-entity">
+						<input type="hidden" name="categoryId" value={category.id} />
+						<input type="text" name="name" placeholder="New {category.name} entry" required />
+						<button class="outline-add" type="submit">
+							<Icon name="plus" size={13} /> Add entry
+						</button>
+					</form>
+				{/if}
+			{/if}
 		{/each}
 		{#if form?.kind === 'lore' && form.message}
 			<p class="error new-entity" role="alert">{form.message}</p>
 		{/if}
 
-		<form method="POST" action="?/createCategory" class="new-entity">
-			{#if form?.kind === 'category' && form.message}
-				<p class="error" role="alert">{form.message}</p>
-			{/if}
-			<input type="text" name="name" placeholder="New category name" required />
-			<select name="color">
-				<option value="">No colour</option>
-				<option value="var(--cat-blue)">Blue</option>
-				<option value="var(--cat-violet)">Violet</option>
-				<option value="var(--cat-rose)">Rose</option>
-				<option value="var(--cat-green)">Green</option>
-				<option value="var(--cat-amber)">Amber</option>
-			</select>
-			<button class="outline-add" type="submit">
-				<Icon name="plus" size={13} /> Add category
-			</button>
-		</form>
+		{#if !anyMatch}
+			<div class="search-empty">Nothing matches.</div>
+		{/if}
+		{#if q === ''}
+			<form method="POST" action="?/createCategory" class="new-entity">
+				{#if form?.kind === 'category' && form.message}
+					<p class="error" role="alert">{form.message}</p>
+				{/if}
+				<input type="text" name="name" placeholder="New category name" required />
+				<select name="color">
+					<option value="">No colour</option>
+					<option value="var(--cat-blue)">Blue</option>
+					<option value="var(--cat-violet)">Violet</option>
+					<option value="var(--cat-rose)">Rose</option>
+					<option value="var(--cat-green)">Green</option>
+					<option value="var(--cat-amber)">Amber</option>
+				</select>
+				<button class="outline-add" type="submit">
+					<Icon name="plus" size={13} /> Add category
+				</button>
+			</form>
+		{/if}
 	</div>
 </aside>
 

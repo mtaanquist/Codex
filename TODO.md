@@ -351,9 +351,19 @@ shipping as its own PR.
       future Notes tab cover it); the admin shell rail widened to the
       editor's 264px so screens stop shifting (follow-up feedback).
       Merged 2026-06-06 (#167), shipped as v2.26.0.
-- [ ] Preferences and left-menu search: a user preference to hide the
-      daily goal/streak in the Session pane; a search field per left-menu
-      tab like the prototype's.
+- [x] Preferences and left-menu search: a "Writing streak" preference
+      under Editor behaviour hides the Session tab's streak card (the
+      session endpoint nulls the streak, so the panel needed no
+      plumbing); filter fields top both left panes, built as instant
+      list filters (not a second search) so they complement the palette.
+      Merged 2026-06-06 (#169).
+- [x] Rename propagation (follow-up feedback): renaming an entity now
+      offers - once the rename settles, no dialog mid-autosave - to
+      replace the old name across the universe's live scenes: whole-word
+      and case-sensitive via mention detection's boundary rules, aliases
+      untouched, marker anchors carried through the edit, a labelled
+      checkpoint revision per changed scene, mention rebuilds queued.
+      Merged 2026-06-06 (#170). Both shipped as v2.27.0.
 
 ## Feedback backlog
 

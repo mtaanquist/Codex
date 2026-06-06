@@ -82,6 +82,7 @@
 						storyNotesMd={data.storyNotesMd}
 						membership={data.membership}
 						entityHref={(id) => `${planPath}?entity=${id}`}
+						universeRef={data.universe.slug}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}

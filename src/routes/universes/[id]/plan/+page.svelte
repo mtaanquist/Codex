@@ -78,6 +78,7 @@
 							lore_entry: data.lore
 						}}
 						entityHref={(id) => `${planPath}?entity=${id}`}
+						universeRef={data.universe.slug}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}

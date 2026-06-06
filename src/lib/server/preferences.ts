@@ -24,6 +24,8 @@ export type UserPreferences = {
 	// The language the prose is written in, as a BCP 47 tag, driving the
 	// spell-check dictionary. Blank follows the browser's language.
 	writingLanguage: string;
+	// The Session pane's streak card; not everyone wants the scorekeeping.
+	sessionStreak: 'shown' | 'hidden';
 	// The colour theme and accent applied across the app.
 	theme: Theme;
 	accent: string;
@@ -63,6 +65,7 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 			typeof raw.writingLanguage === 'string' && LANGUAGE_TAG.test(raw.writingLanguage)
 				? raw.writingLanguage
 				: '',
+		sessionStreak: raw.sessionStreak === 'hidden' ? 'hidden' : 'shown',
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};
