@@ -5,25 +5,30 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
-The work queue as of 2026-06-06 (v2.27.0). Everything below this section
-is the shipped record, newest sections last.
+The capability review queue closed 2026-06-06 (items 1-5 all shipped;
+see the follow-ups section below). Next up: the next-phase candidates
+recorded in the roadmap from the 2026-06-06 capability review (Notes
+tab ship-or-hide, goals and deadlines, TTRPG positioning, scene
+split/merge, draft comparison, front/back matter, a self-host
+walkthrough, write-path rate limits, help docs coverage), then Phase 9
+(AI and interop) when the author calls it. Continuous backup (WAL/PITR)
+stays parked by the roadmap's own criterion; the timeline view stays
+parked on the world-calendar design.
 
-- [ ] 3. Markdown import (capability review, 2026-06-06; collision
+- [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings
      next to Export. Always two steps: upload, preview (counts plus
-     every collision and its resolution), confirm. Collision rules:
-     duplicate story titles allowed (slug auto-suffixes, preview says
-     so); chapters/scenes cannot collide (fresh story, order from NN-
-     prefixes, bad statuses fall back with a preview line); notes match
-     entities by trimmed case-insensitive name + kind - one match
-     attaches and declares membership, no match creates a minimal
-     entity (author's call: never drop authored words; preview lists
-     creations), ambiguous names skip the note with a flag; aliases
-     never match. Assets re-upload as new ids; unconfigured storage
-     imports with links untouched and a warning. Re-import makes a
-     sibling story, never a merge. Out of scope: universe/account
-     archive import, foreign markdown, import into existing stories.
+     every collision and its resolution), confirm. Collision rules as
+     agreed: duplicate story titles allowed (slug auto-suffixes),
+     chapters/scenes cannot collide, notes match entities by trimmed
+     case-insensitive name + kind (match attaches and joins the story,
+     no match creates a minimal entity, ambiguity skips with a flag),
+     aliases never match, assets re-upload as new ids, re-import makes
+     a sibling story. The exporter writes chapter.md so chapter titles
+     round-trip. Out of scope: universe/account archive import, foreign
+     markdown, import into existing stories. Merged 2026-06-06 (#178),
+     shipped as v2.29.0.
 - [x] 4. Export completeness (capability review, 2026-06-06). Story
      notes ride in the story, universe, and account exports as per-story
      notes/ folders; relationships as a relationships.md per universe;
@@ -31,34 +36,23 @@ is the shipped record, newest sections last.
      comments, attribution, and anchored excerpts (author's call:
      review threads yes, revision history no - the current text is
      already exported). Frozen editions stay prose-only. Merged
-     2026-06-06 (#174).
-- [ ] 5. Notifications (capability review, 2026-06-06; scope agreed
-     2026-06-06). Reviewer comments and author replies are silent in
-     both directions; both sides poll. Build the small generic core
-     rather than one-off emails: a notifications table (user, kind,
-     payload with story/thread refs, read_at), a bell in the top navbar
-     with an unread badge and a dropdown (click marks read and jumps to
-     the thread, mark-all-read), and a per-kind preference matrix in
-     users.preferences with in-app and email toggles, both defaulting
-     on, rendered as a grid on the account page. The worker fans out
-     each event: in-app row written immediately if that toggle is on,
-     email queued into the existing batched digest if that one is.
-     Initial kinds: review activity on your stories (author side),
-     replies to your review comments (reviewers with accounts), and new
-     account awaiting approval (admins only; replaces the operator
-     email). Transactional email (verification, password reset,
-     deletion cancellation) stays outside the matrix, never
-     toggleable. Guest reviewers with an email but no account stay
-     email-only with an opt-out link in the digest, no settings UI.
-     Its own release, after item 4.
-
-After these: the next-phase candidates recorded in the roadmap from the
-2026-06-06 capability review (Notes tab ship-or-hide, goals and
-deadlines, TTRPG positioning, scene split/merge, draft comparison,
-front/back matter, a self-host walkthrough, write-path rate limits, help
-docs coverage), then Phase 9 (AI and interop) when the author calls it.
-Continuous backup (WAL/PITR) stays parked by the roadmap's own criterion;
-the timeline view stays parked on the world-calendar design.
+     2026-06-06 (#174), shipped as v2.28.0.
+- [x] 5. Notifications (capability review, 2026-06-06; scope agreed
+     2026-06-06). The generic core as agreed: a notifications table
+     (kind, payload, read/emailed state), a bell in every topbar with
+     an unread badge and dropdown (click marks read and follows the
+     link, mark-all-read), and a per-kind preference matrix on the
+     account page (in-app and email toggles, both defaulting on).
+     Events fan out per the matrix: in-app rows immediately, email
+     through batched worker digests (10 min singleton window per
+     recipient). Kinds: review activity on your stories, replies to
+     your review comments (account reviewers), and new accounts
+     awaiting approval (admins; replaces the operator email).
+     Transactional email stays outside the matrix. Guest reviewers
+     with an email get a reviewer digest with a signed opt-out link
+     (/review-email-opt-out); reviewer notifications inform without
+     navigating, since review links are stored hash-only and cannot be
+     rebuilt into the email or bell. Shipped as v2.30.0.
 
 ## Phase 1 - Foundations
 

@@ -6,6 +6,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import NotificationBell from '$lib/components/NotificationBell.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -182,6 +183,7 @@
 		</a>
 		<span class="spacer"></span>
 		<PaletteButton />
+		<NotificationBell />
 		<UserMenu />
 	</header>
 

@@ -19,6 +19,7 @@ import {
 import { gatherStory } from '$lib/server/export';
 import { reanchorRange } from '$lib/review-anchor';
 import { rateLimit } from '$lib/server/rate-limit';
+import { notifyReviewActivity } from '$lib/server/notify';
 
 // The guest's door into a review: the magic link. A bad, revoked, or expired
 // link gets a plain message; a fresh guest is asked for a name; after that
@@ -122,6 +123,13 @@ export const actions: Actions = {
 			body: String(data.get('body') ?? '')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
+		await notifyReviewActivity(
+			db,
+			resolved.invitation.storyId,
+			access.reviewer.displayName,
+			'commented',
+			String(data.get('body') ?? '')
+		);
 		return { commented: true };
 	},
 	suggest: async ({ params, request, cookies }) => {
@@ -146,6 +154,12 @@ export const actions: Actions = {
 			replacement: String(data.get('replacement') ?? '')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
+		await notifyReviewActivity(
+			db,
+			resolved.invitation.storyId,
+			access.reviewer.displayName,
+			'suggested an edit'
+		);
 		return { suggested: true };
 	},
 	reply: async ({ params, request, cookies }) => {
@@ -166,6 +180,13 @@ export const actions: Actions = {
 			body: String(data.get('body') ?? '')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
+		await notifyReviewActivity(
+			db,
+			resolved.invitation.storyId,
+			access.reviewer.displayName,
+			'replied',
+			String(data.get('body') ?? '')
+		);
 		return { commented: true };
 	}
 };

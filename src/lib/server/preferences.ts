@@ -9,6 +9,7 @@ import {
 	normaliseAccent,
 	type Theme
 } from '$lib/appearance';
+import { NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
 
 export type UserPreferences = {
 	entityAutocomplete: AutocompleteMode;
@@ -26,6 +27,9 @@ export type UserPreferences = {
 	writingLanguage: string;
 	// The Session pane's streak card; not everyone wants the scorekeeping.
 	sessionStreak: 'shown' | 'hidden';
+	// Per-kind notification channels (the bell and the email digest), both
+	// on unless turned off.
+	notifications: NotificationMatrix;
 	// The colour theme and accent applied across the app.
 	theme: Theme;
 	accent: string;
@@ -66,9 +70,22 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 				? raw.writingLanguage
 				: '',
 		sessionStreak: raw.sessionStreak === 'hidden' ? 'hidden' : 'shown',
+		notifications: normaliseNotifications(raw.notifications),
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};
+}
+
+// Both channels default on; only a stored false turns one off. Exported
+// for the fan-out, which reads many users' raw preferences in one query.
+export function normaliseNotifications(raw: unknown): NotificationMatrix {
+	const stored = (raw ?? {}) as Record<string, { inApp?: unknown; email?: unknown }>;
+	return Object.fromEntries(
+		NOTIFICATION_KINDS.map((kind) => [
+			kind,
+			{ inApp: stored[kind]?.inApp !== false, email: stored[kind]?.email !== false }
+		])
+	) as NotificationMatrix;
 }
 
 export async function userPreferences(db: Database, userId: string): Promise<UserPreferences> {

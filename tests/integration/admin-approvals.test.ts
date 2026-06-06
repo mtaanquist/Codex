@@ -6,7 +6,6 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { authTokens, users } from '../../src/lib/server/db/schema';
 import {
-	adminEmails,
 	approveUser,
 	listAllUsers,
 	listPendingUsers,
@@ -97,15 +96,6 @@ describe('rejectUser', () => {
 		expect(await rejectUser(db, approved)).toBe(false);
 		expect(await rejectUser(db, admin)).toBe(false);
 		expect(await db.select().from(users)).toHaveLength(2);
-	});
-});
-
-describe('adminEmails', () => {
-	it('returns every admin address', async () => {
-		await makeUser('boss1@example.com', { role: 'admin' });
-		await makeUser('boss2@example.com', { role: 'admin' });
-		await makeUser('writer@example.com');
-		expect((await adminEmails(db)).sort()).toEqual(['boss1@example.com', 'boss2@example.com']);
 	});
 });
 
