@@ -16,6 +16,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
+import type { NotificationPayload } from '../../notifications.ts';
 
 // Case-insensitive text, used for the public handle. The citext extension is
 // created in the first migration.
@@ -858,7 +859,11 @@ export const reviewers = pgTable(
 		displayName: text('display_name').notNull(),
 		email: text('email'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-		lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+		lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+		// Email digests for guest reviewers: the watermark the next digest
+		// reads from, and the opt-out the email's unsubscribe link sets.
+		lastNotifiedAt: timestamp('last_notified_at', { withTimezone: true }),
+		emailOptOutAt: timestamp('email_opt_out_at', { withTimezone: true })
 	},
 	(table) => [index('reviewers_invitation_idx').on(table.invitationId)]
 );
@@ -945,6 +950,31 @@ export const reviewSuggestions = pgTable(
 		index('review_suggestions_scene_idx').on(table.sceneId),
 		index('review_suggestions_story_idx').on(table.storyId)
 	]
+);
+
+// In-app notifications behind the topbar bell. payload carries the display
+// text and link target; in_app and email_wanted are stamped from the user's
+// preference matrix at creation, and emailed_at when a digest sends it.
+export const notifications = pgTable(
+	'notifications',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		kind: text('kind', {
+			enum: ['review_activity', 'review_reply', 'account_pending']
+		}).notNull(),
+		payload: jsonb('payload').$type<NotificationPayload>().notNull(),
+		// Shown in the bell at all; false means the row only exists to feed
+		// the email digest.
+		inApp: boolean('in_app').notNull().default(true),
+		readAt: timestamp('read_at', { withTimezone: true }),
+		emailWanted: boolean('email_wanted').notNull().default(false),
+		emailedAt: timestamp('emailed_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('notifications_user_idx').on(table.userId, table.createdAt.desc())]
 );
 
 // Registered passkeys (WebAuthn credentials), any number per account. The

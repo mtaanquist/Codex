@@ -6,6 +6,7 @@
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
+	import NotificationBell from '$lib/components/NotificationBell.svelte';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import type { PageData } from './$types';
 
@@ -113,6 +114,7 @@
 		<span class="spacer"></span>
 		<PaletteButton />
 		<HelpLink topic="planning" label="the planning view" />
+		<NotificationBell />
 		<UserMenu />
 	</header>
 

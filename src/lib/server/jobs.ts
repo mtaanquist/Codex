@@ -13,6 +13,12 @@ export const MENTIONS_UNIVERSE_QUEUE = 'mentions-universe';
 export const BACKUP_QUEUE = 'run-backup';
 export const EMAIL_QUEUE = 'send-email';
 export const EXPORT_ARTIFACTS_QUEUE = 'export-artifacts';
+export const NOTIFICATION_DIGEST_QUEUE = 'notification-digest';
+export const REVIEWER_DIGEST_QUEUE = 'reviewer-digest';
+
+// How long a digest waits before sending, so a busy thread lands as one
+// email instead of one per comment.
+export const DIGEST_DELAY_SECONDS = 600;
 
 let starting: Promise<PgBoss> | null = null;
 
@@ -26,9 +32,41 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(BACKUP_QUEUE);
 		await boss.createQueue(EMAIL_QUEUE);
 		await boss.createQueue(EXPORT_ARTIFACTS_QUEUE);
+		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
+		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 		return boss;
 	})();
 	return starting;
+}
+
+// Schedules a user's notification digest. The singleton key keeps one
+// pending job per user: the first notification starts the clock, and
+// everything arriving inside the window rides the same email.
+export async function queueNotificationDigest(userId: string): Promise<void> {
+	try {
+		const boss = await getBoss();
+		await boss.send(
+			NOTIFICATION_DIGEST_QUEUE,
+			{ userId },
+			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: userId }
+		);
+	} catch (error) {
+		console.error('queueing notification digest failed:', error);
+	}
+}
+
+// The same, for a guest reviewer (email, no account).
+export async function queueReviewerDigest(reviewerId: string): Promise<void> {
+	try {
+		const boss = await getBoss();
+		await boss.send(
+			REVIEWER_DIGEST_QUEUE,
+			{ reviewerId },
+			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: reviewerId }
+		);
+	} catch (error) {
+		console.error('queueing reviewer digest failed:', error);
+	}
 }
 
 export async function queueSceneMentions(sceneId: string): Promise<void> {

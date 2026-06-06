@@ -12,6 +12,7 @@ import {
 import { gatherStory } from '$lib/server/export';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
+import { detailSnippet, notifyThreadReviewers } from '$lib/server/notify';
 
 // The author's side of a review: every thread guests have left on the
 // story, against the current text, with reply and resolve.
@@ -48,6 +49,12 @@ export const actions: Actions = {
 			body: String(data.get('body') ?? '')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
+		// Reviewers in the thread hear back; their review link is the way in,
+		// so the notification informs without navigating.
+		await notifyThreadReviewers(db, threadId, {
+			title: `${locals.user!.displayName} replied to your comment on "${story.title}"`,
+			detail: detailSnippet(String(data.get('body') ?? ''))
+		});
 		return { done: true };
 	},
 	resolve: async ({ params, request, locals }) => {

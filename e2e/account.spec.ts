@@ -42,8 +42,20 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.getByRole('button', { name: 'Security' }).click();
 	await expect(page.getByText('Current', { exact: true })).toBeVisible();
 
-	// Display: a saved theme applies app-wide via the data-theme attribute.
+	// Display: the notification matrix saves a per-kind channel choice and
+	// reads it back. The admin-only row is absent for a regular account.
 	await page.getByRole('button', { name: 'Display' }).click();
+	const replyEmail = page.getByLabel('Replies to your review comments by email');
+	await expect(page.getByLabel('New accounts awaiting approval in app')).toHaveCount(0);
+	await replyEmail.uncheck();
+	await page.getByRole('button', { name: 'Save notifications' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await expect(replyEmail).not.toBeChecked();
+	await replyEmail.check();
+	await page.getByRole('button', { name: 'Save notifications' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+
+	// A saved theme applies app-wide via the data-theme attribute.
 	await page.getByLabel('Theme').selectOption('dark');
 	await page.getByRole('button', { name: 'Save display' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');

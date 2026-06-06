@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
+	import NotificationBell from './NotificationBell.svelte';
 	import UserMenu from './UserMenu.svelte';
 	import HelpLink from './HelpLink.svelte';
 	import PaletteButton from './PaletteButton.svelte';
@@ -82,6 +83,7 @@
 		{#if help}
 			<HelpLink topic={help.topic} label={help.label} />
 		{/if}
+		<NotificationBell />
 		<UserMenu />
 	</div>
 </header>
