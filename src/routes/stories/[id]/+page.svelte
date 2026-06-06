@@ -8,6 +8,7 @@
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData } from './$types';
 
@@ -105,7 +106,7 @@
 	);
 
 	// Right column tabs; History holds the open scene's timeline.
-	let rightTab = $state<'reference' | 'history'>('reference');
+	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
 	const sceneHref = $derived(
 		data.selectedScene ? `${storyPath}?scene=${data.selectedScene.id}` : storyPath
 	);
@@ -548,9 +549,9 @@
 			{/if}
 		</main>
 		<aside class="pane right">
-			{#if data.selectedScene}
-				<div class="right-head">
-					<div class="rtabs">
+			<div class="right-head">
+				<div class="rtabs">
+					{#if data.selectedScene}
 						<button
 							class="rtab"
 							class:active={rightTab === 'reference'}
@@ -567,10 +568,20 @@
 						>
 							History
 						</button>
-					</div>
+					{/if}
+					<button
+						class="rtab"
+						class:active={rightTab === 'session'}
+						type="button"
+						onclick={() => (rightTab = 'session')}
+					>
+						Session
+					</button>
 				</div>
-			{/if}
-			{#if data.selectedScene && rightTab === 'history'}
+			</div>
+			{#if rightTab === 'session'}
+				<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
+			{:else if data.selectedScene && rightTab === 'history'}
 				<RevisionHistory
 					entityType="scene"
 					entityId={data.selectedScene.id}

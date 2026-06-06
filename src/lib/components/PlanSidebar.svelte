@@ -14,7 +14,8 @@
 		selectedId,
 		planPath,
 		writeHref,
-		insightsHref,
+		boardHref,
+		boardActive = false,
 		form,
 		before,
 		availableCharacters = [],
@@ -28,16 +29,22 @@
 		planPath: string;
 		// Present at story scope only; the universe Plan has no Write view.
 		writeHref?: string;
-		// Present at universe scope only; links to the Insights view.
-		insightsHref?: string;
+		// Present at story scope only; returns to the scene board after
+		// something else filled the centre.
+		boardHref?: string;
+		boardActive?: boolean;
 		form: { kind?: string; message?: string } | null;
 		// Rendered above the entity groups; the story Plan puts its outline here.
 		before?: Snippet;
-		// Universe entities not in the story yet; picking one declares it a
-		// member. Story scope only.
+		// Universe entities not in the story yet: browsable below the members,
+		// and picking one in the select declares it a member. Story scope only.
 		availableCharacters?: { id: string; name: string }[];
 		availablePlaces?: { id: string; name: string }[];
 	} = $props();
+
+	// The universe lists start folded; members are the working set.
+	let showUniverseCharacters = $state(false);
+	let showUniversePlaces = $state(false);
 </script>
 
 <aside class="pane left">
@@ -48,14 +55,16 @@
 				<a class="seg-btn" href={writeHref}>Write</a>
 			{/if}
 			<button class="seg-btn active" type="button">Plan</button>
-			{#if insightsHref}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-				<a class="seg-btn" href={insightsHref}>Insights</a>
-			{/if}
 			<button class="seg-btn" type="button" disabled>Notes</button>
 		</div>
 	</div>
 	<div class="left-scroll">
+		{#if boardHref}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+			<a class="board-row" class:active={boardActive} href={boardHref}>
+				<Icon name="chapter" size={13} /> Scene board
+			</a>
+		{/if}
 		{#if before}
 			{@render before()}
 		{/if}
@@ -90,6 +99,32 @@
 			</button>
 		</form>
 		{#if availableCharacters.length > 0}
+			<button
+				class="uni-toggle"
+				type="button"
+				onclick={() => (showUniverseCharacters = !showUniverseCharacters)}
+			>
+				<span class="tw" class:open={showUniverseCharacters}><Icon name="chevron" size={11} /></span
+				>
+				In the universe
+				<span class="count">{availableCharacters.length}</span>
+			</button>
+			{#if showUniverseCharacters}
+				{#each availableCharacters as candidate (candidate.id)}
+					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+					<a
+						class="ent-row uni-row"
+						class:active={candidate.id === selectedId}
+						href={`${planPath}?entity=${candidate.id}`}
+					>
+						<span class="badge dot" style="background: {entityColor(candidate.name)}">
+							{entityLetter(candidate.name)}
+						</span>
+						<span class="name">{candidate.name}</span>
+					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{/each}
+			{/if}
 			<form method="POST" action="?/declareMember" class="new-entity">
 				<input type="hidden" name="kind" value="character" />
 				<select name="entityId" aria-label="Add an existing character" required>
@@ -132,6 +167,31 @@
 			</button>
 		</form>
 		{#if availablePlaces.length > 0}
+			<button
+				class="uni-toggle"
+				type="button"
+				onclick={() => (showUniversePlaces = !showUniversePlaces)}
+			>
+				<span class="tw" class:open={showUniversePlaces}><Icon name="chevron" size={11} /></span>
+				In the universe
+				<span class="count">{availablePlaces.length}</span>
+			</button>
+			{#if showUniversePlaces}
+				{#each availablePlaces as candidate (candidate.id)}
+					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+					<a
+						class="ent-row uni-row"
+						class:active={candidate.id === selectedId}
+						href={`${planPath}?entity=${candidate.id}`}
+					>
+						<span class="badge dot" style="background: {entityColor(candidate.name)}">
+							{entityLetter(candidate.name)}
+						</span>
+						<span class="name">{candidate.name}</span>
+					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{/each}
+			{/if}
 			<form method="POST" action="?/declareMember" class="new-entity">
 				<input type="hidden" name="kind" value="place" />
 				<select name="entityId" aria-label="Add an existing place" required>
@@ -241,6 +301,59 @@
 		color: var(--danger, #b00020);
 		font-size: 12.5px;
 		margin: 0;
+	}
+	.board-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0 0 10px;
+		padding: 8px 10px;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-size: 13px;
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.board-row:hover {
+		background: var(--bg-hover);
+	}
+	.board-row.active {
+		background: var(--bg-active);
+		border-color: var(--accent-line, var(--accent));
+	}
+	.uni-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		margin-top: 6px;
+		padding: 5px 10px;
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		font-size: 12px;
+		cursor: pointer;
+		text-align: left;
+	}
+	.uni-toggle:hover {
+		color: var(--text);
+	}
+	.uni-toggle .tw {
+		display: grid;
+		place-items: center;
+	}
+	.uni-toggle .tw :global(svg) {
+		transition: transform 0.14s;
+	}
+	.uni-toggle .tw.open :global(svg) {
+		transform: rotate(90deg);
+	}
+	.uni-toggle .count {
+		margin-left: auto;
+	}
+	.uni-row .name {
+		color: var(--text-muted);
 	}
 	.cat-dot {
 		display: inline-block;
