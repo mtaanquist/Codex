@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from './db';
-import { COLOR_PATTERN } from './categories';
+import { CATEGORY_PALETTE } from '$lib/entity-color';
 import {
 	characters,
 	characterStoryMemberships,
@@ -104,8 +104,8 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 			if (!name) {
 				return fail(400, { kind: 'category', message: 'Give the category a name.' });
 			}
-			if (color !== null && !COLOR_PATTERN.test(color)) {
-				return fail(400, { kind: 'category', message: 'Use a colour like #1a2b3c.' });
+			if (color !== null && !CATEGORY_PALETTE.includes(color)) {
+				return fail(400, { kind: 'category', message: 'Pick a colour from the list.' });
 			}
 			await db.insert(entityCategories).values({
 				universeId: scope.universeId,

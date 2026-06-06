@@ -33,7 +33,7 @@ export type CategorySave = {
 	color: string | null;
 };
 
-export const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const NAME_MAX = 60;
 
 /**
