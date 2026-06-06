@@ -76,7 +76,9 @@
 	// svelte-ignore state_referenced_locally
 	let markerHandle: MarkerHandle = markerExtensions(markers, markSelection);
 
-	let editorEl: HTMLDivElement;
+	// Bound from one of two mutually exclusive branches (compact or full),
+	// hence the state wrapper.
+	let editorEl = $state<HTMLDivElement>();
 	let view: EditorView | undefined;
 	// The editor owns the value after mount; the page keys this component by
 	// scene id, so a different scene means a fresh instance.
@@ -344,23 +346,33 @@
 	});
 </script>
 
-<div class="editor" class:compact>
-	{#if !compact}
+{#if compact}
+	<div class="editor compact">
+		<div class="editor-cm" bind:this={editorEl}></div>
+	</div>
+{:else}
+	<!-- The prototype's editor frame: a full-width toolbar pinned to the
+	     pane top, with the centered prose column scrolling underneath. -->
+	<div class="md-editor">
 		<EditorToolbar
 			view={() => view}
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
 		/>
-		<input
-			class="editor-title-input"
-			type="text"
-			placeholder="Untitled scene"
-			bind:value={titleValue}
-			oninput={scheduleSave}
-			onchange={flushTitle}
-		/>
-	{/if}
-	<div class="editor-cm" bind:this={editorEl}></div>
-</div>
+		<div class="editor-scroll">
+			<div class="editor">
+				<input
+					class="editor-title-input"
+					type="text"
+					placeholder="Untitled scene"
+					bind:value={titleValue}
+					oninput={scheduleSave}
+					onchange={flushTitle}
+				/>
+				<div class="editor-cm" bind:this={editorEl}></div>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <svelte:window
 	onmousedown={onWindowPointerDown}

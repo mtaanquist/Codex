@@ -6,12 +6,14 @@ import {
 	chapters,
 	characters,
 	characterStoryMemberships,
+	entityCategories,
 	entityMentions,
 	loreEntries,
 	places,
 	placeStoryMemberships,
 	scenes
 } from '$lib/server/db/schema';
+import { relatedEntitySummaries } from '$lib/server/relationships';
 import { storyPreferences } from '$lib/server/preferences';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
@@ -162,25 +164,33 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		);
 	}
 
-	// Known entities feed the editor's live underlines and hover tooltips.
+	// Known entities feed the editor's live underlines, the autocomplete,
+	// and the hover cards: category colour and name drive the badges, the
+	// related lists become the card's chips.
 	const knownCharacters = await db
 		.select({
 			id: characters.id,
 			name: characters.name,
 			aliases: characters.aliases,
 			summaryMd: characters.summaryMd,
-			details: characters.details
+			details: characters.details,
+			color: entityCategories.color,
+			categoryName: entityCategories.name
 		})
 		.from(characters)
+		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
 		.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true)));
 	const knownPlaces = await db
 		.select({
 			id: places.id,
 			name: places.name,
 			summaryMd: places.summaryMd,
-			details: places.details
+			details: places.details,
+			color: entityCategories.color,
+			categoryName: entityCategories.name
 		})
 		.from(places)
+		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
 		.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true)));
 	const knownLore = await db
 		.select({
@@ -188,16 +198,25 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			name: loreEntries.title,
 			keywords: loreEntries.keywords,
 			summaryMd: loreEntries.summaryMd,
-			details: loreEntries.details
+			details: loreEntries.details,
+			color: entityCategories.color,
+			categoryName: entityCategories.name
 		})
 		.from(loreEntries)
+		.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
 		.where(and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true)));
+	const relatedByEntity = await relatedEntitySummaries(db, universe.id);
 	const mentionEntities = [
-		...knownCharacters.map((character) => ({ ...character, type: 'character' as const })),
+		...knownCharacters.map((character) => ({
+			...character,
+			type: 'character' as const,
+			related: relatedByEntity.get(character.id) ?? []
+		})),
 		...knownPlaces.map((place) => ({
 			...place,
 			type: 'place' as const,
-			aliases: [] as string[]
+			aliases: [] as string[],
+			related: relatedByEntity.get(place.id) ?? []
 		})),
 		...knownLore.map((entry) => ({
 			id: entry.id,
@@ -205,7 +224,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			name: entry.name,
 			aliases: entry.keywords,
 			summaryMd: entry.summaryMd,
-			details: entry.details
+			details: entry.details,
+			color: entry.color,
+			categoryName: entry.categoryName,
+			related: relatedByEntity.get(entry.id) ?? []
 		}))
 	];
 
