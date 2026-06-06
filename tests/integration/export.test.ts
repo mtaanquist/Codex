@@ -91,9 +91,13 @@ describe('buildStoryZip', () => {
 		expect(names).toEqual([
 			`book-of-ash/assets/${ASSET_ID}.png`,
 			'book-of-ash/chapters/01-the-caravan/01-departure.md',
+			'book-of-ash/chapters/01-the-caravan/chapter.md',
 			'book-of-ash/story.md',
 			'book-of-ash/unfiled/01-loose-end.md'
 		]);
+		expect(strFromU8(entries['book-of-ash/chapters/01-the-caravan/chapter.md'])).toContain(
+			'title: "The Caravan"'
+		);
 
 		const storyFile = strFromU8(entries['book-of-ash/story.md']);
 		expect(storyFile).toContain('title: "Book of Ash"');

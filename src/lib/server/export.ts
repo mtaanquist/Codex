@@ -196,6 +196,9 @@ export async function buildStoryZip(
 
 	chapterList.forEach((chapter, chapterIndex) => {
 		const dir = `chapters/${String(chapterIndex + 1).padStart(2, '0')}-${slugify(chapter.title, 'chapter')}`;
+		// Carries the chapter's exact title (the folder name is only a slug)
+		// and keeps empty chapters present in the archive.
+		files[`${root}/${dir}/chapter.md`] = strToU8(frontMatter({ title: chapter.title }));
 		sceneList
 			.filter((scene) => scene.chapterId === chapter.id)
 			.forEach((scene, sceneIndex) => sceneFile(scene, sceneIndex, dir));
@@ -415,6 +418,7 @@ async function gatherUniverseDocs(
 			};
 			chapterList.forEach((chapter, ci) => {
 				const dir = `${sDir}/chapters/${String(ci + 1).padStart(2, '0')}-${slugify(chapter.title, 'chapter')}`;
+				docs.push({ dir, name: 'chapter.md', front: { title: chapter.title }, body: '' });
 				sceneList
 					.filter((s) => s.chapterId === chapter.id)
 					.forEach((s, si) => addScene(s, si, dir));
