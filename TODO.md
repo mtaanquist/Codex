@@ -3,6 +3,40 @@
 Working checklist against `scratch/system-design/roadmap.md`. One roadmap step
 per line; details live in the roadmap. Cross off as things merge to develop.
 
+## Open
+
+The work queue as of 2026-06-06 (v2.27.0). Everything below this section
+is the shipped record, newest sections last.
+
+- [ ] 3. Markdown import (capability review, 2026-06-06). Every export
+     path exists and no import path does; a writer cannot migrate a
+     novel in. Start with round-tripping our own story export ZIP
+     (front matter + chapter folders + scene files) into a new story;
+     that format is already defined and tested from the export side.
+     Bring a proposal for name collisions with existing entities and
+     chapters before building.
+- [ ] 4. Export completeness (capability review, 2026-06-06). Story
+     notes (the per-story entity overlays) and relationships are
+     authored content but appear in no export, leaving the "authored
+     content stays exportable" principle partially met. Add them to the
+     story and account exports; decide whether review threads and
+     revision history join the account export. (Outline nodes were on
+     this list until the Outline view retired in v2.26.0.)
+- [ ] 5. Review notifications (capability review, 2026-06-06). Reviewer
+     comments and author replies are silent in both directions; both
+     sides poll. Email the author on new comments/suggestions and the
+     reviewer (when they joined with an account or left an email) on
+     author replies, batched so a busy thread sends one digest, through
+     the existing email worker.
+
+After these: the next-phase candidates recorded in the roadmap from the
+2026-06-06 capability review (Notes tab ship-or-hide, goals and
+deadlines, TTRPG positioning, scene split/merge, draft comparison,
+front/back matter, a self-host walkthrough, write-path rate limits, help
+docs coverage), then Phase 9 (AI and interop) when the author calls it.
+Continuous backup (WAL/PITR) stays parked by the roadmap's own criterion;
+the timeline view stays parked on the world-calendar design.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
@@ -130,7 +164,9 @@ Candidate pool, soft order (see the roadmap for detail). Started 2026-06-05.
 - [x] Guest review (comments, then suggested edits)
   - [x] Stage 1 - invitations and threaded comments: review_invitations/reviewers/review_threads/review_comments (migration 0029), magic links with hashed tokens, guest identity via signed cookie (display name only, no account), read-only manuscript at /review/[token] with selection-anchored and whole-scene comments, diff-based re-anchoring (review-anchor.ts; lost anchors degrade to flagged whole-scene), author feedback page at /stories/[id]/review with reply/resolve/reopen, invitations managed in story settings, revoke keeps threads (deliberate deviation from the design line), purge anonymizes a deleted user's reviewer rows. Merged 2026-06-05.
   - [x] Stage 2 - suggested edits: review_suggestions (migration 0030), guests with a can_suggest link propose replacements on exact selections (insertions and deletions included), the author accepts or rejects one at a time on the feedback page; accept re-anchors against the current text (reanchorPoint for insertions), applies to body_md in a status-guarded transaction, records a 'suggestion' revision, and enqueues a mention rebuild; a rewritten passage can only be rejected. Merged 2026-06-05, shipped as v2.9.0.
-- [ ] Continuous backup (WAL/PITR) - parked by design, only if hourly dumps ever bite; cheap first step is tightening the dump cadence (see the roadmap note)
+        Continuous backup (WAL/PITR) is parked by design, only if hourly dumps
+        ever bite; the cheap first step is tightening the dump cadence (see the
+        roadmap note).
 
 > Phase 6 complete (2026-06-05), shipped as v2.6.0 (invite codes + stored
 > exports), v2.7.0 (passkeys), v2.8.0 (review comments), and v2.9.0 (suggested
@@ -253,21 +289,8 @@ softer findings went to the roadmap as candidates for the next phase.
      scoped and trash-aware, backed by pg_trgm and a trigram index over
      scenes.body_md (migration 0037). Merged 2026-06-06 (#151), shipped
      as v2.20.0.
-- [ ] 3. Markdown import. Every export path exists and no import path
-     does; a writer cannot migrate a novel in. Start with round-tripping
-     our own story export ZIP (front matter + chapter folders + scene
-     files) into a new story; that format is already defined and tested
-     from the export side.
-- [ ] 4. Export completeness. Outline node text, story notes, and
-     relationships are authored content but appear in no export, leaving
-     the "authored content stays exportable" principle partially met.
-     Add them to the story and account exports; decide whether review
-     threads and revision history join the account export.
-- [ ] 5. Review notifications. Reviewer comments and author replies are
-     silent in both directions; both sides poll. Email the author on new
-     comments/suggestions and the reviewer (when they joined with an
-     account or left an email) on author replies, batched so a busy
-     thread sends one digest, through the existing email worker.
+     Items 3-5 (markdown import, export completeness, review notifications)
+     are still open; they live in the Open section at the top of this file.
 
 ## Design alignment (author feedback, 2026-06-06)
 
