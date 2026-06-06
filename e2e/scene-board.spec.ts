@@ -55,4 +55,14 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await page.locator('.card-title', { hasText: 'The crossing' }).click();
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.getByPlaceholder('Untitled scene')).toHaveValue('The crossing');
+
+	// Opening an entity replaces the board; the pinned sidebar row brings
+	// it back.
+	await page.goto(`/stories/${storyId}/plan`);
+	await page.getByPlaceholder('New character name').fill('Ferry');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page).toHaveURL(/entity=/);
+	await expect(page.locator('.board')).toHaveCount(0);
+	await page.getByRole('link', { name: 'Scene board' }).click();
+	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
 });

@@ -6,6 +6,7 @@
 	import OutlineNodeEditor from '$lib/components/OutlineNodeEditor.svelte';
 	import SceneBoard from '$lib/components/SceneBoard.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
+	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
@@ -24,7 +25,7 @@
 	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.slug }));
 
 	// Right column tabs; History holds the open item's timeline.
-	let rightTab = $state<'reference' | 'history'>('reference');
+	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
 	const itemHref = $derived(
 		data.selected
 			? `${planPath}?entity=${data.selected.id}`
@@ -109,6 +110,8 @@
 			{selectedId}
 			{planPath}
 			writeHref={resolve('/stories/[id]', { id: data.story.slug })}
+			boardHref={planPath}
+			boardActive={!data.selected && !data.selectedNode}
 			{form}
 			availableCharacters={data.availableCharacters}
 			availablePlaces={data.availablePlaces}
@@ -250,9 +253,9 @@
 			{/if}
 		</main>
 		<aside class="pane right">
-			{#if data.revisionTarget}
-				<div class="right-head">
-					<div class="rtabs">
+			<div class="right-head">
+				<div class="rtabs">
+					{#if data.revisionTarget}
 						<button
 							class="rtab"
 							class:active={rightTab === 'reference'}
@@ -269,10 +272,20 @@
 						>
 							History
 						</button>
-					</div>
+					{/if}
+					<button
+						class="rtab"
+						class:active={rightTab === 'session'}
+						type="button"
+						onclick={() => (rightTab = 'session')}
+					>
+						Session
+					</button>
 				</div>
-			{/if}
-			{#if data.revisionTarget && rightTab === 'history'}
+			</div>
+			{#if rightTab === 'session'}
+				<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
+			{:else if data.revisionTarget && rightTab === 'history'}
 				<RevisionHistory
 					entityType={data.revisionTarget.type}
 					entityId={data.revisionTarget.id}

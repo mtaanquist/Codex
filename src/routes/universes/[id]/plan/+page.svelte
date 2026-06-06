@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import EntityEditor from '$lib/components/EntityEditor.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
+	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
@@ -20,7 +21,7 @@
 	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.slug }));
 
 	// Right column tabs; History holds the open entity's timeline.
-	let rightTab = $state<'reference' | 'history'>('reference');
+	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
 	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
 
 	// Appearances arrive flat and ordered; the panel shows them story by
@@ -46,7 +47,6 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
-			insightsHref={resolve('/universes/[id]/insights', { id: data.universe.slug })}
 			{form}
 		/>
 		<main class="pane center">
@@ -88,9 +88,9 @@
 			{/if}
 		</main>
 		<aside class="pane right">
-			{#if data.revisionTarget}
-				<div class="right-head">
-					<div class="rtabs">
+			<div class="right-head">
+				<div class="rtabs">
+					{#if data.revisionTarget}
 						<button
 							class="rtab"
 							class:active={rightTab === 'reference'}
@@ -107,10 +107,20 @@
 						>
 							History
 						</button>
-					</div>
+					{/if}
+					<button
+						class="rtab"
+						class:active={rightTab === 'session'}
+						type="button"
+						onclick={() => (rightTab = 'session')}
+					>
+						Session
+					</button>
 				</div>
-			{/if}
-			{#if data.revisionTarget && rightTab === 'history'}
+			</div>
+			{#if rightTab === 'session'}
+				<SessionPanel universeSlug={data.universe.slug} />
+			{:else if data.revisionTarget && rightTab === 'history'}
 				<RevisionHistory
 					entityType={data.revisionTarget.type}
 					entityId={data.revisionTarget.id}
