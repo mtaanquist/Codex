@@ -126,6 +126,16 @@
 				aria-label="Your name"
 				required
 			/>
+			<input
+				type="email"
+				name="email"
+				placeholder="Email (optional)"
+				aria-label="Email (optional)"
+			/>
+			<p class="join-hint">
+				Leave an email to hear when the author replies to your comments. Every message has a link to
+				stop them.
+			</p>
 			<button type="submit">Start reviewing</button>
 		</form>
 	</main>
@@ -293,6 +303,12 @@
 {/snippet}
 
 <style>
+	.join-hint {
+		font-size: 12px;
+		color: var(--text-muted);
+		margin: 6px 0 10px;
+	}
+
 	.review {
 		max-width: 44rem;
 		margin: 0 auto;

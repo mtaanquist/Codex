@@ -44,6 +44,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	const guest = await guestContext.newPage();
 	await guest.goto(link!);
 	await guest.getByLabel('Your name').fill('Margin Walker');
+	await guest.getByLabel('Email (optional)').fill('margin@example.com');
 	await guest.getByRole('button', { name: 'Start reviewing' }).click();
 	await expect(guest.getByText('Reviewing as Margin Walker')).toBeVisible();
 	await expect(guest.locator('.manuscript')).toContainText('opinions about this gate');

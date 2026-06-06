@@ -92,7 +92,8 @@ export const actions: Actions = {
 		if (resolved.status !== 'ok') return fail(403, { message: 'This link no longer works.' });
 		const data = await request.formData();
 		const reviewer = await ensureReviewer(db, resolved.invitation.id, {
-			displayName: String(data.get('displayName') ?? '')
+			displayName: String(data.get('displayName') ?? ''),
+			email: String(data.get('email') ?? '')
 		});
 		if (!reviewer) return fail(400, { message: 'Enter a name to review under.' });
 		cookies.set(REVIEWER_COOKIE, issueReviewerToken(reviewer.id), cookieOptions);
