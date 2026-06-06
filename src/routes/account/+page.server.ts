@@ -30,6 +30,7 @@ import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/n
 import { secretsAvailable } from '$lib/server/crypto';
 import {
 	beginEnrollment,
+	cancelPendingEnrollment,
 	confirmEnrollment,
 	disableTotp,
 	pendingEnrollment,
@@ -241,8 +242,9 @@ export const actions: Actions = {
 		return { scope: 'totp', recoveryCodes: result.recoveryCodes };
 	},
 	cancelTotp: async ({ locals }) => {
-		// Only clears an unconfirmed setup; the button is hidden once it is on.
-		await disableTotp(db, locals.user!.id);
+		// Server-side scoped to an unconfirmed setup: a confirmed enrolment
+		// only comes off through the password-gated disable action.
+		await cancelPendingEnrollment(db, locals.user!.id);
 		return { scope: 'totp', cancelled: true };
 	},
 	disableTotp: async ({ request, locals }) => {

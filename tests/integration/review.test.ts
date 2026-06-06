@@ -282,3 +282,23 @@ describe('lifecycle', () => {
 		).toEqual([]);
 	});
 });
+
+describe('guest reviewer emails', () => {
+	it('stores a plausible email on join and drops a junk one', async () => {
+		const { id: invitationId } = await invite();
+		const withEmail = await ensureReviewer(db, invitationId, {
+			displayName: 'Maren',
+			email: ' Maren@Example.com '
+		});
+		expect(withEmail?.email).toBe('maren@example.com');
+
+		const withJunk = await ensureReviewer(db, invitationId, {
+			displayName: 'Bram',
+			email: 'not-an-email'
+		});
+		expect(withJunk?.email).toBeNull();
+
+		const without = await ensureReviewer(db, invitationId, { displayName: 'Quiet' });
+		expect(without?.email).toBeNull();
+	});
+});

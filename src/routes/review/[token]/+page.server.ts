@@ -1,4 +1,5 @@
 import { fail } from '@sveltejs/kit';
+import { isUuid } from '$lib/slug';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { stories } from '$lib/server/db/schema';
@@ -27,7 +28,6 @@ import { notifyReviewActivity } from '$lib/server/notify';
 
 const COMMENT_LIMIT = 30;
 const COMMENT_WINDOW_MS = 5 * 60 * 1000;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const cookieOptions = {
 	path: '/',
@@ -92,7 +92,8 @@ export const actions: Actions = {
 		if (resolved.status !== 'ok') return fail(403, { message: 'This link no longer works.' });
 		const data = await request.formData();
 		const reviewer = await ensureReviewer(db, resolved.invitation.id, {
-			displayName: String(data.get('displayName') ?? '')
+			displayName: String(data.get('displayName') ?? ''),
+			email: String(data.get('email') ?? '')
 		});
 		if (!reviewer) return fail(400, { message: 'Enter a name to review under.' });
 		cookies.set(REVIEWER_COOKIE, issueReviewerToken(reviewer.id), cookieOptions);
@@ -114,7 +115,7 @@ export const actions: Actions = {
 				? { start, end }
 				: null;
 		const sceneId = String(data.get('sceneId') ?? '');
-		if (!UUID.test(sceneId)) return fail(400, { message: 'That scene does not exist.' });
+		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
 		const result = await createThread(db, {
 			storyId: resolved.invitation.storyId,
 			sceneId,
@@ -145,7 +146,7 @@ export const actions: Actions = {
 		}
 		const data = await request.formData();
 		const sceneId = String(data.get('sceneId') ?? '');
-		if (!UUID.test(sceneId)) return fail(400, { message: 'That scene does not exist.' });
+		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
 		const result = await createSuggestion(db, {
 			storyId: resolved.invitation.storyId,
 			sceneId,
@@ -172,7 +173,7 @@ export const actions: Actions = {
 		}
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
-		if (!UUID.test(threadId)) return fail(400, { message: 'That thread does not exist.' });
+		if (!isUuid(threadId)) return fail(400, { message: 'That thread does not exist.' });
 		const result = await addComment(db, {
 			storyId: resolved.invitation.storyId,
 			threadId,

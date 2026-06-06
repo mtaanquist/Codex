@@ -1,4 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
+import { isUuid } from '$lib/slug';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -16,7 +17,7 @@ import { listPublications, takedownPublication } from '$lib/server/publish';
 import { saveSmtp, smtpView } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
-import { purgeAccount } from '$lib/server/account-deletion';
+import { adminCancelDeletion, purgeAccount } from '$lib/server/account-deletion';
 import { disableTotp } from '$lib/server/two-factor';
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
@@ -29,8 +30,6 @@ function formatUptime(seconds: number): string {
 	if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
 	return `${Math.floor(seconds / 86400)}d`;
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function requireAdmin(locals: App.Locals) {
 	if (locals.user?.role !== 'admin') error(404, 'Not found');
@@ -58,7 +57,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 async function onUser(request: Request, scope: string, run: (userId: string) => Promise<boolean>) {
 	const data = await request.formData();
 	const userId = String(data.get('userId') ?? '');
-	if (!UUID.test(userId) || !(await run(userId))) {
+	if (!isUuid(userId) || !(await run(userId))) {
 		return fail(400, { scope, message: 'That account could not be updated.' });
 	}
 	return { scope, done: true };
@@ -89,7 +88,7 @@ export const actions: Actions = {
 		requireAdmin(locals);
 		const data = await request.formData();
 		const userId = String(data.get('userId') ?? '');
-		if (!UUID.test(userId)) {
+		if (!isUuid(userId)) {
 			return fail(400, { scope: 'accounts', message: 'That account could not be deleted.' });
 		}
 		// Never delete an admin or yourself from here.
@@ -104,6 +103,12 @@ export const actions: Actions = {
 	unsuspend: async ({ request, locals }) => {
 		requireAdmin(locals);
 		return onUser(request, 'accounts', (id) => setUserSuspended(db, id, false));
+	},
+	cancelDeletion: async ({ request, locals }) => {
+		requireAdmin(locals);
+		// Rescue an account from a pending self-deletion. Clears only the
+		// schedule; a suspension stays its own decision.
+		return onUser(request, 'accounts', (id) => adminCancelDeletion(db, id));
 	},
 	resetTotp: async ({ request, locals }) => {
 		requireAdmin(locals);
@@ -145,7 +150,7 @@ export const actions: Actions = {
 		requireAdmin(locals);
 		const data = await request.formData();
 		const inviteId = String(data.get('inviteId') ?? '');
-		if (!UUID.test(inviteId) || !(await deleteInviteCode(db, inviteId))) {
+		if (!isUuid(inviteId) || !(await deleteInviteCode(db, inviteId))) {
 			return fail(400, { scope: 'invites', message: 'That invite code does not exist.' });
 		}
 		return { scope: 'invites', done: true };
@@ -154,7 +159,7 @@ export const actions: Actions = {
 		requireAdmin(locals);
 		const data = await request.formData();
 		const publicationId = String(data.get('publicationId') ?? '');
-		if (!UUID.test(publicationId) || !(await takedownPublication(db, publicationId))) {
+		if (!isUuid(publicationId) || !(await takedownPublication(db, publicationId))) {
 			return fail(400, { scope: 'published', message: 'That edition does not exist.' });
 		}
 		return { scope: 'published', done: true };

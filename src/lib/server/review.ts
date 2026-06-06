@@ -126,10 +126,14 @@ export async function invitationByToken(db: Database, token: string) {
 // Finds or creates the reviewer identity for this invitation: a signed-in
 // user reviews as themselves (one row per invitation), a guest gets a fresh
 // row under the name they give.
+// A light shape check; the address only ever receives reply digests, so a
+// bad one just means no email.
+const REVIEWER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function ensureReviewer(
 	db: Database,
 	invitationId: string,
-	identity: { userId: string; displayName: string } | { displayName: string }
+	identity: { userId: string; displayName: string } | { displayName: string; email?: string }
 ) {
 	if ('userId' in identity) {
 		const [existing] = await db
@@ -149,7 +153,16 @@ export async function ensureReviewer(
 	}
 	const displayName = identity.displayName.trim();
 	if (!displayName) return null;
-	const [row] = await db.insert(reviewers).values({ invitationId, displayName }).returning();
+	// Optional: a guest who leaves an email hears about author replies.
+	const email = identity.email?.trim().toLowerCase() ?? '';
+	const [row] = await db
+		.insert(reviewers)
+		.values({
+			invitationId,
+			displayName,
+			email: REVIEWER_EMAIL_RE.test(email) ? email : null
+		})
+		.returning();
 	return row;
 }
 
@@ -571,37 +584,50 @@ export async function decideSuggestion(
 		return { ok: true, sceneId: null };
 	}
 
-	const anchor = mapSuggestionRange(
-		row.baseBody,
-		row.scene.bodyMd,
-		row.suggestion.rangeStart,
-		row.suggestion.rangeEnd
+	// The body is read, re-anchored, and written inside one transaction with
+	// the scene row locked, so a concurrent autosave cannot land between the
+	// read and the write and be silently overwritten by stale text.
+	const applied = await db.transaction(
+		async (tx): Promise<{ ok: true; newBody: string } | { ok: false; reason: string }> => {
+			const [scene] = await tx
+				.select({ bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(eq(scenes.id, row.scene.id))
+				.for('update');
+			if (!scene) return { ok: false, reason: 'That scene does not exist.' };
+			const anchor = mapSuggestionRange(
+				row.baseBody,
+				scene.bodyMd,
+				row.suggestion.rangeStart,
+				row.suggestion.rangeEnd
+			);
+			if (!anchor) {
+				return {
+					ok: false,
+					reason: 'The text this suggestion applies to has changed; it can only be rejected.'
+				};
+			}
+			const newBody =
+				scene.bodyMd.slice(0, anchor.start) +
+				row.suggestion.replacement +
+				scene.bodyMd.slice(anchor.end);
+			// Guard the status inside the transaction so two decisions cannot
+			// both apply; the loser matches no pending row and changes nothing.
+			const decided = await tx
+				.update(reviewSuggestions)
+				.set({ status: 'accepted', decidedByUserId: userId, decidedAt: sql`now()` })
+				.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')))
+				.returning({ id: reviewSuggestions.id });
+			if (decided.length === 0)
+				return { ok: false, reason: 'That suggestion was already decided.' };
+			await tx
+				.update(scenes)
+				.set({ bodyMd: newBody, wordCount: wordCount(newBody) })
+				.where(eq(scenes.id, row.scene.id));
+			return { ok: true, newBody };
+		}
 	);
-	if (!anchor) {
-		return {
-			ok: false,
-			reason: 'The text this suggestion applies to has changed; it can only be rejected.'
-		};
-	}
-	const newBody =
-		row.scene.bodyMd.slice(0, anchor.start) +
-		row.suggestion.replacement +
-		row.scene.bodyMd.slice(anchor.end);
-
-	await db.transaction(async (tx) => {
-		// Guard the status inside the transaction so two decisions cannot both
-		// apply; the loser matches no pending row and changes nothing.
-		const decided = await tx
-			.update(reviewSuggestions)
-			.set({ status: 'accepted', decidedByUserId: userId, decidedAt: sql`now()` })
-			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')))
-			.returning({ id: reviewSuggestions.id });
-		if (decided.length === 0) throw new Error('suggestion already decided');
-		await tx
-			.update(scenes)
-			.set({ bodyMd: newBody, wordCount: wordCount(newBody) })
-			.where(eq(scenes.id, row.scene.id));
-	});
-	await recordRevision(db, 'scene', row.scene.id, newBody, 'suggestion');
+	if (!applied.ok) return applied;
+	await recordRevision(db, 'scene', row.scene.id, applied.newBody, 'suggestion');
 	return { ok: true, sceneId: row.scene.id };
 }

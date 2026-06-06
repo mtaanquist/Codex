@@ -106,7 +106,6 @@ export async function rejectUser(db: Database, userId: string): Promise<boolean>
 	});
 }
 
-// Admin addresses to notify when someone signs up.
 export type AdminUser = {
 	id: string;
 	email: string;
@@ -115,6 +114,7 @@ export type AdminUser = {
 	emailVerifiedAt: Date | null;
 	approvedAt: Date | null;
 	suspendedAt: Date | null;
+	deletionScheduledAt: Date | null;
 	publicArchiveEnabled: boolean;
 	handle: string | null;
 	twoFactorEnabled: boolean;
@@ -132,6 +132,7 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			emailVerifiedAt: users.emailVerifiedAt,
 			approvedAt: users.approvedAt,
 			suspendedAt: users.suspendedAt,
+			deletionScheduledAt: users.deletionScheduledAt,
 			publicArchiveEnabled: users.publicArchiveEnabled,
 			handle: users.handle,
 			twoFactorEnabled: sql<boolean>`${userTotp.confirmedAt} is not null`,
@@ -156,7 +157,9 @@ export async function instanceStats(db: Database): Promise<InstanceStats> {
 	const [writers] = await db
 		.select({ n: count() })
 		.from(users)
-		.where(and(isNotNull(users.approvedAt), isNull(users.suspendedAt)));
+		.where(
+			and(isNotNull(users.approvedAt), isNull(users.suspendedAt), isNull(users.deletionScheduledAt))
+		);
 	const [pending] = await db
 		.select({ n: count() })
 		.from(users)

@@ -186,7 +186,7 @@ describe('reconcile', () => {
 			sceneId
 		]);
 		await rebuildSceneMentions(db, sceneId);
-		expect(await listStaleMentionScenes(db)).not.toContain(sceneId);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
 	});
 
 	it('reindexes a scene whose body changed after indexing (a dropped job)', async () => {
@@ -196,21 +196,21 @@ describe('reconcile', () => {
 			`update scenes set body_md = 'Alice and Alice and Alice.', updated_at = now() where id = $1`,
 			[sceneId]
 		);
-		expect(await listStaleMentionScenes(db)).toContain(sceneId);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).toContain(sceneId);
 
 		const reindexed = await reconcileMentions(db);
 		expect(reindexed).toBeGreaterThanOrEqual(1);
 		expect(await mentionRows(sceneId)).toHaveLength(3);
-		expect(await listStaleMentionScenes(db)).not.toContain(sceneId);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
 	});
 
 	it('reindexes a scene when an entity in its universe changes after indexing', async () => {
 		// An alias edit whose universe rebuild was dropped: the scene body is
 		// unchanged, but a character it could mention changed after the watermark.
 		await pool.query(`update characters set updated_at = now() where id = $1`, [aliceId]);
-		expect(await listStaleMentionScenes(db)).toContain(sceneId);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).toContain(sceneId);
 
 		await reconcileMentions(db);
-		expect(await listStaleMentionScenes(db)).not.toContain(sceneId);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
 	});
 });

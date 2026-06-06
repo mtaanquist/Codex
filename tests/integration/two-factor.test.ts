@@ -15,7 +15,8 @@ import {
 	recoveryCodesRemaining,
 	regenerateRecoveryCodes,
 	totpStatus,
-	verifyUserTotp
+	verifyUserTotp,
+	cancelPendingEnrollment
 } from '../../src/lib/server/two-factor';
 import { signToken } from '../../src/lib/server/crypto';
 import { totpCode } from '../../src/lib/server/totp';
@@ -149,5 +150,22 @@ describe('challenge token', () => {
 		// A token whose expiry is already in the past, but correctly signed.
 		const expired = signToken(`${userId}.${Date.now() - 1000}`);
 		expect(readTotpChallenge(expired)).toBeNull();
+	});
+});
+
+describe('cancelPendingEnrollment', () => {
+	it('clears a pending setup but can never strip confirmed two-factor', async () => {
+		const begin = await beginEnrollment(db, userId, 'tfa@example.com');
+		expect(begin.ok).toBe(true);
+		expect(await cancelPendingEnrollment(db, userId)).toBe(true);
+		expect((await totpStatus(db, userId)).status).toBe('off');
+
+		// Once confirmed, the cancel path is a no-op; only the password-gated
+		// disable removes live two-factor (regression: it used to call
+		// disableTotp and wipe a confirmed enrolment).
+		const { recoveryCodes } = await enroll();
+		expect(await cancelPendingEnrollment(db, userId)).toBe(false);
+		expect((await totpStatus(db, userId)).status).toBe('on');
+		expect(await recoveryCodesRemaining(db, userId)).toBe(recoveryCodes.length);
 	});
 });

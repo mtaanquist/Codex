@@ -63,6 +63,17 @@ export async function saveLoreEntry(
 		keywords.length !== entry.keywords.length ||
 		keywords.some((keyword, index) => keyword !== entry.keywords[index]);
 
+	// Validate the optional story BEFORE anything is written: the old
+	// ordering persisted the save, then reported failure and skipped the
+	// mention reindex (review finding #191).
+	if (save.storyId !== undefined) {
+		const [story] = await db
+			.select({ id: stories.id })
+			.from(stories)
+			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
+		if (!story) return { ok: false, reason: 'story not found' };
+	}
+
 	await db
 		.update(loreEntries)
 		.set({
@@ -79,14 +90,9 @@ export async function saveLoreEntry(
 	await recordEntityRevision(db, 'lore_entry', entry.id);
 
 	if (save.storyId !== undefined) {
-		const [story] = await db
-			.select({ id: stories.id })
-			.from(stories)
-			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
-		if (!story) return { ok: false, reason: 'story not found' };
 		await db
 			.insert(loreStoryNotes)
-			.values({ loreEntryId: entry.id, storyId: story.id, notesMd: save.storyNotesMd ?? '' })
+			.values({ loreEntryId: entry.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
 			.onConflictDoUpdate({
 				target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId],
 				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }

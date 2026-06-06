@@ -15,6 +15,17 @@ walkthrough, write-path rate limits, help docs coverage), then Phase 9
 stays parked by the roadmap's own criterion; the timeline view stays
 parked on the world-calendar design.
 
+A full-codebase review (2026-06-06, 7 finder passes, every candidate
+adversarially verified) found 14 confirmed issues, filed as #182-#195
+with severity labels and all fixed the same day across five PRs
+(#196-#200), shipped as v2.31.0: the account purge FK blocker and the
+suspension/deletion column split (migration 0041), token hygiene
+(reset kills pending email changes, pending-only TOTP cancel,
+confirm-on-POST email links), the guest reviewer email field, the
+suggestion-accept row lock, export path dedup, entity save ordering,
+shared mention contexts, the parallel editor load, and single sources
+of truth for queue names, enums, and helpers.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

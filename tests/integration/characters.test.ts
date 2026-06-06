@@ -74,6 +74,23 @@ describe('saveCharacter', () => {
 		expect(row.summaryMd).toBe('A toll-road smuggler.');
 	});
 
+	it("persists nothing when the optional story is not the saver's", async () => {
+		// Regression #191: the rename used to commit, then the storyId check
+		// failed, reporting an error for a save that had already happened.
+		const [before] = await db.select().from(characters).where(eq(characters.id, characterId));
+		const result = await saveCharacter(db, characterId, ownerId, {
+			name: 'Renamed Anyway',
+			aliases: [],
+			summaryMd: null,
+			bodyMd: '',
+			storyId: '00000000-0000-0000-0000-000000000000',
+			storyNotesMd: 'never lands'
+		});
+		expect(result).toEqual({ ok: false, reason: 'story not found' });
+		const [after] = await db.select().from(characters).where(eq(characters.id, characterId));
+		expect(after.name).toBe(before.name);
+	});
+
 	it('upserts the per-story notes', async () => {
 		const first = await saveCharacter(db, characterId, ownerId, {
 			name: 'Alice Vane',
