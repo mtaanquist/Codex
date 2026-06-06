@@ -245,11 +245,14 @@ softer findings went to the roadmap as candidates for the next phase.
      APIs) and the mention rebuilder clears trashed scenes so a queued
      rebuild cannot resurrect them. Merged 2026-06-06 (#147), shipped as
      v2.19.0.
-- [ ] 2. Find/replace + full-text prose search. @codemirror/search is not
-     installed and search.ts matches only titles/names/aliases/keywords.
-     Add in-editor find/replace, and prose search across a story's scenes
-     (Postgres FTS or trigram over scenes.body_md) surfaced through the
-     existing search API and palette.
+- [x] 2. Find/replace + full-text prose search. The editor gained the
+     @codemirror/search panel (Ctrl+F, find as you type, replace one or
+     all) through the shared prose extension base, styled to the design
+     system; the palette's search now also matches scene bodies and
+     returns "In the text" results with a SQL-computed snippet, owner
+     scoped and trash-aware, backed by pg_trgm and a trigram index over
+     scenes.body_md (migration 0037). Merged 2026-06-06 (#151), shipped
+     as v2.20.0.
 - [ ] 3. Markdown import. Every export path exists and no import path
      does; a writer cannot migrate a novel in. Start with round-tripping
      our own story export ZIP (front matter + chapter folders + scene

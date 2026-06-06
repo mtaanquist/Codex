@@ -229,7 +229,12 @@ export const scenes = pgTable(
 		// or deleted for good. Null means live; every live query filters on it.
 		deletedAt: timestamp('deleted_at', { withTimezone: true })
 	},
-	(table) => [index('scenes_characters_present_gin').using('gin', table.charactersPresent)]
+	(table) => [
+		index('scenes_characters_present_gin').using('gin', table.charactersPresent),
+		// Trigram index behind the palette's body-text search; migration 0037
+		// creates the pg_trgm extension it needs.
+		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops'))
+	]
 );
 
 // Characters belong to the universe, not a story; per-story context layers on
