@@ -37,7 +37,7 @@ page-load query batching, entity-search indexes (migration 0042), the
 cross-universe story-note leak, and the digest re-send on retry (#222);
 and the cleanup pass - createCategory colour validation, dead
 listPendingUsers, shared entity-save guards, a shared action-error
-helper, and a single UUID_BODY fragment (#223). Not yet released.
+helper, and a single UUID_BODY fragment (#223). Shipped as v2.32.0.
 
 Operator feedback batch (2026-06-07), three PRs: the admin shell
 polish - a shared PageTopBar for the static pages (app icon and
@@ -50,7 +50,9 @@ and landing CTA (#254); and backup and asset storage configurable in
 the admin panel - app_settings rows with encrypted secrets seeded by
 the env vars, test-connection probes, live backup rescheduling, and a
 migrate-assets worker job that copies stored objects when asset
-storage moves to a new bucket or host (#255). Not yet released.
+storage moves to a new bucket or host (#255). A follow-up replaced the
+template favicon with the brand mark, tinted by the accent colour and
+updated live with the appearance settings (#256). Shipped as v2.33.0.
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
