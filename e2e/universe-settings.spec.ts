@@ -21,8 +21,9 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await expect(page.locator('.stat-tile').first()).toContainText('stories');
 
 	// Categories: rename a seeded one, add a third, save, all persist.
-	// New universes seed "Lore" and "Faction".
-	await page.getByRole('button', { name: 'Entity categories' }).click();
+	// New universes seed "Lore" and "Faction". Each section is its own page.
+	await page.getByRole('link', { name: 'Entity categories' }).click();
+	await expect(page).toHaveURL(/\/categories$/);
 	await expect(page.locator('.category-name-input')).toHaveCount(2);
 	await expect(page.locator('.category-name-input').nth(0)).toHaveValue('Lore');
 	await expect(page.locator('.category-name-input').nth(1)).toHaveValue('Faction');
@@ -52,7 +53,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 		.fill('Keeper of the record.');
 	await entitySave;
 	await page.goto(`/universes/settle-${stamp}`);
-	await page.getByRole('button', { name: 'History' }).click();
+	await page.getByRole('link', { name: 'History' }).click();
 	const entry = page.locator('.revision-entry', { hasText: 'Histor' }).first();
 	await expect(entry).toBeVisible();
 	await expect(entry.locator('.revision-source-kind')).toHaveText('Character');
@@ -61,12 +62,12 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await page.getByRole('button', { name: 'All', exact: true }).click();
 
 	// Export: the archive downloads.
-	const archive = await page.request.get(`/universes/settle-${stamp}/export`);
+	const archive = await page.request.get(`/universes/settle-${stamp}/export/download`);
 	expect(archive.status()).toBe(200);
 	expect(archive.headers()['content-type']).toBe('application/zip');
 
 	// The trash round trip: delete, restore from the library, delete forever.
-	await page.getByRole('button', { name: 'Import and export' }).click();
+	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
 	await expect(page).toHaveURL('/');
 	const trashRow = page.locator('.trash-uni', { hasText: name });
@@ -78,7 +79,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 
 	// Gone for good.
 	await page.goto(`/universes/settle-${stamp}`);
-	await page.getByRole('button', { name: 'Import and export' }).click();
+	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
 	await expect(page).toHaveURL('/');
 	await page

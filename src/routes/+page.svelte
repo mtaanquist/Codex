@@ -186,7 +186,7 @@
 							<div class="universe-actions">
 								<a
 									class="btn btn-ghost btn-sm"
-									href={resolve('/universes/[id]', { id: universe.slug })}
+									href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
 								>
 									Edit universe
 								</a>

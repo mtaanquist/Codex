@@ -74,7 +74,7 @@
 
 			<div class="avatar-dd-sep"></div>
 			<div class="avatar-dd-group">
-				<a class="avatar-dd-item" role="menuitem" href={resolve('/account')}>
+				<a class="avatar-dd-item" role="menuitem" href={resolve('/account/[[section]]', {})}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -89,7 +89,7 @@
 					<span class="lbl">Account settings</span>
 				</a>
 				{#if user.isAdmin}
-					<a class="avatar-dd-item" role="menuitem" href={resolve('/admin')}>
+					<a class="avatar-dd-item" role="menuitem" href={resolve('/admin/[[section]]', {})}>
 						<svg
 							viewBox="0 0 24 24"
 							fill="none"

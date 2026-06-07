@@ -55,7 +55,7 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 	const zipBytes = await archive.body();
 
 	await page.goto(`/universes/importland-${stamp}`);
-	await page.getByRole('button', { name: 'Import and export' }).click();
+	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.locator('input[name="archive"]').setInputFiles({
 		name: 'roundtrip.zip',
 		mimeType: 'application/zip',

@@ -1,4 +1,4 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
@@ -28,6 +28,10 @@ async function planFromUpload(data: FormData) {
 }
 
 export const load: PageServerLoad = async ({ params, locals }) => {
+	// Details rests on /universes/<slug> itself; the other sections have
+	// their own page.
+	if (params.section !== undefined && !['categories', 'history', 'export'].includes(params.section))
+		error(404, 'Not found');
 	const universe = await ownedUniverse(params.id, locals.user!.id);
 	const [contents, categories, timeline, revisionCount] = await Promise.all([
 		universeContents(db, universe.id),

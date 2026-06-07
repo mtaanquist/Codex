@@ -33,7 +33,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	const storyId = page.url().match(/stories\/([^/?]+)/)![1];
 
 	// Create the review link in settings; it is shown once.
-	await page.goto(`/stories/${storyId}/settings`);
+	await page.goto(`/stories/${storyId}/settings/review`);
 	await page.getByLabel('Who is this link for? (optional)').fill('e2e guest');
 	await page.getByRole('button', { name: 'Create review link' }).click();
 	const link = await page.locator('.review-link code').textContent();
@@ -122,7 +122,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	);
 
 	// A revoked link stops working for new visits.
-	await page.goto(`/stories/${storyId}/settings`);
+	await page.goto(`/stories/${storyId}/settings/review`);
 	await page.getByRole('button', { name: 'Revoke' }).click();
 	await expect(page.getByText('Revoked')).toBeVisible();
 	const lateContext = await browser.newContext({ storageState: { cookies: [], origins: [] } });
