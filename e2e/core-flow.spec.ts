@@ -202,7 +202,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const categorySave = page.waitForResponse(
 		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
 	);
-	await page.getByLabel('Category').selectOption({ label: 'Factions' });
+	// For characters the field is named for what it does: a colour group.
+	await page.getByLabel('Colour group').selectOption({ label: 'Factions' });
 	await categorySave;
 	await page.reload();
 	await expect(

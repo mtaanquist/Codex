@@ -73,6 +73,14 @@
 	// selects the first occurrence so the eye lands on it.
 	const findText = $derived(page.url.searchParams.get('find'));
 
+	// An appears-in jump carries the mention's character offset instead.
+	const findAt = $derived.by(() => {
+		const raw = page.url.searchParams.get('at');
+		if (raw === null) return null;
+		const at = Number.parseInt(raw, 10);
+		return Number.isInteger(at) && at >= 0 ? at : null;
+	});
+
 	// The mention index rebuilds in the background after a save, so the
 	// Reference tab can trail the text by a couple of seconds. While the
 	// open scene's index watermark is behind its last edit (the worker's
@@ -628,6 +636,7 @@
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
 						{findText}
+						{findAt}
 						entities={data.mentionEntities}
 						{mentionOptions}
 						autocompleteMode={data.preferences.entityAutocomplete}

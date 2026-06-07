@@ -179,7 +179,8 @@ describe('entityAppearances', () => {
 			{ storyId: storyOneId }
 		);
 		expect(rows).toHaveLength(1);
-		expect(rows[0]).toMatchObject({ storyId: storyOneId, storyTitle: 'Book one' });
+		// position rides along so the appears-in panel can link to the spot.
+		expect(rows[0]).toMatchObject({ storyId: storyOneId, storyTitle: 'Book one', position: 0 });
 	});
 
 	it('spans every story at universe scope, in series order', async () => {
@@ -194,5 +195,6 @@ describe('entityAppearances', () => {
 		expect(rows).toEqual([]);
 		const placeRows = await entityAppearances(db, { kind: 'place', id: haldenId }, { universeId });
 		expect(placeRows).toHaveLength(1);
+		expect(placeRows[0].position).toBe(16);
 	});
 });

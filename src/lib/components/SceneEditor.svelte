@@ -29,6 +29,7 @@
 		markers = [],
 		imageUniverseId,
 		findText = null,
+		findAt = null,
 		compact = false,
 		onCrossBoundary,
 		onCreateEntity,
@@ -50,6 +51,9 @@
 		imageUniverseId?: string;
 		// Text a search jump arrived with; the first occurrence gets selected.
 		findText?: string | null;
+		// Character offset an appears-in jump arrived with; the word there
+		// gets selected.
+		findAt?: number | null;
 		// The continuous story view stitches one editor per scene: no title
 		// input, no toolbar, and vertical arrows at the edges hand focus to
 		// neighbours.
@@ -190,6 +194,19 @@
 		view.focus();
 	});
 
+	// An appears-in jump lands on a mention's offset; select the word there.
+	// Clamped, because the text may have moved since the index was built.
+	$effect(() => {
+		if (findAt === null || !view) return;
+		const at = Math.min(findAt, view.state.doc.length);
+		const word = view.state.wordAt(at);
+		view.dispatch({
+			selection: word ? { anchor: word.from, head: word.to } : { anchor: at },
+			scrollIntoView: true
+		});
+		view.focus();
+	});
+
 	// Pinning a shared name or creating an entity changes the underlines at
 	// once: the page data refresh delivers new pins or entities, and the
 	// mentions compartment reloads.
@@ -212,9 +229,15 @@
 	// The right-click selection menu: quick formatting plus create-from-
 	// selection. Only an actual selection hijacks the native menu, so the
 	// browser's spelling suggestions stay reachable on a plain caret click.
+	// The handler sits on the pane wrapper rather than the prose column, so
+	// the margins around the centered text behave like the text itself.
 	let selectionMenu = $state<{ x: number; y: number; name: string } | null>(null);
 	let menuBusy = $state(false);
 	let menuError = $state('');
+
+	function onPaneContextMenu(event: MouseEvent) {
+		if (view) openSelectionMenu(event, view);
+	}
 
 	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
 		const range = editor.state.selection.main;
@@ -327,10 +350,7 @@
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
 					boundaryKeymap(),
-					imageUniverseId ? imageUploadExtension(imageUniverseId) : [],
-					EditorView.domEventHandlers({
-						contextmenu: (event, editor) => openSelectionMenu(event, editor)
-					})
+					imageUniverseId ? imageUploadExtension(imageUniverseId) : []
 				]
 			})
 		});
@@ -347,7 +367,7 @@
 </script>
 
 {#if compact}
-	<div class="editor compact">
+	<div class="editor compact" role="presentation" oncontextmenu={onPaneContextMenu}>
 		<div class="editor-cm" bind:this={editorEl}></div>
 	</div>
 {:else}
@@ -358,7 +378,7 @@
 			view={() => view}
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
 		/>
-		<div class="editor-scroll">
+		<div class="editor-scroll" role="presentation" oncontextmenu={onPaneContextMenu}>
 			<div class="editor">
 				<input
 					class="editor-title-input"

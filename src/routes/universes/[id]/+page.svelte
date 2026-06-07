@@ -309,10 +309,12 @@
 												<Icon name="chevron" size={12} />
 											</button>
 										</span>
+										<!-- No inline background when colourless: the shorthand would
+										     blank out the .empty slash. -->
 										<span
 											class="category-color-dot"
 											class:empty={!draft.color}
-											style="background: {draft.color ?? 'transparent'}"
+											style={draft.color ? `background: ${draft.color}` : ''}
 										></span>
 										<select
 											class="category-color-select"
@@ -683,13 +685,14 @@
 		border: 1px solid var(--border);
 		flex: none;
 	}
+	/* The classic "no colour" swatch: a hollow circle with a diagonal slash. */
 	.category-color-dot.empty {
-		background: repeating-linear-gradient(
-			45deg,
-			var(--bg-inset),
-			var(--bg-inset) 3px,
-			transparent 3px,
-			transparent 6px
+		background: linear-gradient(
+			135deg,
+			transparent calc(50% - 1px),
+			var(--border-strong) calc(50% - 1px),
+			var(--border-strong) calc(50% + 1px),
+			transparent calc(50% + 1px)
 		);
 	}
 	.category-color-select {
