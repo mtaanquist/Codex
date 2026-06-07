@@ -11,7 +11,16 @@
 
 	// The formatting bar above a prose editor: headings, bold, italic,
 	// quote, list. Buttons act on the editor and hand focus straight back.
-	let { view, modeLabel }: { view: () => EditorView | undefined; modeLabel?: string } = $props();
+	let {
+		view,
+		modeLabel,
+		onSplitScene
+	}: {
+		view: () => EditorView | undefined;
+		modeLabel?: string;
+		// When set, a split button breaks the scene at the cursor.
+		onSplitScene?: () => void;
+	} = $props();
 
 	function run(command: (view: EditorView) => boolean) {
 		const editor = view();
@@ -87,6 +96,18 @@
 	>
 		<Icon name="list" size={16} />
 	</button>
+	{#if onSplitScene}
+		<span class="md-sep"></span>
+		<button
+			class="md-tool"
+			type="button"
+			title="Split scene at cursor"
+			onmousedown={(event) => event.preventDefault()}
+			onclick={() => onSplitScene()}
+		>
+			<Icon name="split" size={16} />
+		</button>
+	{/if}
 	{#if modeLabel}
 		<span class="md-hint">{modeLabel}</span>
 	{/if}
