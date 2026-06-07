@@ -124,20 +124,21 @@ describe('rebuildSceneMentions', () => {
 });
 
 describe('place mentions', () => {
-	it('indexes place names alongside characters', async () => {
+	it('indexes place names and aliases alongside characters', async () => {
 		await db.insert(schema.places).values({
 			universeId,
 			ownerId: (await db.select({ id: users.id }).from(users).limit(1))[0].id,
-			name: 'Halden Gate'
+			name: 'Halden Gate',
+			aliases: ['Toll Town']
 		});
 		await db
 			.update(scenes)
-			.set({ bodyMd: 'Alice reached Halden Gate by dusk.' })
+			.set({ bodyMd: 'Alice reached Halden Gate by dusk. Toll Town never sleeps.' })
 			.where(eq(scenes.id, sceneId));
 		const result = await rebuildSceneMentions(db, sceneId);
-		expect(result).toMatchObject({ ok: true, count: 2 });
+		expect(result).toMatchObject({ ok: true, count: 3 });
 		const rows = await mentionRows(sceneId);
-		expect(rows.map((row) => row.targetType).sort()).toEqual(['character', 'place']);
+		expect(rows.map((row) => row.targetType).sort()).toEqual(['character', 'place', 'place']);
 	});
 });
 

@@ -390,6 +390,8 @@ export const places = pgTable(
 			.references(() => users.id)
 			.notNull(),
 		name: text('name').notNull(),
+		// Nicknames and local names; the mention scan matches these too.
+		aliases: text('aliases').array().notNull().default([]),
 		// One or two lines; shown in hover popovers.
 		summaryMd: text('summary_md'),
 		bodyMd: text('body_md').notNull().default(''),

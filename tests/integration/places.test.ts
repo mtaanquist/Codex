@@ -54,6 +54,7 @@ describe('savePlace', () => {
 	it('updates fields and reports a rename as mentions-affecting', async () => {
 		const renamed = await savePlace(db, placeId, ownerId, {
 			name: 'Halden Gate',
+			aliases: [],
 			summaryMd: 'The toll town at the pass.',
 			bodyMd: 'Stone walls, one gate, two prices.'
 		});
@@ -61,6 +62,7 @@ describe('savePlace', () => {
 
 		const unchanged = await savePlace(db, placeId, ownerId, {
 			name: 'Halden Gate',
+			aliases: [],
 			summaryMd: 'Body-only edits do not reindex.',
 			bodyMd: 'New body.'
 		});
@@ -70,10 +72,39 @@ describe('savePlace', () => {
 		expect(row.name).toBe('Halden Gate');
 	});
 
+	it('round-trips aliases and reports their change as mentions-affecting', async () => {
+		const withAliases = await savePlace(db, placeId, ownerId, {
+			name: 'Halden Gate',
+			aliases: ['The Gate', ' Toll Town ', ''],
+			summaryMd: null,
+			bodyMd: ''
+		});
+		expect(withAliases).toMatchObject({ ok: true, mentionsAffected: true });
+		const [row] = await db.select().from(places).where(eq(places.id, placeId));
+		expect(row.aliases).toEqual(['The Gate', 'Toll Town']);
+
+		const sameAliases = await savePlace(db, placeId, ownerId, {
+			name: 'Halden Gate',
+			aliases: ['The Gate', 'Toll Town'],
+			summaryMd: 'Unchanged names.',
+			bodyMd: 'New body.'
+		});
+		expect(sameAliases).toMatchObject({ ok: true, mentionsAffected: false });
+
+		const cleared = await savePlace(db, placeId, ownerId, {
+			name: 'Halden Gate',
+			aliases: [],
+			summaryMd: null,
+			bodyMd: ''
+		});
+		expect(cleared).toMatchObject({ ok: true, mentionsAffected: true });
+	});
+
 	it('upserts the per-story notes', async () => {
 		for (const notes of ['First pass.', 'Second pass.']) {
 			const result = await savePlace(db, placeId, ownerId, {
 				name: 'Halden Gate',
+				aliases: [],
 				summaryMd: null,
 				bodyMd: '',
 				storyId,
@@ -92,6 +123,7 @@ describe('savePlace', () => {
 	it('rejects a save by someone who does not own the place', async () => {
 		const result = await savePlace(db, placeId, strangerId, {
 			name: 'Hijacked',
+			aliases: [],
 			summaryMd: null,
 			bodyMd: ''
 		});
