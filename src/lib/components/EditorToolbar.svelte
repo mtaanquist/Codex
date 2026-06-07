@@ -2,12 +2,14 @@
 	import type { EditorView } from '@codemirror/view';
 	import Icon from './Icon.svelte';
 	import {
+		setAlignment,
 		setHeading,
 		toggleBold,
 		toggleBulletList,
 		toggleItalic,
 		toggleQuote
 	} from '$lib/editor-format';
+	import { ALIGNMENTS } from '$lib/alignment';
 
 	// The formatting bar above a prose editor: headings, bold, italic,
 	// quote, list. Buttons act on the editor and hand focus straight back.
@@ -96,6 +98,18 @@
 	>
 		<Icon name="list" size={16} />
 	</button>
+	<span class="md-sep"></span>
+	{#each ALIGNMENTS as align (align)}
+		<button
+			class="md-tool"
+			type="button"
+			title="Align {align}"
+			onmousedown={(event) => event.preventDefault()}
+			onclick={() => run(setAlignment(align))}
+		>
+			<Icon name="align-{align}" size={16} />
+		</button>
+	{/each}
 	{#if onSplitScene}
 		<span class="md-sep"></span>
 		<button

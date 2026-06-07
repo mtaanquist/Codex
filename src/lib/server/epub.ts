@@ -35,6 +35,9 @@ h1 { text-align: center; margin: 2em 0 1.5em; }
 img { max-width: 100%; }
 ${paragraph}
 ${sceneBreak}
+p.align-center { text-align: center; text-indent: 0; }
+p.align-right { text-align: right; text-indent: 0; }
+p.align-justify { text-align: justify; }
 .page-break { break-after: page; }`;
 }
 

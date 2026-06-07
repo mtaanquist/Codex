@@ -222,3 +222,18 @@
 	border-bottom: 1.5px solid var(--cat-amber, #b8860b);
 	border-radius: 2px;
 }
+
+/* Aligned paragraphs (\center, \right, \justify); the marker reads as
+   syntax, not prose. */
+.editor-cm .cm-align-center {
+	text-align: center;
+}
+.editor-cm .cm-align-right {
+	text-align: right;
+}
+.editor-cm .cm-align-justify {
+	text-align: justify;
+}
+.editor-cm .cm-align-marker {
+	color: var(--text-faint);
+}

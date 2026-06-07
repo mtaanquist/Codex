@@ -22,6 +22,8 @@ Right-click a scene in the sidebar and choose "Delete scene". A deleted scene go
 
 Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I (Cmd on a Mac) do bold and italic from the keyboard.
 
+The four alignment buttons set how the paragraphs under the selection sit on the page: left (the default), centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; choose left to remove it.
+
 There are two ways to see your prose while you write, chosen under Editor behaviour on your account page (and per story in its settings):
 
 - **Rich text**, the default, hides the marks except on the line you are editing, so the page reads like formatted text.

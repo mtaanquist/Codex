@@ -1,5 +1,6 @@
 import { EditorSelection, type EditorState, type TransactionSpec } from '@codemirror/state';
 import { keymap, type Command, type EditorView } from '@codemirror/view';
+import { alignmentMarker, alignmentOf, type Alignment } from './alignment';
 
 // Markdown formatting commands behind the toolbar and the Mod-B/Mod-I
 // shortcuts. Each builds its changes in a pure function over the state, so
@@ -107,6 +108,38 @@ export function toggleBulletChanges(state: EditorState): TransactionSpec | null 
 	return toggleLinePrefix(state, /^[-*]\s+/, '- ');
 }
 
+// Sets the alignment of every paragraph the selection touches by writing
+// (or clearing, for left) the \center / \right / \justify marker at each
+// paragraph's start. A paragraph is the lines between blank lines.
+export function setAlignmentChanges(state: EditorState, align: Alignment): TransactionSpec | null {
+	const doc = state.doc;
+	const range = state.selection.main;
+	const marker = alignmentMarker(align);
+
+	// Walk back from the selection to the start of its first paragraph.
+	let n = doc.lineAt(range.from).number;
+	while (n > 1 && doc.line(n).text.trim() !== '' && doc.line(n - 1).text.trim() !== '') n--;
+
+	const lastSelected = doc.lineAt(range.to).number;
+	const changes: { from: number; to: number; insert: string }[] = [];
+	let atParagraphStart = true;
+	for (; n <= doc.lines && n <= lastSelected; n++) {
+		const line = doc.line(n);
+		if (line.text.trim() === '') {
+			atParagraphStart = true;
+			continue;
+		}
+		if (!atParagraphStart) continue;
+		atParagraphStart = false;
+		const found = alignmentOf(line.text);
+		const current = found?.align ?? 'left';
+		if (current === align) continue;
+		changes.push({ from: line.from, to: line.from + (found?.markerLength ?? 0), insert: marker });
+	}
+	if (changes.length === 0) return null;
+	return { changes };
+}
+
 function apply(view: EditorView, spec: TransactionSpec | null): boolean {
 	if (!spec) return false;
 	view.dispatch({ ...spec, scrollIntoView: true, userEvent: 'input.format' });
@@ -121,6 +154,10 @@ export const setHeading =
 		apply(view, setHeadingChanges(view.state, level));
 export const toggleQuote: Command = (view) => apply(view, toggleQuoteChanges(view.state));
 export const toggleBulletList: Command = (view) => apply(view, toggleBulletChanges(view.state));
+export const setAlignment =
+	(align: Alignment): Command =>
+	(view) =>
+		apply(view, setAlignmentChanges(view.state, align));
 
 export function formatKeymap() {
 	return keymap.of([
