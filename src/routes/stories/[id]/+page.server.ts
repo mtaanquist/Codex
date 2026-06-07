@@ -277,7 +277,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		trashedScenes,
 		story,
 		universe,
-		user: locals.user!,
 		preferences,
 		storySiblings,
 		chapters: chapterList,
