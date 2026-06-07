@@ -233,7 +233,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	let sceneRevisions: RevisionRow[] = [];
 	let revisionPreview = null;
 	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
-	let inScene: { id: string; name: string; count: number }[] = [];
+	type InSceneKind = 'character' | 'place' | 'lore';
+	let inScene: { id: string; name: string; count: number; kind: InSceneKind }[] = [];
 	if (selectedScene) {
 		const revisionId = url.searchParams.get('revision');
 		const mentionCounts = (
@@ -268,9 +269,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		sceneRevisions = revs;
 		sceneMarkers = markers;
 		revisionPreview = preview ?? null;
-		inScene = [...mentionedCharacters, ...mentionedPlaces, ...mentionedLore].sort((a, b) =>
-			a.name.localeCompare(b.name)
-		);
+		// Tagged with the kind so the panel can group them by entity type.
+		inScene = [
+			...mentionedCharacters.map((row) => ({ ...row, kind: 'character' as const })),
+			...mentionedPlaces.map((row) => ({ ...row, kind: 'place' as const })),
+			...mentionedLore.map((row) => ({ ...row, kind: 'lore' as const }))
+		].sort((a, b) => a.name.localeCompare(b.name));
 	}
 
 	return {
