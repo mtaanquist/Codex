@@ -5,6 +5,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { stories, universes, users } from '../../src/lib/server/db/schema';
 import { uniqueSlug } from '../../src/lib/server/slugs';
+import { createStoryInUniverse } from '../../src/lib/server/story-create';
 import { ownedStory } from '../../src/lib/server/story-access';
 import { ownedUniverse } from '../../src/lib/server/universe-access';
 import { isValidSlug } from '../../src/lib/slug';
@@ -102,5 +103,15 @@ describe('ownedUniverse / ownedStory', () => {
 		await expect(
 			ownedStory('00000000-0000-4000-8000-000000000000', ownerId, db)
 		).rejects.toMatchObject({ status: 404 });
+	});
+});
+
+describe('createStoryInUniverse', () => {
+	it('creates a story with a readable slug, suffixing on a repeat title', async () => {
+		const first = await createStoryInUniverse(db, ownerId, universeId, 'Night Watch');
+		expect(first.slug).toBe('night-watch');
+		expect(first.universeId).toBe(universeId);
+		const second = await createStoryInUniverse(db, ownerId, universeId, 'Night Watch');
+		expect(second.slug).toBe('night-watch-2');
 	});
 });

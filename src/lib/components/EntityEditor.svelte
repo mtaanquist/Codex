@@ -350,16 +350,23 @@
 		/>
 	{/if}
 
+	<!-- Lore entries live in a category; for characters and places, who
+	     already are their own kind, the same field only lends the sidebar
+	     badge its colour, so it is named for what it does. -->
 	{#if categories.length > 0}
-		<div class="section-label">Category</div>
+		{@const label = kind === 'lore' ? 'Category' : 'Colour group'}
+		<div class="section-label">{label}</div>
+		{#if kind !== 'lore'}
+			<p class="field-hint">Tints this name's badge in the sidebar with the group's colour.</p>
+		{/if}
 		<select
 			class="line-input"
 			bind:value={categoryValue}
 			onchange={scheduleSave}
-			aria-label="Category"
+			aria-label={label}
 		>
 			{#if kind !== 'lore'}
-				<option value="">No category</option>
+				<option value="">None</option>
 			{/if}
 			{#each categories as category (category.id)}
 				<option value={category.id}>{category.name}</option>
