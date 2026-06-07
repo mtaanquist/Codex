@@ -39,6 +39,25 @@ export function rateLimit(
 	return { allowed: true, remaining: limit - existing.count, retryAfterSeconds: 0 };
 }
 
+// Per-user write budgets, keyed by user id. Autosave is debounced on the
+// client, so even heavy multi-editor writing stays well under WRITE_PER_MINUTE;
+// the cap only slows a client hammering the write endpoints in a loop. Uploads
+// are far heavier per request, so they get their own tighter bucket. These run
+// in one process today (see the single-replica note in docs/SELF-HOSTING.md);
+// a shared store is the prerequisite for multiple app replicas.
+const WRITE_PER_MINUTE = 600;
+const UPLOAD_PER_MINUTE = 60;
+
+// The autosave budget: scene, entity, and note saves all draw on it per user.
+export function writeLimit(userId: string, now: number = Date.now()): RateLimitResult {
+	return rateLimit(`write:${userId}`, WRITE_PER_MINUTE, 60 * 1000, now);
+}
+
+// The upload budget: image paste, drop, and cover uploads per user.
+export function uploadLimit(userId: string, now: number = Date.now()): RateLimitResult {
+	return rateLimit(`upload:${userId}`, UPLOAD_PER_MINUTE, 60 * 1000, now);
+}
+
 // Clears all counters. For tests; not used by the app.
 export function resetRateLimits(): void {
 	windows.clear();

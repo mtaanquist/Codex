@@ -135,8 +135,10 @@ pool, plus two decisions:
 v2 wind-down, in flight (author away, autonomous; full release flow per
 item, best-judgment on forks documented in PRs). Done: self-host
 walkthrough (docs/SELF-HOSTING.md) and help docs coverage (account,
-security, shortcuts articles) - shipping as v2.37.0. Next: write-path
-rate limits (v2.38.0), then writing goals and deadlines (v2.39.0).
+security, shortcuts articles) - shipped as v2.37.0; write-path rate
+limits (per-user autosave + upload budgets, single-replica stance
+documented) - shipping as v2.38.0. Next: writing goals and deadlines
+(v2.39.0).
 Held for the author (need a design steer): front/back matter and draft
 comparison UI. Then the v2 -> v3 boundary (the held /code-review ultra
 run).
