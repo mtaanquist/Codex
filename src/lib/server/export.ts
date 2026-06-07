@@ -19,7 +19,7 @@ import {
 	universes
 } from './db/schema.ts';
 import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
-import { assetConfig, s3AssetStore } from './assets.ts';
+import { effectiveAssetConfig, s3AssetStore } from './assets.ts';
 import { extensionFor } from './media-types.ts';
 import { namesByType, type EntityType } from './entity-lookups.ts';
 
@@ -63,7 +63,7 @@ const MAX_EXPORT_ASSET_BYTES = 500 * 1024 * 1024;
 // configuration it returns nothing and links stay as app paths.
 export function bucketAssetLoader(db: Database): AssetLoader {
 	return async (ids) => {
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		if (!config || ids.length === 0) return [];
 		const store = s3AssetStore(config);
 		const loaded: ExportAsset[] = [];

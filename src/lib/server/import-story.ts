@@ -17,7 +17,7 @@ import { isUniqueViolation } from './db';
 import { uniqueSlug } from './slugs';
 import { wordCount } from '../word-count';
 import { rewriteBundledAssetLinks, type ImportedNote, type ImportPlan } from '../import-markdown';
-import { assetConfig, createAsset, s3AssetStore } from './assets';
+import { effectiveAssetConfig, createAsset, s3AssetStore } from './assets';
 import { createStoryEntity } from './create-entity';
 import { queueUniverseMentions } from './jobs';
 import { IMAGE_EXTENSIONS } from './media-types';
@@ -108,7 +108,7 @@ export async function previewImport(
 		words: allScenes.reduce((sum, scene) => sum + wordCount(scene.bodyMd), 0),
 		notes: resolutions.map(({ kind, name, outcome }) => ({ kind, name, outcome })),
 		assetCount: plan.assets.length,
-		assetsConfigured: assetConfig() !== null,
+		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		problems: plan.problems
 	};
 }
@@ -134,7 +134,7 @@ export async function runImport(
 	// transactional anyway, and a failed import at worst leaves unreferenced
 	// uploads. Each bundled file becomes a new asset; links rewrite to it.
 	const assetLinks = new Map<string, string>();
-	const config = assetConfig();
+	const config = await effectiveAssetConfig(db);
 	if (config && plan.assets.length > 0) {
 		const store = s3AssetStore(config);
 		const typeOf = new Map(Object.entries(IMAGE_EXTENSIONS).map(([type, ext]) => [ext, type]));

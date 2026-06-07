@@ -3,13 +3,28 @@ import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { Database } from './auth';
-import { assets, universes, users } from './db/schema.ts';
+import { assets, exportArtifacts, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
 import { IMAGE_TYPES } from './media-types.ts';
+import { encryptSecret, secretsAvailable } from './crypto.ts';
+import {
+	clearSetting,
+	effectiveS3,
+	readSetting,
+	s3SettingsView,
+	saveS3Settings,
+	writeSetting,
+	type S3SettingsView,
+	type SaveS3Input,
+	type SaveS3Result,
+	type StoredS3
+} from './settings.ts';
 
 // Uploaded images live in an S3-compatible bucket, deliberately separate
 // from the backups bucket: a database restore then keeps every asset link
-// valid, and disaster recovery stays one story. Off until configured.
+// valid, and disaster recovery stays one story. Off until configured, in
+// the admin panel or through the ASSET_S3_* environment variables; settings
+// saved in the panel win, the environment is the seed.
 
 export type AssetConfig = {
 	endpoint: string | undefined;
@@ -33,6 +48,51 @@ export function assetConfig(env: Record<string, string | undefined> = process.en
 		accessKeyId,
 		secretAccessKey
 	} satisfies AssetConfig;
+}
+
+const ASSETS_KEY = 'asset-storage';
+const ASSET_PREFIX_DEFAULT = 'codex-assets';
+
+// The effective asset storage: settings saved in the admin panel win, the
+// environment is the fallback for instances configured the old way.
+export async function effectiveAssetConfig(db: Database): Promise<AssetConfig | null> {
+	const stored = await effectiveS3(db, ASSETS_KEY);
+	if (stored) {
+		return {
+			endpoint: stored.endpoint || undefined,
+			region: stored.region || 'auto',
+			bucket: stored.bucket,
+			prefix: stored.prefix,
+			accessKeyId: stored.accessKeyId,
+			secretAccessKey: stored.secretAccessKey
+		};
+	}
+	return assetConfig();
+}
+
+export async function assetStorageView(db: Database): Promise<S3SettingsView> {
+	return s3SettingsView(db, ASSETS_KEY, assetConfig());
+}
+
+// Saves the asset storage settings. When storage that already holds objects
+// is being pointed somewhere else, the old connection is stashed first so a
+// migration can copy the objects over (see the migration functions below).
+export async function saveAssetStorage(db: Database, input: SaveS3Input): Promise<SaveS3Result> {
+	const previous = await effectiveAssetConfig(db);
+	const result = await saveS3Settings(db, ASSETS_KEY, input, ASSET_PREFIX_DEFAULT);
+	if (!result.ok) return result;
+	const next = await effectiveAssetConfig(db);
+	if (
+		previous &&
+		next &&
+		(previous.bucket !== next.bucket ||
+			(previous.endpoint ?? '') !== (next.endpoint ?? '') ||
+			previous.region !== next.region) &&
+		(await countStoredObjects(db)) > 0
+	) {
+		await stashMigrationSource(db, previous);
+	}
+	return result;
 }
 
 export type AssetObjectStore = {
@@ -183,6 +243,112 @@ export async function setUserAvatar(
 		await deleteAsset(db, store, userId, previous).catch(() => {});
 	}
 	return { ok: true, id: result.id };
+}
+
+// ============ Storage migration ============
+// When the asset settings move to a different bucket or host, the objects
+// already uploaded stay behind. Saving such a change stashes the previous
+// connection; the admin can then run a copy job (or dismiss the offer), and
+// the worker streams every known object from the old storage to the new.
+// Keys are copied verbatim, so nothing in the database needs rewriting.
+
+const ASSET_MIGRATION_KEY = 'asset-storage-migration';
+
+async function stashMigrationSource(db: Database, config: AssetConfig): Promise<void> {
+	if (!secretsAvailable()) return;
+	const value: StoredS3 = {
+		endpoint: config.endpoint ?? '',
+		region: config.region,
+		bucket: config.bucket,
+		prefix: config.prefix,
+		accessKeyId: config.accessKeyId,
+		secretAccessKeyEnc: encryptSecret(config.secretAccessKey)
+	};
+	await writeSetting(db, ASSET_MIGRATION_KEY, value);
+}
+
+// The stashed previous connection, or null when there is nothing to migrate.
+export async function assetMigrationSource(db: Database): Promise<AssetConfig | null> {
+	const stored = await effectiveS3(db, ASSET_MIGRATION_KEY);
+	if (!stored) return null;
+	return {
+		endpoint: stored.endpoint || undefined,
+		region: stored.region || 'auto',
+		bucket: stored.bucket,
+		prefix: stored.prefix,
+		accessKeyId: stored.accessKeyId,
+		secretAccessKey: stored.secretAccessKey
+	};
+}
+
+export async function clearAssetMigrationSource(db: Database): Promise<void> {
+	await clearSetting(db, ASSET_MIGRATION_KEY);
+}
+
+// The outcome of the last copy run, shown in the admin panel. The worker
+// records it; failures keep the stash so the copy can be run again.
+const ASSET_MIGRATION_RESULT_KEY = 'asset-storage-migration-result';
+
+export type AssetMigrationResult = { finishedAt: string; copied: number; failed: number };
+
+export async function recordAssetMigrationResult(
+	db: Database,
+	result: AssetMigrationResult
+): Promise<void> {
+	await writeSetting(db, ASSET_MIGRATION_RESULT_KEY, result);
+}
+
+export async function assetMigrationResult(db: Database): Promise<AssetMigrationResult | null> {
+	return readSetting<AssetMigrationResult>(db, ASSET_MIGRATION_RESULT_KEY);
+}
+
+// Every object the database knows about: uploaded assets plus the stored
+// export files of published editions, which live in the same bucket.
+export async function listStoredObjects(
+	db: Database
+): Promise<{ storageKey: string; contentType: string }[]> {
+	const uploaded = await db
+		.select({ storageKey: assets.storageKey, contentType: assets.contentType })
+		.from(assets);
+	const artifacts = await db
+		.select({ storageKey: exportArtifacts.storageKey, contentType: exportArtifacts.contentType })
+		.from(exportArtifacts);
+	return [...uploaded, ...artifacts];
+}
+
+async function countStoredObjects(db: Database): Promise<number> {
+	return (await listStoredObjects(db)).length;
+}
+
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+	const chunks: Buffer[] = [];
+	for await (const chunk of stream) {
+		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	}
+	return Buffer.concat(chunks);
+}
+
+// Copies every known object from one store to the other. A missing or
+// unreadable object is counted and skipped rather than stopping the run, so
+// one lost image cannot strand the rest.
+export async function migrateAssetObjects(
+	db: Database,
+	source: AssetObjectStore,
+	target: AssetObjectStore
+): Promise<{ copied: number; failed: number }> {
+	let copied = 0;
+	let failed = 0;
+	for (const object of await listStoredObjects(db)) {
+		try {
+			const body = await streamToBuffer(await source.get(object.storageKey));
+			await target.put(object.storageKey, body, object.contentType);
+			copied += 1;
+		} catch (error) {
+			failed += 1;
+			console.error(`asset migration: ${object.storageKey} failed:`, error);
+		}
+	}
+	return { copied, failed };
 }
 
 // Clears the account avatar and removes its stored image. Falls back to

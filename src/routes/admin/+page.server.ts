@@ -10,8 +10,14 @@ import {
 	setUserArchive,
 	setUserSuspended
 } from '$lib/server/admin';
-import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
-import { queueBackup } from '$lib/server/jobs';
+import {
+	backupStorageView,
+	effectiveBackupConfig,
+	listRecentBackupRuns,
+	saveBackupStorage
+} from '$lib/server/backups';
+import { applyBackupSchedule, queueAssetMigration, queueBackup } from '$lib/server/jobs';
+import { probeS3 } from '$lib/server/s3-client';
 import { createInviteCode, deleteInviteCode, listInviteCodes } from '$lib/server/invites';
 import { listPublications, takedownPublication } from '$lib/server/publish';
 import {
@@ -26,7 +32,15 @@ import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
 import { adminCancelDeletion, purgeAccount } from '$lib/server/account-deletion';
 import { disableTotp } from '$lib/server/two-factor';
-import { assetConfig, s3AssetStore } from '$lib/server/assets';
+import {
+	assetMigrationResult,
+	assetMigrationSource,
+	assetStorageView,
+	clearAssetMigrationSource,
+	effectiveAssetConfig,
+	s3AssetStore,
+	saveAssetStorage
+} from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
 import { users } from '$lib/server/db/schema';
 import pkg from '../../../package.json';
@@ -51,14 +65,30 @@ export const load: PageServerLoad = async ({ locals }) => {
 		users: await listAllUsers(db),
 		inviteCodes: await listInviteCodes(db),
 		published: await listPublications(db, 50),
-		backupsConfigured: backupConfig() !== null,
+		backupsConfigured: (await effectiveBackupConfig(db)) !== null,
+		backupStorage: await backupStorageView(db),
 		backupRuns: await listRecentBackupRuns(db, 5),
+		assetStorage: await assetStorageView(db),
+		assetMigrationPending: (await assetMigrationSource(db)) !== null,
+		assetMigration: await assetMigrationResult(db),
 		smtp: await smtpView(db),
 		secretsAvailable: secretsAvailable(),
 		version: pkg.version,
 		uptime: formatUptime(process.uptime())
 	};
 };
+
+// The S3 fields shared by the backup and asset storage forms.
+function s3Input(data: FormData) {
+	return {
+		endpoint: String(data.get('endpoint') ?? ''),
+		region: String(data.get('region') ?? ''),
+		bucket: String(data.get('bucket') ?? ''),
+		prefix: String(data.get('prefix') ?? ''),
+		accessKeyId: String(data.get('accessKeyId') ?? ''),
+		secretAccessKey: String(data.get('secretAccessKey') ?? '')
+	};
+}
 
 // Reads a user id from the form and runs the action, returning a uniform
 // result for the page. Keeps the per-action handlers to one line each.
@@ -104,7 +134,7 @@ export const actions: Actions = {
 		if (!target || target.role === 'admin' || userId === locals.user!.id) {
 			return fail(400, { scope: 'accounts', message: 'That account cannot be deleted here.' });
 		}
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		await purgeAccount(db, userId, config ? s3AssetStore(config) : null);
 		return { scope: 'accounts', done: true };
 	},
@@ -184,13 +214,78 @@ export const actions: Actions = {
 	},
 	runBackup: async ({ locals }) => {
 		requireAdmin(locals);
-		if (!backupConfig()) {
+		if (!(await effectiveBackupConfig(db))) {
 			return fail(400, { scope: 'backups', message: 'Backups are not configured.' });
 		}
 		if (!(await queueBackup())) {
 			return fail(500, { scope: 'backups', message: 'Could not queue the backup.' });
 		}
 		return { scope: 'backups', done: true };
+	},
+	saveBackups: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const result = await saveBackupStorage(db, {
+			...s3Input(data),
+			keepRecentHours: Number(data.get('keepRecentHours') ?? 48),
+			keepDays: Number(data.get('keepDays') ?? 30)
+		});
+		if (!result.ok) return fail(400, { scope: 'backups', message: result.reason });
+		// Make sure the worker's schedule exists without waiting for a restart.
+		await applyBackupSchedule((await effectiveBackupConfig(db))?.cron ?? null);
+		return { scope: 'backups', saved: true };
+	},
+	testBackups: async ({ locals }) => {
+		requireAdmin(locals);
+		const config = await effectiveBackupConfig(db);
+		if (!config) {
+			return fail(400, { scope: 'backups', message: 'Save the backup settings first.' });
+		}
+		const probe = await probeS3(config);
+		if (!probe.ok) {
+			return fail(400, {
+				scope: 'backups',
+				message: `Could not reach the bucket: ${probe.reason}`
+			});
+		}
+		return { scope: 'backups', tested: true };
+	},
+	saveAssets: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const result = await saveAssetStorage(db, s3Input(data));
+		if (!result.ok) return fail(400, { scope: 'storage', message: result.reason });
+		return { scope: 'storage', saved: true };
+	},
+	testAssets: async ({ locals }) => {
+		requireAdmin(locals);
+		const config = await effectiveAssetConfig(db);
+		if (!config) {
+			return fail(400, { scope: 'storage', message: 'Save the asset storage settings first.' });
+		}
+		const probe = await probeS3(config);
+		if (!probe.ok) {
+			return fail(400, {
+				scope: 'storage',
+				message: `Could not reach the bucket: ${probe.reason}`
+			});
+		}
+		return { scope: 'storage', tested: true };
+	},
+	migrateAssets: async ({ locals }) => {
+		requireAdmin(locals);
+		if (!(await assetMigrationSource(db))) {
+			return fail(400, { scope: 'storage', message: 'There is nothing to copy.' });
+		}
+		if (!(await queueAssetMigration())) {
+			return fail(500, { scope: 'storage', message: 'Could not queue the copy.' });
+		}
+		return { scope: 'storage', migrating: true };
+	},
+	dismissMigration: async ({ locals }) => {
+		requireAdmin(locals);
+		await clearAssetMigrationSource(db);
+		return { scope: 'storage', done: true };
 	},
 	saveSmtp: async ({ request, locals }) => {
 		requireAdmin(locals);

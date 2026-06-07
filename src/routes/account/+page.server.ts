@@ -15,7 +15,12 @@ import {
 	saveProfile,
 	verifyAccountPassword
 } from '$lib/server/account';
-import { assetConfig, clearUserAvatar, s3AssetStore, setUserAvatar } from '$lib/server/assets';
+import {
+	effectiveAssetConfig,
+	clearUserAvatar,
+	s3AssetStore,
+	setUserAvatar
+} from '$lib/server/assets';
 import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/account-deletion';
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { users } from '$lib/server/db/schema';
@@ -89,7 +94,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return {
 		displayName: user.displayName,
 		email: user.email,
-		assetsConfigured: assetConfig() !== null,
+		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		isAdmin: user.role === 'admin',
 		origin: env.ORIGIN ?? url.origin,
 		profile,
@@ -132,7 +137,7 @@ export const actions: Actions = {
 		return { scope: 'profile', saved: true };
 	},
 	uploadAvatar: async ({ request, locals }) => {
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		if (!config) {
 			return fail(503, { scope: 'avatar', message: 'Image uploads are not configured.' });
 		}
@@ -150,7 +155,7 @@ export const actions: Actions = {
 		return { scope: 'avatar', saved: true };
 	},
 	removeAvatar: async ({ locals }) => {
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		if (config) await clearUserAvatar(db, s3AssetStore(config), locals.user!.id);
 		return { scope: 'avatar', saved: true };
 	},

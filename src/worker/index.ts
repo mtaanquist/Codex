@@ -5,6 +5,7 @@ import {
 	EXPORT_ARTIFACTS_QUEUE,
 	MENTIONS_SCENE_QUEUE,
 	MENTIONS_UNIVERSE_QUEUE,
+	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
@@ -20,7 +21,7 @@ import {
 	reconcileMentions
 } from '../lib/server/mentions.ts';
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
-import { backupConfig, runBackup } from '../lib/server/backups.ts';
+import { effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
 import {
 	buildReviewerDigest,
@@ -34,7 +35,14 @@ import {
 	purgeUniverseWithin,
 	universeAssetKeys
 } from '../lib/server/universe-lifecycle.ts';
-import { assetConfig, s3AssetStore } from '../lib/server/assets.ts';
+import {
+	assetMigrationSource,
+	clearAssetMigrationSource,
+	effectiveAssetConfig,
+	migrateAssetObjects,
+	recordAssetMigrationResult,
+	s3AssetStore
+} from '../lib/server/assets.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -58,6 +66,7 @@ await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
+await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 
 await boss.work<{ sceneId: string }>(MENTIONS_SCENE_QUEUE, async (jobs) => {
 	for (const job of jobs) {
@@ -98,6 +107,22 @@ await boss.work<{ publicationId: string }>(EXPORT_ARTIFACTS_QUEUE, async (jobs) 
 			);
 		}
 	}
+});
+
+// Copies every stored asset and export file from the stashed previous
+// storage to the current one, after the admin re-points asset storage and
+// asks for the copy. Failures leave the stash in place for another run.
+await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
+	const source = await assetMigrationSource(db);
+	const target = await effectiveAssetConfig(db);
+	if (!source || !target) {
+		console.warn('asset migration: no stashed source or no storage configured, skipping');
+		return;
+	}
+	const result = await migrateAssetObjects(db, s3AssetStore(source), s3AssetStore(target));
+	await recordAssetMigrationResult(db, { finishedAt: new Date().toISOString(), ...result });
+	if (result.failed === 0) await clearAssetMigrationSource(db);
+	console.log(`asset migration: ${result.copied} copied, ${result.failed} failed`);
 });
 
 await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs) => {
@@ -150,7 +175,7 @@ await boss.work<{ reviewerId: string }>(REVIEWER_DIGEST_QUEUE, async (jobs) => {
 await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 	const due = await listAccountsDueForPurge(db);
 	if (due.length === 0) return;
-	const config = assetConfig();
+	const config = await effectiveAssetConfig(db);
 	const store = config ? s3AssetStore(config) : null;
 	for (const userId of due) {
 		try {
@@ -166,7 +191,7 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
 	const due = await listUniversesDueForPurge(db);
 	if (due.length === 0) return;
-	const config = assetConfig();
+	const config = await effectiveAssetConfig(db);
 	const store = config ? s3AssetStore(config) : null;
 	for (const universeId of due) {
 		try {
@@ -190,9 +215,10 @@ await boss.schedule(PURGE_UNIVERSES_QUEUE, '45 * * * *', {}, { tz: 'UTC' });
 // self-heals within minutes instead of waiting for the next save.
 await boss.schedule(RECONCILE_MENTIONS_QUEUE, '*/5 * * * *', {}, { tz: 'UTC' });
 
-// Nightly off-site backups, only when the bucket is configured. The
-// schedule lives in pg-boss, so it is cleared when configuration goes away.
-const backups = backupConfig();
+// Off-site backups, only when the bucket is configured (saved settings or
+// environment). The schedule lives in pg-boss, so it is cleared when the
+// configuration goes away; the app re-applies it when settings are saved.
+const backups = await effectiveBackupConfig(db);
 if (backups) {
 	await boss.schedule(BACKUP_QUEUE, backups.cron, { trigger: 'scheduled' }, { tz: 'UTC' });
 	console.log(

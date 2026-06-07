@@ -10,7 +10,7 @@ import {
 	listTrashedUniverses,
 	restoreUniverse
 } from '$lib/server/universe-lifecycle';
-import { assetConfig, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
 import { signupMode } from '$lib/server/settings';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -179,7 +179,7 @@ export const actions: Actions = {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
 		// Best-effort object sweep; an orphaned image is never a blocker.
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		if (config) {
 			const store = s3AssetStore(config);
 			for (const key of result.assetKeys) await store.remove(key).catch(() => {});
