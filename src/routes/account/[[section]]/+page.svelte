@@ -169,7 +169,13 @@
 </svelte:head>
 
 <div class="page-shell">
-	<PageTopBar back={{ href: resolve('/'), label: 'Library' }} />
+	<PageTopBar
+		back={{ href: resolve('/'), label: 'Library' }}
+		help={{
+			topic: active === 'security' ? 'security' : 'account',
+			label: active === 'security' ? 'account security' : 'your account'
+		}}
+	/>
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">

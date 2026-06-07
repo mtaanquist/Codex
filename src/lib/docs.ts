@@ -33,7 +33,10 @@ const REGISTRY: { slug: string; summary: string }[] = [
 	{ slug: 'editor', summary: 'Drafting scenes, mentions, and marks in the editor.' },
 	{ slug: 'planning', summary: 'Characters, places, lore, the outline, and relationships.' },
 	{ slug: 'publishing', summary: 'Turning a finished story into a public reading page.' },
-	{ slug: 'reviewing', summary: 'Asking someone to read a story and leave comments.' }
+	{ slug: 'reviewing', summary: 'Asking someone to read a story and leave comments.' },
+	{ slug: 'account', summary: 'Your profile, public page, appearance, and editor defaults.' },
+	{ slug: 'security', summary: 'Password, two-factor, passkeys, sessions, export, and deletion.' },
+	{ slug: 'shortcuts', summary: 'The keyboard shortcuts worth knowing.' }
 ];
 
 export function docTopics(): DocTopic[] {
