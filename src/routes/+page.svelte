@@ -6,14 +6,16 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// The header's New universe button and each section's new-story card
-	// swap to an inline title form when clicked.
+	// The header's New universe / New story buttons and each section's
+	// new-story card swap to an inline title form when clicked.
 	let creatingUniverse = $state(false);
+	let creatingStandalone = $state(false);
 	let newStoryFor = $state<string | null>(null);
 
 	// A failed submit reloads the page; reopen the form it came from.
 	$effect(() => {
 		if (form?.scope === 'universe' && form.message) creatingUniverse = true;
+		if (form?.scope === 'standalone' && form.message) creatingStandalone = true;
 		if (form?.scope === 'story' && form.message) newStoryFor = form.universeId ?? null;
 	});
 
@@ -101,7 +103,34 @@
 								/>
 								<button class="btn btn-primary" type="submit">Create universe</button>
 							</form>
+						{:else if creatingStandalone}
+							<!-- A story without a universe: files under "Standalone stories",
+							     created for you on first use. -->
+							<form class="new-inline" method="POST" action="?/createStandaloneStory">
+								<!-- svelte-ignore a11y_autofocus (the field only appears on the button click) -->
+								<input
+									class="input"
+									type="text"
+									name="title"
+									aria-label="New standalone story"
+									placeholder="Story title"
+									required
+									autofocus
+									onkeydown={(e) => {
+										if (e.key === 'Escape') creatingStandalone = false;
+									}}
+								/>
+								<button class="btn btn-primary" type="submit">Create story</button>
+							</form>
 						{:else}
+							<button
+								class="btn btn-secondary"
+								type="button"
+								title="A story on its own, outside any universe"
+								onclick={() => (creatingStandalone = true)}
+							>
+								New story
+							</button>
 							<button
 								class="btn btn-secondary"
 								type="button"
@@ -113,6 +142,9 @@
 					</div>
 				</div>
 				{#if form?.scope === 'universe' && form.message}
+					<p class="form-error" role="alert">{form.message}</p>
+				{/if}
+				{#if form?.scope === 'standalone' && form.message}
 					<p class="form-error" role="alert">{form.message}</p>
 				{/if}
 

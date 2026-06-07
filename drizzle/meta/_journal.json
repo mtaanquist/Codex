@@ -330,6 +330,13 @@
 			"when": 1780837012241,
 			"tag": "0046_add_place_aliases",
 			"breakpoints": true
+		},
+		{
+			"idx": 47,
+			"version": "7",
+			"when": 1780838580209,
+			"tag": "0047_standalone_universe",
+			"breakpoints": true
 		}
 	]
 }

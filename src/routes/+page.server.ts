@@ -4,7 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
 import { entityCategories, universes } from '$lib/server/db/schema';
 import { uniqueSlug } from '$lib/server/slugs';
-import { createStoryInUniverse } from '$lib/server/story-create';
+import { createStoryInUniverse, standaloneUniverse } from '$lib/server/story-create';
 import { relativeTime, storyStatus } from '$lib/dashboard';
 import {
 	destroyUniverse,
@@ -150,6 +150,18 @@ export const actions: Actions = {
 		if (!universe) {
 			return fail(404, { scope: 'story', universeId, message: 'That universe does not exist.' });
 		}
+		const story = await createStoryInUniverse(db, locals.user.id, universe.id, title);
+		redirect(303, `/stories/${story.slug}`);
+	},
+	// The header's "New story": a story on its own, filed under the owner's
+	// lazily created "Standalone stories" universe.
+	createStandaloneStory: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const title = String((await request.formData()).get('title') ?? '').trim();
+		if (!title) {
+			return fail(400, { scope: 'standalone', message: 'Give the story a title.' });
+		}
+		const universe = await standaloneUniverse(db, locals.user.id);
 		const story = await createStoryInUniverse(db, locals.user.id, universe.id, title);
 		redirect(303, `/stories/${story.slug}`);
 	},
