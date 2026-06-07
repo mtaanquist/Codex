@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
+	entityRelationships,
 	places,
 	relationTypes,
 	universes,
@@ -151,6 +152,40 @@ describe('createRelationship', () => {
 			toId: aliceId
 		});
 		expect(swapped).toMatchObject({ ok: false });
+	});
+
+	it('rejects a self-relationship', async () => {
+		const result = await createRelationship(db, ownerId, {
+			fromKind: 'character',
+			fromId: aliceId,
+			relationTypeId: typeId('rival_of'),
+			toId: aliceId
+		});
+		expect(result).toMatchObject({ ok: false, reason: 'an entity cannot relate to itself' });
+	});
+
+	it('has a database unique index that blocks a duplicate universe-wide row', async () => {
+		const values = {
+			universeId,
+			ownerId,
+			fromType: 'character' as const,
+			fromId: bramId,
+			toType: 'place' as const,
+			toId: haldenId,
+			relationTypeId: typeId('lives_in')
+		};
+		await db.insert(entityRelationships).values(values);
+		await expect(db.insert(entityRelationships).values(values)).rejects.toThrow();
+		// Leave the fixture as the other tests expect it.
+		await db
+			.delete(entityRelationships)
+			.where(
+				and(
+					eq(entityRelationships.fromId, bramId),
+					eq(entityRelationships.toId, haldenId),
+					eq(entityRelationships.relationTypeId, typeId('lives_in'))
+				)
+			);
 	});
 
 	it('rejects a relation that does not start from that kind', async () => {

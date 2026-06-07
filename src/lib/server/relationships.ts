@@ -11,6 +11,7 @@ import {
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
 import { recordEntityRevision } from './revisions';
+import { isUniqueViolation } from './db';
 
 export type { EntityType };
 
@@ -203,6 +204,10 @@ export async function createRelationship(
 ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
 	const fromType = toEntityType(save.fromKind);
 
+	if (save.fromId === save.toId) {
+		return { ok: false, reason: 'an entity cannot relate to itself' };
+	}
+
 	// The source entity anchors ownership and the universe.
 	const [fromEntity] =
 		fromType === 'character'
@@ -261,39 +266,57 @@ export async function createRelationship(
 		);
 	if (duplicate) return { ok: false, reason: 'that relationship already exists' };
 
-	const [row] = await db
-		.insert(entityRelationships)
-		.values({
-			universeId,
-			ownerId: userId,
-			fromType,
-			fromId: save.fromId,
-			toType: relationType.toType,
-			toId: save.toId,
-			relationTypeId: relationType.id,
-			notesMd: save.notesMd?.trim() || null
-		})
-		.returning({ id: entityRelationships.id });
-	// The relationship set is part of both entities' revision snapshots, so
-	// the change lands on both timelines.
-	await recordEntityRevision(db, fromType, save.fromId);
-	await recordEntityRevision(db, relationType.toType as EntityType, save.toId);
-	return { ok: true, id: row.id };
+	// The application duplicate check above closes the common case; the partial
+	// unique index on (relation_type_id, from_id, to_id) for universe-wide rows
+	// closes the check-then-insert race between two concurrent identical
+	// requests, surfacing here as a unique violation.
+	try {
+		const id = await db.transaction(async (tx) => {
+			const [row] = await tx
+				.insert(entityRelationships)
+				.values({
+					universeId,
+					ownerId: userId,
+					fromType,
+					fromId: save.fromId,
+					toType: relationType.toType,
+					toId: save.toId,
+					relationTypeId: relationType.id,
+					notesMd: save.notesMd?.trim() || null
+				})
+				.returning({ id: entityRelationships.id });
+			// The relationship set is part of both entities' revision snapshots,
+			// so the change lands on both timelines, in the same transaction.
+			await recordEntityRevision(tx, fromType, save.fromId);
+			await recordEntityRevision(tx, relationType.toType as EntityType, save.toId);
+			return row.id;
+		});
+		return { ok: true, id };
+	} catch (err) {
+		if (isUniqueViolation(err)) return { ok: false, reason: 'that relationship already exists' };
+		throw err;
+	}
 }
 
 export async function deleteRelationship(db: Database, relationshipId: string, userId: string) {
-	const [deleted] = await db
-		.delete(entityRelationships)
-		.where(and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.ownerId, userId)))
-		.returning({
-			fromType: entityRelationships.fromType,
-			fromId: entityRelationships.fromId,
-			toType: entityRelationships.toType,
-			toId: entityRelationships.toId
-		});
-	if (!deleted) return false;
-	// As with creation, the change registers on both linked timelines.
-	await recordEntityRevision(db, deleted.fromType as EntityType, deleted.fromId);
-	await recordEntityRevision(db, deleted.toType as EntityType, deleted.toId);
-	return true;
+	// The delete and both timeline snapshots commit together, so neither
+	// entity's history is updated without the relationship actually going.
+	return await db.transaction(async (tx) => {
+		const [deleted] = await tx
+			.delete(entityRelationships)
+			.where(
+				and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.ownerId, userId))
+			)
+			.returning({
+				fromType: entityRelationships.fromType,
+				fromId: entityRelationships.fromId,
+				toType: entityRelationships.toType,
+				toId: entityRelationships.toId
+			});
+		if (!deleted) return false;
+		// As with creation, the change registers on both linked timelines.
+		await recordEntityRevision(tx, deleted.fromType as EntityType, deleted.fromId);
+		await recordEntityRevision(tx, deleted.toType as EntityType, deleted.toId);
+		return true;
+	});
 }

@@ -570,7 +570,14 @@ export const entityRelationships = pgTable(
 	(table) => [
 		index('entity_relationships_from_idx').on(table.fromType, table.fromId),
 		index('entity_relationships_to_idx').on(table.toType, table.toId),
-		index('entity_relationships_scope_idx').on(table.universeId, table.storyId)
+		index('entity_relationships_scope_idx').on(table.universeId, table.storyId),
+		// Backs the application duplicate check for universe-wide relationships,
+		// so two concurrent identical requests cannot both insert. Partial on
+		// story_id IS NULL: story-scoped overrides are unconstrained (no UI yet)
+		// and the filter keeps NULL story ids from each comparing as distinct.
+		uniqueIndex('entity_relationships_universe_unique')
+			.on(table.relationTypeId, table.fromId, table.toId)
+			.where(sql`${table.storyId} is null`)
 	]
 );
 

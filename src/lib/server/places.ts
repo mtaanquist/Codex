@@ -55,28 +55,33 @@ export async function savePlace(
 		return { ok: false, reason: 'story not found' };
 	}
 
-	await db
-		.update(places)
-		.set({
-			name,
-			summaryMd: save.summaryMd?.trim() || null,
-			bodyMd: save.bodyMd,
-			...(save.details !== undefined ? { details: save.details } : {}),
-			...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
-		})
-		.where(eq(places.id, place.id));
-	// Full snapshot, so summary, category, and detail changes register in
-	// History even when the body is untouched.
-	await recordEntityRevision(db, 'place', place.id);
+	// One transaction so the entity update, its History snapshot, and the
+	// story-note upsert commit together rather than leaving the entity changed
+	// with no matching revision on a part-way failure.
+	await db.transaction(async (tx) => {
+		await tx
+			.update(places)
+			.set({
+				name,
+				summaryMd: save.summaryMd?.trim() || null,
+				bodyMd: save.bodyMd,
+				...(save.details !== undefined ? { details: save.details } : {}),
+				...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
+			})
+			.where(eq(places.id, place.id));
+		// Full snapshot, so summary, category, and detail changes register in
+		// History even when the body is untouched.
+		await recordEntityRevision(tx, 'place', place.id);
 
-	if (save.storyId !== undefined) {
-		await db
-			.insert(placeStoryNotes)
-			.values({ placeId: place.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
-			.onConflictDoUpdate({
-				target: [placeStoryNotes.placeId, placeStoryNotes.storyId],
-				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
-			});
-	}
+		if (save.storyId !== undefined) {
+			await tx
+				.insert(placeStoryNotes)
+				.values({ placeId: place.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
+				.onConflictDoUpdate({
+					target: [placeStoryNotes.placeId, placeStoryNotes.storyId],
+					set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
+				});
+		}
+	});
 	return { ok: true, universeId: place.universeId, mentionsAffected };
 }
