@@ -1,10 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import Icon from '$lib/components/Icon.svelte';
 	import Landing from '$lib/components/Landing.svelte';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
-	import PaletteButton from '$lib/components/PaletteButton.svelte';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -71,16 +68,7 @@
 
 {#snippet library()}
 	<div class="page-shell">
-		<header class="topbar">
-			<a class="brand" href={resolve('/')}>
-				<span class="brand-mark" style="color: #fff"><Icon name="feather" size={15} /></span>
-				<span class="brand-name">Codex</span>
-			</a>
-			<span class="spacer"></span>
-			<PaletteButton />
-			<NotificationBell />
-			<UserMenu />
-		</header>
+		<PageTopBar />
 
 		<div class="page-body">
 			<div class="page-container">

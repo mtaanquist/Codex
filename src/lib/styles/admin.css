@@ -309,6 +309,11 @@ a.nav-item {
 	margin: 5px 0 0;
 	max-width: 60ch;
 }
+/* Inside a bordered card the frame sets the measure; a tighter cap there
+   makes the text look cut off against the empty remainder. */
+.admin-card .admin-block-sub {
+	max-width: none;
+}
 /* On the work canvas, grouping cards are hairline-bordered regions, not filled chrome */
 .admin-card {
 	background: transparent;
