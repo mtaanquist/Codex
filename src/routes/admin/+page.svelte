@@ -30,6 +30,7 @@
 		switch (scope) {
 			case 'accounts':
 			case 'invites':
+			case 'signup':
 				return 'users';
 			case 'published':
 				return 'published';
@@ -60,6 +61,30 @@
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- stays on /admin, only the query changes
 		pushState(`?section=${section}`, {});
 	}
+
+	// The sign-up policy choices, in order from closed to open.
+	const SIGNUP_OPTIONS = [
+		{
+			value: 'none',
+			name: 'No one',
+			desc: 'Sign-up is closed. Only existing accounts can sign in, and invite codes stop working.'
+		},
+		{
+			value: 'invite',
+			name: 'Invite only',
+			desc: 'Creating an account needs a valid invite code. Codes are made further down this page.'
+		},
+		{
+			value: 'approval',
+			name: 'Require approval',
+			desc: 'Anyone can ask for an account; an admin approves each one before it can sign in. An invite code skips the wait.'
+		},
+		{
+			value: 'open',
+			name: 'Open',
+			desc: 'Anyone can create an account and sign in once their email is confirmed.'
+		}
+	] as const;
 
 	function when(date: Date | string): string {
 		return new Date(date).toLocaleDateString(undefined, {
@@ -497,6 +522,51 @@
 							<span class="x">{form.message}</span>
 						</div>
 					{/if}
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<div>
+								<h2 class="admin-block-title">Sign-up</h2>
+								<p class="admin-block-sub">Who can create an account on this instance.</p>
+							</div>
+						</div>
+
+						{#if form?.scope === 'signup' && form.message}
+							<div
+								class="status-banner"
+								style="background:var(--danger-soft);border:1px solid color-mix(in oklab, var(--danger) 32%, transparent);margin-bottom:var(--space-4);"
+							>
+								<span class="x">{form.message}</span>
+							</div>
+						{:else if form?.scope === 'signup' && form.saved}
+							<div class="status-banner ok" style="margin-bottom:var(--space-4);">
+								<span class="dot"></span><span class="v">Saved.</span>
+							</div>
+						{/if}
+
+						<form method="POST" action="?/saveSignup">
+							<div class="policy-grid">
+								{#each SIGNUP_OPTIONS as option (option.value)}
+									<label class="policy-card">
+										<input
+											type="radio"
+											name="mode"
+											value={option.value}
+											checked={data.signup === option.value}
+										/>
+										<span class="policy-radio"></span>
+										<div>
+											<div class="policy-name">{option.name}</div>
+											<div class="policy-desc">{option.desc}</div>
+										</div>
+									</label>
+								{/each}
+							</div>
+							<div class="settings-actions">
+								<button type="submit" class="btn btn-primary">Save</button>
+							</div>
+						</form>
+					</div>
 
 					{#if pending.length > 0}
 						<div class="admin-block">

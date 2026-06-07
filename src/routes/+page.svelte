@@ -41,7 +41,7 @@
 </svelte:head>
 
 {#if !data.user}
-	<Landing />
+	<Landing signupOpen={data.signupOpen ?? true} />
 {:else}
 	{@render library()}
 {/if}

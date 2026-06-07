@@ -11,14 +11,21 @@
 </svelte:head>
 
 <AuthShell title="Create an account">
-	{#if form?.sent}
+	{#if data.mode === 'none'}
 		<p class="auth-note" role="status">
-			{#if form.invited}
-				Check your email. We have sent a link to confirm your address. Once you have confirmed it,
-				you can sign in.
-			{:else}
+			This Codex is not taking new accounts. Ask the person who runs it for access.
+		</p>
+		<div class="auth-links">
+			<a href={resolve('/login')}>Back to sign in</a>
+		</div>
+	{:else if form?.sent}
+		<p class="auth-note" role="status">
+			{#if form.pendingApproval}
 				Check your email. We have sent a link to confirm your address. Once you have confirmed it,
 				an administrator reviews your account before you can sign in.
+			{:else}
+				Check your email. We have sent a link to confirm your address. Once you have confirmed it,
+				you can sign in.
 			{/if}
 		</p>
 		<div class="auth-links">
@@ -66,21 +73,28 @@
 					autocomplete="new-password"
 				/>
 			</div>
-			<div class="field">
-				<label for="signup-invite">Invite code (optional)</label>
-				<input
-					id="signup-invite"
-					class="input"
-					type="text"
-					name="inviteCode"
-					value={form?.inviteCode ?? data.prefillCode}
-					autocomplete="off"
-					spellcheck="false"
-				/>
-				<span class="field-hint">
-					If you have an invite code, enter it to skip the approval wait.
-				</span>
-			</div>
+			{#if data.mode !== 'open'}
+				<div class="field">
+					<label for="signup-invite">
+						{data.mode === 'invite' ? 'Invite code' : 'Invite code (optional)'}
+					</label>
+					<input
+						id="signup-invite"
+						class="input"
+						type="text"
+						name="inviteCode"
+						value={form?.inviteCode ?? data.prefillCode}
+						required={data.mode === 'invite'}
+						autocomplete="off"
+						spellcheck="false"
+					/>
+					<span class="field-hint">
+						{data.mode === 'invite'
+							? 'An invite code is needed to create an account here.'
+							: 'If you have an invite code, enter it to skip the approval wait.'}
+					</span>
+				</div>
+			{/if}
 			<button class="btn btn-primary" type="submit">Create account</button>
 		</form>
 		<div class="auth-links">

@@ -2,6 +2,9 @@
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
+
+	// Hides the sign-up call to action when the instance takes no accounts.
+	let { signupOpen = true }: { signupOpen?: boolean } = $props();
 </script>
 
 <div class="landing-surface">
@@ -26,7 +29,9 @@
 
 			<div class="landing-cta">
 				<a class="btn btn-primary" href={resolve('/login')}>Sign in</a>
-				<a class="btn btn-secondary" href={resolve('/signup')}>Request access</a>
+				{#if signupOpen}
+					<a class="btn btn-secondary" href={resolve('/signup')}>Request access</a>
+				{/if}
 			</div>
 
 			<div class="landing-features">
