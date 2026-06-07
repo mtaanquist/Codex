@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
-	import { entityColor, entityLetter } from '$lib/entity-color';
+	import { CATEGORY_COLORS, entityColor, entityLetter } from '$lib/entity-color';
 
 	// The left pane of a Plan view, shared by the story and universe scopes.
 	// Entity links keep the current page and swap the ?entity= query; the
@@ -298,11 +298,9 @@
 				<input type="text" name="name" placeholder="New category name" required />
 				<select name="color">
 					<option value="">No colour</option>
-					<option value="var(--cat-blue)">Blue</option>
-					<option value="var(--cat-violet)">Violet</option>
-					<option value="var(--cat-rose)">Rose</option>
-					<option value="var(--cat-green)">Green</option>
-					<option value="var(--cat-amber)">Amber</option>
+					{#each CATEGORY_COLORS as choice (choice.token)}
+						<option value={choice.token}>{choice.label}</option>
+					{/each}
 				</select>
 				<button class="outline-add" type="submit">
 					<Icon name="plus" size={13} /> Add category
