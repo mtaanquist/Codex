@@ -3,10 +3,12 @@ import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { effectiveAssetConfig, createAsset, s3AssetStore } from '$lib/server/assets';
+import { rateLimitUploads } from '$lib/server/write-guard';
 
 // Accepts an image upload (multipart form: file, kind, universeId) and
 // returns the app-served path for it.
 export const POST: RequestHandler = async ({ request, locals }) => {
+	rateLimitUploads(locals.user!.id);
 	const config = await effectiveAssetConfig(db);
 	if (!config) error(503, 'assets are not configured; set the ASSET_S3_* variables');
 

@@ -5,6 +5,7 @@ import { db } from '$lib/server/db';
 import { scenes, stories } from '$lib/server/db/schema';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { updateMarkerAnchors } from '$lib/server/markers';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { recordRevision } from '$lib/server/revisions';
 import { setSceneStatus } from '$lib/server/scene-status';
 import { isSceneStatus } from '$lib/scene-status';
@@ -12,6 +13,7 @@ import { wordCount } from '$lib/word-count';
 
 // Debounced autosave target for the scene editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const [row] = await db
 		.select({ id: scenes.id })
 		.from(scenes)
