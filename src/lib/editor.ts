@@ -5,6 +5,7 @@ import { search, searchKeymap } from '@codemirror/search';
 import { markdown } from '@codemirror/lang-markdown';
 import { markdownStyling, richModeExtension } from './editor-richtext';
 import { formatKeymap } from './editor-format';
+import { alignmentExtension } from './editor-alignment';
 
 export type EditingMode = 'markdown' | 'rich';
 
@@ -31,7 +32,7 @@ export function proseExtensions(opts: {
 		opts.plain ? [] : formatKeymap(),
 		// Find and replace within the scene; Ctrl+F opens the panel.
 		search(),
-		opts.plain ? [] : [markdown(), markdownStyling()],
+		opts.plain ? [] : [markdown(), markdownStyling(), alignmentExtension()],
 		!opts.plain && opts.editingMode === 'rich' ? richModeExtension() : [],
 		opts.spellCheck?.enabled
 			? EditorView.contentAttributes.of({

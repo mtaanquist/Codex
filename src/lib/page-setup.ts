@@ -126,6 +126,9 @@ export function pageCss(setup: PageSetup, options: { includePageRule?: boolean }
 .scene-break { border: 0; text-align: center; margin: 2rem 0; }
 .scene-break::after { ${sceneBreak} }
 .chapter p { ${paragraph} }
+.chapter p.align-center { text-align: center; text-indent: 0; }
+.chapter p.align-right { text-align: right; text-indent: 0; }
+.chapter p.align-justify { text-align: justify; }
 .page-break { page-break-after: always; }
 img { max-width: 100%; }${pageRule}`;
 }

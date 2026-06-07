@@ -49,3 +49,25 @@ describe('asset references', () => {
 		expect(rewritten).not.toContain('/assets/');
 	});
 });
+
+describe('paragraph alignment markers', () => {
+	it('aligns a marked paragraph and strips the marker', () => {
+		const html = renderMarkdown('\\center The sign read:\n\nPlain paragraph.');
+		expect(html).toContain('<p class="align-center">The sign read:</p>');
+		expect(html).toContain('<p>Plain paragraph.</p>');
+		expect(html).not.toContain('\\center');
+	});
+
+	it('supports right and justify the same way', () => {
+		expect(renderMarkdown('\\right Yours,')).toContain('<p class="align-right">Yours,</p>');
+		expect(renderMarkdown('\\justify Long text.')).toContain(
+			'<p class="align-justify">Long text.</p>'
+		);
+	});
+
+	it('leaves the marker alone when it is not at the paragraph start', () => {
+		const html = renderMarkdown('The \\center marker mid-sentence.');
+		expect(html).not.toContain('align-center');
+		expect(html).toContain('\\center marker');
+	});
+});
