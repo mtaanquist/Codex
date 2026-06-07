@@ -9,7 +9,10 @@ describe('docTopics', () => {
 			'editor',
 			'planning',
 			'publishing',
-			'reviewing'
+			'reviewing',
+			'account',
+			'security',
+			'shortcuts'
 		]);
 		for (const topic of topics) {
 			// Title comes from the article's heading, so a missing file shows here.

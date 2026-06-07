@@ -116,6 +116,10 @@ TLS (`COMPOSE_PROFILES=caddy`), a local MinIO for image uploads
 every variable: SMTP for outgoing email, `ASSET_S3_*` for image uploads,
 `BACKUP_S3_*` for hourly database dumps to any S3-compatible bucket.
 
+For the full operator guide - every variable, reverse-proxy examples for
+Caddy, nginx, and Traefik, email and storage setup, the backup and restore
+drill, health checks, and updates - see [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
+
 ### Create the first admin
 
 New accounts wait behind an approval gate, so the first account has to be
