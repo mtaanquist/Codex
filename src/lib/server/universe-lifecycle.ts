@@ -10,8 +10,10 @@ import {
 	characters,
 	entityCategories,
 	entityRelationships,
+	exportArtifacts,
 	loreEntries,
 	places,
+	publications,
 	relationTypes,
 	revisions,
 	stories,
@@ -121,13 +123,22 @@ export async function listUniversesDueForPurge(db: Database): Promise<string[]> 
 	return rows.map((row) => row.id);
 }
 
-/** The bucket keys of everything the universe's purge will orphan. */
+/** The bucket keys of everything the universe's purge will orphan: uploaded
+ * images and the stored export files of its published editions. */
 export async function universeAssetKeys(db: Database, universeId: string): Promise<string[]> {
-	const rows = await db
+	const assetRows = await db
 		.select({ storageKey: assets.storageKey })
 		.from(assets)
 		.where(eq(assets.universeId, universeId));
-	return rows.map((row) => row.storageKey);
+	// Export-artifact rows cascade with their publications during the purge, but
+	// the bucket objects must be swept here, the way account deletion does.
+	const artifactRows = await db
+		.select({ storageKey: exportArtifacts.storageKey })
+		.from(exportArtifacts)
+		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
+		.innerJoin(stories, eq(publications.storyId, stories.id))
+		.where(eq(stories.universeId, universeId));
+	return [...assetRows, ...artifactRows].map((row) => row.storageKey);
 }
 
 /**

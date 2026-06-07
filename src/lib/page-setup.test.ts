@@ -77,6 +77,10 @@ describe('pageCss', () => {
 	it('escapes the scene break text and supports blank', () => {
 		expect(pageCss({ ...DEFAULT_PAGE_SETUP, sceneBreak: "don't" })).toContain("don\\'t");
 		expect(pageCss({ ...DEFAULT_PAGE_SETUP, sceneBreak: '' })).toContain("content: '';");
+		// A scene break carrying markup cannot break out of the <style> element.
+		const css = pageCss({ ...DEFAULT_PAGE_SETUP, sceneBreak: '</style>x' });
+		expect(css).not.toContain('</style>');
+		expect(css).toContain('\\3c /style>x');
 	});
 
 	it('omits the page rule for the PDF renderer', () => {
