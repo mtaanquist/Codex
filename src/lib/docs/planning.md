@@ -44,6 +44,8 @@ Open Insights from the Session tab in the right column (the "All insights" link)
 
 Progress shows total words, net words written this week, your writing streak, and a chart of words per day for the last 30 days. A day counts towards the streak when you saved any scene that day. Each story below shows its word count and how its scenes split between outline, draft, revised, and final.
 
+If you set a daily word goal on your account page, Progress also shows today against it and how many of the last 30 days met it. Give a story a target length or a deadline in its settings under Goals, and each story shows its progress towards the target and how long until the deadline.
+
 The world heatmap lists every character, place, and lore entry, brighter the more often the prose mentions it. A pale tile is an entry no scene mentions yet, and "no entry" marks one with nothing written in its body. Click any tile to open that entry in the plan.
 
 The relationship web draws every recorded relationship as a map: entities are dots, sized by how connected they are, and the lines between them are the relationships. Hover a dot to read its connections, click it to open the entry. The buttons above filter by kind of relationship, and the select narrows the web to one entity and its direct connections.

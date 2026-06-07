@@ -8,6 +8,7 @@ import {
 	storyProgress,
 	writingActivity
 } from '$lib/server/insights';
+import { userPreferences } from '$lib/server/preferences';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -21,11 +22,12 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 		requested = '';
 	}
 	const timezone = requested && isValidTimezone(requested) ? requested : 'UTC';
-	const [stories, heat, activity, web] = await Promise.all([
+	const [stories, heat, activity, web, preferences] = await Promise.all([
 		storyProgress(db, universe.id),
 		entityHeat(db, universe.id),
 		writingActivity(db, universe.id, timezone),
-		relationshipLinks(db, universe.id)
+		relationshipLinks(db, universe.id),
+		userPreferences(db, locals.user!.id)
 	]);
-	return { universe, timezone, stories, heat, activity, web };
+	return { universe, timezone, stories, heat, activity, web, dailyGoal: preferences.dailyWordGoal };
 };
