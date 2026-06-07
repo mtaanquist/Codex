@@ -8,9 +8,10 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 The capability review queue closed 2026-06-06 (items 1-5 all shipped;
 see the follow-ups section below). Next up: the next-phase candidates
 recorded in the roadmap from the 2026-06-06 capability review (Notes
-tab ship-or-hide, goals and deadlines, TTRPG positioning, scene
-split/merge, draft comparison, front/back matter, a self-host
-walkthrough, write-path rate limits, help docs coverage), then Phase 9
+tab ship-or-hide, goals and deadlines, TTRPG positioning, draft
+comparison, front/back matter, a self-host walkthrough, write-path
+rate limits, help docs coverage; scene split/merge shipped in
+v2.34.0), then Phase 9
 (AI and interop) when the author calls it. Continuous backup (WAL/PITR)
 stays parked by the roadmap's own criterion; the timeline view stays
 parked on the world-calendar design.
