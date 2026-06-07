@@ -353,8 +353,6 @@
 												>{form.message}</span
 											>
 										{/if}
-									{:else}
-										<p class="avatar-edit-hint">Image uploads are not set up on this instance.</p>
 									{/if}
 								</div>
 							</div>
