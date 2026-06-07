@@ -217,6 +217,65 @@
 		renameOffer = null;
 	}
 
+	// The details grid shows saved cells read-only and edits one at a time.
+	// Edits write straight into the array (the debounced autosave already
+	// covers them); closing just prunes rows left fully blank.
+	let editingDetail = $state<number | null>(null);
+
+	function focusOnMount(node: HTMLElement) {
+		node.focus();
+	}
+
+	function pruneEmptyDetails() {
+		const before = details.length;
+		for (let i = details.length - 1; i >= 0; i--) {
+			if (!details[i].label.trim() && !details[i].value.trim()) details.splice(i, 1);
+		}
+		if (details.length !== before) scheduleSave();
+	}
+
+	// By identity, because pruning the abandoned blank row shifts indexes.
+	function openDetail(target: { label: string; value: string }) {
+		pruneEmptyDetails();
+		const index = details.indexOf(target);
+		editingDetail = index >= 0 ? index : null;
+	}
+
+	function addDetail() {
+		details.push({ label: '', value: '' });
+		editingDetail = details.length - 1;
+	}
+
+	function closeDetails() {
+		editingDetail = null;
+		pruneEmptyDetails();
+	}
+
+	function onDetailKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			// Save & add another; a blank row just closes instead of piling up.
+			const current = editingDetail === null ? null : details[editingDetail];
+			if (!current || (!current.label.trim() && !current.value.trim())) closeDetails();
+			else addDetail();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			closeDetails();
+		}
+	}
+
+	// Focus leaving the editing cell closes it. Deferred, because moving
+	// between the cell's own inputs (or into the replacement cell after
+	// "add another") is not leaving.
+	function onDetailFocusOut() {
+		setTimeout(() => {
+			if (editingDetail === null) return;
+			const active = document.activeElement;
+			if (active instanceof HTMLElement && active.closest('.detail-editing')) return;
+			closeDetails();
+		}, 0);
+	}
+
 	async function save() {
 		if (!view) return;
 		dirty = false;
@@ -487,47 +546,64 @@
 	{#if details.length > 0}
 		<div class="fields">
 			{#each details as detail, index (index)}
-				<div class="field">
-					<input
-						class="detail-k"
-						type="text"
-						placeholder="Label"
-						bind:value={detail.label}
-						oninput={scheduleSave}
-						aria-label="Detail label"
-					/>
-					<div class="detail-v-row">
+				{#if editingDetail === index}
+					<div class="field detail-editing" onfocusout={onDetailFocusOut}>
 						<input
-							class="detail-v"
+							class="detail-k"
 							type="text"
-							placeholder="Value"
-							bind:value={detail.value}
+							placeholder="Label"
+							bind:value={detail.label}
 							oninput={scheduleSave}
-							aria-label="Detail value"
+							onkeydown={onDetailKeydown}
+							use:focusOnMount
+							aria-label="Detail label"
 						/>
-						<button
-							class="detail-remove"
-							type="button"
-							title="Remove detail"
-							onclick={() => {
-								details.splice(index, 1);
-								scheduleSave();
-							}}
-						>
-							&times;
-						</button>
+						<div class="detail-v-row">
+							<input
+								class="detail-v"
+								type="text"
+								placeholder="Value"
+								bind:value={detail.value}
+								oninput={scheduleSave}
+								onkeydown={onDetailKeydown}
+								aria-label="Detail value"
+							/>
+							<button
+								class="detail-remove"
+								type="button"
+								title="Remove detail"
+								onclick={() => {
+									details.splice(index, 1);
+									editingDetail = null;
+									scheduleSave();
+								}}
+							>
+								&times;
+							</button>
+						</div>
 					</div>
-				</div>
+				{:else}
+					<button type="button" class="field detail-cell" onclick={() => openDetail(detail)}>
+						<div class="k">{detail.label}</div>
+						<div class="v">{detail.value}</div>
+					</button>
+				{/if}
 			{/each}
+			{#if details.length % 2 === 1}
+				<div class="field detail-filler"></div>
+			{/if}
 		</div>
 	{/if}
-	<button
-		type="button"
-		class="chip dashed detail-add-chip"
-		onclick={() => details.push({ label: '', value: '' })}
-	>
-		+ Add detail
-	</button>
+	{#if editingDetail !== null}
+		<p class="details-foot">
+			<kbd>&#9166;</kbd> save & add another <span class="sep">&middot;</span>
+			<kbd>esc</kbd> done
+		</p>
+	{:else}
+		<button type="button" class="chip dashed detail-add-chip" onclick={addDetail}>
+			+ Add detail
+		</button>
+	{/if}
 
 	{#if storyId}
 		<div class="section-label">In this book</div>
@@ -696,6 +772,45 @@
 	}
 	.detail-add-chip {
 		margin-top: 10px;
+	}
+	/* Saved details read as plain cells; click one to edit it. */
+	.detail-cell {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		font: inherit;
+		cursor: pointer;
+	}
+	.detail-cell:hover {
+		background: var(--bg-hover);
+	}
+	.detail-editing {
+		box-shadow: inset 0 0 0 1.5px var(--accent-line);
+	}
+	/* Completes the row when the count is odd, so the grid's gap colour
+	   never shows as a big empty block. */
+	.detail-filler {
+		background: var(--bg-inset);
+	}
+	.details-foot {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text-faint);
+		font-family: var(--font-ui);
+		font-size: 11.5px;
+		margin: 8px 0 0;
+	}
+	.details-foot kbd {
+		font-family: var(--font-mono);
+		font-size: 10.5px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 0 4px;
+	}
+	.details-foot .sep {
+		color: var(--text-faint);
 	}
 	.rel-error {
 		color: var(--danger, #b00020);

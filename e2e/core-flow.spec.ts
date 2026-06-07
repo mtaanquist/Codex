@@ -165,12 +165,34 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		.getByPlaceholder('Notes that apply only to this story.')
 		.fill('Starts the book in debt.');
 	await characterSave;
+
+	// Details edit one cell at a time: Enter saves and opens the next,
+	// Escape finishes, and the saved facts read back as plain cells.
+	const detailsSave = page.waitForResponse(
+		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
+	);
+	await page.getByRole('button', { name: '+ Add detail' }).click();
+	await page.getByLabel('Detail label').fill('Age');
+	await page.getByLabel('Detail value').fill('32');
+	await page.getByLabel('Detail value').press('Enter');
+	await page.getByLabel('Detail label').fill('Status');
+	await page.getByLabel('Detail value').fill('Alive');
+	await page.getByLabel('Detail value').press('Escape');
+	await expect(page.getByLabel('Detail label')).toHaveCount(0);
+	await expect(page.locator('.detail-cell', { hasText: 'Age' })).toContainText('32');
+	await detailsSave;
+
 	await page.reload();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
 	await expect(page.locator('.ent-row .name')).toHaveText('Alice Vane');
 	await expect(page.getByPlaceholder('Notes that apply only to this story.')).toHaveValue(
 		'Starts the book in debt.'
 	);
+	await expect(page.locator('.detail-cell', { hasText: 'Status' })).toContainText('Alive');
+	// Clicking a saved cell reopens it for editing.
+	await page.locator('.detail-cell', { hasText: 'Age' }).click();
+	await expect(page.getByLabel('Detail label')).toHaveValue('Age');
+	await page.getByLabel('Detail label').press('Escape');
 
 	// Places follow the same pattern.
 	await page.getByPlaceholder('New place name').fill('Halden');
