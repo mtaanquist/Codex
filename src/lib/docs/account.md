@@ -31,6 +31,8 @@ defaults.
   scene marks in the continuous view, show or hide the writing streak, and set
   spell-check and your writing language. There is also a choice between the
   markdown editor and the softer rich editing surface.
+- **Daily word goal**: a daily word target. The Session tab and the Insights
+  page show how close you are to it. Leave it blank for no goal.
 - **Page setup defaults**: the page size, margins, font, paragraph style, and
   scene-break text used when you export to PDF or print. Each story can override
   these in its own settings.

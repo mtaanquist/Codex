@@ -176,6 +176,8 @@ export const actions: Actions = {
 		const spell = String(data.get('spellCheck') ?? '');
 		const language = String(data.get('writingLanguage') ?? '');
 		const streak = String(data.get('sessionStreak') ?? '');
+		// Blank or non-numeric means no goal (0); normalise clamps the rest.
+		const dailyWordGoal = Math.trunc(Number(data.get('dailyWordGoal'))) || 0;
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { scope: 'prefs', message: 'Pick an autocomplete mode.' });
 		}
@@ -198,7 +200,8 @@ export const actions: Actions = {
 			spellCheck: spell,
 			// The select constrains the tags; normalise drops anything else.
 			writingLanguage: language,
-			sessionStreak: streak
+			sessionStreak: streak,
+			dailyWordGoal
 		});
 		return { scope: 'prefs', saved: true };
 	},

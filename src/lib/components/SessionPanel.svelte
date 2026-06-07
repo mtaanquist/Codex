@@ -19,6 +19,8 @@
 		week: { label: string; active: boolean; isToday: boolean }[];
 		// Null when the account hides the streak card.
 		streak: { current: number; longest: number } | null;
+		// 0 when no daily word goal is set.
+		dailyGoal: number;
 	};
 	let session = $state<SessionData | null>(null);
 	let failed = $state(false);
@@ -43,6 +45,13 @@
 	});
 
 	const todayWords = $derived(session ? (session.storyWords ?? session.words) : 0);
+	// The daily goal is a writing habit across the universe, so it tracks the
+	// universe-wide count even on a story screen.
+	const goalPercent = $derived(
+		session && session.dailyGoal > 0
+			? Math.min(100, Math.round((session.words / session.dailyGoal) * 100))
+			: 0
+	);
 </script>
 
 <div class="right-scroll">
@@ -67,6 +76,19 @@
 					</div>
 				{/if}
 			</div>
+			{#if session.dailyGoal > 0}
+				<div class="goal">
+					<div class="goal-track"><div class="goal-fill" style="width: {goalPercent}%"></div></div>
+					<div class="goal-meta">
+						<span>
+							{session.words >= session.dailyGoal
+								? 'Daily goal met'
+								: `${session.words.toLocaleString('en-US')} / ${session.dailyGoal.toLocaleString('en-US')} today`}
+						</span>
+						<span>{goalPercent}%</span>
+					</div>
+				</div>
+			{/if}
 		</div>
 		{#if session.streak}
 			<div class="r-card">
@@ -100,6 +122,20 @@
 </div>
 
 <style>
+	.goal {
+		margin-top: 10px;
+	}
+	.goal-track {
+		height: 6px;
+		border-radius: 3px;
+		background: var(--bg-inset);
+		overflow: hidden;
+	}
+	.goal-fill {
+		height: 100%;
+		background: var(--accent);
+		border-radius: 3px;
+	}
 	.session-insights {
 		display: inline-flex;
 		align-items: center;

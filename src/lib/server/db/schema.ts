@@ -2,6 +2,7 @@ import {
 	bigint,
 	boolean,
 	customType,
+	date,
 	index,
 	inet,
 	integer,
@@ -173,6 +174,10 @@ export const stories = pgTable(
 		// Per-story overrides of the owner's print/PDF page setup; keys absent
 		// here fall back to users.page_setup at render time.
 		pageSetup: jsonb('page_setup').notNull().default({}),
+		// Optional writing goals. A target length in words and a deadline date;
+		// null means none. Progress shows on Insights.
+		targetWords: integer('target_words'),
+		deadline: date('deadline'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
