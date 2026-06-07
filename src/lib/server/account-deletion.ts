@@ -82,10 +82,13 @@ export async function listAccountsDueForPurge(db: Database): Promise<string[]> {
 // goes in one transaction in dependency order; the uploaded image objects are
 // removed from the bucket afterwards (best-effort - an orphaned object is swept
 // later, never a blocker). Used by the scheduled purge and by admin deletion.
+// The scheduled purge passes requireSchedule so a cancellation racing the
+// worker aborts the purge; admin deletion is immediate and skips that check.
 export async function purgeAccount(
 	db: Database,
 	userId: string,
-	store: AssetObjectStore | null
+	store: AssetObjectStore | null,
+	options: { requireSchedule?: boolean } = {}
 ): Promise<void> {
 	// Capture the bucket keys before the rows go, including the stored export
 	// files of the account's editions (their rows cascade with publications).
@@ -99,7 +102,22 @@ export async function purgeAccount(
 		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
 		.where(eq(publications.ownerId, userId));
 
-	await db.transaction(async (tx) => {
+	const purged = await db.transaction(async (tx) => {
+		// Re-assert the schedule under a row lock: a cancellation that landed
+		// after listAccountsDueForPurge read the due list must abort the purge.
+		// cancelAccountDeletion either ran before this (no row here, skip) or
+		// blocks on the lock until the purge commits (by then the account is
+		// already gone, and its clearing update matches nothing). Admin deletion
+		// is immediate and not scheduled, so it skips this check.
+		if (options.requireSchedule) {
+			const [stillDue] = await tx
+				.select({ id: users.id })
+				.from(users)
+				.where(and(eq(users.id, userId), isNotNull(users.deletionScheduledAt)))
+				.for('update');
+			if (!stillDue) return false;
+		}
+
 		// Each universe purges through the shared cascade (stories first, then
 		// entities, history, categories, relation types, and assets).
 		const universeRows = await tx
@@ -125,9 +143,12 @@ export async function purgeAccount(
 		await tx.delete(notifications).where(eq(notifications.userId, userId));
 		await tx.delete(sessions).where(eq(sessions.userId, userId));
 		await tx.delete(users).where(eq(users.id, userId));
+		return true;
 	});
 
-	if (store) {
+	// Only sweep the bucket if the account was actually purged (not cancelled
+	// out from under us between reading the keys and the locked re-check).
+	if (purged && store) {
 		for (const asset of assetRows) await store.remove(asset.storageKey).catch(() => {});
 		for (const artifact of artifactRows) await store.remove(artifact.storageKey).catch(() => {});
 	}

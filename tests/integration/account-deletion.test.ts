@@ -211,6 +211,25 @@ describe('purgeAccount', () => {
 		expect(await db.select().from(publications)).toHaveLength(1);
 		expect(await db.select().from(entityRelationships)).toHaveLength(2);
 	});
+
+	it('with requireSchedule, a cancellation that cleared the schedule aborts the purge', async () => {
+		const rescued = await makeUser('rescued@example.com');
+		await seedFullAccount(rescued);
+		// deletionScheduledAt is null (a cancellation landed before the worker
+		// reached this row). The scheduled purge must leave the account whole.
+		await purgeAccount(db, rescued, stubStore, { requireSchedule: true });
+		expect(await db.select().from(users).where(eq(users.id, rescued))).toHaveLength(1);
+		expect(await db.select().from(stories).where(eq(stories.ownerId, rescued))).toHaveLength(1);
+		expect(removedKeys).toEqual([]);
+
+		// Once the schedule stands, the same call purges.
+		await db
+			.update(users)
+			.set({ deletionScheduledAt: sql`now()` })
+			.where(eq(users.id, rescued));
+		await purgeAccount(db, rescued, stubStore, { requireSchedule: true });
+		expect(await db.select().from(users).where(eq(users.id, rescued))).toHaveLength(0);
+	});
 });
 
 describe('scheduleAccountDeletion and cancel', () => {
