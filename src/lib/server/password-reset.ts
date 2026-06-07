@@ -14,7 +14,12 @@ export async function requestPasswordReset(db: Database, email: string): Promise
 	const normalized = email.trim().toLowerCase();
 	const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, normalized));
 	if (!user) return null;
-	return issueToken(db, user.id, 'password_reset', RESET_TTL_MINUTES);
+	// Revoke any earlier outstanding reset links before issuing the new one, so
+	// only the most recent link is ever live (a leaked older one is dead).
+	return await db.transaction(async (tx) => {
+		await revokeTokens(tx, user.id, 'password_reset');
+		return issueToken(tx, user.id, 'password_reset', RESET_TTL_MINUTES);
+	});
 }
 
 export type ResetResult = { ok: true } | { ok: false; reason: string };
@@ -43,6 +48,9 @@ export async function resetPassword(
 		// started by whoever the owner is recovering from, so it dies here too.
 		await tx.update(users).set({ passwordHash, pendingEmail: null }).where(eq(users.id, userId));
 		await revokeTokens(tx, userId, 'email_change');
+		// Any sibling reset links die with this one, so a second outstanding link
+		// cannot reset the password again after recovery.
+		await revokeTokens(tx, userId, 'password_reset');
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })

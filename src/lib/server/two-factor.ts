@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { totpRecoveryCodes, userTotp } from './db/schema';
@@ -206,20 +207,49 @@ export async function disableTotp(db: Database, userId: string): Promise<void> {
 }
 
 // A signed, ten-minute token standing in for "this user cleared the password
-// step and still owes a code". It carries only the user id and an expiry, and
-// cannot be forged without APP_SECRET.
-export function issueTotpChallenge(userId: string): string {
-	return signToken(`${userId}.${Date.now() + CHALLENGE_TTL_MS}`);
+// step and still owes a code". It carries the user id, an expiry, and a random
+// nonce stored server-side; the signature stops forgery, and the nonce makes
+// the challenge single-use: a new password step overwrites it (killing any
+// earlier challenge) and accepting a code clears it (so a captured cookie
+// cannot be replayed).
+export async function issueTotpChallenge(db: Database, userId: string): Promise<string> {
+	const nonce = randomBytes(18).toString('base64url');
+	await db.update(userTotp).set({ challenge: nonce }).where(eq(userTotp.userId, userId));
+	return signToken(`${userId}.${Date.now() + CHALLENGE_TTL_MS}.${nonce}`);
 }
 
-export function readTotpChallenge(token: string | undefined): string | null {
+function parseTotpChallenge(token: string | undefined): { userId: string; nonce: string } | null {
 	if (!token) return null;
 	const payload = verifyToken(token);
 	if (!payload) return null;
-	const dot = payload.lastIndexOf('.');
-	if (dot <= 0) return null;
-	const userId = payload.slice(0, dot);
-	const expiresAt = Number(payload.slice(dot + 1));
-	if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
-	return userId;
+	const parts = payload.split('.');
+	if (parts.length !== 3) return null;
+	const [userId, expiresAt, nonce] = parts;
+	if (!userId || !nonce) return null;
+	if (!Number.isFinite(Number(expiresAt)) || Date.now() > Number(expiresAt)) return null;
+	return { userId, nonce };
+}
+
+// The unprivileged check the code-prompt page uses to decide whether to render:
+// signature and expiry only, no database round-trip and no consumption.
+export function readTotpChallenge(token: string | undefined): string | null {
+	return parseTotpChallenge(token)?.userId ?? null;
+}
+
+// Spends the challenge once a code has been accepted: the nonce must still match
+// the one stored for the user, and it is cleared in the same statement so the
+// cookie cannot be used a second time. Returns the user id, or null if the
+// challenge was already spent or superseded by a newer one.
+export async function consumeTotpChallenge(
+	db: Database,
+	token: string | undefined
+): Promise<string | null> {
+	const parsed = parseTotpChallenge(token);
+	if (!parsed) return null;
+	const [row] = await db
+		.update(userTotp)
+		.set({ challenge: null })
+		.where(and(eq(userTotp.userId, parsed.userId), eq(userTotp.challenge, parsed.nonce)))
+		.returning({ userId: userTotp.userId });
+	return row?.userId ?? null;
 }

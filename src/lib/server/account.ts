@@ -171,6 +171,9 @@ export async function changePassword(
 		// was wanted, requesting it again costs one form.
 		await tx.update(users).set({ passwordHash, pendingEmail: null }).where(eq(users.id, userId));
 		await revokeTokens(tx, userId, 'email_change');
+		// A deliberate password change also kills any outstanding reset links, so
+		// one issued before the change cannot take the account over afterwards.
+		await revokeTokens(tx, userId, 'password_reset');
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })

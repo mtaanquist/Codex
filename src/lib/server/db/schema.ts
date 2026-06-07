@@ -828,6 +828,11 @@ export const userTotp = pgTable('user_totp', {
 	// The highest TOTP step counter accepted so far; a code at or below it is a
 	// replay and is refused. Backs single-use enforcement (RFC 6238 5.2).
 	lastUsedStep: bigint('last_used_step', { mode: 'number' }),
+	// A random nonce for the in-flight sign-in challenge: set when the password
+	// step issues a challenge, cleared when the code is accepted, so a captured
+	// challenge cookie cannot be replayed and a new password step invalidates
+	// any earlier one.
+	challenge: text('challenge'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
