@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { rateLimit, resetRateLimits } from './rate-limit';
+import { rateLimit, resetRateLimits, uploadLimit, writeLimit } from './rate-limit';
 
 beforeEach(() => resetRateLimits());
 
@@ -28,5 +28,22 @@ describe('rateLimit', () => {
 		expect(rateLimit('a', 1, 1000, 0).allowed).toBe(true);
 		expect(rateLimit('a', 1, 1000, 0).allowed).toBe(false);
 		expect(rateLimit('b', 1, 1000, 0).allowed).toBe(true);
+	});
+});
+
+describe('write and upload budgets', () => {
+	it('keeps the write and upload budgets in separate buckets per user', () => {
+		// A user's uploads do not draw down their (much larger) write budget.
+		expect(writeLimit('u1', 0).allowed).toBe(true);
+		expect(uploadLimit('u1', 0).allowed).toBe(true);
+		expect(writeLimit('u1', 0).remaining).toBeGreaterThan(uploadLimit('u1', 0).remaining);
+	});
+
+	it('limits one user without affecting another', () => {
+		// Spend u1's upload budget; u2 is untouched.
+		let last = uploadLimit('u1', 0);
+		for (let i = 0; i < 200 && last.allowed; i++) last = uploadLimit('u1', 0);
+		expect(last.allowed).toBe(false);
+		expect(uploadLimit('u2', 0).allowed).toBe(true);
 	});
 });

@@ -4,10 +4,12 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { savePlace } from '$lib/server/places';
 import { queueUniverseMentions } from '$lib/server/jobs';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { cleanDetails } from '$lib/entity-snapshot';
 
 // Debounced autosave target for the place editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const payload = (await request.json()) as {
 		name?: unknown;
 		aliases?: unknown;
