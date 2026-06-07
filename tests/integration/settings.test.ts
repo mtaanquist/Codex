@@ -3,7 +3,13 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { effectiveSmtp, saveSmtp, smtpView } from '../../src/lib/server/settings';
+import {
+	effectiveSmtp,
+	saveSignupMode,
+	saveSmtp,
+	signupMode,
+	smtpView
+} from '../../src/lib/server/settings';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -113,5 +119,22 @@ describe('saveSmtp', () => {
 			(await saveSmtp(db, { host: '', port: 587, secure: false, user: '', from: '', password: '' }))
 				.ok
 		).toBe(false);
+	});
+});
+
+describe('signupMode', () => {
+	it('defaults to approval until one is saved, then round-trips', async () => {
+		expect(await signupMode(db)).toBe('approval');
+		await saveSignupMode(db, 'invite');
+		expect(await signupMode(db)).toBe('invite');
+		await saveSignupMode(db, 'none');
+		expect(await signupMode(db)).toBe('none');
+	});
+
+	it('falls back to approval when the stored value is not a known mode', async () => {
+		await pool.query(
+			`insert into app_settings (key, value) values ('signup', '{"mode":"everyone"}')`
+		);
+		expect(await signupMode(db)).toBe('approval');
 	});
 });

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import AuthShell from '$lib/components/AuthShell.svelte';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	// Passkey sign-in is a browser ceremony: fetch a challenge, let the
 	// authenticator answer it, post the assertion back, then load the app.
@@ -90,7 +90,9 @@
 	</p>
 	<div class="auth-links">
 		<a href={resolve('/forgot-password')}>Forgot password?</a>
-		<a href={resolve('/signup')}>Create an account</a>
+		{#if data.signupOpen}
+			<a href={resolve('/signup')}>Create an account</a>
+		{/if}
 	</div>
 </AuthShell>
 

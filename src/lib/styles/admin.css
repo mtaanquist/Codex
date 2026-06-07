@@ -309,6 +309,11 @@ a.nav-item {
 	margin: 5px 0 0;
 	max-width: 60ch;
 }
+/* Inside a bordered card the frame sets the measure; a tighter cap there
+   makes the text look cut off against the empty remainder. */
+.admin-card .admin-block-sub {
+	max-width: none;
+}
 /* On the work canvas, grouping cards are hairline-bordered regions, not filled chrome */
 .admin-card {
 	background: transparent;
@@ -735,6 +740,7 @@ a.nav-item {
 	gap: 10px;
 }
 .policy-card {
+	position: relative;
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
@@ -750,9 +756,21 @@ a.nav-item {
 .policy-card:hover {
 	border-color: var(--border-strong);
 }
-.policy-card.selected {
+/* The native radio drives the card; it stays in the page for the form and
+   the keyboard but never paints. */
+.policy-card input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+}
+.policy-card.selected,
+.policy-card:has(input:checked) {
 	border-color: var(--accent-line);
 	background: var(--accent-soft);
+}
+.policy-card:has(input:focus-visible) {
+	border-color: var(--accent);
 }
 .policy-radio {
 	width: 18px;
@@ -765,10 +783,12 @@ a.nav-item {
 	place-items: center;
 	transition: border-color 0.12s;
 }
-.policy-card.selected .policy-radio {
+.policy-card.selected .policy-radio,
+.policy-card:has(input:checked) .policy-radio {
 	border-color: var(--accent);
 }
-.policy-card.selected .policy-radio::after {
+.policy-card.selected .policy-radio::after,
+.policy-card:has(input:checked) .policy-radio::after {
 	content: '';
 	width: 9px;
 	height: 9px;

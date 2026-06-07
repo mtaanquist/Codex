@@ -4,24 +4,30 @@ import { users } from './db/schema';
 import { hashPassword } from './password';
 import { consumeToken } from './tokens';
 import { redeemInviteCode } from './invites';
+import type { SignupMode } from './settings';
 
 export type RegisterResult =
-	// invited: a valid invite code was spent, so the account is pre-approved.
-	| { ok: true; userId: string; invited: boolean }
+	// invited: a valid invite code was spent. approved: the account skipped
+	// the approval queue (an invite did it, or the instance is open).
+	| { ok: true; userId: string; invited: boolean; approved: boolean }
 	| { ok: false; reason: string }
 	// The email is already in use. Handled like a success by the caller so the
 	// page never reveals whether an address has an account.
 	| { ok: false; reason: 'duplicate' };
 
 export const INVALID_INVITE = 'That invite code is not valid. Check it and try again.';
+export const INVITE_REQUIRED = 'An invite code is needed to create an account here.';
+export const SIGNUPS_CLOSED = 'This Codex is not taking new accounts.';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
 export async function registerUser(
 	db: Database,
-	input: { email: string; password: string; displayName: string; inviteCode?: string }
+	input: { email: string; password: string; displayName: string; inviteCode?: string },
+	mode: SignupMode = 'approval'
 ): Promise<RegisterResult> {
+	if (mode === 'none') return { ok: false, reason: SIGNUPS_CLOSED };
 	const email = input.email.trim().toLowerCase();
 	const displayName = input.displayName.trim();
 	if (!EMAIL_RE.test(email)) return { ok: false, reason: 'Enter a valid email address.' };
@@ -31,7 +37,10 @@ export async function registerUser(
 	if (!displayName) return { ok: false, reason: 'Enter a display name.' };
 
 	const passwordHash = await hashPassword(input.password);
-	const inviteCode = input.inviteCode?.trim() ?? '';
+	// On an open instance a code buys nothing, so one that rides in on an old
+	// invite link is ignored rather than spent.
+	const inviteCode = mode === 'open' ? '' : (input.inviteCode?.trim() ?? '');
+	if (mode === 'invite' && inviteCode === '') return { ok: false, reason: INVITE_REQUIRED };
 	try {
 		// One transaction: a bad code creates no account, and a duplicate email
 		// rolls the redeemed use back, so probing emails cannot burn a code.
@@ -39,8 +48,9 @@ export async function registerUser(
 			const invited = inviteCode !== '' && (await redeemInviteCode(tx, inviteCode));
 			if (inviteCode !== '' && !invited) return { ok: false, reason: INVALID_INVITE };
 			// email_verified_at stays null until the emailed link is clicked, and
-			// approved_at stays null without an invite: both gates must clear
-			// before sign-in succeeds (see verifyCredentials).
+			// approved_at stays null unless something cleared the queue: both
+			// gates must pass before sign-in succeeds (see verifyCredentials).
+			const approved = invited || mode === 'open';
 			const [row] = await tx
 				.insert(users)
 				.values({
@@ -48,10 +58,10 @@ export async function registerUser(
 					displayName,
 					passwordHash,
 					role: 'user',
-					approvedAt: invited ? sql`now()` : null
+					approvedAt: approved ? sql`now()` : null
 				})
 				.returning({ id: users.id });
-			return { ok: true, userId: row.id, invited };
+			return { ok: true, userId: row.id, invited, approved };
 		});
 	} catch (err) {
 		if ((err as { cause?: { code?: string } }).cause?.code === '23505') {

@@ -149,6 +149,47 @@
 			{ label: 'Account settings', sublabel: null, kind: 'Go to', run: navigate('/account') },
 			{ label: 'Help', sublabel: null, kind: 'Go to', run: navigate('/docs') }
 		);
+		// The admin sections, for the people who run the instance.
+		if (page.data.user?.isAdmin) {
+			list.push(
+				{
+					label: 'Admin: overview',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=overview')
+				},
+				{
+					label: 'Admin: users & access',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=users')
+				},
+				{
+					label: 'Admin: published',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=published')
+				},
+				{
+					label: 'Admin: usage & storage',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=usage')
+				},
+				{
+					label: 'Admin: backups',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=backups')
+				},
+				{
+					label: 'Admin: email relay',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=instance')
+				}
+			);
+		}
 		return list;
 	});
 

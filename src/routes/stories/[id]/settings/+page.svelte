@@ -2,9 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
-	import PaletteButton from '$lib/components/PaletteButton.svelte';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
 	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
@@ -78,27 +76,9 @@
 </svelte:head>
 
 <div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="divider"></span>
-		<a class="back-link" href={resolve('/stories/[id]', { id: data.story.slug })}>
-			<svg
-				viewBox="0 0 12 12"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.4"
-				stroke-linecap="round"
-				stroke-linejoin="round"><polyline points="7.5 2.5 3 6 7.5 9.5" /></svg
-			>
-			{data.story.title}
-		</a>
-		<span class="spacer"></span>
-		<PaletteButton />
-		<NotificationBell />
-		<UserMenu />
-	</header>
+	<PageTopBar
+		back={{ href: resolve('/stories/[id]', { id: data.story.slug }), label: data.story.title }}
+	/>
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">

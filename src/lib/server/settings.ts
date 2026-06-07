@@ -4,6 +4,179 @@ import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';
 
 const SMTP_KEY = 'smtp';
+const SIGNUP_KEY = 'signup';
+
+// Generic accessors for one app_settings row; the callers shape the value.
+export async function readSetting<T>(db: Database, key: string): Promise<T | null> {
+	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+	return row ? (row.value as T) : null;
+}
+
+export async function writeSetting(db: Database, key: string, value: unknown): Promise<void> {
+	await db
+		.insert(appSettings)
+		.values({ key, value })
+		.onConflictDoUpdate({
+			target: appSettings.key,
+			set: { value, updatedAt: sql`now()` }
+		});
+}
+
+export async function clearSetting(db: Database, key: string): Promise<void> {
+	await db.delete(appSettings).where(eq(appSettings.key, key));
+}
+
+// ============ S3 storage settings (backups and assets) ============
+// Same resolution as SMTP: a saved row wins, the environment is the seed,
+// and the secret key is stored encrypted.
+
+export type StoredS3 = {
+	endpoint: string;
+	region: string;
+	bucket: string;
+	prefix: string;
+	accessKeyId: string;
+	secretAccessKeyEnc: string | null;
+};
+
+// What the admin panel shows: never the secret itself.
+export type S3SettingsView = {
+	source: 'database' | 'environment' | 'none';
+	endpoint: string;
+	region: string;
+	bucket: string;
+	prefix: string;
+	accessKeyId: string;
+	hasSecret: boolean;
+};
+
+export type SaveS3Result = { ok: true } | { ok: false; reason: string };
+
+export type SaveS3Input = {
+	endpoint: string;
+	region: string;
+	bucket: string;
+	prefix: string;
+	accessKeyId: string;
+	secretAccessKey: string;
+};
+
+// Validates and stores one S3 connection under the given key. A blank secret
+// keeps the stored one, like the SMTP password. Extra fields (retention
+// numbers, say) ride along in the same row.
+export async function saveS3Settings(
+	db: Database,
+	key: string,
+	input: SaveS3Input,
+	defaultPrefix: string,
+	extra: Record<string, unknown> = {}
+): Promise<SaveS3Result> {
+	if (!input.bucket.trim()) return { ok: false, reason: 'Enter the bucket name.' };
+	if (!input.accessKeyId.trim()) return { ok: false, reason: 'Enter the access key id.' };
+
+	const existing = await readSetting<StoredS3>(db, key);
+	let secretAccessKeyEnc = existing?.secretAccessKeyEnc ?? null;
+	if (input.secretAccessKey) {
+		if (!secretsAvailable()) {
+			return { ok: false, reason: 'Set APP_SECRET on the server before storing a secret here.' };
+		}
+		secretAccessKeyEnc = encryptSecret(input.secretAccessKey);
+	}
+	if (!secretAccessKeyEnc) return { ok: false, reason: 'Enter the secret access key.' };
+
+	const value: StoredS3 & Record<string, unknown> = {
+		...extra,
+		endpoint: input.endpoint.trim(),
+		region: input.region.trim() || 'auto',
+		bucket: input.bucket.trim(),
+		prefix: (input.prefix.trim() || defaultPrefix).replace(/\/+$/, ''),
+		accessKeyId: input.accessKeyId.trim(),
+		secretAccessKeyEnc
+	};
+	await writeSetting(db, key, value);
+	return { ok: true };
+}
+
+// The stored connection with its secret decrypted, for building a client.
+export async function effectiveS3(
+	db: Database,
+	key: string
+): Promise<(StoredS3 & { secretAccessKey: string }) | null> {
+	const stored = await readSetting<StoredS3>(db, key);
+	if (!stored) return null;
+	return {
+		...stored,
+		secretAccessKey: stored.secretAccessKeyEnc ? decryptSecret(stored.secretAccessKeyEnc) : ''
+	};
+}
+
+export async function s3SettingsView(
+	db: Database,
+	key: string,
+	env: {
+		endpoint: string | undefined;
+		region: string;
+		bucket: string;
+		prefix: string;
+		accessKeyId: string;
+	} | null
+): Promise<S3SettingsView> {
+	const stored = await readSetting<StoredS3>(db, key);
+	if (stored) {
+		return {
+			source: 'database',
+			endpoint: stored.endpoint,
+			region: stored.region,
+			bucket: stored.bucket,
+			prefix: stored.prefix,
+			accessKeyId: stored.accessKeyId,
+			hasSecret: Boolean(stored.secretAccessKeyEnc)
+		};
+	}
+	if (env) {
+		return {
+			source: 'environment',
+			endpoint: env.endpoint ?? '',
+			region: env.region,
+			bucket: env.bucket,
+			prefix: env.prefix,
+			accessKeyId: env.accessKeyId,
+			hasSecret: true
+		};
+	}
+	return {
+		source: 'none',
+		endpoint: '',
+		region: '',
+		bucket: '',
+		prefix: '',
+		accessKeyId: '',
+		hasSecret: false
+	};
+}
+
+// Who can create an account. 'approval' matches the behavior from before the
+// setting existed, so an instance that has never saved one keeps working the
+// same way.
+export const SIGNUP_MODES = ['none', 'invite', 'approval', 'open'] as const;
+export type SignupMode = (typeof SIGNUP_MODES)[number];
+
+export async function signupMode(db: Database): Promise<SignupMode> {
+	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, SIGNUP_KEY));
+	const mode = (row?.value as { mode?: string } | undefined)?.mode;
+	return SIGNUP_MODES.includes(mode as SignupMode) ? (mode as SignupMode) : 'approval';
+}
+
+export async function saveSignupMode(db: Database, mode: SignupMode): Promise<void> {
+	const value = { mode };
+	await db
+		.insert(appSettings)
+		.values({ key: SIGNUP_KEY, value })
+		.onConflictDoUpdate({
+			target: appSettings.key,
+			set: { value, updatedAt: sql`now()` }
+		});
+}
 
 // What the worker needs to actually send: the password is decrypted here.
 export type SmtpConfig = {

@@ -2,14 +2,14 @@ import { error } from '@sveltejs/kit';
 import { Readable } from 'node:stream';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { assetConfig, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
 import { artifactForDownload } from '$lib/server/export-artifacts';
 
 // Streams a stored export file (markdown zip, EPUB, PDF): to the edition's
 // owner always, and to anyone when the edition is readable and the owner has
 // switched reader downloads on. artifactForDownload owns those rules.
 export const GET: RequestHandler = async ({ params, locals }) => {
-	const config = assetConfig();
+	const config = await effectiveAssetConfig(db);
 	if (!config) error(503, 'assets are not configured');
 
 	const artifact = await artifactForDownload(db, params.id, locals.user?.id ?? null);

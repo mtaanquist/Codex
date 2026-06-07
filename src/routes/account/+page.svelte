@@ -7,9 +7,7 @@
 	import { ADMIN_KINDS, NOTIFICATION_KINDS, NOTIFICATION_LABELS } from '$lib/notifications';
 	import { WRITING_LANGUAGES } from '$lib/writing-languages';
 	import { applyAppearance } from '$lib/appearance-apply';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
-	import PaletteButton from '$lib/components/PaletteButton.svelte';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -191,27 +189,7 @@
 </svelte:head>
 
 <div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="divider"></span>
-		<a class="back-link" href={resolve('/')}>
-			<svg
-				viewBox="0 0 12 12"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.4"
-				stroke-linecap="round"
-				stroke-linejoin="round"><polyline points="7.5 2.5 3 6 7.5 9.5" /></svg
-			>
-			Library
-		</a>
-		<span class="spacer"></span>
-		<PaletteButton />
-		<NotificationBell />
-		<UserMenu />
-	</header>
+	<PageTopBar back={{ href: resolve('/'), label: 'Library' }} />
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">

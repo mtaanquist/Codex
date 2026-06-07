@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { exportArtifacts, publications, stories } from './db/schema.ts';
-import { assetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
+import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import {
 	bucketAssetLoader,
 	buildStoryZip,
@@ -171,7 +171,7 @@ export async function generateEditionArtifacts(
 	publicationId: string,
 	deps: ArtifactDeps = {}
 ): Promise<GenerateResult> {
-	const config = assetConfig();
+	const config = await effectiveAssetConfig(db);
 	if (!config && !(deps.store && deps.prefix !== undefined)) {
 		return { ok: false, reason: 'asset storage is not configured' };
 	}

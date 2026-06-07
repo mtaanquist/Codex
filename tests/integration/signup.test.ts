@@ -4,8 +4,14 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { authTokens, users } from '../../src/lib/server/db/schema';
-import { registerUser, verifyEmail } from '../../src/lib/server/signup';
+import { authTokens, inviteCodes, users } from '../../src/lib/server/db/schema';
+import {
+	INVITE_REQUIRED,
+	registerUser,
+	SIGNUPS_CLOSED,
+	verifyEmail
+} from '../../src/lib/server/signup';
+import { createInviteCode } from '../../src/lib/server/invites';
 import { consumeToken, issueToken } from '../../src/lib/server/tokens';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -21,7 +27,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-	await pool.query('truncate table auth_tokens, users cascade');
+	await pool.query('truncate table auth_tokens, invite_codes, users cascade');
 });
 
 afterAll(async () => {
@@ -71,6 +77,54 @@ describe('registerUser', () => {
 		});
 		expect(second).toEqual({ ok: false, reason: 'duplicate' });
 		expect(await db.select().from(users)).toHaveLength(1);
+	});
+});
+
+describe('registerUser sign-up modes', () => {
+	const input = { email: 'mode@example.com', password: 'a-good-password', displayName: 'M' };
+
+	async function mintCode() {
+		const admin = (await registerUser(db, {
+			email: 'admin@example.com',
+			password: 'a-good-password',
+			displayName: 'Admin'
+		})) as { ok: true; userId: string };
+		return createInviteCode(db, { createdBy: admin.userId, label: '', maxUses: 1 });
+	}
+
+	it('refuses everyone when sign-up is closed', async () => {
+		const result = await registerUser(db, input, 'none');
+		expect(result).toEqual({ ok: false, reason: SIGNUPS_CLOSED });
+		expect(await db.select().from(users)).toHaveLength(0);
+	});
+
+	it('requires a code in invite mode and approves a valid one', async () => {
+		const noCode = await registerUser(db, input, 'invite');
+		expect(noCode).toEqual({ ok: false, reason: INVITE_REQUIRED });
+
+		const code = await mintCode();
+		const result = await registerUser(db, { ...input, inviteCode: code.code }, 'invite');
+		expect(result).toMatchObject({ ok: true, invited: true, approved: true });
+		const [row] = await db.select().from(users).where(eq(users.email, input.email));
+		expect(row.approvedAt).not.toBeNull();
+	});
+
+	it('approves without a code on an open instance and leaves codes unspent', async () => {
+		const code = await mintCode();
+		// An old invite link still works; its code is just not burned.
+		const result = await registerUser(db, { ...input, inviteCode: code.code }, 'open');
+		expect(result).toMatchObject({ ok: true, invited: false, approved: true });
+		const [row] = await db.select().from(users).where(eq(users.email, input.email));
+		expect(row.approvedAt).not.toBeNull();
+		const [stored] = await db.select().from(inviteCodes).where(eq(inviteCodes.id, code.id));
+		expect(stored.usedCount).toBe(0);
+	});
+
+	it('keeps the approval queue as the default mode', async () => {
+		const result = await registerUser(db, input);
+		expect(result).toMatchObject({ ok: true, invited: false, approved: false });
+		const [row] = await db.select().from(users).where(eq(users.email, input.email));
+		expect(row.approvedAt).toBeNull();
 	});
 });
 

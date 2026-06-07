@@ -1,20 +1,28 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
+	import { pushState } from '$app/navigation';
+	import { page } from '$app/state';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	type Section =
-		| 'overview'
-		| 'users'
-		| 'ai'
-		| 'usage'
-		| 'published'
-		| 'backups'
-		| 'audit'
-		| 'instance';
+	const SECTIONS = [
+		'overview',
+		'users',
+		'ai',
+		'usage',
+		'published',
+		'backups',
+		'audit',
+		'instance'
+	] as const;
+	type Section = (typeof SECTIONS)[number];
+
+	function sectionFromUrl(url: URL): Section | null {
+		const s = url.searchParams.get('section');
+		return SECTIONS.includes(s as Section) ? (s as Section) : null;
+	}
 
 	// After an action, jump to the section that owns the result so the admin
 	// sees the message where it belongs.
@@ -22,11 +30,14 @@
 		switch (scope) {
 			case 'accounts':
 			case 'invites':
+			case 'signup':
 				return 'users';
 			case 'published':
 				return 'published';
 			case 'backups':
 				return 'backups';
+			case 'storage':
+				return 'usage';
 			case 'smtp':
 				return 'instance';
 			default:
@@ -34,10 +45,14 @@
 		}
 	}
 
-	// Defaults to the overview; the effect below moves to the section that owns
-	// an action result (it also runs once on mount, so a server-side redirect
-	// into, say, the accounts list lands there).
-	let active = $state<Section>('overview');
+	// The section rides in the URL (?section=users) so links, refreshes, and
+	// the command palette land on the right one; a plain /admin is the
+	// overview. The effects move to the section a navigation or an action
+	// result points at.
+	let active: Section = $derived(sectionFromUrl(page.url) ?? 'overview');
+	// An action result overrides the URL: the forms here post natively, so the
+	// page reloads without ?section= and only form.scope knows where the admin
+	// was.
 	$effect(() => {
 		const s = sectionFor(form?.scope);
 		if (s) active = s;
@@ -45,7 +60,33 @@
 
 	function go(section: Section) {
 		active = section;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- stays on /admin, only the query changes
+		pushState(`?section=${section}`, {});
 	}
+
+	// The sign-up policy choices, in order from closed to open.
+	const SIGNUP_OPTIONS = [
+		{
+			value: 'none',
+			name: 'No one',
+			desc: 'Sign-up is closed. Only existing accounts can sign in, and invite codes stop working.'
+		},
+		{
+			value: 'invite',
+			name: 'Invite only',
+			desc: 'Creating an account needs a valid invite code. Codes are made further down this page.'
+		},
+		{
+			value: 'approval',
+			name: 'Require approval',
+			desc: 'Anyone can ask for an account; an admin approves each one before it can sign in. An invite code skips the wait.'
+		},
+		{
+			value: 'open',
+			name: 'Open',
+			desc: 'Anyone can create an account and sign in once their email is confirmed.'
+		}
+	] as const;
 
 	function when(date: Date | string): string {
 		return new Date(date).toLocaleDateString(undefined, {
@@ -111,7 +152,7 @@
 			list.push({
 				tone: 'warn',
 				title: 'Off-site backups are not configured',
-				sub: 'Set the BACKUP_S3_* variables and restart so the worker can take hourly dumps.',
+				sub: 'Point the backups section at a bucket so the worker can take hourly dumps.',
 				goto: 'backups'
 			});
 		} else if (lastBackup && lastBackup.status === 'failed') {
@@ -145,27 +186,68 @@
 	<title>Site admin - Codex</title>
 </svelte:head>
 
+<!-- The S3 connection fields shared by the backup and asset storage forms. -->
+{#snippet s3Fields(idPrefix: string, view: PageData['assetStorage'])}
+	<div class="field-grid">
+		<div class="field">
+			<label for="{idPrefix}-endpoint">Endpoint</label>
+			<input
+				id="{idPrefix}-endpoint"
+				class="input"
+				type="text"
+				name="endpoint"
+				value={view.endpoint}
+				placeholder="https://s3.us-west-004.backblazeb2.com"
+			/>
+		</div>
+		<div class="field">
+			<label for="{idPrefix}-region">Region</label>
+			<input
+				id="{idPrefix}-region"
+				class="input"
+				type="text"
+				name="region"
+				value={view.region}
+				placeholder="auto"
+			/>
+		</div>
+	</div>
+	<div class="field-grid">
+		<div class="field">
+			<label for="{idPrefix}-bucket">Bucket</label>
+			<input id="{idPrefix}-bucket" class="input" type="text" name="bucket" value={view.bucket} />
+		</div>
+		<div class="field">
+			<label for="{idPrefix}-prefix">Key prefix</label>
+			<input id="{idPrefix}-prefix" class="input" type="text" name="prefix" value={view.prefix} />
+		</div>
+	</div>
+	<div class="field">
+		<label for="{idPrefix}-access">Access key id</label>
+		<input
+			id="{idPrefix}-access"
+			class="input"
+			type="text"
+			name="accessKeyId"
+			value={view.accessKeyId}
+			autocomplete="off"
+		/>
+	</div>
+	<div class="field">
+		<label for="{idPrefix}-secret">Secret access key</label>
+		<input
+			id="{idPrefix}-secret"
+			class="input"
+			type="password"
+			name="secretAccessKey"
+			autocomplete="off"
+			placeholder={view.hasSecret ? 'Leave blank to keep the current key' : ''}
+		/>
+	</div>
+{/snippet}
+
 <div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="divider"></span>
-		<a class="back-link" href={resolve('/')}>
-			<svg
-				viewBox="0 0 12 12"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.4"
-				stroke-linecap="round"
-				stroke-linejoin="round"><polyline points="7.5 2.5 3 6 7.5 9.5" /></svg
-			>
-			Library
-		</a>
-		<span class="spacer"></span>
-		<NotificationBell />
-		<UserMenu />
-	</header>
+	<PageTopBar back={{ href: resolve('/'), label: 'Library' }} />
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">
@@ -503,6 +585,51 @@
 						</div>
 					{/if}
 
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<div>
+								<h2 class="admin-block-title">Sign-up</h2>
+								<p class="admin-block-sub">Who can create an account on this instance.</p>
+							</div>
+						</div>
+
+						{#if form?.scope === 'signup' && form.message}
+							<div
+								class="status-banner"
+								style="background:var(--danger-soft);border:1px solid color-mix(in oklab, var(--danger) 32%, transparent);margin-bottom:var(--space-4);"
+							>
+								<span class="x">{form.message}</span>
+							</div>
+						{:else if form?.scope === 'signup' && form.saved}
+							<div class="status-banner ok" style="margin-bottom:var(--space-4);">
+								<span class="dot"></span><span class="v">Saved.</span>
+							</div>
+						{/if}
+
+						<form method="POST" action="?/saveSignup">
+							<div class="policy-grid">
+								{#each SIGNUP_OPTIONS as option (option.value)}
+									<label class="policy-card">
+										<input
+											type="radio"
+											name="mode"
+											value={option.value}
+											checked={data.signup === option.value}
+										/>
+										<span class="policy-radio"></span>
+										<div>
+											<div class="policy-name">{option.name}</div>
+											<div class="policy-desc">{option.desc}</div>
+										</div>
+									</label>
+								{/each}
+							</div>
+							<div class="settings-actions">
+								<button type="submit" class="btn btn-primary">Save</button>
+							</div>
+						</form>
+					</div>
+
 					{#if pending.length > 0}
 						<div class="admin-block">
 							<div class="admin-block-head">
@@ -814,15 +941,115 @@
 					</div>
 				</section>
 
-				<!-- ========== USAGE (stub) ========== -->
+				<!-- ========== USAGE & STORAGE ========== -->
 				<section class="admin-section" class:active={active === 'usage'}>
 					<div class="admin-head">
 						<p class="admin-eyebrow">Data</p>
 						<h1 class="admin-title">Usage &amp; storage</h1>
-						<p class="admin-lede">Per-writer usage and a storage breakdown will live here.</p>
+						<p class="admin-lede">
+							Where uploaded images and stored export files are kept.
+							{#if data.assetStorage.source === 'environment'}
+								Currently taking values from the environment; saving here overrides them.
+							{:else if data.assetStorage.source === 'none'}
+								Not configured yet; until a bucket is set below, image uploads are off.
+							{/if}
+						</p>
 					</div>
-					<div class="admin-card">
-						<p class="admin-block-sub" style="margin:0;">Coming in a later release.</p>
+
+					{#if form?.scope === 'storage' && form.message}
+						<div
+							class="status-banner"
+							style="background:var(--danger-soft);border:1px solid color-mix(in oklab, var(--danger) 32%, transparent);"
+						>
+							<span class="x">{form.message}</span>
+						</div>
+					{:else if form?.scope === 'storage' && form.saved}
+						<div class="status-banner ok">
+							<span class="dot"></span><span class="v">Saved.</span>
+						</div>
+					{:else if form?.scope === 'storage' && form.tested}
+						<div class="status-banner ok">
+							<span class="dot"></span><span class="v">The bucket is reachable and writable.</span>
+						</div>
+					{:else if form?.scope === 'storage' && form.migrating}
+						<div class="status-banner ok">
+							<span class="dot"></span><span class="v"
+								>Copy started. The worker copies every stored file; check back here for the result.</span
+							>
+						</div>
+					{/if}
+
+					{#if data.assetMigrationPending}
+						<div
+							class="status-banner"
+							style="background:color-mix(in oklab, var(--status-draft) 12%, transparent);border:1px solid color-mix(in oklab, var(--status-draft) 32%, transparent);"
+						>
+							<span class="x">
+								Files uploaded before the storage change are still in the old location. Copy them to
+								the new storage, or dismiss this if you moved them yourself.
+							</span>
+							<span class="when" style="display:flex;gap:8px;">
+								<form method="POST" action="?/migrateAssets">
+									<button type="submit" class="btn btn-primary btn-sm">Copy files</button>
+								</form>
+								<form method="POST" action="?/dismissMigration">
+									<button type="submit" class="btn btn-ghost btn-sm">Dismiss</button>
+								</form>
+							</span>
+						</div>
+					{/if}
+
+					{#if data.assetMigration}
+						<p class="admin-block-sub">
+							Last copy finished {when(data.assetMigration.finishedAt)}: {data.assetMigration
+								.copied} copied, {data.assetMigration.failed} failed{data.assetMigration.failed > 0
+								? '. Failures are listed in the worker log; run the copy again to retry.'
+								: '.'}
+						</p>
+					{/if}
+
+					{#if !data.secretsAvailable}
+						<div
+							class="status-banner"
+							style="background:color-mix(in oklab, var(--status-draft) 12%, transparent);border:1px solid color-mix(in oklab, var(--status-draft) 32%, transparent);"
+						>
+							<span class="x">
+								Set APP_SECRET on the server to store a secret key here. Without it you can still
+								seed asset storage from environment variables.
+							</span>
+						</div>
+					{/if}
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<div>
+								<h2 class="admin-block-title">Asset storage</h2>
+								<p class="admin-block-sub">
+									Any S3-compatible bucket works: S3, Backblaze B2, MinIO, R2. Use a different
+									bucket than the one holding backups, so a database restore keeps every image link
+									valid.
+								</p>
+							</div>
+						</div>
+						<div class="admin-card">
+							<form method="POST" action="?/saveAssets">
+								{@render s3Fields('asset', data.assetStorage)}
+								<div class="settings-actions">
+									<button type="submit" formaction="?/testAssets" class="btn btn-ghost">
+										Test connection
+									</button>
+									<button type="submit" class="btn btn-primary">Save</button>
+								</div>
+							</form>
+						</div>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-card">
+							<p class="admin-block-sub" style="margin:0;">
+								Per-writer usage and a storage breakdown will come in a later release.
+							</p>
+						</div>
 					</div>
 				</section>
 
@@ -887,7 +1114,14 @@
 					<div class="admin-head">
 						<p class="admin-eyebrow">Data</p>
 						<h1 class="admin-title">Backups</h1>
-						<p class="admin-lede">Off-site database snapshots taken by the worker.</p>
+						<p class="admin-lede">
+							Off-site database snapshots taken by the worker.
+							{#if data.backupStorage.source === 'environment'}
+								Currently taking values from the environment; saving here overrides them.
+							{:else if data.backupStorage.source === 'none'}
+								Not configured yet; until a bucket is set below, no snapshots are taken.
+							{/if}
+						</p>
 					</div>
 
 					{#if form?.scope === 'backups' && form.message}
@@ -897,17 +1131,24 @@
 						>
 							<span class="x">{form.message}</span>
 						</div>
+					{:else if form?.scope === 'backups' && form.saved}
+						<div class="status-banner ok">
+							<span class="dot"></span><span class="v">Saved.</span>
+						</div>
+					{:else if form?.scope === 'backups' && form.tested}
+						<div class="status-banner ok">
+							<span class="dot"></span><span class="v">The bucket is reachable and writable.</span>
+						</div>
+					{:else if form?.scope === 'backups' && form.done}
+						<div class="status-banner ok">
+							<span class="dot"></span><span class="v"
+								>Backup queued. Refresh to see the result.</span
+							>
+						</div>
 					{/if}
 
-					<div class="admin-block">
-						{#if !data.backupsConfigured}
-							<div class="admin-card">
-								<p class="admin-block-sub" style="margin:0;">
-									Off-site backups are not configured. Set the BACKUP_S3_* variables (see
-									.env.example) and restart; the worker then uploads an hourly database dump.
-								</p>
-							</div>
-						{:else}
+					{#if data.backupsConfigured}
+						<div class="admin-block">
 							<div class="status-banner ok">
 								<span class="dot"></span>
 								<span>
@@ -922,10 +1163,66 @@
 									</form>
 								</span>
 							</div>
-							{#if form?.scope === 'backups' && form.done}
-								<p class="admin-block-sub">Backup queued. Refresh to see the result.</p>
-							{/if}
-						{/if}
+						</div>
+					{/if}
+
+					{#if !data.secretsAvailable}
+						<div
+							class="status-banner"
+							style="background:color-mix(in oklab, var(--status-draft) 12%, transparent);border:1px solid color-mix(in oklab, var(--status-draft) 32%, transparent);"
+						>
+							<span class="x">
+								Set APP_SECRET on the server to store a secret key here. Without it you can still
+								seed backups from environment variables.
+							</span>
+						</div>
+					{/if}
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<div>
+								<h2 class="admin-block-title">Storage</h2>
+								<p class="admin-block-sub">
+									Any S3-compatible bucket works: S3, Backblaze B2, MinIO, R2. Use a different
+									bucket than the one holding uploaded images.
+								</p>
+							</div>
+						</div>
+						<div class="admin-card">
+							<form method="POST" action="?/saveBackups">
+								{@render s3Fields('backup', data.backupStorage)}
+								<div class="field-grid">
+									<div class="field">
+										<label for="backup-keep-hours">Keep every dump for (hours)</label>
+										<input
+											id="backup-keep-hours"
+											class="input"
+											type="number"
+											name="keepRecentHours"
+											min="1"
+											value={data.backupStorage.keepRecentHours}
+										/>
+									</div>
+									<div class="field">
+										<label for="backup-keep-days">Keep one dump per day for (days)</label>
+										<input
+											id="backup-keep-days"
+											class="input"
+											type="number"
+											name="keepDays"
+											min="1"
+											value={data.backupStorage.keepDays}
+										/>
+									</div>
+								</div>
+								<div class="settings-actions">
+									<button type="submit" formaction="?/testBackups" class="btn btn-ghost">
+										Test connection
+									</button>
+									<button type="submit" class="btn btn-primary">Save</button>
+								</div>
+							</form>
+						</div>
 					</div>
 
 					{#if data.backupRuns.length > 0}

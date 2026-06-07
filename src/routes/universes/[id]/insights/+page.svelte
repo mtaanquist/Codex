@@ -3,11 +3,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
-	import PaletteButton from '$lib/components/PaletteButton.svelte';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
-	import HelpLink from '$lib/components/HelpLink.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -95,28 +92,10 @@
 </svelte:head>
 
 <div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="divider"></span>
-		<a class="back-link" href={planPath}>
-			<svg
-				viewBox="0 0 12 12"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.4"
-				stroke-linecap="round"
-				stroke-linejoin="round"><polyline points="7.5 2.5 3 6 7.5 9.5" /></svg
-			>
-			{data.universe.name}
-		</a>
-		<span class="spacer"></span>
-		<PaletteButton />
-		<HelpLink topic="planning" label="the planning view" />
-		<NotificationBell />
-		<UserMenu />
-	</header>
+	<PageTopBar
+		back={{ href: planPath, label: data.universe.name }}
+		help={{ topic: 'planning', label: 'the planning view' }}
+	/>
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">

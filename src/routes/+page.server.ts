@@ -10,12 +10,21 @@ import {
 	listTrashedUniverses,
 	restoreUniverse
 } from '$lib/server/universe-lifecycle';
-import { assetConfig, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
+import { signupMode } from '$lib/server/settings';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	// Signed-out visitors get the landing page; no data to load for it.
+	// Signed-out visitors get the landing page. The page checks the layout's
+	// `user` for which face to show; returning a `user` key here would shadow
+	// the layout's shape (and once dropped the admin link from the avatar menu
+	// by losing its isAdmin flag).
 	if (!locals.user) {
-		return { user: null, universes: [], stories: [], isAdmin: false, trashedUniverses: [] };
+		return {
+			universes: [],
+			stories: [],
+			trashedUniverses: [],
+			signupOpen: (await signupMode(db)) !== 'none'
+		};
 	}
 	const user = locals.user;
 	const list = await db
@@ -85,10 +94,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	});
 
 	return {
-		user,
 		universes: list,
 		stories: storyList,
-		isAdmin: user.role === 'admin',
 		trashedUniverses
 	};
 };
@@ -172,7 +179,7 @@ export const actions: Actions = {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
 		// Best-effort object sweep; an orphaned image is never a blocker.
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		if (config) {
 			const store = s3AssetStore(config);
 			for (const key of result.assetKeys) await store.remove(key).catch(() => {});
