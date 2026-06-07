@@ -7,6 +7,8 @@ import {
 	loreEntries,
 	places,
 	relationTypes,
+	reviewSuggestions,
+	reviewThreads,
 	revisions,
 	scenes,
 	stories
@@ -33,6 +35,25 @@ export type RevisionReason = 'autosave' | 'checkpoint' | 'restore' | 'suggestion
 // instead of appending, so a writing burst leaves one timeline entry rather
 // than one per pause. A gap longer than this starts a fresh autosave entry.
 const AUTOSAVE_COALESCE_MS = 2 * 60 * 1000;
+
+// A scene revision pinned as the base of a review thread or suggestion is the
+// exact text those anchors diff against, so it must never be coalesced into:
+// rolling its body forward would silently re-anchor every pinned comment and
+// mis-apply accepted suggestions. Only scene revisions are ever pinned.
+async function isPinnedBaseRevision(db: Database, revisionId: string): Promise<boolean> {
+	const [thread] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(eq(reviewThreads.baseRevisionId, revisionId))
+		.limit(1);
+	if (thread) return true;
+	const [suggestion] = await db
+		.select({ id: reviewSuggestions.id })
+		.from(reviewSuggestions)
+		.where(eq(reviewSuggestions.baseRevisionId, revisionId))
+		.limit(1);
+	return Boolean(suggestion);
+}
 
 // Records a revision. An autosave skips when nothing changed (body, and for
 // entities the structured snapshot), and otherwise coalesces into the latest
@@ -68,7 +89,8 @@ export async function recordRevision(
 		if (
 			latest &&
 			latest.reason === 'autosave' &&
-			Date.now() - latest.createdAt.getTime() < AUTOSAVE_COALESCE_MS
+			Date.now() - latest.createdAt.getTime() < AUTOSAVE_COALESCE_MS &&
+			!(entityType === 'scene' && (await isPinnedBaseRevision(db, latest.id)))
 		) {
 			await db
 				.update(revisions)
@@ -494,11 +516,14 @@ export async function restoreRevision(
 	if (!revision) return { ok: false, reason: 'revision not found' };
 
 	if (entityType === 'scene') {
-		await db
-			.update(scenes)
-			.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
-			.where(eq(scenes.id, entityId));
-		await recordRevision(db, entityType, entityId, revision.bodyMd, 'restore');
+		// One transaction so the body and its 'restore' snapshot commit together.
+		await db.transaction(async (tx) => {
+			await tx
+				.update(scenes)
+				.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
+				.where(eq(scenes.id, entityId));
+			await recordRevision(tx, entityType, entityId, revision.bodyMd, 'restore');
+		});
 		return { ok: true };
 	}
 	if (!isSnapshotType(entityType)) {
@@ -510,75 +535,81 @@ export async function restoreRevision(
 	const snapshot = revision.snapshot;
 	const category = snapshot ? await restorableCategory(db, before.universeId, snapshot) : {};
 
-	if (entityType === 'character') {
-		await db
-			.update(characters)
-			.set({
-				bodyMd: revision.bodyMd,
-				...(snapshot
-					? {
-							name: snapshot.name,
-							aliases: snapshot.aliases ?? [],
-							summaryMd: snapshot.summaryMd,
-							details: snapshot.details,
-							...category
-						}
-					: {})
-			})
-			.where(eq(characters.id, entityId));
-	} else if (entityType === 'place') {
-		await db
-			.update(places)
-			.set({
-				bodyMd: revision.bodyMd,
-				...(snapshot
-					? {
-							name: snapshot.name,
-							summaryMd: snapshot.summaryMd,
-							details: snapshot.details,
-							...category
-						}
-					: {})
-			})
-			.where(eq(places.id, entityId));
-	} else {
-		// Lore always has a category, so a cleared or deleted one keeps the
-		// current category rather than setting null.
-		const loreCategory =
-			'categoryId' in category && category.categoryId !== null
-				? { categoryId: category.categoryId }
-				: {};
-		await db
-			.update(loreEntries)
-			.set({
-				bodyMd: revision.bodyMd,
-				...(snapshot
-					? {
-							title: snapshot.name,
-							keywords: snapshot.keywords ?? [],
-							summaryMd: snapshot.summaryMd,
-							details: snapshot.details,
-							...loreCategory
-						}
-					: {})
-			})
-			.where(eq(loreEntries.id, entityId));
-	}
-
-	if (snapshot) {
-		const touched = await reconcileRelationships(
-			db,
-			{ universeId: before.universeId, ownerId: before.ownerId },
-			entityType,
-			entityId,
-			snapshot.relationships
-		);
-		for (const other of touched) {
-			await recordEntityRevision(db, other.type, other.id);
+	// One transaction: the entity update, the relationship reconcile, and every
+	// revision snapshot commit together, so a failure part-way cannot leave the
+	// entity restored with a half-reconciled relationship set or no 'restore'
+	// entry on the timeline.
+	await db.transaction(async (tx) => {
+		if (entityType === 'character') {
+			await tx
+				.update(characters)
+				.set({
+					bodyMd: revision.bodyMd,
+					...(snapshot
+						? {
+								name: snapshot.name,
+								aliases: snapshot.aliases ?? [],
+								summaryMd: snapshot.summaryMd,
+								details: snapshot.details,
+								...category
+							}
+						: {})
+				})
+				.where(eq(characters.id, entityId));
+		} else if (entityType === 'place') {
+			await tx
+				.update(places)
+				.set({
+					bodyMd: revision.bodyMd,
+					...(snapshot
+						? {
+								name: snapshot.name,
+								summaryMd: snapshot.summaryMd,
+								details: snapshot.details,
+								...category
+							}
+						: {})
+				})
+				.where(eq(places.id, entityId));
+		} else {
+			// Lore always has a category, so a cleared or deleted one keeps the
+			// current category rather than setting null.
+			const loreCategory =
+				'categoryId' in category && category.categoryId !== null
+					? { categoryId: category.categoryId }
+					: {};
+			await tx
+				.update(loreEntries)
+				.set({
+					bodyMd: revision.bodyMd,
+					...(snapshot
+						? {
+								title: snapshot.name,
+								keywords: snapshot.keywords ?? [],
+								summaryMd: snapshot.summaryMd,
+								details: snapshot.details,
+								...loreCategory
+							}
+						: {})
+				})
+				.where(eq(loreEntries.id, entityId));
 		}
-	}
 
-	await recordEntityRevision(db, entityType, entityId, 'restore');
+		if (snapshot) {
+			const touched = await reconcileRelationships(
+				tx,
+				{ universeId: before.universeId, ownerId: before.ownerId },
+				entityType,
+				entityId,
+				snapshot.relationships
+			);
+			for (const other of touched) {
+				await recordEntityRevision(tx, other.type, other.id);
+			}
+		}
+
+		await recordEntityRevision(tx, entityType, entityId, 'restore');
+	});
 	const mentionsAffected = snapshot
 		? JSON.stringify([snapshot.name, snapshot.aliases ?? [], snapshot.keywords ?? []]) !==
 			JSON.stringify([

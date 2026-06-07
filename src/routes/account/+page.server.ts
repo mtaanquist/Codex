@@ -39,7 +39,25 @@ import {
 	totpStatus
 } from '$lib/server/two-factor';
 import { listPasskeys, removePasskey } from '$lib/server/passkeys';
+import { rateLimit } from '$lib/server/rate-limit';
 import QRCode from 'qrcode';
+
+// The actions that re-verify the password (disabling two-factor, regenerating
+// recovery codes, removing a passkey, changing email, deleting the account) are
+// throttled per account, the way sign-in is, so a borrowed session cannot
+// brute-force the password through them. One shared bucket across the actions.
+const REAUTH_LIMIT = 10;
+const REAUTH_WINDOW_MS = 15 * 60 * 1000;
+
+function reauthGuard(userId: string, scope: string) {
+	const limit = rateLimit(`account:reauth:${userId}`, REAUTH_LIMIT, REAUTH_WINDOW_MS);
+	if (limit.allowed) return null;
+	const minutes = Math.ceil(limit.retryAfterSeconds / 60);
+	return fail(429, {
+		scope,
+		message: `Too many attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`
+	});
+}
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!;
@@ -248,6 +266,8 @@ export const actions: Actions = {
 		return { scope: 'totp', cancelled: true };
 	},
 	disableTotp: async ({ request, locals }) => {
+		const limited = reauthGuard(locals.user!.id, 'totp');
+		if (limited) return limited;
 		const data = await request.formData();
 		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
 			return fail(400, { scope: 'totp', message: 'That password is not right.' });
@@ -256,6 +276,8 @@ export const actions: Actions = {
 		return { scope: 'totp', disabled: true };
 	},
 	regenerateRecovery: async ({ request, locals }) => {
+		const limited = reauthGuard(locals.user!.id, 'totp');
+		if (limited) return limited;
 		const data = await request.formData();
 		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
 			return fail(400, { scope: 'totp', message: 'That password is not right.' });
@@ -265,6 +287,8 @@ export const actions: Actions = {
 		return { scope: 'totp', recoveryCodes: codes };
 	},
 	removePasskey: async ({ request, locals }) => {
+		const limited = reauthGuard(locals.user!.id, 'passkeys');
+		if (limited) return limited;
 		const data = await request.formData();
 		// Removing a sign-in credential is guarded by the password, the same as
 		// turning two-factor off: a borrowed session must not weaken sign-in.
@@ -286,6 +310,8 @@ export const actions: Actions = {
 		redirect(303, '/login');
 	},
 	changeEmail: async ({ request, locals, url }) => {
+		const limited = reauthGuard(locals.user!.id, 'email');
+		if (limited) return limited;
 		const data = await request.formData();
 		const result = await requestEmailChange(
 			db,
@@ -326,6 +352,8 @@ export const actions: Actions = {
 		return { scope: 'sessions', saved: true };
 	},
 	deleteAccount: async ({ request, locals, url, cookies }) => {
+		const limited = reauthGuard(locals.user!.id, 'delete');
+		if (limited) return limited;
 		const data = await request.formData();
 		const password = String(data.get('password') ?? '');
 		const [account] = await db

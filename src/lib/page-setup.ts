@@ -90,8 +90,15 @@ export function mergePageSetup(
 	return normalisePageSetup({ ...userRaw, ...storyRaw });
 }
 
-function cssEscape(text: string): string {
-	return text.replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', ' ');
+// Escapes a user value for a CSS string literal. The '<' is escaped as a CSS
+// hex escape so the value can never form a literal '</style>' that would close
+// the surrounding style element in the print HTML or EPUB XHTML.
+export function cssEscape(text: string): string {
+	return text
+		.replaceAll('\\', '\\\\')
+		.replaceAll("'", "\\'")
+		.replaceAll('\n', ' ')
+		.replaceAll('<', '\\3c ');
 }
 
 // The parameterized print stylesheet: page geometry, typography, scene

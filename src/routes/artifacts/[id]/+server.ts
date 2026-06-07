@@ -21,7 +21,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	return new Response(Readable.toWeb(body) as ReadableStream, {
 		headers: {
 			'content-type': artifact.contentType,
-			'content-length': String(artifact.byteSize),
+			// No content-length: regeneration overwrites the bytes behind the same
+			// id and the stored byteSize can lag the live object, so a fixed length
+			// could truncate the download. The body streams chunked instead.
 			'content-disposition': `attachment; filename="${artifact.filename}"`,
 			// Regeneration replaces the bytes behind the same id, and public
 			// reachability can flip (takedown, downloads switched off), so nothing

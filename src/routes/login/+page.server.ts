@@ -62,7 +62,7 @@ export const actions: Actions = {
 		// challenge in a short-lived cookie and ask for a code before any session
 		// exists.
 		if (await isTotpEnabled(db, result.user.id)) {
-			cookies.set(TOTP_CHALLENGE_COOKIE, issueTotpChallenge(result.user.id), {
+			cookies.set(TOTP_CHALLENGE_COOKIE, await issueTotpChallenge(db, result.user.id), {
 				path: '/',
 				httpOnly: true,
 				sameSite: 'lax',

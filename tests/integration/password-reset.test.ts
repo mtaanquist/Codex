@@ -7,7 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import { requestPasswordReset, resetPassword } from '../../src/lib/server/password-reset';
 import { confirmEmailChange, requestEmailChange } from '../../src/lib/server/account';
-import { peekToken } from '../../src/lib/server/tokens';
+import { issueToken, peekToken } from '../../src/lib/server/tokens';
 import { hashPassword as hashFor, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -52,6 +52,14 @@ describe('requestPasswordReset', () => {
 	it('returns null for an unknown address without leaking', async () => {
 		expect(await requestPasswordReset(db, 'nobody@example.com')).toBeNull();
 	});
+
+	it('revokes an earlier reset link when a new one is requested', async () => {
+		const first = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const second = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		// Only the most recent link is live.
+		expect(await peekToken(db, 'password_reset', first)).toBeNull();
+		expect(await peekToken(db, 'password_reset', second)).toBe(userId);
+	});
 });
 
 describe('resetPassword', () => {
@@ -84,6 +92,16 @@ describe('resetPassword', () => {
 		const token = (await requestPasswordReset(db, 'reset@example.com')) as string;
 		expect((await resetPassword(db, token, 'a-good-password')).ok).toBe(true);
 		expect((await resetPassword(db, token, 'another-password')).ok).toBe(false);
+	});
+
+	it('revokes any sibling reset link on completion', async () => {
+		// Two links outstanding at once (e.g. issued before the revoke-on-request
+		// behaviour, here issued directly to simulate that). Completing one kills
+		// the other so a leaked link cannot reset the password again.
+		const used = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const sibling = await issueToken(db, userId, 'password_reset', 60);
+		expect((await resetPassword(db, used, 'a-good-password')).ok).toBe(true);
+		expect(await peekToken(db, 'password_reset', sibling)).toBeNull();
 	});
 });
 

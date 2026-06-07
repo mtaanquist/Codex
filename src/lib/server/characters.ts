@@ -66,33 +66,38 @@ export async function saveCharacter(
 		return { ok: false, reason: 'story not found' };
 	}
 
-	await db
-		.update(characters)
-		.set({
-			name,
-			aliases,
-			summaryMd: save.summaryMd?.trim() || null,
-			bodyMd: save.bodyMd,
-			...(save.details !== undefined ? { details: save.details } : {}),
-			...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
-		})
-		.where(eq(characters.id, character.id));
-	// Full snapshot, so alias, summary, category, and detail changes register
-	// in History even when the body is untouched.
-	await recordEntityRevision(db, 'character', character.id);
-
-	if (save.storyId !== undefined) {
-		await db
-			.insert(characterStoryNotes)
-			.values({
-				characterId: character.id,
-				storyId: save.storyId,
-				notesMd: save.storyNotesMd ?? ''
+	// One transaction so the entity update, its History snapshot, and the
+	// story-note upsert commit together rather than leaving the entity changed
+	// with no matching revision on a part-way failure.
+	await db.transaction(async (tx) => {
+		await tx
+			.update(characters)
+			.set({
+				name,
+				aliases,
+				summaryMd: save.summaryMd?.trim() || null,
+				bodyMd: save.bodyMd,
+				...(save.details !== undefined ? { details: save.details } : {}),
+				...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
 			})
-			.onConflictDoUpdate({
-				target: [characterStoryNotes.characterId, characterStoryNotes.storyId],
-				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
-			});
-	}
+			.where(eq(characters.id, character.id));
+		// Full snapshot, so alias, summary, category, and detail changes register
+		// in History even when the body is untouched.
+		await recordEntityRevision(tx, 'character', character.id);
+
+		if (save.storyId !== undefined) {
+			await tx
+				.insert(characterStoryNotes)
+				.values({
+					characterId: character.id,
+					storyId: save.storyId,
+					notesMd: save.storyNotesMd ?? ''
+				})
+				.onConflictDoUpdate({
+					target: [characterStoryNotes.characterId, characterStoryNotes.storyId],
+					set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
+				});
+		}
+	});
 	return { ok: true, universeId: character.universeId, mentionsAffected };
 }

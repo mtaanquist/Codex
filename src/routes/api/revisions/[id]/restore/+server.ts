@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { queueSceneMentions, queueUniverseMentions } from '$lib/server/jobs';
 import { restoreRevision, type RevisionEntityType } from '$lib/server/revisions';
 
@@ -24,7 +25,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		entityType,
 		payload.entityId
 	);
-	if (!result.ok) error(404, result.reason);
+	if (!result.ok) throwActionError(result);
 	if (entityType === 'scene') {
 		await queueSceneMentions(payload.entityId);
 	}

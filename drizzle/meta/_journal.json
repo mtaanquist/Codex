@@ -302,6 +302,27 @@
 			"when": 1780784621097,
 			"tag": "0042_entity-search-indexes",
 			"breakpoints": true
+		},
+		{
+			"idx": 43,
+			"version": "7",
+			"when": 1780811073029,
+			"tag": "0043_category-palette-normalize",
+			"breakpoints": true
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1780812394880,
+			"tag": "0044_relationship-unique-index",
+			"breakpoints": true
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1780813835936,
+			"tag": "0045_totp-challenge-nonce",
+			"breakpoints": true
 		}
 	]
 }

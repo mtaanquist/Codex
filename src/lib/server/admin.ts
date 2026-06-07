@@ -1,6 +1,6 @@
 import { and, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { authTokens, stories, universes, users, userTotp } from './db/schema.ts';
+import { authTokens, sessions, stories, universes, users, userTotp } from './db/schema.ts';
 import { hashPassword } from './password.ts';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
@@ -164,17 +164,27 @@ export async function setUserArchive(
 	return Boolean(row);
 }
 
-// Suspends or unsuspends an account. Suspending blocks sign-in and drops the
-// account's live sessions on their next request; it never touches an admin.
+// Suspends or unsuspends an account. Suspending blocks sign-in and revokes the
+// account's live sessions then and there, so unsuspending later cannot bring an
+// old session back to life; it never touches an admin.
 export async function setUserSuspended(
 	db: Database,
 	userId: string,
 	suspended: boolean
 ): Promise<boolean> {
-	const [row] = await db
-		.update(users)
-		.set({ suspendedAt: suspended ? new Date() : null })
-		.where(and(eq(users.id, userId), ne(users.role, 'admin')))
-		.returning({ id: users.id });
-	return Boolean(row);
+	return await db.transaction(async (tx) => {
+		const [row] = await tx
+			.update(users)
+			.set({ suspendedAt: suspended ? new Date() : null })
+			.where(and(eq(users.id, userId), ne(users.role, 'admin')))
+			.returning({ id: users.id });
+		if (!row) return false;
+		if (suspended) {
+			await tx
+				.update(sessions)
+				.set({ revokedAt: sql`now()` })
+				.where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+		}
+		return true;
+	});
 }

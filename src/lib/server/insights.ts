@@ -35,9 +35,14 @@ export type WritingActivity = {
 	streak: { current: number; longest: number };
 };
 
-// Matches src/lib/word-count.ts: whitespace-delimited, edges trimmed.
-const WORDS_SQL = (column: string) =>
-	`case when btrim(${column}) = '' then 0 else array_length(regexp_split_to_array(btrim(${column}), '\\s+'), 1) end`;
+// Word count for prose, matching src/lib/word-count.ts: the number of maximal
+// runs of non-whitespace. Postgres POSIX \s is ASCII-only, so the Unicode
+// spaces JS \s treats as whitespace (NBSP and friends) are first normalised to
+// a space; otherwise this SQL total would drift from the stored, JS-computed
+// scenes.word_count for prose using those characters.
+const UNICODE_WS = '\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff';
+export const WORDS_SQL = (column: string) =>
+	`(select count(*)::int from regexp_matches(regexp_replace(${column}, '[${UNICODE_WS}]', ' ', 'g'), '\\S+', 'g'))`;
 
 export async function storyProgress(db: Database, universeId: string): Promise<StoryProgress[]> {
 	const result = await db.execute(sql`

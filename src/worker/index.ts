@@ -154,7 +154,7 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 	const store = config ? s3AssetStore(config) : null;
 	for (const userId of due) {
 		try {
-			await purgeAccount(db, userId, store);
+			await purgeAccount(db, userId, store, { requireSchedule: true });
 			console.log(`purge: account ${userId} deleted`);
 		} catch (error) {
 			console.error(`purge: account ${userId} failed`, error);

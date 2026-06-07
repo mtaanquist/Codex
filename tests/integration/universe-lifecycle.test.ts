@@ -5,9 +5,12 @@ import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assets,
 	characters,
 	entityCategories,
 	entityRelationships,
+	exportArtifacts,
+	publications,
 	relationTypes,
 	revisions,
 	scenes,
@@ -20,7 +23,8 @@ import {
 	listTrashedUniverses,
 	listUniversesDueForPurge,
 	restoreUniverse,
-	trashUniverse
+	trashUniverse,
+	universeAssetKeys
 } from '../../src/lib/server/universe-lifecycle';
 import { ownedStory } from '../../src/lib/server/story-access';
 import { ownedUniverse } from '../../src/lib/server/universe-access';
@@ -128,6 +132,44 @@ describe('trash and restore', () => {
 		expect((await ownedStory('last-orders', ownerId, db)).story.id).toBe(storyId);
 		expect((await searchAll(db, ownerId, 'Mara')).length).toBeGreaterThan(0);
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(false);
+	});
+});
+
+describe('universeAssetKeys', () => {
+	it('includes uploaded images and the editions stored export files', async () => {
+		const [asset] = await db
+			.insert(assets)
+			.values({
+				ownerId,
+				universeId,
+				kind: 'inline',
+				filename: 'x.png',
+				contentType: 'image/png',
+				byteSize: 1,
+				storageKey: 'img-key'
+			})
+			.returning();
+		const [pub] = await db
+			.insert(publications)
+			.values({ storyId, ownerId, handle: 'h', title: 'Ed', content: {}, isCurrent: true })
+			.returning();
+		await db.insert(exportArtifacts).values({
+			publicationId: pub.id,
+			format: 'epub',
+			storageKey: 'epub-key',
+			filename: 'e.epub',
+			contentType: 'application/epub+zip',
+			byteSize: 20
+		});
+
+		const keys = await universeAssetKeys(db, universeId);
+		expect(keys).toContain('img-key');
+		expect(keys).toContain('epub-key');
+
+		// Leave the universe as the later destroy test expects it.
+		await db.delete(exportArtifacts).where(eq(exportArtifacts.publicationId, pub.id));
+		await db.delete(publications).where(eq(publications.id, pub.id));
+		await db.delete(assets).where(eq(assets.id, asset.id));
 	});
 });
 

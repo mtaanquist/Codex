@@ -8,6 +8,7 @@ import {
 	beginEnrollment,
 	confirmEnrollment,
 	consumeRecoveryCode,
+	consumeTotpChallenge,
 	disableTotp,
 	isTotpEnabled,
 	issueTotpChallenge,
@@ -142,14 +143,32 @@ describe('disable', () => {
 });
 
 describe('challenge token', () => {
-	it('round-trips a fresh token and rejects tampered or expired ones', () => {
-		const token = issueTotpChallenge(userId);
+	it('round-trips a fresh token and rejects tampered or expired ones', async () => {
+		await enroll();
+		const token = await issueTotpChallenge(db, userId);
 		expect(readTotpChallenge(token)).toBe(userId);
 		expect(readTotpChallenge(token + 'x')).toBeNull();
 		expect(readTotpChallenge(undefined)).toBeNull();
 		// A token whose expiry is already in the past, but correctly signed.
-		const expired = signToken(`${userId}.${Date.now() - 1000}`);
+		const expired = signToken(`${userId}.${Date.now() - 1000}.nonce`);
 		expect(readTotpChallenge(expired)).toBeNull();
+	});
+
+	it('is single-use: consuming spends the nonce', async () => {
+		await enroll();
+		const token = await issueTotpChallenge(db, userId);
+		expect(await consumeTotpChallenge(db, token)).toBe(userId);
+		// A second use finds the nonce already cleared.
+		expect(await consumeTotpChallenge(db, token)).toBeNull();
+	});
+
+	it('a new challenge invalidates the previous one', async () => {
+		await enroll();
+		const first = await issueTotpChallenge(db, userId);
+		const second = await issueTotpChallenge(db, userId);
+		// Only the most recent challenge can still be spent.
+		expect(await consumeTotpChallenge(db, first)).toBeNull();
+		expect(await consumeTotpChallenge(db, second)).toBe(userId);
 	});
 });
 

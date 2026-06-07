@@ -1,0 +1,1 @@
+ALTER TABLE "user_totp" ADD COLUMN "challenge" text;

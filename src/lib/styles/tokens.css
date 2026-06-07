@@ -77,6 +77,11 @@
 	--cat-green: #5fae5f;
 	--cat-blue: #5b8cff;
 	--cat-amber: #c8924a;
+	--cat-red: #e36a5f;
+	--cat-lime: #a6c24a;
+	--cat-teal: #4cc1ad;
+	--cat-cyan: #4bb4d4;
+	--cat-fuchsia: #cf72d6;
 	color-scheme: dark;
 }
 
@@ -112,6 +117,11 @@
 	--cat-green: #3f9a4f;
 	--cat-blue: #3b5bdb;
 	--cat-amber: #b07b34;
+	--cat-red: #cf463b;
+	--cat-lime: #7f9e2c;
+	--cat-teal: #1f9685;
+	--cat-cyan: #1f87a8;
+	--cat-fuchsia: #a843b0;
 	color-scheme: light;
 }
 
