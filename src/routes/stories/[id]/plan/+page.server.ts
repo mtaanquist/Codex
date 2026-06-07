@@ -185,7 +185,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	return {
 		story,
 		universe,
-		user: locals.user!,
 		...lists,
 		selected,
 		selectedKind,
