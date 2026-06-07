@@ -93,7 +93,9 @@ Sections of the settings pages then became real pages: /admin/users,
 /universes/<slug>/categories, with the default section resting on the
 bare URL, unknown slugs 404ing, old ?section= admin links redirecting,
 and the universe export download moved to /export/download out of the
-section page's way. Unreleased.
+section page's way (#273). The editor's In this scene list then split
+by entity type, and the right rail learned to scroll when a reference
+outgrows the pane (#274). Shipped as v2.35.1.
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
