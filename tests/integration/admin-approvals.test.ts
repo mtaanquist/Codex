@@ -66,6 +66,21 @@ describe('approveUser', () => {
 		const id = await makeUser('a@example.com', { role: 'admin' });
 		expect(await approveUser(db, id)).toBe(false);
 	});
+
+	it('waives a still-unconfirmed email, so approval alone allows sign-in', async () => {
+		const id = await makeUser('unconfirmed@example.com');
+		expect(await approveUser(db, id)).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.emailVerifiedAt).not.toBeNull();
+	});
+
+	it('leaves an already-confirmed email timestamp alone', async () => {
+		const id = await makeUser('confirmed@example.com', { verified: true });
+		const [before] = await db.select().from(users).where(eq(users.id, id));
+		expect(await approveUser(db, id)).toBe(true);
+		const [after] = await db.select().from(users).where(eq(users.id, id));
+		expect(after.emailVerifiedAt).toEqual(before.emailVerifiedAt);
+	});
 });
 
 describe('rejectUser', () => {

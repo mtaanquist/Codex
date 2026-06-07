@@ -144,7 +144,7 @@
 			list.push({
 				tone: 'info',
 				title: `${pending.length} ${pending.length === 1 ? 'person is' : 'people are'} waiting for access`,
-				sub: 'Approving creates their library and lets them sign in.',
+				sub: 'Approving creates their library and lets them sign in, even before their email is confirmed.',
 				goto: 'users'
 			});
 		}
@@ -637,7 +637,8 @@
 									Pending approvals <span class="n">{pending.length}</span>
 								</h2>
 								<p class="admin-block-sub">
-									Approving creates an empty library and lets them sign in.
+									Approving creates an empty library and lets them sign in, even before their email
+									is confirmed.
 								</p>
 							</div>
 							<div class="admin-card tight">

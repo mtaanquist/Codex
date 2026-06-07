@@ -56,11 +56,19 @@ export async function createFirstAdmin(
 }
 
 // Approves a pending account. Scoped to still-pending non-admin rows so a
-// double-click or a stale form cannot re-approve or touch an admin.
+// double-click or a stale form cannot re-approve or touch an admin. The
+// explicit approval also waives a still-unconfirmed email - the operator
+// vouching for the account outranks the emailed link, and an instance
+// without an email relay can let people in at all. Invite-code and open
+// sign-ups are approved at registration, not here, so they still confirm
+// their email the normal way.
 export async function approveUser(db: Database, userId: string): Promise<boolean> {
 	const [row] = await db
 		.update(users)
-		.set({ approvedAt: new Date() })
+		.set({
+			approvedAt: new Date(),
+			emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`
+		})
 		.where(and(eq(users.id, userId), isNull(users.approvedAt), ne(users.role, 'admin')))
 		.returning({ id: users.id });
 	return Boolean(row);
