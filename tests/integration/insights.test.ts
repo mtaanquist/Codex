@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
@@ -23,9 +23,11 @@ import {
 	isValidTimezone,
 	relationshipLinks,
 	storyProgress,
+	WORDS_SQL,
 	writingActivity
 } from '../../src/lib/server/insights';
 import { addDays } from '../../src/lib/insights';
+import { wordCount } from '../../src/lib/word-count';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureBuiltInRelationTypes, ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -295,5 +297,24 @@ describe('isValidTimezone', () => {
 		expect(isValidTimezone('UTC')).toBe(true);
 		expect(isValidTimezone('Not/AZone')).toBe(false);
 		expect(isValidTimezone('')).toBe(false);
+	});
+});
+
+describe('WORDS_SQL', () => {
+	it('counts words the same as the JS word counter, including Unicode spaces', async () => {
+		const samples = [
+			'',
+			'one',
+			'two words',
+			'  padded \t and \n spaced  ',
+			'nbsp\u00a0separated\u00a0words',
+			'ideographic\u3000space',
+			'thin\u2009space'
+		];
+		for (const sample of samples) {
+			const literal = `'${sample.replaceAll("'", "''")}'`;
+			const result = await db.execute(sql.raw(`select ${WORDS_SQL(literal)} as n`));
+			expect((result.rows[0] as { n: number }).n).toBe(wordCount(sample));
+		}
 	});
 });

@@ -70,13 +70,21 @@ export async function deleteMarker(
 
 // The editor maps anchors through edits; the autosave persists where they
 // landed. One UPDATE over unnested arrays; the scene_id condition keeps
-// the write to the scene's own markers.
+// the write to the scene's own markers. Anchors are clamped to the body
+// length (as createMarker does), so a stale or crafted client cannot store
+// ranges past the end or inverted.
 export async function updateMarkerAnchors(
 	db: Database,
 	sceneId: string,
-	anchors: { id: string; anchorStart: number; anchorEnd: number }[]
+	anchors: { id: string; anchorStart: number; anchorEnd: number }[],
+	bodyLength: number
 ): Promise<void> {
 	if (anchors.length === 0) return;
+	anchors = anchors.map((anchor) => {
+		const start = Math.max(0, Math.min(anchor.anchorStart, bodyLength));
+		const end = Math.max(start, Math.min(anchor.anchorEnd, bodyLength));
+		return { id: anchor.id, anchorStart: start, anchorEnd: end };
+	});
 	// array[...] constructors, since a bare array parameter binds as a
 	// record rather than a Postgres array.
 	const column = (values: (string | number)[]) =>

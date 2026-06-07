@@ -84,7 +84,7 @@ export async function replaceProse(
 				.update(scenes)
 				.set({ bodyMd: result.body, wordCount: wordCount(result.body) })
 				.where(eq(scenes.id, row.id));
-			await updateMarkerAnchors(tx, row.id, result.anchors);
+			await updateMarkerAnchors(tx, row.id, result.anchors, result.body.length);
 			// A checkpoint, so the sweep stands apart in History and never
 			// coalesces into surrounding autosaves.
 			await recordRevision(tx, 'scene', row.id, result.body, 'checkpoint', {
