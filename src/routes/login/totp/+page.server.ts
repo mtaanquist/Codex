@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { createSession, SESSION_COOKIE } from '$lib/server/auth';
 import {
 	consumeRecoveryCode,
+	consumeTotpChallenge,
 	readTotpChallenge,
 	TOTP_CHALLENGE_COOKIE,
 	verifyUserTotp
@@ -58,6 +59,13 @@ export const actions: Actions = {
 					? 'That recovery code is not valid or has been used.'
 					: 'That code is not right. Check your app and try again.'
 			});
+		}
+
+		// Spend the challenge now the code is accepted: a stale or replayed cookie
+		// whose nonce no longer matches is refused even with a valid code.
+		if (!(await consumeTotpChallenge(db, cookies.get(TOTP_CHALLENGE_COOKIE)))) {
+			cookies.delete(TOTP_CHALLENGE_COOKIE, { path: '/' });
+			redirect(303, '/login');
 		}
 
 		const session = await createSession(db, userId, {

@@ -104,6 +104,11 @@ client address; set `XFF_DEPTH` to the number of proxies in front of the app
 if more than one. If you ever expose the app with no proxy in front, drop
 `ADDRESS_HEADER` so a client cannot spoof its address.
 
+Set `ADDRESS_HEADER` whenever there is a proxy in front of the app. Without it,
+every request appears to come from the proxy's own address, so the per-address
+sign-in rate limit collapses into a single shared counter and enough failed
+sign-ins can lock the whole instance out at once.
+
 The repository's own `compose.yaml` is the same stack built from source
 instead of pulled, with every optional service wired up: bundled Caddy for
 TLS (`COMPOSE_PROFILES=caddy`), a local MinIO for image uploads
