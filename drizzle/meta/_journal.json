@@ -344,6 +344,13 @@
 			"when": 1780861929736,
 			"tag": "0048_notes",
 			"breakpoints": true
+		},
+		{
+			"idx": 49,
+			"version": "7",
+			"when": 1780866331180,
+			"tag": "0049_writing_goals",
+			"breakpoints": true
 		}
 	]
 }

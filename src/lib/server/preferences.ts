@@ -27,6 +27,9 @@ export type UserPreferences = {
 	writingLanguage: string;
 	// The Session pane's streak card; not everyone wants the scorekeeping.
 	sessionStreak: 'shown' | 'hidden';
+	// A daily word target. 0 means no goal; the Session pane and Insights show
+	// progress toward it when set.
+	dailyWordGoal: number;
 	// Per-kind notification channels (the bell and the email digest), both
 	// on unless turned off.
 	notifications: NotificationMatrix;
@@ -70,10 +73,19 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 				? raw.writingLanguage
 				: '',
 		sessionStreak: raw.sessionStreak === 'hidden' ? 'hidden' : 'shown',
+		dailyWordGoal: normaliseWordGoal(raw.dailyWordGoal),
 		notifications: normaliseNotifications(raw.notifications),
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};
+}
+
+// A non-negative whole number of words, capped at a sane ceiling; anything
+// else means no goal (0).
+const MAX_WORD_GOAL = 100_000;
+function normaliseWordGoal(raw: unknown): number {
+	if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 0;
+	return Math.min(Math.floor(raw), MAX_WORD_GOAL);
 }
 
 // Both channels default on; only a stored false turns one off. Exported

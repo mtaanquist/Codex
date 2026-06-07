@@ -63,6 +63,20 @@ export function dailyNetWords(
 	return net;
 }
 
+/** How many of the given days met or beat the daily word goal. Zero goal
+ * means no goal, so nothing counts. */
+export function daysMetGoal(daily: DailyWords[], goal: number): number {
+	if (goal <= 0) return 0;
+	return daily.filter((entry) => entry.words >= goal).length;
+}
+
+/** Whole calendar days from `today` until a deadline (both ISO date strings):
+ * positive ahead, 0 today, negative past due. Null for no deadline. */
+export function daysUntil(deadline: string | null, today: string): number | null {
+	if (!deadline) return null;
+	return Math.round((toUtcMs(deadline) - toUtcMs(today)) / DAY_MS);
+}
+
 /**
  * Writing streaks over a set of active days. The current streak counts back
  * from today, or from yesterday when today has no writing yet, so it does not

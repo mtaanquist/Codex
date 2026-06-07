@@ -1358,6 +1358,25 @@
 										Hide it if the scorekeeping is not for you.
 									</div>
 								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
+										<span class="behavior-title">Daily word goal</span>
+										<input
+											class="select"
+											type="number"
+											name="dailyWordGoal"
+											min="0"
+											step="50"
+											aria-label="Daily word goal"
+											value={data.preferences.dailyWordGoal || ''}
+											placeholder="None"
+										/>
+									</div>
+									<div class="behavior-body">
+										A daily word target. The Session tab and Insights show progress toward it. Leave
+										it blank or zero for no goal.
+									</div>
+								</div>
 								<div class="settings-actions">
 									{#if form?.scope === 'prefs' && form.message}
 										<span class="field-hint" role="alert" style="color:var(--danger);"

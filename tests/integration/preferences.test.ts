@@ -161,6 +161,17 @@ describe('story preference overrides', () => {
 		expect((await userPreferences(db, userId)).writingLanguage).toBe('');
 	});
 
+	it('defaults the daily word goal to none and clamps a saved one', async () => {
+		expect((await userPreferences(db, userId)).dailyWordGoal).toBe(0);
+		await savePreferences(db, userId, { dailyWordGoal: 750 });
+		expect((await userPreferences(db, userId)).dailyWordGoal).toBe(750);
+		// A negative or absurd value falls back to no goal / the ceiling.
+		await savePreferences(db, userId, { dailyWordGoal: -5 });
+		expect((await userPreferences(db, userId)).dailyWordGoal).toBe(0);
+		await savePreferences(db, userId, { dailyWordGoal: 9_999_999 });
+		expect((await userPreferences(db, userId)).dailyWordGoal).toBe(100_000);
+	});
+
 	it('an unrecognised override value falls back to a sane default', async () => {
 		await db
 			.update(stories)

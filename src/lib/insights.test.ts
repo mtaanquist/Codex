@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addDays, dayAxis, dailyNetWords, streaks } from './insights';
+import { addDays, dayAxis, dailyNetWords, daysMetGoal, daysUntil, streaks } from './insights';
 
 describe('addDays', () => {
 	it('crosses month and year boundaries', () => {
@@ -92,5 +92,30 @@ describe('streaks', () => {
 
 	it('handles no activity at all', () => {
 		expect(streaks([], '2026-06-05')).toEqual({ current: 0, longest: 0 });
+	});
+});
+
+describe('daysMetGoal', () => {
+	const daily = [
+		{ day: '2026-06-03', words: 200 },
+		{ day: '2026-06-04', words: 500 },
+		{ day: '2026-06-05', words: 800 }
+	];
+	it('counts days at or above the goal', () => {
+		expect(daysMetGoal(daily, 500)).toBe(2);
+	});
+	it('a zero (or negative) goal counts nothing', () => {
+		expect(daysMetGoal(daily, 0)).toBe(0);
+	});
+});
+
+describe('daysUntil', () => {
+	it('is positive ahead, zero today, negative past due', () => {
+		expect(daysUntil('2026-06-10', '2026-06-05')).toBe(5);
+		expect(daysUntil('2026-06-05', '2026-06-05')).toBe(0);
+		expect(daysUntil('2026-06-01', '2026-06-05')).toBe(-4);
+	});
+	it('is null with no deadline', () => {
+		expect(daysUntil(null, '2026-06-05')).toBeNull();
 	});
 });

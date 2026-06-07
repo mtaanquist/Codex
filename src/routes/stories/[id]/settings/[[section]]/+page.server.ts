@@ -43,6 +43,7 @@ async function currentEdition(storyId: string) {
 const SECTIONS = [
 	'editor',
 	'pagesetup',
+	'goals',
 	'cover',
 	'publish',
 	'review',
@@ -135,6 +136,23 @@ export const actions: Actions = {
 		// A changed slug moves this page's own URL.
 		if (slug !== story.slug) redirect(303, `/stories/${slug}/settings`);
 		return { action: 'update', saved: true };
+	},
+	saveGoals: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const rawTarget = String(data.get('targetWords') ?? '').trim();
+		const rawDeadline = String(data.get('deadline') ?? '').trim();
+		let targetWords: number | null = null;
+		if (rawTarget !== '') {
+			const n = Number(rawTarget);
+			if (!Number.isFinite(n) || n < 0) {
+				return fail(400, { action: 'goals', message: 'Enter a word target of zero or more.' });
+			}
+			targetWords = Math.trunc(n) > 0 ? Math.trunc(n) : null;
+		}
+		const deadline = /^\d{4}-\d{2}-\d{2}$/.test(rawDeadline) ? rawDeadline : null;
+		await db.update(stories).set({ targetWords, deadline }).where(eq(stories.id, story.id));
+		return { action: 'goals', saved: true };
 	},
 	savePreferences: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);

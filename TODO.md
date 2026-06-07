@@ -137,8 +137,10 @@ item, best-judgment on forks documented in PRs). Done: self-host
 walkthrough (docs/SELF-HOSTING.md) and help docs coverage (account,
 security, shortcuts articles) - shipped as v2.37.0; write-path rate
 limits (per-user autosave + upload budgets, single-replica stance
-documented) - shipping as v2.38.0. Next: writing goals and deadlines
-(v2.39.0).
+documented) - shipped as v2.38.0; writing goals and deadlines
+(account daily word goal + per-story target/deadline, surfaced on the
+Session tab and Insights; migration 0049) - shipping as v2.39.0. That
+clears the autonomous batch.
 Held for the author (need a design steer): front/back matter and draft
 comparison UI. Then the v2 -> v3 boundary (the held /code-review ultra
 run).

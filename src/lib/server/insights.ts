@@ -13,6 +13,9 @@ export type StoryProgress = {
 	title: string;
 	sceneCount: number;
 	words: number;
+	// Optional writing goals; null when unset.
+	targetWords: number | null;
+	deadline: string | null;
 	status: { outline: number; draft: number; revised: number; final: number };
 };
 
@@ -46,7 +49,7 @@ export const WORDS_SQL = (column: string) =>
 
 export async function storyProgress(db: Database, universeId: string): Promise<StoryProgress[]> {
 	const result = await db.execute(sql`
-		select st.id, st.title, st.slug,
+		select st.id, st.title, st.slug, st.target_words, st.deadline,
 			count(s.id)::int as scene_count,
 			coalesce(sum(s.word_count), 0)::int as words,
 			count(s.id) filter (where s.status = 'outline')::int as outline,
@@ -64,6 +67,8 @@ export async function storyProgress(db: Database, universeId: string): Promise<S
 			id: string;
 			slug: string;
 			title: string;
+			target_words: number | null;
+			deadline: string | null;
 			scene_count: number;
 			words: number;
 			outline: number;
@@ -77,6 +82,8 @@ export async function storyProgress(db: Database, universeId: string): Promise<S
 			title: r.title,
 			sceneCount: r.scene_count,
 			words: r.words,
+			targetWords: r.target_words,
+			deadline: r.deadline,
 			status: { outline: r.outline, draft: r.draft, revised: r.revised, final: r.final }
 		};
 	});

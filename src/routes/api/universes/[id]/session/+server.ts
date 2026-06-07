@@ -41,6 +41,8 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		words: activity.daily.at(-1)?.words ?? 0,
 		storyWords,
 		week,
-		streak: preferences.sessionStreak === 'hidden' ? null : activity.streak
+		streak: preferences.sessionStreak === 'hidden' ? null : activity.streak,
+		// 0 means no goal; the panel shows progress toward it when set.
+		dailyGoal: preferences.dailyWordGoal
 	});
 };

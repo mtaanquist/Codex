@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
+	import { daysMetGoal, daysUntil } from '$lib/insights';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
 	import type { PageData } from './$types';
@@ -48,6 +49,8 @@
 	const finalScenes = $derived(data.stories.reduce((sum, story) => sum + story.status.final, 0));
 	const weekWords = $derived(data.activity.daily.slice(-7).reduce((sum, d) => sum + d.words, 0));
 	const monthWords = $derived(data.activity.daily.reduce((sum, d) => sum + d.words, 0));
+	const todayWords = $derived(data.activity.daily.at(-1)?.words ?? 0);
+	const goalMetDays = $derived(daysMetGoal(data.activity.daily, data.dailyGoal));
 
 	// Chart geometry: positive bars rise from the baseline, trimming days dip
 	// below it, both scaled to the loudest day in the window.
@@ -162,6 +165,17 @@
 								<span class="delta flat">{finalScenes}</span> final
 							</div>
 						</div>
+						{#if data.dailyGoal > 0}
+							<div class="admin-stat">
+								<div class="admin-stat-top"><span class="admin-stat-label">Daily goal</span></div>
+								<div class="admin-stat-n">
+									{formatNumber(todayWords)} / {formatNumber(data.dailyGoal)}
+								</div>
+								<div class="admin-stat-foot">
+									{todayWords >= data.dailyGoal ? 'met today; ' : ''}{goalMetDays} of the last 30 days
+								</div>
+							</div>
+						{/if}
 					</div>
 
 					<div class="chart-card">
@@ -215,6 +229,32 @@
 											{story.sceneCount === 1 ? 'scene' : 'scenes'}
 										</span>
 									</div>
+									{#if story.targetWords || story.deadline}
+										{@const left = daysUntil(story.deadline, data.activity.today)}
+										<div class="goal-line">
+											{#if story.targetWords}
+												{@const pct = Math.min(
+													100,
+													Math.round((story.words / story.targetWords) * 100)
+												)}
+												<div class="goal-track">
+													<div class="goal-fill" style="width: {pct}%"></div>
+												</div>
+												<span class="goal-text">
+													{pct}% of {formatNumber(story.targetWords)} words
+												</span>
+											{/if}
+											{#if left !== null}
+												<span class="goal-text deadline">
+													{left > 0
+														? `due in ${left} ${left === 1 ? 'day' : 'days'}`
+														: left === 0
+															? 'due today'
+															: `${-left} ${left === -1 ? 'day' : 'days'} overdue`}
+												</span>
+											{/if}
+										</div>
+									{/if}
 									{#if story.sceneCount > 0}
 										<div class="status-bar">
 											{#each STATUS_ORDER as status (status)}
@@ -393,6 +433,33 @@
 		font-size: 12.5px;
 		color: var(--text-muted);
 		white-space: nowrap;
+	}
+	.goal-line {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin: 2px 0 2px;
+	}
+	.goal-track {
+		flex: 1;
+		min-width: 0;
+		height: 6px;
+		border-radius: 3px;
+		background: var(--bg-inset);
+		overflow: hidden;
+	}
+	.goal-fill {
+		height: 100%;
+		background: var(--accent);
+		border-radius: 3px;
+	}
+	.goal-text {
+		font-size: 12px;
+		color: var(--text-muted);
+		white-space: nowrap;
+	}
+	.goal-text.deadline {
+		color: var(--text-faint);
 	}
 	.status-bar {
 		display: flex;
