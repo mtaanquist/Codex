@@ -150,6 +150,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			.select({
 				id: places.id,
 				name: places.name,
+				aliases: places.aliases,
 				summaryMd: places.summaryMd,
 				details: places.details,
 				color: entityCategories.color,
@@ -205,7 +206,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		...knownPlaces.map((place) => ({
 			...place,
 			type: 'place' as const,
-			aliases: [] as string[],
 			related: relatedByEntity.get(place.id) ?? []
 		})),
 		...knownLore.map((entry) => ({

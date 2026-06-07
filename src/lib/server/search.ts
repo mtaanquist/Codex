@@ -134,7 +134,14 @@ export async function searchAll(
 				.from(places)
 				.innerJoin(universes, eq(places.universeId, universes.id))
 				.where(
-					and(eq(places.ownerId, userId), ilike(places.name, like), isNull(universes.deletedAt))
+					and(
+						eq(places.ownerId, userId),
+						or(
+							ilike(places.name, like),
+							sql`array_to_string(${places.aliases}, ' ') ilike ${like}`
+						),
+						isNull(universes.deletedAt)
+					)
 				)
 				.orderBy(asc(places.name))
 				.limit(PER_TYPE),

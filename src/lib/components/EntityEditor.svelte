@@ -291,7 +291,7 @@
 				payload.storyId = storyId;
 				payload.storyNotesMd = notes;
 			}
-			if (kind === 'character') {
+			if (kind === 'character' || kind === 'place') {
 				payload.aliases = aliases;
 			}
 			if (kind === 'lore') {
@@ -381,9 +381,13 @@
 		</div>
 	{/if}
 
-	{#if kind === 'character'}
+	{#if kind === 'character' || kind === 'place'}
 		<div class="section-label">Aliases</div>
-		<p class="field-hint">Nicknames and variants used to spot mentions in your prose.</p>
+		<p class="field-hint">
+			{kind === 'character'
+				? 'Nicknames and variants used to spot mentions in your prose.'
+				: 'Nicknames and local names used to spot mentions in your prose.'}
+		</p>
 		<TagInput
 			values={aliases}
 			onChange={(next) => {
@@ -397,7 +401,10 @@
 
 	{#if kind === 'lore'}
 		<div class="section-label">Keywords</div>
-		<p class="field-hint">Terms that refer to this entry, used to spot mentions in your prose.</p>
+		<p class="field-hint">
+			Other names and terms that refer to this entry; they work like aliases and are used to spot
+			mentions in your prose.
+		</p>
 		<TagInput
 			values={keywords}
 			onChange={(next) => {

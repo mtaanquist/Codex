@@ -219,7 +219,12 @@ export async function buildEntitySnapshot(
 		const [row] = await db.select().from(places).where(eq(places.id, id));
 		if (!row) return null;
 		({ bodyMd, universeId, ownerId } = row);
-		base = { name: row.name, summaryMd: row.summaryMd, categoryId: row.categoryId };
+		base = {
+			name: row.name,
+			aliases: row.aliases,
+			summaryMd: row.summaryMd,
+			categoryId: row.categoryId
+		};
 		details = row.details;
 	} else {
 		const [row] = await db.select().from(loreEntries).where(eq(loreEntries.id, id));
@@ -564,6 +569,7 @@ export async function restoreRevision(
 					...(snapshot
 						? {
 								name: snapshot.name,
+								aliases: snapshot.aliases ?? [],
 								summaryMd: snapshot.summaryMd,
 								details: snapshot.details,
 								...category

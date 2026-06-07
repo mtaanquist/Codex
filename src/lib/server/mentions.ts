@@ -49,7 +49,7 @@ export async function universeMentionContext(
 		.from(characters)
 		.where(and(eq(characters.universeId, universeId), eq(characters.autoDetectMentions, true)));
 	const placeRows = await db
-		.select({ id: places.id, name: places.name })
+		.select({ id: places.id, name: places.name, aliases: places.aliases })
 		.from(places)
 		.where(and(eq(places.universeId, universeId), eq(places.autoDetectMentions, true)));
 	const loreRows = await db
@@ -65,7 +65,11 @@ export async function universeMentionContext(
 			})
 		),
 		...placeRows.map(
-			(place): MentionTarget => ({ id: place.id, type: 'place', names: [place.name] })
+			(place): MentionTarget => ({
+				id: place.id,
+				type: 'place',
+				names: [place.name, ...place.aliases]
+			})
 		),
 		...loreRows.map(
 			(entry): MentionTarget => ({

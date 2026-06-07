@@ -1,0 +1,1 @@
+ALTER TABLE "places" ADD COLUMN "aliases" text[] DEFAULT '{}' NOT NULL;
