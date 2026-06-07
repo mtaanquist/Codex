@@ -16,6 +16,10 @@ export function proseExtensions(opts: {
 	placeholder: string;
 	onDocChanged: () => void;
 	editingMode?: EditingMode;
+	// Plain prose: no markdown styling and no formatting shortcuts; entity
+	// descriptions use it. The text still stores (and exports) as markdown,
+	// it just is not treated as markdown while editing.
+	plain?: boolean;
 	// Browser-native spell-check; the language tag picks the dictionary,
 	// blank follows the browser. CodeMirror turns spellcheck off by
 	// default, so this opts back in.
@@ -24,12 +28,11 @@ export function proseExtensions(opts: {
 	return [
 		history(),
 		keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-		formatKeymap(),
+		opts.plain ? [] : formatKeymap(),
 		// Find and replace within the scene; Ctrl+F opens the panel.
 		search(),
-		markdown(),
-		markdownStyling(),
-		opts.editingMode === 'rich' ? richModeExtension() : [],
+		opts.plain ? [] : [markdown(), markdownStyling()],
+		!opts.plain && opts.editingMode === 'rich' ? richModeExtension() : [],
 		opts.spellCheck?.enabled
 			? EditorView.contentAttributes.of({
 					spellcheck: 'true',
