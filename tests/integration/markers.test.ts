@@ -112,14 +112,33 @@ describe('resolve and anchors', () => {
 		const foreign = await createMarker(db, ownerId, otherScene.id, 0, 4);
 		if (!foreign.ok) throw new Error('setup failed');
 
-		await updateMarkerAnchors(db, sceneId, [
-			{ id: marker.id, anchorStart: 10, anchorEnd: 15 },
-			{ id: foreign.id, anchorStart: 0, anchorEnd: 1 }
-		]);
+		await updateMarkerAnchors(
+			db,
+			sceneId,
+			[
+				{ id: marker.id, anchorStart: 10, anchorEnd: 15 },
+				{ id: foreign.id, anchorStart: 0, anchorEnd: 1 }
+			],
+			BODY.length
+		);
 		const [moved] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
 		expect([moved.anchorStart, moved.anchorEnd]).toEqual([10, 15]);
 		const [untouched] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, foreign.id));
 		expect([untouched.anchorStart, untouched.anchorEnd]).toEqual([0, 4]);
+	});
+
+	it('clamps out-of-range anchors to the body on save', async () => {
+		const created = await createMarker(db, ownerId, sceneId, 0, 5);
+		if (!created.ok) throw new Error('setup failed');
+		await updateMarkerAnchors(
+			db,
+			sceneId,
+			[{ id: created.id, anchorStart: -5, anchorEnd: 9999 }],
+			BODY.length
+		);
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, created.id));
+		expect(row.anchorStart).toBe(0);
+		expect(row.anchorEnd).toBe(BODY.length);
 	});
 
 	it('deletes own markers only', async () => {

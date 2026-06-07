@@ -49,7 +49,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		.set({ title, bodyMd: payload.bodyMd, wordCount: count })
 		.where(eq(scenes.id, row.id));
 	await recordRevision(db, 'scene', row.id, payload.bodyMd);
-	await updateMarkerAnchors(db, row.id, anchors);
+	await updateMarkerAnchors(db, row.id, anchors, payload.bodyMd.length);
 	await queueSceneMentions(row.id);
 
 	return json({ savedAt: new Date().toISOString(), wordCount: count });

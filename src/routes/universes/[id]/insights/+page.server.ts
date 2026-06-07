@@ -12,8 +12,14 @@ import {
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
 	// Day boundaries follow the author's clock. The page sets this cookie on
-	// first visit and reloads the data once; until then days bucket as UTC.
-	const requested = decodeURIComponent(cookies.get('codex-tz') ?? '');
+	// first visit and reloads the data once; until then days bucket as UTC. A
+	// malformed cookie (bad percent-escape) must fall back to UTC, not 500.
+	let requested: string;
+	try {
+		requested = decodeURIComponent(cookies.get('codex-tz') ?? '');
+	} catch {
+		requested = '';
+	}
 	const timezone = requested && isValidTimezone(requested) ? requested : 'UTC';
 	const [stories, heat, activity, web] = await Promise.all([
 		storyProgress(db, universe.id),
