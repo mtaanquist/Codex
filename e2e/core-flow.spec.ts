@@ -274,6 +274,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 			});
 		}
 	}).toPass({ timeout: 60000 });
+	// The cast is grouped by entity type: one of each here.
+	await expect(page.locator('.r-sub')).toHaveText(['Characters', 'Places', 'Lore']);
 
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
