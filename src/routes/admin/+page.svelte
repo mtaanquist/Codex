@@ -166,6 +166,14 @@
 				goto: 'backups'
 			});
 		}
+		if (data.assetStorage.source === 'none') {
+			list.push({
+				tone: 'warn',
+				title: 'Asset storage is not configured',
+				sub: 'Image uploads, covers, avatars, and edition downloads stay hidden until a bucket is set under Usage & storage.',
+				goto: 'usage'
+			});
+		}
 		if (!emailReady) {
 			list.push({
 				tone: 'warn',
@@ -178,7 +186,7 @@
 			list.push({
 				tone: 'ok',
 				title: 'Everything looks healthy',
-				sub: 'No accounts are waiting, backups are configured, and email is set up.'
+				sub: 'No accounts are waiting, and backups, asset storage, and email are all set up.'
 			});
 		}
 		return list;

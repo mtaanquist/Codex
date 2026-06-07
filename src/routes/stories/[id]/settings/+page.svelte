@@ -38,17 +38,21 @@
 		rich: 'Rich text'
 	};
 
-	const NAV = [
-		{ id: 'details', label: 'Details' },
-		{ id: 'editor', label: 'Editor' },
-		{ id: 'pagesetup', label: 'Page setup' },
-		{ id: 'cover', label: 'Cover' },
-		{ id: 'publish', label: 'Publish' },
-		{ id: 'review', label: 'Review' },
-		{ id: 'export', label: 'Export' },
-		{ id: 'history', label: 'History' },
-		{ id: 'danger', label: 'Danger zone' }
-	];
+	// Cover uploads need asset storage; without it the section hides
+	// entirely rather than explaining server configuration to a writer.
+	const NAV = $derived(
+		[
+			{ id: 'details', label: 'Details' },
+			{ id: 'editor', label: 'Editor' },
+			{ id: 'pagesetup', label: 'Page setup' },
+			{ id: 'cover', label: 'Cover' },
+			{ id: 'publish', label: 'Publish' },
+			{ id: 'review', label: 'Review' },
+			{ id: 'export', label: 'Export' },
+			{ id: 'history', label: 'History' },
+			{ id: 'danger', label: 'Danger zone' }
+		].filter((item) => item.id !== 'cover' || data.assetsConfigured)
+	);
 
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
@@ -465,30 +469,30 @@
 					</div>
 				</div>
 
-				<div class="admin-block" id="cover">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Cover</h2>
-						<p class="admin-block-sub">Shown on your public shelf and inside the EPUB.</p>
-					</div>
-					<div class="settings-group">
-						{#if data.story.coverAssetId}
-							<img class="cover" src="/assets/{data.story.coverAssetId}" alt="Story cover" />
-						{:else}
-							<svg class="cover" viewBox="0 0 200 300" role="img" aria-label="Default cover">
-								<rect width="200" height="300" rx="6" style="fill: {coverColor}" />
-								<text
-									x="100"
-									y="150"
-									text-anchor="middle"
-									fill="#fff"
-									font-size="16"
-									font-family="serif"
-								>
-									{data.story.title.slice(0, 18)}
-								</text>
-							</svg>
-						{/if}
-						{#if data.assetsConfigured}
+				{#if data.assetsConfigured}
+					<div class="admin-block" id="cover">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Cover</h2>
+							<p class="admin-block-sub">Shown on your public shelf and inside the EPUB.</p>
+						</div>
+						<div class="settings-group">
+							{#if data.story.coverAssetId}
+								<img class="cover" src="/assets/{data.story.coverAssetId}" alt="Story cover" />
+							{:else}
+								<svg class="cover" viewBox="0 0 200 300" role="img" aria-label="Default cover">
+									<rect width="200" height="300" rx="6" style="fill: {coverColor}" />
+									<text
+										x="100"
+										y="150"
+										text-anchor="middle"
+										fill="#fff"
+										font-size="16"
+										font-family="serif"
+									>
+										{data.story.title.slice(0, 18)}
+									</text>
+								</svg>
+							{/if}
 							<form method="POST" action="?/setCover" enctype="multipart/form-data">
 								{#if form?.action === 'cover' && form.message}
 									<p class="form-error" role="alert">{form.message}</p>
@@ -513,14 +517,9 @@
 									<button class="btn btn-primary" type="submit">Upload cover</button>
 								</div>
 							</form>
-						{:else}
-							<p class="field-hint">
-								Image uploads are off until an admin sets up asset storage (Usage & storage in the
-								admin panel).
-							</p>
-						{/if}
+						</div>
 					</div>
-				</div>
+				{/if}
 
 				{#if data.archive.enabled && data.archive.handle}
 					<div class="admin-block" id="publish">
@@ -592,7 +591,7 @@
 								</div>
 							</form>
 
-							{#if data.edition}
+							{#if data.edition && data.assetsConfigured}
 								<div class="sub-head">Edition downloads</div>
 								{#if form?.action === 'exports' && form.message}
 									<p class="form-error" role="alert">{form.message}</p>
@@ -619,40 +618,33 @@
 											</li>
 										{/each}
 									</ul>
-								{:else if data.assetsConfigured}
+								{:else}
 									<p class="field-hint">
 										The download files for this edition have not been generated yet. They are
 										created shortly after publishing; if they do not appear, run the generation
 										again.
 									</p>
-								{:else}
-									<p class="field-hint">
-										Stored downloads are off until an admin sets up asset storage (Usage & storage
-										in the admin panel).
-									</p>
 								{/if}
-								{#if data.assetsConfigured}
-									<form method="POST" action="?/regenerateExports">
-										<div class="settings-actions">
-											<button class="btn" type="submit">Generate again</button>
-										</div>
-									</form>
-									<form method="POST" action="?/setDownloads">
-										<div class="field">
-											<label class="check-row">
-												<input
-													type="checkbox"
-													name="downloadsPublic"
-													checked={data.edition.downloadsPublic}
-												/>
-												Let readers download this edition (EPUB and PDF) from its public page
-											</label>
-										</div>
-										<div class="settings-actions">
-											<button class="btn btn-primary" type="submit">Save</button>
-										</div>
-									</form>
-								{/if}
+								<form method="POST" action="?/regenerateExports">
+									<div class="settings-actions">
+										<button class="btn" type="submit">Generate again</button>
+									</div>
+								</form>
+								<form method="POST" action="?/setDownloads">
+									<div class="field">
+										<label class="check-row">
+											<input
+												type="checkbox"
+												name="downloadsPublic"
+												checked={data.edition.downloadsPublic}
+											/>
+											Let readers download this edition (EPUB and PDF) from its public page
+										</label>
+									</div>
+									<div class="settings-actions">
+										<button class="btn btn-primary" type="submit">Save</button>
+									</div>
+								</form>
 							{/if}
 						</div>
 					</div>
