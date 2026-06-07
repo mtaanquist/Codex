@@ -39,6 +39,19 @@ and the cleanup pass - createCategory colour validation, dead
 listPendingUsers, shared entity-save guards, a shared action-error
 helper, and a single UUID_BODY fragment (#223). Not yet released.
 
+Operator feedback batch (2026-06-07), three PRs: the admin shell
+polish - a shared PageTopBar for the static pages (app icon and
+palette everywhere, fixing the library page's missing Admin panel
+menu item), ?section= URLs with admin palette entries, and the 60ch
+text cap removed inside bordered admin cards (#253); the sign-up mode
+setting - none / invite only / require approval (default) / open,
+enforced in registerUser and reflected on the signup page, login link,
+and landing CTA (#254); and backup and asset storage configurable in
+the admin panel - app_settings rows with encrypted secrets seeded by
+the env vars, test-connection probes, live backup rescheduling, and a
+migrate-assets worker job that copies stored objects when asset
+storage moves to a new bucket or host (#255). Not yet released.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings
