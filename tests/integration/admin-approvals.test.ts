@@ -7,6 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import { authTokens, users } from '../../src/lib/server/db/schema';
 import {
 	approveUser,
+	confirmUserEmail,
 	listAllUsers,
 	rejectUser,
 	setUserArchive,
@@ -65,6 +66,31 @@ describe('approveUser', () => {
 	it('refuses to approve an admin', async () => {
 		const id = await makeUser('a@example.com', { role: 'admin' });
 		expect(await approveUser(db, id)).toBe(false);
+	});
+
+	it('waives a still-unconfirmed email, so approval alone allows sign-in', async () => {
+		const id = await makeUser('unconfirmed@example.com');
+		expect(await approveUser(db, id)).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.emailVerifiedAt).not.toBeNull();
+	});
+
+	it('leaves an already-confirmed email timestamp alone', async () => {
+		const id = await makeUser('confirmed@example.com', { verified: true });
+		const [before] = await db.select().from(users).where(eq(users.id, id));
+		expect(await approveUser(db, id)).toBe(true);
+		const [after] = await db.select().from(users).where(eq(users.id, id));
+		expect(after.emailVerifiedAt).toEqual(before.emailVerifiedAt);
+	});
+});
+
+describe('confirmUserEmail', () => {
+	it('confirms an unconfirmed email and is a no-op when already confirmed', async () => {
+		const id = await makeUser('stuck@example.com', { approved: true });
+		expect(await confirmUserEmail(db, id)).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.emailVerifiedAt).not.toBeNull();
+		expect(await confirmUserEmail(db, id)).toBe(false);
 	});
 });
 
