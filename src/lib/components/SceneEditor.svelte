@@ -83,6 +83,9 @@
 	// Bound from one of two mutually exclusive branches (compact or full),
 	// hence the state wrapper.
 	let editorEl = $state<HTMLDivElement>();
+	// The pane's scroll container (full editor only); the page snapshot
+	// reads and restores its position across history navigation.
+	let scrollEl = $state<HTMLDivElement>();
 	let view: EditorView | undefined;
 	// The editor owns the value after mount; the page keys this component by
 	// scene id, so a different scene means a fresh instance.
@@ -155,6 +158,21 @@
 				{ key: 'ArrowUp', run: cross(false) }
 			])
 		);
+	}
+
+	// Where the writer was, for the page's history snapshot: the browser
+	// back button then returns to the same scroll position and caret
+	// instead of the top of the scene.
+	export function getViewPosition(): { anchor: number; scroll: number } | null {
+		if (!view) return null;
+		return { anchor: view.state.selection.main.head, scroll: scrollEl?.scrollTop ?? 0 };
+	}
+
+	export function restoreViewPosition(position: { anchor: number; scroll: number }) {
+		if (!view) return;
+		// Clamped: the text may have changed under the history entry.
+		view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length) } });
+		if (scrollEl) scrollEl.scrollTop = position.scroll;
 	}
 
 	// Lets the page place the caret when focus crosses a scene boundary.
@@ -378,7 +396,12 @@
 			view={() => view}
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
 		/>
-		<div class="editor-scroll" role="presentation" oncontextmenu={onPaneContextMenu}>
+		<div
+			class="editor-scroll"
+			role="presentation"
+			bind:this={scrollEl}
+			oncontextmenu={onPaneContextMenu}
+		>
 			<div class="editor">
 				<input
 					class="editor-title-input"

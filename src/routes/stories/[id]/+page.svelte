@@ -13,9 +13,27 @@
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
-	import type { PageData } from './$types';
+	import type { PageData, Snapshot } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// Where the writer was in the open scene, kept with the history entry:
+	// the browser back button returns to the same scroll and caret instead
+	// of the top of the scene.
+	let sceneEditor = $state<SceneEditor>();
+	type ScenePosition = { sceneId: string; anchor: number; scroll: number };
+	export const snapshot: Snapshot<ScenePosition | null> = {
+		capture: () => {
+			const position = sceneEditor?.getViewPosition();
+			if (!position || !data.selectedScene) return null;
+			return { sceneId: data.selectedScene.id, ...position };
+		},
+		restore: (value) => {
+			if (value && value.sceneId === data.selectedScene?.id) {
+				sceneEditor?.restoreViewPosition(value);
+			}
+		}
+	};
 
 	// Picking which entity a shared name means: store the pin, then let the
 	// data refresh re-render the underlines (the editor reconfigures its
@@ -632,6 +650,7 @@
 			{:else if data.selectedScene}
 				{#key data.selectedScene.id}
 					<SceneEditor
+						bind:this={sceneEditor}
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
