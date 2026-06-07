@@ -54,6 +54,24 @@ storage moves to a new bucket or host (#255). A follow-up replaced the
 template favicon with the brand mark, tinted by the accent colour and
 updated live with the appearance settings (#256). Shipped as v2.33.0.
 
+Writing and planning feedback batch (2026-06-07), nine PRs plus a
+hotfix: quick fixes - editor context menu over the whole pane,
+"Colour group" naming for the character/place category field (it
+drives the sidebar tints), the no-colour swatch, a New story form on
+the plan board, and appears-in snippets that jump to the mention's
+offset (#258); the entity details grid edited one cell at a time
+(#260); browser-back returning to the editor spot via a page snapshot
+(#261); aliases on places plus spellcheck=false on known mentions
+(#262, migration 0046); a category flyout on the selection menu's lore
+item (#263); plain-prose entity descriptions (#264); standalone
+stories under a lazily created per-owner universe (#265, migration
+0047); scene split at the cursor and sidebar merge (#266); and
+per-paragraph alignment stored as \center / \right / \justify markers
+rendered across editor, reading pages, print, EPUB, and PDF (#267).
+The worker also learned to tolerate a fresh database when reading
+backup settings at boot, a v2.33.0 boot race (#259). Shipped as
+v2.34.0.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings
