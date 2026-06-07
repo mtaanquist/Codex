@@ -332,7 +332,10 @@
 				doc: entity.bodyMd,
 				extensions: proseExtensions({
 					placeholder: BODY_PLACEHOLDER,
-					onDocChanged: scheduleSave
+					onDocChanged: scheduleSave,
+					// Descriptions are notes, not manuscript: plain prose with no
+					// markdown styling. Existing text is stored untouched.
+					plain: true
 				})
 			})
 		});
