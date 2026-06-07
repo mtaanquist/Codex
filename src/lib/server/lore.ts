@@ -67,29 +67,34 @@ export async function saveLoreEntry(
 		return { ok: false, reason: 'story not found' };
 	}
 
-	await db
-		.update(loreEntries)
-		.set({
-			title,
-			keywords,
-			categoryId,
-			summaryMd: save.summaryMd?.trim() || null,
-			bodyMd: save.bodyMd,
-			...(save.details !== undefined ? { details: save.details } : {})
-		})
-		.where(eq(loreEntries.id, entry.id));
-	// Full snapshot, so keyword, summary, category, and detail changes
-	// register in History even when the body is untouched.
-	await recordEntityRevision(db, 'lore_entry', entry.id);
+	// One transaction so the entity update, its History snapshot, and the
+	// story-note upsert commit together rather than leaving the entry changed
+	// with no matching revision on a part-way failure.
+	await db.transaction(async (tx) => {
+		await tx
+			.update(loreEntries)
+			.set({
+				title,
+				keywords,
+				categoryId,
+				summaryMd: save.summaryMd?.trim() || null,
+				bodyMd: save.bodyMd,
+				...(save.details !== undefined ? { details: save.details } : {})
+			})
+			.where(eq(loreEntries.id, entry.id));
+		// Full snapshot, so keyword, summary, category, and detail changes
+		// register in History even when the body is untouched.
+		await recordEntityRevision(tx, 'lore_entry', entry.id);
 
-	if (save.storyId !== undefined) {
-		await db
-			.insert(loreStoryNotes)
-			.values({ loreEntryId: entry.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
-			.onConflictDoUpdate({
-				target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId],
-				set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
-			});
-	}
+		if (save.storyId !== undefined) {
+			await tx
+				.insert(loreStoryNotes)
+				.values({ loreEntryId: entry.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
+				.onConflictDoUpdate({
+					target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId],
+					set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
+				});
+		}
+	});
 	return { ok: true, universeId: entry.universeId, mentionsAffected };
 }

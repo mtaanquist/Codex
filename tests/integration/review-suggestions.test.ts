@@ -4,8 +4,16 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, desc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { revisions, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	reviewSuggestions,
+	revisions,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import { deleteStory } from '../../src/lib/server/story-delete';
+import { recordRevision } from '../../src/lib/server/revisions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -84,6 +92,32 @@ async function sceneBody(): Promise<string> {
 		.where(eq(scenes.id, sceneId));
 	return row.bodyMd;
 }
+
+describe('base revision protection', () => {
+	it('does not coalesce an autosave that a suggestion pinned as its base', async () => {
+		const start = BODY.indexOf('quick');
+		const made = await suggest({ start, end: start + 5 }, 'swift');
+		expect(made).toMatchObject({ ok: true });
+		const [pinned] = await db
+			.select({ baseRevisionId: reviewSuggestions.baseRevisionId })
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.id, (made as { suggestionId: string }).suggestionId));
+
+		const before = await db.select().from(revisions).where(eq(revisions.entityId, sceneId));
+		// An autosave inside the coalesce window would normally roll the latest
+		// autosave row forward; the pinned base must be left intact, so this
+		// appends a new revision instead.
+		await recordRevision(db, 'scene', sceneId, `${BODY} The fox rests.`, 'autosave');
+
+		const [base] = await db
+			.select({ bodyMd: revisions.bodyMd })
+			.from(revisions)
+			.where(eq(revisions.id, pinned.baseRevisionId!));
+		expect(base.bodyMd).toBe(BODY);
+		const after = await db.select().from(revisions).where(eq(revisions.entityId, sceneId));
+		expect(after.length).toBe(before.length + 1);
+	});
+});
 
 describe('createSuggestion', () => {
 	it('records a replacement pinned to a base revision', async () => {
