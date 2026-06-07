@@ -25,6 +25,7 @@ playwright-report/
 
 # Local Claude Code overrides (settings.json is committed; local is not)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Planning prototype: regenerable from Claude Design, kept out of the repo.
 # The system-design docs under scratch/ are committed; the prototype is not.
