@@ -72,6 +72,17 @@ The worker also learned to tolerate a fresh database when reading
 backup settings at boot, a v2.33.0 boot race (#259). Shipped as
 v2.34.0.
 
+Two follow-ups the same day: three more page loads (story editor,
+story plan, universe plan) stopped shadowing the layout's user shape,
+which had been hiding the Admin panel menu item and the admin palette
+entries on those pages (#269); and a manual admin approval now waives
+a still-unconfirmed email - the operator's vouch outranks the emailed
+link, vital without an SMTP relay - with a Confirm email action in the
+accounts list for accounts already stuck behind it, which now read
+"Email unconfirmed" instead of a misleading "Active" (#270). Invite
+and open-mode sign-ups still confirm their email the normal way.
+Shipped as v2.35.0.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings
