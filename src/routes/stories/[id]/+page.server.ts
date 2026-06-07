@@ -72,6 +72,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		knownCharacters,
 		knownPlaces,
 		knownLore,
+		loreCategories,
 		relatedByEntity,
 		characterMembers,
 		placeMembers,
@@ -174,6 +175,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			.where(
 				and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true))
 			),
+		// The selection menu's lore submenu offers every category.
+		db
+			.select({ id: entityCategories.id, name: entityCategories.name })
+			.from(entityCategories)
+			.where(eq(entityCategories.universeId, universe.id))
+			.orderBy(asc(entityCategories.sortOrder), asc(entityCategories.name)),
 		relatedEntitySummaries(db, universe.id),
 		// Disambiguation context: who is declared in this story, and the
 		// author's pins for shared names.
@@ -283,6 +290,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		storyDocMarkers,
 		mentionEntities,
 		mentionPins,
+		loreCategories,
 		storyMemberIds: memberRows.map((row) => row.id),
 		inScene,
 		view,

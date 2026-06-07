@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	characters,
@@ -18,14 +18,15 @@ type Scope = { universeId: string; ownerId: string; storyId: string };
  * Creates an entity by name alone, for the editor's create-from-selection
  * popover. Mirrors the Plan sidebar's create actions: a character or place
  * created while working in a story is declared a member of it; a lore entry
- * files under the universe's first category. The caller owns the access
- * check on the scope.
+ * files under the chosen category, or the universe's first when none is
+ * named. The caller owns the access check on the scope.
  */
 export async function createStoryEntity(
 	db: Database,
 	scope: Scope,
 	type: EntityType,
-	rawName: string
+	rawName: string,
+	categoryId?: string
 ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
 	const name = rawName.replace(/\s+/g, ' ').trim();
 	if (!name) return { ok: false, reason: 'The selection is empty.' };
@@ -50,13 +51,30 @@ export async function createStoryEntity(
 		await db.insert(placeStoryMemberships).values({ placeId: place.id, storyId: scope.storyId });
 		return { ok: true, id: place.id };
 	}
-	const [category] = await db
-		.select({ id: entityCategories.id })
-		.from(entityCategories)
-		.where(eq(entityCategories.universeId, scope.universeId))
-		.orderBy(asc(entityCategories.sortOrder))
-		.limit(1);
-	if (!category) return { ok: false, reason: 'The universe has no lore category yet.' };
+	const [category] = categoryId
+		? await db
+				.select({ id: entityCategories.id })
+				.from(entityCategories)
+				.where(
+					and(
+						eq(entityCategories.id, categoryId),
+						eq(entityCategories.universeId, scope.universeId)
+					)
+				)
+		: await db
+				.select({ id: entityCategories.id })
+				.from(entityCategories)
+				.where(eq(entityCategories.universeId, scope.universeId))
+				.orderBy(asc(entityCategories.sortOrder))
+				.limit(1);
+	if (!category) {
+		return {
+			ok: false,
+			reason: categoryId
+				? 'That category does not exist.'
+				: 'The universe has no lore category yet.'
+		};
+	}
 	const [entry] = await db
 		.insert(loreEntries)
 		.values({

@@ -59,12 +59,13 @@
 	// reconfigures the underlines, so the new name lights up in place.
 	async function createEntity(
 		type: 'character' | 'place' | 'lore_entry',
-		name: string
+		name: string,
+		categoryId?: string
 	): Promise<string | null> {
 		const response = await fetch(`/api/stories/${data.story.id}/entities`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ type, name })
+			body: JSON.stringify({ type, name, ...(categoryId ? { categoryId } : {}) })
 		});
 		if (!response.ok) {
 			const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -601,6 +602,7 @@
 							writingLanguage={data.preferences.writingLanguage}
 							imageUniverseId={data.universe.id}
 							markers={data.storyDocMarkers[scene.id] ?? []}
+							loreCategories={data.loreCategories}
 							onCreateEntity={createEntity}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
 							onStatus={(status) => {
@@ -664,6 +666,7 @@
 						writingLanguage={data.preferences.writingLanguage}
 						imageUniverseId={data.universe.id}
 						markers={data.sceneMarkers}
+						loreCategories={data.loreCategories}
 						onCreateEntity={createEntity}
 						onStatus={(status) => {
 							saveStatus = status;
