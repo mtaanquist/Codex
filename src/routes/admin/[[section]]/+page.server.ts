@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { isUuid } from '$lib/slug';
+import { EMAIL_RE } from '$lib/server/signup';
 import { isSectionSlug } from './sections';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
@@ -68,6 +69,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	if (params.section !== undefined && !isSectionSlug(params.section)) error(404, 'Not found');
 	return {
 		meId: locals.user!.id,
+		meEmail: locals.user!.email,
 		stats: await instanceStats(db),
 		signup: await signupMode(db),
 		users: await listAllUsers(db),
@@ -314,12 +316,17 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { scope: 'smtp', message: result.reason });
 		return { scope: 'smtp', saved: true };
 	},
-	testEmail: async ({ locals }) => {
+	testEmail: async ({ request, locals }) => {
 		requireAdmin(locals);
+		const data = await request.formData();
+		const to = String(data.get('testTo') ?? '').trim() || locals.user!.email;
+		if (!EMAIL_RE.test(to)) {
+			return fail(400, { scope: 'smtp', message: 'Enter a valid address to send the test to.' });
+		}
 		// Sent inline (not queued) so the result is reported back to the admin.
 		try {
 			await sendEmail(db, {
-				to: locals.user!.email,
+				to,
 				subject: 'Codex test email',
 				text: 'This is a test email from your Codex instance. Email is working.'
 			});
@@ -335,6 +342,6 @@ export const actions: Actions = {
 				message: `Could not send: ${detail}${tlsHint}`
 			});
 		}
-		return { scope: 'smtp', tested: true };
+		return { scope: 'smtp', tested: true, testTo: to };
 	}
 };

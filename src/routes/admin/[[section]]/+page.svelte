@@ -1275,7 +1275,8 @@
 									</div>
 								{:else if form?.scope === 'smtp' && form.tested}
 									<div class="status-banner ok">
-										<span class="dot"></span><span class="v">Test email sent.</span>
+										<span class="dot"></span><span class="v">Test email sent to {form.testTo}.</span
+										>
 									</div>
 								{/if}
 
@@ -1342,7 +1343,7 @@
 											: ''}
 									/>
 								</div>
-								<div class="field" style="margin-bottom:0;">
+								<div class="field">
 									<label for="smtp-from">From address</label>
 									<input
 										id="smtp-from"
@@ -1352,6 +1353,17 @@
 										value={data.smtp.from}
 										placeholder="Codex <no-reply@example.com>"
 									/>
+								</div>
+								<div class="field" style="margin-bottom:0;">
+									<label for="smtp-test-to">Send the test to</label>
+									<input
+										id="smtp-test-to"
+										class="input"
+										type="email"
+										name="testTo"
+										value={data.meEmail}
+									/>
+									<span class="field-hint">Only used by the test button below.</span>
 								</div>
 
 								<div class="settings-actions">
