@@ -5,7 +5,7 @@ import { throwActionError } from '$lib/server/action-result';
 import { queueSceneMentions, queueUniverseMentions } from '$lib/server/jobs';
 import { restoreRevision, type RevisionEntityType } from '$lib/server/revisions';
 
-const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'outline_node'] as const;
+const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'note'] as const;
 
 // Replaces the entity's text with the revision's; a new 'restore' revision
 // lands on top of the timeline, so nothing is overwritten.

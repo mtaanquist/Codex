@@ -9,6 +9,7 @@ import {
 	chapters,
 	characters,
 	characterStoryNotes,
+	notes,
 	scenes,
 	stories,
 	universes,
@@ -141,6 +142,24 @@ describe('buildStoryZip', () => {
 		expect(note).toContain('Limps in this book.');
 		expect(note).toContain(`![scar](../../assets/${ASSET_ID}.png)`);
 		expect(Object.keys(entries).some((name) => name.includes('bert'))).toBe(false);
+	});
+
+	it('includes freeform notes under notebook/ with asset links rewritten', async () => {
+		const [storyRow] = await db.select().from(stories).where(eq(stories.id, story.id));
+		await db.insert(notes).values({
+			ownerId: storyRow.ownerId,
+			universeId: storyRow.universeId,
+			storyId: story.id,
+			title: 'Session 1',
+			bodyMd: `They met.\n\n![map](/assets/${ASSET_ID})`
+		});
+
+		const { bytes } = await buildStoryZip(story, await gatherStory(db, story), loader);
+		const entries = unzipSync(bytes);
+		const note = strFromU8(entries['book-of-ash/notebook/session-1.md']);
+		expect(note).toContain('title: "Session 1"');
+		expect(note).toContain('They met.');
+		expect(note).toContain(`![map](../assets/${ASSET_ID}.png)`);
 	});
 });
 

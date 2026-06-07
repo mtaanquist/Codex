@@ -620,6 +620,38 @@ export const revisions = pgTable(
 	]
 );
 
+// Freeform writer notes, scoped by whichever foreign key is populated: a
+// note with only universeId set is universe-wide; one with storyId set is
+// story-specific. chapterId and sceneId are reserved for finer attachment
+// (not yet created from the UI). Distinct from the entity story-note
+// overlays and from review comments. Revisions are recorded body-only under
+// the 'note' entity type.
+export const notes = pgTable(
+	'notes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		universeId: uuid('universe_id').references(() => universes.id),
+		storyId: uuid('story_id').references(() => stories.id),
+		chapterId: uuid('chapter_id').references(() => chapters.id),
+		sceneId: uuid('scene_id').references(() => scenes.id),
+		title: text('title'),
+		bodyMd: text('body_md').notNull().default(''),
+		pinned: boolean('pinned').notNull().default(false),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [
+		index('notes_universe_idx').on(table.universeId),
+		index('notes_story_idx').on(table.storyId)
+	]
+);
+
 // A frozen, read-only edition of a story, served on the public reading
 // pages. Snapshot, not live: in-progress drafts never appear, and the
 // reader path reads only these rows.

@@ -55,3 +55,37 @@ test('split a scene at the cursor, then merge the halves back', async ({ page })
 	await page.getByRole('button', { name: /Deleted scenes/ }).click();
 	await expect(page.locator('.trash-row')).toHaveCount(1);
 });
+
+// Duplicating a scene from the sidebar's right-click menu, the building
+// block for keeping a scene as a reusable template.
+test('duplicate a scene from the row menu', async ({ page }) => {
+	await page.goto('/');
+
+	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
+	await page.getByLabel('New universe').fill(`Dupes ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Dupes ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
+	await page.getByLabel('New story').fill(`Copies ${stamp}`);
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page).toHaveURL(`/stories/copies-${stamp}`);
+
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('Reusable template body.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+
+	await page.locator('.scene-row').nth(0).click({ button: 'right' });
+	await page.getByRole('menuitem', { name: 'Duplicate scene' }).click();
+
+	// Two scenes now, and the editor is on the copy with the same prose.
+	await expect(page.locator('.scene-row')).toHaveCount(2);
+	await expect(page.locator('.cm-content')).toContainText('Reusable template body.');
+});

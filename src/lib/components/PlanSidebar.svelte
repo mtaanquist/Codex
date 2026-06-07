@@ -13,6 +13,7 @@
 		lore,
 		selectedId,
 		planPath,
+		notesHref,
 		writeHref,
 		boardHref,
 		boardActive = false,
@@ -27,6 +28,8 @@
 		lore: { id: string; name: string; categoryId: string }[];
 		selectedId?: string;
 		planPath: string;
+		// The Notes view at this scope; caller resolves the path.
+		notesHref: string;
 		// Present at story scope only; the universe Plan has no Write view.
 		writeHref?: string;
 		// Returns to the board after something else filled the centre: the
@@ -81,7 +84,8 @@
 				<a class="seg-btn" href={writeHref}>Write</a>
 			{/if}
 			<button class="seg-btn active" type="button">Plan</button>
-			<button class="seg-btn" type="button" disabled>Notes</button>
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+			<a class="seg-btn" href={notesHref}>Notes</a>
 		</div>
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>

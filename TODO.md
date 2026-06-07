@@ -11,10 +11,12 @@ recorded in the roadmap from the 2026-06-06 capability review (Notes
 tab ship-or-hide, goals and deadlines, TTRPG positioning, draft
 comparison, front/back matter, a self-host walkthrough, write-path
 rate limits, help docs coverage; scene split/merge shipped in
-v2.34.0), then Phase 9
-(AI and interop) when the author calls it. Continuous backup (WAL/PITR)
-stays parked by the roadmap's own criterion; the timeline view stays
-parked on the world-calendar design.
+v2.34.0), then Phase 9 (AI) when the author calls it. SillyTavern and
+lorebook import was removed from the roadmap outright (2026-06-07,
+author's call: no expected use); Phase 9 is now just the LLM work.
+Continuous backup (WAL/PITR) stays parked by the roadmap's own
+criterion; the timeline view stays parked on the world-calendar
+design.
 
 A full-codebase review (2026-06-06, 7 finder passes, every candidate
 adversarially verified) found 14 confirmed issues, filed as #182-#195
@@ -97,6 +99,42 @@ and the universe export download moved to /export/download out of the
 section page's way (#273). The editor's In this scene list then split
 by entity type, and the right rail learned to scroll when a reference
 outgrows the pane (#274). Shipped as v2.35.1.
+
+Next-phase batch in flight (built on develop 2026-06-07, not yet
+released). Three things from the 2026-06-06 capability-review candidate
+pool, plus two decisions:
+
+- Duplicate scene: a row-menu "Duplicate scene" makes a full copy
+  (title + "(copy)", body, status, summary, planning fields, and
+  markers re-anchored) directly after the source - the building block
+  for keeping a scene as a reusable template. duplicateScene in
+  scene-split-merge.ts behind /api/stories/[id]/duplicate-scene; a
+  "copy" icon added to the set. Integration + e2e cover it.
+- Notes: the long-disabled Notes segment is now a real view at story
+  and universe scope (migration 0048 adds the notes table with all four
+  scope FKs; only universe + story notes are created from the UI,
+  scene/chapter attachment reserved). Pinned/recent list, prose editor
+  with autosave (/api/notes/[id]), pin/delete, and full History
+  (preview + restore) reusing the revision machinery ('note' was
+  already in the revisions enum; added the note branch to
+  ownedEntityBody/restoreRevision and to both REVISABLE lists). Story
+  view peeks universe notes under "From the universe". Cascade cleanup
+  wired into deleteStoryWithin and purgeUniverseWithin (so account
+  deletion is covered too); notes ride the story, universe, and account
+  exports under notebook/ (import round-trip deferred). Help: a Notes
+  section added to
+  planning.md. Integration (9) + e2e cover CRUD, scoping, restore, and
+  cascade.
+- SillyTavern/lorebook import removed from the roadmap entirely
+  (author's call: no expected use); Phase 9 is now just the LLM work.
+- TTRPG positioning decided: keep it in the pitch but scoped to
+  campaign prep and worldbuilding (campaign wiki, not VTT/maps/stat
+  blocks); close the capability-review gap with docs, not features.
+  See the roadmap candidate notes for both.
+
+Still open from the candidate pool for this v2 wind-down: writing goals
+and deadlines, draft comparison UI, front/back matter, self-host
+walkthrough, write-path rate limits, help docs coverage.
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
