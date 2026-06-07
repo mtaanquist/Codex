@@ -297,8 +297,10 @@ export const actions: Actions = {
 	delete: async ({ params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);
 		// Clears every story-scoped row first; a plain delete 500s on the FKs
-		// the moment the story has any content or a published edition.
-		await deleteStory(db, story.id, locals.user!.id);
+		// the moment the story has any content or a published edition. The store
+		// sweeps the edition export files left behind in the bucket.
+		const config = assetConfig();
+		await deleteStory(db, story.id, locals.user!.id, config ? s3AssetStore(config) : null);
 		redirect(303, `/universes/${universe.slug}`);
 	}
 };

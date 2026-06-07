@@ -53,6 +53,12 @@ function detailLines(details: { label: string; value: string }[]): string[] {
 export type ExportAsset = { id: string; contentType: string; bytes: Uint8Array };
 export type AssetLoader = (ids: string[]) => Promise<ExportAsset[]>;
 
+// A ceiling on the total image bytes one export holds in memory at once. An
+// export bundles every referenced image plus the in-memory zip, so without a
+// cap a large library can exhaust the worker. Past it, the remaining images are
+// left unbundled (their links stay as app paths) rather than risking an OOM.
+const MAX_EXPORT_ASSET_BYTES = 500 * 1024 * 1024;
+
 // The default loader reads from the configured bucket; absent
 // configuration it returns nothing and links stay as app paths.
 export function bucketAssetLoader(db: Database): AssetLoader {
@@ -61,14 +67,25 @@ export function bucketAssetLoader(db: Database): AssetLoader {
 		if (!config || ids.length === 0) return [];
 		const store = s3AssetStore(config);
 		const loaded: ExportAsset[] = [];
+		let total = 0;
+		let skipped = 0;
 		for (const id of ids) {
+			if (total >= MAX_EXPORT_ASSET_BYTES) {
+				skipped++;
+				continue;
+			}
 			const [row] = await db.select().from(assets).where(eq(assets.id, id));
 			if (!row) continue;
 			const chunks: Buffer[] = [];
 			for await (const chunk of await store.get(row.storageKey)) {
 				chunks.push(Buffer.from(chunk));
 			}
-			loaded.push({ id, contentType: row.contentType, bytes: Buffer.concat(chunks) });
+			const bytes = Buffer.concat(chunks);
+			total += bytes.length;
+			loaded.push({ id, contentType: row.contentType, bytes });
+		}
+		if (skipped > 0) {
+			console.warn(`export: asset budget reached; ${skipped} image(s) left unbundled`);
 		}
 		return loaded;
 	};
