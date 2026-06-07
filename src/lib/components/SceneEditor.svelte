@@ -34,6 +34,7 @@
 		loreCategories = [],
 		onCrossBoundary,
 		onCreateEntity,
+		onSplitScene,
 		onStatus
 	}: {
 		sceneId: string;
@@ -70,6 +71,8 @@
 			name: string,
 			categoryId?: string
 		) => Promise<string | null>;
+		// When set, the toolbar offers splitting the scene at the cursor.
+		onSplitScene?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -178,6 +181,19 @@
 		// Clamped: the text may have changed under the history entry.
 		view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length) } });
 		if (scrollEl) scrollEl.scrollTop = position.scroll;
+	}
+
+	// For splitting at the cursor: where the caret is, and a way to land the
+	// pending autosave first so the offset is against the stored text.
+	export function cursorOffset(): { offset: number; length: number } | null {
+		if (!view) return null;
+		return { offset: view.state.selection.main.head, length: view.state.doc.length };
+	}
+
+	export async function flushSave(): Promise<void> {
+		clearTimeout(saveTimer);
+		if (dirty) enqueueSave();
+		await saveChain;
 	}
 
 	// Lets the page place the caret when focus crosses a scene boundary.
@@ -407,6 +423,7 @@
 		<EditorToolbar
 			view={() => view}
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
+			{onSplitScene}
 		/>
 		<div
 			class="editor-scroll"
