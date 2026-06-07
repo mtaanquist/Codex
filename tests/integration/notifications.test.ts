@@ -28,7 +28,8 @@ import {
 	buildUserDigest,
 	markEmailed,
 	markReviewerNotified,
-	reviewerOptOutToken
+	reviewerOptOutToken,
+	reviewerOptOutTarget
 } from '../../src/lib/server/notification-digest';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -222,6 +223,12 @@ describe('reviewer digests', () => {
 		await db
 			.insert(reviewComments)
 			.values({ threadId: thread.id, authorUserId: owner.id, bodyMd: 'Reply.' });
+
+		// Checking the link is read-only: it names the reviewer without opting
+		// them out, so a mail scanner's GET cannot silently unsubscribe them.
+		expect(reviewerOptOutTarget(reviewerOptOutToken(guest.id))).toBe(guest.id);
+		expect(reviewerOptOutTarget('garbage.token')).toBeNull();
+		expect(await buildReviewerDigest(db, guest.id, 'https://codex.test')).not.toBeNull();
 
 		expect(await applyReviewerOptOut(db, reviewerOptOutToken(guest.id))).toBe(true);
 		expect(await buildReviewerDigest(db, guest.id, 'https://codex.test')).toBeNull();

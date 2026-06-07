@@ -29,12 +29,18 @@ async function planFromUpload(data: FormData) {
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
+	const [contents, categories, timeline, revisionCount] = await Promise.all([
+		universeContents(db, universe.id),
+		listCategories(db, universe.id),
+		universeTimeline(db, universe.id, 100),
+		universeRevisionCount(db, universe.id)
+	]);
 	return {
 		universe,
-		contents: await universeContents(db, universe.id),
-		categories: await listCategories(db, universe.id),
-		timeline: await universeTimeline(db, universe.id, 100),
-		revisionCount: await universeRevisionCount(db, universe.id),
+		contents,
+		categories,
+		timeline,
+		revisionCount,
 		trashDays: UNIVERSE_TRASH_DAYS
 	};
 };

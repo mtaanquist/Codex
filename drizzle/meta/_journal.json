@@ -295,6 +295,13 @@
 			"when": 1780779853915,
 			"tag": "0041_split-suspension-from-deletion",
 			"breakpoints": true
+		},
+		{
+			"idx": 42,
+			"version": "7",
+			"when": 1780784621097,
+			"tag": "0042_entity-search-indexes",
+			"breakpoints": true
 		}
 	]
 }

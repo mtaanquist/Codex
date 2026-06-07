@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { assetConfig, createAsset, s3AssetStore } from '$lib/server/assets';
@@ -24,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		bytes: Buffer.from(await file.arrayBuffer())
 	});
 	if (!result.ok) {
-		error(result.reason.includes('not found') ? 404 : 400, result.reason);
+		throwActionError(result);
 	}
 	return json({ id: result.id, path: `/assets/${result.id}` }, { status: 201 });
 };

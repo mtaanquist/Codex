@@ -44,6 +44,9 @@ services:
       ORIGIN: ${ORIGIN}
       APP_SECRET: ${APP_SECRET}
       BODY_SIZE_LIMIT: 15M
+      # Trust the proxy's forwarded client address for rate limiting.
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: '1'
     depends_on:
       db:
         condition: service_healthy
@@ -95,6 +98,11 @@ it defaults to 3000.
 Then `docker compose up -d` and open the app on its port behind your
 reverse proxy. Run both the app and the worker: mentions, email,
 publishing exports, and backups all happen in the worker.
+
+The example trusts the `X-Forwarded-For` header so rate limits see the real
+client address; set `XFF_DEPTH` to the number of proxies in front of the app
+if more than one. If you ever expose the app with no proxy in front, drop
+`ADDRESS_HEADER` so a client cannot spoof its address.
 
 The repository's own `compose.yaml` is the same stack built from source
 instead of pulled, with every optional service wired up: bundled Caddy for

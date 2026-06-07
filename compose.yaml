@@ -19,6 +19,11 @@ services:
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
       ORIGIN: ${ORIGIN:-http://localhost:3000}
+      # Trust the reverse proxy's forwarded client address so per-IP rate
+      # limits see the real client and not the proxy. XFF_DEPTH is the number
+      # of proxies in front of the app (1 for a single Caddy or nginx).
+      ADDRESS_HEADER: ${ADDRESS_HEADER:-x-forwarded-for}
+      XFF_DEPTH: ${XFF_DEPTH:-1}
       # Image uploads go up to 10 MB; the adapter default is 512 KB.
       BODY_SIZE_LIMIT: ${BODY_SIZE_LIMIT:-15M}
       # Uploaded images, stored in their own S3-compatible bucket.

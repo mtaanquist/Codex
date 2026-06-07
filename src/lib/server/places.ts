@@ -1,7 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { recordEntityRevision } from './revisions';
-import { entityCategories, places, placeStoryNotes, stories } from './db/schema';
+import { categoryInUniverse, ownsStoryInUniverse } from './entity-lookups';
+import { places, placeStoryNotes } from './db/schema';
 import type { EntityDetail } from '$lib/entity-snapshot';
 
 export type PlaceSave = {
@@ -37,28 +38,21 @@ export async function savePlace(
 	// Only a changed name can add or remove mentions.
 	const mentionsAffected = name !== place.name;
 
-	if (save.categoryId != null) {
-		const [category] = await db
-			.select({ id: entityCategories.id })
-			.from(entityCategories)
-			.where(
-				and(
-					eq(entityCategories.id, save.categoryId),
-					eq(entityCategories.universeId, place.universeId)
-				)
-			);
-		if (!category) return { ok: false, reason: 'category not found' };
+	if (
+		save.categoryId != null &&
+		!(await categoryInUniverse(db, save.categoryId, place.universeId))
+	) {
+		return { ok: false, reason: 'category not found' };
 	}
 
 	// Validate the optional story BEFORE anything is written: the old
 	// ordering persisted the save, then reported failure and skipped the
 	// mention reindex (review finding #191).
-	if (save.storyId !== undefined) {
-		const [story] = await db
-			.select({ id: stories.id })
-			.from(stories)
-			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
-		if (!story) return { ok: false, reason: 'story not found' };
+	if (
+		save.storyId !== undefined &&
+		!(await ownsStoryInUniverse(db, save.storyId, userId, place.universeId))
+	) {
+		return { ok: false, reason: 'story not found' };
 	}
 
 	await db

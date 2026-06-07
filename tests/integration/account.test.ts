@@ -236,6 +236,24 @@ describe('email change', () => {
 		expect(row.pendingEmail).toBeNull();
 	});
 
+	it('invalidates an earlier link when a new change is requested', async () => {
+		const first = await requestEmailChange(db, userId, 'current-password', 'first@example.com');
+		const second = await requestEmailChange(db, userId, 'current-password', 'second@example.com');
+		expect(first.ok && second.ok).toBe(true);
+		if (!first.ok || !second.ok) throw new Error('unreachable');
+
+		// The stale link cannot confirm the now-current pending address.
+		expect((await confirmEmailChange(db, first.token)).ok).toBe(false);
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.email).toBe('acct@example.com');
+		expect(row.pendingEmail).toBe('second@example.com');
+
+		// The current link still works.
+		expect((await confirmEmailChange(db, second.token)).ok).toBe(true);
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.email).toBe('second@example.com');
+	});
+
 	it('refuses an unknown confirmation token', async () => {
 		expect((await confirmEmailChange(db, 'not-a-real-token')).ok).toBe(false);
 	});

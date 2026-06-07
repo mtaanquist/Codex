@@ -1,5 +1,6 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { isSceneStatus, type SceneStatus } from './scene-status';
+import { UUID_BODY } from './slug';
 
 // Parses our own story export zip back into a plan the importer can write:
 // story metadata, chapters and scenes in NN- prefix order, story notes, and
@@ -25,6 +26,14 @@ export type ImportPlan = {
 };
 
 export class StoryZipError extends Error {}
+
+// A zip's central directory reports each entry's uncompressed size before we
+// spend memory decompressing it, so a malicious archive (a small file that
+// expands to gigabytes, or one with millions of entries) is rejected up front
+// rather than after it has exhausted the process.
+const MAX_ENTRIES = 5000;
+const MAX_ENTRY_BYTES = 50 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
 type FrontMatter = Record<string, string | string[]>;
 
@@ -87,11 +96,10 @@ function orderOf(name: string): number {
 	return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
-const ASSET_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9]+$/;
+const ASSET_FILE = new RegExp(`^(${UUID_BODY})\\.[A-Za-z0-9]+$`);
 // A bundled asset link as the exporter writes it: ../ steps up to a relative
 // assets/ folder, the original asset id as the file name.
-const BUNDLED_ASSET_LINK =
-	/(?:\.\.\/)*assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9]+/g;
+const BUNDLED_ASSET_LINK = new RegExp(`(?:\\.\\./)*assets/(${UUID_BODY})\\.[A-Za-z0-9]+`, 'g');
 
 // Rewrites bundled asset links through the importer's old-id -> new-path map;
 // a null mapping leaves the link untouched.
@@ -104,9 +112,26 @@ export function rewriteBundledAssetLinks(
 
 export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	let entries: Record<string, Uint8Array>;
+	let count = 0;
+	let total = 0;
 	try {
-		entries = unzipSync(bytes);
-	} catch {
+		entries = unzipSync(bytes, {
+			filter(file) {
+				if (++count > MAX_ENTRIES) {
+					throw new StoryZipError('This archive has too many files to import.');
+				}
+				if (file.originalSize > MAX_ENTRY_BYTES) {
+					throw new StoryZipError('This archive contains a file that is too large to import.');
+				}
+				total += file.originalSize;
+				if (total > MAX_TOTAL_BYTES) {
+					throw new StoryZipError('This archive is too large to import once unpacked.');
+				}
+				return true;
+			}
+		});
+	} catch (err) {
+		if (err instanceof StoryZipError) throw err;
 		throw new StoryZipError('This file is not a zip archive.');
 	}
 

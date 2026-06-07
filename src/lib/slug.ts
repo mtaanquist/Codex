@@ -16,7 +16,14 @@ export function slugify(text: string | null, fallback: string): string {
 	return slug || fallback;
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The bare UUID grammar (lowercase, as crypto.randomUUID writes it), shared
+// by the slug check and the asset-link regexes in markdown.ts and
+// import-markdown.ts so the export writer and import reader cannot drift on
+// what an asset id looks like. Compose it into each regex with its own
+// anchors, capture groups, and flags.
+export const UUID_BODY = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+const UUID_PATTERN = new RegExp(`^${UUID_BODY}$`);
 
 export function isUuid(value: string): boolean {
 	return UUID_PATTERN.test(value);

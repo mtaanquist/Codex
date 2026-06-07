@@ -1,7 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { recordEntityRevision } from './revisions';
-import { entityCategories, loreEntries, loreStoryNotes, stories } from './db/schema';
+import { categoryInUniverse, ownsStoryInUniverse } from './entity-lookups';
+import { loreEntries, loreStoryNotes } from './db/schema';
 import type { EntityDetail } from '$lib/entity-snapshot';
 
 export type LoreSave = {
@@ -44,17 +45,10 @@ export async function saveLoreEntry(
 
 	let categoryId = entry.categoryId;
 	if (save.categoryId !== undefined && save.categoryId !== entry.categoryId) {
-		const [category] = await db
-			.select({ id: entityCategories.id })
-			.from(entityCategories)
-			.where(
-				and(
-					eq(entityCategories.id, save.categoryId),
-					eq(entityCategories.universeId, entry.universeId)
-				)
-			);
-		if (!category) return { ok: false, reason: 'category not found' };
-		categoryId = category.id;
+		if (!(await categoryInUniverse(db, save.categoryId, entry.universeId))) {
+			return { ok: false, reason: 'category not found' };
+		}
+		categoryId = save.categoryId;
 	}
 
 	// Title and keywords drive mention detection.
@@ -66,12 +60,11 @@ export async function saveLoreEntry(
 	// Validate the optional story BEFORE anything is written: the old
 	// ordering persisted the save, then reported failure and skipped the
 	// mention reindex (review finding #191).
-	if (save.storyId !== undefined) {
-		const [story] = await db
-			.select({ id: stories.id })
-			.from(stories)
-			.where(and(eq(stories.id, save.storyId), eq(stories.ownerId, userId)));
-		if (!story) return { ok: false, reason: 'story not found' };
+	if (
+		save.storyId !== undefined &&
+		!(await ownsStoryInUniverse(db, save.storyId, userId, entry.universeId))
+	) {
+		return { ok: false, reason: 'story not found' };
 	}
 
 	await db
