@@ -1,4 +1,4 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import type { Actions, PageServerLoad } from './$types';
@@ -64,7 +64,10 @@ function reauthGuard(userId: string, scope: string) {
 	});
 }
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
+	// Profile rests on /account itself; the other sections have their own page.
+	if (params.section !== undefined && !['security', 'display'].includes(params.section))
+		error(404, 'Not found');
 	const user = locals.user!;
 	const sessionId = locals.session!.id;
 	const [profile] = await db

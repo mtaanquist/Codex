@@ -83,6 +83,18 @@ accounts list for accounts already stuck behind it, which now read
 and open-mode sign-ups still confirm their email the normal way.
 Shipped as v2.35.0.
 
+Settings discoverability (2026-06-07): the editor's gear now opens the
+settings of what is on screen (story settings when a story is open),
+the story-title crumb links there too, and asset-backed features
+(cover, edition downloads, avatar upload) hide entirely when no bucket
+is configured, replaced by a single admin overview warning (#272).
+Sections of the settings pages then became real pages: /admin/users,
+/account/security, /stories/<slug>/settings/pagesetup,
+/universes/<slug>/categories, with the default section resting on the
+bare URL, unknown slugs 404ing, old ?section= admin links redirecting,
+and the universe export download moved to /export/download out of the
+section page's way. Unreleased.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

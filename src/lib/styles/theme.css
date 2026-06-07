@@ -1667,6 +1667,11 @@
 	display: flex;
 	flex-direction: column;
 	gap: 14px;
+	/* The pane clips its overflow, so the scroll lives here; without it a
+	   long reference (relationships, appears-in) is simply cut off. */
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
 }
 
 .r-card {
@@ -1680,6 +1685,18 @@
 	font-size: 13.5px;
 	font-weight: 650;
 	letter-spacing: -0.005em;
+}
+/* A sub-heading inside a card, grouping its rows. */
+.r-sub {
+	margin: 10px 0 2px;
+	font-size: 11px;
+	font-weight: 650;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+.r-card h5 + .r-sub {
+	margin-top: 0;
 }
 .r-line {
 	display: flex;

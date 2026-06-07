@@ -224,6 +224,12 @@
 
 	// Right column tabs; History holds the open scene's timeline.
 	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
+	// The scene's cast, grouped by entity type in this order.
+	const IN_SCENE_GROUPS = [
+		{ kind: 'character', label: 'Characters' },
+		{ kind: 'place', label: 'Places' },
+		{ kind: 'lore', label: 'Lore' }
+	] as const;
 	const sceneHref = $derived(
 		data.selectedScene ? `${storyPath}?scene=${data.selectedScene.id}` : storyPath
 	);
@@ -827,21 +833,27 @@
 					{#if data.selectedScene && data.inScene.length > 0}
 						<div class="r-card">
 							<h5>In this scene</h5>
-							{#each data.inScene as entity (entity.id)}
-								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-								<a
-									class="r-line"
-									href={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${entity.id}`}
-								>
-									<span class="r-line-left">
-										<span class="badge dot" style="background: {entityColor(entity.name)}">
-											{entityLetter(entity.name)}
-										</span>
-										<span class="r-line-name">{entity.name}</span>
-									</span>
-									<span class="r-count">{entity.count}</span>
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#each IN_SCENE_GROUPS as group (group.kind)}
+								{@const rows = data.inScene.filter((entity) => entity.kind === group.kind)}
+								{#if rows.length > 0}
+									<h6 class="r-sub">{group.label}</h6>
+									{#each rows as entity (entity.id)}
+										<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+										<a
+											class="r-line"
+											href={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${entity.id}`}
+										>
+											<span class="r-line-left">
+												<span class="badge dot" style="background: {entityColor(entity.name)}">
+													{entityLetter(entity.name)}
+												</span>
+												<span class="r-line-name">{entity.name}</span>
+											</span>
+											<span class="r-count">{entity.count}</span>
+										</a>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
+									{/each}
+								{/if}
 							{/each}
 						</div>
 					{:else}

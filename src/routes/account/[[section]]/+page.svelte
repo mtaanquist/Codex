@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
 	import { ACCENT_PRESETS } from '$lib/appearance';
@@ -13,37 +14,16 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	type Section = 'profile' | 'security' | 'display';
-	function sectionFor(scope: string | undefined): Section | null {
-		switch (scope) {
-			case 'name':
-			case 'profile':
-			case 'handle':
-				return 'profile';
-			case 'password':
-			case 'email':
-			case 'sessions':
-			case 'delete':
-			case 'totp':
-			case 'passkeys':
-				return 'security';
-			case 'prefs':
-			case 'notifyprefs':
-			case 'appearance':
-			case 'pagesetup':
-				return 'display';
-			default:
-				return null;
-		}
-	}
 
-	let active = $state<Section>('profile');
-	$effect(() => {
-		const s = sectionFor(form?.scope);
-		if (s) active = s;
-	});
+	// Each section is its own page (/account/security, /account/display);
+	// a plain /account is the profile. Forms post to the section they sit
+	// on, so an action result lands where it belongs without any bookkeeping.
+	let active: Section = $derived((page.params.section as Section) ?? 'profile');
 
-	function go(section: Section) {
-		active = section;
+	function sectionHref(section: Section): string {
+		return resolve('/account/[[section]]', {
+			section: section === 'profile' ? undefined : section
+		});
 	}
 
 	let avatarForm = $state<HTMLFormElement | null>(null);
@@ -205,9 +185,10 @@
 				</div>
 			</div>
 
+			<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 			<nav class="admin-nav">
 				<div class="admin-nav-label">You</div>
-				<button class="nav-item" class:active={active === 'profile'} onclick={() => go('profile')}>
+				<a class="nav-item" class:active={active === 'profile'} href={sectionHref('profile')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -218,12 +199,8 @@
 						><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg
 					>
 					<span class="lbl">Profile</span>
-				</button>
-				<button
-					class="nav-item"
-					class:active={active === 'security'}
-					onclick={() => go('security')}
-				>
+				</a>
+				<a class="nav-item" class:active={active === 'security'} href={sectionHref('security')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -236,10 +213,10 @@
 						/></svg
 					>
 					<span class="lbl">Security</span>
-				</button>
+				</a>
 
 				<div class="admin-nav-label">Workspace</div>
-				<button class="nav-item" class:active={active === 'display'} onclick={() => go('display')}>
+				<a class="nav-item" class:active={active === 'display'} href={sectionHref('display')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -255,11 +232,11 @@
 						/><line x1="12" y1="17" x2="12" y2="21" /></svg
 					>
 					<span class="lbl">Display</span>
-				</button>
+				</a>
 
 				{#if data.isAdmin}
 					<div class="admin-nav-label">Instance</div>
-					<a class="nav-item nav-item-out" href={resolve('/admin')}>
+					<a class="nav-item nav-item-out" href={resolve('/admin/[[section]]', {})}>
 						<svg
 							viewBox="0 0 24 24"
 							fill="none"
@@ -284,6 +261,7 @@
 					</a>
 				{/if}
 			</nav>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 
 			<div
 				class="admin-health"
@@ -353,8 +331,6 @@
 												>{form.message}</span
 											>
 										{/if}
-									{:else}
-										<p class="avatar-edit-hint">Image uploads are not set up on this instance.</p>
 									{/if}
 								</div>
 							</div>

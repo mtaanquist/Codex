@@ -29,7 +29,7 @@ test('passkeys: register, sign in with one, remove it', async ({ page }) => {
 
 	await page.getByLabel('Account menu').click();
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
-	await page.getByRole('button', { name: 'Security' }).click();
+	await page.getByRole('link', { name: 'Security' }).click();
 
 	await page.getByLabel('Passkey name').fill('e2e device');
 	await page.getByRole('button', { name: 'Add passkey' }).click();
@@ -46,7 +46,7 @@ test('passkeys: register, sign in with one, remove it', async ({ page }) => {
 	// password.
 	await page.getByLabel('Account menu').click();
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
-	await page.getByRole('button', { name: 'Security' }).click();
+	await page.getByRole('link', { name: 'Security' }).click();
 	const row = page.locator('.user-row', { hasText: 'e2e device' });
 	await row.getByLabel('Current password').fill('e2e-password');
 	await row.getByRole('button', { name: 'Remove' }).click();

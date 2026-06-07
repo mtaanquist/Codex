@@ -1,5 +1,6 @@
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { isUuid } from '$lib/slug';
+import { isSectionSlug } from './sections';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -44,7 +45,7 @@ import {
 } from '$lib/server/assets';
 import { eq } from 'drizzle-orm';
 import { users } from '$lib/server/db/schema';
-import pkg from '../../../package.json';
+import pkg from '../../../../package.json';
 
 // A compact uptime for the sidebar footer: minutes, then hours, then days.
 function formatUptime(seconds: number): string {
@@ -57,8 +58,14 @@ function requireAdmin(locals: App.Locals) {
 	if (locals.user?.role !== 'admin') error(404, 'Not found');
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
 	requireAdmin(locals);
+	// Older links carried the section as a query string; send them to the
+	// section's own page.
+	const legacy = url.searchParams.get('section');
+	if (legacy && isSectionSlug(legacy)) redirect(308, `/admin/${legacy}`);
+	// The overview rests on /admin itself; anything else must be a known slug.
+	if (params.section !== undefined && !isSectionSlug(params.section)) error(404, 'Not found');
 	return {
 		meId: locals.user!.id,
 		stats: await instanceStats(db),

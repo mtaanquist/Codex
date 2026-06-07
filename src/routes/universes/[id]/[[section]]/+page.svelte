@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
@@ -9,8 +10,9 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// One section at a time, like the account page; categories and history
-	// can both grow long.
+	// Each section is its own page (/universes/<slug>/categories, ...);
+	// a plain /universes/<slug> is the details. Forms post to the section
+	// they sit on, so a reload lands where the form lives.
 	type Section = 'details' | 'categories' | 'history' | 'export';
 	const NAV: { id: Section; label: string }[] = [
 		{ id: 'details', label: 'Details' },
@@ -18,14 +20,14 @@
 		{ id: 'history', label: 'History' },
 		{ id: 'export', label: 'Import and export' }
 	];
-	let active = $state<Section>('details');
-	// A failed or saved POST reloads the page; land back on the section the
-	// form lives in.
-	$effect(() => {
-		if (form?.action === 'categories') active = 'categories';
-		else if (form?.action === 'update') active = 'details';
-		else if (form?.action === 'import') active = 'export';
-	});
+	let active: Section = $derived((page.params.section as Section) ?? 'details');
+
+	function sectionHref(section: Section): string {
+		return resolve('/universes/[id]/[[section]]', {
+			id: data.universe.slug,
+			section: section === 'details' ? undefined : section
+		});
+	}
 
 	// The import form is enhanced so the chosen file survives the preview
 	// step; the Import button then posts the same file to the run action.
@@ -173,19 +175,16 @@
 					<div class="st">Universe</div>
 				</div>
 			</div>
+			<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 			<nav class="admin-nav">
 				<div class="admin-nav-label">Universe settings</div>
 				{#each NAV as item (item.id)}
-					<button
-						class="nav-item"
-						class:active={active === item.id}
-						type="button"
-						onclick={() => (active = item.id)}
-					>
+					<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
 						{item.label}
-					</button>
+					</a>
 				{/each}
 			</nav>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</aside>
 
 		<main class="admin-main page-body">
@@ -474,7 +473,11 @@
 							</div>
 							<div class="danger-row-actions">
 								<!-- eslint-disable svelte/no-navigation-without-resolve (download endpoint) -->
-								<a class="btn btn-secondary" href="/universes/{data.universe.slug}/export" download>
+								<a
+									class="btn btn-secondary"
+									href="/universes/{data.universe.slug}/export/download"
+									download
+								>
 									Download .zip
 								</a>
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->

@@ -57,7 +57,7 @@ test('rich editing: toolbar formats, marks hide by default, override shows them'
 
 	// Switch this story to raw markdown, written in Danish, through its
 	// settings overrides.
-	await page.goto(`/stories/${storyId}/settings`);
+	await page.goto(`/stories/${storyId}/settings/editor`);
 	await page.getByLabel('Editing mode').selectOption('markdown');
 	await page.getByLabel('Writing language').selectOption('Dansk');
 	await page.getByRole('button', { name: 'Save editor settings' }).click();

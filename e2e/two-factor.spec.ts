@@ -17,7 +17,7 @@ test('two-factor: enrol from the account page and turn it back off', async ({ pa
 
 	await page.getByLabel('Account menu').click();
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
-	await page.getByRole('button', { name: 'Security' }).click();
+	await page.getByRole('link', { name: 'Security' }).click();
 
 	// Begin setup and read the secret the page shows for manual entry.
 	await page.getByRole('button', { name: 'Set up' }).click();

@@ -10,7 +10,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Repeated runs share the seeded user, so pin the preferences to their
 	// defaults before exercising them later. They live on the account page now.
 	await page.goto('/account');
-	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
 	await page.getByLabel('Editing mode').selectOption('rich');
@@ -274,6 +274,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 			});
 		}
 	}).toPass({ timeout: 60000 });
+	// The cast is grouped by entity type: one of each here.
+	await expect(page.locator('.r-sub')).toHaveText(['Characters', 'Places', 'Lore']);
 
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
@@ -315,7 +317,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Ghost mode comes from the user preference: an unambiguous prefix
 	// shows the rest of the name, and Tab accepts it.
 	await page.goto('/account');
-	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Display' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('ghost');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
@@ -414,6 +416,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 	if (process.env.ASSET_S3_BUCKET) {
 		await page.locator('.crumb.current').click();
+		await page.getByRole('link', { name: 'Cover' }).click();
 		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
 		await expect(page.locator('svg.cover')).toBeVisible();
 		await page.getByLabel('Cover image').setInputFiles({
@@ -464,6 +467,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Publishing: set the story public, freeze an edition, and read it
 	// back anonymously on the public pages.
 	await page.locator('.crumb.current').click();
+	await page.getByRole('link', { name: 'Publish' }).click();
 	await expect(page.getByRole('heading', { name: 'Publish' })).toBeVisible();
 	await page.getByLabel('Visibility').selectOption('public');
 	await page.getByRole('button', { name: 'Save visibility' }).click();
@@ -494,6 +498,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Exports: the zip and the EPUB download, and the print view renders
 	// the prose for PDF via the browser dialog.
+	await page.getByRole('link', { name: 'Export', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
 	const zipDownload = page.waitForEvent('download');
 	await page.getByRole('link', { name: 'Markdown (.zip)' }).click();
@@ -509,7 +514,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Scene marks in the story view follow the display preference.
 	await page.goto('/account');
-	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Display' }).click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
@@ -605,7 +610,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Deleting a story that has chapters, scenes, markers, revisions, and a
 	// published edition succeeds rather than 500ing on the foreign keys, and
 	// lands back on the universe.
-	await page.goto(`${proseSceneUrl.split('?')[0]}/settings`);
+	await page.goto(`${proseSceneUrl.split('?')[0]}/settings/danger`);
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);

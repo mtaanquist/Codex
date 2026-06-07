@@ -87,7 +87,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	// Hiding the streak on the account page empties the Session tab's
 	// streak card; the words stay. Restore it for the other specs.
 	await page.goto('/account');
-	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Display' }).click();
 	await page.getByLabel('Writing streak').selectOption('hidden');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
@@ -96,7 +96,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await expect(page.locator('.sess-n').first()).toBeVisible();
 	await expect(page.locator('.streak-row')).toHaveCount(0);
 	await page.goto('/account');
-	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Display' }).click();
 	await page.getByLabel('Writing streak').selectOption('shown');
 	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');

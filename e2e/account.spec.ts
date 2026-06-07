@@ -38,13 +38,19 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.reload();
 	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
 
-	// Sessions live under Security; the signed-in device shows as current.
-	await page.getByRole('button', { name: 'Security' }).click();
+	// Sessions live under Security, on its own page; the signed-in device
+	// shows as current.
+	await page.getByRole('link', { name: 'Security' }).click();
+	await expect(page).toHaveURL(/\/account\/security$/);
 	await expect(page.getByText('Current', { exact: true })).toBeVisible();
+
+	// A made-up section is a clean 404, not an empty page.
+	const bogus = await page.request.get('/account/nonsense');
+	expect(bogus.status()).toBe(404);
 
 	// Display: the notification matrix saves a per-kind channel choice and
 	// reads it back. The admin-only row is absent for a regular account.
-	await page.getByRole('button', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Display' }).click();
 	const replyEmail = page.getByLabel('Replies to your review comments by email');
 	await expect(page.getByLabel('New accounts awaiting approval in app')).toHaveCount(0);
 	await replyEmail.uncheck();
