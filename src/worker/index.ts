@@ -21,7 +21,7 @@ import {
 	reconcileMentions
 } from '../lib/server/mentions.ts';
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
-import { effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
+import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
 import {
 	buildReviewerDigest,
@@ -218,7 +218,13 @@ await boss.schedule(RECONCILE_MENTIONS_QUEUE, '*/5 * * * *', {}, { tz: 'UTC' });
 // Off-site backups, only when the bucket is configured (saved settings or
 // environment). The schedule lives in pg-boss, so it is cleared when the
 // configuration goes away; the app re-applies it when settings are saved.
-const backups = await effectiveBackupConfig(db);
+// On a fresh stack the worker can boot while the app is still running the
+// migrations, so a failed settings read falls back to the environment
+// instead of crashing the process; the next start reconciles fully.
+const backups = await effectiveBackupConfig(db).catch((error) => {
+	console.warn('backups: could not read saved settings, using the environment:', error);
+	return backupConfig();
+});
 if (backups) {
 	await boss.schedule(BACKUP_QUEUE, backups.cron, { trigger: 'scheduled' }, { tz: 'UTC' });
 	console.log(
