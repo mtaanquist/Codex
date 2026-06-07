@@ -31,6 +31,7 @@
 		findText = null,
 		findAt = null,
 		compact = false,
+		loreCategories = [],
 		onCrossBoundary,
 		onCreateEntity,
 		onStatus
@@ -58,12 +59,16 @@
 		// input, no toolbar, and vertical arrows at the edges hand focus to
 		// neighbours.
 		compact?: boolean;
+		// The universe's categories; with more than one, the selection menu's
+		// lore item grows a submenu to pick where the entry files.
+		loreCategories?: { id: string; name: string }[];
 		onCrossBoundary?: (direction: 'up' | 'down') => void;
 		// Create an entity from the right-click selection menu. Resolves to an
 		// error message, or null when it worked.
 		onCreateEntity?: (
 			type: 'character' | 'place' | 'lore_entry',
-			name: string
+			name: string,
+			categoryId?: string
 		) => Promise<string | null>;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
@@ -257,6 +262,9 @@
 		if (view) openSelectionMenu(event, view);
 	}
 
+	// The lore item's category flyout; reset whenever the menu opens.
+	let loreSubOpen = $state(false);
+
 	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
 		const range = editor.state.selection.main;
 		if (range.empty) return false;
@@ -265,6 +273,7 @@
 		event.preventDefault();
 		menuError = '';
 		menuBusy = false;
+		loreSubOpen = false;
 		selectionMenu = {
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
@@ -283,12 +292,15 @@
 		view?.focus();
 	}
 
-	async function createFromSelection(type: 'character' | 'place' | 'lore_entry') {
+	async function createFromSelection(
+		type: 'character' | 'place' | 'lore_entry',
+		categoryId?: string
+	) {
 		if (!onCreateEntity || !selectionMenu || menuBusy) return;
 		menuBusy = true;
 		menuError = '';
 		try {
-			const failure = await onCreateEntity(type, selectionMenu.name);
+			const failure = await onCreateEntity(type, selectionMenu.name, categoryId);
 			if (failure) {
 				menuError = failure;
 				menuBusy = false;
@@ -487,15 +499,54 @@
 			>
 				New place
 			</button>
-			<button
-				class="sel-create"
-				type="button"
-				role="menuitem"
-				disabled={menuBusy}
-				onclick={() => createFromSelection('lore_entry')}
-			>
-				New lore entry
-			</button>
+			{#if loreCategories.length > 1}
+				<!-- More than one category: the lore item opens a flyout to pick
+				     which one the new entry files under. -->
+				<div
+					class="sel-sub"
+					role="presentation"
+					onmouseenter={() => (loreSubOpen = true)}
+					onmouseleave={() => (loreSubOpen = false)}
+				>
+					<button
+						class="sel-create sel-sub-trigger"
+						type="button"
+						role="menuitem"
+						aria-haspopup="menu"
+						aria-expanded={loreSubOpen}
+						disabled={menuBusy}
+						onclick={() => (loreSubOpen = !loreSubOpen)}
+					>
+						New lore entry
+						<Icon name="chevron" size={12} />
+					</button>
+					{#if loreSubOpen}
+						<div class="sel-submenu" role="menu">
+							{#each loreCategories as category (category.id)}
+								<button
+									class="sel-create"
+									type="button"
+									role="menuitem"
+									disabled={menuBusy}
+									onclick={() => createFromSelection('lore_entry', category.id)}
+								>
+									{category.name}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<button
+					class="sel-create"
+					type="button"
+					role="menuitem"
+					disabled={menuBusy}
+					onclick={() => createFromSelection('lore_entry')}
+				>
+					New lore entry
+				</button>
+			{/if}
 			{#if menuError}
 				<p class="sel-menu-error" role="alert">{menuError}</p>
 			{/if}
@@ -591,5 +642,29 @@
 		font-size: 12px;
 		color: var(--danger, #c0564f);
 		margin: 2px 7px 4px;
+	}
+	/* The lore item's category flyout. */
+	.sel-sub {
+		position: relative;
+	}
+	.sel-sub-trigger {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.sel-submenu {
+		position: absolute;
+		left: calc(100% - 2px);
+		top: -7px;
+		min-width: 150px;
+		max-height: 260px;
+		overflow-y: auto;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+		z-index: 61;
 	}
 </style>

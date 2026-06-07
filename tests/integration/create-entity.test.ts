@@ -24,6 +24,7 @@ let ownerId: string;
 let universeId: string;
 let storyId: string;
 let loreCategoryId: string;
+let spellsCategoryId: string;
 
 function scope() {
 	return { universeId, ownerId, storyId };
@@ -51,7 +52,7 @@ beforeAll(async () => {
 		.insert(entityCategories)
 		.values({ universeId, ownerId, name: 'Spells', sortOrder: 5 })
 		.returning();
-	void second;
+	spellsCategoryId = second.id;
 	const [first] = await db
 		.insert(entityCategories)
 		.values({ universeId, ownerId, name: 'Lore', sortOrder: 0 })
@@ -97,6 +98,29 @@ describe('createStoryEntity', () => {
 		const [row] = await db.select().from(loreEntries).where(eq(loreEntries.id, result.id));
 		expect(row.title).toBe('The Long Night');
 		expect(row.categoryId).toBe(loreCategoryId);
+	});
+
+	it('files a lore entry under the named category, refusing a foreign one', async () => {
+		const result = await createStoryEntity(
+			db,
+			scope(),
+			'lore_entry',
+			'Featherfall',
+			spellsCategoryId
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const [row] = await db.select().from(loreEntries).where(eq(loreEntries.id, result.id));
+		expect(row.categoryId).toBe(spellsCategoryId);
+
+		// A category from another universe (or none at all) does not pass.
+		const [other] = await db.insert(universes).values({ ownerId, name: 'Other' }).returning();
+		const [foreign] = await db
+			.insert(entityCategories)
+			.values({ universeId: other.id, ownerId, name: 'Foreign', sortOrder: 0 })
+			.returning();
+		const refused = await createStoryEntity(db, scope(), 'lore_entry', 'Trespass', foreign.id);
+		expect(refused).toMatchObject({ ok: false });
 	});
 
 	it('rejects an empty or overlong selection', async () => {

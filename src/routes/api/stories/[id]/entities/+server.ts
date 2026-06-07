@@ -11,7 +11,11 @@ const TYPES = ['character', 'place', 'lore_entry'] as const;
 // universe rebuild picks the new name up across every scene.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
-	const payload = (await request.json()) as { type?: unknown; name?: unknown };
+	const payload = (await request.json()) as {
+		type?: unknown;
+		name?: unknown;
+		categoryId?: unknown;
+	};
 	if (!TYPES.includes(payload.type as (typeof TYPES)[number]) || typeof payload.name !== 'string') {
 		error(400, 'type and name are required');
 	}
@@ -19,7 +23,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		db,
 		{ universeId: universe.id, ownerId: locals.user!.id, storyId: story.id },
 		payload.type as (typeof TYPES)[number],
-		payload.name
+		payload.name,
+		typeof payload.categoryId === 'string' ? payload.categoryId : undefined
 	);
 	if (!result.ok) error(400, result.reason);
 	await queueUniverseMentions(universe.id);
