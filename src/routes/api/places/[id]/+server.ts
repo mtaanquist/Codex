@@ -10,6 +10,7 @@ import { cleanDetails } from '$lib/entity-snapshot';
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const payload = (await request.json()) as {
 		name?: unknown;
+		aliases?: unknown;
 		summaryMd?: unknown;
 		bodyMd?: unknown;
 		details?: unknown;
@@ -20,9 +21,13 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	if (typeof payload.name !== 'string' || typeof payload.bodyMd !== 'string') {
 		error(400, 'name and bodyMd must be strings');
 	}
+	const aliases = Array.isArray(payload.aliases)
+		? payload.aliases.filter((alias): alias is string => typeof alias === 'string')
+		: [];
 
 	const result = await savePlace(db, params.id, locals.user!.id, {
 		name: payload.name,
+		aliases,
 		summaryMd: typeof payload.summaryMd === 'string' ? payload.summaryMd : null,
 		bodyMd: payload.bodyMd,
 		details: payload.details !== undefined ? cleanDetails(payload.details) : undefined,

@@ -8,6 +8,12 @@ A scene holds one stretch of prose. Chapters group scenes in order. Drag a scene
 
 Right-click a chapter in the sidebar to rename it, move it up or down, or delete it. Deleting a chapter keeps its scenes; they move to the unfiled list.
 
+## Splitting and merging scenes
+
+To split a scene in two, put the cursor where the break should go and press the split button in the toolbar (the page with the dashed line). Everything after the cursor moves into a new untitled scene directly after the current one. Marks move along with their text.
+
+To merge scenes, right-click each scene in the sidebar and choose "Select for merging"; selected scenes show a coloured ring. With two or more selected, right-click any of them and choose "Merge". The scenes join in story order into the earliest one, with a blank line between them; that scene keeps its title. The others go to "Deleted scenes", so a merge can be undone by restoring them and removing the joined text.
+
 ## Deleting scenes
 
 Right-click a scene in the sidebar and choose "Delete scene". A deleted scene goes to "Deleted scenes" at the bottom of the sidebar, where you can restore it or delete it forever. Restoring puts the scene back at the end of its chapter, or in the unfiled list if the chapter is gone. While a scene sits in the trash it does not count anywhere: not in word counts, search, exports, or the story view.
@@ -15,6 +21,8 @@ Right-click a scene in the sidebar and choose "Delete scene". A deleted scene go
 ## Formatting
 
 Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I (Cmd on a Mac) do bold and italic from the keyboard.
+
+The four alignment buttons set how the paragraphs under the selection sit on the page: left (the default), centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; choose left to remove it.
 
 There are two ways to see your prose while you write, chosen under Editor behaviour on your account page (and per story in its settings):
 

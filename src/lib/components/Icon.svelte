@@ -24,6 +24,21 @@
 			'M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'
 		],
 		chapter: ['M4 6h16', 'M4 12h16', 'M4 18h10'],
+		'align-left': ['M4 6h16', 'M4 10h10', 'M4 14h16', 'M4 18h10'],
+		'align-center': ['M4 6h16', 'M7 10h10', 'M4 14h16', 'M7 18h10'],
+		'align-right': ['M4 6h16', 'M10 10h10', 'M4 14h16', 'M10 18h10'],
+		'align-justify': ['M4 6h16', 'M4 10h16', 'M4 14h16', 'M4 18h16'],
+		// A page break: text above and below a dashed cut line.
+		split: [
+			'M4 5h16',
+			'M4 9h10',
+			'M4 12h2',
+			'M9 12h2',
+			'M14 12h2',
+			'M19 12h1',
+			'M4 15h16',
+			'M4 19h10'
+		],
 		scene: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6'],
 		user: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
 		pin: [

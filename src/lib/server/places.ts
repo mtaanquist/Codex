@@ -7,6 +7,7 @@ import type { EntityDetail } from '$lib/entity-snapshot';
 
 export type PlaceSave = {
 	name: string;
+	aliases: string[];
 	summaryMd: string | null;
 	bodyMd: string;
 	// Quick details; undefined leaves them unchanged.
@@ -27,16 +28,26 @@ export async function savePlace(
 	{ ok: true; universeId: string; mentionsAffected: boolean } | { ok: false; reason: string }
 > {
 	const [place] = await db
-		.select({ id: places.id, universeId: places.universeId, name: places.name })
+		.select({
+			id: places.id,
+			universeId: places.universeId,
+			name: places.name,
+			aliases: places.aliases
+		})
 		.from(places)
 		.where(and(eq(places.id, placeId), eq(places.ownerId, userId)));
 	if (!place) return { ok: false, reason: 'place not found' };
 
 	const name = save.name.trim();
 	if (!name) return { ok: false, reason: 'the place needs a name' };
+	const aliases = save.aliases.map((alias) => alias.trim()).filter((alias) => alias !== '');
 
-	// Only a changed name can add or remove mentions.
-	const mentionsAffected = name !== place.name;
+	// Only a changed name or alias set can add or remove mentions; body and
+	// summary edits should not trigger a universe-wide reindex.
+	const mentionsAffected =
+		name !== place.name ||
+		aliases.length !== place.aliases.length ||
+		aliases.some((alias, index) => alias !== place.aliases[index]);
 
 	if (
 		save.categoryId != null &&
@@ -63,6 +74,7 @@ export async function savePlace(
 			.update(places)
 			.set({
 				name,
+				aliases,
 				summaryMd: save.summaryMd?.trim() || null,
 				bodyMd: save.bodyMd,
 				...(save.details !== undefined ? { details: save.details } : {}),

@@ -71,6 +71,8 @@ export type PlanAppearance = {
 	sceneId: string;
 	sceneTitle: string | null;
 	snippet: string;
+	// Character offset of the mention in the scene, for jump links.
+	position: number;
 };
 
 // Every indexed mention of an entity, for the "Appears in" panel. Scoped to
@@ -91,7 +93,8 @@ export async function entityAppearances(
 			storyTitle: stories.title,
 			sceneId: scenes.id,
 			sceneTitle: scenes.title,
-			snippet: entityMentions.surroundingText
+			snippet: entityMentions.surroundingText,
+			position: entityMentions.position
 		})
 		.from(entityMentions)
 		.innerJoin(scenes, eq(entityMentions.sourceId, scenes.id))

@@ -114,6 +114,9 @@ export const universes = pgTable(
 			.notNull()
 			.default(sql`substr(md5(random()::text), 1, 12)`),
 		descriptionMd: text('description_md'),
+		// The auto-created home for one-off stories outside any universe; at
+		// most one per owner, made lazily the first time it is needed.
+		standalone: boolean('standalone').notNull().default(false),
 		// Soft delete: a deleted universe sits in the dashboard's trash for the
 		// restore window, then the worker purges it for good. Null means live.
 		deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -123,7 +126,12 @@ export const universes = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date())
 	},
-	(table) => [uniqueIndex('universes_owner_slug_idx').on(table.ownerId, table.slug)]
+	(table) => [
+		uniqueIndex('universes_owner_slug_idx').on(table.ownerId, table.slug),
+		uniqueIndex('universes_one_standalone_idx')
+			.on(table.ownerId)
+			.where(sql`${table.standalone}`)
+	]
 );
 
 export const stories = pgTable(
@@ -390,6 +398,8 @@ export const places = pgTable(
 			.references(() => users.id)
 			.notNull(),
 		name: text('name').notNull(),
+		// Nicknames and local names; the mention scan matches these too.
+		aliases: text('aliases').array().notNull().default([]),
 		// One or two lines; shown in hover popovers.
 		summaryMd: text('summary_md'),
 		bodyMd: text('body_md').notNull().default(''),

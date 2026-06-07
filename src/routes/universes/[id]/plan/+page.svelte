@@ -13,6 +13,12 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let saveStatus = $state<SaveStatus>('idle');
+	// The board's new-story form swaps in when the button is clicked; a
+	// failed submit reloads the page, so reopen it to show the message.
+	let creatingStory = $state(false);
+	$effect(() => {
+		if (form?.scope === 'story' && form.message) creatingStory = true;
+	});
 	const selectedId = $derived(data.selected?.id);
 	$effect(() => {
 		void selectedId;
@@ -33,6 +39,27 @@
 <svelte:head>
 	<title>{data.universe.name} - Plan - Codex</title>
 </svelte:head>
+
+<!-- The new-story affordance shown above the board and in the empty states. -->
+{#snippet newStory()}
+	{#if creatingStory}
+		<form method="POST" action="?/createStory" class="new-story-form">
+			<!-- svelte-ignore a11y_autofocus (swaps in on the button click; focus follows the action) -->
+			<input class="input" type="text" name="title" placeholder="Story title" required autofocus />
+			<button class="btn btn-primary" type="submit">Create</button>
+			<button class="btn btn-ghost" type="button" onclick={() => (creatingStory = false)}>
+				Cancel
+			</button>
+		</form>
+		{#if form?.scope === 'story' && form.message}
+			<p class="form-error" role="alert">{form.message}</p>
+		{/if}
+	{:else}
+		<button class="btn btn-secondary" type="button" onclick={() => (creatingStory = true)}>
+			New story
+		</button>
+	{/if}
+{/snippet}
 
 <div class="app">
 	<TopBar
@@ -85,6 +112,9 @@
 			{:else if data.storyBoard.length > 0}
 				<!-- Nothing selected: the universe's stories as a board, each in
 				     the lane of its derived status. -->
+				<div class="board-tools">
+					{@render newStory()}
+				</div>
 				<StoryBoard
 					stories={data.storyBoard.map((story) => ({
 						...story,
@@ -93,11 +123,13 @@
 				/>
 			{:else if data.characters.length === 0 && data.places.length === 0}
 				<div class="empty">
-					<p>Nothing here yet. Add a character or a place in the sidebar.</p>
+					<p>Nothing here yet. Start a story, or add a character or a place in the sidebar.</p>
+					{@render newStory()}
 				</div>
 			{:else}
 				<div class="empty">
-					<p>Select a character or place in the sidebar.</p>
+					<p>Select a character or place in the sidebar, or start a story.</p>
+					{@render newStory()}
 				</div>
 			{/if}
 		</main>
@@ -183,10 +215,15 @@
 										</span>
 										<span class="r-count">{mentions.length}</span>
 									</a>
-									<!-- eslint-enable svelte/no-navigation-without-resolve -->
 									{#each mentions as mention, mi (mi)}
-										<div class="snippet">{mention.snippet}</div>
+										<a
+											class="snippet"
+											href={`${resolve('/stories/[id]', { id: storyRef.storyId })}?scene=${sceneRef.sceneId}&at=${mention.position}`}
+										>
+											{mention.snippet}
+										</a>
 									{/each}
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								{/each}
 							</div>
 						{/each}
@@ -210,17 +247,37 @@
 </div>
 
 <style>
+	.board-tools {
+		display: flex;
+		justify-content: flex-end;
+		padding: 14px 18px 0;
+	}
+	.new-story-form {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.empty .new-story-form,
+	.empty .btn {
+		margin-top: 12px;
+	}
 	.rel-label {
 		color: var(--text-muted);
 		font-size: 12px;
 		margin-right: 6px;
 	}
+	/* A snippet links to its spot in the scene. */
 	.snippet {
+		display: block;
 		color: var(--text-muted);
 		font-size: 12px;
 		line-height: 1.5;
 		padding: 2px 0 6px;
 		border-bottom: 1px dashed var(--border);
+		text-decoration: none;
+	}
+	.snippet:hover {
+		color: var(--text);
 	}
 	.mentions-card {
 		display: flex;

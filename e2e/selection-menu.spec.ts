@@ -57,7 +57,23 @@ test('selection menu: create a character from a selection, then bold it', async 
 	await page.locator('.cm-content').click({ button: 'right' });
 	await expect(page.locator('.sel-menu')).not.toBeVisible();
 
-	// The character landed in the story plan as a member.
+	// The lore item carries a category flyout (the universe seeds two
+	// categories), so a selection can file under Faction directly.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('Duskward Pact');
+	await page.keyboard.press('Shift+Home');
+	// Right-click on the selected line itself, so the selection survives.
+	await page.locator('.cm-line', { hasText: 'Duskward Pact' }).click({ button: 'right' });
+	await expect(page.locator('.sel-menu')).toBeVisible();
+	await page.getByRole('menuitem', { name: 'New lore entry' }).hover();
+	await page.locator('.sel-submenu').getByRole('menuitem', { name: 'Faction' }).click();
+	await expect(page.locator('.sel-menu')).not.toBeVisible();
+
+	// The character landed in the story plan as a member, and the lore
+	// entry filed under the flyout's category.
 	await page.goto(`/universes/${universeId}/plan`);
 	await expect(page.locator('.ent-row', { hasText: 'Veylan' })).toBeVisible();
+	await expect(page.locator('.ent-row', { hasText: 'Duskward Pact' })).toBeVisible();
 });

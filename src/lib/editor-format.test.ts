@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EditorSelection, EditorState } from '@codemirror/state';
 import {
+	setAlignmentChanges,
 	setHeadingChanges,
 	toggleBulletChanges,
 	toggleInlineMark,
@@ -77,5 +78,34 @@ describe('line prefixes', () => {
 	it('bullets toggle off across both marker styles', () => {
 		const initial = state('- One\n* Two', 0, 11);
 		expect(applied(initial, toggleBulletChanges(initial)).doc.toString()).toBe('One\nTwo');
+	});
+});
+
+describe('setAlignmentChanges', () => {
+	it('marks the paragraph at the cursor and clears it with left', () => {
+		const initial = state('First paragraph here.\n\nSecond one.', 6);
+		const centered = applied(initial, setAlignmentChanges(initial, 'center'));
+		expect(centered.doc.toString()).toBe('\\center First paragraph here.\n\nSecond one.');
+
+		const back = applied(centered, setAlignmentChanges(centered, 'left'));
+		expect(back.doc.toString()).toBe('First paragraph here.\n\nSecond one.');
+	});
+
+	it('replaces an existing marker instead of stacking', () => {
+		const initial = state('\\center A sign.', 10);
+		const next = applied(initial, setAlignmentChanges(initial, 'right'));
+		expect(next.doc.toString()).toBe('\\right A sign.');
+	});
+
+	it('covers every paragraph the selection touches', () => {
+		const doc = 'One.\n\nTwo.\n\nThree.';
+		const initial = state(doc, 2, doc.indexOf('Two.') + 2);
+		const next = applied(initial, setAlignmentChanges(initial, 'center'));
+		expect(next.doc.toString()).toBe('\\center One.\n\n\\center Two.\n\nThree.');
+	});
+
+	it('does nothing when the alignment already matches', () => {
+		const initial = state('Plain text.', 3);
+		expect(setAlignmentChanges(initial, 'left')).toBeNull();
 	});
 });

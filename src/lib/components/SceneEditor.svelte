@@ -29,9 +29,12 @@
 		markers = [],
 		imageUniverseId,
 		findText = null,
+		findAt = null,
 		compact = false,
+		loreCategories = [],
 		onCrossBoundary,
 		onCreateEntity,
+		onSplitScene,
 		onStatus
 	}: {
 		sceneId: string;
@@ -50,17 +53,26 @@
 		imageUniverseId?: string;
 		// Text a search jump arrived with; the first occurrence gets selected.
 		findText?: string | null;
+		// Character offset an appears-in jump arrived with; the word there
+		// gets selected.
+		findAt?: number | null;
 		// The continuous story view stitches one editor per scene: no title
 		// input, no toolbar, and vertical arrows at the edges hand focus to
 		// neighbours.
 		compact?: boolean;
+		// The universe's categories; with more than one, the selection menu's
+		// lore item grows a submenu to pick where the entry files.
+		loreCategories?: { id: string; name: string }[];
 		onCrossBoundary?: (direction: 'up' | 'down') => void;
 		// Create an entity from the right-click selection menu. Resolves to an
 		// error message, or null when it worked.
 		onCreateEntity?: (
 			type: 'character' | 'place' | 'lore_entry',
-			name: string
+			name: string,
+			categoryId?: string
 		) => Promise<string | null>;
+		// When set, the toolbar offers splitting the scene at the cursor.
+		onSplitScene?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -79,6 +91,9 @@
 	// Bound from one of two mutually exclusive branches (compact or full),
 	// hence the state wrapper.
 	let editorEl = $state<HTMLDivElement>();
+	// The pane's scroll container (full editor only); the page snapshot
+	// reads and restores its position across history navigation.
+	let scrollEl = $state<HTMLDivElement>();
 	let view: EditorView | undefined;
 	// The editor owns the value after mount; the page keys this component by
 	// scene id, so a different scene means a fresh instance.
@@ -153,6 +168,34 @@
 		);
 	}
 
+	// Where the writer was, for the page's history snapshot: the browser
+	// back button then returns to the same scroll position and caret
+	// instead of the top of the scene.
+	export function getViewPosition(): { anchor: number; scroll: number } | null {
+		if (!view) return null;
+		return { anchor: view.state.selection.main.head, scroll: scrollEl?.scrollTop ?? 0 };
+	}
+
+	export function restoreViewPosition(position: { anchor: number; scroll: number }) {
+		if (!view) return;
+		// Clamped: the text may have changed under the history entry.
+		view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length) } });
+		if (scrollEl) scrollEl.scrollTop = position.scroll;
+	}
+
+	// For splitting at the cursor: where the caret is, and a way to land the
+	// pending autosave first so the offset is against the stored text.
+	export function cursorOffset(): { offset: number; length: number } | null {
+		if (!view) return null;
+		return { offset: view.state.selection.main.head, length: view.state.doc.length };
+	}
+
+	export async function flushSave(): Promise<void> {
+		clearTimeout(saveTimer);
+		if (dirty) enqueueSave();
+		await saveChain;
+	}
+
 	// Lets the page place the caret when focus crosses a scene boundary.
 	export function focusEdge(edge: 'start' | 'end') {
 		if (!view) return;
@@ -190,6 +233,19 @@
 		view.focus();
 	});
 
+	// An appears-in jump lands on a mention's offset; select the word there.
+	// Clamped, because the text may have moved since the index was built.
+	$effect(() => {
+		if (findAt === null || !view) return;
+		const at = Math.min(findAt, view.state.doc.length);
+		const word = view.state.wordAt(at);
+		view.dispatch({
+			selection: word ? { anchor: word.from, head: word.to } : { anchor: at },
+			scrollIntoView: true
+		});
+		view.focus();
+	});
+
 	// Pinning a shared name or creating an entity changes the underlines at
 	// once: the page data refresh delivers new pins or entities, and the
 	// mentions compartment reloads.
@@ -212,9 +268,18 @@
 	// The right-click selection menu: quick formatting plus create-from-
 	// selection. Only an actual selection hijacks the native menu, so the
 	// browser's spelling suggestions stay reachable on a plain caret click.
+	// The handler sits on the pane wrapper rather than the prose column, so
+	// the margins around the centered text behave like the text itself.
 	let selectionMenu = $state<{ x: number; y: number; name: string } | null>(null);
 	let menuBusy = $state(false);
 	let menuError = $state('');
+
+	function onPaneContextMenu(event: MouseEvent) {
+		if (view) openSelectionMenu(event, view);
+	}
+
+	// The lore item's category flyout; reset whenever the menu opens.
+	let loreSubOpen = $state(false);
 
 	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
 		const range = editor.state.selection.main;
@@ -224,6 +289,7 @@
 		event.preventDefault();
 		menuError = '';
 		menuBusy = false;
+		loreSubOpen = false;
 		selectionMenu = {
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
@@ -242,12 +308,15 @@
 		view?.focus();
 	}
 
-	async function createFromSelection(type: 'character' | 'place' | 'lore_entry') {
+	async function createFromSelection(
+		type: 'character' | 'place' | 'lore_entry',
+		categoryId?: string
+	) {
 		if (!onCreateEntity || !selectionMenu || menuBusy) return;
 		menuBusy = true;
 		menuError = '';
 		try {
-			const failure = await onCreateEntity(type, selectionMenu.name);
+			const failure = await onCreateEntity(type, selectionMenu.name, categoryId);
 			if (failure) {
 				menuError = failure;
 				menuBusy = false;
@@ -327,10 +396,7 @@
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
 					boundaryKeymap(),
-					imageUniverseId ? imageUploadExtension(imageUniverseId) : [],
-					EditorView.domEventHandlers({
-						contextmenu: (event, editor) => openSelectionMenu(event, editor)
-					})
+					imageUniverseId ? imageUploadExtension(imageUniverseId) : []
 				]
 			})
 		});
@@ -347,7 +413,7 @@
 </script>
 
 {#if compact}
-	<div class="editor compact">
+	<div class="editor compact" role="presentation" oncontextmenu={onPaneContextMenu}>
 		<div class="editor-cm" bind:this={editorEl}></div>
 	</div>
 {:else}
@@ -357,8 +423,14 @@
 		<EditorToolbar
 			view={() => view}
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
+			{onSplitScene}
 		/>
-		<div class="editor-scroll">
+		<div
+			class="editor-scroll"
+			role="presentation"
+			bind:this={scrollEl}
+			oncontextmenu={onPaneContextMenu}
+		>
 			<div class="editor">
 				<input
 					class="editor-title-input"
@@ -444,15 +516,54 @@
 			>
 				New place
 			</button>
-			<button
-				class="sel-create"
-				type="button"
-				role="menuitem"
-				disabled={menuBusy}
-				onclick={() => createFromSelection('lore_entry')}
-			>
-				New lore entry
-			</button>
+			{#if loreCategories.length > 1}
+				<!-- More than one category: the lore item opens a flyout to pick
+				     which one the new entry files under. -->
+				<div
+					class="sel-sub"
+					role="presentation"
+					onmouseenter={() => (loreSubOpen = true)}
+					onmouseleave={() => (loreSubOpen = false)}
+				>
+					<button
+						class="sel-create sel-sub-trigger"
+						type="button"
+						role="menuitem"
+						aria-haspopup="menu"
+						aria-expanded={loreSubOpen}
+						disabled={menuBusy}
+						onclick={() => (loreSubOpen = !loreSubOpen)}
+					>
+						New lore entry
+						<Icon name="chevron" size={12} />
+					</button>
+					{#if loreSubOpen}
+						<div class="sel-submenu" role="menu">
+							{#each loreCategories as category (category.id)}
+								<button
+									class="sel-create"
+									type="button"
+									role="menuitem"
+									disabled={menuBusy}
+									onclick={() => createFromSelection('lore_entry', category.id)}
+								>
+									{category.name}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<button
+					class="sel-create"
+					type="button"
+					role="menuitem"
+					disabled={menuBusy}
+					onclick={() => createFromSelection('lore_entry')}
+				>
+					New lore entry
+				</button>
+			{/if}
 			{#if menuError}
 				<p class="sel-menu-error" role="alert">{menuError}</p>
 			{/if}
@@ -548,5 +659,29 @@
 		font-size: 12px;
 		color: var(--danger, #c0564f);
 		margin: 2px 7px 4px;
+	}
+	/* The lore item's category flyout. */
+	.sel-sub {
+		position: relative;
+	}
+	.sel-sub-trigger {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.sel-submenu {
+		position: absolute;
+		left: calc(100% - 2px);
+		top: -7px;
+		min-width: 150px;
+		max-height: 260px;
+		overflow-y: auto;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+		z-index: 61;
 	}
 </style>

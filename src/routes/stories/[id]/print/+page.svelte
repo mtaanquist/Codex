@@ -121,6 +121,18 @@
 		margin: 0 0 0.8em;
 		text-indent: 0;
 	}
+	/* Aligned paragraphs; centered and right-aligned text drops the indent. */
+	.chapter :global(p.align-center) {
+		text-align: center;
+		text-indent: 0;
+	}
+	.chapter :global(p.align-right) {
+		text-align: right;
+		text-indent: 0;
+	}
+	.chapter :global(p.align-justify) {
+		text-align: justify;
+	}
 	.chapter :global(img) {
 		max-width: 100%;
 	}

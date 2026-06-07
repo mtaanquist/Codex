@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import { UUID_BODY } from './slug.ts';
+import { alignmentOf } from './alignment.ts';
 
 // A paragraph containing exactly \page becomes an explicit page break:
 // styled with a forced break in print and PDF, an inert empty element
@@ -23,16 +24,32 @@ function pageBreaks(md: MarkdownIt) {
 	});
 }
 
+// A paragraph starting with \center, \right, or \justify renders with that
+// text alignment; the marker is stripped from the text. Runs before inline
+// parsing so the marker never reaches the rendered output.
+function alignments(md: MarkdownIt) {
+	md.core.ruler.before('inline', 'codex_alignment', (state) => {
+		const tokens = state.tokens;
+		for (let index = 0; index < tokens.length - 1; index++) {
+			if (tokens[index].type !== 'paragraph_open' || tokens[index + 1].type !== 'inline') continue;
+			const found = alignmentOf(tokens[index + 1].content);
+			if (!found) continue;
+			tokens[index + 1].content = tokens[index + 1].content.slice(found.markerLength);
+			tokens[index].attrJoin('class', `align-${found.align}`);
+		}
+	});
+}
+
 // The one markdown renderer, shared by every surface that turns prose
 // into HTML: exports, the print view, and later the public reading pages.
 // Raw HTML stays off, so prose can never smuggle markup onto a page.
-const renderer = new MarkdownIt({ html: false, linkify: false, typographer: false }).use(
-	pageBreaks
-);
+const renderer = new MarkdownIt({ html: false, linkify: false, typographer: false })
+	.use(pageBreaks)
+	.use(alignments);
 // EPUB chapters are XHTML, which wants self-closed void elements.
-const xhtmlRenderer = new MarkdownIt({ html: false, linkify: false, xhtmlOut: true }).use(
-	pageBreaks
-);
+const xhtmlRenderer = new MarkdownIt({ html: false, linkify: false, xhtmlOut: true })
+	.use(pageBreaks)
+	.use(alignments);
 
 export function renderMarkdown(markdown: string, options: { xhtml?: boolean } = {}): string {
 	return (options.xhtml ? xhtmlRenderer : renderer).render(markdown);

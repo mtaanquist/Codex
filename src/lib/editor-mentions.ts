@@ -91,7 +91,9 @@ export function mentionExtensions(
 			matches.map((match) =>
 				Decoration.mark({
 					class: match.candidates ? 'ref-word ref-ambiguous' : 'ref-word',
-					attributes: { 'data-entity': match.targetId }
+					// A known entity's name is spelled the way its author chose;
+					// the browser's spellchecker keeps its squiggle off it.
+					attributes: { 'data-entity': match.targetId, spellcheck: 'false' }
 				}).range(match.position, match.position + match.length)
 			),
 			true

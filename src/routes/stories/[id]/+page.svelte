@@ -13,9 +13,27 @@
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
-	import type { PageData } from './$types';
+	import type { PageData, Snapshot } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// Where the writer was in the open scene, kept with the history entry:
+	// the browser back button returns to the same scroll and caret instead
+	// of the top of the scene.
+	let sceneEditor = $state<SceneEditor>();
+	type ScenePosition = { sceneId: string; anchor: number; scroll: number };
+	export const snapshot: Snapshot<ScenePosition | null> = {
+		capture: () => {
+			const position = sceneEditor?.getViewPosition();
+			if (!position || !data.selectedScene) return null;
+			return { sceneId: data.selectedScene.id, ...position };
+		},
+		restore: (value) => {
+			if (value && value.sceneId === data.selectedScene?.id) {
+				sceneEditor?.restoreViewPosition(value);
+			}
+		}
+	};
 
 	// Picking which entity a shared name means: store the pin, then let the
 	// data refresh re-render the underlines (the editor reconfigures its
@@ -41,12 +59,13 @@
 	// reconfigures the underlines, so the new name lights up in place.
 	async function createEntity(
 		type: 'character' | 'place' | 'lore_entry',
-		name: string
+		name: string,
+		categoryId?: string
 	): Promise<string | null> {
 		const response = await fetch(`/api/stories/${data.story.id}/entities`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ type, name })
+			body: JSON.stringify({ type, name, ...(categoryId ? { categoryId } : {}) })
 		});
 		if (!response.ok) {
 			const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -73,6 +92,14 @@
 	// selects the first occurrence so the eye lands on it.
 	const findText = $derived(page.url.searchParams.get('find'));
 
+	// An appears-in jump carries the mention's character offset instead.
+	const findAt = $derived.by(() => {
+		const raw = page.url.searchParams.get('at');
+		if (raw === null) return null;
+		const at = Number.parseInt(raw, 10);
+		return Number.isInteger(at) && at >= 0 ? at : null;
+	});
+
 	// The mention index rebuilds in the background after a save, so the
 	// Reference tab can trail the text by a couple of seconds. While the
 	// open scene's index watermark is behind its last edit (the worker's
@@ -92,6 +119,61 @@
 		}, MENTION_POLL_MS);
 		return () => clearTimeout(timer);
 	});
+
+	// Scenes picked for merging via the row menu; the merge joins them in
+	// story order regardless of the picking order.
+	let mergeSelection = new SvelteSet<string>();
+
+	function toggleMergeSelection(sceneId: string) {
+		if (mergeSelection.has(sceneId)) mergeSelection.delete(sceneId);
+		else mergeSelection.add(sceneId);
+		rowMenu = null;
+	}
+
+	async function mergeSelectedScenes() {
+		rowMenu = null;
+		const response = await fetch(`/api/stories/${data.story.id}/merge-scenes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ sceneIds: [...mergeSelection] })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			alert(body?.message ?? 'Could not merge the scenes.');
+			return;
+		}
+		const { targetSceneId } = (await response.json()) as { targetSceneId: string };
+		mergeSelection.clear();
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+		await goto(`${storyPath}?scene=${targetSceneId}`, { invalidateAll: true });
+	}
+
+	// Splits the open scene at the cursor, like a page break: the rest of
+	// the text moves to a new untitled scene directly after this one.
+	async function splitCurrentScene() {
+		if (!sceneEditor || !data.selectedScene) return;
+		const cursor = sceneEditor.cursorOffset();
+		if (!cursor || cursor.offset <= 0 || cursor.offset >= cursor.length) {
+			alert('Put the cursor where the scene should break, inside the text.');
+			return;
+		}
+		// The offset must point into the stored text, so the pending autosave
+		// lands first.
+		await sceneEditor.flushSave();
+		const response = await fetch(`/api/scenes/${data.selectedScene.id}/split`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ offset: cursor.offset })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			alert(body?.message ?? 'Could not split the scene.');
+			return;
+		}
+		const { newSceneId } = (await response.json()) as { newSceneId: string };
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
+	}
 
 	// Chapters start expanded; collapsing is per-visit state.
 	let collapsed = new SvelteSet<string>();
@@ -412,6 +494,7 @@
 												<a
 													class="scene-row"
 													class:active={scene.id === data.selectedScene?.id}
+													class:merge-selected={mergeSelection.has(scene.id)}
 													href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
 													draggable="true"
 													oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
@@ -462,6 +545,7 @@
 										<a
 											class="scene-row"
 											class:active={scene.id === data.selectedScene?.id}
+											class:merge-selected={mergeSelection.has(scene.id)}
 											href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
 											draggable={sceneQuery === ''}
 											oncontextmenu={(e) => openRowMenu(e, { kind: 'scene', id: scene.id })}
@@ -575,6 +659,7 @@
 							writingLanguage={data.preferences.writingLanguage}
 							imageUniverseId={data.universe.id}
 							markers={data.storyDocMarkers[scene.id] ?? []}
+							loreCategories={data.loreCategories}
 							onCreateEntity={createEntity}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
 							onStatus={(status) => {
@@ -624,10 +709,13 @@
 			{:else if data.selectedScene}
 				{#key data.selectedScene.id}
 					<SceneEditor
+						bind:this={sceneEditor}
+						onSplitScene={splitCurrentScene}
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
 						{findText}
+						{findAt}
 						entities={data.mentionEntities}
 						{mentionOptions}
 						autocompleteMode={data.preferences.entityAutocomplete}
@@ -636,6 +724,7 @@
 						writingLanguage={data.preferences.writingLanguage}
 						imageUniverseId={data.universe.id}
 						markers={data.sceneMarkers}
+						loreCategories={data.loreCategories}
 						onCreateEntity={createEntity}
 						onStatus={(status) => {
 							saveStatus = status;
@@ -834,6 +923,34 @@
 				</button>
 			</form>
 		{:else}
+			{@const pickedForMerge = mergeSelection.has(target.id)}
+			<button
+				class="row-menu-item"
+				type="button"
+				role="menuitem"
+				onclick={() => toggleMergeSelection(target.id)}
+			>
+				<Icon name="plus" size={13} />
+				{pickedForMerge ? 'Unselect for merging' : 'Select for merging'}
+			</button>
+			{#if pickedForMerge && mergeSelection.size >= 2}
+				<button class="row-menu-item" type="button" role="menuitem" onclick={mergeSelectedScenes}>
+					<Icon name="chapter" size={13} /> Merge {mergeSelection.size} scenes
+				</button>
+			{/if}
+			{#if mergeSelection.size > 0}
+				<button
+					class="row-menu-item"
+					type="button"
+					role="menuitem"
+					onclick={() => {
+						mergeSelection.clear();
+						rowMenu = null;
+					}}
+				>
+					Clear merge selection
+				</button>
+			{/if}
 			<form method="POST" action="?/deleteScene">
 				<input type="hidden" name="sceneId" value={target.id} />
 				{@render openSceneField()}
@@ -846,6 +963,13 @@
 {/if}
 
 <style>
+	/* A scene picked for merging keeps a quiet accent ring until the merge
+	   or the selection is cleared. */
+	.scene-row.merge-selected {
+		box-shadow: inset 0 0 0 1.5px var(--accent-line);
+		border-radius: 6px;
+	}
+
 	/* The sidebar rows' right-click menu; same look as the editor's
 	   selection menu. */
 	.row-menu {

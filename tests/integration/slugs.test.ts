@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { stories, universes, users } from '../../src/lib/server/db/schema';
+import { entityCategories, stories, universes, users } from '../../src/lib/server/db/schema';
 import { uniqueSlug } from '../../src/lib/server/slugs';
+import { createStoryInUniverse, standaloneUniverse } from '../../src/lib/server/story-create';
 import { ownedStory } from '../../src/lib/server/story-access';
 import { ownedUniverse } from '../../src/lib/server/universe-access';
 import { isValidSlug } from '../../src/lib/slug';
@@ -102,5 +104,40 @@ describe('ownedUniverse / ownedStory', () => {
 		await expect(
 			ownedStory('00000000-0000-4000-8000-000000000000', ownerId, db)
 		).rejects.toMatchObject({ status: 404 });
+	});
+});
+
+describe('createStoryInUniverse', () => {
+	it('creates a story with a readable slug, suffixing on a repeat title', async () => {
+		const first = await createStoryInUniverse(db, ownerId, universeId, 'Night Watch');
+		expect(first.slug).toBe('night-watch');
+		expect(first.universeId).toBe(universeId);
+		const second = await createStoryInUniverse(db, ownerId, universeId, 'Night Watch');
+		expect(second.slug).toBe('night-watch-2');
+	});
+});
+
+describe('standaloneUniverse', () => {
+	it('creates the home for one-off stories once, then reuses it', async () => {
+		const first = await standaloneUniverse(db, ownerId);
+		expect(first.name).toBe('Standalone stories');
+		expect(first.standalone).toBe(true);
+		// Lore needs a category, so the starter pair comes along.
+		const categories = await db
+			.select()
+			.from(entityCategories)
+			.where(eq(entityCategories.universeId, first.id));
+		expect(categories.map((c) => c.name).sort()).toEqual(['Faction', 'Lore']);
+
+		const again = await standaloneUniverse(db, ownerId);
+		expect(again.id).toBe(first.id);
+
+		// Another owner gets their own.
+		const theirs = await standaloneUniverse(db, otherId);
+		expect(theirs.id).not.toBe(first.id);
+
+		// And a story files into it like any universe.
+		const story = await createStoryInUniverse(db, ownerId, first.id, 'A One-Off');
+		expect(story.universeId).toBe(first.id);
 	});
 });

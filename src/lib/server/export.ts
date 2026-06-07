@@ -402,6 +402,7 @@ async function gatherUniverseDocs(
 				name: `${placeName(slugify(p.name, p.id))}.md`,
 				front: {
 					name: p.name,
+					aliases: p.aliases.length ? p.aliases.join(', ') : null,
 					category: categoryName(p.categoryId),
 					details: detailLines(p.details)
 				},

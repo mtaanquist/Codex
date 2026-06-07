@@ -1,9 +1,11 @@
 import { sql } from 'drizzle-orm';
+import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { storyStatus } from '$lib/dashboard';
 import { ownedUniverse } from '$lib/server/universe-access';
 import { planActions } from '$lib/server/plan-actions';
+import { createStoryInUniverse } from '$lib/server/story-create';
 import {
 	entityAppearances,
 	entityMentionCount,
@@ -147,11 +149,22 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	};
 };
 
-export const actions: Actions = planActions(async ({ params, locals }) => {
-	const universe = await ownedUniverse(params.id, locals.user!.id);
-	return {
-		universeId: universe.id,
-		ownerId: locals.user!.id,
-		planPath: `/universes/${universe.slug}/plan`
-	};
-});
+export const actions: Actions = {
+	...planActions(async ({ params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		return {
+			universeId: universe.id,
+			ownerId: locals.user!.id,
+			planPath: `/universes/${universe.slug}/plan`
+		};
+	}),
+	// The board's new-story form, so a fresh universe can grow its first
+	// story without a detour through the library.
+	createStory: async ({ request, params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		const title = String((await request.formData()).get('title') ?? '').trim();
+		if (!title) return fail(400, { scope: 'story', message: 'Give the story a title.' });
+		const story = await createStoryInUniverse(db, locals.user!.id, universe.id, title);
+		redirect(303, `/stories/${story.slug}`);
+	}
+};
