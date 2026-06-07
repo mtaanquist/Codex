@@ -74,6 +74,18 @@ export async function approveUser(db: Database, userId: string): Promise<boolean
 	return Boolean(row);
 }
 
+// Marks an account's email confirmed by the operator's word, for accounts
+// stuck behind a verification mail that never arrived (no relay configured,
+// or approved before approval started waiving the check).
+export async function confirmUserEmail(db: Database, userId: string): Promise<boolean> {
+	const [row] = await db
+		.update(users)
+		.set({ emailVerifiedAt: new Date() })
+		.where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
+		.returning({ id: users.id });
+	return Boolean(row);
+}
+
 // Rejects a pending account by deleting it. Only ever a brand-new sign-up with
 // no content of its own; its outstanding tokens go first to clear the foreign
 // key. Refuses to delete an already-approved account or an admin.

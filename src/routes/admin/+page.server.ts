@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
 	approveUser,
+	confirmUserEmail,
 	instanceStats,
 	listAllUsers,
 	rejectUser,
@@ -105,6 +106,11 @@ export const actions: Actions = {
 	approve: async ({ request, locals }) => {
 		requireAdmin(locals);
 		return onUser(request, 'accounts', (id) => approveUser(db, id));
+	},
+	confirmEmail: async ({ request, locals }) => {
+		requireAdmin(locals);
+		// Frees an account stuck behind a verification mail that never arrived.
+		return onUser(request, 'accounts', (id) => confirmUserEmail(db, id));
 	},
 	reject: async ({ request, locals }) => {
 		requireAdmin(locals);

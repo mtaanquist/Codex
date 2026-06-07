@@ -107,6 +107,9 @@
 		if (u.deletionScheduledAt) return 'Deletion scheduled';
 		if (u.suspendedAt) return 'Suspended';
 		if (!u.approvedAt) return u.emailVerifiedAt ? 'Awaiting approval' : 'Email unconfirmed';
+		// Approved before approval started waiving the check, or an invite
+		// sign-up whose verification mail never arrived: cannot sign in yet.
+		if (!u.emailVerifiedAt) return 'Email unconfirmed';
 		return 'Active';
 	}
 
@@ -722,6 +725,14 @@
 													{#if account.role === 'admin' || account.id === data.meId}
 														<span class="cell-muted">-</span>
 													{:else}
+														{#if !account.emailVerifiedAt}
+															<form method="POST" action="?/confirmEmail">
+																<input type="hidden" name="userId" value={account.id} />
+																<button type="submit" class="btn btn-ghost btn-sm"
+																	>Confirm email</button
+																>
+															</form>
+														{/if}
 														{#if account.publicArchiveEnabled}
 															<form method="POST" action="?/disableArchive">
 																<input type="hidden" name="userId" value={account.id} />

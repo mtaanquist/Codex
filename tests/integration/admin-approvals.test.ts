@@ -7,6 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import { authTokens, users } from '../../src/lib/server/db/schema';
 import {
 	approveUser,
+	confirmUserEmail,
 	listAllUsers,
 	rejectUser,
 	setUserArchive,
@@ -80,6 +81,16 @@ describe('approveUser', () => {
 		expect(await approveUser(db, id)).toBe(true);
 		const [after] = await db.select().from(users).where(eq(users.id, id));
 		expect(after.emailVerifiedAt).toEqual(before.emailVerifiedAt);
+	});
+});
+
+describe('confirmUserEmail', () => {
+	it('confirms an unconfirmed email and is a no-op when already confirmed', async () => {
+		const id = await makeUser('stuck@example.com', { approved: true });
+		expect(await confirmUserEmail(db, id)).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, id));
+		expect(row.emailVerifiedAt).not.toBeNull();
+		expect(await confirmUserEmail(db, id)).toBe(false);
 	});
 });
 
