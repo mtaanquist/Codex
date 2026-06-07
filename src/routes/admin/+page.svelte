@@ -1,20 +1,28 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
+	import { pushState } from '$app/navigation';
+	import { page } from '$app/state';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	type Section =
-		| 'overview'
-		| 'users'
-		| 'ai'
-		| 'usage'
-		| 'published'
-		| 'backups'
-		| 'audit'
-		| 'instance';
+	const SECTIONS = [
+		'overview',
+		'users',
+		'ai',
+		'usage',
+		'published',
+		'backups',
+		'audit',
+		'instance'
+	] as const;
+	type Section = (typeof SECTIONS)[number];
+
+	function sectionFromUrl(url: URL): Section | null {
+		const s = url.searchParams.get('section');
+		return SECTIONS.includes(s as Section) ? (s as Section) : null;
+	}
 
 	// After an action, jump to the section that owns the result so the admin
 	// sees the message where it belongs.
@@ -34,10 +42,14 @@
 		}
 	}
 
-	// Defaults to the overview; the effect below moves to the section that owns
-	// an action result (it also runs once on mount, so a server-side redirect
-	// into, say, the accounts list lands there).
-	let active = $state<Section>('overview');
+	// The section rides in the URL (?section=users) so links, refreshes, and
+	// the command palette land on the right one; a plain /admin is the
+	// overview. The effects move to the section a navigation or an action
+	// result points at.
+	let active: Section = $derived(sectionFromUrl(page.url) ?? 'overview');
+	// An action result overrides the URL: the forms here post natively, so the
+	// page reloads without ?section= and only form.scope knows where the admin
+	// was.
 	$effect(() => {
 		const s = sectionFor(form?.scope);
 		if (s) active = s;
@@ -45,6 +57,8 @@
 
 	function go(section: Section) {
 		active = section;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- stays on /admin, only the query changes
+		pushState(`?section=${section}`, {});
 	}
 
 	function when(date: Date | string): string {
@@ -146,26 +160,7 @@
 </svelte:head>
 
 <div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="divider"></span>
-		<a class="back-link" href={resolve('/')}>
-			<svg
-				viewBox="0 0 12 12"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.4"
-				stroke-linecap="round"
-				stroke-linejoin="round"><polyline points="7.5 2.5 3 6 7.5 9.5" /></svg
-			>
-			Library
-		</a>
-		<span class="spacer"></span>
-		<NotificationBell />
-		<UserMenu />
-	</header>
+	<PageTopBar back={{ href: resolve('/'), label: 'Library' }} />
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">

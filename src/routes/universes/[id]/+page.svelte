@@ -4,9 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
-	import PaletteButton from '$lib/components/PaletteButton.svelte';
-	import UserMenu from '$lib/components/UserMenu.svelte';
-	import NotificationBell from '$lib/components/NotificationBell.svelte';
+	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -157,27 +155,12 @@
 </svelte:head>
 
 <div class="page-shell">
-	<header class="topbar">
-		<a class="brand" href={resolve('/')}>
-			<span class="brand-name">Codex</span>
-		</a>
-		<span class="divider"></span>
-		<a class="back-link" href={resolve('/universes/[id]/plan', { id: data.universe.slug })}>
-			<svg
-				viewBox="0 0 12 12"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.4"
-				stroke-linecap="round"
-				stroke-linejoin="round"><polyline points="7.5 2.5 3 6 7.5 9.5" /></svg
-			>
-			{data.universe.name}
-		</a>
-		<span class="spacer"></span>
-		<PaletteButton />
-		<NotificationBell />
-		<UserMenu />
-	</header>
+	<PageTopBar
+		back={{
+			href: resolve('/universes/[id]/plan', { id: data.universe.slug }),
+			label: data.universe.name
+		}}
+	/>
 
 	<div class="admin-shell">
 		<aside class="admin-sidebar">

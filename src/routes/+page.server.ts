@@ -13,9 +13,12 @@ import {
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	// Signed-out visitors get the landing page; no data to load for it.
+	// Signed-out visitors get the landing page; no data to load for it. The
+	// page checks the layout's `user` for which face to show; returning a
+	// `user` key here would shadow the layout's shape (and once dropped the
+	// admin link from the avatar menu by losing its isAdmin flag).
 	if (!locals.user) {
-		return { user: null, universes: [], stories: [], isAdmin: false, trashedUniverses: [] };
+		return { universes: [], stories: [], trashedUniverses: [] };
 	}
 	const user = locals.user;
 	const list = await db
@@ -85,10 +88,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	});
 
 	return {
-		user,
 		universes: list,
 		stories: storyList,
-		isAdmin: user.role === 'admin',
 		trashedUniverses
 	};
 };
