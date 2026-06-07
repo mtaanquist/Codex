@@ -1,4 +1,5 @@
 import { DEFAULT_ACCENT, type Theme } from './appearance';
+import { faviconDataUrl } from './favicon.ts';
 
 // Applies the colour theme and accent to the document, and keeps the
 // localStorage keys the app.html pre-paint script reads in sync so the next
@@ -18,6 +19,9 @@ export function applyAppearance(theme: Theme, accent: string): void {
 	} else {
 		root.style.removeProperty('--accent');
 	}
+
+	// The favicon carries the accent too, so the tab matches the brand mark.
+	document.querySelector('link[rel="icon"]')?.setAttribute('href', faviconDataUrl(accent));
 
 	try {
 		// 'system' is the absence of a stored theme, matching the pre-paint script.
