@@ -152,9 +152,9 @@ planned. None are committed yet; each needs a scoping conversation first.
 - **Scene split/merge, duplicate, and cross-container moves.** Split/merge shipped in v2.34.0; duplicate-a-scene shipped on develop 2026-06-07 (row-menu "Duplicate scene", a full copy directly after the source, the building block for keeping a scene as a template). Still open: duplicate a whole story, and cross-container moves between stories and universes (need ownership and mention-index design).
 - **Draft comparison UI.** Revision diffs exist in the preview banner; a side-by-side comparison of two revisions (and a clearer way to find "what changed between drafts") does not.
 - **Front and back matter.** Prologues, epilogues, dedications, and author's notes are currently faked as scenes; exports and EPUB would treat real front/back matter differently.
-- **Self-host walkthrough.** README covers the image and first-admin bootstrap; env vars, backup/restore drill, SMTP, S3 setup, and non-Caddy reverse-proxy examples live only in `.env.example` and the code. A docs/SELF-HOSTING.md would close it.
+- **Self-host walkthrough.** SHIPPED (develop 2026-06-07): docs/SELF-HOSTING.md - full env-var reference, Caddy/nginx/Traefik reverse-proxy examples, email and S3 setup, the backup/restore drill, health checks, updating, a single-replica scaling note, and troubleshooting; linked from the README.
 - **Write-path rate limits and a shared limiter.** Auth, search, and guest review are rate-limited; autosave and asset upload are not. The in-memory limiter also gives N independent buckets across N replicas, so a shared store (or a deliberate single-replica stance) is a prerequisite for scaling the hosted service.
-- **Help docs coverage.** Articles are accurate but cover roughly 70% of the app: account/profile, security (2FA, passkeys, sessions), appearance/page-setup defaults, and a keyboard shortcuts reference have no articles.
+- **Help docs coverage.** SHIPPED (develop 2026-06-07): added account (profile, public page, appearance, editor and page-setup defaults), security (password, email change, 2FA, passkeys, sessions, export, deletion), and shortcuts (keyboard reference) articles; the account page's help "?" opens the relevant one per section.
 
 ### Phase 9 - AI
 

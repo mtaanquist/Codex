@@ -132,9 +132,14 @@ pool, plus two decisions:
   blocks); close the capability-review gap with docs, not features.
   See the roadmap candidate notes for both.
 
-Still open from the candidate pool for this v2 wind-down: writing goals
-and deadlines, draft comparison UI, front/back matter, self-host
-walkthrough, write-path rate limits, help docs coverage.
+v2 wind-down, in flight (author away, autonomous; full release flow per
+item, best-judgment on forks documented in PRs). Done: self-host
+walkthrough (docs/SELF-HOSTING.md) and help docs coverage (account,
+security, shortcuts articles) - shipping as v2.37.0. Next: write-path
+rate limits (v2.38.0), then writing goals and deadlines (v2.39.0).
+Held for the author (need a design steer): front/back matter and draft
+comparison UI. Then the v2 -> v3 boundary (the held /code-review ultra
+run).
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
