@@ -47,6 +47,7 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
+			notesHref={resolve('/stories/[id]/notes', { id: data.story.slug })}
 			writeHref={resolve('/stories/[id]', { id: data.story.slug })}
 			boardHref={planPath}
 			boardActive={!data.selected}
