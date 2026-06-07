@@ -2,6 +2,8 @@
 
 The editor is where you draft scenes. It saves on its own as you type, so there is no save button; the status near the top shows when your work was last stored.
 
+The gear in the top bar opens the story's settings: details, cover, page setup, publishing, review links, exports, and more. Clicking the story's title in the breadcrumb goes there too.
+
 ## Scenes and chapters
 
 A scene holds one stretch of prose. Chapters group scenes in order. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".

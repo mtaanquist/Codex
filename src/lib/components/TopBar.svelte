@@ -43,7 +43,11 @@
 				{universe.name}
 			</a>
 			<span class="sep"><Icon name="chevron" size={13} /></span>
-			<a class="crumb current" href={resolve('/stories/[id]/settings', { id: story.slug })}>
+			<a
+				class="crumb current"
+				href={resolve('/stories/[id]/settings', { id: story.slug })}
+				title="Story settings"
+			>
 				{story.title}
 			</a>
 		{:else}
@@ -57,13 +61,25 @@
 			<span class="saved" role="status"><span class="dot"></span> {SAVE_LABEL[saveStatus]}</span>
 		{/if}
 		<PaletteButton />
-		<a
-			class="icon-btn"
-			href={resolve('/universes/[id]', { id: universe.slug })}
-			title="Universe settings"
-		>
-			<Icon name="gear" />
-		</a>
+		<!-- The gear opens the settings of what is on screen: the story's when
+		     one is open, the universe's otherwise. -->
+		{#if story}
+			<a
+				class="icon-btn"
+				href={resolve('/stories/[id]/settings', { id: story.slug })}
+				title="Story settings"
+			>
+				<Icon name="gear" />
+			</a>
+		{:else}
+			<a
+				class="icon-btn"
+				href={resolve('/universes/[id]', { id: universe.slug })}
+				title="Universe settings"
+			>
+				<Icon name="gear" />
+			</a>
+		{/if}
 		{#if storyView}
 			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 			<a

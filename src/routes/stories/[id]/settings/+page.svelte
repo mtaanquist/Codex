@@ -515,7 +515,8 @@
 							</form>
 						{:else}
 							<p class="field-hint">
-								Image uploads need the ASSET_S3_* variables set; see .env.example.
+								Image uploads are off until an admin sets up asset storage (Usage & storage in the
+								admin panel).
 							</p>
 						{/if}
 					</div>
@@ -626,7 +627,8 @@
 									</p>
 								{:else}
 									<p class="field-hint">
-										Stored downloads need the ASSET_S3_* variables set; see .env.example.
+										Stored downloads are off until an admin sets up asset storage (Usage & storage
+										in the admin panel).
 									</p>
 								{/if}
 								{#if data.assetsConfigured}
