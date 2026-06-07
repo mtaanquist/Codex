@@ -11,14 +11,20 @@ import {
 	restoreUniverse
 } from '$lib/server/universe-lifecycle';
 import { assetConfig, s3AssetStore } from '$lib/server/assets';
+import { signupMode } from '$lib/server/settings';
 
 export const load: PageServerLoad = async ({ locals }) => {
-	// Signed-out visitors get the landing page; no data to load for it. The
-	// page checks the layout's `user` for which face to show; returning a
-	// `user` key here would shadow the layout's shape (and once dropped the
-	// admin link from the avatar menu by losing its isAdmin flag).
+	// Signed-out visitors get the landing page. The page checks the layout's
+	// `user` for which face to show; returning a `user` key here would shadow
+	// the layout's shape (and once dropped the admin link from the avatar menu
+	// by losing its isAdmin flag).
 	if (!locals.user) {
-		return { universes: [], stories: [], trashedUniverses: [] };
+		return {
+			universes: [],
+			stories: [],
+			trashedUniverses: [],
+			signupOpen: (await signupMode(db)) !== 'none'
+		};
 	}
 	const user = locals.user;
 	const list = await db

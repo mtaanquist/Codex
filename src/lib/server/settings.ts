@@ -4,6 +4,30 @@ import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';
 
 const SMTP_KEY = 'smtp';
+const SIGNUP_KEY = 'signup';
+
+// Who can create an account. 'approval' matches the behavior from before the
+// setting existed, so an instance that has never saved one keeps working the
+// same way.
+export const SIGNUP_MODES = ['none', 'invite', 'approval', 'open'] as const;
+export type SignupMode = (typeof SIGNUP_MODES)[number];
+
+export async function signupMode(db: Database): Promise<SignupMode> {
+	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, SIGNUP_KEY));
+	const mode = (row?.value as { mode?: string } | undefined)?.mode;
+	return SIGNUP_MODES.includes(mode as SignupMode) ? (mode as SignupMode) : 'approval';
+}
+
+export async function saveSignupMode(db: Database, mode: SignupMode): Promise<void> {
+	const value = { mode };
+	await db
+		.insert(appSettings)
+		.values({ key: SIGNUP_KEY, value })
+		.onConflictDoUpdate({
+			target: appSettings.key,
+			set: { value, updatedAt: sql`now()` }
+		});
+}
 
 // What the worker needs to actually send: the password is decrypted here.
 export type SmtpConfig = {

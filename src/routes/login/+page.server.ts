@@ -1,7 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { createSession, SESSION_COOKIE, verifyCredentials } from '$lib/server/auth';
+import { signupMode } from '$lib/server/settings';
 import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '$lib/server/two-factor';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
@@ -16,6 +17,11 @@ const LOGIN_WINDOW_MS = 5 * 60 * 1000;
 // shared network behind one proxy; needs ADDRESS_HEADER set (see the README)
 // for the address to be the real client rather than the proxy.
 const LOGIN_IP_LIMIT = 50;
+
+// Whether to offer the sign-up link at all.
+export const load: PageServerLoad = async () => {
+	return { signupOpen: (await signupMode(db)) !== 'none' };
+};
 
 export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {

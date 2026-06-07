@@ -14,7 +14,14 @@ import { backupConfig, listRecentBackupRuns } from '$lib/server/backups';
 import { queueBackup } from '$lib/server/jobs';
 import { createInviteCode, deleteInviteCode, listInviteCodes } from '$lib/server/invites';
 import { listPublications, takedownPublication } from '$lib/server/publish';
-import { saveSmtp, smtpView } from '$lib/server/settings';
+import {
+	saveSignupMode,
+	saveSmtp,
+	SIGNUP_MODES,
+	signupMode,
+	smtpView,
+	type SignupMode
+} from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
 import { sendEmail } from '$lib/server/email';
 import { adminCancelDeletion, purgeAccount } from '$lib/server/account-deletion';
@@ -40,6 +47,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		meId: locals.user!.id,
 		stats: await instanceStats(db),
+		signup: await signupMode(db),
 		users: await listAllUsers(db),
 		inviteCodes: await listInviteCodes(db),
 		published: await listPublications(db, 50),
@@ -118,6 +126,16 @@ export const actions: Actions = {
 			await disableTotp(db, id);
 			return true;
 		});
+	},
+	saveSignup: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const mode = String(data.get('mode') ?? '');
+		if (!SIGNUP_MODES.includes(mode as SignupMode)) {
+			return fail(400, { scope: 'signup', message: 'Pick one of the sign-up options.' });
+		}
+		await saveSignupMode(db, mode as SignupMode);
+		return { scope: 'signup', saved: true };
 	},
 	createInvite: async ({ request, locals }) => {
 		requireAdmin(locals);
