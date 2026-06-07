@@ -220,19 +220,31 @@ describe('email change', () => {
 		expect(row.emailVerifiedAt).not.toBeNull();
 	});
 
-	it('rejects a wrong password, an invalid address, and a taken one', async () => {
+	it('rejects a wrong password and an invalid address', async () => {
+		expect((await requestEmailChange(db, userId, 'wrong', 'fine@example.com')).ok).toBe(false);
+		expect((await requestEmailChange(db, userId, 'current-password', 'nope')).ok).toBe(false);
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.pendingEmail).toBeNull();
+	});
+
+	it('does not reveal a taken address at request time; the collision fails on confirm', async () => {
 		await db.insert(users).values({
 			email: 'taken@example.com',
 			displayName: 'T',
 			passwordHash: 'x',
 			role: 'user'
 		});
-		expect((await requestEmailChange(db, userId, 'wrong', 'fine@example.com')).ok).toBe(false);
-		expect((await requestEmailChange(db, userId, 'current-password', 'nope')).ok).toBe(false);
-		expect((await requestEmailChange(db, userId, 'current-password', 'taken@example.com')).ok).toBe(
-			false
-		);
+		// No enumeration oracle: a taken address is accepted like any other, so
+		// the form cannot be used to probe which emails have accounts.
+		const result = await requestEmailChange(db, userId, 'current-password', 'taken@example.com');
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error('unreachable');
+		const [pending] = await db.select().from(users).where(eq(users.id, userId));
+		expect(pending.pendingEmail).toBe('taken@example.com');
+		// Confirmation catches the unique violation and clears the pending address.
+		expect((await confirmEmailChange(db, result.token)).ok).toBe(false);
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.email).toBe('acct@example.com');
 		expect(row.pendingEmail).toBeNull();
 	});
 

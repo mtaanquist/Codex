@@ -211,8 +211,11 @@ export async function requestEmailChange(
 	if (email === user.email) {
 		return { ok: false, reason: 'That is already your email address.' };
 	}
-	const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
-	if (taken) return { ok: false, reason: 'That email address is already in use.' };
+
+	// Do not reveal whether the address already belongs to another account: a
+	// distinct "already in use" message turns this into an enumeration oracle.
+	// A taken address simply fails at confirmation time (confirmEmailChange
+	// catches the unique violation), keeping signup, reset, and change quiet.
 
 	// Revoke any earlier pending change before issuing the new one, so an older
 	// link cannot later confirm whatever address is pending at that moment.

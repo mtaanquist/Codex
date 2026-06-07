@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { users } from '../../src/lib/server/db/schema';
-import { createFirstAdmin, instanceStats } from '../../src/lib/server/admin';
+import { sessions, users } from '../../src/lib/server/db/schema';
+import { createFirstAdmin, instanceStats, setUserSuspended } from '../../src/lib/server/admin';
 import { universes, stories } from '../../src/lib/server/db/schema';
 import { verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
@@ -123,5 +123,43 @@ describe('instanceStats', () => {
 	it('reports zeroes on an empty instance', async () => {
 		const stats = await instanceStats(db);
 		expect(stats).toEqual({ writers: 0, pending: 0, universes: 0, stories: 0 });
+	});
+});
+
+describe('setUserSuspended', () => {
+	async function liveSessions(userId: string) {
+		return await db
+			.select({ id: sessions.id })
+			.from(sessions)
+			.where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+	}
+
+	it('suspends, revokes live sessions, and unsuspending does not revive them', async () => {
+		const [user] = await db
+			.insert(users)
+			.values({ email: 'sub@example.com', displayName: 'Sub', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await db
+			.insert(sessions)
+			.values({ userId: user.id, expiresAt: new Date(Date.now() + 3_600_000) });
+
+		expect(await setUserSuspended(db, user.id, true)).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, user.id));
+		expect(row.suspendedAt).not.toBeNull();
+		expect(await liveSessions(user.id)).toHaveLength(0);
+
+		// Unsuspending clears the flag but the revoked session stays dead.
+		expect(await setUserSuspended(db, user.id, false)).toBe(true);
+		const [after] = await db.select().from(users).where(eq(users.id, user.id));
+		expect(after.suspendedAt).toBeNull();
+		expect(await liveSessions(user.id)).toHaveLength(0);
+	});
+
+	it('refuses to suspend an admin', async () => {
+		const [admin] = await db
+			.insert(users)
+			.values({ email: 'adm@example.com', displayName: 'A', passwordHash: 'x', role: 'admin' })
+			.returning({ id: users.id });
+		expect(await setUserSuspended(db, admin.id, true)).toBe(false);
 	});
 });
