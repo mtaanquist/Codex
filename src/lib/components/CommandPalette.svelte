@@ -171,6 +171,12 @@
 					run: navigate('/admin?section=published')
 				},
 				{
+					label: 'Admin: usage & storage',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate('/admin?section=usage')
+				},
+				{
 					label: 'Admin: backups',
 					sublabel: null,
 					kind: 'Go to',

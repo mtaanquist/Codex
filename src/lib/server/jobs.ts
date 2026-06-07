@@ -14,6 +14,7 @@ export {
 	BACKUP_QUEUE,
 	EMAIL_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
+	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE
 } from './queues.ts';
@@ -23,6 +24,7 @@ import {
 	BACKUP_QUEUE,
 	EMAIL_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
+	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE
 } from './queues.ts';
@@ -43,6 +45,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(BACKUP_QUEUE);
 		await boss.createQueue(EMAIL_QUEUE);
 		await boss.createQueue(EXPORT_ARTIFACTS_QUEUE);
+		await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 		return boss;
@@ -137,6 +140,36 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 	} catch (error) {
 		console.error('queueing export artifacts failed:', error);
 		return false;
+	}
+}
+
+// Copies stored assets to newly saved storage, queued from the admin page.
+// The singleton key keeps one migration in flight at a time.
+export async function queueAssetMigration(): Promise<boolean> {
+	try {
+		const boss = await getBoss();
+		const id = await boss.send(
+			MIGRATE_ASSETS_QUEUE,
+			{},
+			{ singletonKey: 'migrate-assets', singletonSeconds: 30 }
+		);
+		return id !== null;
+	} catch (error) {
+		console.error('queueing asset migration failed:', error);
+		return false;
+	}
+}
+
+// Keeps the worker's backup schedule in step when the settings change in the
+// admin panel, without waiting for a worker restart. The worker reconciles
+// the same schedule at startup.
+export async function applyBackupSchedule(cron: string | null): Promise<void> {
+	try {
+		const boss = await getBoss();
+		if (cron) await boss.schedule(BACKUP_QUEUE, cron, { trigger: 'scheduled' }, { tz: 'UTC' });
+		else await boss.unschedule(BACKUP_QUEUE);
+	} catch (error) {
+		console.error('applying the backup schedule failed:', error);
 	}
 }
 

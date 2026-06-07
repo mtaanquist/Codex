@@ -12,10 +12,21 @@ import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth';
 import { backupRuns } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
+import {
+	effectiveS3,
+	readSetting,
+	s3SettingsView,
+	saveS3Settings,
+	type S3SettingsView,
+	type SaveS3Input,
+	type SaveS3Result,
+	type StoredS3
+} from './settings.ts';
 
 // Off-site database backups to any S3-compatible bucket (S3, Backblaze B2,
-// MinIO, R2). Configured entirely through environment variables and off
-// until the bucket and keys are set. The worker runs the scheduled and
+// MinIO, R2). Off until the bucket and keys are set, in the admin panel or
+// through the BACKUP_S3_* environment variables; settings saved in the panel
+// win, the environment is the seed. The worker runs the scheduled and
 // ad-hoc jobs; backup_runs holds the evidence either way.
 
 export type BackupConfig = {
@@ -56,6 +67,69 @@ export function backupConfig(env: Record<string, string | undefined> = process.e
 		// prevent, and unchanged hours skip the upload anyway.
 		cron: env.BACKUP_CRON || '0 * * * *'
 	} satisfies BackupConfig;
+}
+
+const BACKUPS_KEY = 'backup-storage';
+const BACKUP_PREFIX_DEFAULT = 'codex-backups';
+
+type StoredBackups = StoredS3 & { keepRecentHours: number; keepDays: number };
+
+// The effective backup config: settings saved in the admin panel win, the
+// environment is the fallback. The cadence stays an operator concern, so
+// BACKUP_CRON applies either way.
+export async function effectiveBackupConfig(db: Database): Promise<BackupConfig | null> {
+	const stored = await effectiveS3(db, BACKUPS_KEY);
+	if (stored) {
+		const extras = (await readSetting<StoredBackups>(db, BACKUPS_KEY))!;
+		return {
+			endpoint: stored.endpoint || undefined,
+			region: stored.region || 'auto',
+			bucket: stored.bucket,
+			prefix: stored.prefix,
+			accessKeyId: stored.accessKeyId,
+			secretAccessKey: stored.secretAccessKey,
+			keepRecentHours: positiveInt(String(extras.keepRecentHours ?? ''), 48),
+			keepDays: positiveInt(String(extras.keepDays ?? ''), 30),
+			cron: process.env.BACKUP_CRON || '0 * * * *'
+		};
+	}
+	return backupConfig();
+}
+
+export async function backupStorageView(
+	db: Database
+): Promise<S3SettingsView & { keepRecentHours: number; keepDays: number }> {
+	const view = await s3SettingsView(db, BACKUPS_KEY, backupConfig());
+	if (view.source === 'database') {
+		const extras = (await readSetting<StoredBackups>(db, BACKUPS_KEY))!;
+		return {
+			...view,
+			keepRecentHours: positiveInt(String(extras.keepRecentHours ?? ''), 48),
+			keepDays: positiveInt(String(extras.keepDays ?? ''), 30)
+		};
+	}
+	const env = backupConfig();
+	return {
+		...view,
+		keepRecentHours: env?.keepRecentHours ?? 48,
+		keepDays: env?.keepDays ?? 30
+	};
+}
+
+export async function saveBackupStorage(
+	db: Database,
+	input: SaveS3Input & { keepRecentHours: number; keepDays: number }
+): Promise<SaveS3Result> {
+	if (!Number.isInteger(input.keepRecentHours) || input.keepRecentHours < 1) {
+		return { ok: false, reason: 'Keep every dump for at least one hour.' };
+	}
+	if (!Number.isInteger(input.keepDays) || input.keepDays < 1) {
+		return { ok: false, reason: 'Keep daily dumps for at least one day.' };
+	}
+	return saveS3Settings(db, BACKUPS_KEY, input, BACKUP_PREFIX_DEFAULT, {
+		keepRecentHours: input.keepRecentHours,
+		keepDays: input.keepDays
+	});
 }
 
 // Timestamped keys sort lexically in age order, which both pruning and
@@ -179,7 +253,7 @@ export async function runBackup(
 	trigger: 'scheduled' | 'manual',
 	options: BackupRunOptions = {}
 ): Promise<{ ok: true; key: string | null; skipped: boolean } | { ok: false; reason: string }> {
-	const config = options.config !== undefined ? options.config : backupConfig();
+	const config = options.config !== undefined ? options.config : await effectiveBackupConfig(db);
 	if (!config) return { ok: false, reason: 'backups are not configured' };
 	const store = options.store ?? s3Store(config);
 	const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;

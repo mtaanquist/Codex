@@ -4,13 +4,13 @@ import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { assets } from '$lib/server/db/schema';
-import { assetConfig, openAsset, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, openAsset, s3AssetStore } from '$lib/server/assets';
 import { isPublicAsset, isPublicAvatar } from '$lib/server/publish';
 
 // Streams an uploaded asset: to its owner always, and to anyone when it
 // belongs to a publicly readable edition (cover or inline image).
 export const GET: RequestHandler = async ({ params, locals }) => {
-	const config = assetConfig();
+	const config = await effectiveAssetConfig(db);
 	if (!config) error(503, 'assets are not configured');
 	const store = s3AssetStore(config);
 

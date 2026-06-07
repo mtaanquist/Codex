@@ -5,7 +5,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
 import { stories } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
-import { assetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 import { publishStory } from '$lib/server/publish';
 import { listEditionArtifacts, setDownloadsPublic } from '$lib/server/export-artifacts';
 import {
@@ -70,7 +70,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		story,
 		universe,
 		timeline,
-		assetsConfigured: assetConfig() !== null,
+		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		archive,
 		edition,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
@@ -206,7 +206,7 @@ export const actions: Actions = {
 		}
 		// The worker stores the edition's download files; best-effort, since the
 		// settings page offers "generate again" if they never appear.
-		if (assetConfig()) await queueExportArtifacts(result.publicationId);
+		if (await effectiveAssetConfig(db)) await queueExportArtifacts(result.publicationId);
 		return { action: 'publish', published: true };
 	},
 	regenerateExports: async ({ params, locals }) => {
@@ -215,7 +215,7 @@ export const actions: Actions = {
 		if (!edition) {
 			return fail(400, { action: 'exports', message: 'Publish an edition first.' });
 		}
-		if (!assetConfig()) {
+		if (!(await effectiveAssetConfig(db))) {
 			return fail(400, { action: 'exports', message: 'Assets are not configured on this server.' });
 		}
 		if (!(await queueExportArtifacts(edition.id))) {
@@ -268,7 +268,7 @@ export const actions: Actions = {
 	},
 	setCover: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		if (!config) {
 			return fail(400, { action: 'cover', message: 'Assets are not configured on this server.' });
 		}
@@ -299,7 +299,7 @@ export const actions: Actions = {
 		// Clears every story-scoped row first; a plain delete 500s on the FKs
 		// the moment the story has any content or a published edition. The store
 		// sweeps the edition export files left behind in the bucket.
-		const config = assetConfig();
+		const config = await effectiveAssetConfig(db);
 		await deleteStory(db, story.id, locals.user!.id, config ? s3AssetStore(config) : null);
 		redirect(303, `/universes/${universe.slug}`);
 	}
