@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
@@ -8,6 +9,17 @@
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Each section is its own page (/settings/pagesetup, /settings/export, ...);
+	// a plain /settings is the details. Forms post to the section they sit on.
+	const active = $derived(page.params.section ?? 'details');
+
+	function sectionHref(section: string): string {
+		return resolve('/stories/[id]/settings/[[section]]', {
+			id: data.story.slug,
+			section: section === 'details' ? undefined : section
+		});
+	}
 
 	// The scene-break override needs a mode select, since a blank text value
 	// is itself a meaningful choice (a plain gap). A full page load follows
@@ -38,8 +50,9 @@
 		rich: 'Rich text'
 	};
 
-	// Cover uploads need asset storage; without it the section hides
-	// entirely rather than explaining server configuration to a writer.
+	// Cover uploads need asset storage and publishing needs a public shelf;
+	// without those the sections hide entirely rather than explaining server
+	// configuration to a writer.
 	const NAV = $derived(
 		[
 			{ id: 'details', label: 'Details' },
@@ -51,7 +64,9 @@
 			{ id: 'export', label: 'Export' },
 			{ id: 'history', label: 'History' },
 			{ id: 'danger', label: 'Danger zone' }
-		].filter((item) => item.id !== 'cover' || data.assetsConfigured)
+		]
+			.filter((item) => item.id !== 'cover' || data.assetsConfigured)
+			.filter((item) => item.id !== 'publish' || (data.archive?.enabled && data.archive?.handle))
 	);
 
 	function formatBytes(bytes: number): string {
@@ -95,12 +110,16 @@
 					<div class="st">{data.universe.name}</div>
 				</div>
 			</div>
+			<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 			<nav class="admin-nav">
 				<div class="admin-nav-label">Story settings</div>
 				{#each NAV as item (item.id)}
-					<a class="nav-item" href="#{item.id}">{item.label}</a>
+					<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
+						{item.label}
+					</a>
 				{/each}
 			</nav>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</aside>
 
 		<main class="admin-main page-body">
@@ -111,7 +130,7 @@
 					<p class="admin-lede">Everything about "{data.story.title}" that is not its prose.</p>
 				</div>
 
-				<div class="admin-block" id="details">
+				<div class="admin-block" class:active={active === 'details'} id="details">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">Details</h2>
 						<p class="admin-block-sub">The title and description readers and exports use.</p>
@@ -174,7 +193,7 @@
 					</div>
 				</div>
 
-				<div class="admin-block" id="editor">
+				<div class="admin-block" class:active={active === 'editor'} id="editor">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">Editor</h2>
 						<p class="admin-block-sub">
@@ -289,7 +308,7 @@
 					</div>
 				</div>
 
-				<div class="admin-block" id="pagesetup">
+				<div class="admin-block" class:active={active === 'pagesetup'} id="pagesetup">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">Page setup</h2>
 						<p class="admin-block-sub">
@@ -470,7 +489,7 @@
 				</div>
 
 				{#if data.assetsConfigured}
-					<div class="admin-block" id="cover">
+					<div class="admin-block" class:active={active === 'cover'} id="cover">
 						<div class="admin-block-head">
 							<h2 class="admin-block-title">Cover</h2>
 							<p class="admin-block-sub">Shown on your public shelf and inside the EPUB.</p>
@@ -522,7 +541,7 @@
 				{/if}
 
 				{#if data.archive.enabled && data.archive.handle}
-					<div class="admin-block" id="publish">
+					<div class="admin-block" class:active={active === 'publish'} id="publish">
 						<div class="admin-block-head">
 							<h2 class="admin-block-title">
 								Publish <HelpLink topic="publishing" label="publishing" />
@@ -650,7 +669,7 @@
 					</div>
 				{/if}
 
-				<div class="admin-block" id="review">
+				<div class="admin-block" class:active={active === 'review'} id="review">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">
 							Review <HelpLink topic="reviewing" label="reviewing" />
@@ -742,7 +761,7 @@
 					</div>
 				</div>
 
-				<div class="admin-block" id="export">
+				<div class="admin-block" class:active={active === 'export'} id="export">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">Export</h2>
 						<p class="admin-block-sub">Take your words with you; nothing is trapped here.</p>
@@ -771,7 +790,7 @@
 					</div>
 				</div>
 
-				<div class="admin-block" id="history">
+				<div class="admin-block" class:active={active === 'history'} id="history">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">History</h2>
 						<p class="admin-block-sub">Recent changes to this story's scenes and outline.</p>
@@ -798,7 +817,7 @@
 					</div>
 				</div>
 
-				<div class="admin-block danger-block" id="danger">
+				<div class="admin-block danger-block" class:active={active === 'danger'} id="danger">
 					<div class="admin-block-head">
 						<h2 class="admin-block-title">Danger zone</h2>
 						<p class="admin-block-sub">
@@ -819,6 +838,11 @@
 </div>
 
 <style>
+	/* One section at a time; the URL picks which. */
+	.admin-main .admin-block:not(.active) {
+		display: none;
+	}
+
 	.cover {
 		width: 120px;
 		height: 180px;

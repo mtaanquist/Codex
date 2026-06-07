@@ -156,37 +156,37 @@
 					label: 'Admin: overview',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin?section=overview')
+					run: navigate('/admin')
 				},
 				{
 					label: 'Admin: users & access',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin?section=users')
+					run: navigate('/admin/users')
 				},
 				{
 					label: 'Admin: published',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin?section=published')
+					run: navigate('/admin/published')
 				},
 				{
 					label: 'Admin: usage & storage',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin?section=usage')
+					run: navigate('/admin/usage')
 				},
 				{
 					label: 'Admin: backups',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin?section=backups')
+					run: navigate('/admin/backups')
 				},
 				{
 					label: 'Admin: email relay',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin?section=instance')
+					run: navigate('/admin/instance')
 				}
 			);
 		}

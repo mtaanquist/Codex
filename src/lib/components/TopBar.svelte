@@ -45,13 +45,13 @@
 			<span class="sep"><Icon name="chevron" size={13} /></span>
 			<a
 				class="crumb current"
-				href={resolve('/stories/[id]/settings', { id: story.slug })}
+				href={resolve('/stories/[id]/settings/[[section]]', { id: story.slug })}
 				title="Story settings"
 			>
 				{story.title}
 			</a>
 		{:else}
-			<a class="crumb current" href={resolve('/universes/[id]', { id: universe.slug })}>
+			<a class="crumb current" href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}>
 				{universe.name}
 			</a>
 		{/if}
@@ -66,7 +66,7 @@
 		{#if story}
 			<a
 				class="icon-btn"
-				href={resolve('/stories/[id]/settings', { id: story.slug })}
+				href={resolve('/stories/[id]/settings/[[section]]', { id: story.slug })}
 				title="Story settings"
 			>
 				<Icon name="gear" />
@@ -74,7 +74,7 @@
 		{:else}
 			<a
 				class="icon-btn"
-				href={resolve('/universes/[id]', { id: universe.slug })}
+				href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
 				title="Universe settings"
 			>
 				<Icon name="gear" />

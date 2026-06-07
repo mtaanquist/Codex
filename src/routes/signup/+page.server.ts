@@ -74,7 +74,7 @@ export const actions: Actions = {
 						? `${displayName.trim()} created an account`
 						: `${displayName.trim()} signed up and waits for approval`,
 				detail: cleanEmail,
-				href: '/admin?section=users'
+				href: '/admin/users'
 			});
 		}
 

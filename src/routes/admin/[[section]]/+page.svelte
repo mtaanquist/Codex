@@ -1,67 +1,21 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { pushState } from '$app/navigation';
 	import { page } from '$app/state';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import type { Section } from './sections';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	const SECTIONS = [
-		'overview',
-		'users',
-		'ai',
-		'usage',
-		'published',
-		'backups',
-		'audit',
-		'instance'
-	] as const;
-	type Section = (typeof SECTIONS)[number];
+	// Each section is its own page (/admin/users, /admin/backups, ...);
+	// a plain /admin is the overview. Forms post to the section they sit on,
+	// so an action result lands where it belongs without any bookkeeping.
+	let active: Section = $derived((page.params.section as Section) ?? 'overview');
 
-	function sectionFromUrl(url: URL): Section | null {
-		const s = url.searchParams.get('section');
-		return SECTIONS.includes(s as Section) ? (s as Section) : null;
-	}
-
-	// After an action, jump to the section that owns the result so the admin
-	// sees the message where it belongs.
-	function sectionFor(scope: string | undefined): Section | null {
-		switch (scope) {
-			case 'accounts':
-			case 'invites':
-			case 'signup':
-				return 'users';
-			case 'published':
-				return 'published';
-			case 'backups':
-				return 'backups';
-			case 'storage':
-				return 'usage';
-			case 'smtp':
-				return 'instance';
-			default:
-				return null;
-		}
-	}
-
-	// The section rides in the URL (?section=users) so links, refreshes, and
-	// the command palette land on the right one; a plain /admin is the
-	// overview. The effects move to the section a navigation or an action
-	// result points at.
-	let active: Section = $derived(sectionFromUrl(page.url) ?? 'overview');
-	// An action result overrides the URL: the forms here post natively, so the
-	// page reloads without ?section= and only form.scope knows where the admin
-	// was.
-	$effect(() => {
-		const s = sectionFor(form?.scope);
-		if (s) active = s;
-	});
-
-	function go(section: Section) {
-		active = section;
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- stays on /admin, only the query changes
-		pushState(`?section=${section}`, {});
+	function sectionHref(section: Section): string {
+		return resolve('/admin/[[section]]', {
+			section: section === 'overview' ? undefined : section
+		});
 	}
 
 	// The sign-up policy choices, in order from closed to open.
@@ -279,13 +233,10 @@
 				</div>
 			</div>
 
+			<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 			<nav class="admin-nav">
 				<div class="admin-nav-label">Instance</div>
-				<button
-					class="nav-item"
-					class:active={active === 'overview'}
-					onclick={() => go('overview')}
-				>
+				<a class="nav-item" class:active={active === 'overview'} href={sectionHref('overview')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -308,8 +259,8 @@
 						/></svg
 					>
 					<span class="lbl">Overview</span>
-				</button>
-				<button class="nav-item" class:active={active === 'users'} onclick={() => go('users')}>
+				</a>
+				<a class="nav-item" class:active={active === 'users'} href={sectionHref('users')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -325,8 +276,8 @@
 					>
 					<span class="lbl">Users &amp; access</span>
 					{#if pending.length > 0}<span class="nav-badge">{pending.length}</span>{/if}
-				</button>
-				<button class="nav-item" class:active={active === 'ai'} onclick={() => go('ai')}>
+				</a>
+				<a class="nav-item" class:active={active === 'ai'} href={sectionHref('ai')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -340,10 +291,10 @@
 					>
 					<span class="lbl">AI</span>
 					<span class="nav-badge muted">soon</span>
-				</button>
+				</a>
 
 				<div class="admin-nav-label">Data</div>
-				<button class="nav-item" class:active={active === 'usage'} onclick={() => go('usage')}>
+				<a class="nav-item" class:active={active === 'usage'} href={sectionHref('usage')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -361,12 +312,8 @@
 					>
 					<span class="lbl">Usage &amp; storage</span>
 					<span class="nav-badge muted">soon</span>
-				</button>
-				<button
-					class="nav-item"
-					class:active={active === 'published'}
-					onclick={() => go('published')}
-				>
+				</a>
+				<a class="nav-item" class:active={active === 'published'} href={sectionHref('published')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -379,8 +326,8 @@
 						/></svg
 					>
 					<span class="lbl">Published</span>
-				</button>
-				<button class="nav-item" class:active={active === 'backups'} onclick={() => go('backups')}>
+				</a>
+				<a class="nav-item" class:active={active === 'backups'} href={sectionHref('backups')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -394,8 +341,8 @@
 					>
 					<span class="lbl">Backups</span>
 					{#if !data.backupsConfigured}<span class="nav-badge muted">!</span>{/if}
-				</button>
-				<button class="nav-item" class:active={active === 'audit'} onclick={() => go('audit')}>
+				</a>
+				<a class="nav-item" class:active={active === 'audit'} href={sectionHref('audit')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -406,14 +353,10 @@
 					>
 					<span class="lbl">Audit log</span>
 					<span class="nav-badge muted">soon</span>
-				</button>
+				</a>
 
 				<div class="admin-nav-label">Configuration</div>
-				<button
-					class="nav-item"
-					class:active={active === 'instance'}
-					onclick={() => go('instance')}
-				>
+				<a class="nav-item" class:active={active === 'instance'} href={sectionHref('instance')}>
 					<svg
 						viewBox="0 0 24 24"
 						fill="none"
@@ -430,8 +373,9 @@
 						/></svg
 					>
 					<span class="lbl">Email relay</span>
-				</button>
+				</a>
 			</nav>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 
 			<div class="admin-health">
 				<div class="admin-health-row">
@@ -561,9 +505,8 @@
 										</div>
 										{#if item.goto}
 											<div class="attn-actions">
-												<button class="btn btn-secondary btn-sm" onclick={() => go(item.goto!)}
-													>Open</button
-												>
+												<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
+												<a class="btn btn-secondary btn-sm" href={sectionHref(item.goto)}>Open</a>
 											</div>
 										{/if}
 									</div>

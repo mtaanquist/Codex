@@ -1,4 +1,4 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { isUuid } from '$lib/slug';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
@@ -40,7 +40,20 @@ async function currentEdition(storyId: string) {
 	return edition ?? null;
 }
 
+const SECTIONS = [
+	'editor',
+	'pagesetup',
+	'cover',
+	'publish',
+	'review',
+	'export',
+	'history',
+	'danger'
+];
+
 export const load: PageServerLoad = async ({ params, locals }) => {
+	// Details rests on /settings itself; the other sections have their own page.
+	if (params.section !== undefined && !SECTIONS.includes(params.section)) error(404, 'Not found');
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 	// These reads are independent; only the artifact list depends on the
 	// edition, so run the rest together and fetch artifacts after.
@@ -66,11 +79,16 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		storyPageSetupOverrides(db, story.id),
 		userPageSetup(db, locals.user!.id)
 	]);
+	const assetsConfigured = (await effectiveAssetConfig(db)) !== null;
+	// These sections hide when their feature is off, so their pages do too.
+	if (params.section === 'cover' && !assetsConfigured) error(404, 'Not found');
+	if (params.section === 'publish' && !(archive?.enabled && archive?.handle))
+		error(404, 'Not found');
 	return {
 		story,
 		universe,
 		timeline,
-		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
+		assetsConfigured,
 		archive,
 		edition,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
