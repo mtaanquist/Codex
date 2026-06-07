@@ -324,9 +324,15 @@ export const actions: Actions = {
 				text: 'This is a test email from your Codex instance. Email is working.'
 			});
 		} catch (err) {
+			const detail = err instanceof Error ? err.message : 'unknown error';
+			// A missing greeting or a TLS handshake error almost always means
+			// the TLS toggle does not match what the relay expects.
+			const tlsHint = /greeting never received|wrong version number|ssl|tls/i.test(detail)
+				? ' This usually means the TLS setting does not match the relay: turn "Use TLS on connect" on if the relay wants TLS from the start, off if it wants STARTTLS.'
+				: '';
 			return fail(400, {
 				scope: 'smtp',
-				message: `Could not send: ${err instanceof Error ? err.message : 'unknown error'}`
+				message: `Could not send: ${detail}${tlsHint}`
 			});
 		}
 		return { scope: 'smtp', tested: true };
