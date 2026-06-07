@@ -54,16 +54,16 @@ afterAll(async () => {
 describe('saveCategories', () => {
 	it('renames, recolours, reorders, adds, and deletes empty categories in one save', async () => {
 		const result = await saveCategories(db, { universeId, ownerId }, [
-			{ id: emptyCat, name: 'Guilds', color: '#7d5fe0' },
+			{ id: emptyCat, name: 'Guilds', color: 'var(--cat-violet)' },
 			{ id: loreCat, name: 'Old Lore', color: null },
-			{ id: null, name: 'Rituals', color: '#2fae8c' }
+			{ id: null, name: 'Rituals', color: 'var(--cat-teal)' }
 		]);
 		expect(result).toEqual({ ok: true });
 		const after = await listCategories(db, universeId);
 		expect(after.map((row) => [row.name, row.color, row.entries])).toEqual([
-			['Guilds', '#7d5fe0', 0],
+			['Guilds', 'var(--cat-violet)', 0],
 			['Old Lore', null, 1],
-			['Rituals', '#2fae8c', 0]
+			['Rituals', 'var(--cat-teal)', 0]
 		]);
 	});
 
@@ -82,6 +82,47 @@ describe('saveCategories', () => {
 			await saveCategories(db, { universeId, ownerId }, [
 				{ id: null, name: 'Bad colour', color: 'red' }
 			])
+		).toMatchObject({ ok: false });
+	});
+
+	it('accepts a palette token but rejects a hex colour and an over-long name', async () => {
+		const list = await listCategories(db, universeId);
+		const guild = list.find((row) => row.name === 'Guilds')!;
+		// A palette token the plan sidebar produces saves cleanly.
+		expect(
+			await saveCategories(
+				db,
+				{ universeId, ownerId },
+				list.map((row) =>
+					row.id === guild.id
+						? { id: row.id, name: row.name, color: 'var(--cat-amber)' }
+						: { id: row.id, name: row.name, color: row.color }
+				)
+			)
+		).toEqual({ ok: true });
+		// A raw hex value (the old free picker) is no longer a valid colour.
+		expect(
+			await saveCategories(
+				db,
+				{ universeId, ownerId },
+				list.map((row) =>
+					row.id === guild.id
+						? { id: row.id, name: row.name, color: '#7d5fe0' }
+						: { id: row.id, name: row.name, color: row.color }
+				)
+			)
+		).toMatchObject({ ok: false });
+		// And the name length is bounded.
+		expect(
+			await saveCategories(
+				db,
+				{ universeId, ownerId },
+				list.map((row) =>
+					row.id === guild.id
+						? { id: row.id, name: 'x'.repeat(61), color: row.color }
+						: { id: row.id, name: row.name, color: row.color }
+				)
+			)
 		).toMatchObject({ ok: false });
 	});
 

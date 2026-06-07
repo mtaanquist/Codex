@@ -1,7 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from './db';
-import { CATEGORY_PALETTE } from '$lib/entity-color';
+import { isCategoryColor } from '$lib/entity-color';
+import { CATEGORY_NAME_MAX } from './categories';
 import {
 	characters,
 	characterStoryMemberships,
@@ -104,7 +105,13 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 			if (!name) {
 				return fail(400, { kind: 'category', message: 'Give the category a name.' });
 			}
-			if (color !== null && !CATEGORY_PALETTE.includes(color)) {
+			if (name.length > CATEGORY_NAME_MAX) {
+				return fail(400, {
+					kind: 'category',
+					message: 'Category names can be at most 60 characters.'
+				});
+			}
+			if (!isCategoryColor(color)) {
 				return fail(400, { kind: 'category', message: 'Pick a colour from the list.' });
 			}
 			await db.insert(entityCategories).values({

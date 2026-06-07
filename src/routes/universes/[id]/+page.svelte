@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { entityColor } from '$lib/entity-color';
+	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import PaletteButton from '$lib/components/PaletteButton.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
@@ -48,7 +48,6 @@
 		id: string | null;
 		name: string;
 		color: string | null;
-		colorTouched: boolean;
 		entries: number;
 	};
 	let nextKey = 0;
@@ -61,20 +60,13 @@
 			id: category.id,
 			name: category.name,
 			color: category.color,
-			colorTouched: false,
 			entries: category.entries
 		}))
 	);
 
-	// What the save action receives: original colours unless the swatch was
-	// actually touched, so legacy token values survive an unrelated save.
 	const categoriesPayload = $derived(
 		JSON.stringify(drafts.map((draft) => ({ id: draft.id, name: draft.name, color: draft.color })))
 	);
-
-	function swatchValue(draft: CategoryDraft): string {
-		return draft.color && /^#[0-9a-f]{6}$/i.test(draft.color) ? draft.color : '#7d8aa3';
-	}
 
 	function moveDraft(index: number, direction: -1 | 1) {
 		const to = index + direction;
@@ -334,16 +326,21 @@
 												<Icon name="chevron" size={12} />
 											</button>
 										</span>
-										<input
-											class="category-swatch-input"
-											type="color"
-											title="Category colour"
-											value={swatchValue(draft)}
-											oninput={(e) => {
-												draft.color = e.currentTarget.value;
-												draft.colorTouched = true;
-											}}
-										/>
+										<span
+											class="category-color-dot"
+											class:empty={!draft.color}
+											style="background: {draft.color ?? 'transparent'}"
+										></span>
+										<select
+											class="category-color-select"
+											aria-label="Category colour"
+											bind:value={draft.color}
+										>
+											<option value={null}>No colour</option>
+											{#each CATEGORY_COLORS as choice (choice.token)}
+												<option value={choice.token}>{choice.label}</option>
+											{/each}
+										</select>
 										<input
 											class="category-name-input"
 											type="text"
@@ -380,7 +377,6 @@
 											id: null,
 											name: '',
 											color: null,
-											colorTouched: false,
 											entries: 0
 										}
 									])}
@@ -697,13 +693,29 @@
 	.category-tools .tool-btn.turn-down :global(svg) {
 		transform: rotate(90deg);
 	}
-	.category-swatch-input {
-		width: 26px;
-		height: 26px;
-		padding: 0;
+	.category-color-dot {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		border: 1px solid var(--border);
+		flex: none;
+	}
+	.category-color-dot.empty {
+		background: repeating-linear-gradient(
+			45deg,
+			var(--bg-inset),
+			var(--bg-inset) 3px,
+			transparent 3px,
+			transparent 6px
+		);
+	}
+	.category-color-select {
+		height: 28px;
+		padding: 0 6px;
 		border: 1px solid var(--border);
 		border-radius: 6px;
-		background: none;
+		background: var(--bg-inset);
+		color: var(--text);
 		cursor: pointer;
 		flex: none;
 	}

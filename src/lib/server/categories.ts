@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from './auth';
+import { isCategoryColor } from '$lib/entity-color';
 import { entityCategories } from './db/schema';
 
 // The universe settings' category manager: list with usage counts, and one
@@ -33,8 +34,7 @@ export type CategorySave = {
 	color: string | null;
 };
 
-const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const NAME_MAX = 60;
+export const CATEGORY_NAME_MAX = 60;
 
 /**
  * Applies the edited category list: rows arrive in display order; existing
@@ -52,11 +52,11 @@ export async function saveCategories(
 	for (const row of rows) {
 		const name = row.name.trim();
 		if (!name) return { ok: false, reason: 'Every category needs a name.' };
-		if (name.length > NAME_MAX) {
+		if (name.length > CATEGORY_NAME_MAX) {
 			return { ok: false, reason: 'Category names can be at most 60 characters.' };
 		}
-		if (row.color !== null && !COLOR_PATTERN.test(row.color)) {
-			return { ok: false, reason: 'Colors must be hex values like #7d5fe0.' };
+		if (!isCategoryColor(row.color)) {
+			return { ok: false, reason: 'Pick a colour from the list.' };
 		}
 	}
 
