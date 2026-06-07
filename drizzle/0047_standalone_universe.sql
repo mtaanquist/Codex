@@ -1,0 +1,2 @@
+ALTER TABLE "universes" ADD COLUMN "standalone" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "universes_one_standalone_idx" ON "universes" USING btree ("owner_id") WHERE "universes"."standalone";
