@@ -12,6 +12,7 @@ import {
 	entityRelationships,
 	exportArtifacts,
 	loreEntries,
+	notes,
 	places,
 	publications,
 	relationTypes,
@@ -153,6 +154,20 @@ export async function purgeUniverseWithin(tx: Tx, universeId: string): Promise<v
 		.from(stories)
 		.where(eq(stories.universeId, universeId));
 	for (const story of storyRows) await deleteStoryWithin(tx, story.id);
+
+	// Universe-scoped freeform notes (story notes went with their stories) and
+	// their polymorphic revisions.
+	const noteRows = await tx
+		.select({ id: notes.id })
+		.from(notes)
+		.where(eq(notes.universeId, universeId));
+	if (noteRows.length > 0) {
+		const noteIds = noteRows.map((row) => row.id);
+		await tx
+			.delete(revisions)
+			.where(and(eq(revisions.entityType, 'note'), inArray(revisions.entityId, noteIds)));
+		await tx.delete(notes).where(eq(notes.universeId, universeId));
+	}
 
 	// Entity history is polymorphic (no FK), so it goes by the entity ids.
 	const entityIds = [

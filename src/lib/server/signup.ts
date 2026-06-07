@@ -19,7 +19,7 @@ export const INVALID_INVITE = 'That invite code is not valid. Check it and try a
 export const INVITE_REQUIRED = 'An invite code is needed to create an account here.';
 export const SIGNUPS_CLOSED = 'This Codex is not taking new accounts.';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
 export async function registerUser(

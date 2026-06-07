@@ -5,6 +5,7 @@ import {
 	entityCategories,
 	entityRelationships,
 	loreEntries,
+	notes,
 	places,
 	relationTypes,
 	reviewSuggestions,
@@ -354,7 +355,14 @@ export async function ownedEntityBody(
 			.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
 		return row ?? null;
 	}
-	// Chapters and notes have no revisable body yet.
+	if (entityType === 'note') {
+		const [row] = await db
+			.select({ bodyMd: notes.bodyMd })
+			.from(notes)
+			.where(and(eq(notes.id, entityId), eq(notes.ownerId, userId)));
+		return row ?? null;
+	}
+	// Chapters have no revisable body yet.
 	return null;
 }
 
@@ -527,6 +535,14 @@ export async function restoreRevision(
 				.update(scenes)
 				.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
 				.where(eq(scenes.id, entityId));
+			await recordRevision(tx, entityType, entityId, revision.bodyMd, 'restore');
+		});
+		return { ok: true };
+	}
+	if (entityType === 'note') {
+		// Notes restore body-only, like scenes; the title is not revisioned.
+		await db.transaction(async (tx) => {
+			await tx.update(notes).set({ bodyMd: revision.bodyMd }).where(eq(notes.id, entityId));
 			await recordRevision(tx, entityType, entityId, revision.bodyMd, 'restore');
 		});
 		return { ok: true };

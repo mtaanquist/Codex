@@ -5,7 +5,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { sceneMarkers, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
-import { mergeScenes, splitScene } from '../../src/lib/server/scene-split-merge';
+import { duplicateScene, mergeScenes, splitScene } from '../../src/lib/server/scene-split-merge';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -131,6 +131,92 @@ describe('splitScene', () => {
 		expect(await splitScene(db, ownerId, '00000000-0000-4000-8000-000000000000', 4)).toMatchObject({
 			ok: false
 		});
+	});
+});
+
+describe('duplicateScene', () => {
+	it('copies the scene in full directly after the original', async () => {
+		const before = await makeScene(1, 'Stays first.');
+		const scene = await makeScene(2, 'Template body.', 'Session skeleton');
+		await db
+			.update(scenes)
+			.set({ status: 'outline', summaryMd: 'A recurring shape', storyTime: 'Day 1' })
+			.where(eq(scenes.id, scene.id));
+		const after = await makeScene(3, 'Stays last.');
+
+		const result = await duplicateScene(db, ownerId, scene.id);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		const rows = await db
+			.select()
+			.from(scenes)
+			.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
+			.orderBy(asc(scenes.globalPosition));
+		expect(rows.map((row) => row.bodyMd)).toEqual([
+			'Stays first.',
+			'Template body.',
+			'Template body.',
+			'Stays last.'
+		]);
+		// The copy lands directly after its source, between it and the next scene.
+		expect(rows[0].id).toBe(before.id);
+		expect(rows[1].id).toBe(scene.id);
+		expect(rows[3].id).toBe(after.id);
+
+		const copy = rows[2];
+		expect(copy.id).toBe(result.newSceneId);
+		expect(copy.title).toBe('Session skeleton (copy)');
+		expect(copy.status).toBe('outline');
+		expect(copy.summaryMd).toBe('A recurring shape');
+		expect(copy.storyTime).toBe('Day 1');
+		expect(copy.wordCount).toBe(2);
+		// The source is untouched.
+		const [original] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+		expect(original.title).toBe('Session skeleton');
+		expect(original.bodyMd).toBe('Template body.');
+	});
+
+	it('copies markers onto the new scene at the same anchors', async () => {
+		const scene = await makeScene(1, 'Alpha beta gamma.', 'With markers');
+		await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, kind: 'todo', anchorStart: 0, anchorEnd: 5 });
+
+		const result = await duplicateScene(db, ownerId, scene.id);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		const copyMarkers = await db
+			.select()
+			.from(sceneMarkers)
+			.where(eq(sceneMarkers.sceneId, result.newSceneId));
+		expect(copyMarkers).toHaveLength(1);
+		expect(copyMarkers[0]).toMatchObject({ kind: 'todo', anchorStart: 0, anchorEnd: 5 });
+		// The original's marker stays its own row.
+		const sourceMarkers = await db
+			.select()
+			.from(sceneMarkers)
+			.where(eq(sceneMarkers.sceneId, scene.id));
+		expect(sourceMarkers).toHaveLength(1);
+		expect(sourceMarkers[0].id).not.toBe(copyMarkers[0].id);
+	});
+
+	it('keeps an untitled scene untitled when copied', async () => {
+		const scene = await makeScene(1, 'No name.', null);
+		const result = await duplicateScene(db, ownerId, scene.id);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const [copy] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+		expect(copy.title).toBeNull();
+	});
+
+	it('refuses a foreign scene and a missing scene', async () => {
+		const scene = await makeScene(1, 'Mine.');
+		expect(await duplicateScene(db, strangerId, scene.id)).toMatchObject({ ok: false });
+		expect(await duplicateScene(db, ownerId, '00000000-0000-4000-8000-000000000000')).toMatchObject(
+			{ ok: false }
+		);
 	});
 });
 

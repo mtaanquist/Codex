@@ -11,6 +11,7 @@ import {
 	entityRelationships,
 	loreEntries,
 	loreStoryNotes,
+	notes,
 	places,
 	placeStoryNotes,
 	relationTypes,
@@ -118,11 +119,14 @@ export type ExportNote = {
 	name: string;
 	notesMd: string;
 };
+// A freeform writer note, for the working archive.
+export type ExportFreeformNote = { id: string; title: string | null; bodyMd: string };
 export type StoryContent = {
 	chapters: { id: string; title: string | null }[];
 	scenes: ExportScene[];
-	// Absent for frozen editions: notes are working material, not manuscript.
+	// Both absent for frozen editions: notes are working material, not manuscript.
 	notes?: ExportNote[];
+	freeformNotes?: ExportFreeformNote[];
 };
 
 export async function gatherStory(db: Database, story: ExportStory): Promise<StoryContent> {
@@ -142,7 +146,23 @@ export async function gatherStory(db: Database, story: ExportStory): Promise<Sto
 		.from(scenes)
 		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
-	return { chapters: chapterList, scenes: sceneList, notes: await gatherStoryNotes(db, story.id) };
+	return {
+		chapters: chapterList,
+		scenes: sceneList,
+		notes: await gatherStoryNotes(db, story.id),
+		freeformNotes: await gatherStoryFreeformNotes(db, story.id)
+	};
+}
+
+async function gatherStoryFreeformNotes(
+	db: Database,
+	storyId: string
+): Promise<ExportFreeformNote[]> {
+	return db
+		.select({ id: notes.id, title: notes.title, bodyMd: notes.bodyMd })
+		.from(notes)
+		.where(eq(notes.storyId, storyId))
+		.orderBy(asc(notes.createdAt));
 }
 
 async function gatherStoryNotes(db: Database, storyId: string): Promise<ExportNote[]> {
@@ -194,12 +214,18 @@ export async function buildStoryZip(
 	content: StoryContent,
 	loadAssets: AssetLoader
 ): Promise<{ filename: string; bytes: Uint8Array }> {
-	const { chapters: chapterList, scenes: sceneList, notes: noteList = [] } = content;
+	const {
+		chapters: chapterList,
+		scenes: sceneList,
+		notes: noteList = [],
+		freeformNotes: freeformList = []
+	} = content;
 
 	const referenced = [
 		...new Set([
 			...sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd)),
-			...noteList.flatMap((note) => findAssetReferences(note.notesMd))
+			...noteList.flatMap((note) => findAssetReferences(note.notesMd)),
+			...freeformList.flatMap((note) => findAssetReferences(note.bodyMd))
 		])
 	];
 	const loaded = await loadAssets(referenced);
@@ -252,6 +278,17 @@ export async function buildStoryZip(
 		);
 		files[`${root}/${dir}/${noteNamers[note.kind](slugify(note.name, note.id))}.md`] = strToU8(
 			frontMatter({ name: note.name, kind: note.kind }) + body
+		);
+	}
+
+	const freeformNamer = uniqueNamer();
+	for (const note of freeformList) {
+		const up = '../'.repeat('notebook'.split('/').length);
+		const body = rewriteAssetReferences(note.bodyMd, (id) =>
+			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
+		);
+		files[`${root}/notebook/${freeformNamer(slugify(note.title ?? '', note.id))}.md`] = strToU8(
+			frontMatter({ title: note.title }) + body
 		);
 	}
 
@@ -359,6 +396,14 @@ async function gatherUniverseDocs(
 			front: { name: universe.name },
 			body: universe.descriptionMd ?? ''
 		});
+
+		// Universe-scoped freeform notes (story notes ride with their stories).
+		const universeNoteRows = await db
+			.select({ id: notes.id, title: notes.title, bodyMd: notes.bodyMd })
+			.from(notes)
+			.where(and(eq(notes.universeId, universe.id), isNull(notes.storyId)))
+			.orderBy(asc(notes.createdAt));
+		docs.push(...notebookDocs(universeNoteRows, `${uDir}/notebook`));
 
 		const categories = new Map(
 			(
@@ -481,6 +526,13 @@ async function gatherUniverseDocs(
 					body: note.notesMd
 				});
 			}
+			// This story's freeform notes.
+			const storyNoteRows = await db
+				.select({ id: notes.id, title: notes.title, bodyMd: notes.bodyMd })
+				.from(notes)
+				.where(eq(notes.storyId, story.id))
+				.orderBy(asc(notes.createdAt));
+			docs.push(...notebookDocs(storyNoteRows, `${sDir}/notebook`));
 			if (loadReviews) {
 				const threads = await loadReviews(story.id);
 				if (threads.length > 0) {
@@ -598,4 +650,18 @@ async function packDocs(
 
 function joinBody(summaryMd: string | null, bodyMd: string): string {
 	return [summaryMd?.trim(), bodyMd.trim()].filter(Boolean).join('\n\n');
+}
+
+// Freeform notes as archive docs under a notebook/ folder, one file each.
+function notebookDocs(
+	rows: { id: string; title: string | null; bodyMd: string }[],
+	dir: string
+): Doc[] {
+	const namer = uniqueNamer();
+	return rows.map((note) => ({
+		dir,
+		name: `${namer(slugify(note.title ?? '', note.id))}.md`,
+		front: { title: note.title },
+		body: note.bodyMd
+	}));
 }

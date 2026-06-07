@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { createCheckpoint, type RevisionEntityType } from '$lib/server/revisions';
 
-const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'outline_node'] as const;
+const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'note'] as const;
 
 // Creates a manual checkpoint of the entity's current text.
 export const POST: RequestHandler = async ({ request, locals }) => {

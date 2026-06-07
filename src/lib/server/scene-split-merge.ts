@@ -126,6 +126,88 @@ export async function splitScene(
 }
 
 /**
+ * Duplicates a scene as a full copy directly after the original: title (with
+ * a "(copy)" suffix), body, status, summary, the planning fields, and every
+ * marker, so a scene set up as a template reproduces intact. The body is
+ * identical, so marker anchors copy across unchanged. Returns the copy's id.
+ */
+export async function duplicateScene(
+	db: Database,
+	userId: string,
+	sceneId: string
+): Promise<{ ok: true; newSceneId: string } | { ok: false; reason: string }> {
+	const [source] = await db
+		.select()
+		.from(scenes)
+		.innerJoin(stories, eq(scenes.storyId, stories.id))
+		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
+	if (!source) return { ok: false, reason: 'scene not found' };
+	const scene = source.scenes;
+
+	const newSceneId = await db.transaction(async (tx) => {
+		// Make room directly after the source scene, the same shift split uses.
+		await tx
+			.update(scenes)
+			.set({ globalPosition: sql`${scenes.globalPosition} + 1` })
+			.where(
+				and(eq(scenes.storyId, scene.storyId), gt(scenes.globalPosition, scene.globalPosition))
+			);
+		if (scene.chapterId) {
+			await tx
+				.update(scenes)
+				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1` })
+				.where(
+					and(
+						eq(scenes.chapterId, scene.chapterId),
+						gt(scenes.positionInChapter, scene.positionInChapter ?? 0)
+					)
+				);
+		}
+
+		const [created] = await tx
+			.insert(scenes)
+			.values({
+				storyId: scene.storyId,
+				chapterId: scene.chapterId,
+				positionInChapter: scene.positionInChapter === null ? null : scene.positionInChapter + 1,
+				globalPosition: scene.globalPosition + 1,
+				title: scene.title === null ? null : `${scene.title} (copy)`,
+				bodyMd: scene.bodyMd,
+				povCharacterId: scene.povCharacterId,
+				locationId: scene.locationId,
+				storyTime: scene.storyTime,
+				charactersPresent: scene.charactersPresent,
+				status: scene.status,
+				summaryMd: scene.summaryMd,
+				wordCount: wordCount(scene.bodyMd),
+				metadata: scene.metadata
+			})
+			.returning({ id: scenes.id });
+
+		// The copy's body is identical, so anchors carry over as they are.
+		const markers = await tx.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, scene.id));
+		if (markers.length > 0) {
+			await tx.insert(sceneMarkers).values(
+				markers.map((marker) => ({
+					sceneId: created.id,
+					ownerId: marker.ownerId,
+					kind: marker.kind,
+					anchorStart: marker.anchorStart,
+					anchorEnd: marker.anchorEnd,
+					bodyMd: marker.bodyMd,
+					resolvedAt: marker.resolvedAt
+				}))
+			);
+		}
+
+		await recordRevision(tx, 'scene', created.id, scene.bodyMd);
+		return created.id;
+	});
+
+	return { ok: true, newSceneId };
+}
+
+/**
  * Merges two or more scenes into the earliest of them (by story order):
  * bodies join with a blank line between, markers move along with their
  * text, and the merged-away scenes go to the story's trash, restorable

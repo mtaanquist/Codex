@@ -148,6 +148,25 @@
 		await goto(`${storyPath}?scene=${targetSceneId}`, { invalidateAll: true });
 	}
 
+	// Copies a scene in full directly after itself; useful for keeping a
+	// scene as a reusable template.
+	async function duplicateScene(sceneId: string) {
+		rowMenu = null;
+		const response = await fetch(`/api/stories/${data.story.id}/duplicate-scene`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ sceneId })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			alert(body?.message ?? 'Could not duplicate the scene.');
+			return;
+		}
+		const { newSceneId } = (await response.json()) as { newSceneId: string };
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
+	}
+
 	// Splits the open scene at the cursor, like a page break: the rest of
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
@@ -389,7 +408,12 @@
 					<a class="seg-btn seg-link" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>
 						Plan
 					</a>
-					<button class="seg-btn" type="button" disabled>Notes</button>
+					<a
+						class="seg-btn seg-link"
+						href={resolve('/stories/[id]/notes', { id: data.story.slug })}
+					>
+						Notes
+					</a>
 				</div>
 				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>
@@ -944,6 +968,14 @@
 			>
 				<Icon name="plus" size={13} />
 				{pickedForMerge ? 'Unselect for merging' : 'Select for merging'}
+			</button>
+			<button
+				class="row-menu-item"
+				type="button"
+				role="menuitem"
+				onclick={() => duplicateScene(target.id)}
+			>
+				<Icon name="copy" size={13} /> Duplicate scene
 			</button>
 			{#if pickedForMerge && mergeSelection.size >= 2}
 				<button class="row-menu-item" type="button" role="menuitem" onclick={mergeSelectedScenes}>

@@ -48,6 +48,16 @@ The world heatmap lists every character, place, and lore entry, brighter the mor
 
 The relationship web draws every recorded relationship as a map: entities are dots, sized by how connected they are, and the lines between them are the relationships. Hover a dot to read its connections, click it to open the entry. The buttons above filter by kind of relationship, and the select narrows the web to one entity and its direct connections.
 
+## Notes
+
+The Notes view holds freeform writing notes: ideas, threads to pull, anything that does not belong to one character or place. Open it from the Notes button at the top of the sidebar, in a story or a universe.
+
+A note in a story belongs to that story. A note in a universe belongs to the whole universe and shows in every story under it, under "From the universe" in the story's note list; open one there to jump to it and edit it in the universe view. Select "New note" to make one, give it a title, and write in the body. Notes save on their own as you type.
+
+Pin the notes you reach for often with the Pin button above a note; pinned notes sit at the top of the list. Delete removes a note for good. The filter field at the top of the list narrows it by title.
+
+If you run a campaign, a note per session works well: keep the running log in a story note, and world facts the players have learned in a universe note. The History tab keeps past versions of a note the same way it does for scenes and entries.
+
 ## History
 
 The History tab on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.

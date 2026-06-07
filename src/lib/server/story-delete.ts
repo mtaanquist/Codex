@@ -9,6 +9,7 @@ import {
 	entityRelationships,
 	exportArtifacts,
 	loreStoryNotes,
+	notes,
 	placeStoryMemberships,
 	placeStoryNotes,
 	publicationAssets,
@@ -104,6 +105,21 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 	// Scenes reference chapters, so scenes first.
 	await tx.delete(scenes).where(eq(scenes.storyId, storyId));
 	await tx.delete(chapters).where(eq(chapters.storyId, storyId));
+
+	// Freeform story notes and their polymorphic revisions.
+	const noteRows = await tx.select({ id: notes.id }).from(notes).where(eq(notes.storyId, storyId));
+	if (noteRows.length > 0) {
+		await tx.delete(revisions).where(
+			and(
+				eq(revisions.entityType, 'note'),
+				inArray(
+					revisions.entityId,
+					noteRows.map((row) => row.id)
+				)
+			)
+		);
+		await tx.delete(notes).where(eq(notes.storyId, storyId));
+	}
 
 	await tx.delete(characterStoryNotes).where(eq(characterStoryNotes.storyId, storyId));
 	await tx.delete(loreStoryNotes).where(eq(loreStoryNotes.storyId, storyId));
