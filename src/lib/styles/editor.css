@@ -237,3 +237,22 @@
 .editor-cm .cm-align-marker {
 	color: var(--text-faint);
 }
+
+/* Non-printing characters: spaces (the built-in highlighter) and the
+   line-break glyphs sit faint so they guide without competing with prose. */
+.editor-cm .cm-highlightSpace,
+.editor-cm .cm-highlightTab {
+	color: var(--text-faint);
+}
+.cm-np-para,
+.cm-np-soft {
+	color: var(--text-faint);
+	font-weight: 400;
+}
+/* A hair of left margin so the glyph does not touch the last word. */
+.cm-np-para::before,
+.cm-np-soft::before {
+	content: '';
+	display: inline-block;
+	width: 1px;
+}

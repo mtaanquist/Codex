@@ -19,6 +19,10 @@
 		onSplitScene,
 		previewHref,
 		storyView,
+		nonPrintingActive,
+		onToggleNonPrinting,
+		commandMarkersActive,
+		onToggleCommandMarkers,
 		onEnterFocus
 	}: {
 		view: () => EditorView | undefined;
@@ -30,6 +34,13 @@
 		previewHref?: string;
 		// The scene <-> whole-story toggle, shown at the end of the bar.
 		storyView?: { active: boolean; toggleHref: string };
+		// The view toggles: show non-printing characters, and hide the command
+		// markers (\center and friends). Each button appears only when its
+		// toggle callback is set; active marks the toggle as on.
+		nonPrintingActive?: boolean;
+		onToggleNonPrinting?: () => void;
+		commandMarkersActive?: boolean;
+		onToggleCommandMarkers?: () => void;
 		// Enters distraction-free writing.
 		onEnterFocus?: () => void;
 	} = $props();
@@ -120,6 +131,39 @@
 			<Icon name="align-{align}" size={16} />
 		</button>
 	{/each}
+	{#if onToggleNonPrinting || onToggleCommandMarkers}
+		<span class="md-sep"></span>
+		{#if onToggleNonPrinting}
+			<button
+				class="md-tool"
+				class:is-active={nonPrintingActive}
+				type="button"
+				aria-label="Non-printing characters"
+				title={nonPrintingActive ? 'Hide non-printing characters' : 'Show non-printing characters'}
+				aria-pressed={nonPrintingActive}
+				onmousedown={(event) => event.preventDefault()}
+				onclick={() => onToggleNonPrinting()}
+			>
+				<Icon name="pilcrow" size={16} />
+			</button>
+		{/if}
+		{#if onToggleCommandMarkers}
+			<button
+				class="md-tool"
+				class:is-active={commandMarkersActive}
+				type="button"
+				aria-label="Command markers"
+				title={commandMarkersActive
+					? 'Show command markers (\\center, \\right, \\justify)'
+					: 'Hide command markers (\\center, \\right, \\justify)'}
+				aria-pressed={commandMarkersActive}
+				onmousedown={(event) => event.preventDefault()}
+				onclick={() => onToggleCommandMarkers()}
+			>
+				<Icon name="eye" size={16} />
+			</button>
+		{/if}
+	{/if}
 	{#if onSplitScene}
 		<span class="md-sep"></span>
 		<button
