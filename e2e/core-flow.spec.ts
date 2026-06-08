@@ -42,9 +42,15 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
 	// The top-bar help opens the editor article in a modal; Esc closes it.
-	await page.getByRole('button', { name: 'Help: the editor' }).click();
+	// Opening is idempotent, so retry the click until the dialog shows: a lone
+	// click can be dropped if it lands as the top bar re-renders.
 	const help = page.getByRole('dialog', { name: 'Writing in the editor' });
-	await expect(help.getByRole('heading', { name: 'Writing in the editor' })).toBeVisible();
+	await expect(async () => {
+		await page.getByRole('button', { name: 'Help: the editor' }).click();
+		await expect(help.getByRole('heading', { name: 'Writing in the editor' })).toBeVisible({
+			timeout: 2000
+		});
+	}).toPass({ timeout: 15000 });
 	await page.keyboard.press('Escape');
 	await expect(help).toBeHidden();
 
@@ -300,13 +306,17 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('Control+End');
 	await page.keyboard.type(' Ali');
-	// Ctrl-Space asks for the completion explicitly, so the assertion does
-	// not race the type-activation debounce.
-	await page.keyboard.press('Control+Space');
-	await expect(page.locator('.cm-tooltip-autocomplete')).toBeVisible();
-	await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
-		'Alice Vane'
-	);
+	// Ctrl-Space asks for the completion explicitly. Re-ask until the filtered
+	// list shows: a single request can land before the editor has registered
+	// the typed text, opening the popup unfiltered, and re-asking re-runs the
+	// source against the current text.
+	await expect(async () => {
+		await page.keyboard.press('Control+Space');
+		await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
+			'Alice Vane',
+			{ timeout: 2000 }
+		);
+	}).toPass({ timeout: 15000 });
 	// The design's popup: a coloured badge, the kind, and the key footer.
 	await expect(page.locator('.cm-tooltip-autocomplete .ac-badge').first()).toHaveText('A');
 	await expect(page.locator('.cm-tooltip-autocomplete .cm-completionDetail').first()).toHaveText(
