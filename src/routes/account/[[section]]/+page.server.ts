@@ -185,6 +185,8 @@ export const actions: Actions = {
 		const spell = String(data.get('spellCheck') ?? '');
 		const language = String(data.get('writingLanguage') ?? '');
 		const streak = String(data.get('sessionStreak') ?? '');
+		const nonPrinting = String(data.get('nonPrintingMarks') ?? '');
+		const command = String(data.get('commandMarkers') ?? '');
 		// Blank or non-numeric means no goal (0); normalise clamps the rest.
 		const dailyWordGoal = Math.trunc(Number(data.get('dailyWordGoal'))) || 0;
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
@@ -192,6 +194,12 @@ export const actions: Actions = {
 		}
 		if (marks !== 'shown' && marks !== 'hidden') {
 			return fail(400, { scope: 'prefs', message: 'Pick a scene marks option.' });
+		}
+		if (nonPrinting !== 'shown' && nonPrinting !== 'hidden') {
+			return fail(400, { scope: 'prefs', message: 'Pick a non-printing characters option.' });
+		}
+		if (command !== 'shown' && command !== 'hidden') {
+			return fail(400, { scope: 'prefs', message: 'Pick a command markers option.' });
 		}
 		if (editing !== 'markdown' && editing !== 'rich') {
 			return fail(400, { scope: 'prefs', message: 'Pick an editing mode.' });
@@ -210,6 +218,8 @@ export const actions: Actions = {
 			// The select constrains the tags; normalise drops anything else.
 			writingLanguage: language,
 			sessionStreak: streak,
+			nonPrintingMarks: nonPrinting,
+			commandMarkers: command,
 			dailyWordGoal
 		});
 		return { scope: 'prefs', saved: true };

@@ -39,6 +39,19 @@ Your work is stored as markdown in both modes; switching is purely about what yo
 
 To force a page break in print and PDF output, put \page alone on its own line. It does nothing on screen or in the reading pages.
 
+## Paragraphs and line breaks
+
+Press Enter to start a new paragraph. One Enter is enough: it reads the same in the editor, the preview, and every export. For a soft line break that stays inside the same paragraph, press Shift+Enter. Inside a bullet list or a quote, Enter continues the list or the quote.
+
+## Showing the hidden marks
+
+Two buttons on the formatting bar change what you see without changing your text:
+
+- **Non-printing characters** (the pilcrow button) shows spaces as a faint dot, paragraph breaks as a pilcrow, and soft line breaks as a return arrow. It is the quickest way to tell a real paragraph break from a soft line break.
+- **Command markers** (the eye button) tucks away the alignment markers like \center, leaving the paragraph aligned the way it will read. The marker comes back on the line you are editing, so you can still change or remove it.
+
+Both buttons remember their setting, and you can also set them under Editor behaviour on your account page.
+
 ## Reading and previewing the whole story
 
 The book icon at the right of the formatting toolbar opens the whole story as one long document, every scene joined in order. This is still the editor: it has the same formatting toolbar, and you can write anywhere in it. The up and down arrows carry the cursor from the end of one scene into the next. Use the same button again to go back to a single scene.

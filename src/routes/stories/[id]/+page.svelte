@@ -22,6 +22,30 @@
 
 	let { data }: { data: PageData } = $props();
 
+	// The prose-view toggles (show non-printing marks, hide command markers)
+	// are shared by every editor in the story and remembered per user. The
+	// toolbar flips them; the change persists in the background so the next
+	// visit opens the same way.
+	// svelte-ignore state_referenced_locally
+	let nonPrintingMarks = $state(data.preferences.nonPrintingMarks);
+	// svelte-ignore state_referenced_locally
+	let commandMarkers = $state(data.preferences.commandMarkers);
+	function persistEditorView(patch: { nonPrintingMarks?: string; commandMarkers?: string }) {
+		void fetch('/api/editor-view', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(patch)
+		}).catch(() => {});
+	}
+	function toggleNonPrinting() {
+		nonPrintingMarks = nonPrintingMarks === 'shown' ? 'hidden' : 'shown';
+		persistEditorView({ nonPrintingMarks });
+	}
+	function toggleCommandMarkers() {
+		commandMarkers = commandMarkers === 'shown' ? 'hidden' : 'shown';
+		persistEditorView({ commandMarkers });
+	}
+
 	// Where the writer was in the open scene, kept with the history entry:
 	// the browser back button returns to the same scroll and caret instead
 	// of the top of the scene.
@@ -820,6 +844,8 @@
 							editingMode={data.preferences.editingMode}
 							spellCheck={data.preferences.spellCheck}
 							writingLanguage={data.preferences.writingLanguage}
+							{nonPrintingMarks}
+							{commandMarkers}
 							imageUniverseId={data.universe.id}
 							markers={data.storyDocMarkers[scene.id] ?? []}
 							loreCategories={data.loreCategories}
@@ -838,6 +864,10 @@
 						view={toolbarView}
 						{previewHref}
 						storyView={{ active: inWholeStory, toggleHref }}
+						nonPrintingActive={nonPrintingMarks === 'shown'}
+						onToggleNonPrinting={toggleNonPrinting}
+						commandMarkersActive={commandMarkers === 'hidden'}
+						onToggleCommandMarkers={toggleCommandMarkers}
 						onEnterFocus={() => (focusMode.on = true)}
 					/>
 					<div class="editor-scroll">
@@ -889,6 +919,10 @@
 						onSplitScene={splitCurrentScene}
 						storyView={{ active: inWholeStory, toggleHref }}
 						previewHref={`${storyPath}?view=preview&scene=${data.selectedScene.id}`}
+						{nonPrintingMarks}
+						{commandMarkers}
+						onToggleNonPrinting={toggleNonPrinting}
+						onToggleCommandMarkers={toggleCommandMarkers}
 						onEnterFocus={() => (focusMode.on = true)}
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}

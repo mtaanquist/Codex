@@ -1152,6 +1152,11 @@
 	background: var(--bg-hover);
 	color: var(--text);
 }
+/* A pressed view toggle (non-printing marks, hide command markers). */
+.md-tool.is-active {
+	background: var(--bg-hover);
+	color: var(--accent);
+}
 .md-tool-label {
 	font-family: var(--font-ui);
 	letter-spacing: 0.01em;

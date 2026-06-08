@@ -1298,6 +1298,43 @@
 								</div>
 								<div class="behavior-card">
 									<div class="behavior-head">
+										<span class="behavior-title">Non-printing characters</span>
+										<select
+											class="select"
+											name="nonPrintingMarks"
+											aria-label="Non-printing characters"
+											value={data.preferences.nonPrintingMarks}
+										>
+											<option value="hidden">Hidden</option>
+											<option value="shown">Shown</option>
+										</select>
+									</div>
+									<div class="behavior-body">
+										Show spaces, paragraph breaks, and soft line breaks as faint marks. You can also
+										toggle this from the button on the editor's formatting bar.
+									</div>
+								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
+										<span class="behavior-title">Command markers</span>
+										<select
+											class="select"
+											name="commandMarkers"
+											aria-label="Command markers"
+											value={data.preferences.commandMarkers}
+										>
+											<option value="shown">Shown</option>
+											<option value="hidden">Hidden</option>
+										</select>
+									</div>
+									<div class="behavior-body">
+										The alignment markers (\center, \right, \justify) that ride in the text. Hidden
+										tucks them away except on the line you are editing, so the page reads as the
+										finished alignment. You can also toggle this from the editor's formatting bar.
+									</div>
+								</div>
+								<div class="behavior-card">
+									<div class="behavior-head">
 										<span class="behavior-title">Spell-check</span>
 										<select
 											class="select"

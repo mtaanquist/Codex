@@ -59,6 +59,18 @@ describe('appearance preferences', () => {
 		expect(prefs.continuousSceneMarks).toBe('shown');
 	});
 
+	it('defaults the editor view toggles and round-trips a change', async () => {
+		let prefs = await userPreferences(db, userId);
+		// Non-printing marks start hidden; command markers start shown.
+		expect(prefs.nonPrintingMarks).toBe('hidden');
+		expect(prefs.commandMarkers).toBe('shown');
+
+		await savePreferences(db, userId, { nonPrintingMarks: 'shown', commandMarkers: 'hidden' });
+		prefs = await userPreferences(db, userId);
+		expect(prefs.nonPrintingMarks).toBe('shown');
+		expect(prefs.commandMarkers).toBe('hidden');
+	});
+
 	it('round-trips theme and accent without disturbing other keys', async () => {
 		await savePreferences(db, userId, { entityAutocomplete: 'ghost' });
 		await savePreferences(db, userId, { theme: 'dark', accent: '#2fae8c' });
