@@ -154,13 +154,15 @@ user feedback + design drift; autonomous, full release flow per item).
       create forms dismissable: visible Cancel on the dashboard forms,
       Esc-to-cancel on the add-relationship and universe-plan new-story
       forms. Both merged 2026-06-08 (#289), shipped as v2.39.1.
-- [ ] #287 (reframed by author): the whole-story view IS the editor and
-      editing there is correct; the gap is discoverability (no toolbar reads
-      as read-only) plus the want for a true preview. Plan: put the
-      formatting toolbar into the whole-story view (with a preview toggle in
-      that bar, not the top bar - author's call), and add a read-only
-      print/export preview rendered through the shared renderMarkdown so it
-      matches the export. Ships as its own minor (v2.40.0).
+- [x] #287 (reframed by author): the whole-story view IS the editor and
+      editing there is correct; the gap was discoverability (no toolbar read
+      as read-only) plus the want for a true preview. Put the formatting
+      toolbar into the whole-story view (acting on the focused scene, preview
+      toggle in that bar, not the top bar - author's call), and added a
+      read-only export preview (view=preview) through the shared
+      renderMarkdown so it matches the export (markers gone; alignment, page
+      breaks, scene-break text, paragraph style applied), plus a "Preview the
+      story" palette command. Merged 2026-06-08 (#291), shipped as v2.40.0.
 - [ ] #288 entity read-only card in the right column (design-drift
       restoration of the prototype's EntityInspector): clicking an entity
       shows a read-only card (summary, details, relationships, related) with
