@@ -888,6 +888,7 @@
 						bind:this={sceneEditor}
 						onSplitScene={splitCurrentScene}
 						storyView={{ active: inWholeStory, toggleHref }}
+						previewHref={`${storyPath}?view=preview&scene=${data.selectedScene.id}`}
 						onEnterFocus={() => (focusMode.on = true)}
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}

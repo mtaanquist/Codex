@@ -39,6 +39,18 @@ test('whole-story view has the toolbar; preview hides the markers', async ({ pag
 	await expect(page.locator('.cm-content')).toContainText('\\center Centered line.');
 	await alignSave;
 
+	// The scene editor's own toolbar offers Preview directly, without first
+	// opening the whole-story view (#308). It opens the export render; return
+	// to the scene to carry on with the whole-story checks below.
+	const sceneUrl = page.url();
+	const scenePreview = page.locator('.md-toolbar a.md-preview');
+	await expect(scenePreview).toBeVisible();
+	await scenePreview.click();
+	await expect(page).toHaveURL(/view=preview/);
+	await expect(page.locator('.story-preview')).toContainText('Centered line.');
+	await page.goto(sceneUrl);
+	await expect(page.locator('.cm-content')).toContainText('Centered line.');
+
 	// Read the whole story: still the editor, so the formatting toolbar is
 	// there alongside a Preview button.
 	await page.getByTitle('Read the whole story').click();

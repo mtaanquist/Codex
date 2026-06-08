@@ -673,29 +673,27 @@
 											<td class="cell-muted">{when(account.createdAt)}</td>
 											<td class="row-actions">
 												<div class="row-actions-inner">
-													{#if account.role === 'admin' || account.id === data.meId}
-														<span class="cell-muted">-</span>
+													{#if account.publicArchiveEnabled}
+														<form method="POST" action="?/disableArchive">
+															<input type="hidden" name="userId" value={account.id} />
+															<button type="submit" class="btn btn-ghost btn-sm"
+																>Stop publishing</button
+															>
+														</form>
 													{:else}
+														<form method="POST" action="?/enableArchive">
+															<input type="hidden" name="userId" value={account.id} />
+															<button type="submit" class="btn btn-ghost btn-sm"
+																>Allow publishing</button
+															>
+														</form>
+													{/if}
+													{#if account.role !== 'admin' && account.id !== data.meId}
 														{#if !account.emailVerifiedAt}
 															<form method="POST" action="?/confirmEmail">
 																<input type="hidden" name="userId" value={account.id} />
 																<button type="submit" class="btn btn-ghost btn-sm"
 																	>Confirm email</button
-																>
-															</form>
-														{/if}
-														{#if account.publicArchiveEnabled}
-															<form method="POST" action="?/disableArchive">
-																<input type="hidden" name="userId" value={account.id} />
-																<button type="submit" class="btn btn-ghost btn-sm"
-																	>Stop publishing</button
-																>
-															</form>
-														{:else}
-															<form method="POST" action="?/enableArchive">
-																<input type="hidden" name="userId" value={account.id} />
-																<button type="submit" class="btn btn-ghost btn-sm"
-																	>Allow publishing</button
 																>
 															</form>
 														{/if}
