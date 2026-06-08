@@ -34,6 +34,9 @@ export type MentionOptions = {
 	onPin?: (name: string, target: { type: MentionTarget['type']; id: string }) => void;
 	// Where "Open full details" points for an entity.
 	entityHref?: (entity: { type: MentionTarget['type']; id: string }) => string;
+	// When set, "Open full details" opens the read-only card in the right
+	// column instead of navigating to the plan.
+	onOpenCard?: (entityId: string) => void;
 };
 
 // The hover card shows the first few quick details and related entities;
@@ -178,9 +181,18 @@ export function mentionExtensions(
 					}
 					dom.appendChild(chips);
 				}
-				if (options.entityHref) {
+				if (options.onOpenCard || options.entityHref) {
 					const open = el('a', 'pop-open', 'Open full details') as HTMLAnchorElement;
-					open.href = options.entityHref({ type: entity.type, id: entity.id });
+					if (options.entityHref) {
+						open.href = options.entityHref({ type: entity.type, id: entity.id });
+					}
+					if (options.onOpenCard) {
+						const entityId = entity.id;
+						open.addEventListener('click', (event) => {
+							event.preventDefault();
+							options.onOpenCard!(entityId);
+						});
+					}
 					dom.appendChild(open);
 				}
 				if (others.length > 0 && options.onPin) {
