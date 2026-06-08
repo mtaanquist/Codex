@@ -20,11 +20,15 @@ If the link allows suggested edits, selecting a passage also offers "Suggest a c
 
 Reviewers only ever see this one story. They never change your text directly - a suggestion only touches the prose if you accept it - and they cannot see your other stories, characters, or notes.
 
+## Reviewing your own story
+
+You do not have to invite anyone to use review mode. Open "Review mode" in the Review section to read your manuscript and leave your own comments and suggested edits, the same way a reviewer would - a useful pass for marking things to fix without changing the prose yet. Your notes are marked as yours, and any reviewers you have invited see them too, so you can offer a second opinion of your own.
+
 ## Working through the feedback
 
-Open "See the feedback" in the Review section (or visit the story's review page) to read every thread. Reply to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
+The same review page shows every thread, yours and your reviewers'. Reply to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
 
-Suggested changes appear on the same page, showing the original text and the proposed text. Accept one to apply it to the scene (a history entry records it), or reject it. You decide one at a time, in any order.
+Suggested changes appear there too, showing the original text and the proposed text. Accept one to apply it to the scene (a history entry records it), or reject it - this works the same for your own suggestions and a reviewer's. You decide one at a time, in any order.
 
 Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text, and a suggestion can no longer be accepted, only rejected.
 

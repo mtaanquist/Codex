@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const DEFAULTS = { nonPrintingMarks: 'hidden', commandMarkers: 'shown' };
+const DEFAULTS = { nonPrintingMarks: 'hidden', commandMarkers: 'hidden' };
 
 // The editor legibility batch: Enter makes a paragraph (one Enter, not two),
 // and the formatting bar's view toggles show non-printing marks and remember
@@ -35,30 +35,30 @@ test('Enter makes a paragraph; the view toggles show marks and persist', async (
 	await page.keyboard.type('Beta');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	// Non-printing characters: off by default, toggling on shows the pilcrow
-	// glyphs (end of "Alpha" and on the blank line between the paragraphs).
-	const nonPrinting = page.getByRole('button', { name: 'Non-printing characters' });
-	await expect(nonPrinting).toHaveAttribute('aria-pressed', 'false');
+	// The view toggles live in the overflow ("View options") menu and are off
+	// by default. Turning non-printing on shows the pilcrow glyphs (end of
+	// "Alpha" and on the blank line between the paragraphs).
+	await page.getByRole('button', { name: 'View options' }).click();
+	const nonPrinting = page.getByRole('menuitemcheckbox', { name: /non-printing characters/ });
+	await expect(nonPrinting).toHaveAttribute('aria-checked', 'false');
 	await nonPrinting.click();
-	await expect(nonPrinting).toHaveAttribute('aria-pressed', 'true');
+	await expect(nonPrinting).toHaveAttribute('aria-checked', 'true');
 	await expect(page.locator('.cm-np-para')).toHaveCount(2);
 
-	// The setting is remembered: after a reload the toggle is still on.
-	await page.reload();
-	await expect(page.getByRole('button', { name: 'Non-printing characters' })).toHaveAttribute(
-		'aria-pressed',
-		'true'
-	);
-
-	// Command markers: shown by default (button not pressed), toggling hides
-	// them, and that persists too.
-	const commandMarkers = page.getByRole('button', { name: 'Command markers' });
-	await expect(commandMarkers).toHaveAttribute('aria-pressed', 'false');
+	// Command markers are also off by default (click to show), in the same menu.
+	const commandMarkers = page.getByRole('menuitemcheckbox', { name: /command markers/ });
+	await expect(commandMarkers).toHaveAttribute('aria-checked', 'false');
 	await commandMarkers.click();
-	await expect(commandMarkers).toHaveAttribute('aria-pressed', 'true');
+	await expect(commandMarkers).toHaveAttribute('aria-checked', 'true');
+
+	// Both settings are remembered across a reload.
 	await page.reload();
-	await expect(page.getByRole('button', { name: 'Command markers' })).toHaveAttribute(
-		'aria-pressed',
+	await page.getByRole('button', { name: 'View options' }).click();
+	await expect(
+		page.getByRole('menuitemcheckbox', { name: /non-printing characters/ })
+	).toHaveAttribute('aria-checked', 'true');
+	await expect(page.getByRole('menuitemcheckbox', { name: /command markers/ })).toHaveAttribute(
+		'aria-checked',
 		'true'
 	);
 

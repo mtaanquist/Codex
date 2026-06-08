@@ -5,6 +5,8 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
 	addComment,
+	createSuggestion,
+	createThread,
 	decideSuggestion,
 	listSuggestions,
 	listThreads,
@@ -37,6 +39,46 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 };
 
 export const actions: Actions = {
+	// The author leaving their own note, like a guest reviewer would. A null
+	// anchor is a whole-scene comment; a range is a selection.
+	comment: async ({ params, request, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const start = Number(data.get('start'));
+		const end = Number(data.get('end'));
+		const anchor =
+			Number.isInteger(start) && Number.isInteger(end) && end > start && start >= 0
+				? { start, end }
+				: null;
+		const sceneId = String(data.get('sceneId') ?? '');
+		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
+		const result = await createThread(db, {
+			storyId: story.id,
+			sceneId,
+			anchor,
+			author: { userId: locals.user!.id },
+			body: String(data.get('body') ?? '')
+		});
+		if (!result.ok) return fail(400, { message: result.reason });
+		return { done: true };
+	},
+	// The author proposing an edit on their own story; guests reviewing see it
+	// like any other suggestion. The author owns the story, so no canSuggest gate.
+	suggest: async ({ params, request, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const sceneId = String(data.get('sceneId') ?? '');
+		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
+		const result = await createSuggestion(db, {
+			storyId: story.id,
+			sceneId,
+			author: { userId: locals.user!.id },
+			range: { start: Number(data.get('start')), end: Number(data.get('end')) },
+			replacement: String(data.get('replacement') ?? '')
+		});
+		if (!result.ok) return fail(400, { message: result.reason });
+		return { done: true };
+	},
 	reply: async ({ params, request, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();

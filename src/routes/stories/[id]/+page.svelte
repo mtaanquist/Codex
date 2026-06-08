@@ -877,7 +877,7 @@
 						storyView={{ active: inWholeStory, toggleHref }}
 						nonPrintingActive={nonPrintingMarks === 'shown'}
 						onToggleNonPrinting={toggleNonPrinting}
-						commandMarkersActive={commandMarkers === 'hidden'}
+						commandMarkersActive={commandMarkers === 'shown'}
 						onToggleCommandMarkers={toggleCommandMarkers}
 						onEnterFocus={() => (focusMode.on = true)}
 					/>

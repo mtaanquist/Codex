@@ -150,7 +150,7 @@ export const actions: Actions = {
 		const result = await createSuggestion(db, {
 			storyId: resolved.invitation.storyId,
 			sceneId,
-			reviewerId: access.reviewer.id,
+			author: { reviewerId: access.reviewer.id },
 			range: { start: Number(data.get('start')), end: Number(data.get('end')) },
 			replacement: String(data.get('replacement') ?? '')
 		});
