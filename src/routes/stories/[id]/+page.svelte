@@ -544,15 +544,9 @@
 			<div class="left-head">
 				<div class="seg full">
 					<button class="seg-btn active" type="button">Write</button>
-					<a class="seg-btn seg-link" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>
-						Plan
-					</a>
-					<a
-						class="seg-btn seg-link"
-						href={resolve('/stories/[id]/notes', { id: data.story.slug })}
+					<a class="seg-btn" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>Plan</a>
+					<a class="seg-btn" href={resolve('/stories/[id]/notes', { id: data.story.slug })}>Notes</a
 					>
-						Notes
-					</a>
 				</div>
 				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>
@@ -1236,10 +1230,6 @@
 	.scene-row {
 		text-decoration: none;
 		color: inherit;
-	}
-	.seg-link {
-		text-decoration: none;
-		text-align: center;
 	}
 	main.pane.center {
 		scroll-behavior: smooth;
