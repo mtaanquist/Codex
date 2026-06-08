@@ -45,7 +45,17 @@
 	{#if creatingStory}
 		<form method="POST" action="?/createStory" class="new-story-form">
 			<!-- svelte-ignore a11y_autofocus (swaps in on the button click; focus follows the action) -->
-			<input class="input" type="text" name="title" placeholder="Story title" required autofocus />
+			<input
+				class="input"
+				type="text"
+				name="title"
+				placeholder="Story title"
+				required
+				autofocus
+				onkeydown={(e) => {
+					if (e.key === 'Escape') creatingStory = false;
+				}}
+			/>
 			<button class="btn btn-primary" type="submit">Create</button>
 			<button class="btn btn-ghost" type="button" onclick={() => (creatingStory = false)}>
 				Cancel
