@@ -145,6 +145,20 @@ export async function claimHandle(
 	return { ok: true };
 }
 
+// Admins grant publishing to other accounts; they can also turn it on for
+// their own account here, rather than needing a second admin to do it. A
+// regular user still has to be granted publishing by an admin.
+export async function enableOwnPublishing(
+	db: Database,
+	user: { id: string; role: 'admin' | 'user' }
+): Promise<AccountResult> {
+	if (user.role !== 'admin') {
+		return { ok: false, reason: 'Only an admin can enable publishing.' };
+	}
+	await db.update(users).set({ publicArchiveEnabled: true }).where(eq(users.id, user.id));
+	return { ok: true };
+}
+
 // Verifies the current password before setting a new one, then revokes every
 // other session so a device that still held the old password is signed out.
 // The caller's own session is kept so they are not logged out mid-change.

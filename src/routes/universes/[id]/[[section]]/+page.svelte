@@ -309,10 +309,10 @@
 											</button>
 										</span>
 										<!-- No inline background when colourless: the shorthand would
-										     blank out the .empty slash. -->
+										     blank out the no-colour slash. -->
 										<span
 											class="category-color-dot"
-											class:empty={!draft.color}
+											class:no-colour={!draft.color}
 											style={draft.color ? `background: ${draft.color}` : ''}
 										></span>
 										<select
@@ -688,8 +688,10 @@
 		border: 1px solid var(--border);
 		flex: none;
 	}
-	/* The classic "no colour" swatch: a hollow circle with a diagonal slash. */
-	.category-color-dot.empty {
+	/* The classic "no colour" swatch: a hollow circle with a diagonal slash.
+	   The modifier is "no-colour", not "empty", to avoid the global .empty
+	   helper (theme.css), whose padding would stretch the swatch into an oval. */
+	.category-color-dot.no-colour {
 		background: linear-gradient(
 			135deg,
 			transparent calc(50% - 1px),

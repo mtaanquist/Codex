@@ -173,6 +173,25 @@ user feedback + design drift; autonomous, full release flow per item).
       editor right column (in the plan the entity is already open for
       editing). Merged 2026-06-08 (#293), shipped as v2.41.0. Batch complete.
 
+GitHub-issue quick-wins batch (2026-06-08, branch
+`fix/quick-wins-feedback`; four cleanly-scoped items pulled from the
+open issues, the larger requests #301/#305/#306/#307/#309 deferred to
+their own branches). Implemented and tested locally; PR and version on
+merge.
+
+- [x] #302 entity-category swatch showed a tall oval when no colour was
+      set: the swatch's `class:empty` collided with the app-wide `.empty`
+      helper (theme.css padding), stretching the 16px circle. Renamed the
+      modifier to `no-colour`; an e2e assertion keeps the swatch square.
+- [x] #303 a "Library" breadcrumb before the universe name in TopBar.
+- [x] #304 admins could not enable publishing for themselves: added
+      `enableOwnPublishing` (account server, admin-gated) with a self-serve
+      button on the account public-page block, and unhid the admin-panel
+      publishing toggle for admin and own rows. Integration test covers the
+      gate.
+- [x] #308 Preview button on the single-scene toolbar (`previewHref`
+      threaded through SceneEditor), not just the whole-story view.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

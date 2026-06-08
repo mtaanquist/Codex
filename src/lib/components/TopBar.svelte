@@ -34,6 +34,8 @@
 		<span class="brand-name">Codex</span>
 	</a>
 	<nav class="crumbs">
+		<a class="crumb" href={resolve('/')}>Library</a>
+		<span class="sep"><Icon name="chevron" size={13} /></span>
 		{#if story}
 			<a class="crumb" href={resolve('/universes/[id]/plan', { id: universe.slug })}>
 				{universe.name}

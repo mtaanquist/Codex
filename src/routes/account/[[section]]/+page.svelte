@@ -397,10 +397,20 @@
 
 						{#if !data.profile.publicArchiveEnabled}
 							<div class="admin-card">
-								<p class="admin-block-sub" style="margin:0;">
-									Ask an admin to enable publishing for your account before you can claim a handle
-									and show a public page.
-								</p>
+								{#if data.isAdmin}
+									<form method="POST" action="?/enablePublishing">
+										<p class="admin-block-sub" style="margin:0 0 10px;">
+											Turn on publishing for your account, then claim a handle to show a public
+											page.
+										</p>
+										<button type="submit" class="btn btn-primary">Enable publishing</button>
+									</form>
+								{:else}
+									<p class="admin-block-sub" style="margin:0;">
+										Ask an admin to enable publishing for your account before you can claim a handle
+										and show a public page.
+									</p>
+								{/if}
 							</div>
 						{:else if !data.profile.handle}
 							<div class="admin-card">

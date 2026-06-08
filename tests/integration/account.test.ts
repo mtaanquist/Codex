@@ -9,6 +9,7 @@ import {
 	changePassword,
 	claimHandle,
 	confirmEmailChange,
+	enableOwnPublishing,
 	listSessions,
 	requestEmailChange,
 	revokeOtherSessions,
@@ -160,6 +161,31 @@ describe('claimHandle', () => {
 		const result = await claimHandle(db, userId, 'shared');
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toMatch(/taken/i);
+	});
+});
+
+describe('enableOwnPublishing', () => {
+	it('lets an admin turn on their own publishing', async () => {
+		const [admin] = await db
+			.insert(users)
+			.values({
+				email: 'admin@example.com',
+				displayName: 'Admin',
+				passwordHash: 'x',
+				role: 'admin'
+			})
+			.returning({ id: users.id });
+		const result = await enableOwnPublishing(db, { id: admin.id, role: 'admin' });
+		expect(result.ok).toBe(true);
+		const [row] = await db.select().from(users).where(eq(users.id, admin.id));
+		expect(row.publicArchiveEnabled).toBe(true);
+	});
+
+	it('refuses a regular user and leaves the flag off', async () => {
+		const result = await enableOwnPublishing(db, { id: userId, role: 'user' });
+		expect(result.ok).toBe(false);
+		const [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.publicArchiveEnabled).toBe(false);
 	});
 });
 
