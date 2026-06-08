@@ -36,6 +36,8 @@
 		onCreateEntity,
 		onSplitScene,
 		onFocus,
+		storyView,
+		onEnterFocus,
 		onStatus
 	}: {
 		sceneId: string;
@@ -77,6 +79,9 @@
 		// The continuous view's shared toolbar acts on whichever stitched
 		// editor last took focus; this reports that.
 		onFocus?: () => void;
+		// Editor-view controls carried on the formatting bar.
+		storyView?: { active: boolean; toggleHref: string };
+		onEnterFocus?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -439,6 +444,8 @@
 			view={() => view}
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
 			{onSplitScene}
+			{storyView}
+			{onEnterFocus}
 		/>
 		<div
 			class="editor-scroll"
