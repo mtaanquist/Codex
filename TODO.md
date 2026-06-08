@@ -163,11 +163,15 @@ user feedback + design drift; autonomous, full release flow per item).
       renderMarkdown so it matches the export (markers gone; alignment, page
       breaks, scene-break text, paragraph style applied), plus a "Preview the
       story" palette command. Merged 2026-06-08 (#291), shipped as v2.40.0.
-- [ ] #288 entity read-only card in the right column (design-drift
-      restoration of the prototype's EntityInspector): clicking an entity
-      shows a read-only card (summary, details, relationships, related) with
-      a back-stack and an open-in-plan link, related entities reachable in
-      the frame. Ships as its own minor (v2.41.0).
+- [x] #288 entity read-only card in the right column (design-drift
+      restoration of the prototype's EntityInspector): clicking an entity in
+      the editor's "In this scene" list, or "Open full details" on a mention
+      hover, replaces the right column with a read-only card (summary,
+      description, typed relationships, details, open-in-plan link); related
+      entries open in the same card with a Back stack. Owner-scoped GET
+      /api/entities/[id]/card (getEntityCard in plan-data). Scoped to the
+      editor right column (in the plan the entity is already open for
+      editing). Merged 2026-06-08 (#293), shipped as v2.41.0. Batch complete.
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a

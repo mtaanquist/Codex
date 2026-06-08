@@ -476,8 +476,21 @@
 				<Icon name="pencil" size={15} />
 				<span class="md-tool-label">Edit</span>
 			</a>
+			<div class="md-right">
+				<span class="md-hint">Preview</span>
+				<a class="md-tool" href={toggleHref} title="Back to the scene editor">
+					<Icon name="scene" size={16} />
+				</a>
+				<button
+					class="md-tool"
+					type="button"
+					title="Focus mode"
+					onclick={() => (focusMode.on = true)}
+				>
+					<Icon name="expand" size={16} />
+				</button>
+			</div>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
-			<span class="md-hint">Preview</span>
 		</div>
 		<div class="editor-scroll">
 			<div
@@ -523,9 +536,7 @@
 	<TopBar
 		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		story={{ slug: data.story.slug, title: data.story.title }}
-		onEnterFocus={() => (focusMode.on = true)}
 		{saveStatus}
-		storyView={{ active: inWholeStory, toggleHref }}
 		help={{ topic: 'editor', label: 'the editor' }}
 	/>
 	<div class="body">
@@ -829,7 +840,12 @@
 					</article>
 				{/snippet}
 				<div class="md-editor">
-					<EditorToolbar view={toolbarView} {previewHref} />
+					<EditorToolbar
+						view={toolbarView}
+						{previewHref}
+						storyView={{ active: inWholeStory, toggleHref }}
+						onEnterFocus={() => (focusMode.on = true)}
+					/>
 					<div class="editor-scroll">
 						<div class="editor story-doc">
 							<h1 class="doc-title">{data.story.title}</h1>
@@ -877,6 +893,8 @@
 					<SceneEditor
 						bind:this={sceneEditor}
 						onSplitScene={splitCurrentScene}
+						storyView={{ active: inWholeStory, toggleHref }}
+						onEnterFocus={() => (focusMode.on = true)}
 						sceneId={data.selectedScene.id}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
@@ -1270,6 +1288,15 @@
 	}
 	.md-preview-edit:hover {
 		color: var(--text);
+	}
+	.md-right {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+	.md-right .md-hint {
+		margin-left: 0;
 	}
 	.story-preview {
 		font-family: var(--font-content);

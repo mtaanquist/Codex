@@ -17,7 +17,9 @@
 		view,
 		modeLabel,
 		onSplitScene,
-		previewHref
+		previewHref,
+		storyView,
+		onEnterFocus
 	}: {
 		view: () => EditorView | undefined;
 		modeLabel?: string;
@@ -26,6 +28,10 @@
 		// When set, a Preview button at the end of the bar opens the read-only
 		// export preview (the whole-story view only).
 		previewHref?: string;
+		// The scene <-> whole-story toggle, shown at the end of the bar.
+		storyView?: { active: boolean; toggleHref: string };
+		// Enters distraction-free writing.
+		onEnterFocus?: () => void;
 	} = $props();
 
 	function run(command: (view: EditorView) => boolean) {
@@ -126,22 +132,48 @@
 			<Icon name="split" size={16} />
 		</button>
 	{/if}
-	{#if modeLabel}
-		<span class="md-hint">{modeLabel}</span>
-	{/if}
-	{#if previewHref}
-		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-		<a class="md-tool md-preview" href={previewHref} title="See how this will look when exported">
-			<Icon name="book" size={15} />
-			<span class="md-tool-label">Preview</span>
-		</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
-	{/if}
+	<div class="md-right">
+		{#if modeLabel}
+			<span class="md-hint">{modeLabel}</span>
+		{/if}
+		{#if previewHref}
+			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+			<a class="md-tool md-preview" href={previewHref} title="See how this will look when exported">
+				<Icon name="book" size={15} />
+				<span class="md-tool-label">Preview</span>
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		{/if}
+		{#if storyView}
+			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+			<a
+				class="md-tool"
+				href={storyView.toggleHref}
+				title={storyView.active ? 'Back to the scene editor' : 'Read the whole story'}
+			>
+				<Icon name={storyView.active ? 'scene' : 'chapter'} size={16} />
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		{/if}
+		{#if onEnterFocus}
+			<button class="md-tool" type="button" title="Focus mode" onclick={() => onEnterFocus()}>
+				<Icon name="expand" size={16} />
+			</button>
+		{/if}
+	</div>
 </div>
 
 <style>
-	.md-preview {
+	.md-right {
 		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+	.md-right .md-hint {
+		margin-left: 0;
+	}
+	.md-preview {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;

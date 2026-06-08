@@ -9,17 +9,13 @@
 	let {
 		universe,
 		story,
-		onEnterFocus,
 		saveStatus = 'idle',
-		storyView,
 		help
 	}: {
 		universe: { slug: string; name: string };
 		// Absent on universe-scoped pages; the universe becomes the crumb.
 		story?: { slug: string; title: string };
-		onEnterFocus?: () => void;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
-		storyView?: { active: boolean; toggleHref: string };
 		// The help topic for this page, shown as a "?" in the bar.
 		help?: { topic: string; label: string };
 	} = $props();
@@ -79,22 +75,6 @@
 			>
 				<Icon name="gear" />
 			</a>
-		{/if}
-		{#if storyView}
-			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-			<a
-				class="icon-btn"
-				href={storyView.toggleHref}
-				title={storyView.active ? 'Back to the scene editor' : 'Read the whole story'}
-			>
-				<Icon name={storyView.active ? 'scene' : 'chapter'} />
-			</a>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
-		{/if}
-		{#if onEnterFocus}
-			<button class="icon-btn" type="button" title="Focus mode" onclick={onEnterFocus}>
-				<Icon name="expand" />
-			</button>
 		{/if}
 		{#if help}
 			<HelpLink topic={help.topic} label={help.label} />
