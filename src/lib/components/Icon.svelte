@@ -104,7 +104,11 @@
 		tag: [
 			'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-6.2-6.2a2 2 0 0 1 0-2.8L11.6 4.4a2 2 0 0 1 1.4-.6H19a2 2 0 0 1 2 2v6a2 2 0 0 1-.4 1.4z',
 			'M16 8h.01'
-		]
+		],
+		// Pilcrow: the show-formatting-marks toggle.
+		pilcrow: ['M13 4v16', 'M17 4v16', 'M19 4H9.5a4.5 4.5 0 0 0 0 9H13'],
+		// Eye: the show/hide command-markers toggle.
+		eye: ['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z']
 	} as const;
 
 	export type IconName = keyof typeof PATHS;

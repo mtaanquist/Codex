@@ -192,6 +192,30 @@ merge.
 - [x] #308 Preview button on the single-scene toolbar (`previewHref`
       threaded through SceneEditor), not just the whole-story view.
 
+Editor legibility batch (2026-06-08, branch `feat/editor-legibility`;
+the "editor legibility" group from the next-batch triage, author chose
+WYSIWYG Enter and remembered toolbar toggles). Implemented and tested
+locally; PR and version on merge.
+
+- [x] #307 Enter = paragraph: a custom Enter (`editor-enter.ts`,
+      Prec.high) inserts a blank-line paragraph break, Shift+Enter a soft
+      newline, and a list/quote line still continues its markup; defers to
+      the autocomplete popup when it is open. Applies to the prose
+      (non-plain) editors in both editing modes. No auto-migration of
+      existing single-newline prose - #306 helps fix it by eye.
+- [x] #306 show non-printing characters: a toolbar toggle (`editor-
+      nonprinting.ts`) showing spaces via the built-in highlighter plus a
+      pilcrow at paragraph breaks and a return-arrow at soft wraps - the
+      glyph that tells the two apart.
+- [x] New (author request): a toolbar toggle to hide the command markers
+      (\center, \right, \justify). `editor-alignment.ts` gained a
+      hideMarkers mode that replaces the marker except on the line being
+      edited, like rich mode does for `**`/`#`.
+- Both toggles are remembered per user (`nonPrintingMarks`,
+  `commandMarkers` in UserPreferences; a `POST /api/editor-view` persists
+  them from the bar) and also live under Editor behaviour on the account
+  page. Shared across every editor in a story via runtime compartments.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

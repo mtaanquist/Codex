@@ -7,7 +7,13 @@
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
-	import { proseExtensions, type EditingMode } from '$lib/editor';
+	import {
+		proseExtensions,
+		alignmentFor,
+		nonPrintingFor,
+		type EditingMode,
+		type MarkVisibility
+	} from '$lib/editor';
 	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
@@ -38,6 +44,10 @@
 		onFocus,
 		storyView,
 		previewHref,
+		nonPrintingMarks = 'hidden',
+		commandMarkers = 'shown',
+		onToggleNonPrinting,
+		onToggleCommandMarkers,
 		onEnterFocus,
 		onStatus
 	}: {
@@ -84,6 +94,13 @@
 		storyView?: { active: boolean; toggleHref: string };
 		// When set, a Preview button on the bar opens the read-only export view.
 		previewHref?: string;
+		// The prose-view toggles, shared across every editor in the story. The
+		// toggle callbacks are only passed where the toolbar is shown (the
+		// scene editor); the stitched editors just take the values.
+		nonPrintingMarks?: MarkVisibility;
+		commandMarkers?: MarkVisibility;
+		onToggleNonPrinting?: () => void;
+		onToggleCommandMarkers?: () => void;
 		onEnterFocus?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
@@ -97,6 +114,9 @@
 	const mentionsCompartment = new Compartment();
 	const autocompleteCompartment = new Compartment();
 	const markersCompartment = new Compartment();
+	// The toolbar toggles flip these at runtime.
+	const nonPrintingCompartment = new Compartment();
+	const alignmentCompartment = new Compartment();
 	// svelte-ignore state_referenced_locally
 	let markerHandle: MarkerHandle = markerExtensions(markers, markSelection);
 
@@ -236,6 +256,20 @@
 		if (!view || incoming === current) return;
 		markerHandle = markerExtensions(markers, markSelection);
 		view.dispatch({ effects: markersCompartment.reconfigure(markerHandle.extension) });
+	});
+
+	// The toolbar's view toggles, flipped from any editor in the story; each
+	// editor reconfigures its own compartment to match. The prop is read before
+	// the view guard so it is tracked even on the first (pre-mount) run.
+	$effect(() => {
+		const extension = nonPrintingFor(nonPrintingMarks);
+		if (!view) return;
+		view.dispatch({ effects: nonPrintingCompartment.reconfigure(extension) });
+	});
+	$effect(() => {
+		const extension = alignmentFor(commandMarkers);
+		if (!view) return;
+		view.dispatch({ effects: alignmentCompartment.reconfigure(extension) });
 	});
 
 	// A search jump selects the first occurrence of the text it arrived
@@ -408,7 +442,13 @@
 						placeholder: 'Start writing...',
 						onDocChanged: scheduleSave,
 						editingMode,
-						spellCheck: { enabled: spellCheck === 'on', language: writingLanguage }
+						spellCheck: { enabled: spellCheck === 'on', language: writingLanguage },
+						nonPrintingMarks,
+						commandMarkers,
+						compartments: {
+							nonPrinting: nonPrintingCompartment,
+							alignment: alignmentCompartment
+						}
 					}),
 					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
@@ -449,6 +489,10 @@
 			{onSplitScene}
 			{storyView}
 			{previewHref}
+			nonPrintingActive={nonPrintingMarks === 'shown'}
+			{onToggleNonPrinting}
+			commandMarkersActive={commandMarkers === 'hidden'}
+			{onToggleCommandMarkers}
 			{onEnterFocus}
 		/>
 		<div

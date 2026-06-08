@@ -20,6 +20,13 @@ export type UserPreferences = {
 	// cursor, reading like formatted text. The stored document is markdown
 	// either way.
 	editingMode: 'markdown' | 'rich';
+	// Spaces, paragraph breaks, and soft line breaks shown as faint glyphs in
+	// the prose editors. Toggled from the formatting toolbar.
+	nonPrintingMarks: 'shown' | 'hidden';
+	// The command markers that ride in the prose (\center, \right, \justify):
+	// shown dims them in place; hidden tucks them away except on the line
+	// being edited, so the page reads as the finished alignment.
+	commandMarkers: 'shown' | 'hidden';
 	// Browser-native spell-check squiggles in the prose editors.
 	spellCheck: 'on' | 'off';
 	// The language the prose is written in, as a BCP 47 tag, driving the
@@ -67,6 +74,10 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 		// Rich is the default: markdown renders formatted with the syntax
 		// hidden away from the cursor, which is what most writers expect.
 		editingMode: raw.editingMode === 'markdown' ? 'markdown' : 'rich',
+		// Off by default; the writer turns these on when they want to see them.
+		nonPrintingMarks: raw.nonPrintingMarks === 'shown' ? 'shown' : 'hidden',
+		// Shown by default, matching how the markers have always rendered.
+		commandMarkers: raw.commandMarkers === 'hidden' ? 'hidden' : 'shown',
 		spellCheck: raw.spellCheck === 'off' ? 'off' : 'on',
 		writingLanguage:
 			typeof raw.writingLanguage === 'string' && LANGUAGE_TAG.test(raw.writingLanguage)
