@@ -99,7 +99,7 @@ export function buildEditionHtml(
 
 	return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"/><title>${escapeHtml(meta.title)}</title><style>${pageCss(setup, { includePageRule: false })}</style></head>
+<head><meta charset="utf-8"/><title>${escapeHtml(meta.title)}</title><style>${pageCss(setup, { includePageRule: true })}</style></head>
 <body>
 <header class="title-page"><h1>${escapeHtml(meta.title)}</h1>${
 		meta.author ? `<p class="author">${escapeHtml(meta.author)}</p>` : ''

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_PAGE_SETUP,
+	contentWidthCss,
 	mergePageSetup,
 	normalisePageSetup,
 	pageCss,
@@ -19,6 +20,8 @@ describe('normalisePageSetup', () => {
 			font: 'times',
 			fontSize: 11,
 			paragraphStyle: 'spaced',
+			lineSpacing: 'double',
+			gutter: 'wide',
 			sceneBreak: ' ~ ~ ~ ',
 			pageNumbers: true,
 			runningHeader: 'yes'
@@ -29,6 +32,8 @@ describe('normalisePageSetup', () => {
 			font: 'times',
 			fontSize: 11,
 			paragraphStyle: 'spaced',
+			lineSpacing: 'double',
+			gutter: 'wide',
 			sceneBreak: '~ ~ ~',
 			pageNumbers: true,
 			// Only the boolean true counts.
@@ -37,10 +42,18 @@ describe('normalisePageSetup', () => {
 	});
 
 	it('falls back when stored values are unrecognised', () => {
-		const setup = normalisePageSetup({ pageSize: 'a0', font: 'comic-sans', fontSize: 7 });
+		const setup = normalisePageSetup({
+			pageSize: 'a0',
+			font: 'comic-sans',
+			fontSize: 7,
+			lineSpacing: 'triple',
+			gutter: 'huge'
+		});
 		expect(setup.pageSize).toBe('a4');
 		expect(setup.font).toBe('georgia');
 		expect(setup.fontSize).toBe(12);
+		expect(setup.lineSpacing).toBe('normal');
+		expect(setup.gutter).toBe('none');
 	});
 
 	it('caps a runaway scene break and allows blank', () => {
@@ -87,8 +100,39 @@ describe('pageCss', () => {
 		expect(pageCss(DEFAULT_PAGE_SETUP, { includePageRule: false })).not.toContain('@page');
 	});
 
+	it('sets the line height from the line-spacing setting', () => {
+		expect(pageCss(DEFAULT_PAGE_SETUP)).toContain('line-height: 1.6;');
+		expect(pageCss({ ...DEFAULT_PAGE_SETUP, lineSpacing: 'double' })).toContain(
+			'line-height: 2.1;'
+		);
+	});
+
+	it('emits mirrored @page margins for a binding gutter', () => {
+		const css = pageCss({ ...DEFAULT_PAGE_SETUP, gutter: 'wide' });
+		// Right pages bind on the left, left pages on the right; inner = margin + gutter.
+		expect(css).toContain('@page :right { margin: 2cm 2cm 2cm calc(2cm + 1cm); }');
+		expect(css).toContain('@page :left { margin: 2cm calc(2cm + 1cm) 2cm 2cm; }');
+		// No single symmetric rule when there is a gutter.
+		expect(css).not.toContain('@page { size: A4; margin: 2cm; }');
+	});
+
+	it('uses one symmetric @page rule with no gutter', () => {
+		const css = pageCss(DEFAULT_PAGE_SETUP);
+		expect(css).toContain('@page { size: A4; margin: 2cm; }');
+		expect(css).not.toContain('@page :right');
+	});
+
 	it('always styles explicit page breaks', () => {
 		expect(pageCss(DEFAULT_PAGE_SETUP)).toContain('.page-break { page-break-after: always; }');
+	});
+});
+
+describe('contentWidthCss', () => {
+	it('subtracts both side margins and the gutter from the page width', () => {
+		expect(contentWidthCss(DEFAULT_PAGE_SETUP)).toBe('calc(210mm - 2 * 2cm - 0cm)');
+		expect(contentWidthCss({ ...DEFAULT_PAGE_SETUP, pageSize: '6x9', gutter: 'narrow' })).toBe(
+			'calc(6in - 2 * 2cm - 0.5cm)'
+		);
 	});
 });
 
@@ -101,10 +145,10 @@ describe('pdfRenderOptions', () => {
 		});
 	});
 
-	it('passes the margins through', () => {
-		expect(pdfRenderOptions({ ...DEFAULT_PAGE_SETUP, margins: 'narrow' }, 'T')).toMatchObject({
-			margin: { top: '1.3cm', bottom: '1.3cm', left: '1.3cm', right: '1.3cm' }
-		});
+	it('drives margins from CSS so the gutter can alternate, not a fixed option', () => {
+		const options = pdfRenderOptions(DEFAULT_PAGE_SETUP, 'T');
+		expect(options).toMatchObject({ preferCSSPageSize: true });
+		expect(options).not.toHaveProperty('margin');
 	});
 
 	it('only draws the header and footer layer when asked', () => {

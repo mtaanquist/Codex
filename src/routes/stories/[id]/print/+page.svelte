@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { renderMarkdown } from '$lib/markdown';
-	import { PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
+	import { PAGE_FONTS, lineHeight, pageRuleCss } from '$lib/page-setup';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -17,11 +17,9 @@
 	const sceneBreakText = $derived(setup.sceneBreak.replaceAll('\\', '\\\\').replaceAll('"', '\\"'));
 	const pageVars = $derived(
 		`font-family: ${PAGE_FONTS[setup.font].css}; font-size: ${setup.fontSize}pt; ` +
-			`--scene-break: "${sceneBreakText}";`
+			`line-height: ${lineHeight(setup)}; --scene-break: "${sceneBreakText}";`
 	);
-	const pageRule = $derived(
-		`@page { size: ${PAGE_SIZES[setup.pageSize].css}; margin: ${PAGE_MARGINS[setup.margins].css}; }`
-	);
+	const pageRule = $derived(pageRuleCss(setup));
 </script>
 
 <svelte:head>
@@ -73,7 +71,6 @@
 		max-width: 42rem;
 		margin: 0 auto;
 		padding: 2rem 1rem;
-		line-height: 1.6;
 		color: #000;
 		background: #fff;
 	}
