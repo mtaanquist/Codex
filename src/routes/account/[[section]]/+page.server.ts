@@ -253,6 +253,8 @@ export const actions: Actions = {
 			font: String(data.get('font') ?? ''),
 			fontSize: Number(data.get('fontSize')),
 			paragraphStyle: String(data.get('paragraphStyle') ?? ''),
+			lineSpacing: String(data.get('lineSpacing') ?? ''),
+			gutter: String(data.get('gutter') ?? ''),
 			sceneBreak: String(data.get('sceneBreak') ?? ''),
 			pageNumbers: data.get('pageNumbers') === 'on',
 			runningHeader: data.get('runningHeader') === 'on'

@@ -1,6 +1,6 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
-import { cssEscape, DEFAULT_PAGE_SETUP, type PageSetup } from '../page-setup.ts';
+import { cssEscape, DEFAULT_PAGE_SETUP, lineHeight, type PageSetup } from '../page-setup.ts';
 import type { AssetLoader, ExportAsset, ExportStory, StoryContent } from './export.ts';
 import { extensionFor } from './media-types.ts';
 
@@ -30,7 +30,7 @@ p:first-of-type { text-indent: 0; }`
 		? `hr.scene-break { border: 0; text-align: center; margin: 2em 0; }
 hr.scene-break::after { content: '${cssEscape(setup.sceneBreak)}'; }`
 		: `hr.scene-break { border: 0; margin: 2em 0; }`;
-	return `body { font-family: serif; line-height: 1.6; }
+	return `body { font-family: serif; line-height: ${lineHeight(setup)}; }
 h1 { text-align: center; margin: 2em 0 1.5em; }
 img { max-width: 100%; }
 ${paragraph}

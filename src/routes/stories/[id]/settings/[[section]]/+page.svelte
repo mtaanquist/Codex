@@ -4,7 +4,14 @@
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
-	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
+	import {
+		FONT_SIZES,
+		GUTTERS,
+		LINE_SPACINGS,
+		PAGE_FONTS,
+		PAGE_MARGINS,
+		PAGE_SIZES
+	} from '$lib/page-setup';
 	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
 
@@ -404,6 +411,41 @@
 									<option value="indent">First-line indent</option>
 									<option value="spaced">Space between paragraphs</option>
 								</select>
+							</div>
+							<div class="field">
+								<label for="st-linespacing">Line spacing</label>
+								<select
+									id="st-linespacing"
+									class="select"
+									name="lineSpacing"
+									value={(data.pageSetupOverrides.lineSpacing as string) ?? ''}
+								>
+									<option value="">
+										Use my account setting ({LINE_SPACINGS[data.accountPageSetup.lineSpacing]
+											.label})
+									</option>
+									{#each Object.entries(LINE_SPACINGS) as [value, option] (value)}
+										<option {value}>{option.label}</option>
+									{/each}
+								</select>
+							</div>
+							<div class="field">
+								<label for="st-gutter">Binding gutter</label>
+								<select
+									id="st-gutter"
+									class="select"
+									name="gutter"
+									value={(data.pageSetupOverrides.gutter as string) ?? ''}
+								>
+									<option value="">
+										Use my account setting ({GUTTERS[data.accountPageSetup.gutter].label})
+									</option>
+									{#each Object.entries(GUTTERS) as [value, option] (value)}
+										<option {value}>{option.label}</option>
+									{/each}
+								</select>
+								<span class="field-hint">Extra inner margin for the spine. PDF and print only.</span
+								>
 							</div>
 							<div class="field">
 								<label for="st-scenebreak">Scene break</label>
