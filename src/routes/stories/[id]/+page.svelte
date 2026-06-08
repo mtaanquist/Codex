@@ -7,6 +7,8 @@
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
+	import EntityCard from '$lib/components/EntityCard.svelte';
+	import type { EntityCardData } from '$lib/server/plan-data';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
@@ -55,7 +57,50 @@
 		pins: data.mentionPins,
 		onPin: pinMention,
 		entityHref: (entity: { id: string }) =>
-			`/universes/${data.universe.slug}/plan?entity=${entity.id}`
+			`/universes/${data.universe.slug}/plan?entity=${entity.id}`,
+		onOpenCard: (entityId: string) => openCard(entityId)
+	});
+
+	// The read-only entity card that takes over the right column. The stack
+	// holds the ids visited so Back walks them; an empty stack shows the tabs.
+	let inspectStack = $state<string[]>([]);
+	let inspectCard = $state<EntityCardData | null>(null);
+
+	async function loadCard(entityId: string) {
+		inspectCard = null;
+		const response = await fetch(`/api/entities/${entityId}/card`);
+		if (!response.ok) {
+			closeInspect();
+			return;
+		}
+		inspectCard = (await response.json()) as EntityCardData;
+	}
+
+	function openCard(entityId: string) {
+		inspectStack = [...inspectStack, entityId];
+		void loadCard(entityId);
+	}
+
+	// Back walks the stack; from the first card it returns to the tabs.
+	function backCard() {
+		if (inspectStack.length <= 1) {
+			closeInspect();
+			return;
+		}
+		inspectStack = inspectStack.slice(0, -1);
+		void loadCard(inspectStack[inspectStack.length - 1]);
+	}
+
+	function closeInspect() {
+		inspectStack = [];
+		inspectCard = null;
+	}
+
+	// The card is tied to the scene context it was opened from; leave it
+	// behind when the open scene changes.
+	$effect(() => {
+		void selectedSceneId;
+		closeInspect();
 	});
 
 	// The editor's create-from-selection menu; the refreshed page data
@@ -868,113 +913,121 @@
 			{/if}
 		</main>
 		<aside class="pane right">
-			<div class="right-head">
-				<div class="rtabs">
-					{#if data.selectedScene}
-						<button
-							class="rtab"
-							class:active={rightTab === 'reference'}
-							type="button"
-							onclick={() => (rightTab = 'reference')}
-						>
-							Reference
-						</button>
-						<button
-							class="rtab"
-							class:active={rightTab === 'history'}
-							type="button"
-							onclick={() => (rightTab = 'history')}
-						>
-							History
-						</button>
-					{/if}
-					<button
-						class="rtab"
-						class:active={rightTab === 'session'}
-						type="button"
-						onclick={() => (rightTab = 'session')}
-					>
-						Session
-					</button>
-				</div>
-			</div>
-			{#if rightTab === 'session'}
-				<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
-			{:else if data.selectedScene && rightTab === 'history'}
-				<RevisionHistory
-					entityType="scene"
-					entityId={data.selectedScene.id}
-					revisions={data.sceneRevisions}
-					previewId={data.revisionPreview?.id}
-					previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
-				/>
+			{#if inspectStack.length > 0}
+				{#if inspectCard}
+					<EntityCard
+						card={inspectCard}
+						onBack={backCard}
+						onOpen={openCard}
+						planHref={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${inspectCard.id}`}
+					/>
+				{:else}
+					<div class="empty">Loading...</div>
+				{/if}
 			{:else}
-				<div class="right-scroll">
-					{#if data.storyTodos.length > 0}
-						<div class="r-card">
-							<h5>To do</h5>
-							{#each data.storyTodos as todo, ti (ti)}
-								<div class="todo-row">
-									{#if todo.markerId}
-										<button
-											class="todo-check"
-											type="button"
-											title="Mark done"
-											onclick={async () => {
-												await fetch(`/api/markers/${todo.markerId}`, {
-													method: 'PUT',
-													headers: { 'content-type': 'application/json' },
-													body: JSON.stringify({ resolved: true })
-												});
-												await invalidateAll();
-											}}
-										></button>
-									{:else}
-										<span class="todo-dot" title="A TODO: line; delete it when done"></span>
-									{/if}
-									<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-									<a class="todo-text" href={`${storyPath}?scene=${todo.sceneId}`}>
-										{todo.text}
-										<span class="todo-scene">{todo.sceneTitle ?? 'Untitled scene'}</span>
-									</a>
-									<!-- eslint-enable svelte/no-navigation-without-resolve -->
-								</div>
-							{/each}
-							<div class="todo-hint">
-								Write a line starting with TODO:, or select prose and press Ctrl+Alt+M.
-							</div>
-						</div>
-					{/if}
-					{#if data.selectedScene && data.inScene.length > 0}
-						<div class="r-card">
-							<h5>In this scene</h5>
-							{#each IN_SCENE_GROUPS as group (group.kind)}
-								{@const rows = data.inScene.filter((entity) => entity.kind === group.kind)}
-								{#if rows.length > 0}
-									<h6 class="r-sub">{group.label}</h6>
-									{#each rows as entity (entity.id)}
+				<div class="right-head">
+					<div class="rtabs">
+						{#if data.selectedScene}
+							<button
+								class="rtab"
+								class:active={rightTab === 'reference'}
+								type="button"
+								onclick={() => (rightTab = 'reference')}
+							>
+								Reference
+							</button>
+							<button
+								class="rtab"
+								class:active={rightTab === 'history'}
+								type="button"
+								onclick={() => (rightTab = 'history')}
+							>
+								History
+							</button>
+						{/if}
+						<button
+							class="rtab"
+							class:active={rightTab === 'session'}
+							type="button"
+							onclick={() => (rightTab = 'session')}
+						>
+							Session
+						</button>
+					</div>
+				</div>
+				{#if rightTab === 'session'}
+					<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
+				{:else if data.selectedScene && rightTab === 'history'}
+					<RevisionHistory
+						entityType="scene"
+						entityId={data.selectedScene.id}
+						revisions={data.sceneRevisions}
+						previewId={data.revisionPreview?.id}
+						previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
+					/>
+				{:else}
+					<div class="right-scroll">
+						{#if data.storyTodos.length > 0}
+							<div class="r-card">
+								<h5>To do</h5>
+								{#each data.storyTodos as todo, ti (ti)}
+									<div class="todo-row">
+										{#if todo.markerId}
+											<button
+												class="todo-check"
+												type="button"
+												title="Mark done"
+												onclick={async () => {
+													await fetch(`/api/markers/${todo.markerId}`, {
+														method: 'PUT',
+														headers: { 'content-type': 'application/json' },
+														body: JSON.stringify({ resolved: true })
+													});
+													await invalidateAll();
+												}}
+											></button>
+										{:else}
+											<span class="todo-dot" title="A TODO: line; delete it when done"></span>
+										{/if}
 										<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-										<a
-											class="r-line"
-											href={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${entity.id}`}
-										>
-											<span class="r-line-left">
-												<span class="badge dot" style="background: {entityColor(entity.name)}">
-													{entityLetter(entity.name)}
-												</span>
-												<span class="r-line-name">{entity.name}</span>
-											</span>
-											<span class="r-count">{entity.count}</span>
+										<a class="todo-text" href={`${storyPath}?scene=${todo.sceneId}`}>
+											{todo.text}
+											<span class="todo-scene">{todo.sceneTitle ?? 'Untitled scene'}</span>
 										</a>
 										<!-- eslint-enable svelte/no-navigation-without-resolve -->
-									{/each}
-								{/if}
-							{/each}
-						</div>
-					{:else}
-						<div class="empty">Nothing to show yet.</div>
-					{/if}
-				</div>
+									</div>
+								{/each}
+								<div class="todo-hint">
+									Write a line starting with TODO:, or select prose and press Ctrl+Alt+M.
+								</div>
+							</div>
+						{/if}
+						{#if data.selectedScene && data.inScene.length > 0}
+							<div class="r-card">
+								<h5>In this scene</h5>
+								{#each IN_SCENE_GROUPS as group (group.kind)}
+									{@const rows = data.inScene.filter((entity) => entity.kind === group.kind)}
+									{#if rows.length > 0}
+										<h6 class="r-sub">{group.label}</h6>
+										{#each rows as entity (entity.id)}
+											<button class="r-line" type="button" onclick={() => openCard(entity.id)}>
+												<span class="r-line-left">
+													<span class="badge dot" style="background: {entityColor(entity.name)}">
+														{entityLetter(entity.name)}
+													</span>
+													<span class="r-line-name">{entity.name}</span>
+												</span>
+												<span class="r-count">{entity.count}</span>
+											</button>
+										{/each}
+									{/if}
+								{/each}
+							</div>
+						{:else}
+							<div class="empty">Nothing to show yet.</div>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 		</aside>
 	</div>
