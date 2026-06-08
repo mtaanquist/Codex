@@ -216,6 +216,26 @@ locally; PR and version on merge.
   them from the bar) and also live under Editor behaviour on the account
   page. Shared across every editor in a story via runtime compartments.
 
+Entity badges batch (2026-06-08, branch `feat/entity-badges`; issue
+#305, author chose per-entity scope and badges everywhere). Implemented
+and tested locally; PR and version on merge.
+
+- [x] #305 per-entity badge colour and image: `badgeColor` +
+      `badgeAssetId` on characters/places/lore (migration 0050, additive),
+      a `badge` asset kind. Resolution order image -> per-entity colour ->
+      category colour -> name hash, in a shared `entity-badge.ts` helper and
+      an `EntityBadge.svelte` used across the badge sites (plan sidebar,
+      entity card, entity editor, mention hover, autocomplete, story right
+      panel). The relationship-web graph and the insights heat tiles keep the
+      category colour (graph/stats surfaces, not editing); related mini-dots
+      keep the name hash for now.
+- The menu lives on the entity editor's large badge: a colour palette (with
+  Default to clear) plus, when assets are configured, Upload image; an
+  image set offers Remove/Download. Colour PUTs and the image POST/DELETE
+  go to `/api/entities/[id]/badge` (server `entity-badge.ts`, mirroring
+  the avatar flow). No per-entity asset cleanup needed: entities only go
+  on universe purge, which already sweeps assets by universeId.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

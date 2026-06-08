@@ -3,7 +3,8 @@ import { Decoration, EditorView, keymap, ViewPlugin, WidgetType } from '@codemir
 import { Prec, type Extension } from '@codemirror/state';
 import type { ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { MentionEntity } from './editor-mentions';
-import { entityColor, entityLetter } from './entity-color';
+import { entityLetter } from './entity-color';
+import { badgeBackground, badgeImageSrc } from './entity-badge';
 
 export type AutocompleteMode = 'off' | 'popup' | 'ghost';
 
@@ -127,8 +128,19 @@ function popupExtension(entities: MentionEntity[]): Extension {
 						if (!entity) return null;
 						const badge = document.createElement('span');
 						badge.className = 'ac-badge';
-						badge.textContent = entityLetter(entity.name);
-						badge.style.background = entity.color ?? entityColor(entity.name);
+						const image = badgeImageSrc(entity);
+						if (image) {
+							badge.style.backgroundImage = `url("${image}")`;
+							badge.style.backgroundSize = 'cover';
+							badge.style.backgroundPosition = 'center';
+						} else {
+							badge.textContent = entityLetter(entity.name);
+							badge.style.background = badgeBackground({
+								name: entity.name,
+								badgeColor: entity.badgeColor,
+								categoryColor: entity.color
+							});
+						}
 						return badge;
 					}
 				}

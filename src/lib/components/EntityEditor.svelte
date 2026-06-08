@@ -8,7 +8,8 @@
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
-	import { entityColor, entityLetter } from '$lib/entity-color';
+	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
+	import EntityBadge from './EntityBadge.svelte';
 	import TagInput from './TagInput.svelte';
 	import type { SaveStatus } from './SceneEditor.svelte';
 
@@ -31,6 +32,7 @@
 		kind,
 		entity,
 		categories = [],
+		assetsConfigured = false,
 		relationTypes = [],
 		relationships = [],
 		targets = {},
@@ -51,8 +53,12 @@
 			summaryMd: string | null;
 			bodyMd: string;
 			details?: { label: string; value: string }[];
+			badgeColor?: string | null;
+			badgeAssetId?: string | null;
 		};
 		categories?: { id: string; name: string; color: string | null }[];
+		// Image uploads only appear when an asset bucket is configured.
+		assetsConfigured?: boolean;
 		relationTypes?: RelationTypeOption[];
 		relationships?: RelationshipRow[];
 		// Entities a relationship can point at, keyed by entity type.
@@ -101,6 +107,65 @@
 	let details = $state((entity.details ?? []).map((detail) => ({ ...detail })));
 	// svelte-ignore state_referenced_locally
 	let notes = $state(storyNotesMd ?? '');
+
+	// The badge override and its little menu. Colour and image post straight to
+	// the badge endpoint (not the debounced field save), then the page data
+	// refresh carries the change to the sidebar and the rest.
+	// svelte-ignore state_referenced_locally
+	let badgeColor = $state(entity.badgeColor ?? null);
+	// svelte-ignore state_referenced_locally
+	let badgeAssetId = $state(entity.badgeAssetId ?? null);
+	let badgeMenuOpen = $state(false);
+	let badgeWrap = $state<HTMLElement>();
+	const categoryColor = $derived(categories.find((c) => c.id === categoryValue)?.color ?? null);
+
+	$effect(() => {
+		if (!badgeMenuOpen) return;
+		const onClick = (event: MouseEvent) => {
+			if (badgeWrap && !badgeWrap.contains(event.target as Node)) badgeMenuOpen = false;
+		};
+		window.addEventListener('click', onClick, true);
+		return () => window.removeEventListener('click', onClick, true);
+	});
+
+	async function pickBadgeColour(color: string | null) {
+		badgeColor = color;
+		badgeMenuOpen = false;
+		await fetch(`/api/entities/${entity.id}/badge`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ color })
+		}).catch(() => {});
+		await invalidateAll();
+	}
+
+	async function uploadBadgeImage(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		badgeMenuOpen = false;
+		const data = new FormData();
+		data.set('file', file);
+		const response = await fetch(`/api/entities/${entity.id}/badge`, {
+			method: 'POST',
+			body: data
+		});
+		if (response.ok) {
+			badgeAssetId = (await response.json()).id;
+			await invalidateAll();
+		}
+	}
+
+	async function removeBadgeImage() {
+		badgeMenuOpen = false;
+		const response = await fetch(`/api/entities/${entity.id}/badge`, { method: 'DELETE' });
+		if (response.ok) {
+			badgeAssetId = null;
+			await invalidateAll();
+		}
+	}
+
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let dirty = false;
 	// Saves are chained so an earlier slow request can never land after, and
@@ -362,13 +427,69 @@
 
 <div class="detail">
 	<div class="detail-head">
-		<span
-			class="badge lg"
-			style="background: {categories.find((c) => c.id === categoryValue)?.color ??
-				entityColor(entity.name)}"
-		>
-			{entityLetter(entity.name)}
-		</span>
+		<div class="badge-pick" bind:this={badgeWrap}>
+			<button
+				class="badge-pick-btn"
+				type="button"
+				aria-haspopup="menu"
+				aria-expanded={badgeMenuOpen}
+				title="Change the badge colour or image"
+				onclick={() => (badgeMenuOpen = !badgeMenuOpen)}
+			>
+				<EntityBadge name={entity.name} {badgeColor} {badgeAssetId} {categoryColor} size="lg" />
+			</button>
+			{#if badgeMenuOpen}
+				<div class="badge-menu" role="menu">
+					{#if badgeAssetId}
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+						<a class="badge-menu-item" role="menuitem" href="/assets/{badgeAssetId}" download>
+							Download image
+						</a>
+						<button
+							class="badge-menu-item"
+							type="button"
+							role="menuitem"
+							onclick={removeBadgeImage}
+						>
+							Remove image
+						</button>
+					{:else}
+						<div class="badge-swatches">
+							<button
+								class="swatch swatch-default"
+								class:active={!badgeColor}
+								type="button"
+								title="Default colour"
+								aria-label="Default colour"
+								onclick={() => pickBadgeColour(null)}
+							></button>
+							{#each CATEGORY_COLORS as choice (choice.token)}
+								<button
+									class="swatch"
+									class:active={badgeColor === choice.token}
+									type="button"
+									style="background: {choice.token}"
+									title={choice.label}
+									aria-label={choice.label}
+									onclick={() => pickBadgeColour(choice.token)}
+								></button>
+							{/each}
+						</div>
+						{#if assetsConfigured}
+							<label class="badge-menu-item badge-upload">
+								Upload image
+								<input
+									type="file"
+									accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+									onchange={uploadBadgeImage}
+									hidden
+								/>
+							</label>
+						{/if}
+					{/if}
+				</div>
+			{/if}
+		</div>
 		<input
 			class="detail-title-input"
 			type="text"
@@ -650,6 +771,83 @@
 </div>
 
 <style>
+	/* The badge picker: the large badge is a button that drops a small menu of
+	   palette swatches and the image actions. */
+	.badge-pick {
+		position: relative;
+		flex: none;
+	}
+	.badge-pick-btn {
+		display: block;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: pointer;
+		border-radius: 18px;
+	}
+	.badge-pick-btn:hover {
+		opacity: 0.9;
+	}
+	.badge-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		left: 0;
+		z-index: 20;
+		min-width: 184px;
+		padding: 8px;
+		background: var(--bg-raised, var(--bg-inset));
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+	}
+	.badge-swatches {
+		display: grid;
+		grid-template-columns: repeat(6, 1fr);
+		gap: 6px;
+		margin-bottom: 6px;
+	}
+	.swatch {
+		width: 22px;
+		height: 22px;
+		border-radius: 7px;
+		border: 2px solid transparent;
+		cursor: pointer;
+		padding: 0;
+	}
+	.swatch.active {
+		border-color: var(--text);
+	}
+	.swatch-default {
+		background: linear-gradient(
+			135deg,
+			transparent calc(50% - 1px),
+			var(--border-strong) calc(50% - 1px),
+			var(--border-strong) calc(50% + 1px),
+			transparent calc(50% + 1px)
+		);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+	.badge-menu-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		padding: 7px 8px;
+		border: 0;
+		border-radius: 7px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 13px;
+		cursor: pointer;
+		text-decoration: none;
+	}
+	.badge-menu-item:hover {
+		background: var(--bg-hover);
+	}
+	.badge-upload {
+		cursor: pointer;
+	}
+
 	.rename-offer {
 		display: flex;
 		align-items: center;

@@ -2,6 +2,7 @@
 	import { renderMarkdown } from '$lib/markdown';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from './Icon.svelte';
+	import EntityBadge from './EntityBadge.svelte';
 	import type { EntityCardData } from '$lib/server/plan-data';
 
 	// The read-only entity card that takes over the editor's right column:
@@ -35,9 +36,13 @@
 	</div>
 	<div class="inspector-scroll">
 		<div class="insp-id">
-			<span class="badge lg" style="background: {entityColor(card.name)}">
-				{entityLetter(card.name)}
-			</span>
+			<EntityBadge
+				name={card.name}
+				badgeColor={card.badgeColor}
+				badgeAssetId={card.badgeAssetId}
+				categoryColor={card.categoryColor}
+				size="lg"
+			/>
 			<div>
 				<div class="insp-name">{card.name}</div>
 				{#if card.categoryName}<div class="insp-role">{card.categoryName}</div>{/if}

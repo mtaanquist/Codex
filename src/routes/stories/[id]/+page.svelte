@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
-	import { entityColor, entityLetter } from '$lib/entity-color';
+	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
 	import EntityCard from '$lib/components/EntityCard.svelte';
@@ -1059,9 +1059,12 @@
 										{#each rows as entity (entity.id)}
 											<button class="r-line" type="button" onclick={() => openCard(entity.id)}>
 												<span class="r-line-left">
-													<span class="badge dot" style="background: {entityColor(entity.name)}">
-														{entityLetter(entity.name)}
-													</span>
+													<EntityBadge
+														name={entity.name}
+														badgeColor={entity.badgeColor}
+														badgeAssetId={entity.badgeAssetId}
+														categoryColor={entity.categoryColor}
+													/>
 													<span class="r-line-name">{entity.name}</span>
 												</span>
 												<span class="r-count">{entity.count}</span>

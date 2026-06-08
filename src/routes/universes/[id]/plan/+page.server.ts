@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { effectiveAssetConfig } from '$lib/server/assets';
 import { storyStatus } from '$lib/dashboard';
 import { ownedUniverse } from '$lib/server/universe-access';
 import { planActions } from '$lib/server/plan-actions';
@@ -138,6 +139,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		storyBoard,
 		selected,
 		selectedKind,
+		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		appearsIn,
 		mentionTotal,
 		relationTypes,

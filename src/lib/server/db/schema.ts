@@ -274,6 +274,11 @@ export const characters = pgTable(
 		autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
 		// Optional grouping; the category's colour drives the badge.
 		categoryId: uuid('category_id').references(() => entityCategories.id),
+		// Per-entity badge override: a palette colour, or an uploaded image
+		// (the image wins). Both fall back to the category colour, then a name
+		// hash, so an entity is never without a badge.
+		badgeColor: text('badge_color'),
+		badgeAssetId: uuid('badge_asset_id').references(() => assets.id),
 		// Freeform quick details ("Status", "Age"), shown as the Details grid
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
@@ -345,6 +350,10 @@ export const loreEntries = pgTable(
 			.references(() => entityCategories.id)
 			.notNull(),
 		title: text('title').notNull(),
+		// Per-entity badge override: a palette colour, or an uploaded image
+		// (the image wins). Both fall back to the category colour.
+		badgeColor: text('badge_color'),
+		badgeAssetId: uuid('badge_asset_id').references(() => assets.id),
 		summaryMd: text('summary_md'),
 		bodyMd: text('body_md').notNull().default(''),
 		// In-editor search, mention detection, and (eventually) LLM context
@@ -412,6 +421,11 @@ export const places = pgTable(
 		autoDetectMentions: boolean('auto_detect_mentions').notNull().default(true),
 		// Optional grouping; the category's colour drives the badge.
 		categoryId: uuid('category_id').references(() => entityCategories.id),
+		// Per-entity badge override: a palette colour, or an uploaded image
+		// (the image wins). Both fall back to the category colour, then a name
+		// hash.
+		badgeColor: text('badge_color'),
+		badgeAssetId: uuid('badge_asset_id').references(() => assets.id),
 		// Freeform quick details ("Status", "Age"), shown as the Details grid
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),

@@ -153,7 +153,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				summaryMd: characters.summaryMd,
 				details: characters.details,
 				color: entityCategories.color,
-				categoryName: entityCategories.name
+				categoryName: entityCategories.name,
+				badgeColor: characters.badgeColor,
+				badgeAssetId: characters.badgeAssetId
 			})
 			.from(characters)
 			.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
@@ -166,7 +168,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				summaryMd: places.summaryMd,
 				details: places.details,
 				color: entityCategories.color,
-				categoryName: entityCategories.name
+				categoryName: entityCategories.name,
+				badgeColor: places.badgeColor,
+				badgeAssetId: places.badgeAssetId
 			})
 			.from(places)
 			.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
@@ -179,7 +183,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				summaryMd: loreEntries.summaryMd,
 				details: loreEntries.details,
 				color: entityCategories.color,
-				categoryName: entityCategories.name
+				categoryName: entityCategories.name,
+				badgeColor: loreEntries.badgeColor,
+				badgeAssetId: loreEntries.badgeAssetId
 			})
 			.from(loreEntries)
 			.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
@@ -248,21 +254,34 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	let revisionPreview = null;
 	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
 	type InSceneKind = 'character' | 'place' | 'lore';
-	let inScene: { id: string; name: string; count: number; kind: InSceneKind }[] = [];
+	let inScene: {
+		id: string;
+		name: string;
+		count: number;
+		kind: InSceneKind;
+		categoryColor: string | null;
+		badgeColor: string | null;
+		badgeAssetId: string | null;
+	}[] = [];
 	if (selectedScene) {
 		const revisionId = url.searchParams.get('revision');
 		const mentionCounts = (
 			table: typeof characters | typeof places | typeof loreEntries,
 			targetType: 'character' | 'place' | 'lore_entry'
-		) =>
-			db
+		) => {
+			const nameColumn = 'name' in table ? table.name : loreEntries.title;
+			return db
 				.select({
 					id: table.id,
-					name: 'name' in table ? table.name : loreEntries.title,
-					count: sql<number>`count(*)::int`
+					name: nameColumn,
+					count: sql<number>`count(*)::int`,
+					categoryColor: entityCategories.color,
+					badgeColor: table.badgeColor,
+					badgeAssetId: table.badgeAssetId
 				})
 				.from(entityMentions)
 				.innerJoin(table, eq(entityMentions.targetId, table.id))
+				.leftJoin(entityCategories, eq(table.categoryId, entityCategories.id))
 				.where(
 					and(
 						eq(entityMentions.sourceType, 'scene'),
@@ -270,7 +289,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 						eq(entityMentions.targetType, targetType)
 					)
 				)
-				.groupBy(table.id, 'name' in table ? table.name : loreEntries.title);
+				.groupBy(
+					table.id,
+					nameColumn,
+					entityCategories.color,
+					table.badgeColor,
+					table.badgeAssetId
+				);
+		};
 		const [revs, markers, preview, mentionedCharacters, mentionedPlaces, mentionedLore] =
 			await Promise.all([
 				listRevisions(db, 'scene', selectedScene.id),

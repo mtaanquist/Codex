@@ -8,7 +8,8 @@ import {
 } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
 import { detectMentions, type MentionContext, type MentionTarget } from './mention-detect';
-import { entityColor, entityLetter } from './entity-color';
+import { entityLetter } from './entity-color';
+import { badgeBackground, badgeImageSrc, type BadgeFields } from './entity-badge';
 
 export type MentionEntity = {
 	id: string;
@@ -21,6 +22,10 @@ export type MentionEntity = {
 	// drives the badge, the name rides the kind line on the hover card.
 	color?: string | null;
 	categoryName?: string | null;
+	// The per-entity badge override: a palette colour, or an uploaded image
+	// that wins over any colour.
+	badgeColor?: string | null;
+	badgeAssetId?: string | null;
 	// A few related entities for the hover card's chips.
 	related?: { name: string; color: string | null }[];
 };
@@ -64,9 +69,18 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 	return node;
 }
 
-function badge(name: string, color: string | null | undefined, size: 'sm' | 'dot'): HTMLElement {
-	const node = el('span', `badge ${size}`, entityLetter(name));
-	node.style.background = color ?? entityColor(name);
+function badge(fields: BadgeFields, size: 'sm' | 'dot'): HTMLElement {
+	const image = badgeImageSrc(fields);
+	if (image) {
+		const node = el('span', `badge ${size} badge-img`);
+		const img = document.createElement('img');
+		img.src = image;
+		img.alt = '';
+		node.appendChild(img);
+		return node;
+	}
+	const node = el('span', `badge ${size}`, entityLetter(fields.name));
+	node.style.background = badgeBackground(fields);
 	return node;
 }
 
@@ -147,7 +161,17 @@ export function mentionExtensions(
 				// page. The pop-* classes are the ported design system's.
 				const dom = el('div', 'entity-card');
 				const head = el('div', 'pop-head');
-				head.appendChild(badge(entity.name, entity.color, 'sm'));
+				head.appendChild(
+					badge(
+						{
+							name: entity.name,
+							badgeColor: entity.badgeColor,
+							badgeAssetId: entity.badgeAssetId,
+							categoryColor: entity.color
+						},
+						'sm'
+					)
+				);
 				const id = el('div', 'pop-id');
 				id.appendChild(el('div', 'pop-name', entity.name));
 				const kind = entity.categoryName
@@ -175,7 +199,7 @@ export function mentionExtensions(
 					const chips = el('div', 'pop-related');
 					for (const other of related.slice(0, TOOLTIP_RELATED)) {
 						const chip = el('span', 'pop-chip');
-						chip.appendChild(badge(other.name, other.color, 'dot'));
+						chip.appendChild(badge({ name: other.name, categoryColor: other.color }, 'dot'));
 						chip.appendChild(document.createTextNode(` ${other.name}`));
 						chips.appendChild(chip);
 					}

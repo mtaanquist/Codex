@@ -72,6 +72,7 @@
 						kind={data.selectedKind}
 						entity={data.selected}
 						categories={data.categories}
+						assetsConfigured={data.assetsConfigured}
 						relationTypes={data.relationTypes}
 						relationships={data.relationships}
 						targets={{
