@@ -16,13 +16,25 @@ import { listEntityRelationships } from './relationships';
 // story Plan does too until declared membership (step 20) narrows it.
 export async function planEntityLists(db: Database, universeId: string) {
 	const characterList = await db
-		.select({ id: characters.id, name: characters.name, color: entityCategories.color })
+		.select({
+			id: characters.id,
+			name: characters.name,
+			color: entityCategories.color,
+			badgeColor: characters.badgeColor,
+			badgeAssetId: characters.badgeAssetId
+		})
 		.from(characters)
 		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
 		.where(eq(characters.universeId, universeId))
 		.orderBy(asc(characters.name));
 	const placeList = await db
-		.select({ id: places.id, name: places.name, color: entityCategories.color })
+		.select({
+			id: places.id,
+			name: places.name,
+			color: entityCategories.color,
+			badgeColor: places.badgeColor,
+			badgeAssetId: places.badgeAssetId
+		})
 		.from(places)
 		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
 		.where(eq(places.universeId, universeId))
@@ -37,7 +49,13 @@ export async function planEntityLists(db: Database, universeId: string) {
 		.where(eq(entityCategories.universeId, universeId))
 		.orderBy(asc(entityCategories.sortOrder), asc(entityCategories.name));
 	const loreList = await db
-		.select({ id: loreEntries.id, name: loreEntries.title, categoryId: loreEntries.categoryId })
+		.select({
+			id: loreEntries.id,
+			name: loreEntries.title,
+			categoryId: loreEntries.categoryId,
+			badgeColor: loreEntries.badgeColor,
+			badgeAssetId: loreEntries.badgeAssetId
+		})
 		.from(loreEntries)
 		.where(eq(loreEntries.universeId, universeId))
 		.orderBy(asc(loreEntries.title));
@@ -145,6 +163,9 @@ export type EntityCardData = {
 	kind: EntityKind;
 	name: string;
 	categoryName: string | null;
+	categoryColor: string | null;
+	badgeColor: string | null;
+	badgeAssetId: string | null;
 	aliases: string[];
 	summaryMd: string | null;
 	bodyMd: string;
@@ -164,7 +185,10 @@ async function resolveOwnedEntity(db: Database, userId: string, entityId: string
 			summaryMd: characters.summaryMd,
 			bodyMd: characters.bodyMd,
 			details: characters.details,
-			categoryName: entityCategories.name
+			categoryName: entityCategories.name,
+			categoryColor: entityCategories.color,
+			badgeColor: characters.badgeColor,
+			badgeAssetId: characters.badgeAssetId
 		})
 		.from(characters)
 		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
@@ -178,7 +202,10 @@ async function resolveOwnedEntity(db: Database, userId: string, entityId: string
 			summaryMd: places.summaryMd,
 			bodyMd: places.bodyMd,
 			details: places.details,
-			categoryName: entityCategories.name
+			categoryName: entityCategories.name,
+			categoryColor: entityCategories.color,
+			badgeColor: places.badgeColor,
+			badgeAssetId: places.badgeAssetId
 		})
 		.from(places)
 		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
@@ -192,7 +219,10 @@ async function resolveOwnedEntity(db: Database, userId: string, entityId: string
 			summaryMd: loreEntries.summaryMd,
 			bodyMd: loreEntries.bodyMd,
 			details: loreEntries.details,
-			categoryName: entityCategories.name
+			categoryName: entityCategories.name,
+			categoryColor: entityCategories.color,
+			badgeColor: loreEntries.badgeColor,
+			badgeAssetId: loreEntries.badgeAssetId
 		})
 		.from(loreEntries)
 		.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
@@ -217,6 +247,9 @@ export async function getEntityCard(
 		kind: base.kind,
 		name: base.name,
 		categoryName: base.categoryName,
+		categoryColor: base.categoryColor,
+		badgeColor: base.badgeColor,
+		badgeAssetId: base.badgeAssetId,
 		aliases: base.aliases ?? [],
 		summaryMd: base.summaryMd,
 		bodyMd: base.bodyMd,

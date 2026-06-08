@@ -1,7 +1,18 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
-	import { CATEGORY_COLORS, entityColor, entityLetter } from '$lib/entity-color';
+	import EntityBadge from './EntityBadge.svelte';
+	import { CATEGORY_COLORS } from '$lib/entity-color';
+
+	// A character or place row: its category colour plus any per-entity badge
+	// override (colour or uploaded image).
+	type Entity = {
+		id: string;
+		name: string;
+		color: string | null;
+		badgeColor: string | null;
+		badgeAssetId: string | null;
+	};
 
 	// The left pane of a Plan view, shared by the story and universe scopes.
 	// Entity links keep the current page and swap the ?entity= query; the
@@ -22,10 +33,16 @@
 		availableCharacters = [],
 		availablePlaces = []
 	}: {
-		characters: { id: string; name: string; color: string | null }[];
-		places: { id: string; name: string; color: string | null }[];
+		characters: Entity[];
+		places: Entity[];
 		categories: { id: string; name: string; color: string | null }[];
-		lore: { id: string; name: string; categoryId: string }[];
+		lore: {
+			id: string;
+			name: string;
+			categoryId: string;
+			badgeColor: string | null;
+			badgeAssetId: string | null;
+		}[];
 		selectedId?: string;
 		planPath: string;
 		// The Notes view at this scope; caller resolves the path.
@@ -40,8 +57,8 @@
 		form: { kind?: string; message?: string } | null;
 		// Universe entities not in the story yet: browsable below the members,
 		// and picking one in the select declares it a member. Story scope only.
-		availableCharacters?: { id: string; name: string }[];
-		availablePlaces?: { id: string; name: string }[];
+		availableCharacters?: Entity[];
+		availablePlaces?: Entity[];
 	} = $props();
 
 	// The universe lists start open so the wider cast stays in view; the
@@ -108,12 +125,12 @@
 				class:active={character.id === selectedId}
 				href={`${planPath}?entity=${character.id}`}
 			>
-				<span
-					class="badge dot"
-					style="background: {character.color ?? entityColor(character.name)}"
-				>
-					{entityLetter(character.name)}
-				</span>
+				<EntityBadge
+					name={character.name}
+					badgeColor={character.badgeColor}
+					badgeAssetId={character.badgeAssetId}
+					categoryColor={character.color}
+				/>
 				<span class="name">{character.name}</span>
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
@@ -149,9 +166,12 @@
 						class:active={candidate.id === selectedId}
 						href={`${planPath}?entity=${candidate.id}`}
 					>
-						<span class="badge dot" style="background: {entityColor(candidate.name)}">
-							{entityLetter(candidate.name)}
-						</span>
+						<EntityBadge
+							name={candidate.name}
+							badgeColor={candidate.badgeColor}
+							badgeAssetId={candidate.badgeAssetId}
+							categoryColor={candidate.color}
+						/>
 						<span class="name">{candidate.name}</span>
 					</a>
 					<!-- eslint-enable svelte/no-navigation-without-resolve -->
@@ -184,9 +204,12 @@
 				class:active={place.id === selectedId}
 				href={`${planPath}?entity=${place.id}`}
 			>
-				<span class="badge dot" style="background: {place.color ?? entityColor(place.name)}">
-					{entityLetter(place.name)}
-				</span>
+				<EntityBadge
+					name={place.name}
+					badgeColor={place.badgeColor}
+					badgeAssetId={place.badgeAssetId}
+					categoryColor={place.color}
+				/>
 				<span class="name">{place.name}</span>
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
@@ -222,9 +245,12 @@
 						class:active={candidate.id === selectedId}
 						href={`${planPath}?entity=${candidate.id}`}
 					>
-						<span class="badge dot" style="background: {entityColor(candidate.name)}">
-							{entityLetter(candidate.name)}
-						</span>
+						<EntityBadge
+							name={candidate.name}
+							badgeColor={candidate.badgeColor}
+							badgeAssetId={candidate.badgeAssetId}
+							categoryColor={candidate.color}
+						/>
 						<span class="name">{candidate.name}</span>
 					</a>
 					<!-- eslint-enable svelte/no-navigation-without-resolve -->
@@ -269,9 +295,12 @@
 						class:active={entry.id === selectedId}
 						href={`${planPath}?entity=${entry.id}`}
 					>
-						<span class="badge dot" style="background: {category.color ?? entityColor(entry.name)}">
-							{entityLetter(entry.name)}
-						</span>
+						<EntityBadge
+							name={entry.name}
+							badgeColor={entry.badgeColor}
+							badgeAssetId={entry.badgeAssetId}
+							categoryColor={category.color}
+						/>
 						<span class="name">{entry.name}</span>
 					</a>
 					<!-- eslint-enable svelte/no-navigation-without-resolve -->

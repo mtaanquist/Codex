@@ -351,6 +351,13 @@
 			"when": 1780866331180,
 			"tag": "0049_writing_goals",
 			"breakpoints": true
+		},
+		{
+			"idx": 50,
+			"version": "7",
+			"when": 1780944641570,
+			"tag": "0050_entity_badges",
+			"breakpoints": true
 		}
 	]
 }

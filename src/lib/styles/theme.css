@@ -414,6 +414,18 @@
 	font-family: var(--font-serif);
 	font-weight: 600;
 }
+/* A badge showing an uploaded image instead of a letter: the image fills the
+   badge's rounded square at every size. */
+.badge.badge-img {
+	overflow: hidden;
+	background: var(--bg-inset);
+}
+.badge.badge-img img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
 
 /* ---- Write outline (chapters + scenes) ---- */
 .outline {

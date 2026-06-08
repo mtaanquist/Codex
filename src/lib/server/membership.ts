@@ -90,7 +90,13 @@ export async function removeMembership(
 // explicit signal; mentions are the derived one.
 export async function storyEntityLists(db: Database, universeId: string, storyId: string) {
 	const characterList = await db
-		.select({ id: characters.id, name: characters.name, color: entityCategories.color })
+		.select({
+			id: characters.id,
+			name: characters.name,
+			color: entityCategories.color,
+			badgeColor: characters.badgeColor,
+			badgeAssetId: characters.badgeAssetId
+		})
 		.from(characters)
 		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
 		.where(
@@ -127,7 +133,13 @@ export async function storyEntityLists(db: Database, universeId: string, storyId
 		)
 		.orderBy(asc(characters.name));
 	const placeList = await db
-		.select({ id: places.id, name: places.name, color: entityCategories.color })
+		.select({
+			id: places.id,
+			name: places.name,
+			color: entityCategories.color,
+			badgeColor: places.badgeColor,
+			badgeAssetId: places.badgeAssetId
+		})
 		.from(places)
 		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
 		.where(
