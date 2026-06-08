@@ -102,6 +102,12 @@
 					run: navigate(`/stories/${storyRef}?view=story`)
 				},
 				{
+					label: 'Preview the story',
+					sublabel: 'See how it will look when exported',
+					kind: 'Go to',
+					run: navigate(`/stories/${storyRef}?view=preview`)
+				},
+				{
 					label: 'Plan this story',
 					sublabel: null,
 					kind: 'Go to',
