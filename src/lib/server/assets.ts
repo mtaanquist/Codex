@@ -129,7 +129,7 @@ export const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 
 export type AssetInput = {
 	universeId: string | null;
-	kind: 'inline' | 'cover' | 'avatar';
+	kind: 'inline' | 'cover' | 'avatar' | 'badge';
 	filename: string;
 	contentType: string;
 	bytes: Buffer;

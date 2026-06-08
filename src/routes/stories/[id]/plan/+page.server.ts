@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { effectiveAssetConfig } from '$lib/server/assets';
 import {
 	chapters,
 	characterStoryNotes,
@@ -188,6 +189,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		...lists,
 		selected,
 		selectedKind,
+		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		storyNotesMd,
 		appearsIn,
 		mentionTotal,

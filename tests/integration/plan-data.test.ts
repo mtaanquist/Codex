@@ -131,8 +131,18 @@ afterAll(async () => {
 describe('planEntityLists', () => {
 	it('lists each kind with category colours joined in', async () => {
 		const lists = await planEntityLists(db, universeId);
-		expect(lists.characters).toEqual([{ id: aliceId, name: 'Alice', color: 'var(--cat-blue)' }]);
-		expect(lists.places).toEqual([{ id: haldenId, name: 'Halden', color: null }]);
+		expect(lists.characters).toEqual([
+			{
+				id: aliceId,
+				name: 'Alice',
+				color: 'var(--cat-blue)',
+				badgeColor: null,
+				badgeAssetId: null
+			}
+		]);
+		expect(lists.places).toEqual([
+			{ id: haldenId, name: 'Halden', color: null, badgeColor: null, badgeAssetId: null }
+		]);
 		expect(lists.lore.map((entry) => entry.name)).toEqual(['Toll-pass']);
 		expect(lists.categories).toHaveLength(1);
 	});
