@@ -277,9 +277,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// The cast is grouped by entity type: one of each here.
 	await expect(page.locator('.r-sub')).toHaveText(['Characters', 'Places', 'Lore']);
 
+	// Clicking the cast opens the read-only card in the right column; its
+	// "Open in Plan view" link goes to the editable entity.
+	await page.locator('.r-line', { hasText: 'Alice Vane' }).click();
+	await expect(page.locator('.inspector .insp-name')).toHaveText('Alice Vane');
+	await page.locator('.insp-open').click();
+
 	// Find usages: the character's panel lists the scene with the snippet,
 	// and jumps back into it.
-	await page.locator('.r-line', { hasText: 'Alice Vane' }).click();
 	await expect(page).toHaveURL(/\/plan\?entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
 	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');

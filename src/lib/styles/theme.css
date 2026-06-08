@@ -1710,8 +1710,10 @@
 	text-align: left;
 	border-radius: 7px;
 	color: var(--text);
-	/* Reference rows are anchors; do not let the name pick up the default
-	   anchor underline. */
+	cursor: pointer;
+	font: inherit;
+	/* Reference rows are anchors or buttons; keep the type consistent and do
+	   not let the name pick up the default anchor underline. */
 	text-decoration: none;
 }
 .r-line + .r-line {

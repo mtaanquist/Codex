@@ -10,6 +10,7 @@ import {
 	stories
 } from './db/schema';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import { listEntityRelationships } from './relationships';
 
 // Sidebar lists for a Plan view. Both scopes list the whole universe: the
 // story Plan does too until declared membership (step 20) narrows it.
@@ -137,4 +138,94 @@ export async function entityMentionCount(
 			)
 		);
 	return row?.total ?? 0;
+}
+
+export type EntityCardData = {
+	id: string;
+	kind: EntityKind;
+	name: string;
+	categoryName: string | null;
+	aliases: string[];
+	summaryMd: string | null;
+	bodyMd: string;
+	details: { label: string; value: string }[];
+	related: { id: string; name: string; kind: EntityKind; label: string }[];
+};
+
+// An entity by id with its category, details, and typed relationships, for
+// the editor's read-only entity card. Owner-scoped, so a foreign id resolves
+// to nothing.
+async function resolveOwnedEntity(db: Database, userId: string, entityId: string) {
+	const [character] = await db
+		.select({
+			universeId: characters.universeId,
+			name: characters.name,
+			aliases: characters.aliases,
+			summaryMd: characters.summaryMd,
+			bodyMd: characters.bodyMd,
+			details: characters.details,
+			categoryName: entityCategories.name
+		})
+		.from(characters)
+		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
+		.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
+	if (character) return { kind: 'character' as const, ...character };
+	const [place] = await db
+		.select({
+			universeId: places.universeId,
+			name: places.name,
+			aliases: places.aliases,
+			summaryMd: places.summaryMd,
+			bodyMd: places.bodyMd,
+			details: places.details,
+			categoryName: entityCategories.name
+		})
+		.from(places)
+		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
+		.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
+	if (place) return { kind: 'place' as const, ...place };
+	const [lore] = await db
+		.select({
+			universeId: loreEntries.universeId,
+			name: loreEntries.title,
+			aliases: loreEntries.keywords,
+			summaryMd: loreEntries.summaryMd,
+			bodyMd: loreEntries.bodyMd,
+			details: loreEntries.details,
+			categoryName: entityCategories.name
+		})
+		.from(loreEntries)
+		.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
+		.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+	if (lore) return { kind: 'lore' as const, ...lore };
+	return null;
+}
+
+export async function getEntityCard(
+	db: Database,
+	userId: string,
+	entityId: string
+): Promise<EntityCardData | null> {
+	const base = await resolveOwnedEntity(db, userId, entityId);
+	if (!base) return null;
+	const relationships = await listEntityRelationships(db, base.universeId, {
+		kind: base.kind,
+		id: entityId
+	});
+	return {
+		id: entityId,
+		kind: base.kind,
+		name: base.name,
+		categoryName: base.categoryName,
+		aliases: base.aliases ?? [],
+		summaryMd: base.summaryMd,
+		bodyMd: base.bodyMd,
+		details: base.details ?? [],
+		related: relationships.map((relationship) => ({
+			id: relationship.otherId,
+			name: relationship.otherName,
+			kind: relationship.otherType === 'lore_entry' ? ('lore' as const) : relationship.otherType,
+			label: relationship.label
+		}))
+	};
 }
