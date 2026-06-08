@@ -795,7 +795,7 @@
 		z-index: 20;
 		min-width: 184px;
 		padding: 8px;
-		background: var(--bg-raised, var(--bg-inset));
+		background: var(--bg-elevated);
 		border: 1px solid var(--border);
 		border-radius: 10px;
 		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
