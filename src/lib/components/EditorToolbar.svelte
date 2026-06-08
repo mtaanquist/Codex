@@ -16,12 +16,16 @@
 	let {
 		view,
 		modeLabel,
-		onSplitScene
+		onSplitScene,
+		previewHref
 	}: {
 		view: () => EditorView | undefined;
 		modeLabel?: string;
 		// When set, a split button breaks the scene at the cursor.
 		onSplitScene?: () => void;
+		// When set, a Preview button at the end of the bar opens the read-only
+		// export preview (the whole-story view only).
+		previewHref?: string;
 	} = $props();
 
 	function run(command: (view: EditorView) => boolean) {
@@ -125,4 +129,26 @@
 	{#if modeLabel}
 		<span class="md-hint">{modeLabel}</span>
 	{/if}
+	{#if previewHref}
+		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+		<a class="md-tool md-preview" href={previewHref} title="See how this will look when exported">
+			<Icon name="book" size={15} />
+			<span class="md-tool-label">Preview</span>
+		</a>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/if}
 </div>
+
+<style>
+	.md-preview {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		text-decoration: none;
+		color: var(--text-muted);
+	}
+	.md-preview:hover {
+		color: var(--text);
+	}
+</style>

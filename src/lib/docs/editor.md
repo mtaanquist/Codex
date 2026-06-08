@@ -39,6 +39,12 @@ Your work is stored as markdown in both modes; switching is purely about what yo
 
 To force a page break in print and PDF output, put \page alone on its own line. It does nothing on screen or in the reading pages.
 
+## Reading and previewing the whole story
+
+The book icon in the top bar opens the whole story as one long document, every scene joined in order. This is still the editor: it has the same formatting toolbar, and you can write anywhere in it. The up and down arrows carry the cursor from the end of one scene into the next. Use the same button again to go back to a single scene.
+
+For a clean read, select Preview in that toolbar. Preview shows the story the way it will look when exported: no underlines, marks, or alignment markers, just the finished prose with your scene breaks and page setup applied. It is read-only; select Edit to return to writing.
+
 ## Find and replace
 
 Press Ctrl+F (Cmd+F on a Mac) in the editor to search the open scene. The panel finds as you type; Enter jumps to the next match, and the replace field swaps one match or all of them. Press Escape to close it. To search across every scene, use Ctrl+K instead.

@@ -35,6 +35,7 @@
 		onCrossBoundary,
 		onCreateEntity,
 		onSplitScene,
+		onFocus,
 		onStatus
 	}: {
 		sceneId: string;
@@ -73,6 +74,9 @@
 		) => Promise<string | null>;
 		// When set, the toolbar offers splitting the scene at the cursor.
 		onSplitScene?: () => void;
+		// The continuous view's shared toolbar acts on whichever stitched
+		// editor last took focus; this reports that.
+		onFocus?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -194,6 +198,12 @@
 		clearTimeout(saveTimer);
 		if (dirty) enqueueSave();
 		await saveChain;
+	}
+
+	// The continuous view's shared formatting toolbar runs its commands on
+	// this view when this editor holds the caret.
+	export function getView(): EditorView | undefined {
+		return view;
 	}
 
 	// Lets the page place the caret when focus crosses a scene boundary.
@@ -396,6 +406,11 @@
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
 					boundaryKeymap(),
+					onFocus
+						? EditorView.updateListener.of((update) => {
+								if (update.focusChanged && update.view.hasFocus) onFocus();
+							})
+						: [],
 					imageUniverseId ? imageUploadExtension(imageUniverseId) : []
 				]
 			})

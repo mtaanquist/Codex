@@ -6,9 +6,12 @@
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
+	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
+	import { renderMarkdown } from '$lib/markdown';
+	import type { EditorView } from '@codemirror/view';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
@@ -227,18 +230,41 @@
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
 	const viewStory = $derived(data.view === 'story');
+	const viewPreview = $derived(data.view === 'preview');
+	// Both the continuous editor and the preview span the whole story; the top
+	// bar treats them as one "whole story" state that toggles back to a scene.
+	const inWholeStory = $derived(viewStory || viewPreview);
 	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.slug }));
 
 	// Entering the story view carries the open scene along; leaving it returns
 	// there.
 	const toggleHref = $derived(
-		viewStory
+		inWholeStory
 			? data.returnSceneId
 				? `${storyPath}?scene=${data.returnSceneId}`
 				: storyPath
 			: data.selectedScene
 				? `${storyPath}?view=story&scene=${data.selectedScene.id}`
 				: `${storyPath}?view=story`
+	);
+
+	// The scene to return to is carried between the editor and preview so
+	// leaving either lands on the scene that was open.
+	const returnScenePart = $derived(data.returnSceneId ? `&scene=${data.returnSceneId}` : '');
+	const previewHref = $derived(`${storyPath}?view=preview${returnScenePart}`);
+	const editStoryHref = $derived(`${storyPath}?view=story${returnScenePart}`);
+
+	// The continuous view's one formatting bar acts on whichever stitched
+	// editor last held the caret; default to the first so the bar is live
+	// before the writer clicks in.
+	let activeDocId = $state<string | null>(null);
+	const toolbarView = () => docEditors[activeDocId ?? docOrder[0]]?.getView();
+
+	// Preview honours the story's paragraph style and scene-break text, like
+	// the export. The break text is escaped for the CSS content property.
+	const previewSpaced = $derived(data.pageSetup?.paragraphStyle === 'spaced');
+	const previewSceneBreak = $derived(
+		(data.pageSetup?.sceneBreak ?? '* * *').replaceAll('\\', '\\\\').replaceAll('"', '\\"')
 	);
 
 	// Right column tabs; History holds the open scene's timeline.
@@ -281,8 +307,11 @@
 		...data.chapters.flatMap((chapter) => docScenes(chapter.id).map((scene) => scene.id)),
 		...docScenes(null).map((scene) => scene.id)
 	]);
-	let docEditors: Record<string, { focusEdge: (edge: 'start' | 'end') => void } | undefined> =
-		$state({});
+	let docEditors: Record<
+		string,
+		| { focusEdge: (edge: 'start' | 'end') => void; getView: () => EditorView | undefined }
+		| undefined
+	> = $state({});
 
 	function focusNeighbor(sceneId: string, direction: 'up' | 'down') {
 		const index = docOrder.indexOf(sceneId);
@@ -391,13 +420,67 @@
 	{/if}
 {/snippet}
 
+<!-- Read-only render of the whole story through the export's markdown
+     renderer, so the writer sees what an export looks like: no underlines,
+     no markers, alignment and scene breaks applied. -->
+{#snippet storyPreview()}
+	<div class="md-editor">
+		<div class="md-toolbar">
+			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+			<a class="md-tool md-preview-edit" href={editStoryHref} title="Back to editing">
+				<Icon name="pencil" size={15} />
+				<span class="md-tool-label">Edit</span>
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			<span class="md-hint">Preview</span>
+		</div>
+		<div class="editor-scroll">
+			<div
+				class="editor story-preview"
+				class:spaced={previewSpaced}
+				style={`--scene-break: "${previewSceneBreak}";`}
+			>
+				<h1 class="doc-title">{data.story.title}</h1>
+				{#if (data.storyDoc ?? []).length === 0}
+					<div class="empty">
+						<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+					</div>
+				{/if}
+				{#each data.chapters as chapter, index (chapter.id)}
+					{@const list = docScenes(chapter.id)}
+					{#if list.length > 0}
+						<section class="prev-chapter">
+							<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
+							{#each list as scene, si (scene.id)}
+								{#if si > 0}<hr class="scene-break" />{/if}
+								<!-- eslint-disable-next-line svelte/no-at-html-tags (shared renderer escapes raw HTML) -->
+								{@html renderMarkdown(scene.bodyMd)}
+							{/each}
+						</section>
+					{/if}
+				{/each}
+				{#if docScenes(null).length > 0}
+					<section class="prev-chapter">
+						<h2>Unfiled scenes</h2>
+						{#each docScenes(null) as scene, si (scene.id)}
+							{#if si > 0}<hr class="scene-break" />{/if}
+							<!-- eslint-disable-next-line svelte/no-at-html-tags (shared renderer escapes raw HTML) -->
+							{@html renderMarkdown(scene.bodyMd)}
+						{/each}
+					</section>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/snippet}
+
 <div class="app" class:focus-mode={focusMode.on}>
 	<TopBar
 		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		story={{ slug: data.story.slug, title: data.story.title }}
 		onEnterFocus={() => (focusMode.on = true)}
 		{saveStatus}
-		storyView={{ active: viewStory, toggleHref }}
+		storyView={{ active: inWholeStory, toggleHref }}
 		help={{ topic: 'editor', label: 'the editor' }}
 	/>
 	<div class="body">
@@ -692,6 +775,7 @@
 							loreCategories={data.loreCategories}
 							onCreateEntity={createEntity}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
+							onFocus={() => (activeDocId = scene.id)}
 							onStatus={(status) => {
 								saveStatus = status;
 								if (status === 'saved') void invalidateAll();
@@ -699,33 +783,40 @@
 						/>
 					</article>
 				{/snippet}
-				<div class="editor story-doc">
-					<h1 class="doc-title">{data.story.title}</h1>
-					{#if (data.storyDoc ?? []).length === 0}
-						<div class="empty">
-							<p>Nothing written yet. Switch back to the editor to add scenes.</p>
-						</div>
-					{/if}
-					{#each data.chapters as chapter, index (chapter.id)}
-						{@const docList = docScenes(chapter.id)}
-						{#if docList.length > 0}
-							<section class="doc-chapter" id="chapter-{chapter.id}">
-								<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
-								{#each docList as scene (scene.id)}
-									{@render docScene(scene)}
-								{/each}
-							</section>
-						{/if}
-					{/each}
-					{#if docScenes(null).length > 0}
-						<section class="doc-chapter">
-							<h2>Unfiled scenes</h2>
-							{#each docScenes(null) as scene (scene.id)}
-								{@render docScene(scene)}
+				<div class="md-editor">
+					<EditorToolbar view={toolbarView} {previewHref} />
+					<div class="editor-scroll">
+						<div class="editor story-doc">
+							<h1 class="doc-title">{data.story.title}</h1>
+							{#if (data.storyDoc ?? []).length === 0}
+								<div class="empty">
+									<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+								</div>
+							{/if}
+							{#each data.chapters as chapter, index (chapter.id)}
+								{@const docList = docScenes(chapter.id)}
+								{#if docList.length > 0}
+									<section class="doc-chapter" id="chapter-{chapter.id}">
+										<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
+										{#each docList as scene (scene.id)}
+											{@render docScene(scene)}
+										{/each}
+									</section>
+								{/if}
 							{/each}
-						</section>
-					{/if}
+							{#if docScenes(null).length > 0}
+								<section class="doc-chapter">
+									<h2>Unfiled scenes</h2>
+									{#each docScenes(null) as scene (scene.id)}
+										{@render docScene(scene)}
+									{/each}
+								</section>
+							{/if}
+						</div>
+					</div>
 				</div>
+			{:else if viewPreview}
+				{@render storyPreview()}
 			{:else if data.selectedScene && data.revisionPreview}
 				<div class="editor">
 					<RevisionPreview
@@ -1114,6 +1205,65 @@
 	}
 	.doc-scene-mark:hover {
 		color: var(--accent);
+	}
+	/* Read-only preview: prose through the export renderer, styled to read
+	   like the finished book. */
+	.md-preview-edit {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		text-decoration: none;
+		color: var(--text-muted);
+	}
+	.md-preview-edit:hover {
+		color: var(--text);
+	}
+	.story-preview {
+		font-family: var(--font-content);
+		line-height: 1.7;
+	}
+	.prev-chapter h2 {
+		font-family: var(--font-content);
+		font-size: 23px;
+		font-weight: 600;
+		text-align: center;
+		margin: 40px 0 20px;
+	}
+	.story-preview :global(p) {
+		margin: 0 0 0.2rem;
+		text-indent: 1.5em;
+	}
+	.story-preview.spaced :global(p) {
+		margin: 0 0 0.85em;
+		text-indent: 0;
+	}
+	/* Centered and right-aligned paragraphs drop the indent, as in the export. */
+	.story-preview :global(p.align-center) {
+		text-align: center;
+		text-indent: 0;
+	}
+	.story-preview :global(p.align-right) {
+		text-align: right;
+		text-indent: 0;
+	}
+	.story-preview :global(p.align-justify) {
+		text-align: justify;
+	}
+	.story-preview :global(img) {
+		max-width: 100%;
+	}
+	.scene-break {
+		border: 0;
+		text-align: center;
+		margin: 2rem 0;
+	}
+	.scene-break::after {
+		content: var(--scene-break, '* * *');
+		color: var(--text-faint);
+	}
+	.story-preview :global(.page-break) {
+		border-top: 1px dashed var(--border);
+		margin: 2.5rem 0;
 	}
 	.todo-row {
 		display: flex;

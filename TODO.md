@@ -139,11 +139,33 @@ security, shortcuts articles) - shipped as v2.37.0; write-path rate
 limits (per-user autosave + upload budgets, single-replica stance
 documented) - shipped as v2.38.0; writing goals and deadlines
 (account daily word goal + per-story target/deadline, surfaced on the
-Session tab and Insights; migration 0049) - shipping as v2.39.0. That
+Session tab and Insights; migration 0049) - shipped as v2.39.0. That
 clears the autonomous batch.
 Held for the author (need a design steer): front/back matter and draft
 comparison UI. Then the v2 -> v3 boundary (the held /code-review ultra
 run).
+
+GitHub-issue feedback batch (2026-06-08, author filed #285-#288 from
+user feedback + design drift; autonomous, full release flow per item).
+
+- [x] #286 bold-then-italic stripping the bold: toggleInlineMark no
+      longer reads the inner star of a \*_ as an italic mark (italic only
+      unwraps an isolated _); bold/italic compose either order. #285 inline
+      create forms dismissable: visible Cancel on the dashboard forms,
+      Esc-to-cancel on the add-relationship and universe-plan new-story
+      forms. Both merged 2026-06-08 (#289), shipped as v2.39.1.
+- [ ] #287 (reframed by author): the whole-story view IS the editor and
+      editing there is correct; the gap is discoverability (no toolbar reads
+      as read-only) plus the want for a true preview. Plan: put the
+      formatting toolbar into the whole-story view (with a preview toggle in
+      that bar, not the top bar - author's call), and add a read-only
+      print/export preview rendered through the shared renderMarkdown so it
+      matches the export. Ships as its own minor (v2.40.0).
+- [ ] #288 entity read-only card in the right column (design-drift
+      restoration of the prototype's EntityInspector): clicking an entity
+      shows a read-only card (summary, details, relationships, related) with
+      a back-stack and an open-in-plan link, related entities reachable in
+      the frame. Ships as its own minor (v2.41.0).
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
