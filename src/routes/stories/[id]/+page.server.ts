@@ -15,6 +15,7 @@ import {
 } from '$lib/server/db/schema';
 import { relatedEntitySummaries } from '$lib/server/relationships';
 import { storyPreferences } from '$lib/server/preferences';
+import { storyPageSetup } from '$lib/server/page-setup';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 import { listMentionPins } from '$lib/server/mention-pins';
@@ -33,7 +34,16 @@ import { queueSceneMentions } from '$lib/server/jobs';
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 
-	const view = url.searchParams.get('view') === 'story' ? ('story' as const) : ('scene' as const);
+	// scene: edit one scene; story: the continuous editor; preview: the
+	// read-only, export-faithful render of the whole story.
+	const viewParam = url.searchParams.get('view');
+	const view =
+		viewParam === 'story'
+			? ('story' as const)
+			: viewParam === 'preview'
+				? ('preview' as const)
+				: ('scene' as const);
+	const wholeStory = view === 'story' || view === 'preview';
 	const selectedId = view === 'scene' ? url.searchParams.get('scene') : null;
 
 	// The open scene: the named one, or - opening the story bare - the one
@@ -78,7 +88,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		placeMembers,
 		pinList,
 		preferences,
-		trashedScenes
+		trashedScenes,
+		pageSetup
 	] = await Promise.all([
 		// The sidebar's book switcher: every story in the universe, with the
 		// chapter and word counts its menu rows show.
@@ -111,8 +122,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			.from(scenes)
 			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 			.orderBy(asc(scenes.globalPosition)),
-		// The story view renders every scene as one continuous document.
-		view === 'story'
+		// The story and preview views render every scene as one document.
+		wholeStory
 			? db
 					.select({
 						id: scenes.id,
@@ -195,7 +206,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		listMentionPins(db, story.id),
 		// The user's preferences with this story's overrides applied.
 		storyPreferences(db, locals.user!.id, story.id),
-		listTrashedScenes(db, story.id)
+		listTrashedScenes(db, story.id),
+		// The preview honours the story's scene break and paragraph style so it
+		// matches the export.
+		view === 'preview' ? storyPageSetup(db, story.id) : Promise.resolve(null)
 	]);
 
 	const storySiblings = siblingResult.rows.map((row) => {
@@ -298,6 +312,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		inScene,
 		view,
 		storyDoc,
+		pageSetup,
 		// Carried through the story view so toggling back lands on the scene
 		// that was open before.
 		returnSceneId: url.searchParams.get('scene')
