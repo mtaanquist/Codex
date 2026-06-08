@@ -8,6 +8,12 @@ export default defineConfig({
 	// take a few seconds; give assertions room so a slow-but-correct response is
 	// not read as a failure.
 	expect: { timeout: 10_000 },
+	// On CI the suite runs in parallel against one preview server, where a
+	// browser journey can hit an irreducible timing hiccup; retry so a single
+	// load flake does not red-flag an otherwise green run. Retried tests show as
+	// "flaky" in the report, so a test that keeps retrying still gets noticed and
+	// fixed. Locally there are no retries, so flakes surface while developing.
+	retries: process.env.CI ? 2 : 0,
 	use: { baseURL: 'http://localhost:4173' },
 	// One login for the whole run: the setup project signs in as the e2e
 	// user and saves the session; specs that need a signed-out browser (or

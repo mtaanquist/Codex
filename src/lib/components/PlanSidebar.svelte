@@ -315,10 +315,6 @@
 </aside>
 
 <style>
-	.seg-btn {
-		text-decoration: none;
-		text-align: center;
-	}
 	.ent-row {
 		text-decoration: none;
 		color: inherit;
