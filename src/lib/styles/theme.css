@@ -183,6 +183,10 @@
 	font-size: 13px;
 	font-weight: 550;
 	white-space: nowrap;
+	/* Segments can be buttons or links; keep links centred and unadorned so
+	   the two render identically. */
+	text-align: center;
+	text-decoration: none;
 	transition:
 		background 0.12s,
 		color 0.12s;
