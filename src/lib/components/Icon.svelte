@@ -108,7 +108,10 @@
 		// Pilcrow: the show-formatting-marks toggle.
 		pilcrow: ['M13 4v16', 'M17 4v16', 'M19 4H9.5a4.5 4.5 0 0 0 0 9H13'],
 		// Eye: the show/hide command-markers toggle.
-		eye: ['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z']
+		eye: ['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'],
+		// Increase / decrease paragraph indent.
+		'indent-increase': ['M3 8l4 4-4 4', 'M21 12H11', 'M21 6H11', 'M21 18H11'],
+		'indent-decrease': ['M7 8l-4 4 4 4', 'M21 12H11', 'M21 6H11', 'M21 18H11']
 	} as const;
 
 	export type IconName = keyof typeof PATHS;

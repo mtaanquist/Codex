@@ -1,6 +1,7 @@
 import { EditorSelection, type EditorState, type TransactionSpec } from '@codemirror/state';
 import { keymap, type Command, type EditorView } from '@codemirror/view';
 import { alignmentMarker, alignmentOf, type Alignment } from './alignment';
+import { indentMarker, indentOf, MAX_INDENT } from './indent';
 
 // Markdown formatting commands behind the toolbar and the Mod-B/Mod-I
 // shortcuts. Each builds its changes in a pure function over the state, so
@@ -163,6 +164,37 @@ export function setAlignmentChanges(state: EditorState, align: Alignment): Trans
 	return { changes };
 }
 
+// Steps the block indent of every paragraph the selection touches up or down
+// by one level (delta +1 or -1), clamped to 0..MAX_INDENT. The indent marker
+// sits after any alignment marker, so an aligned paragraph indents too.
+export function setIndentChanges(state: EditorState, delta: number): TransactionSpec | null {
+	const doc = state.doc;
+	const range = state.selection.main;
+	let n = doc.lineAt(range.from).number;
+	while (n > 1 && doc.line(n).text.trim() !== '' && doc.line(n - 1).text.trim() !== '') n--;
+	const lastSelected = doc.lineAt(range.to).number;
+	const changes: { from: number; to: number; insert: string }[] = [];
+	let atParagraphStart = true;
+	for (; n <= doc.lines && n <= lastSelected; n++) {
+		const line = doc.line(n);
+		if (line.text.trim() === '') {
+			atParagraphStart = true;
+			continue;
+		}
+		if (!atParagraphStart) continue;
+		atParagraphStart = false;
+		const offset = alignmentOf(line.text)?.markerLength ?? 0;
+		const found = indentOf(line.text.slice(offset));
+		const current = found?.level ?? 0;
+		const next = Math.min(Math.max(current + delta, 0), MAX_INDENT);
+		if (next === current) continue;
+		const from = line.from + offset;
+		changes.push({ from, to: from + (found?.markerLength ?? 0), insert: indentMarker(next) });
+	}
+	if (changes.length === 0) return null;
+	return { changes };
+}
+
 function apply(view: EditorView, spec: TransactionSpec | null): boolean {
 	if (!spec) return false;
 	view.dispatch({ ...spec, scrollIntoView: true, userEvent: 'input.format' });
@@ -181,10 +213,15 @@ export const setAlignment =
 	(align: Alignment): Command =>
 	(view) =>
 		apply(view, setAlignmentChanges(view.state, align));
+export const increaseIndent: Command = (view) => apply(view, setIndentChanges(view.state, 1));
+export const decreaseIndent: Command = (view) => apply(view, setIndentChanges(view.state, -1));
 
 export function formatKeymap() {
 	return keymap.of([
 		{ key: 'Mod-b', run: toggleBold },
-		{ key: 'Mod-i', run: toggleItalic }
+		{ key: 'Mod-i', run: toggleItalic },
+		// Bracket keys step the indent, matching common editors.
+		{ key: 'Mod-]', run: increaseIndent },
+		{ key: 'Mod-[', run: decreaseIndent }
 	]);
 }

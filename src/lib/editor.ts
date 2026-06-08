@@ -7,16 +7,18 @@ import { markdownStyling, richModeExtension } from './editor-richtext';
 import { formatKeymap } from './editor-format';
 import { enterKeymap } from './editor-enter';
 import { alignmentExtension } from './editor-alignment';
+import { indentExtension } from './editor-indent';
 import { nonPrintingExtension } from './editor-nonprinting';
 
 export type EditingMode = 'markdown' | 'rich';
 export type MarkVisibility = 'shown' | 'hidden';
 
-// The alignment decorations for the current command-marker setting, and the
-// non-printing glyphs for its setting. Single source for both the initial
-// config and the toolbar's runtime reconfigure, so the two never drift.
-export function alignmentFor(commandMarkers: MarkVisibility): Extension {
-	return alignmentExtension(commandMarkers === 'hidden');
+// The command-marker decorations (alignment and indent) for the current
+// setting, and the non-printing glyphs for theirs. Single source for both the
+// initial config and the toolbar's runtime reconfigure, so they never drift.
+export function commandMarkerExtensions(commandMarkers: MarkVisibility): Extension {
+	const hide = commandMarkers === 'hidden';
+	return [alignmentExtension(hide), indentExtension(hide)];
 }
 export function nonPrintingFor(nonPrintingMarks: MarkVisibility): Extension {
 	return nonPrintingMarks === 'shown' ? nonPrintingExtension() : [];
@@ -44,7 +46,7 @@ export function proseExtensions(opts: {
 	commandMarkers?: MarkVisibility;
 	compartments?: { nonPrinting?: Compartment; alignment?: Compartment };
 }): Extension[] {
-	const alignment = alignmentFor(opts.commandMarkers ?? 'shown');
+	const commandMarkers = commandMarkerExtensions(opts.commandMarkers ?? 'shown');
 	const nonPrinting = nonPrintingFor(opts.nonPrintingMarks ?? 'hidden');
 	return [
 		history(),
@@ -60,7 +62,9 @@ export function proseExtensions(opts: {
 			: [
 					markdown(),
 					markdownStyling(),
-					opts.compartments?.alignment ? opts.compartments.alignment.of(alignment) : alignment,
+					opts.compartments?.alignment
+						? opts.compartments.alignment.of(commandMarkers)
+						: commandMarkers,
 					opts.compartments?.nonPrinting
 						? opts.compartments.nonPrinting.of(nonPrinting)
 						: nonPrinting

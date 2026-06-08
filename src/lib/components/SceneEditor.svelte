@@ -9,7 +9,7 @@
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
 	import {
 		proseExtensions,
-		alignmentFor,
+		commandMarkerExtensions,
 		nonPrintingFor,
 		type EditingMode,
 		type MarkVisibility
@@ -267,7 +267,7 @@
 		view.dispatch({ effects: nonPrintingCompartment.reconfigure(extension) });
 	});
 	$effect(() => {
-		const extension = alignmentFor(commandMarkers);
+		const extension = commandMarkerExtensions(commandMarkers);
 		if (!view) return;
 		view.dispatch({ effects: alignmentCompartment.reconfigure(extension) });
 	});

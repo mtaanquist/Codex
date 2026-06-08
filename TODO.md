@@ -259,6 +259,21 @@ coexist) in `scratch/system-design/page-setup-gutters.md`.
   default); unit tests cover line-height, mirrored @page, and the
   preview content width; an e2e checks the preview reflects spacing.
 
+Paragraph indent batch (2026-06-08, branch `feat/paragraph-indent`;
+the resolved #309 - the writer only wanted Word/OpenOffice-style
+increase/decrease indent, named styles dropped).
+
+- [x] Per-paragraph block indent: a `\indent` / `\indentN` marker
+      (`indent.ts`) at paragraph start, after any alignment marker, stepped
+      0..6 by `setIndentChanges` (`editor-format.ts`) behind two toolbar
+      buttons and Ctrl+] / Ctrl+[. `markdown.ts` (`codex_indent`) strips the
+      marker and renders it as an inline `margin-left`, so it shows on every
+      surface (editor, preview, print, PDF, EPUB) with no per-surface CSS.
+- [x] Editor decoration `editor-indent.ts` shifts the lines and dims/hides
+      the marker under the existing command-markers toggle (#306);
+      `alignmentFor` became `commandMarkerExtensions` (alignment + indent).
+      The #309 design note is marked resolved.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings
