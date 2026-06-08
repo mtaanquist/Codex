@@ -2,6 +2,8 @@
 	import type { EditorView } from '@codemirror/view';
 	import Icon from './Icon.svelte';
 	import {
+		decreaseIndent,
+		increaseIndent,
 		setAlignment,
 		setHeading,
 		toggleBold,
@@ -131,6 +133,25 @@
 			<Icon name="align-{align}" size={16} />
 		</button>
 	{/each}
+	<span class="md-sep"></span>
+	<button
+		class="md-tool"
+		type="button"
+		title="Decrease indent (Ctrl+[)"
+		onmousedown={(event) => event.preventDefault()}
+		onclick={() => run(decreaseIndent)}
+	>
+		<Icon name="indent-decrease" size={16} />
+	</button>
+	<button
+		class="md-tool"
+		type="button"
+		title="Increase indent (Ctrl+])"
+		onmousedown={(event) => event.preventDefault()}
+		onclick={() => run(increaseIndent)}
+	>
+		<Icon name="indent-increase" size={16} />
+	</button>
 	{#if onToggleNonPrinting || onToggleCommandMarkers}
 		<span class="md-sep"></span>
 		{#if onToggleNonPrinting}

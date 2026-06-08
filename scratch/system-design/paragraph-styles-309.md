@@ -1,6 +1,13 @@
 # Custom paragraph styles (#309) - feasibility
 
-Status: design write-up for discussion. No code yet.
+Status: RESOLVED. After two rounds of asking the writer, the real need turned out
+to be just **increase/decrease paragraph indent** (OpenOffice/Word style). That
+shipped as a `\indent` marker (Option A, narrowed) with two toolbar buttons -
+see `editor-format.ts` (`setIndentChanges`), `indent.ts`, `markdown.ts`
+(`codex_indent`), and `editor-indent.ts`. The document-level line spacing and the
+binding gutter shipped as page-setup knobs (`page-setup-gutters.md`). **Named,
+user-defined paragraph styles (Option B below) were explicitly dropped** - no
+demand. The analysis below is kept as the record of why.
 
 ## The real ask
 
