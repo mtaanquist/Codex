@@ -203,10 +203,10 @@ locally; PR and version on merge.
       the autocomplete popup when it is open. Applies to the prose
       (non-plain) editors in both editing modes. No auto-migration of
       existing single-newline prose - #306 helps fix it by eye.
-- [x] #306 show non-printing characters: a toolbar toggle (`editor-
-      nonprinting.ts`) showing spaces via the built-in highlighter plus a
-      pilcrow at paragraph breaks and a return-arrow at soft wraps - the
-      glyph that tells the two apart.
+- [x] #306 show non-printing characters: a toolbar toggle
+      (`editor-nonprinting.ts`) showing spaces via the built-in highlighter
+      plus a pilcrow at paragraph breaks and a return-arrow at soft wraps -
+      the glyph that tells the two apart.
 - [x] New (author request): a toolbar toggle to hide the command markers
       (\center, \right, \justify). `editor-alignment.ts` gained a
       hideMarkers mode that replaces the marker except on the line being
