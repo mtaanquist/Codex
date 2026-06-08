@@ -274,6 +274,24 @@ increase/decrease indent, named styles dropped).
       `alignmentFor` became `commandMarkerExtensions` (alignment + indent).
       The #309 design note is marked resolved.
 
+Author review mode batch (2026-06-08, branch `feat/author-review-mode`;
+#301, plus two toolbar asks the author folded in).
+
+- [x] #301 author self-review: the author opens their own story in review
+      mode (`/stories/[id]/review`, linked from the settings Review section)
+      and leaves their own comments and suggested edits with the same
+      select-to-comment/suggest surface guests use; invited reviewers see the
+      author's notes too. reviewSuggestions gained authorUserId (migration
+      0051, reviewerId now nullable, mirroring reviewComments); createSuggestion
+      and listSuggestions take/resolve the author-or-reviewer author, and
+      reply/resolve/accept/reject stay author-only. The author can accept their
+      own suggestion to apply it.
+- [x] Toolbar overflow menu: the two view toggles moved into a "View options"
+      ("...") popover in EditorToolbar, decluttering the main row.
+- [x] Command markers inverted to match non-printing: default hidden, click to
+      show (UserPreferences default flipped; the editor still reveals a marker
+      on the line being edited). Closes the original feedback issues #301-#309.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

@@ -47,12 +47,12 @@ Press Enter to start a new paragraph. One Enter is enough: it reads the same in 
 
 ## Showing the hidden marks
 
-Two buttons on the formatting bar change what you see without changing your text:
+The "..." (View options) button on the formatting bar opens two toggles that change what you see without changing your text:
 
-- **Non-printing characters** (the pilcrow button) shows spaces as a faint dot, paragraph breaks as a pilcrow, and soft line breaks as a return arrow. It is the quickest way to tell a real paragraph break from a soft line break.
-- **Command markers** (the eye button) tucks away the alignment markers like \center, leaving the paragraph aligned the way it will read. The marker comes back on the line you are editing, so you can still change or remove it.
+- **Show non-printing characters** shows spaces as a faint dot, paragraph breaks as a pilcrow, and soft line breaks as a return arrow. It is the quickest way to tell a real paragraph break from a soft line break.
+- **Show command markers** reveals the markers that ride in the prose, like \center and \indent. They are tucked away by default, so the page reads as the finished formatting; turn this on to see and edit them. (A marker also reappears on its own on the line you are editing.)
 
-Both buttons remember their setting, and you can also set them under Editor behaviour on your account page.
+Both toggles remember their setting, and you can also set them under Editor behaviour on your account page.
 
 ## Reading and previewing the whole story
 

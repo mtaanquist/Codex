@@ -1011,10 +1011,12 @@ export const reviewComments = pgTable(
 	(table) => [index('review_comments_thread_idx').on(table.threadId)]
 );
 
-// A reviewer's proposed edit: replace [range_start, range_end) of the scene's
-// body with the replacement text (equal offsets insert, an empty replacement
-// deletes). Never applied directly: the author accepts or rejects one at a
-// time, and accepting re-anchors the range against the current text first.
+// A proposed edit: replace [range_start, range_end) of the scene's body with
+// the replacement text (equal offsets insert, an empty replacement deletes).
+// Never applied directly: the author accepts or rejects one at a time, and
+// accepting re-anchors the range against the current text first. Exactly one
+// of author_user_id (the author reviewing their own story) / reviewer_id (a
+// guest) is set, mirroring review_comments.
 export const reviewSuggestions = pgTable(
 	'review_suggestions',
 	{
@@ -1025,9 +1027,8 @@ export const reviewSuggestions = pgTable(
 		sceneId: uuid('scene_id')
 			.references(() => scenes.id)
 			.notNull(),
-		reviewerId: uuid('reviewer_id')
-			.references(() => reviewers.id)
-			.notNull(),
+		authorUserId: uuid('author_user_id').references(() => users.id),
+		reviewerId: uuid('reviewer_id').references(() => reviewers.id),
 		// The text the range was placed against.
 		baseRevisionId: uuid('base_revision_id')
 			.references(() => revisions.id)

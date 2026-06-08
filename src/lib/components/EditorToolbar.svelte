@@ -53,6 +53,19 @@
 		command(editor);
 		editor.focus();
 	}
+
+	// The overflow ("more") menu holds the view toggles, off the crowded main
+	// row. Closes on an outside click.
+	let viewMenuOpen = $state(false);
+	let viewMenuWrap = $state<HTMLElement>();
+	$effect(() => {
+		if (!viewMenuOpen) return;
+		const onClick = (event: MouseEvent) => {
+			if (viewMenuWrap && !viewMenuWrap.contains(event.target as Node)) viewMenuOpen = false;
+		};
+		window.addEventListener('click', onClick, true);
+		return () => window.removeEventListener('click', onClick, true);
+	});
 </script>
 
 <div class="md-toolbar">
@@ -154,36 +167,51 @@
 	</button>
 	{#if onToggleNonPrinting || onToggleCommandMarkers}
 		<span class="md-sep"></span>
-		{#if onToggleNonPrinting}
+		<div class="md-overflow" bind:this={viewMenuWrap}>
 			<button
 				class="md-tool"
-				class:is-active={nonPrintingActive}
+				class:is-active={viewMenuOpen}
 				type="button"
-				aria-label="Non-printing characters"
-				title={nonPrintingActive ? 'Hide non-printing characters' : 'Show non-printing characters'}
-				aria-pressed={nonPrintingActive}
+				aria-label="View options"
+				title="View options"
+				aria-haspopup="menu"
+				aria-expanded={viewMenuOpen}
 				onmousedown={(event) => event.preventDefault()}
-				onclick={() => onToggleNonPrinting()}
+				onclick={() => (viewMenuOpen = !viewMenuOpen)}
 			>
-				<Icon name="pilcrow" size={16} />
+				<Icon name="more" size={16} />
 			</button>
-		{/if}
-		{#if onToggleCommandMarkers}
-			<button
-				class="md-tool"
-				class:is-active={commandMarkersActive}
-				type="button"
-				aria-label="Command markers"
-				title={commandMarkersActive
-					? 'Show command markers (\\center, \\right, \\justify)'
-					: 'Hide command markers (\\center, \\right, \\justify)'}
-				aria-pressed={commandMarkersActive}
-				onmousedown={(event) => event.preventDefault()}
-				onclick={() => onToggleCommandMarkers()}
-			>
-				<Icon name="eye" size={16} />
-			</button>
-		{/if}
+			{#if viewMenuOpen}
+				<div class="md-menu" role="menu">
+					{#if onToggleNonPrinting}
+						<button
+							class="md-menu-item"
+							type="button"
+							role="menuitemcheckbox"
+							aria-checked={nonPrintingActive}
+							onmousedown={(event) => event.preventDefault()}
+							onclick={() => onToggleNonPrinting()}
+						>
+							<span class="md-menu-check">{nonPrintingActive ? '✓' : ''}</span>
+							Show non-printing characters
+						</button>
+					{/if}
+					{#if onToggleCommandMarkers}
+						<button
+							class="md-menu-item"
+							type="button"
+							role="menuitemcheckbox"
+							aria-checked={commandMarkersActive}
+							onmousedown={(event) => event.preventDefault()}
+							onclick={() => onToggleCommandMarkers()}
+						>
+							<span class="md-menu-check">{commandMarkersActive ? '✓' : ''}</span>
+							Show command markers (\center, \indent)
+						</button>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	{/if}
 	{#if onSplitScene}
 		<span class="md-sep"></span>
@@ -229,6 +257,47 @@
 </div>
 
 <style>
+	.md-overflow {
+		position: relative;
+		display: inline-flex;
+	}
+	.md-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		left: 0;
+		z-index: 20;
+		min-width: 232px;
+		padding: 6px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+	}
+	.md-menu-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		text-align: left;
+		padding: 7px 8px;
+		border: 0;
+		border-radius: 7px;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.md-menu-item:hover {
+		background: var(--bg-hover);
+	}
+	.md-menu-check {
+		display: inline-block;
+		width: 1em;
+		flex: none;
+		color: var(--accent);
+		font-weight: 700;
+	}
 	.md-right {
 		margin-left: auto;
 		display: flex;

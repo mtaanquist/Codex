@@ -771,12 +771,11 @@
 						<p class="admin-block-sub">
 							Invite someone to read this story and leave comments. They follow a link; no account
 							is needed.
-							{#if data.reviewInvitations.length > 0}
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (app path with a suffix) -->
-								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/review`}
-									>See the feedback</a
-								>.
-							{/if}
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (app path with a suffix) -->
+							<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/review`}>
+								Open review mode</a
+							> to read the manuscript and leave your own comments and suggestions, and to work through
+							any feedback.
 						</p>
 					</div>
 					<div class="settings-group">

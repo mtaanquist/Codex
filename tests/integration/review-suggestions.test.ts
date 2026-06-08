@@ -82,7 +82,13 @@ afterAll(async () => {
 });
 
 async function suggest(range: { start: number; end: number }, replacement: string) {
-	return await createSuggestion(db, { storyId, sceneId, reviewerId, range, replacement });
+	return await createSuggestion(db, {
+		storyId,
+		sceneId,
+		author: { reviewerId },
+		range,
+		replacement
+	});
 }
 
 async function sceneBody(): Promise<string> {
@@ -116,6 +122,28 @@ describe('base revision protection', () => {
 		expect(base.bodyMd).toBe(BODY);
 		const after = await db.select().from(revisions).where(eq(revisions.entityId, sceneId));
 		expect(after.length).toBe(before.length + 1);
+	});
+});
+
+describe('author-authored suggestions', () => {
+	it('attributes the author and marks it as theirs', async () => {
+		const start = BODY.indexOf('lazy dog');
+		const result = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { userId: authorId },
+			range: { start, end: start + 'lazy dog'.length },
+			replacement: 'sleeping cat'
+		});
+		expect(result).toMatchObject({ ok: true });
+		const [view] = await listSuggestions(db, storyId);
+		expect(view.isOwner).toBe(true);
+		expect(view.reviewerName).toBe('Avery');
+		// A guest's suggestion is not flagged as the owner's.
+		const guestStart = BODY.indexOf('brown fox');
+		await suggest({ start: guestStart, end: guestStart + 'brown fox'.length }, 'red vixen');
+		const views = await listSuggestions(db, storyId);
+		expect(views.find((v) => v.replacement === 'red vixen')?.isOwner).toBe(false);
 	});
 });
 

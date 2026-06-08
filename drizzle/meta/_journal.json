@@ -358,6 +358,13 @@
 			"when": 1780944641570,
 			"tag": "0050_entity_badges",
 			"breakpoints": true
+		},
+		{
+			"idx": 51,
+			"version": "7",
+			"when": 1780952416538,
+			"tag": "0051_author_suggestions",
+			"breakpoints": true
 		}
 	]
 }

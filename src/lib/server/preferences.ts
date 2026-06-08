@@ -23,9 +23,10 @@ export type UserPreferences = {
 	// Spaces, paragraph breaks, and soft line breaks shown as faint glyphs in
 	// the prose editors. Toggled from the formatting toolbar.
 	nonPrintingMarks: 'shown' | 'hidden';
-	// The command markers that ride in the prose (\center, \right, \justify):
-	// shown dims them in place; hidden tucks them away except on the line
-	// being edited, so the page reads as the finished alignment.
+	// The command markers that ride in the prose (\center, \right, \justify,
+	// \indent): hidden (the default) tucks them away except on the line being
+	// edited, so the page reads as the finished formatting; shown dims them in
+	// place. Click to show, like the non-printing marks.
 	commandMarkers: 'shown' | 'hidden';
 	// Browser-native spell-check squiggles in the prose editors.
 	spellCheck: 'on' | 'off';
@@ -76,8 +77,8 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 		editingMode: raw.editingMode === 'markdown' ? 'markdown' : 'rich',
 		// Off by default; the writer turns these on when they want to see them.
 		nonPrintingMarks: raw.nonPrintingMarks === 'shown' ? 'shown' : 'hidden',
-		// Shown by default, matching how the markers have always rendered.
-		commandMarkers: raw.commandMarkers === 'hidden' ? 'hidden' : 'shown',
+		// Hidden by default; the writer clicks to reveal the markers.
+		commandMarkers: raw.commandMarkers === 'shown' ? 'shown' : 'hidden',
 		spellCheck: raw.spellCheck === 'off' ? 'off' : 'on',
 		writingLanguage:
 			typeof raw.writingLanguage === 'string' && LANGUAGE_TAG.test(raw.writingLanguage)

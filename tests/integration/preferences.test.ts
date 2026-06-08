@@ -61,14 +61,14 @@ describe('appearance preferences', () => {
 
 	it('defaults the editor view toggles and round-trips a change', async () => {
 		let prefs = await userPreferences(db, userId);
-		// Non-printing marks start hidden; command markers start shown.
+		// Both marks start hidden; the writer clicks to show them.
 		expect(prefs.nonPrintingMarks).toBe('hidden');
-		expect(prefs.commandMarkers).toBe('shown');
+		expect(prefs.commandMarkers).toBe('hidden');
 
-		await savePreferences(db, userId, { nonPrintingMarks: 'shown', commandMarkers: 'hidden' });
+		await savePreferences(db, userId, { nonPrintingMarks: 'shown', commandMarkers: 'shown' });
 		prefs = await userPreferences(db, userId);
 		expect(prefs.nonPrintingMarks).toBe('shown');
-		expect(prefs.commandMarkers).toBe('hidden');
+		expect(prefs.commandMarkers).toBe('shown');
 	});
 
 	it('round-trips theme and accent without disturbing other keys', async () => {
