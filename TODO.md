@@ -236,6 +236,29 @@ and tested locally; PR and version on merge.
   the avatar flow). No per-entity asset cleanup needed: entities only go
   on universe purge, which already sweeps assets by universeId.
 
+Page setup: line spacing + binding gutter batch (2026-06-08, branch
+`feat/page-setup-spacing-gutter`; the page-setup half of the #309
+conversation, plus a print-binding gutter the writer asked for). The
+deferred per-user paragraph styles are recorded in
+`scratch/system-design/paragraph-styles-309.md`; the gutter feasibility
+spike (Chromium honours mirrored `@page :left/:right`, page numbers
+coexist) in `scratch/system-design/page-setup-gutters.md`.
+
+- [x] Line spacing: a `lineSpacing` page-setup knob (single / normal /
+      relaxed / double) replacing the hardcoded 1.6 across pageCss (PDF),
+      the print route, the in-app preview, and the EPUB. Shown in the
+      preview, which is now also dimensioned to the page's text-column
+      width and print font so line length matches the export.
+- [x] Binding gutter: a `gutter` knob (none / narrow / wide) adding inner
+      margin on the spine edge, emitted as mirrored `@page :left/:right`
+      via a shared `pageRuleCss`. The PDF moved off Chromium's uniform
+      margin option to CSS-driven margins (`preferCSSPageSize`), which the
+      spike confirmed coexists with the page-number/header layer. Print and
+      PDF only; the continuous preview can't show the per-page alternation.
+- Controls added to both page-setup forms (story override + account
+  default); unit tests cover line-height, mirrored @page, and the
+  preview content width; an e2e checks the preview reflects spacing.
+
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
      design agreed 2026-06-06). Imports our own story export ZIP into a
      chosen universe, always as a new story, from universe settings

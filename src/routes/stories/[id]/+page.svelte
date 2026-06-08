@@ -13,6 +13,7 @@
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import { renderMarkdown } from '$lib/markdown';
+	import { PAGE_FONTS, contentWidthCss, lineHeight } from '$lib/page-setup';
 	import type { EditorView } from '@codemirror/view';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
@@ -335,6 +336,20 @@
 	const previewSceneBreak = $derived(
 		(data.pageSetup?.sceneBreak ?? '* * *').replaceAll('\\', '\\\\').replaceAll('"', '\\"')
 	);
+	// The preview shows the prose at the page's text-column width, print font,
+	// size, and line spacing, so line length and spacing match the export. (The
+	// alternating spine gutter only shows in the paginated Print view.)
+	const previewStyle = $derived.by(() => {
+		let css = `--scene-break: "${previewSceneBreak}";`;
+		const setup = data.pageSetup;
+		if (setup) {
+			css +=
+				` max-width: ${contentWidthCss(setup)};` +
+				` font-family: ${PAGE_FONTS[setup.font].css};` +
+				` font-size: ${setup.fontSize}pt; line-height: ${lineHeight(setup)};`;
+		}
+		return css;
+	});
 
 	// Right column tabs; History holds the open scene's timeline.
 	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
@@ -517,11 +532,7 @@
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</div>
 		<div class="editor-scroll">
-			<div
-				class="editor story-preview"
-				class:spaced={previewSpaced}
-				style={`--scene-break: "${previewSceneBreak}";`}
-			>
+			<div class="editor story-preview" class:spaced={previewSpaced} style={previewStyle}>
 				<h1 class="doc-title">{data.story.title}</h1>
 				{#if (data.storyDoc ?? []).length === 0}
 					<div class="empty">

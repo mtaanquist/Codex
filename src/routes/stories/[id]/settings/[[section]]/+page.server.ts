@@ -22,7 +22,14 @@ import {
 	userPreferences
 } from '$lib/server/preferences';
 import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib/server/page-setup';
-import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
+import {
+	FONT_SIZES,
+	GUTTERS,
+	LINE_SPACINGS,
+	PAGE_FONTS,
+	PAGE_MARGINS,
+	PAGE_SIZES
+} from '$lib/page-setup';
 import { ownedStory } from '$lib/server/story-access';
 import { uniqueSlug } from '$lib/server/slugs';
 
@@ -210,6 +217,8 @@ export const actions: Actions = {
 			font: enumValue('font', PAGE_FONTS),
 			fontSize,
 			paragraphStyle: enumValue('paragraphStyle', { indent: true, spaced: true }),
+			lineSpacing: enumValue('lineSpacing', LINE_SPACINGS),
+			gutter: enumValue('gutter', GUTTERS),
 			sceneBreak:
 				String(data.get('sceneBreakMode') ?? '') === 'custom'
 					? String(data.get('sceneBreak') ?? '')

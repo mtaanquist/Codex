@@ -4,7 +4,14 @@
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
 	import { ACCENT_PRESETS } from '$lib/appearance';
-	import { FONT_SIZES, PAGE_FONTS, PAGE_MARGINS, PAGE_SIZES } from '$lib/page-setup';
+	import {
+		FONT_SIZES,
+		GUTTERS,
+		LINE_SPACINGS,
+		PAGE_FONTS,
+		PAGE_MARGINS,
+		PAGE_SIZES
+	} from '$lib/page-setup';
 	import { ADMIN_KINDS, NOTIFICATION_KINDS, NOTIFICATION_LABELS } from '$lib/notifications';
 	import { WRITING_LANGUAGES } from '$lib/writing-languages';
 	import { applyAppearance } from '$lib/appearance-apply';
@@ -1562,6 +1569,30 @@
 										<option value="indent">First-line indent</option>
 										<option value="spaced">Space between paragraphs</option>
 									</select>
+								</div>
+								<div class="field">
+									<label for="ps-linespacing">Line spacing</label>
+									<select
+										id="ps-linespacing"
+										class="select"
+										name="lineSpacing"
+										value={data.pageSetup.lineSpacing}
+									>
+										{#each Object.entries(LINE_SPACINGS) as [value, option] (value)}
+											<option {value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+								<div class="field">
+									<label for="ps-gutter">Binding gutter</label>
+									<select id="ps-gutter" class="select" name="gutter" value={data.pageSetup.gutter}>
+										{#each Object.entries(GUTTERS) as [value, option] (value)}
+											<option {value}>{option.label}</option>
+										{/each}
+									</select>
+									<span class="field-hint"
+										>Extra inner margin for the spine. PDF and print only.</span
+									>
 								</div>
 								<div class="field">
 									<label for="ps-scenebreak">Scene break</label>

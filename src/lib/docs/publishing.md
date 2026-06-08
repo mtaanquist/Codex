@@ -28,9 +28,11 @@ The files are prepared shortly after publishing. If they have not appeared, use 
 
 ## Page setup
 
-Page setup controls how print and PDF output is typeset: page size (including book trim sizes), margins, font and size, paragraph style, the scene-break text, and page numbers or a running title on the PDF. Set your defaults on your account page under Display; a story can override any of them in its own settings.
+Page setup controls how print and PDF output is typeset: page size (including book trim sizes), margins, font and size, paragraph style, line spacing, the binding gutter, the scene-break text, and page numbers or a running title on the PDF. Set your defaults on your account page under Display; a story can override any of them in its own settings.
 
-Changing the page setup does not change a published edition's text. Use "Generate again" under Edition downloads to re-typeset the files with your current setup. The EPUB stays reflowable - reading apps control its page size and fonts - but the paragraph style and scene-break text carry over.
+Line spacing (single through double) and paragraph style also show in the preview, so what you read while writing matches the export. The binding gutter adds extra margin on the inner, spine edge, alternating between left and right pages so a bound book has room at the seam; because that alternates per page, it shows in the Print view rather than the continuous preview, and it only affects PDF and print.
+
+Changing the page setup does not change a published edition's text. Use "Generate again" under Edition downloads to re-typeset the files with your current setup. The EPUB stays reflowable - reading apps control its page size and margins - but the paragraph style, line spacing, and scene-break text carry over.
 
 To force a page break inside a chapter, put \page alone on its own line in your prose. It breaks the page in print and PDF and is invisible everywhere else.
 
