@@ -48,12 +48,6 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.keyboard.press('Escape');
 	await expect(help).toBeHidden();
 
-	// Focus mode hides the chrome; Esc brings it back.
-	await page.getByRole('button', { name: 'Focus mode' }).click();
-	await expect(page.locator('.topbar')).toBeHidden();
-	await page.keyboard.press('Escape');
-	await expect(page.locator('.topbar')).toBeVisible();
-
 	// Build the tree: a chapter, then a scene inside it, which opens.
 	await page.getByRole('button', { name: 'New chapter' }).click();
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
@@ -61,6 +55,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.getByPlaceholder('Untitled scene')).toBeVisible();
 	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Untitled scene');
+
+	// Focus mode hides the chrome; Esc brings it back. The control sits on the
+	// editor's formatting bar, so it needs a scene open.
+	await page.getByRole('button', { name: 'Focus mode' }).click();
+	await expect(page.locator('.topbar')).toBeHidden();
+	await page.keyboard.press('Escape');
+	await expect(page.locator('.topbar')).toBeVisible();
 
 	// Write prose: the autosave chip confirms, and a reload preserves it.
 	await page.locator('.cm-content').click();
