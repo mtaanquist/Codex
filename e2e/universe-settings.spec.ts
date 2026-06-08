@@ -24,6 +24,10 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	// New universes seed "Lore" and "Faction". Each section is its own page.
 	await page.getByRole('link', { name: 'Entity categories' }).click();
 	await expect(page).toHaveURL(/\/categories$/);
+	// The "no colour" swatch stays a circle. Regression: the global .empty
+	// helper's padding once stretched it into a tall oval (#302).
+	const swatch = await page.locator('.category-color-dot.no-colour').first().boundingBox();
+	expect(Math.round(swatch!.width)).toBe(Math.round(swatch!.height));
 	await expect(page.locator('.category-name-input')).toHaveCount(2);
 	await expect(page.locator('.category-name-input').nth(0)).toHaveValue('Lore');
 	await expect(page.locator('.category-name-input').nth(1)).toHaveValue('Faction');

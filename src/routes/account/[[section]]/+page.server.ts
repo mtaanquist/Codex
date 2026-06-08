@@ -6,6 +6,7 @@ import { db } from '$lib/server/db';
 import {
 	changePassword,
 	claimHandle,
+	enableOwnPublishing,
 	listSessions,
 	parseLinks,
 	requestEmailChange,
@@ -166,6 +167,14 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const result = await claimHandle(db, locals.user!.id, String(data.get('handle') ?? ''));
 		if (!result.ok) return fail(400, { scope: 'handle', message: result.reason });
+		return { scope: 'handle', saved: true };
+	},
+	enablePublishing: async ({ locals }) => {
+		const result = await enableOwnPublishing(db, {
+			id: locals.user!.id,
+			role: locals.user!.role
+		});
+		if (!result.ok) return fail(403, { scope: 'handle', message: result.reason });
 		return { scope: 'handle', saved: true };
 	},
 	savePreferences: async ({ request, locals }) => {

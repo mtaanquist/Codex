@@ -37,6 +37,7 @@
 		onSplitScene,
 		onFocus,
 		storyView,
+		previewHref,
 		onEnterFocus,
 		onStatus
 	}: {
@@ -81,6 +82,8 @@
 		onFocus?: () => void;
 		// Editor-view controls carried on the formatting bar.
 		storyView?: { active: boolean; toggleHref: string };
+		// When set, a Preview button on the bar opens the read-only export view.
+		previewHref?: string;
 		onEnterFocus?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
@@ -445,6 +448,7 @@
 			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
 			{onSplitScene}
 			{storyView}
+			{previewHref}
 			{onEnterFocus}
 		/>
 		<div

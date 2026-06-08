@@ -43,9 +43,9 @@ To force a page break in print and PDF output, put \page alone on its own line. 
 
 The book icon at the right of the formatting toolbar opens the whole story as one long document, every scene joined in order. This is still the editor: it has the same formatting toolbar, and you can write anywhere in it. The up and down arrows carry the cursor from the end of one scene into the next. Use the same button again to go back to a single scene.
 
-The two buttons beside it are Focus mode, which clears everything but the page, and (in the whole-story view) Preview.
+The two buttons beside it are Focus mode, which clears everything but the page, and Preview.
 
-For a clean read, select Preview in that toolbar. Preview shows the story the way it will look when exported: no underlines, marks, or alignment markers, just the finished prose with your scene breaks and page setup applied. It is read-only; select Edit to return to writing.
+For a clean read, select Preview. It is on the toolbar in both the single-scene editor and the whole-story view, so you can reach it without opening the whole story first. Preview shows the story the way it will look when exported: no underlines, marks, or alignment markers, just the finished prose with your scene breaks and page setup applied. It is read-only; select Edit to return to writing.
 
 ## Find and replace
 
