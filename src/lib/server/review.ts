@@ -433,12 +433,19 @@ const MAX_REPLACEMENT_LENGTH = 20000;
 // A reviewer proposes replacing [start, end) of the scene's current text with
 // the replacement (equal offsets insert, an empty replacement deletes). The
 // range is pinned to a base revision so the author's later edits re-anchor.
+// Exactly one of author_user_id / reviewer_id, mirroring comments.
+function suggestionAuthorColumns(author: ThreadAuthor) {
+	return 'userId' in author
+		? { authorUserId: author.userId, reviewerId: null }
+		: { authorUserId: null, reviewerId: author.reviewerId };
+}
+
 export async function createSuggestion(
 	db: Database,
 	input: {
 		storyId: string;
 		sceneId: string;
-		reviewerId: string;
+		author: ThreadAuthor;
 		range: { start: number; end: number };
 		replacement: string;
 	}
@@ -470,7 +477,7 @@ export async function createSuggestion(
 		.values({
 			storyId: input.storyId,
 			sceneId: input.sceneId,
-			reviewerId: input.reviewerId,
+			...suggestionAuthorColumns(input.author),
 			baseRevisionId,
 			rangeStart: start,
 			rangeEnd: end,
@@ -484,6 +491,8 @@ export type SuggestionView = {
 	id: string;
 	sceneId: string;
 	reviewerName: string;
+	// True when the author proposed it in their own review pass.
+	isOwner: boolean;
 	// What the suggestion replaces, as proposed against its base text.
 	original: string;
 	replacement: string;
@@ -517,12 +526,14 @@ export async function listSuggestions(db: Database, storyId: string): Promise<Su
 			suggestion: reviewSuggestions,
 			baseBody: revisions.bodyMd,
 			currentBody: scenes.bodyMd,
-			reviewerName: reviewers.displayName
+			reviewerName: reviewers.displayName,
+			ownerName: users.displayName
 		})
 		.from(reviewSuggestions)
 		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
 		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
-		.innerJoin(reviewers, eq(reviewSuggestions.reviewerId, reviewers.id))
+		.leftJoin(reviewers, eq(reviewSuggestions.reviewerId, reviewers.id))
+		.leftJoin(users, eq(reviewSuggestions.authorUserId, users.id))
 		.where(eq(reviewSuggestions.storyId, storyId))
 		.orderBy(asc(reviewSuggestions.createdAt));
 	return rows.map((row) => {
@@ -532,10 +543,12 @@ export async function listSuggestions(db: Database, storyId: string): Promise<Su
 			row.suggestion.status === 'pending'
 				? mapSuggestionRange(row.baseBody, row.currentBody, rangeStart, rangeEnd)
 				: null;
+		const isOwner = row.suggestion.authorUserId !== null;
 		return {
 			id: row.suggestion.id,
 			sceneId: row.suggestion.sceneId,
-			reviewerName: row.reviewerName,
+			reviewerName: isOwner ? (row.ownerName ?? 'Author') : (row.reviewerName ?? 'Reviewer'),
+			isOwner,
 			original: row.baseBody.slice(rangeStart, rangeEnd),
 			replacement: row.suggestion.replacement,
 			status: row.suggestion.status,

@@ -491,7 +491,7 @@
 			{previewHref}
 			nonPrintingActive={nonPrintingMarks === 'shown'}
 			{onToggleNonPrinting}
-			commandMarkersActive={commandMarkers === 'hidden'}
+			commandMarkersActive={commandMarkers === 'shown'}
 			{onToggleCommandMarkers}
 			{onEnterFocus}
 		/>
