@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import { UUID_BODY } from './slug.ts';
 import { alignmentOf } from './alignment.ts';
+import { indentMargin, indentOf } from './indent.ts';
 
 // A paragraph containing exactly \page becomes an explicit page break:
 // styled with a forced break in print and PDF, an inert empty element
@@ -40,16 +41,35 @@ function alignments(md: MarkdownIt) {
 	});
 }
 
+// A paragraph starting with \indent (or \indent2, ...) is shifted right by
+// that many levels; the marker is stripped and the indent rides as an inline
+// left margin, so it renders on every surface with no per-surface CSS. Runs
+// after alignment so an aligned paragraph can also indent.
+function indents(md: MarkdownIt) {
+	md.core.ruler.before('inline', 'codex_indent', (state) => {
+		const tokens = state.tokens;
+		for (let index = 0; index < tokens.length - 1; index++) {
+			if (tokens[index].type !== 'paragraph_open' || tokens[index + 1].type !== 'inline') continue;
+			const found = indentOf(tokens[index + 1].content);
+			if (!found) continue;
+			tokens[index + 1].content = tokens[index + 1].content.slice(found.markerLength);
+			tokens[index].attrSet('style', indentMargin(found.level));
+		}
+	});
+}
+
 // The one markdown renderer, shared by every surface that turns prose
 // into HTML: exports, the print view, and later the public reading pages.
 // Raw HTML stays off, so prose can never smuggle markup onto a page.
 const renderer = new MarkdownIt({ html: false, linkify: false, typographer: false })
 	.use(pageBreaks)
-	.use(alignments);
+	.use(alignments)
+	.use(indents);
 // EPUB chapters are XHTML, which wants self-closed void elements.
 const xhtmlRenderer = new MarkdownIt({ html: false, linkify: false, xhtmlOut: true })
 	.use(pageBreaks)
-	.use(alignments);
+	.use(alignments)
+	.use(indents);
 
 export function renderMarkdown(markdown: string, options: { xhtml?: boolean } = {}): string {
 	return (options.xhtml ? xhtmlRenderer : renderer).render(markdown);

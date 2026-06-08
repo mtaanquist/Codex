@@ -3,6 +3,7 @@ import { EditorSelection, EditorState } from '@codemirror/state';
 import {
 	setAlignmentChanges,
 	setHeadingChanges,
+	setIndentChanges,
 	toggleBulletChanges,
 	toggleInlineMark,
 	toggleQuoteChanges
@@ -16,6 +17,31 @@ function applied(initial: EditorState, spec: ReturnType<typeof toggleInlineMark>
 	if (!spec) return initial;
 	return initial.update(spec).state;
 }
+
+describe('setIndentChanges', () => {
+	function indented(doc: string, delta: number, anchor = 0) {
+		const initial = state(doc, anchor);
+		return applied(initial, setIndentChanges(initial, delta)).doc.toString();
+	}
+
+	it('adds the marker on a first increase and steps it up', () => {
+		expect(indented('A line.', 1)).toBe('\\indent A line.');
+		expect(indented('\\indent A line.', 1)).toBe('\\indent2 A line.');
+	});
+
+	it('steps down and removes the marker at zero', () => {
+		expect(indented('\\indent2 A line.', -1)).toBe('\\indent A line.');
+		expect(indented('\\indent A line.', -1)).toBe('A line.');
+	});
+
+	it('does nothing when already at the floor', () => {
+		expect(setIndentChanges(state('A line.', 0), -1)).toBeNull();
+	});
+
+	it('keeps the indent marker after an alignment marker', () => {
+		expect(indented('\\center A line.', 1)).toBe('\\center \\indent A line.');
+	});
+});
 
 describe('toggleInlineMark', () => {
 	it('wraps a selection and keeps it selected', () => {

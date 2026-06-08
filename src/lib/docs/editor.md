@@ -30,6 +30,8 @@ Write markdown and it styles in place: **bold** shows bold, # headings show larg
 
 The four alignment buttons set how the paragraphs under the selection sit on the page: left (the default), centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; choose left to remove it.
 
+The two indent buttons beside them step the selected paragraphs in from the left and back out again (Ctrl+] and Ctrl+[, Cmd on a Mac). Like alignment, the indent is written as a marker (\indent) that rides with the text and shows everywhere, including exports.
+
 There are two ways to see your prose while you write, chosen under Editor behaviour on your account page (and per story in its settings):
 
 - **Rich text**, the default, hides the marks except on the line you are editing, so the page reads like formatted text.
