@@ -102,6 +102,13 @@
 									}}
 								/>
 								<button class="btn btn-primary" type="submit">Create universe</button>
+								<button
+									class="btn btn-ghost"
+									type="button"
+									onclick={() => (creatingUniverse = false)}
+								>
+									Cancel
+								</button>
 							</form>
 						{:else if creatingStandalone}
 							<!-- A story without a universe: files under "Standalone stories",
@@ -121,6 +128,13 @@
 									}}
 								/>
 								<button class="btn btn-primary" type="submit">Create story</button>
+								<button
+									class="btn btn-ghost"
+									type="button"
+									onclick={() => (creatingStandalone = false)}
+								>
+									Cancel
+								</button>
 							</form>
 						{:else}
 							<button
@@ -216,6 +230,13 @@
 										}}
 									/>
 									<button class="btn btn-primary btn-sm" type="submit">Create story</button>
+									<button
+										class="btn btn-ghost btn-sm"
+										type="button"
+										onclick={() => (newStoryFor = null)}
+									>
+										Cancel
+									</button>
 								</form>
 							{:else}
 								<button class="card-add" type="button" onclick={() => (newStoryFor = universe.id)}>

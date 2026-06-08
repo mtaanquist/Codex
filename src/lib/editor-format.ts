@@ -14,7 +14,22 @@ export function toggleInlineMark(state: EditorState, mark: string): TransactionS
 	const len = mark.length;
 	const before = state.sliceDoc(Math.max(0, from - len), from);
 	const after = state.sliceDoc(to, Math.min(state.doc.length, to + len));
-	if (before === mark && after === mark) {
+	// A single * next to the selection might be the inner star of a ** (bold),
+	// not an italic mark of its own. Toggling italic must not eat it, or bolding
+	// then italicising a word would strip the bold. So an italic mark (len 1)
+	// only unwraps when its star is isolated - no further star just beyond it.
+	// Bold (len 2) needs no such guard: a ** beside an extra star is a complete
+	// bold mark in a *** run, and unwrapping it correctly leaves the italic.
+	const ch = mark[0];
+	const isolatedBefore =
+		len > 1 || state.sliceDoc(Math.max(0, from - len - 1), Math.max(0, from - len)) !== ch;
+	const isolatedAfter =
+		len > 1 ||
+		state.sliceDoc(
+			Math.min(state.doc.length, to + len),
+			Math.min(state.doc.length, to + len + 1)
+		) !== ch;
+	if (before === mark && after === mark && isolatedBefore && isolatedAfter) {
 		return {
 			changes: [
 				{ from: from - len, to: from },
@@ -23,7 +38,15 @@ export function toggleInlineMark(state: EditorState, mark: string): TransactionS
 			selection: EditorSelection.range(from - len, to - len)
 		};
 	}
-	if (to - from >= 2 * len && state.sliceDoc(from, from + len) === mark) {
+	const insideIsolatedBefore = len > 1 || state.sliceDoc(Math.max(0, from - 1), from) !== ch;
+	const insideIsolatedAfter =
+		len > 1 || state.sliceDoc(to, Math.min(state.doc.length, to + 1)) !== ch;
+	if (
+		to - from >= 2 * len &&
+		insideIsolatedBefore &&
+		insideIsolatedAfter &&
+		state.sliceDoc(from, from + len) === mark
+	) {
 		if (state.sliceDoc(to - len, to) === mark) {
 			return {
 				changes: [

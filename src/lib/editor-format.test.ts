@@ -37,6 +37,34 @@ describe('toggleInlineMark', () => {
 		expect(next.doc.toString()).toBe('a word here');
 	});
 
+	it('italicising a bolded word keeps the bold (both marks apply)', () => {
+		// Bold "word" first, then italicise the same selection.
+		const bold = state('a word here', 2, 6);
+		const bolded = applied(bold, toggleInlineMark(bold, '**'));
+		expect(bolded.doc.toString()).toBe('a **word** here');
+		const sel = bolded.selection.main;
+		const italic = applied(bolded, toggleInlineMark(bolded, '*'));
+		expect(italic.doc.toString()).toBe('a ***word*** here');
+		expect(italic.sliceDoc(italic.selection.main.from, italic.selection.main.to)).toBe('word');
+		// And the reverse order lands on the same result.
+		void sel;
+		const it1 = state('a word here', 2, 6);
+		const italicFirst = applied(it1, toggleInlineMark(it1, '*'));
+		expect(italicFirst.doc.toString()).toBe('a *word* here');
+		const boldSecond = applied(italicFirst, toggleInlineMark(italicFirst, '**'));
+		expect(boldSecond.doc.toString()).toBe('a ***word*** here');
+	});
+
+	it('italic unwraps a plain italic word but not the inner star of bold', () => {
+		const plain = state('a *word* here', 3, 7);
+		expect(applied(plain, toggleInlineMark(plain, '*')).doc.toString()).toBe('a word here');
+	});
+
+	it('bold still unwraps inside a bold+italic run, leaving the italic', () => {
+		const initial = state('a ***word*** here', 5, 9);
+		expect(applied(initial, toggleInlineMark(initial, '**')).doc.toString()).toBe('a *word* here');
+	});
+
 	it('an empty selection gets an empty pair to type into', () => {
 		const initial = state('write ', 6);
 		const next = applied(initial, toggleInlineMark(initial, '*'));

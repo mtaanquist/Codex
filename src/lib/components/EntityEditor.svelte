@@ -122,6 +122,16 @@
 	let relTargetId = $state('');
 	let relNotes = $state('');
 	let relError = $state('');
+	function cancelRelationship() {
+		addingRel = false;
+		relTypeId = '';
+		relTargetId = '';
+		relNotes = '';
+		relError = '';
+	}
+	function onRelKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') cancelRelationship();
+	}
 	const relTargetOptions = $derived.by(() => {
 		const relationType = relationTypes.find((option) => option.id === relTypeId);
 		if (!relationType) return [];
@@ -498,6 +508,7 @@
 						class="line-input"
 						bind:value={relTypeId}
 						onchange={() => (relTargetId = '')}
+						onkeydown={onRelKeydown}
 						aria-label="Relation"
 					>
 						<option value="">Pick a relationship...</option>
@@ -510,7 +521,12 @@
 						{/each}
 					</select>
 					{#if relTypeId}
-						<select class="line-input" bind:value={relTargetId} aria-label="Related entity">
+						<select
+							class="line-input"
+							bind:value={relTargetId}
+							onkeydown={onRelKeydown}
+							aria-label="Related entity"
+						>
 							<option value="">Who or where...</option>
 							{#each relTargetOptions as target (target.id)}
 								<option value={target.id}>{target.name}</option>
@@ -521,23 +537,12 @@
 							type="text"
 							placeholder="Notes (optional)"
 							bind:value={relNotes}
+							onkeydown={onRelKeydown}
 						/>
 					{/if}
 					<div class="rel-add-actions">
 						<button class="outline-add" type="submit" disabled={!relTargetId}>Add</button>
-						<button
-							class="rel-cancel"
-							type="button"
-							onclick={() => {
-								addingRel = false;
-								relTypeId = '';
-								relTargetId = '';
-								relNotes = '';
-								relError = '';
-							}}
-						>
-							Cancel
-						</button>
+						<button class="rel-cancel" type="button" onclick={cancelRelationship}> Cancel </button>
 					</div>
 					{#if relError}
 						<p class="rel-error" role="alert">{relError}</p>
