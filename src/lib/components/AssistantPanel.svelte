@@ -134,6 +134,32 @@
 		await streamInto('/api/assistant/recap', { storyId, sceneId });
 	}
 
+	// Update summaries: a background pass that drafts and refreshes scene and
+	// chapter summaries. It runs unattended, so this only kicks it off and
+	// confirms; the writer is notified when it finishes.
+	let summarising = $state(false);
+	async function updateSummaries() {
+		if (summarising) return;
+		summarising = true;
+		try {
+			const response = await fetch('/api/assistant/summaries-job', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				alert(body?.message ?? 'Could not start the summary pass.');
+				return;
+			}
+			alert(
+				'The Assistant is updating your scene and chapter summaries in the background. You will be notified when it is done.'
+			);
+		} finally {
+			summarising = false;
+		}
+	}
+
 	function stop() {
 		pending?.abort();
 	}
@@ -192,6 +218,15 @@
 					onclick={catchUp}
 				>
 					Catch me up
+				</button>
+				<button
+					class="head-link"
+					type="button"
+					disabled={summarising}
+					title="Draft and refresh scene and chapter summaries in the background"
+					onclick={updateSummaries}
+				>
+					{summarising ? 'Starting...' : 'Update summaries'}
 				</button>
 				<form method="POST" action="?/muteAssistant" use:enhance>
 					<button class="mute-link" type="submit" title="Hide the Assistant for this story">
@@ -287,9 +322,11 @@
 		color: var(--text-muted);
 	}
 	.head-actions {
-		display: inline-flex;
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		align-items: center;
-		gap: 12px;
+		gap: 6px 12px;
 	}
 	.head-link {
 		border: 0;

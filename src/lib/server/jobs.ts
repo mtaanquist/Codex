@@ -17,7 +17,8 @@ export {
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
-	ASSISTANT_REVIEW_QUEUE
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
 } from './queues.ts';
 import {
 	MENTIONS_SCENE_QUEUE,
@@ -28,7 +29,8 @@ import {
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
-	ASSISTANT_REVIEW_QUEUE
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
 } from './queues.ts';
 
 // How long a digest waits before sending, so a busy thread lands as one
@@ -51,6 +53,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 		await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
+		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -164,6 +167,26 @@ export async function queueAssistantReview(input: {
 		return id !== null;
 	} catch (error) {
 		console.error('queueing assistant review failed:', error);
+		return false;
+	}
+}
+
+// Queues a whole-story summary-maintenance pass. The singleton key (the story)
+// coalesces repeat requests so a writer cannot pile up duplicate passes over the
+// same scenes while one is already running.
+export async function queueAssistantSummaries(input: {
+	userId: string;
+	storyId: string;
+}): Promise<boolean> {
+	try {
+		const boss = await getBoss();
+		const id = await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
+			singletonKey: input.storyId,
+			singletonSeconds: 30
+		});
+		return id !== null;
+	} catch (error) {
+		console.error('queueing assistant summaries failed:', error);
 		return false;
 	}
 }

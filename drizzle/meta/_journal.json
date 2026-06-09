@@ -372,6 +372,13 @@
 			"when": 1781001997956,
 			"tag": "0052_assistant_author",
 			"breakpoints": true
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1781029698737,
+			"tag": "0053_assistant_summary_watermark",
+			"breakpoints": true
 		}
 	]
 }

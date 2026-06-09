@@ -196,6 +196,10 @@ export const chapters = pgTable('chapters', {
 	position: integer('position').notNull(),
 	title: text('title'),
 	summaryMd: text('summary_md'),
+	// When the Assistant last generated this summary. Null means it was never
+	// auto-generated (so a non-null summary here is the writer's own and is never
+	// overwritten). See scenes.summary_generated_at.
+	summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
 	metadata: jsonb('metadata').notNull().default({}),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()
@@ -229,6 +233,13 @@ export const scenes = pgTable(
 		status: text('status', { enum: SCENE_STATUSES }).notNull().default('draft'),
 		// One line of what happens; shown in the sidebar and outline.
 		summaryMd: text('summary_md'),
+		// When the Assistant last generated summary_md. Null means the summary was
+		// never auto-generated: a non-null summary with a null watermark is the
+		// writer's own and the summary job never overwrites it. The job fills a
+		// blank summary and refreshes one it generated when the body changed after
+		// this watermark; the summary write preserves updated_at so it does not
+		// look stale on the next run.
+		summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
 		// Updated on save.
 		wordCount: integer('word_count').notNull().default(0),
 		metadata: jsonb('metadata').notNull().default({}),
