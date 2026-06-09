@@ -15,6 +15,8 @@ Codex keeps to a small set of shortcuts. On a Mac, use Cmd where Ctrl is shown.
 - **Ctrl+Alt+M**: mark the selected text as a TODO. A line that begins with
   `TODO:` becomes one on its own, no shortcut needed.
 - **Ctrl+Z** and **Ctrl+Shift+Z**: undo and redo.
+- **Ctrl+J**: ask the Assistant to continue the passage at the cursor (when the
+  Assistant is set up). Tab accepts the grey suggestion; Esc dismisses it.
 
 In the continuous "read the whole story" view, the up and down arrows carry the
 cursor across scene boundaries, so you can move through the book as one document.
