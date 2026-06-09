@@ -32,6 +32,7 @@ import {
 	type SignupMode
 } from '$lib/server/settings';
 import { secretsAvailable } from '$lib/server/crypto';
+import { egressPolicy, saveEgressPolicy, type EgressPolicyName } from '$lib/server/llm/egress';
 import { sendEmail } from '$lib/server/email';
 import { adminCancelDeletion, purgeAccount } from '$lib/server/account-deletion';
 import { disableTotp } from '$lib/server/two-factor';
@@ -82,6 +83,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		assetMigrationPending: (await assetMigrationSource(db)) !== null,
 		assetMigration: await assetMigrationResult(db),
 		smtp: await smtpView(db),
+		egress: await egressPolicy(db),
 		secretsAvailable: secretsAvailable(),
 		version: pkg.version,
 		uptime: formatUptime(process.uptime())
@@ -343,5 +345,22 @@ export const actions: Actions = {
 			});
 		}
 		return { scope: 'smtp', tested: true, testTo: to };
+	},
+	saveEgress: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const policy = String(data.get('policy') ?? '');
+		if (policy !== 'block-private' && policy !== 'allowlist' && policy !== 'open') {
+			return fail(400, { scope: 'egress', message: 'Pick an egress policy.' });
+		}
+		// One host per line in the textarea; saveEgressPolicy trims, lowercases,
+		// and de-duplicates, and refuses an allowlist policy with no hosts.
+		const allowlist = String(data.get('allowlist') ?? '')
+			.split('\n')
+			.map((host) => host.trim())
+			.filter(Boolean);
+		const result = await saveEgressPolicy(db, { policy: policy as EgressPolicyName, allowlist });
+		if (!result.ok) return fail(400, { scope: 'egress', message: result.reason });
+		return { scope: 'egress', saved: true };
 	}
 };
