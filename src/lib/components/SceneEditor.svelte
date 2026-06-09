@@ -135,6 +135,76 @@
 	// reads and restores its position across history navigation.
 	let scrollEl = $state<HTMLDivElement>();
 	let view: EditorView | undefined;
+
+	// Co-author: a toolbar-opened panel that drafts a passage to a brief, which
+	// the writer inserts at the cursor, edits, or discards. Nothing is written
+	// until Insert. The drafted text is held in an editable field so "edit" is
+	// just typing in it before inserting.
+	let coauthorOpen = $state(false);
+	let coauthorInstruction = $state('');
+	let coauthorBusy = $state(false);
+	let coauthorResult = $state('');
+	let coauthorError = $state('');
+	let coauthorInput = $state<HTMLTextAreaElement>();
+	let coauthorPending: AbortController | null = null;
+
+	function toggleCoauthor() {
+		coauthorOpen = !coauthorOpen;
+		if (coauthorOpen) setTimeout(() => coauthorInput?.focus(), 0);
+	}
+
+	async function generateCoauthor() {
+		const instruction = coauthorInstruction.trim();
+		if (!instruction || coauthorBusy) return;
+		coauthorBusy = true;
+		coauthorError = '';
+		coauthorPending?.abort();
+		const controller = new AbortController();
+		coauthorPending = controller;
+		try {
+			const response = await fetch('/api/assistant/coauthor', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId, sceneId, instruction }),
+				signal: controller.signal
+			});
+			if (!response.ok) {
+				coauthorError =
+					'The Assistant could not draft that. Check your endpoint in account settings.';
+				return;
+			}
+			const data = (await response.json()) as { text?: string };
+			coauthorResult = (data.text ?? '').trim();
+			if (!coauthorResult) coauthorError = 'The Assistant returned nothing to use.';
+		} catch {
+			if (!controller.signal.aborted)
+				coauthorError = 'Something went wrong reaching the Assistant.';
+		} finally {
+			coauthorBusy = false;
+			coauthorPending = null;
+		}
+	}
+
+	function insertCoauthor() {
+		if (!view || !coauthorResult.trim()) return;
+		const head = view.state.selection.main.head;
+		view.dispatch({
+			changes: { from: head, insert: coauthorResult },
+			selection: { anchor: head + coauthorResult.length }
+		});
+		scheduleSave();
+		discardCoauthor();
+		view.focus();
+	}
+
+	function discardCoauthor() {
+		coauthorPending?.abort();
+		coauthorOpen = false;
+		coauthorInstruction = '';
+		coauthorResult = '';
+		coauthorError = '';
+	}
+
 	// The editor owns the value after mount; the page keys this component by
 	// scene id, so a different scene means a fresh instance.
 	// svelte-ignore state_referenced_locally
@@ -502,8 +572,66 @@
 			{onToggleNonPrinting}
 			commandMarkersActive={commandMarkers === 'shown'}
 			{onToggleCommandMarkers}
+			onCoauthor={assistantContinuation && storyId ? toggleCoauthor : undefined}
+			coauthorActive={coauthorOpen}
 			{onEnterFocus}
 		/>
+		{#if coauthorOpen}
+			<div class="coauthor-panel">
+				<div class="coauthor-head">
+					<span class="coauthor-title"
+						><Icon name="sparkles" size={13} /> Write with the Assistant</span
+					>
+					<button class="coauthor-x" type="button" title="Close" onclick={discardCoauthor}>x</button
+					>
+				</div>
+				<textarea
+					bind:this={coauthorInput}
+					class="coauthor-brief"
+					rows="2"
+					placeholder="What should the Assistant write? e.g. a tense paragraph where Alice spots the toll-keeper lying."
+					bind:value={coauthorInstruction}
+					onkeydown={(e) => {
+						if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+							e.preventDefault();
+							void generateCoauthor();
+						}
+					}}
+				></textarea>
+				{#if coauthorError}
+					<p class="coauthor-error">{coauthorError}</p>
+				{/if}
+				{#if coauthorResult}
+					<textarea class="coauthor-result" rows="6" bind:value={coauthorResult}></textarea>
+					<div class="coauthor-actions">
+						<button class="btn btn-primary" type="button" onclick={insertCoauthor}>
+							Insert at cursor
+						</button>
+						<button
+							class="btn"
+							type="button"
+							onclick={generateCoauthor}
+							disabled={coauthorBusy || !coauthorInstruction.trim()}
+						>
+							{coauthorBusy ? 'Writing...' : 'Try again'}
+						</button>
+						<button class="btn" type="button" onclick={discardCoauthor}>Discard</button>
+					</div>
+				{:else}
+					<div class="coauthor-actions">
+						<button
+							class="btn btn-primary"
+							type="button"
+							onclick={generateCoauthor}
+							disabled={coauthorBusy || !coauthorInstruction.trim()}
+						>
+							{coauthorBusy ? 'Writing...' : 'Generate'}
+						</button>
+						<span class="coauthor-hint">It drafts a passage; you choose whether to insert it.</span>
+					</div>
+				{/if}
+			</div>
+		{/if}
 		<div
 			class="editor-scroll"
 			role="presentation"
@@ -651,6 +779,72 @@
 {/if}
 
 <style>
+	.coauthor-panel {
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-card);
+		padding: 12px 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.coauthor-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.coauthor-title {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-muted);
+	}
+	.coauthor-x {
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+		font-size: 14px;
+		line-height: 1;
+		padding: 2px 6px;
+	}
+	.coauthor-x:hover {
+		color: var(--text);
+	}
+	.coauthor-brief,
+	.coauthor-result {
+		width: 100%;
+		resize: vertical;
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 8px 10px;
+		color: var(--text);
+		font-family: var(--font-content);
+		font-size: 14px;
+		line-height: 1.5;
+		outline: none;
+	}
+	.coauthor-brief:focus,
+	.coauthor-result:focus {
+		border-color: var(--accent-line);
+	}
+	.coauthor-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.coauthor-hint {
+		font-size: 12px;
+		color: var(--text-faint);
+	}
+	.coauthor-error {
+		margin: 0;
+		font-size: 12.5px;
+		color: var(--danger, #c0392b);
+	}
 	.editor-title-input {
 		width: 100%;
 		border: 0;

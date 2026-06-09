@@ -777,6 +777,20 @@ endpoint. Started 2026-06-09.
       the extension/endpoint need a browser+model so they are left for CI/manual.
       Lint, check, unit (336), and build pass locally. Deferred: co-author (the
       side panel with insert/edit/reject), auto-on-pause, and streaming.
+- [ ] Co-author (second inline surface; branch `feat/assistant-coauthor`). A
+      "Write with the Assistant" button on the editor toolbar opens a panel: the
+      writer types a brief, the Assistant drafts a passage grounded in the
+      assembled world + current scene, and the writer inserts it at the cursor,
+      edits it in place first, or discards it (nothing is written until Insert).
+      `POST /api/assistant/coauthor` (`buildCoauthorMessage`, `role: 'coauthor'`,
+      no tools, context assembled) returns the buffered draft. UI lives in
+      `SceneEditor` (owns the view for insert-at-cursor) with an `onCoauthor`
+      trigger added to `EditorToolbar`; gated on `surfacesEnabled`, single-scene
+      editor only. Verified live: a strong in-context passage through the real
+      provider path. Unit test covers the prompt builder. Completes the inline
+      surface. Deferred (own future work): streaming the draft, and the
+      structural/enrichment tools, summary jobs, recap, and persisted chat the
+      design lists as later.
 
 ## Capability review follow-ups (2026-06-06)
 
