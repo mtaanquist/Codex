@@ -759,6 +759,24 @@ endpoint. Started 2026-06-09.
       `assistant-summaries` jobs. Lint, check, unit (335), and build pass locally;
       the worker job and notification fan-out need Postgres/the worker, so they
       are left for CI.
+- [ ] Inline continuation (first inline surface; branch
+      `feat/assistant-continuation`). A CodeMirror ghost-text extension
+      (`editor-continuation.ts`, its own keymap/StateField, distinct from the
+      entity autocomplete): Ctrl/Cmd+J asks the Assistant to continue the prose at
+      the cursor, the suggestion shows as grey ghost-text, Tab accepts, Esc / an
+      edit / a caret move dismisses. `POST /api/assistant/continuation`
+      (`buildContinuationMessage`, `role: 'continuation'`, no tools) returns the
+      buffered continuation; the editor inserts it only on accept (a suggestion,
+      never a silent write). Threaded through `SceneEditor` (`storyId` +
+      `assistantContinuation` props) in both the single-scene and continuous
+      views, gated on `surfacesEnabled`. Editor + shortcuts help updated. The live
+      model produced a clean in-voice continuation through the real provider path.
+      First-cut product choices (documented for the author to revisit):
+      request-on-demand via a keybinding rather than auto-on-pause (cost), and
+      buffered rather than token-streamed. Unit test covers the prompt builder;
+      the extension/endpoint need a browser+model so they are left for CI/manual.
+      Lint, check, unit (336), and build pass locally. Deferred: co-author (the
+      side panel with insert/edit/reject), auto-on-pause, and streaming.
 
 ## Capability review follow-ups (2026-06-06)
 

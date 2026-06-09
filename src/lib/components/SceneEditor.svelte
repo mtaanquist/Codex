@@ -17,6 +17,7 @@
 	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
+	import { continuationExtensions } from '$lib/editor-continuation';
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
@@ -24,10 +25,12 @@
 
 	let {
 		sceneId,
+		storyId,
 		title,
 		body,
 		entities = [],
 		mentionOptions = {},
+		assistantContinuation = false,
 		autocompleteMode = 'popup',
 		editingMode = 'markdown',
 		spellCheck = 'off',
@@ -52,11 +55,16 @@
 		onStatus
 	}: {
 		sceneId: string;
+		// The owning story; continuation posts it so the server can gate and scope.
+		storyId: string;
 		title: string | null;
 		body: string;
 		entities?: MentionEntity[];
 		// Disambiguation context and the pin callback for shared names.
 		mentionOptions?: MentionOptions;
+		// When true, Ctrl/Cmd+J asks the Assistant to continue the prose at the
+		// cursor (ghost-text, Tab to accept). Off unless the Assistant is live.
+		assistantContinuation?: boolean;
 		autocompleteMode?: AutocompleteMode;
 		editingMode?: EditingMode;
 		spellCheck?: 'on' | 'off';
@@ -453,6 +461,7 @@
 					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
+					assistantContinuation && storyId ? continuationExtensions(storyId) : [],
 					boundaryKeymap(),
 					onFocus
 						? EditorView.updateListener.of((update) => {

@@ -915,10 +915,12 @@
 							bind:this={docEditors[scene.id]}
 							compact
 							sceneId={scene.id}
+							storyId={data.story.id}
 							title={scene.title}
 							body={scene.bodyMd}
 							entities={data.mentionEntities}
 							{mentionOptions}
+							assistantContinuation={data.assistant.surfacesEnabled}
 							autocompleteMode={data.preferences.entityAutocomplete}
 							editingMode={data.preferences.editingMode}
 							spellCheck={data.preferences.spellCheck}
@@ -1004,6 +1006,8 @@
 						onToggleCommandMarkers={toggleCommandMarkers}
 						onEnterFocus={() => (focusMode.on = true)}
 						sceneId={data.selectedScene.id}
+						storyId={data.story.id}
+						assistantContinuation={data.assistant.surfacesEnabled}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
 						{findText}
