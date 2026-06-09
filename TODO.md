@@ -580,6 +580,23 @@ endpoint. Started 2026-06-09.
       the SSE `/api/assistant/*` endpoints, all UI (account/story/admin),
       context assembly, tools, the worker queues, the Assistant-reviewer
       attribution, and chat persistence.
+- [ ] Step 3 (pulled ahead of the chat surface - it is pure backend) -
+      context assembly. `$lib/server/llm/context/`: `sources.ts` gathers the
+      in-scope world (story/universe frame, the current scene + neighbouring
+      scene summaries, the chapter/scene skeleton, members-or-mentioned
+      entities with quick details/aliases/relationships/per-story notes via the
+      existing `storyEntityLists` and `listEntityRelationships`, lore by the
+      reserved `activation_mode` with keyword matching, and freeform
+      story/universe notes); `assemble.ts` tiers and fits them to a token
+      budget and renders a system message, returning the source refs for a
+      later grounding step. The gathering is settled design; the budget and
+      tier-drop order are kept deliberately simple and marked provisional, per
+      the design's "needs a corpus" TODO. Owner-scoped through the story. Unit
+      tests (the pure `loreMatches`, `estimateTokens`, `selectWithinBudget`) +
+      integration (frame, scene-local, entity + per-story note, lore
+      always/keyword/manual activation, notes, owner-scoping, budget drop).
+      Not yet wired to a surface; the chat endpoint and co-author/review will
+      call `assembleContext` + `buildSystemMessage`.
 
 ## Capability review follow-ups (2026-06-06)
 
