@@ -13,6 +13,7 @@ export {
 	MENTIONS_UNIVERSE_QUEUE,
 	BACKUP_QUEUE,
 	EMAIL_QUEUE,
+	EMAIL_DEAD_LETTER_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
@@ -25,6 +26,7 @@ import {
 	MENTIONS_UNIVERSE_QUEUE,
 	BACKUP_QUEUE,
 	EMAIL_QUEUE,
+	EMAIL_DEAD_LETTER_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
@@ -48,6 +50,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(MENTIONS_UNIVERSE_QUEUE);
 		await boss.createQueue(BACKUP_QUEUE);
 		await boss.createQueue(EMAIL_QUEUE);
+		await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 		await boss.createQueue(EXPORT_ARTIFACTS_QUEUE);
 		await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
@@ -118,13 +121,30 @@ export async function queueUniverseMentions(universeId: string): Promise<void> {
 	}
 }
 
-// Queues a transactional email (verification, password reset). Best-effort,
-// like the mention queues: a failed enqueue logs rather than breaking the
-// request, and the caller shows the same neutral "check your email" either way.
+// Send-email retry policy: an SMTP outage of a few seconds to a couple of
+// hours is ridden out rather than dropping account-critical mail. Exponential
+// backoff from a minute, each delay capped at an hour, over ten tries (~5h
+// total). A job that still fails is routed to the dead-letter queue, where the
+// worker logs it so an operator can see what was dropped.
+const EMAIL_RETRY = {
+	retryLimit: 10,
+	retryDelay: 60,
+	retryBackoff: true,
+	retryDelayMax: 3600
+} as const;
+
+// Queues a transactional email (verification, password reset). Best-effort
+// enqueue, like the mention queues: a failed enqueue logs rather than breaking
+// the request, and the caller shows the same neutral "check your email" either
+// way. Once queued, the retry policy above keeps the send alive through an
+// outage.
 export async function queueEmail(message: EmailMessage): Promise<void> {
 	try {
 		const boss = await getBoss();
-		await boss.send(EMAIL_QUEUE, message);
+		await boss.send(EMAIL_QUEUE, message, {
+			...EMAIL_RETRY,
+			deadLetter: EMAIL_DEAD_LETTER_QUEUE
+		});
 	} catch (error) {
 		console.error('queueing email failed:', error);
 	}

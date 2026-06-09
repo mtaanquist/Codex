@@ -8,6 +8,9 @@ export const MENTIONS_UNIVERSE_QUEUE = 'mentions-universe';
 export const RECONCILE_MENTIONS_QUEUE = 'reconcile-mentions';
 export const BACKUP_QUEUE = 'run-backup';
 export const EMAIL_QUEUE = 'send-email';
+// Transactional emails that exhaust their retries land here so an operator
+// can see what was dropped instead of it vanishing into pg-boss's failed rows.
+export const EMAIL_DEAD_LETTER_QUEUE = 'send-email-dead-letter';
 export const EXPORT_ARTIFACTS_QUEUE = 'export-artifacts';
 export const NOTIFICATION_DIGEST_QUEUE = 'notification-digest';
 export const REVIEWER_DIGEST_QUEUE = 'reviewer-digest';
