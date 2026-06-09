@@ -77,19 +77,25 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await page.goto('/account/assistant');
 	await expect(page.getByRole('heading', { name: 'Assistant', level: 1 })).toBeVisible();
 
-	// The Assistant starts off; the config block is dimmed until the kill switch
-	// is turned off. The status reads the state back. The real checkbox is a
-	// zero-size hidden input behind the toggle track, so drive it by clicking the
-	// wrapping label (the visible switch); toggle-xl is unique to this control.
+	// The real checkbox is a zero-size hidden input behind the toggle track, so
+	// drive it by clicking the wrapping label (the visible switch); toggle-xl is
+	// unique to this control. The status span (one element, exact text) reads the
+	// state back without the substring ambiguity a loose getByText would hit.
 	const killToggle = page.locator('label.toggle-xl');
+	const status = page.locator('.ks-status');
 	const gated = page.locator('[data-ai-gated]');
-	await expect(page.getByText('Assistant off')).toBeVisible();
+
+	// Normalize to off first: this test mutates account state, and a prior retry
+	// may have left the Assistant on.
+	await expect(status).toBeVisible();
+	if ((await status.textContent())?.trim() === 'Assistant on') await killToggle.click();
+	await expect(status).toHaveText('Assistant off');
 	await expect(gated).toHaveClass(/off/);
 
 	// Turning the kill switch off enables the Assistant; the toggle auto-submits
 	// and the page reloads with the config lit up.
 	await killToggle.click();
-	await expect(page.getByText('Assistant on')).toBeVisible();
+	await expect(status).toHaveText('Assistant on');
 	await expect(gated).not.toHaveClass(/off/);
 
 	// Identity saves a name and tone and reads them back after a reload. Exact
@@ -112,5 +118,5 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 
 	// Turn it back off so repeated runs start from the known default.
 	await killToggle.click();
-	await expect(page.getByText('Assistant off')).toBeVisible();
+	await expect(status).toHaveText('Assistant off');
 });
