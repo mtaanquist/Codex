@@ -20,6 +20,7 @@ import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisi
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 import { listMentionPins } from '$lib/server/mention-pins';
 import { ownedStory } from '$lib/server/story-access';
+import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import {
 	deleteChapter,
@@ -51,7 +52,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// edited last.
 	const selectScene = async () => {
 		if (view !== 'scene') return null;
-		if (selectedId) {
+		// A non-uuid ?scene= would throw on the uuid cast; fall back to the
+		// last-edited scene instead of 500ing.
+		if (selectedId && isUuid(selectedId)) {
 			const [row] = await db
 				.select()
 				.from(scenes)
@@ -270,7 +273,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		badgeAssetId: string | null;
 	}[] = [];
 	if (selectedScene) {
-		const revisionId = url.searchParams.get('revision');
+		const revisionParam = url.searchParams.get('revision');
+		// Guard the uuid cast, the same as ?scene above.
+		const revisionId = revisionParam && isUuid(revisionParam) ? revisionParam : null;
 		const mentionCounts = (
 			table: typeof characters | typeof places | typeof loreEntries,
 			targetType: 'character' | 'place' | 'lore_entry'

@@ -124,6 +124,13 @@ describe('sessions', () => {
 		expect(await validateSession(db, crypto.randomUUID())).toBeNull();
 	});
 
+	it('rejects a malformed (non-uuid) session id without throwing', async () => {
+		// A stale or hand-edited cookie used to throw on the uuid cast, 500ing
+		// every request and never clearing the cookie. It must read as no session.
+		expect(await validateSession(db, 'not-a-uuid')).toBeNull();
+		expect(await validateSession(db, '')).toBeNull();
+	});
+
 	it('drops a live session when the account is suspended', async () => {
 		const userId = await seedUser('suspend-session@example.com');
 		const session = await createSession(db, userId);
