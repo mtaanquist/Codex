@@ -140,4 +140,23 @@ describe('standaloneUniverse', () => {
 		const story = await createStoryInUniverse(db, ownerId, first.id, 'A One-Off');
 		expect(story.universeId).toBe(first.id);
 	});
+
+	it('revives a trashed standalone universe instead of swallowing the new story', async () => {
+		const home = await standaloneUniverse(db, ownerId);
+		// Owner trashes the standalone home, the way any universe can be trashed.
+		await db.update(universes).set({ deletedAt: new Date() }).where(eq(universes.id, home.id));
+
+		// Asking for the standalone home again must bring it back live, not fail
+		// the insert against the partial unique index and return a trashed row.
+		const revived = await standaloneUniverse(db, ownerId);
+		expect(revived.id).toBe(home.id);
+		expect(revived.deletedAt).toBeNull();
+
+		const row = await db.select().from(universes).where(eq(universes.id, home.id));
+		expect(row[0].deletedAt).toBeNull();
+
+		// A story created now lands in a live universe, so it stays visible.
+		const story = await createStoryInUniverse(db, ownerId, revived.id, 'After Trash');
+		expect(story.universeId).toBe(revived.id);
+	});
 });
