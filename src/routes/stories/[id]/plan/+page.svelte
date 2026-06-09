@@ -85,6 +85,8 @@
 						membership={data.membership}
 						entityHref={(id) => `${planPath}?entity=${id}`}
 						universeRef={data.universe.slug}
+						assistantEnabled={data.assistantEnabled}
+						assistantSuggestions={data.assistantSuggestions}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}

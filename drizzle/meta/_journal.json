@@ -379,6 +379,13 @@
 			"when": 1781029698737,
 			"tag": "0053_assistant_summary_watermark",
 			"breakpoints": true
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1781031677899,
+			"tag": "0054_entity_suggestions",
+			"breakpoints": true
 		}
 	]
 }
