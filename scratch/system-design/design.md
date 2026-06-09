@@ -98,7 +98,7 @@ The Session tab is where the preferences that actually change mid-session live �
 
 Four quick-settings controls sit at the top: **entity autocomplete** (off / inline ghost-text / popup menu), **underline known entities** (toggle), **theme** (auto / light / dark), and **focus mode** (toggle). Each has a canonical home in full settings; Session just surfaces the commonly-flipped ones. Changes apply forward, not retroactively — switching autocomplete style mid-sentence affects the next suggestion, not the one currently on screen.
 
-The Session tab is for the working preferences above, not the Assistant. When the deferred LLM work is taken on, its chat surface (rubber duck, co-author, editor roles) lives in its own **Assistant** tab in the right sidebar, a peer of Reference, History, and Session, not nested here (see `assistant.md`). The per-story "Assistant for this story" on/off lives with that tab.
+The Session tab is for the working preferences above, not the Assistant. When the deferred LLM work is taken on, its chat surface (rubber duck, world Q&A) lives in its own **Assistant** tab in the right sidebar, a peer of Reference, History, and Session, not nested here, with the co-author, continuation, and review roles on the editor and review surfaces (see `assistant.md`). The per-story "Assistant for this story" on/off lives with that tab.
 
 ### Entity mentions
 
@@ -192,15 +192,9 @@ Codex has no AI features in v1. The decision to defer is deliberate, not inciden
 
 The full design for this work (named the Assistant) lives in `assistant.md`: the bring-your-own-key configuration, the admin egress policy, the gateway module, the chat/inline/review surfaces, and how it reuses the existing review framework. The sketch below is the shape; `assistant.md` is the spec.
 
-When that work is eventually taken on, the planned shape is:
+The planned shape, in brief (full detail in `assistant.md`): an opt-in Assistant, off by default and dark until the writer configures an endpoint and turns it on, offering a small set of roles across three surfaces. A rubber-duck chat and grounded world Q&A live in their own **Assistant** tab (a peer of Reference, History, and Session); inline **co-author** and **continuation** live in the editor; and an **editor/reviewer** role leaves comments and suggested edits through the existing review framework. Everything the Assistant writes is a suggestion the author accepts or rejects, never a silent change.
 
-1. **Off.** No LLM surfaces shown. Default for every account and every story.
-2. **Rubber duck.** A side-panel chat in the Session tab, user-driven. No automatic context injection.
-3. **Co-author.** A side-panel generation surface with insert/edit/reject flow, assembled with current-scene + chapter-summary + active-characters context.
-4. **Continuation.** Inline ghost-text from the LLM, Tab to accept. Distinct from entity autocomplete, which is local and lookup-based and ships in v1.
-5. **Editor.** Margin annotations on existing prose, no generation.
-
-**BYO key.** Codex will not ship bundled AI when this lands. Users will configure their own OpenAI-compatible endpoint — Ollama on a local machine, a proper API provider, a self-hosted vLLM, anything with the right interface. The user's endpoint and key will be stored encrypted in their account settings, with per-story overrides for model selection.
+**BYO key.** Codex will not ship bundled AI when this lands. Users configure their own OpenAI-compatible endpoint — Ollama on a local machine, a hosted API provider, a self-hosted vLLM — with the endpoint and key stored encrypted in their account settings and per-story overrides for model selection. (A Claude Pro or Max subscription is not an API credential; that and the egress and kill-switch details are in `assistant.md`.)
 
 **The schema already reserves space** for the configuration (`users.llm_config`, `stories.llm_config`) and for lore activation behaviour (`lore_entries.activation_mode`). Those columns exist now so the eventual feature doesn't require migrating live data; in v1 they're inert. See `schema.md`.
 
