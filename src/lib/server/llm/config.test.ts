@@ -4,6 +4,8 @@ import { assistantGate, type StoredAccountConfig, type StoredStoryOverride } fro
 function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfig {
 	return {
 		enabled: false,
+		assistantName: '',
+		persona: 'balanced',
 		endpoint: '',
 		apiKeyEnc: null,
 		models: {},

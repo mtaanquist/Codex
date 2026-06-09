@@ -10,7 +10,12 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 process.env.APP_SECRET = process.env.APP_SECRET || 'llm-gateway-test-secret';
 
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
-import type { HttpRequest, Provider, StreamEvent } from '../../src/lib/server/llm/providers/types';
+import type {
+	ChatMessage,
+	HttpRequest,
+	Provider,
+	StreamEvent
+} from '../../src/lib/server/llm/providers/types';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { complete, stream, AssistantDisabledError } =
@@ -22,15 +27,15 @@ let userId: string;
 
 // A provider that records the request and emits canned events, so the gateway's
 // resolve -> pick model -> stream path is exercised without a network.
-let captured: { model: string } | null = null;
+let captured: { model: string; messages: ChatMessage[] } | null = null;
 const stubProvider: Provider = {
 	async *chatStream(req) {
-		captured = { model: req.model };
+		captured = { model: req.model, messages: req.messages };
 		yield { type: 'token', text: `[${req.model}]` };
 		yield { type: 'done' };
 	},
 	async complete(req) {
-		captured = { model: req.model };
+		captured = { model: req.model, messages: req.messages };
 		return `done:${req.model}`;
 	},
 	async probe() {
@@ -48,9 +53,15 @@ async function drain(events: AsyncIterable<StreamEvent>) {
 	return out;
 }
 
-async function configure(enabled: boolean) {
+async function configure(
+	enabled: boolean,
+	persona: 'balanced' | 'concise' = 'balanced',
+	name = ''
+) {
 	await saveAccountLlmConfig(db, userId, {
 		enabled,
+		assistantName: name,
+		persona,
 		endpoint: 'https://api.example.com/v1',
 		apiKey: 'sk',
 		models: { chat: 'chat-model' },
@@ -100,6 +111,18 @@ describe('gateway gating', () => {
 		);
 	});
 
+	it('prepends a persona system message carrying the name and tone', async () => {
+		await configure(true, 'concise', 'Muse');
+		await drain(
+			stream(db, { userId, role: 'chat', messages: [{ role: 'user', content: 'hi' }] }, stubDeps)
+		);
+		expect(captured?.messages[0].role).toBe('system');
+		expect(captured?.messages[0].content).toContain('Muse');
+		expect(captured?.messages[0].content).toContain('concise');
+		// The caller's turns follow the persona message.
+		expect(captured?.messages[1]).toEqual({ role: 'user', content: 'hi' });
+	});
+
 	it('refuses to stream when the account master is off', async () => {
 		await configure(false);
 		await expect(
@@ -122,6 +145,8 @@ describe('gateway over the real egress guard', () => {
 		// egress transport turns the denial into a clean error event.
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
 			endpoint: 'http://127.0.0.1:9/v1',
 			apiKey: '',
 			models: { chat: 'm' },

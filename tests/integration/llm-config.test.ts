@@ -52,6 +52,8 @@ describe('account config round-trip', () => {
 	it('saves, never exposes the key in the view, and decrypts it on resolve', async () => {
 		const result = await saveAccountLlmConfig(db, userId, {
 			enabled: true,
+			assistantName: 'Muse',
+			persona: 'concise',
 			endpoint: 'https://api.example.com/v1',
 			apiKey: 'sk-secret-123',
 			models: { chat: 'gpt-4o-mini' },
@@ -63,6 +65,8 @@ describe('account config round-trip', () => {
 		expect(view).toMatchObject({
 			configured: true,
 			enabled: true,
+			assistantName: 'Muse',
+			persona: 'concise',
 			endpoint: 'https://api.example.com/v1',
 			hasKey: true,
 			toolCallBudget: 12
@@ -73,11 +77,31 @@ describe('account config round-trip', () => {
 		expect(resolved.gate.surfacesEnabled).toBe(true);
 		expect(resolved.config.apiKey).toBe('sk-secret-123');
 		expect(resolved.config.models.chat).toBe('gpt-4o-mini');
+		expect(resolved.config.assistantName).toBe('Muse');
+		expect(resolved.config.persona).toBe('concise');
+	});
+
+	it('cleans the name and falls back to the default persona for an unknown value', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '  The   Muse \n',
+			// An invalid persona id is coerced to the default on save.
+			persona: 'wildcard' as never,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: {},
+			toolCallBudget: 8
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.assistantName).toBe('The Muse');
+		expect(view.persona).toBe('balanced');
 	});
 
 	it('a blank key on save keeps the stored one', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
 			endpoint: 'https://api.example.com/v1',
 			apiKey: 'sk-original',
 			models: {},
@@ -85,6 +109,8 @@ describe('account config round-trip', () => {
 		});
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
 			endpoint: 'https://api.example.com/v2',
 			apiKey: '',
 			models: {},
@@ -99,6 +125,8 @@ describe('account config round-trip', () => {
 	it('rejects a non-http endpoint', async () => {
 		const result = await saveAccountLlmConfig(db, userId, {
 			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
 			endpoint: 'ftp://nope',
 			apiKey: '',
 			models: {},
@@ -112,6 +140,8 @@ describe('story override merge', () => {
 	beforeEach(async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
 			endpoint: 'https://api.example.com/v1',
 			apiKey: 'sk',
 			models: { chat: 'account-model', reviewer: 'account-reviewer' },
@@ -144,6 +174,8 @@ describe('story override merge', () => {
 	it('account-off stays dark even with a story override present', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: false,
+			assistantName: '',
+			persona: 'balanced',
 			endpoint: 'https://api.example.com/v1',
 			apiKey: '',
 			models: { chat: 'account-model' },

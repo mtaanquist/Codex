@@ -597,6 +597,20 @@ endpoint. Started 2026-06-09.
       always/keyword/manual activation, notes, owner-scoping, budget drop).
       Not yet wired to a surface; the chat endpoint and co-author/review will
       call `assembleContext` + `buildSystemMessage`.
+- [ ] Assistant name + persona (author request - a bit of personality). A
+      cosmetic `assistantName` and a fixed-set `persona` tone preset (balanced
+      default, concise, professional, casual, encouraging) on the account
+      `llm_config`, in a pure `prompts/persona.ts` (the spec's `prompts/` dir).
+      Deliberately not a free-form system prompt - tone presets keep the
+      Assistant a writing aid and do not reopen the role-play escape hatch the
+      design closes. The gateway prepends a persona system message (name + tone,
+      "stay in the helper role") to every turn, so the personality is consistent
+      across surfaces; any surface-supplied context message follows it. Rides in
+      the existing jsonb, no migration. Unit tests (presets, validators,
+      `buildPersonaPrompt`) + integration (save/resolve/view round-trip,
+      normalisation fallback, the gateway prepend). Frontend (a name field + a
+      tone dropdown in the account Assistant section) deferred with the rest of
+      the UI.
 
 ## Capability review follow-ups (2026-06-06)
 

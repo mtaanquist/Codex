@@ -3,6 +3,7 @@ import { logEvent } from '../log';
 import { resolveLlmConfig, type AssistantRole, type ResolvedConfig } from './config';
 import { egressHttpRequest, egressPolicy } from './egress';
 import { openaiProvider } from './providers/openai';
+import { buildPersonaPrompt } from './prompts/persona';
 import type { ChatMessage, HttpRequest, Provider } from './providers/types';
 
 // The gateway is the one public entry the rest of the app calls. It resolves
@@ -57,6 +58,7 @@ function selectProvider(): Provider {
 type Prepared = {
 	config: ResolvedConfig;
 	model: string;
+	messages: ChatMessage[];
 	http: HttpRequest;
 	provider: Provider;
 };
@@ -70,9 +72,18 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 	const model = pickModel(resolved.config, req.role);
 	if (!model) throw new AssistantDisabledError('No model is configured for this action.');
 	const policy = await egressPolicy(db);
+	// The persona system message rides at the front of every turn, so the
+	// Assistant's name and tone are consistent across surfaces without each one
+	// remembering to set them. Any surface-supplied system message (the assembled
+	// world context) follows it.
+	const persona: ChatMessage = {
+		role: 'system',
+		content: buildPersonaPrompt(resolved.config.assistantName, resolved.config.persona)
+	};
 	return {
 		config: resolved.config,
 		model,
+		messages: [persona, ...req.messages],
 		http: deps.http ?? egressHttpRequest(policy),
 		provider: deps.provider ?? selectProvider()
 	};
@@ -83,12 +94,12 @@ export async function* stream(
 	req: GatewayRequest,
 	deps: GatewayDeps = {}
 ): AsyncGenerator<import('./providers/types').StreamEvent> {
-	const { config, model, http, provider } = await prepare(db, req, deps);
+	const { config, model, messages, http, provider } = await prepare(db, req, deps);
 	logEvent('info', 'assistant.stream', { userId: req.userId, role: req.role, model });
 	yield* provider.chatStream(
 		{
 			model,
-			messages: req.messages,
+			messages,
 			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
 			temperature: req.temperature
 		},
@@ -103,12 +114,12 @@ export async function complete(
 	req: GatewayRequest,
 	deps: GatewayDeps = {}
 ): Promise<string> {
-	const { config, model, http, provider } = await prepare(db, req, deps);
+	const { config, model, messages, http, provider } = await prepare(db, req, deps);
 	logEvent('info', 'assistant.complete', { userId: req.userId, role: req.role, model });
 	return provider.complete(
 		{
 			model,
-			messages: req.messages,
+			messages,
 			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
 			temperature: req.temperature
 		},

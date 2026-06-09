@@ -2,6 +2,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { stories, users } from '../db/schema';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto';
+import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are
@@ -24,6 +25,10 @@ export type StoredAccountConfig = {
 	// The master kill switch (the opt-in). Off by default; the writer flips it on
 	// once and the Assistant becomes available across their stories.
 	enabled: boolean;
+	// The Assistant's display name and tone preset - a little personality. Both
+	// cosmetic-to-the-task: the name is shown in the UI, the persona nudges tone.
+	assistantName: string;
+	persona: Persona;
 	endpoint: string;
 	apiKeyEnc: string | null;
 	models: ModelMap;
@@ -68,6 +73,8 @@ function normaliseCapability(raw: unknown): boolean | undefined {
 function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 	return {
 		enabled: raw.enabled === true,
+		assistantName: normaliseAssistantName(raw.assistantName),
+		persona: normalisePersona(raw.persona),
 		endpoint: typeof raw.endpoint === 'string' ? raw.endpoint.trim() : '',
 		apiKeyEnc: typeof raw.apiKeyEnc === 'string' && raw.apiKeyEnc ? raw.apiKeyEnc : null,
 		models: normaliseModels(raw.models),
@@ -136,6 +143,8 @@ async function storyOverride(db: Database, storyId: string): Promise<StoredStory
 // (story models win, the override can only mute), the key decrypted. The key is
 // plaintext here and must not leave the server.
 export type ResolvedConfig = {
+	assistantName: string;
+	persona: Persona;
 	endpoint: string;
 	apiKey: string;
 	models: ModelMap;
@@ -160,6 +169,8 @@ export async function resolveLlmConfig(
 	return {
 		gate,
 		config: {
+			assistantName: account.assistantName,
+			persona: account.persona,
 			endpoint: account.endpoint,
 			apiKey: account.apiKeyEnc ? decryptSecret(account.apiKeyEnc) : '',
 			models: { ...account.models, ...(override?.models ?? {}) },
@@ -175,6 +186,8 @@ export async function resolveLlmConfig(
 export type AccountLlmView = {
 	configured: boolean;
 	enabled: boolean;
+	assistantName: string;
+	persona: Persona;
 	endpoint: string;
 	hasKey: boolean;
 	models: ModelMap;
@@ -188,6 +201,8 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 	return {
 		configured: c.endpoint.length > 0,
 		enabled: c.enabled,
+		assistantName: c.assistantName,
+		persona: c.persona,
 		endpoint: c.endpoint,
 		hasKey: c.apiKeyEnc !== null,
 		models: c.models,
@@ -199,6 +214,8 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 
 export type SaveAccountInput = {
 	enabled: boolean;
+	assistantName: string;
+	persona: Persona;
 	endpoint: string;
 	// Blank keeps the stored key, so the writer can edit other fields without
 	// re-entering it (the SMTP/S3 pattern).
@@ -240,6 +257,8 @@ export async function saveAccountLlmConfig(
 
 	const value: StoredAccountConfig = {
 		enabled: input.enabled,
+		assistantName: normaliseAssistantName(input.assistantName),
+		persona: normalisePersona(input.persona),
 		endpoint,
 		apiKeyEnc,
 		models: normaliseModels(input.models),
