@@ -710,6 +710,16 @@ endpoint. Started 2026-06-09.
       chat, the inline/review/admin surfaces. Lint, check, unit (333), and build
       pass locally; the DB-backed integration and Playwright specs need Postgres /
       a browser the sandbox lacks, so they are written but left for CI.
+- [ ] Admin egress panel (the SSRF control; branch
+      `feat/assistant-egress-admin`). The admin "AI" section (a "soon" stub
+      until now) becomes the egress policy form: a select over `block-private`
+      (default, safe for shared instances) / `allowlist` / `open`, plus a hosts
+      textarea (one per line) for the allowlist mode, wired through a `saveEgress`
+      action over the existing `egressPolicy` / `saveEgressPolicy` helpers
+      (`llm/egress.ts`). Plain-language labels, no admin help article needed
+      (admin panel). The egress helpers are already unit- and integration-tested;
+      the admin area 404s for the seeded regular-user e2e session, so no new e2e.
+      Lint, check, and build pass locally.
 
 ## Capability review follow-ups (2026-06-06)
 
