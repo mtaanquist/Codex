@@ -432,34 +432,40 @@
 		}, 0);
 	}
 
+	// The full set of editable fields, shared by the debounced save and the
+	// page-hide flush so both write the same shape.
+	function savePayload(bodyMd: string): Record<string, unknown> {
+		const payload: Record<string, unknown> = {
+			name,
+			summaryMd: summary,
+			bodyMd,
+			details
+		};
+		if (storyId) {
+			payload.storyId = storyId;
+			payload.storyNotesMd = notes;
+		}
+		if (kind === 'character' || kind === 'place') {
+			payload.aliases = aliases;
+		}
+		if (kind === 'lore') {
+			payload.keywords = keywords;
+		}
+		if (categories.length > 0) {
+			payload.categoryId = categoryValue || null;
+		}
+		return payload;
+	}
+
 	async function save() {
 		if (!view) return;
 		dirty = false;
 		onStatus('saving');
 		try {
-			const payload: Record<string, unknown> = {
-				name,
-				summaryMd: summary,
-				bodyMd: view.state.doc.toString(),
-				details
-			};
-			if (storyId) {
-				payload.storyId = storyId;
-				payload.storyNotesMd = notes;
-			}
-			if (kind === 'character' || kind === 'place') {
-				payload.aliases = aliases;
-			}
-			if (kind === 'lore') {
-				payload.keywords = keywords;
-			}
-			if (categories.length > 0) {
-				payload.categoryId = categoryValue || null;
-			}
 			const response = await fetch(`/api/${ENDPOINT}/${entity.id}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(payload)
+				body: JSON.stringify(savePayload(view.state.doc.toString()))
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
 			onStatus(dirty ? 'saving' : 'saved');
@@ -469,6 +475,24 @@
 			dirty = true;
 			onStatus('error');
 		}
+	}
+
+	// A reload or tab close inside the debounce window would drop the last
+	// edit, since component teardown does not run on browser unload. Flush the
+	// pending save with a request that outlives the page, the way SceneEditor
+	// does for scene prose.
+	function flushOnPageHide() {
+		if (!dirty || !view) return;
+		clearTimeout(saveTimer);
+		dirty = false;
+		void fetch(`/api/${ENDPOINT}/${entity.id}`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			keepalive: true,
+			body: JSON.stringify(savePayload(view.state.doc.toString()))
+		}).catch(() => {
+			dirty = true;
+		});
 	}
 
 	function enqueueSave() {
@@ -505,6 +529,8 @@
 		};
 	});
 </script>
+
+<svelte:window onpagehide={flushOnPageHide} />
 
 <div class="detail">
 	<div class="detail-head">
