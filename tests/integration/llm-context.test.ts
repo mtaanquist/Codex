@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -19,7 +20,8 @@ import {
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
-const { assembleContext } = await import('../../src/lib/server/llm/context/assemble');
+const { assembleContext, assembleRecapContext } =
+	await import('../../src/lib/server/llm/context/assemble');
 
 let pool: pg.Pool;
 let db: Database;
@@ -228,5 +230,40 @@ describe('assembleContext', () => {
 		expect(context!.includedTiers).toEqual(['frame']);
 		expect(context!.droppedTiers.length).toBeGreaterThan(0);
 		expect(context!.text).not.toContain('Alice met Bram');
+	});
+});
+
+describe('assembleRecapContext', () => {
+	it('returns null for a story the user does not own', async () => {
+		expect(await assembleRecapContext(db, { userId: strangerId, storyId })).toBeNull();
+	});
+
+	it('frames the story and includes the story so far', async () => {
+		const text = await assembleRecapContext(db, { userId: ownerId, storyId, sceneId: scene2Id });
+		expect(text).not.toBeNull();
+		expect(text).toContain('The Tide Below');
+		expect(text).toContain('The story so far');
+		// scene1 has a summary; recap prefers it over the body.
+		expect(text).toContain('Alice and Bram meet.');
+		// In-scope entities ride along for grounding.
+		expect(text).toContain('Alice');
+	});
+
+	it('stops at the focus scene and excludes later scenes', async () => {
+		const text = await assembleRecapContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(text).toContain('Alice and Bram meet.'); // scene1
+		expect(text).not.toContain('A calm walk south.'); // scene2, after the focus
+	});
+
+	it('recaps the whole story when no scene is given', async () => {
+		const text = await assembleRecapContext(db, { userId: ownerId, storyId });
+		expect(text).toContain('Alice and Bram meet.');
+		expect(text).toContain('A calm walk south.');
+	});
+
+	it('falls back to a scene body when it has no summary', async () => {
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.id, scene1Id));
+		const text = await assembleRecapContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(text).toContain('Alice met Bram by the Aether gate at dawn.');
 	});
 });

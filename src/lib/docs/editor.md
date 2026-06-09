@@ -96,6 +96,8 @@ When you have set up the Assistant on your account page, an Assistant tab appear
 
 The conversation is not saved. It clears when you reload or leave the page.
 
+When you come back to a story after time away, select "Catch me up" at the top of the tab. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
+
 While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 
 To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.

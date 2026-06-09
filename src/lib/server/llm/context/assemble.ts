@@ -5,11 +5,13 @@ import {
 	inScopeEntities,
 	loadStoryScope,
 	sceneNeighbourhood,
+	scenesUpTo,
 	scopeNotes,
 	storySkeleton,
 	type ChapterSkeleton,
 	type CurrentScene,
 	type NeighbourScene,
+	type RecapScene,
 	type ScopeEntity,
 	type ScopeLore,
 	type ScopeNote,
@@ -156,6 +158,76 @@ const PREAMBLE =
 // this, then hand the messages to the gateway; the gateway stays generic.
 export function buildSystemMessage(context: AssembledContext): ChatMessage {
 	return { role: 'system', content: `${PREAMBLE}\n\n${context.text}` };
+}
+
+// Recap ("catch me up"): the story so far, up to and including the open scene.
+// A separate assembly from the per-scene context above - it walks the scenes in
+// order rather than a neighbour window, and falls back to a body excerpt where a
+// scene has no summary yet (summaries are sparse until summary maintenance fills
+// them). Budgets and the excerpt length are provisional, like the rest of this
+// file (see the calibration note at the top).
+const RECAP_BUDGET_TOKENS = 8000;
+const RECAP_BODY_EXCERPT_CHARS = 1500;
+
+function recapSceneBlock(scene: RecapScene): string {
+	const heading = `### ${scene.title?.trim() || 'Untitled'}`;
+	const summary = scene.summaryMd?.trim();
+	const body = scene.bodyMd.trim();
+	let content: string;
+	if (summary) content = summary;
+	else if (!body) content = '(empty)';
+	else if (body.length <= RECAP_BODY_EXCERPT_CHARS) content = body;
+	else content = body.slice(0, RECAP_BODY_EXCERPT_CHARS).trimEnd() + ' [...]';
+	return `${heading}\n${content}`;
+}
+
+// Greedily fit scene blocks newest-first (a recap cares most about where the
+// story stands now), then restore chronological order for the prose. The most
+// recent scene is always kept even if it alone exceeds the budget. Pure, so the
+// drop policy is testable without a database.
+export function fitRecapScenes(
+	scenes: RecapScene[],
+	budgetTokens = RECAP_BUDGET_TOKENS
+): { blocks: string[]; dropped: number } {
+	const kept: { index: number; text: string }[] = [];
+	let used = 0;
+	let dropped = 0;
+	for (let i = scenes.length - 1; i >= 0; i--) {
+		const text = recapSceneBlock(scenes[i]);
+		const cost = estimateTokens(text);
+		if (used > 0 && used + cost > budgetTokens) {
+			dropped += 1;
+			continue;
+		}
+		kept.push({ index: i, text });
+		used += cost;
+	}
+	kept.sort((a, b) => a.index - b.index);
+	return { blocks: kept.map((k) => k.text), dropped };
+}
+
+// The world frame plus the story so far, as a single system-message body. Null
+// when the story is not the user's (owner-scoped through loadStoryScope).
+export async function assembleRecapContext(
+	db: Database,
+	options: { userId: string; storyId: string; sceneId?: string }
+): Promise<string | null> {
+	const scope = await loadStoryScope(db, options.userId, options.storyId);
+	if (!scope) return null;
+	const scenes = await scenesUpTo(db, scope.storyId, options.sceneId);
+	const entities = await inScopeEntities(db, scope.universeId, scope.storyId);
+
+	const { blocks, dropped } = fitRecapScenes(scenes);
+	const parts = [renderFrame(scope)];
+	if (dropped > 0) {
+		parts.push(
+			`(The first ${dropped} scene${dropped === 1 ? '' : 's'} ${dropped === 1 ? 'is' : 'are'} omitted to fit; recap from what follows.)`
+		);
+	}
+	parts.push(['## The story so far', ...blocks].join('\n\n'));
+	const renderedEntities = renderEntities(entities);
+	if (renderedEntities) parts.push(renderedEntities);
+	return parts.join('\n\n');
 }
 
 function renderFrame(scope: StoryScope): string {
