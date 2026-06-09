@@ -184,28 +184,35 @@ export const stories = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date())
 	},
-	(table) => [uniqueIndex('stories_owner_slug_idx').on(table.ownerId, table.slug)]
+	(table) => [
+		uniqueIndex('stories_owner_slug_idx').on(table.ownerId, table.slug),
+		index('stories_universe_idx').on(table.universeId)
+	]
 );
 
 // Chapters are organisational only; prose lives on scenes.
-export const chapters = pgTable('chapters', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	storyId: uuid('story_id')
-		.references(() => stories.id)
-		.notNull(),
-	position: integer('position').notNull(),
-	title: text('title'),
-	summaryMd: text('summary_md'),
-	// When the Assistant last generated this summary. Null means it was never
-	// auto-generated (so a non-null summary here is the writer's own and is never
-	// overwritten). See scenes.summary_generated_at.
-	summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
-	metadata: jsonb('metadata').notNull().default({}),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const chapters = pgTable(
+	'chapters',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		position: integer('position').notNull(),
+		title: text('title'),
+		summaryMd: text('summary_md'),
+		// When the Assistant last generated this summary. Null means it was never
+		// auto-generated (so a non-null summary here is the writer's own and is never
+		// overwritten). See scenes.summary_generated_at.
+		summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
+		metadata: jsonb('metadata').notNull().default({}),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('chapters_story_idx').on(table.storyId)]
+);
 
 export const scenes = pgTable(
 	'scenes',
@@ -259,7 +266,9 @@ export const scenes = pgTable(
 		index('scenes_characters_present_gin').using('gin', table.charactersPresent),
 		// Trigram index behind the palette's body-text search; migration 0037
 		// creates the pg_trgm extension it needs.
-		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops'))
+		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops')),
+		// Every story open, scene list, and mention sweep filters on story_id.
+		index('scenes_story_idx').on(table.storyId)
 	]
 );
 
@@ -305,7 +314,8 @@ export const characters = pgTable(
 	(table) => [
 		// The palette search filters by owner and substring-matches the name.
 		index('characters_owner_idx').on(table.ownerId),
-		index('characters_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops'))
+		index('characters_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops')),
+		index('characters_universe_idx').on(table.universeId)
 	]
 );
 
@@ -388,7 +398,8 @@ export const loreEntries = pgTable(
 	(table) => [
 		// The palette search filters by owner and substring-matches the title.
 		index('lore_entries_owner_idx').on(table.ownerId),
-		index('lore_entries_title_trgm_idx').using('gin', table.title.op('gin_trgm_ops'))
+		index('lore_entries_title_trgm_idx').using('gin', table.title.op('gin_trgm_ops')),
+		index('lore_entries_universe_idx').on(table.universeId)
 	]
 );
 
@@ -450,7 +461,8 @@ export const places = pgTable(
 	(table) => [
 		// The palette search filters by owner and substring-matches the name.
 		index('places_owner_idx').on(table.ownerId),
-		index('places_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops'))
+		index('places_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops')),
+		index('places_universe_idx').on(table.universeId)
 	]
 );
 

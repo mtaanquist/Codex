@@ -386,6 +386,13 @@
 			"when": 1781031677899,
 			"tag": "0054_entity_suggestions",
 			"breakpoints": true
+		},
+		{
+			"idx": 55,
+			"version": "7",
+			"when": 1781039099086,
+			"tag": "0055_hot_fk_indexes",
+			"breakpoints": true
 		}
 	]
 }
