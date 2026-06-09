@@ -59,8 +59,9 @@ The reserved `users.llm_config` and `stories.llm_config` jsonb columns hold
 this. They exist now and are inert (`{}`) in v1.
 
 - `users.llm_config` holds the per-account configuration: endpoint URL, API
-  key, and a model-per-role mapping (continuation, co-author, editor,
-  reviewer, chat). The key is encrypted at rest using the existing
+  key, a model-per-role mapping (continuation, co-author, editor, reviewer,
+  chat), and a tool-call budget (the maximum tool calls the Assistant may
+  make in one turn). The key is encrypted at rest using the existing
   AES-256-GCM helper in `crypto.ts` (keyed from `APP_SECRET`, already used
   for the SMTP password and the TOTP secret), stored as an encrypted string
   inside the jsonb the same way the SMTP password is. A blank key on save
@@ -130,9 +131,20 @@ token-at-a-time shape and needs no new dependency.
 
 Cost and runaway protection: the writer pays their own provider, so Codex
 does not meter spend, but an agentic tool loop on a slow endpoint can still
-run away. The gateway enforces a per-turn tool-call cap and a token ceiling,
-and the streaming endpoint is covered by the existing per-user write/rate
-limiter.
+run away. The gateway enforces a per-turn tool-call budget and a token
+ceiling, and the streaming endpoint is covered by the existing per-user
+write/rate limiter.
+
+The tool-call budget is a writer-set value in `users.llm_config`, not a
+fixed number Codex chooses. The point of bring-your-own-endpoint is that the
+writer owns the trade-off: someone running a model on their own server
+incurs only electricity and may want a generous budget, while someone on a
+metered API may want a tight one. The setting has a sensible default and an
+optional admin ceiling in `app_settings`: a runaway loop still ties up a
+server connection (and, for a background job, a worker slot) regardless of
+who pays for the tokens, so a shared hosted operator can bound it
+instance-wide. On self-host the operator is the writer, so the ceiling is
+theirs to raise or remove.
 
 ## Three surfaces
 
@@ -277,8 +289,9 @@ change):
   the mention index for an entity. These ground the model's answers and do
   not need confirmation (they write nothing).
 
-Iteration is capped (per-turn tool-call limit) so a loop on a slow endpoint
-cannot run away.
+Iteration is capped by the writer's per-turn tool-call budget (see
+configuration above) so a loop on a slow endpoint cannot run away, bounded
+by the optional admin ceiling.
 
 ## Context assembly
 
@@ -376,7 +389,8 @@ suggestions framework rather than a bespoke margin-annotation system.
   model + toggle).
 - `lore_entries.activation_mode`: already reserved; context assembly
   activates it.
-- `app_settings`: new rows for the egress policy and the host whitelist.
+- `app_settings`: new rows for the egress policy, the host whitelist, and
+  the optional tool-call-budget ceiling.
 - Review tables: a third reviewer attribution for the Assistant (synthetic
   reviewer row or a flag column), TBD at build time.
 - Possible additive columns for cached entity arc summaries with a staleness
