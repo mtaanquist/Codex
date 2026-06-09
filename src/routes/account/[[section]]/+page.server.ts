@@ -58,9 +58,10 @@ import { rateLimit } from '$lib/server/rate-limit';
 import QRCode from 'qrcode';
 
 // The actions that re-verify the password (disabling two-factor, regenerating
-// recovery codes, removing a passkey, changing email, deleting the account) are
-// throttled per account, the way sign-in is, so a borrowed session cannot
-// brute-force the password through them. One shared bucket across the actions.
+// recovery codes, removing a passkey, changing email, changing the password,
+// deleting the account) are throttled per account, the way sign-in is, so a
+// borrowed session cannot brute-force the password through them. One shared
+// bucket across the actions.
 const REAUTH_LIMIT = 10;
 const REAUTH_WINDOW_MS = 15 * 60 * 1000;
 
@@ -451,6 +452,8 @@ export const actions: Actions = {
 		return { scope: 'email', sent: true };
 	},
 	changePassword: async ({ request, locals }) => {
+		const limited = reauthGuard(locals.user!.id, 'password');
+		if (limited) return limited;
 		const data = await request.formData();
 		const result = await changePassword(
 			db,
