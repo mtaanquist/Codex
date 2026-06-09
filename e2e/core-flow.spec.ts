@@ -512,17 +512,36 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	expect(notFound.status()).toBe(404);
 	await anonymous.close();
 
-	// Exports: the zip and the EPUB download, and the print view renders
-	// the prose for PDF via the browser dialog.
+	// Exports: prepare the zip and the EPUB (built in the worker), wait for
+	// each to land, and download it. The print view renders the prose for PDF.
 	await page.getByRole('link', { name: 'Export', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
+
+	await page.getByRole('button', { name: 'Prepare markdown (.zip)' }).click();
+	const zipLink = page
+		.locator('.export-row', { hasText: '.zip' })
+		.getByRole('link', { name: 'Download' });
+	await expect(async () => {
+		await page.reload();
+		await expect(zipLink).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 30_000 });
 	const zipDownload = page.waitForEvent('download');
-	await page.getByRole('link', { name: 'Markdown (.zip)' }).click();
+	await zipLink.click();
 	expect((await zipDownload).suggestedFilename()).toBe('book-of-ash.zip');
+
+	await page.getByRole('button', { name: 'Prepare EPUB' }).click();
+	const epubLink = page
+		.locator('.export-row', { hasText: '.epub' })
+		.getByRole('link', { name: 'Download' });
+	await expect(async () => {
+		await page.reload();
+		await expect(epubLink).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 30_000 });
 	const epubDownload = page.waitForEvent('download');
-	await page.getByRole('link', { name: 'EPUB' }).click();
+	await epubLink.click();
 	expect((await epubDownload).suggestedFilename()).toContain('.epub');
-	await page.getByRole('link', { name: 'PDF' }).click();
+
+	await page.getByRole('link', { name: 'open the print view' }).click();
 	await expect(page).toHaveURL(/\/print$/);
 	await expect(page.locator('.title-page h1')).toHaveText('Book of Ash');
 	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');

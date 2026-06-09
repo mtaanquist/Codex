@@ -6,7 +6,8 @@ export const NOTIFICATION_KINDS = [
 	'review_reply',
 	'account_pending',
 	'assistant_review',
-	'assistant_summaries'
+	'assistant_summaries',
+	'export_ready'
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -15,7 +16,8 @@ export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
 	review_reply: 'Replies to your review comments',
 	account_pending: 'New accounts awaiting approval',
 	assistant_review: 'Assistant reviews you asked for',
-	assistant_summaries: 'Assistant summaries you asked for'
+	assistant_summaries: 'Assistant summaries you asked for',
+	export_ready: 'Exports you asked for are ready'
 };
 
 // Only admins approve accounts, so only they see that row.

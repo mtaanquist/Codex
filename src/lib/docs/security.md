@@ -38,9 +38,12 @@ out everywhere else at once, if you used a shared or lost device.
 
 ## Export everything
 
-Export downloads a single zip of everything you own: every universe, story,
-scene, entity, note, and uploaded image, as markdown with the images bundled in.
-This is the safety net to run before deleting your account.
+Select "Prepare everything (.zip)" to build a single zip of everything you own:
+every universe, story, scene, entity, note, and uploaded image, as markdown with
+the images bundled in. The file is prepared in the background; it appears below
+the button when it is ready, and a bell notification tells you too. Reload the
+page if you do not see it yet, then select Download. This is the safety net to
+run before deleting your account.
 
 ## Delete your account
 

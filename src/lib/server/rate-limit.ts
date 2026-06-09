@@ -66,6 +66,14 @@ export function assistantLimit(userId: string, now: number = Date.now()): RateLi
 	return rateLimit(`assistant:${userId}`, ASSISTANT_PER_MINUTE, 60 * 1000, now);
 }
 
+// The export budget: requesting an account, story, or universe export per user.
+// Each request enqueues a heavy worker build, so the bucket is small and the
+// window is long.
+const EXPORT_PER_HOUR = 20;
+export function exportLimit(userId: string, now: number = Date.now()): RateLimitResult {
+	return rateLimit(`export:${userId}`, EXPORT_PER_HOUR, 3600 * 1000, now);
+}
+
 // Clears all counters. For tests; not used by the app.
 export function resetRateLimits(): void {
 	windows.clear();

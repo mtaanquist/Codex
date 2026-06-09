@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
+	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import {
 		FONT_SIZES,
@@ -902,26 +903,25 @@
 						<p class="admin-block-sub">Take your words with you; nothing is trapped here.</p>
 					</div>
 					<div class="settings-group">
-						<ul class="exports">
-							<!-- eslint-disable svelte/no-navigation-without-resolve (file downloads and the print view) -->
-							<li>
-								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/export`} download>
-									Markdown (.zip)
-								</a>
-								- every scene and story note as a markdown file, images bundled
-							</li>
-							<li>
-								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/epub`} download
-									>EPUB</a
-								>
-								- for e-readers
-							</li>
-							<li>
-								<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/print`}>PDF</a>
-								- opens a print view; choose "Save as PDF" in the print dialog
-							</li>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						</ul>
+						<ExportPanel
+							scope="story"
+							targetId={data.story.id}
+							formats={[
+								{ format: 'zip', label: 'markdown (.zip)' },
+								{ format: 'epub', label: 'EPUB' }
+							]}
+							exports={data.exports}
+							assetsConfigured={data.assetsConfigured}
+						/>
+						<p class="field-hint">
+							Markdown bundles every scene and story note as a file with images; EPUB is for
+							e-readers. For a PDF,
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (print view) -->
+							<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/print`}
+								>open the print view</a
+							>
+							and choose "Save as PDF".
+						</p>
 					</div>
 				</div>
 

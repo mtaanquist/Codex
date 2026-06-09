@@ -801,6 +801,36 @@ export const assets = pgTable('assets', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// A user-requested export (account, story, or universe; zip or EPUB), built by
+// the worker and stored in the asset bucket so the heavy in-memory build never
+// runs on the web request path. The owner downloads the finished file from
+// /exports/[id]; old ones expire and are swept.
+export const userExports = pgTable(
+	'user_exports',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		scope: text('scope', { enum: ['account', 'story', 'universe'] }).notNull(),
+		// The story or universe id; null for an account export.
+		targetId: uuid('target_id'),
+		format: text('format', { enum: ['zip', 'epub'] }).notNull(),
+		status: text('status', { enum: ['pending', 'ready', 'failed'] })
+			.notNull()
+			.default('pending'),
+		// Set once the worker has built and stored the file.
+		storageKey: text('storage_key'),
+		filename: text('filename'),
+		contentType: text('content_type'),
+		byteSize: bigint('byte_size', { mode: 'number' }),
+		error: text('error'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		expiresAt: timestamp('expires_at', { withTimezone: true })
+	},
+	(table) => [index('user_exports_owner_idx').on(table.ownerId, table.createdAt.desc())]
+);
+
 // A flagged spot in a scene to return to: a selection marked by hand, with
 // a checkable state. Plain "TODO:" lines in prose are detected from the
 // text instead and never get a row; deleting the line resolves them.
