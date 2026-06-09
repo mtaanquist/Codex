@@ -20,7 +20,7 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	type Section = 'profile' | 'security' | 'display';
+	type Section = 'profile' | 'security' | 'assistant' | 'display';
 
 	// Each section is its own page (/account/security, /account/display);
 	// a plain /account is the profile. Forms post to the section they sit
@@ -66,6 +66,50 @@
 	function seen(date: Date): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 	}
+
+	// The Assistant's kill switch reads inverted: engaged (checked) means off.
+	// Submitting on change flips the master switch with a single round trip.
+	const assistantOff = $derived(!data.assistant.enabled);
+
+	// Per-role model rows. The ids match the Assistant roles the gateway resolves
+	// a model for; the copy is presentational.
+	const ROLE_META = [
+		{
+			id: 'chat',
+			name: 'Rubber duck',
+			hint: 'Conversational side panel. Best with a smart, chatty model.'
+		},
+		{
+			id: 'coauthor',
+			name: 'Co-author',
+			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.'
+		},
+		{
+			id: 'continuation',
+			name: 'Continuation',
+			hint: 'Inline ghost-text suggestions. Fast and light is what matters.'
+		},
+		{
+			id: 'editor',
+			name: 'Editor',
+			hint: 'Margin notes on existing prose. Analytical over generative.'
+		},
+		{
+			id: 'reviewer',
+			name: 'Reviewer',
+			hint: 'Reads a draft and leaves suggested edits in your name.'
+		}
+	] as const;
+
+	// The model dropdowns offer whatever the last discovery returned, unioned with
+	// any model already chosen, so a saved pick always shows even before a refresh.
+	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
+	const discoveredModels = $derived(
+		form?.scope === 'assistant-discover' && 'models' in form ? (form.models as string[]) : []
+	);
+	const modelOptions = $derived([
+		...new Set([...discoveredModels, ...Object.values(savedModels).filter((m): m is string => !!m)])
+	]);
 
 	// Adding a passkey is a browser ceremony, not a form post: fetch the
 	// creation options, hand them to the authenticator, post the result back.
@@ -229,6 +273,20 @@
 				</a>
 
 				<div class="admin-nav-label">Workspace</div>
+				<a class="nav-item" class:active={active === 'assistant'} href={sectionHref('assistant')}>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path
+							d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4"
+						/><circle cx="12" cy="12" r="4" /></svg
+					>
+					<span class="lbl">Assistant</span>
+				</a>
 				<a class="nav-item" class:active={active === 'display'} href={sectionHref('display')}>
 					<svg
 						viewBox="0 0 24 24"
@@ -1150,6 +1208,318 @@
 				</section>
 
 				<!-- ========== DISPLAY ========== -->
+				<!-- ========== ASSISTANT ========== -->
+				<section class="admin-section" class:active={active === 'assistant'}>
+					<div class="admin-head">
+						<p class="admin-eyebrow">Account</p>
+						<h1 class="admin-title">Assistant</h1>
+						<p class="admin-lede">
+							Codex can lend a hand while you write, but only if you want it to. You decide whether
+							it runs at all, what it is called, how it sounds, and where your words go.
+						</p>
+					</div>
+
+					<div class="admin-block">
+						<form method="POST" action="?/toggleAssistant">
+							<div class="killswitch" class:engaged={assistantOff}>
+								<span class="ks-ic"
+									><svg
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="1.8"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /></svg
+									></span
+								>
+								<div class="ks-body">
+									<div class="ks-titlerow">
+										<span class="ks-title">Assistant kill switch</span>
+										<span class="ks-status">{assistantOff ? 'Assistant off' : 'Assistant on'}</span>
+									</div>
+									<div class="ks-sub">
+										While this is on, Codex never contacts a model: no suggestions, no analysis,
+										nothing leaves your machine. Turn it off whenever you would like a hand; turn it
+										back on and everything stops at once.
+									</div>
+									{#if form?.scope === 'assistant-kill' && form.message}
+										<div class="ks-sub" role="alert" style="color:var(--danger);">
+											{form.message}
+										</div>
+									{/if}
+								</div>
+								<label class="toggle toggle-xl">
+									<input
+										type="checkbox"
+										name="killSwitch"
+										value="on"
+										aria-label="Assistant kill switch"
+										checked={assistantOff}
+										onchange={(e) => e.currentTarget.form?.requestSubmit()}
+									/>
+									<span class="toggle-track"></span>
+								</label>
+							</div>
+						</form>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">How Codex uses your assistant</h2>
+						</div>
+						<div class="admin-card tight">
+							<div class="attn-list">
+								<div class="list-row">
+									<span class="list-ic"
+										><svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><path d="m9 11 3 3L22 4" /><path
+												d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+											/></svg
+										></span
+									>
+									<div class="list-main">
+										<div class="list-title">Only when you ask</div>
+										<div class="list-sub">
+											Help appears when you open the side panel, run a command, or accept an inline
+											suggestion. Nothing is generated in the background.
+										</div>
+									</div>
+								</div>
+								<div class="list-row">
+									<span class="list-ic"
+										><svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><rect x="3" y="11" width="18" height="11" rx="2" /><path
+												d="M7 11V7a5 5 0 0 1 10 0v4"
+											/></svg
+										></span
+									>
+									<div class="list-main">
+										<div class="list-title">Your words stay yours</div>
+										<div class="list-sub">
+											Text is sent only to the endpoint you set below, and is never used to train
+											any model.
+										</div>
+									</div>
+								</div>
+								<div class="list-row">
+									<span class="list-ic"
+										><svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /></svg
+										></span
+									>
+									<div class="list-main">
+										<div class="list-title">Off in one tap</div>
+										<div class="list-sub">
+											The kill switch above disables everything instantly, across every story you
+											have open.
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div data-ai-gated class:off={assistantOff}>
+						<div class="admin-block">
+							<div class="settings-group">
+								<header class="settings-group-header">
+									<h2 class="settings-group-title">Identity</h2>
+									<p class="settings-group-subtitle">
+										Give your assistant a name and a voice. It introduces itself this way in the
+										side panel, and writes back in the tone you pick.
+									</p>
+								</header>
+								<form method="POST" action="?/saveAssistantIdentity">
+									<div class="field">
+										<label for="assistant_name">Name</label>
+										<input
+											id="assistant_name"
+											name="assistantName"
+											type="text"
+											class="input"
+											maxlength="60"
+											value={data.assistant.assistantName}
+											placeholder="What should your assistant be called?"
+										/>
+										<p class="field-hint">
+											Shown in the side-panel header and on any notes it leaves.
+										</p>
+									</div>
+									<div class="field">
+										<label for="assistant_style">Style</label>
+										<select id="assistant_style" name="persona" class="select">
+											{#each data.personas as preset (preset.id)}
+												<option value={preset.id} selected={data.assistant.persona === preset.id}
+													>{preset.label} - {preset.description}</option
+												>
+											{/each}
+										</select>
+										<p class="field-hint">
+											Sets the assistant's default tone. Individual stories can override it.
+										</p>
+									</div>
+									<div class="settings-actions">
+										{#if form?.scope === 'assistant-identity' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{:else if form?.scope === 'assistant-identity' && form.saved}
+											<span class="field-hint" role="status" style="color:var(--status-final);"
+												>Saved.</span
+											>
+										{/if}
+										<button type="submit" class="btn btn-primary">Save identity</button>
+									</div>
+								</form>
+							</div>
+						</div>
+
+						<div class="admin-block">
+							<div class="settings-group">
+								<header class="settings-group-header">
+									<h2 class="settings-group-title">Endpoint</h2>
+									<p class="settings-group-subtitle">Any OpenAI-compatible endpoint.</p>
+								</header>
+								<form method="POST" action="?/saveAssistantEndpoint">
+									<div class="field">
+										<label for="endpoint">Base URL</label>
+										<input
+											id="endpoint"
+											name="endpoint"
+											type="url"
+											class="input"
+											value={data.assistant.endpoint}
+											placeholder="http://ollama.local:11434/v1"
+										/>
+										<p class="field-hint">
+											Example: <code style="font-family: var(--font-mono); font-size: 12px;"
+												>http://ollama.local:11434/v1</code
+											> for Ollama, or the OpenAI, Anthropic, or OpenRouter equivalent.
+										</p>
+									</div>
+									<div class="field">
+										<label for="api_key">API key</label>
+										<input
+											id="api_key"
+											name="apiKey"
+											type="password"
+											class="input"
+											autocomplete="off"
+											placeholder={data.assistant.hasKey ? 'Saved. Leave blank to keep it.' : ''}
+										/>
+										<p class="field-hint">
+											Leave blank to keep your saved key. Not every endpoint needs one.
+										</p>
+									</div>
+									<div class="settings-actions">
+										{#if form?.scope === 'assistant-test' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{:else if form?.scope === 'assistant-test' && 'reply' in form && form.reply}
+											<span class="field-hint" role="status" style="color:var(--status-final);"
+												>Reply: {form.reply}</span
+											>
+										{:else if form?.scope === 'assistant-endpoint' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{:else if form?.scope === 'assistant-endpoint' && form.saved}
+											<span class="field-hint" role="status" style="color:var(--status-final);"
+												>Saved.</span
+											>
+										{/if}
+										<button type="submit" class="btn btn-ghost" formaction="?/testAssistant"
+											>Test connection</button
+										>
+										<button type="submit" class="btn btn-primary">Save endpoint</button>
+									</div>
+								</form>
+							</div>
+						</div>
+
+						<div class="admin-block">
+							<div class="settings-group">
+								<header class="settings-group-header">
+									<h2 class="settings-group-title">Models per role</h2>
+									<p class="settings-group-subtitle">
+										Different tasks benefit from different models. Individual stories can override
+										these defaults.
+									</p>
+								</header>
+								<form method="POST" action="?/saveAssistantModels">
+									<div class="role-table">
+										{#each ROLE_META as role (role.id)}
+											<div class="role-row">
+												<div class="role-row-label">
+													<div class="role-row-name">{role.name}</div>
+													<div class="role-row-hint">{role.hint}</div>
+												</div>
+												<select class="select" name={role.id}>
+													<option value="" selected={!savedModels[role.id]}
+														>Use endpoint default</option
+													>
+													{#each modelOptions as model (model)}
+														<option value={model} selected={savedModels[role.id] === model}
+															>{model}</option
+														>
+													{/each}
+												</select>
+											</div>
+										{/each}
+									</div>
+									<div class="settings-actions">
+										{#if form?.scope === 'assistant-discover' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{:else if form?.scope === 'assistant-discover' && 'models' in form}
+											<span class="field-hint" role="status" style="color:var(--status-final);"
+												>Found {discoveredModels.length} model{discoveredModels.length === 1
+													? ''
+													: 's'}.</span
+											>
+										{:else if form?.scope === 'assistant-models' && form.message}
+											<span class="field-hint" role="alert" style="color:var(--danger);"
+												>{form.message}</span
+											>
+										{:else if form?.scope === 'assistant-models' && form.saved}
+											<span class="field-hint" role="status" style="color:var(--status-final);"
+												>Saved.</span
+											>
+										{/if}
+										<button
+											type="submit"
+											class="btn btn-ghost"
+											formaction="?/discoverAssistantModels">Discover models</button
+										>
+										<button type="submit" class="btn btn-primary">Save models</button>
+									</div>
+								</form>
+							</div>
+						</div>
+					</div>
+				</section>
+
 				<section class="admin-section" class:active={active === 'display'}>
 					<div class="admin-head">
 						<p class="admin-eyebrow">Account</p>

@@ -72,3 +72,51 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.getByRole('button', { name: 'Save display' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 });
+
+test('account assistant: kill switch, identity, and endpoint persist', async ({ page }) => {
+	await page.goto('/account/assistant');
+	await expect(page.getByRole('heading', { name: 'Assistant', level: 1 })).toBeVisible();
+
+	// The real checkbox is a zero-size hidden input behind the toggle track, so
+	// drive it by clicking the wrapping label (the visible switch); toggle-xl is
+	// unique to this control. The status span (one element, exact text) reads the
+	// state back without the substring ambiguity a loose getByText would hit.
+	const killToggle = page.locator('label.toggle-xl');
+	const status = page.locator('.ks-status');
+	const gated = page.locator('[data-ai-gated]');
+
+	// Normalize to off first: this test mutates account state, and a prior retry
+	// may have left the Assistant on.
+	await expect(status).toBeVisible();
+	if ((await status.textContent())?.trim() === 'Assistant on') await killToggle.click();
+	await expect(status).toHaveText('Assistant off');
+	await expect(gated).toHaveClass(/off/);
+
+	// Turning the kill switch off enables the Assistant; the toggle auto-submits
+	// and the page reloads with the config lit up.
+	await killToggle.click();
+	await expect(status).toHaveText('Assistant on');
+	await expect(gated).not.toHaveClass(/off/);
+
+	// Identity saves a name and tone and reads them back after a reload. Exact
+	// labels: "Name" otherwise also matches "Display name" and "Pen name".
+	await page.getByLabel('Name', { exact: true }).fill('Margin');
+	await page.getByLabel('Style', { exact: true }).selectOption('concise');
+	await page.getByRole('button', { name: 'Save identity' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await page.reload();
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Margin');
+
+	// Endpoint saves a base URL; the saved key hint only appears once a key is set.
+	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
+	await page.getByRole('button', { name: 'Save endpoint' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await page.reload();
+	await expect(page.getByLabel('Base URL', { exact: true })).toHaveValue(
+		'http://ollama.local:11434/v1'
+	);
+
+	// Turn it back off so repeated runs start from the known default.
+	await killToggle.click();
+	await expect(status).toHaveText('Assistant off');
+});

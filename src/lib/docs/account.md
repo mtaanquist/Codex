@@ -1,8 +1,8 @@
 # Your account
 
-Open your account page from the avatar menu in the top bar. It has three
-sections: Profile, Security, and Display. Changes save when you select the save
-button in each block.
+Open your account page from the avatar menu in the top bar. It has four
+sections: Profile, Security, Assistant, and Display. Changes save when you
+select the save button in each block.
 
 ## Profile
 
@@ -18,6 +18,30 @@ it, your initials stand in.
 
 The public page and avatar only appear to visitors once an admin has enabled
 publishing for your account and your profile is set to public.
+
+## Assistant
+
+The Assistant is an optional writing helper that connects to a language-model
+endpoint you choose and control. It is off until you turn it on, and it never
+contacts a model on its own.
+
+- **Kill switch**: the switch at the top turns the whole Assistant on or off. While
+  it shows "Assistant off", nothing you write is ever sent to a model. Turn it off
+  to use the Assistant; turn it back on to stop everything at once. The settings
+  below are dimmed while the Assistant is off.
+- **Identity**: give the Assistant a name and pick a style for how it writes back.
+  The name shows wherever the Assistant appears. A single story can override the
+  style later.
+- **Endpoint**: enter the base URL of any OpenAI-compatible endpoint, such as a
+  local Ollama server or a hosted service, and an API key if it needs one. Leave
+  the key blank to keep the one already saved. Select Test connection to send a
+  short message and see the model reply.
+- **Models per role**: pick which model handles each kind of help. Select Discover
+  models to fill the lists from your endpoint, choose one per role, then save. Roles
+  with no model chosen fall back to the endpoint's default. A single story can
+  override these too.
+
+Your words are sent only to the endpoint you set here.
 
 ## Display
 

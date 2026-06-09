@@ -1,10 +1,15 @@
 # The Assistant (LLM integration)
 
-Status: design sketch for Phase 9. Nothing here is built. This document
-expands the deferred "AI" notes in `design.md` and the single Phase 9
-roadmap bullet into a working spec. It is deliberately ahead of the code,
-so treat the numbers and prompts as placeholders (marked TODO) until a real
-prose corpus is available to calibrate them against.
+Status: Phase 9, in progress. The server-only gateway plumbing is built,
+tested, and merged to `develop` (the `src/lib/server/llm/` module: config,
+egress guard, OpenAI-compatible provider, context assembly, tools, and the
+setup helpers). The first surface is built: the account Assistant settings
+page at `/account/assistant` (PR #325). The remaining surfaces (chat, inline,
+review, the admin egress panel, the per-story mute) and the worker jobs are
+not yet built; the "Frontend wiring map" at the end tracks each one. Parts of
+this document remain deliberately ahead of the code, so treat the numbers and
+prompts as placeholders (marked TODO) until a real prose corpus is available
+to calibrate them against.
 
 The feature is named the Assistant throughout, in the UI and the code. "AI"
 and "LLM" describe the mechanism; the Assistant is the thing the writer
@@ -746,13 +751,14 @@ Not a contract, but the natural order, foundations first:
 8. Deferred refinements: chat persistence and browsing; the native Claude
    adapter.
 
-## Frontend wiring map (backend status as of the feat/assistant-gateway branch)
+## Frontend wiring map (backend on develop; account settings surface on PR #325)
 
 A note for the frontend agent. The server-only plumbing is built and tested
-under `src/lib/server/llm/`; the surfaces (SSE endpoints, form actions, Svelte
-UI, worker jobs) are not. This maps each feature to what it should call. Status
-markers: [built] server-side helper exists and is tested; [to build] the
-frontend agent creates it.
+under `src/lib/server/llm/`, and the first surface (the account Assistant
+settings page) is built; the rest of the surfaces (SSE endpoints, the other
+form actions, Svelte UI, worker jobs) are not. This maps each feature to what
+it should call. Status markers: [built] server-side helper exists and is
+tested, or the surface is built; [to build] the frontend agent creates it.
 
 Everything that touches the key or the endpoint is server-only. The browser
 never calls the model endpoint; a SvelteKit `+server.ts` (SSE) or a form action
@@ -780,7 +786,11 @@ calls the gateway, which proxies through the egress guard.
 - [built] The master toggle (kill switch) is the `enabled` field. Keep the
   privacy disclosure on this control (see "The kill switch as a prominent
   control").
-- [to build] The settings page + a form action that calls `saveAccountLlmConfig`.
+- [built] The settings page at `/account/assistant` (the account sidebar shell's
+  Assistant section). Form actions `toggleAssistant`, `saveAssistantIdentity`,
+  `saveAssistantEndpoint`, `saveAssistantModels` call `saveAccountLlmConfig` (each
+  reads the current view and overlays only its fields). The kill switch reads
+  inverted (engaged means off) and dims the config below while off.
 
 ### Endpoint setup helpers (so a non-technical writer does not type a model name)
 
@@ -794,7 +804,10 @@ calls the gateway, which proxies through the egress guard.
   `probeEndpoint(db, conn, model)` - returns `{ supportsStreaming, supportsTools }`
   for a "tools: supported / not" line. Save these onto the config (via
   `saveAccountLlmConfig`) so the gateway withholds tools when unsupported.
-- [to build] Form actions / buttons that call these and a model `<select>`.
+- [built] On `/account/assistant`: a "Test connection" button (`testAssistant`
+  action) and a "Discover models" button (`discoverAssistantModels`) that fills
+  the per-role model `<select>`s. Capability probing on this screen is deferred
+  (no "tools: supported" line yet); the probe helpers remain available.
 
 ### Admin egress policy (the SSRF control)
 
