@@ -91,7 +91,7 @@ The editor exists at two scopes: **story** and **universe**. Both use the same t
 
 This structure — universes as first-class editable surfaces, not just settings containers — is important for worldbuilders and TTRPG designers who may never write a prose "story" but need a full editor for characters, places, and lore. It's also important for novelists adding a character who'll cross multiple books: the natural home for such a character is the universe, not whichever book they happened to appear in first.
 
-Across every view at either scope, the right sidebar has three tabs: **Reference** (panels for what's in view), **History** (the revision timeline for whatever is currently being edited), and **Session** (quick settings that govern how you're working in this moment). Each tab has a distinct semantic axis: *what's in view*, *what was in view*, and *how you're working with it*. A fourth surface many apps ship — a command palette — is deferred, not in v1.
+Across every view at either scope, the right sidebar has four tabs: **Reference** (panels for what's in view), **History** (the revision timeline for whatever is currently being edited), **Session** (quick settings that govern how you're working in this moment), and **Assistant** (the LLM chat surface). Each tab has a distinct semantic axis: *what's in view*, *what was in view*, *how you're working with it*, and *who you're working with*. The Assistant is deferred LLM work, not in v1 (see `assistant.md` and "AI: deferred" below); the tab is its reserved home, so the chat is a peer of the other three rather than nested inside Session. A separate surface many apps ship — a command palette — is deferred, not in v1.
 
 ### The Session tab
 
@@ -99,7 +99,7 @@ The Session tab is where the preferences that actually change mid-session live �
 
 Four quick-settings controls sit at the top: **entity autocomplete** (off / inline ghost-text / popup menu), **underline known entities** (toggle), **theme** (auto / light / dark), and **focus mode** (toggle). Each has a canonical home in full settings; Session just surfaces the commonly-flipped ones. Changes apply forward, not retroactively — switching autocomplete style mid-sentence affects the next suggestion, not the one currently on screen.
 
-Below the quick settings, the Session tab is intentionally empty in v1. It is the eventual home of an LLM chat surface (rubber duck, co-author, editor roles) when that work is taken on; for now, leaving the space reserved keeps the tab's purpose clear without rushing the feature behind it. An *AI assistance for this story* toggle will join the quick settings above when there is something to toggle.
+The Session tab is for the working preferences above, not the Assistant. When the deferred LLM work is taken on, its chat surface (rubber duck, co-author, editor roles) lives in its own **Assistant** tab in the right sidebar, a peer of Reference, History, and Session, not nested here (see `assistant.md`). The per-story "Assistant for this story" on/off lives with that tab.
 
 ### Entity mentions
 
@@ -191,6 +191,8 @@ The instance serves these `/@handle` pages directly for its own users, the same 
 
 Codex has no AI features in v1. The decision to defer is deliberate, not incidental. The editor and the planning surface have to be good on their own merits first; the prose corpus that emerges from real use is the best calibration material for whatever assistance eventually arrives; and the temptation to build the LLM gateway early is exactly the kind of interesting tangent that wrecks solo projects.
 
+The full design for this work (named the Assistant) lives in `assistant.md`: the bring-your-own-key configuration, the admin egress policy, the gateway module, the chat/inline/review surfaces, and how it reuses the existing review framework. The sketch below is the shape; `assistant.md` is the spec.
+
 When that work is eventually taken on, the planned shape is:
 
 1. **Off.** No LLM surfaces shown. Default for every account and every story.
@@ -243,7 +245,7 @@ Portability is achieved through export, not through storage format. The database
 - **Editing in the continuous view.** Resolved: the read-only continuous view shipped with the core writing loop, and author feedback confirmed editing in place is needed, scheduled as roadmap step 23b. What remains open is the default for scene marks inside the flow (shown or hidden) until the preferences UI exists to make it a choice.
 - **Plotlines or arcs as first-class entities.** Currently modelled through scene tags and metadata `jsonb`. May be promoted to their own table if usage shows it's needed.
 - **Command palette (Ctrl+K).** Desirable long-term, not v1. Would absorb search and cross-view navigation into one surface.
-- **Session tab refinements (deferred with AI).** When a chat panel eventually lives below the quick settings, it will need persistence, resumption, and browsing of past conversations. The quick-settings portion may also need a collapse control once chat sessions grow long enough to compete for vertical space. None of this matters until the chat exists.
+- **Assistant tab refinements (deferred with AI).** When the Assistant chat tab exists, it will need persistence, resumption, and browsing of past conversations. None of this matters until the chat exists. See `assistant.md`.
 - **Entity colours with meaning.** Character badges currently take a deterministic colour from the name. The better model: universe-defined categories with chosen colours (the `entity_categories` table already carries `color` for lore), opened up so characters and places can optionally join one - a nullable `category_id`, purely additive. Grouping the cast by colour then carries whatever meaning the author gives it (factions, families, POV tiers). Falls naturally out of step 16, when the category machinery is built for lore.
 - **How much markdown the editor should show.** Bodies are stored as markdown; today the editor shows the raw marks and the continuous view renders plain text. A proper renderer arrives with exports and the public reading pages (Phase 4), and the continuous view picks it up then. In-editor affordances (styled emphasis and headings while writing, the prototype's formatting toolbar) are candidates after that, and how much markup stays visible while writing is likely a display preference; worth testing on real authors before committing to a default.
 - **Preference layering.** Display preferences live on the user (`users.preferences`), but several (content font, density, markdown affordance, scene marks in the continuous flow) plausibly want per-story overrides merged at render time, the same user-plus-story override pattern already modelled for `llm_config`. A story-level preferences column is an additive migration when this is built.
