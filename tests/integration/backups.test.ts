@@ -6,6 +6,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	backupKey,
+	latestBackupKey,
 	listRecentBackupRuns,
 	runBackup,
 	type BackupConfig,
@@ -89,6 +90,9 @@ describe('runBackup', () => {
 			store,
 			databaseUrl: TEST_DATABASE_URL,
 			dumpCommand: ['printf', 'fake-dump-bytes'],
+			// The fake dump is not a real archive, so hash its bytes directly
+			// rather than running the production pg_restore renderer over them.
+			hashCommand: (scratch) => ['cat', scratch],
 			now
 		});
 		expect(result).toMatchObject({ ok: true, skipped: false });
@@ -115,6 +119,7 @@ describe('runBackup', () => {
 			store,
 			databaseUrl: TEST_DATABASE_URL,
 			dumpCommand: ['printf', 'fake-dump-bytes'],
+			hashCommand: (scratch) => ['cat', scratch],
 			now: new Date('2026-06-04T13:00:00Z')
 		});
 		expect(again).toMatchObject({ ok: true, skipped: true, key: null });
@@ -127,6 +132,7 @@ describe('runBackup', () => {
 			store,
 			databaseUrl: TEST_DATABASE_URL,
 			dumpCommand: ['printf', 'different-bytes'],
+			hashCommand: (scratch) => ['cat', scratch],
 			now: new Date('2026-06-04T14:00:00Z')
 		});
 		expect(changed).toMatchObject({ ok: true, skipped: false });
@@ -194,5 +200,30 @@ describe('pg_dump round trip', () => {
 		const { stdout } = await run('pg_restore', ['--list', dumpFile]);
 		expect(stdout).toContain('TABLE DATA');
 		await rm(dumpFile);
+
+		// The real regression: a second backup of the unchanged database hashes
+		// the same and skips the upload. The custom archive's header timestamp
+		// (and the per-run backup_runs row) used to defeat this, so the skip
+		// never fired in production. The database is quiescent during this test.
+		const second = await runBackup(db, 'manual', {
+			config,
+			store,
+			databaseUrl: TEST_DATABASE_URL
+		});
+		expect(second).toMatchObject({ ok: true, skipped: true, key: null });
+		expect(objects.size).toBe(1);
+	});
+});
+
+describe('latestBackupKey', () => {
+	it('picks the newest real backup and ignores non-backup objects', () => {
+		const older = backupKey('codex-backups', new Date('2026-06-01T01:00:00Z'));
+		const newer = backupKey('codex-backups', new Date('2026-06-02T01:00:00Z'));
+		// A leftover probe object sorts lexically after the codex- keys, so a
+		// plain sort().at(-1) would wrongly pick it as latest.
+		const probe = 'codex-backups/connection-probe';
+		expect(latestBackupKey([older, probe, newer])).toBe(newer);
+		expect(latestBackupKey([probe])).toBeNull();
+		expect(latestBackupKey([])).toBeNull();
 	});
 });
