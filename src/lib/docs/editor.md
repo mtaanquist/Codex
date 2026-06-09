@@ -90,6 +90,14 @@ To flag a spot to come back to, select some text and add a mark. Marks show in t
 
 The History tab on the right keeps past versions of the open scene. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Select "Preview" on a version to read it or compare it with the current text, and "Restore this version" to bring it back. Restoring never deletes history: the version you replaced stays in the list.
 
+## The Assistant
+
+When you have set up the Assistant on your account page, an Assistant tab appears on the right alongside Reference, History, and Session. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
+
+The conversation is not saved. It clears when you reload or leave the page.
+
+To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted. This does not change your other stories or your account setting.
+
 ## Spelling
 
 The browser's spell-checker underlines possible misspellings as you write. Set the language your prose is written in on your account page, under Display, so the right dictionary is used; "Follow my browser" uses whatever your browser is set to. Turn spell-check off there if the underlines distract you. Both settings can be overridden per story in the story's settings.

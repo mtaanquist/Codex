@@ -1,0 +1,432 @@
+<script lang="ts">
+	// The right pane's Assistant tab: an ephemeral chat with the writing
+	// Assistant, grounded in the open story. The transcript lives in the client
+	// and is lost on reload (persistence is a later refinement). The server holds
+	// the key and endpoint; this only POSTs the transcript and streams tokens
+	// back over Server-Sent Events.
+	import { enhance } from '$app/forms';
+	import Icon from './Icon.svelte';
+
+	let {
+		storyId,
+		sceneId = null,
+		name,
+		storyTitle,
+		muted,
+		suggestions = []
+	}: {
+		storyId: string;
+		// The open scene, sent as the focus of context assembly; null off a scene.
+		sceneId?: string | null;
+		// The Assistant's display name, shown over its replies.
+		name: string;
+		storyTitle: string;
+		// This story has muted the Assistant; the tab stays to un-mute.
+		muted: boolean;
+		// Grounded starter prompts shown when the conversation is empty.
+		suggestions?: string[];
+	} = $props();
+
+	type Message = { role: 'user' | 'assistant'; content: string };
+	type StreamEvent =
+		| { type: 'token'; text: string }
+		| { type: 'done' }
+		| { type: 'error'; message: string };
+
+	// Seeded once from the story open at mount; the transcript is then client-held.
+	// svelte-ignore state_referenced_locally
+	const opening = `I've read your codex for ${storyTitle}. Ask me about your characters, check continuity, or work a scene.`;
+	let messages = $state<Message[]>([{ role: 'assistant', content: opening }]);
+	let input = $state('');
+	let busy = $state(false);
+	let composer = $state<HTMLTextAreaElement>();
+	let scroll = $state<HTMLDivElement>();
+	let pending: AbortController | null = null;
+
+	$effect(() => {
+		// Re-read on every transcript change so the newest turn stays in view.
+		void messages.length;
+		void busy;
+		if (scroll) scroll.scrollTop = scroll.scrollHeight;
+	});
+
+	function appendToReply(text: string) {
+		const last = messages[messages.length - 1];
+		if (last && last.role === 'assistant') {
+			last.content += text;
+		}
+	}
+
+	async function send(text?: string) {
+		const question = (text ?? input).trim();
+		if (!question || busy) return;
+		input = '';
+		if (composer) composer.style.height = 'auto';
+		// The turn the model answers, then an empty reply to stream into.
+		const turns: Message[] = [...messages, { role: 'user', content: question }];
+		messages = [...turns, { role: 'assistant', content: '' }];
+		busy = true;
+		const controller = new AbortController();
+		pending = controller;
+		try {
+			const response = await fetch('/api/assistant/chat', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					storyId,
+					sceneId,
+					messages: turns.map((m) => ({ role: m.role, content: m.content }))
+				}),
+				signal: controller.signal
+			});
+			if (!response.ok || !response.body) {
+				appendToReply(
+					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
+				);
+				return;
+			}
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let streamError = '';
+			for (;;) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+				const frames = buffer.split('\n\n');
+				buffer = frames.pop() ?? '';
+				for (const frame of frames) {
+					const line = frame.trim();
+					if (!line.startsWith('data:')) continue;
+					const json = line.slice(5).trim();
+					if (!json) continue;
+					const event = JSON.parse(json) as StreamEvent;
+					if (event.type === 'token') appendToReply(event.text);
+					else if (event.type === 'error') streamError = event.message;
+				}
+			}
+			const reply = messages[messages.length - 1];
+			if (reply && reply.role === 'assistant' && reply.content === '') {
+				reply.content = streamError || 'The Assistant did not return a response.';
+			}
+		} catch {
+			if (!controller.signal.aborted) {
+				appendToReply('Sorry, something went wrong reaching the Assistant.');
+			}
+		} finally {
+			busy = false;
+			pending = null;
+		}
+	}
+
+	function stop() {
+		pending?.abort();
+	}
+
+	function onKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !event.shiftKey) {
+			event.preventDefault();
+			void send();
+		}
+	}
+
+	function grow(event: Event) {
+		const el = event.target as HTMLTextAreaElement;
+		el.style.height = 'auto';
+		el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+		input = el.value;
+	}
+
+	// Crude **bold** rendering, matching the prototype: split into bold and plain
+	// spans so the bubble shows emphasis without a full markdown pass.
+	function segments(text: string): { bold: boolean; text: string }[] {
+		return text
+			.split(/(\*\*[^*]+\*\*)/g)
+			.map((part) =>
+				part.startsWith('**') && part.endsWith('**')
+					? { bold: true, text: part.slice(2, -2) }
+					: { bold: false, text: part }
+			);
+	}
+
+	function paragraphs(text: string): string[] {
+		return text.split(/\n{2,}/);
+	}
+</script>
+
+{#if muted}
+	<div class="assistant-muted">
+		<p>The Assistant is off for this story.</p>
+		<p class="muted-hint">
+			Turn it back on to chat about this book, review scenes, and write alongside it.
+		</p>
+		<form method="POST" action="?/unmuteAssistant" use:enhance>
+			<button class="btn btn-primary" type="submit">Turn on for this story</button>
+		</form>
+	</div>
+{:else}
+	<div class="assistant">
+		<div class="assistant-head">
+			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
+			<form method="POST" action="?/muteAssistant" use:enhance>
+				<button class="mute-link" type="submit" title="Hide the Assistant for this story">
+					Mute for this story
+				</button>
+			</form>
+		</div>
+		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
+			{#each messages as message, index (index)}
+				{#if message.role === 'user'}
+					<div class="msg user">{message.content}</div>
+				{:else}
+					<div class="msg assistant-msg">
+						<div class="who"><Icon name="sparkles" size={12} /> {name}</div>
+						<div class="bubble">
+							{#if message.content === '' && busy && index === messages.length - 1}
+								<div class="typing"><i></i><i></i><i></i></div>
+							{:else}
+								{#each paragraphs(message.content) as para, pi (pi)}
+									<p>
+										{#each segments(para) as seg, si (si)}
+											{#if seg.bold}<strong>{seg.text}</strong>{:else}{seg.text}{/if}
+										{/each}
+									</p>
+								{/each}
+							{/if}
+						</div>
+					</div>
+				{/if}
+			{/each}
+		</div>
+
+		{#if messages.length <= 1 && !busy && suggestions.length > 0}
+			<div class="suggest">
+				{#each suggestions as suggestion (suggestion)}
+					<button class="suggest-chip" type="button" onclick={() => send(suggestion)}>
+						{suggestion}
+					</button>
+				{/each}
+			</div>
+		{/if}
+
+		<div class="composer">
+			<textarea
+				bind:this={composer}
+				rows="1"
+				placeholder="Ask about your story..."
+				value={input}
+				oninput={grow}
+				onkeydown={onKeydown}
+			></textarea>
+			{#if busy}
+				<button class="send-btn" type="button" title="Stop generating" onclick={stop}>
+					<span class="stop-glyph"></span>
+				</button>
+			{:else}
+				<button
+					class="send-btn"
+					type="button"
+					disabled={!input.trim()}
+					title="Send"
+					onclick={() => send()}
+				>
+					<Icon name="send" size={16} />
+				</button>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+<style>
+	/* Ported from the app-design prototype's Assistant panel (right.jsx + theme.css). */
+	.assistant {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		min-height: 0;
+	}
+	.assistant-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 10px 14px;
+		border-bottom: 1px solid var(--border);
+	}
+	.assistant-name {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-muted);
+	}
+	.mute-link {
+		border: 0;
+		background: none;
+		padding: 0;
+		font-size: 12px;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+	.mute-link:hover {
+		color: var(--text);
+		text-decoration: underline;
+	}
+	.chat-scroll {
+		flex: 1;
+		overflow: auto;
+		padding: 16px 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		min-height: 0;
+	}
+	.msg {
+		font-size: 14px;
+		line-height: 1.55;
+		max-width: 100%;
+	}
+	.msg.user {
+		align-self: flex-end;
+		background: var(--accent);
+		color: var(--accent-contrast);
+		padding: 9px 13px;
+		border-radius: 13px 13px 4px 13px;
+		max-width: 85%;
+		white-space: pre-wrap;
+	}
+	.msg.assistant-msg {
+		align-self: flex-start;
+		color: var(--text);
+		max-width: 100%;
+	}
+	.msg.assistant-msg .who {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		font-size: 11px;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		margin-bottom: 6px;
+	}
+	.msg.assistant-msg .bubble {
+		background: var(--bg-card);
+		border: 1px solid var(--border);
+		padding: 11px 13px;
+		border-radius: 4px 13px 13px 13px;
+	}
+	.msg.assistant-msg .bubble p {
+		margin: 0 0 0.7em;
+	}
+	.msg.assistant-msg .bubble p:last-child {
+		margin: 0;
+	}
+	.typing {
+		display: inline-flex;
+		gap: 4px;
+		align-items: center;
+		padding: 4px 0;
+	}
+	.typing i {
+		width: 6px;
+		height: 6px;
+		border-radius: 99px;
+		background: var(--text-faint);
+		animation: blink 1.2s infinite;
+	}
+	.typing i:nth-child(2) {
+		animation-delay: 0.2s;
+	}
+	.typing i:nth-child(3) {
+		animation-delay: 0.4s;
+	}
+	@keyframes blink {
+		0%,
+		80%,
+		100% {
+			opacity: 0.25;
+		}
+		40% {
+			opacity: 1;
+		}
+	}
+	.suggest {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 0 14px 6px;
+	}
+	.suggest-chip {
+		text-align: left;
+		border: 1px solid var(--border);
+		background: var(--bg-card);
+		border-radius: 10px;
+		padding: 9px 12px;
+		font-size: 13px;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	.suggest-chip:hover {
+		color: var(--text);
+		border-color: var(--border-strong);
+		background: var(--bg-hover);
+	}
+	.composer {
+		border-top: 1px solid var(--border);
+		padding: 12px;
+		display: flex;
+		gap: 8px;
+		align-items: flex-end;
+	}
+	.composer textarea {
+		flex: 1;
+		resize: none;
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		padding: 9px 11px;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: 13.5px;
+		line-height: 1.45;
+		max-height: 120px;
+		outline: none;
+	}
+	.composer textarea:focus {
+		border-color: var(--accent-line);
+	}
+	.send-btn {
+		flex: none;
+		width: 36px;
+		height: 36px;
+		border-radius: 9px;
+		border: 0;
+		background: var(--accent);
+		color: var(--accent-contrast);
+		display: grid;
+		place-items: center;
+		cursor: pointer;
+	}
+	.send-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+	.stop-glyph {
+		width: 11px;
+		height: 11px;
+		border-radius: 2px;
+		background: var(--accent-contrast);
+	}
+	.assistant-muted {
+		padding: 28px 22px;
+		text-align: center;
+		color: var(--text-muted);
+		font-size: 14px;
+	}
+	.assistant-muted .muted-hint {
+		font-size: 12.5px;
+		color: var(--text-faint);
+		margin: 6px 0 16px;
+	}
+</style>

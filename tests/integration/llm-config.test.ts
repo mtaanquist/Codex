@@ -10,8 +10,13 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 // The config decrypts the API key on resolve, so a secret must be set.
 process.env.APP_SECRET = process.env.APP_SECRET || 'llm-config-test-secret';
 
-const { accountLlmView, resolveLlmConfig, saveAccountLlmConfig, saveStoryLlmOverride } =
-	await import('../../src/lib/server/llm/config');
+const {
+	accountLlmView,
+	assistantLayout,
+	resolveLlmConfig,
+	saveAccountLlmConfig,
+	saveStoryLlmOverride
+} = await import('../../src/lib/server/llm/config');
 const { egressPolicy, saveEgressPolicy } = await import('../../src/lib/server/llm/egress');
 
 let pool: pg.Pool;
@@ -185,6 +190,70 @@ describe('story override merge', () => {
 		const resolved = await resolveLlmConfig(db, userId, storyId);
 		expect(resolved.gate.surfacesEnabled).toBe(false);
 		expect(resolved.gate.tabEnabled).toBe(false);
+	});
+});
+
+describe('assistant layout (the editor page gate)', () => {
+	it('renders no Assistant when the account is unconfigured', async () => {
+		const layout = await assistantLayout(db, userId, storyId);
+		expect(layout).toEqual({
+			tabEnabled: false,
+			surfacesEnabled: false,
+			muted: false,
+			name: 'Assistant'
+		});
+	});
+
+	it('shows the tab and live surfaces when configured and enabled', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: 'Muse',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		});
+		const layout = await assistantLayout(db, userId, storyId);
+		expect(layout).toEqual({
+			tabEnabled: true,
+			surfacesEnabled: true,
+			muted: false,
+			name: 'Muse'
+		});
+	});
+
+	it('keeps the tab but reports muted when the story is muted', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: 'Muse',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		});
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		const layout = await assistantLayout(db, userId, storyId);
+		expect(layout.tabEnabled).toBe(true);
+		expect(layout.surfacesEnabled).toBe(false);
+		expect(layout.muted).toBe(true);
+	});
+
+	it('stays dark when the master switch is off, ignoring any story override', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: false,
+			assistantName: 'Muse',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		});
+		const layout = await assistantLayout(db, userId, storyId);
+		expect(layout.tabEnabled).toBe(false);
+		expect(layout.surfacesEnabled).toBe(false);
+		expect(layout.muted).toBe(false);
 	});
 });
 

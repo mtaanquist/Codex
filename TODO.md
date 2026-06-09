@@ -686,6 +686,30 @@ endpoint. Started 2026-06-09.
       deferred. Lint, check, unit (333), the LLM + account integration specs, and
       build pass locally; Playwright could not download a browser in the sandbox,
       so the e2e is unverified locally and left for CI.
+- [ ] Chat surface + layout gate + per-story mute (second surface; branch
+      `feat/assistant-chat`). The gate finally renders something: a new
+      `assistantLayout(db, userId, storyId)` (key-free: `tabEnabled`,
+      `surfacesEnabled`, `muted`, display `name`) feeds the story editor's
+      `load`, the way asset-backed features hide when no bucket is set, so the
+      Assistant tab appears only when the account is configured and on. The tab
+      is a fourth peer of Reference/History/Session (`AssistantPanel.svelte`,
+      ported from the prototype's chat panel + CSS): an ephemeral, client-held
+      transcript, grounded starter chips drawn from the story's cast, a composer,
+      and a stop button. It streams from a new `POST /api/assistant/chat` SSE
+      `+server.ts` that verifies ownership, assembles context
+      (`assembleContext` + `buildSystemMessage`), runs `gateway.stream` with
+      `role: 'chat'` + tools, forwards `token`/`done`/`error` frames, and threads
+      the request `AbortSignal` for cancel. A per-user `assistantLimit` bounds
+      open streams. The per-story mute lives on the tab ("Mute for this story" /
+      "Turn on for this story", `muteAssistant`/`unmuteAssistant` actions over
+      `saveStoryLlmOverride`); a muted story keeps the tab to un-mute. Editor
+      help gained a "The Assistant" section. Integration test covers
+      `assistantLayout` (unconfigured / on / muted / master-off); an e2e (in
+      `account.spec.ts`, serialised with the kill-switch test) covers tab gating
+      and the mute round-trip. Deferred: persisted conversations, reference-in-
+      chat, the inline/review/admin surfaces. Lint, check, unit (333), and build
+      pass locally; the DB-backed integration and Playwright specs need Postgres /
+      a browser the sandbox lacks, so they are written but left for CI.
 
 ## Capability review follow-ups (2026-06-06)
 

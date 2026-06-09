@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { uploadLimit, writeLimit } from './rate-limit';
+import { assistantLimit, uploadLimit, writeLimit } from './rate-limit';
 
 // Per-user throttles for the write paths, shared by the autosave endpoints
 // (scene, entity, note) and the asset upload. Both throw a 429 when the budget
@@ -20,5 +20,15 @@ export function rateLimitUploads(userId: string): void {
 	const result = uploadLimit(userId);
 	if (!result.allowed) {
 		error(429, `Too many uploads in a short time. Try again in ${result.retryAfterSeconds}s.`);
+	}
+}
+
+export function rateLimitAssistant(userId: string): void {
+	const result = assistantLimit(userId);
+	if (!result.allowed) {
+		error(
+			429,
+			`Too many Assistant requests in a short time. Try again in ${result.retryAfterSeconds}s.`
+		);
 	}
 }
