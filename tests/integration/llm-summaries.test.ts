@@ -10,6 +10,10 @@ import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
+// Storing the account API key encrypts it with APP_SECRET, so set one before the
+// config helper loads (CI does not set it globally; each file that needs it does).
+process.env.APP_SECRET = process.env.APP_SECRET || 'llm-summaries-test-secret';
+
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 
