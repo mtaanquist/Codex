@@ -13,7 +13,8 @@ import type { ModelMap } from '../../src/lib/server/llm/config';
 import type { Provider } from '../../src/lib/server/llm/providers/types';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
-const { discoverModels, testAccountConnection } = await import('../../src/lib/server/llm/models');
+const { discoverModels, testAccountConnection, probeAccountEndpoint } =
+	await import('../../src/lib/server/llm/models');
 
 let pool: pg.Pool;
 let db: Database;
@@ -128,6 +129,29 @@ describe('testAccountConnection', () => {
 	it('fails gracefully when the endpoint is blocked by the egress guard', async () => {
 		await configure('http://127.0.0.1:9/v1', { chat: 'm' });
 		const result = await testAccountConnection(db, userId); // real provider + egress
+		expect(result.ok).toBe(false);
+	});
+});
+
+describe('probeAccountEndpoint', () => {
+	it('reports the detected capabilities for the setup screen', async () => {
+		await configure('https://api.example.com/v1', { chat: 'm' });
+		const toolCapable: Provider = {
+			...stub,
+			async probe() {
+				return { ok: true, supportsStreaming: true, supportsTools: true };
+			}
+		};
+		const result = await probeAccountEndpoint(db, userId, undefined, {
+			provider: toolCapable,
+			http: noHttp
+		});
+		expect(result).toEqual({ ok: true, supportsStreaming: true, supportsTools: true });
+	});
+
+	it('fails gracefully when the endpoint is blocked by the egress guard', async () => {
+		await configure('http://127.0.0.1:9/v1', { chat: 'm' });
+		const result = await probeAccountEndpoint(db, userId); // real provider + egress
 		expect(result.ok).toBe(false);
 	});
 });

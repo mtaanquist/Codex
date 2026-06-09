@@ -654,8 +654,17 @@ endpoint. Started 2026-06-09.
       needs to pass the `tools` field through to a tool-capable model. Unit
       tests (listModels parse/path/auth) + integration (discovery and test
       happy paths via injected provider, missing endpoint/model, real egress
-      denial). Still open from the tools work: the probe's real tool-capability
-      detection. UI deferred.
+      denial). UI deferred.
+- [ ] Tool-capability detection (finishes the tools work). The probe now sends
+      a one-shot forced-optional tool request and reports `supportsTools` from
+      whether a tool call comes back (best-effort: any error or a plain answer
+      reads as no tools), alongside `supportsStreaming`. `probeAccountEndpoint`
+      / `probeEndpoint` in `llm/models.ts` expose it so the setup screen can
+      show a "tools: supported / not" line next to the discovered models; the
+      flags are meant to be saved onto the config, and the gateway already
+      withholds tools when `supportsTools` is false. Unit tests (tool call
+      detected / rejected) + integration (capabilities reported, egress
+      denial). UI deferred.
 
 ## Capability review follow-ups (2026-06-06)
 

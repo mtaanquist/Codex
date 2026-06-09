@@ -2,6 +2,7 @@ import type {
 	ChatMessage,
 	CompletionRequest,
 	Connection,
+	HttpRequest,
 	ProviderToolCall,
 	Provider,
 	StreamEvent
@@ -99,6 +100,52 @@ function parseToolCalls(raw: unknown): ProviderToolCall[] {
 		}
 	}
 	return calls;
+}
+
+// Probe whether the endpoint and model can call tools: offer one trivial no-arg
+// tool and a prompt that should trigger it, and see whether a tool call comes
+// back. A best-effort heuristic - any error or a plain text answer reads as "no
+// tools" - so the setup screen can show tool support without a false promise.
+async function detectTools(
+	conn: Connection,
+	model: string,
+	http: HttpRequest,
+	signal?: AbortSignal
+): Promise<boolean> {
+	try {
+		const res = await http(endpointUrl(conn.endpoint), {
+			method: 'POST',
+			headers: headers(conn),
+			body: JSON.stringify({
+				model,
+				messages: [{ role: 'user', content: 'Call the ping tool to confirm tools work.' }],
+				max_tokens: 16,
+				tools: [
+					{
+						type: 'function',
+						function: {
+							name: 'ping',
+							description: 'A connectivity probe; call it with no arguments.',
+							parameters: { type: 'object', properties: {}, additionalProperties: false }
+						}
+					}
+				],
+				tool_choice: 'auto',
+				stream: false
+			}),
+			signal
+		});
+		if (res.status < 200 || res.status >= 300) {
+			await res.text().catch(() => '');
+			return false;
+		}
+		const json = JSON.parse(await res.text()) as {
+			choices?: { message?: { tool_calls?: unknown } }[];
+		};
+		return parseToolCalls(json?.choices?.[0]?.message?.tool_calls).length > 0;
+	} catch {
+		return false;
+	}
 }
 
 function truncate(text: string, max = 300): string {
@@ -210,8 +257,7 @@ export const openaiProvider: Provider = {
 			};
 		}
 		// An endpoint that honours stream:true answers as text/event-stream;
-		// one that ignores it returns buffered JSON. Tool support is not probed
-		// here - the tool surface is deferred, so we do not claim it.
+		// one that ignores it returns buffered JSON.
 		const supportsStreaming = (res.headers['content-type'] ?? '').includes('text/event-stream');
 		try {
 			for await (const _chunk of res.body) {
@@ -220,7 +266,8 @@ export const openaiProvider: Provider = {
 		} catch {
 			// Draining is best-effort; the probe already succeeded.
 		}
-		return { ok: true, supportsStreaming, supportsTools: false };
+		const supportsTools = await detectTools(conn, model, http, signal);
+		return { ok: true, supportsStreaming, supportsTools };
 	},
 
 	async listModels(conn, http, signal) {

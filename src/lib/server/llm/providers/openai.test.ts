@@ -224,6 +224,46 @@ describe('openaiProvider.probe', () => {
 		const result = await openaiProvider.probe(conn, 'm', http);
 		expect(result.ok).toBe(false);
 	});
+
+	it('detects tool support when the tools probe returns a tool call', async () => {
+		// The streaming ping carries no tools; the tools probe does.
+		const http: HttpRequest = async (_url, init) => {
+			const body = JSON.parse(init.body ?? '{}');
+			if (body.tools) {
+				return jsonResponse(200, {
+					choices: [
+						{
+							message: {
+								content: '',
+								tool_calls: [
+									{ id: 'c', type: 'function', function: { name: 'ping', arguments: '{}' } }
+								]
+							}
+						}
+					]
+				});
+			}
+			return sseResponse(['data: [DONE]\n']);
+		};
+		expect(await openaiProvider.probe(conn, 'm', http)).toEqual({
+			ok: true,
+			supportsStreaming: true,
+			supportsTools: true
+		});
+	});
+
+	it('reports no tool support when the tools probe is rejected', async () => {
+		const http: HttpRequest = async (_url, init) => {
+			const body = JSON.parse(init.body ?? '{}');
+			if (body.tools) return jsonResponse(400, { error: 'tools not supported' });
+			return sseResponse(['data: [DONE]\n']);
+		};
+		expect(await openaiProvider.probe(conn, 'm', http)).toEqual({
+			ok: true,
+			supportsStreaming: true,
+			supportsTools: false
+		});
+	});
 });
 
 describe('openaiProvider.listModels', () => {
