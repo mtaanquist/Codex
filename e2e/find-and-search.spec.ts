@@ -65,4 +65,21 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await expect
 		.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
 		.toBe(`pin${stamp}`);
+
+	// The same jump into a different, freshly mounted scene must select the
+	// match too. This was the bug: the find ran before the new editor's view
+	// existed and never reapplied, so only same-scene jumps worked.
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.cm-content')).not.toContainText(`pin${stamp}`);
+
+	await page.keyboard.press('Control+k');
+	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
+	const jump = page.locator('.palette-item', { hasText: 'In the text' });
+	await expect(jump).toHaveCount(1);
+	await jump.click();
+	await expect(page.locator('.cm-content')).toContainText(`pin${stamp}`);
+	await expect
+		.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+		.toBe(`pin${stamp}`);
 });
