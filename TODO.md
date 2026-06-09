@@ -556,6 +556,31 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
 > Phase 9 (AI and interop) - or the timeline's calendar design talk,
 > whichever the author wants first.
 
+## Phase 9 - The Assistant (LLM)
+
+Full design in `scratch/system-design/assistant.md`. Building foundations
+first, surfaces later; no bundled model, bring-your-own OpenAI-compatible
+endpoint. Started 2026-06-09.
+
+- [ ] Step 1 - gateway plumbing (server-only, no surfaces). The
+      `$lib/server/llm/` module: `config.ts` (account/story `llm_config`
+      read/merge/decrypt + the pure `assistantGate` and save helpers, reusing
+      `crypto.ts` and the `storyPreferences` null-clear pattern), `egress.ts`
+      (the SSRF guard - pure `classifyAddress`, the block-private / allowlist /
+      open policy in `app_settings`, and a connect-time-`lookup` pinned request
+      that closes the DNS-rebinding window), `providers/` (the adapter seam +
+      the OpenAI-compatible adapter: streaming SSE, buffered complete,
+      test-connection probe), and `gateway.ts` (the one entry: config ->
+      egress -> provider -> stream/complete, with context-assembly and the
+      tool loop left as marked seams). No migration (the jsonb columns and
+      `app_settings` already exist). Unit + integration tests across config
+      merge/decrypt, the egress IP table and policy, the SSE parse, and the
+      gateway gate + real egress denial. Lint, check, unit (305), the new
+      integration specs, and build pass locally. Deferred to their own steps:
+      the SSE `/api/assistant/*` endpoints, all UI (account/story/admin),
+      context assembly, tools, the worker queues, the Assistant-reviewer
+      attribution, and chat persistence.
+
 ## Capability review follow-ups (2026-06-06)
 
 A general capability review (six survey passes over routes, design docs,

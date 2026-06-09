@@ -1,0 +1,172 @@
+import { describe, it, expect } from 'vitest';
+import { openaiProvider } from './openai';
+import type { Connection, HttpRequest, HttpResponse, StreamEvent } from './types';
+
+function encode(parts: string[]): AsyncIterable<Uint8Array> {
+	const encoder = new TextEncoder();
+	return {
+		async *[Symbol.asyncIterator]() {
+			for (const part of parts) yield encoder.encode(part);
+		}
+	};
+}
+
+function sseResponse(frames: string[]): HttpResponse {
+	return {
+		status: 200,
+		headers: { 'content-type': 'text/event-stream' },
+		body: encode(frames),
+		text: async () => frames.join('')
+	};
+}
+
+function jsonResponse(status: number, obj: unknown): HttpResponse {
+	const text = JSON.stringify(obj);
+	return {
+		status,
+		headers: { 'content-type': 'application/json' },
+		body: encode([text]),
+		text: async () => text
+	};
+}
+
+const conn: Connection = { endpoint: 'http://local/v1', apiKey: '' };
+
+async function drain(stream: AsyncIterable<StreamEvent>): Promise<StreamEvent[]> {
+	const out: StreamEvent[] = [];
+	for await (const event of stream) out.push(event);
+	return out;
+}
+
+describe('openaiProvider.chatStream', () => {
+	it('parses streamed token deltas and the [DONE] terminator', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"content":"Hello"}}]}\n',
+			'data: {"choices":[{"delta":{"content":", world"}}]}\n',
+			'data: [DONE]\n'
+		];
+		let calledUrl = '';
+		const http: HttpRequest = async (url) => {
+			calledUrl = url;
+			return sseResponse(frames);
+		};
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(calledUrl).toBe('http://local/v1/chat/completions');
+		expect(events).toEqual([
+			{ type: 'token', text: 'Hello' },
+			{ type: 'token', text: ', world' },
+			{ type: 'done' }
+		]);
+	});
+
+	it('reassembles a frame split across chunk boundaries', async () => {
+		const frames = ['data: {"choi', 'ces":[{"delta":{"content":"Hi"}}]}\n', 'data: [DONE]\n'];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([{ type: 'token', text: 'Hi' }, { type: 'done' }]);
+	});
+
+	it('emits a single error event on a non-2xx status', async () => {
+		const http: HttpRequest = async () => jsonResponse(401, { error: 'bad key' });
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toHaveLength(1);
+		expect(events[0].type).toBe('error');
+	});
+
+	it('emits an error event when the transport throws', async () => {
+		const http: HttpRequest = async () => {
+			throw new Error('connection refused');
+		};
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([{ type: 'error', message: 'connection refused' }]);
+	});
+});
+
+describe('openaiProvider.complete', () => {
+	it('returns the message content', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, { choices: [{ message: { content: 'Done.' } }] });
+		const text = await openaiProvider.complete(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(text).toBe('Done.');
+	});
+
+	it('throws on a non-2xx status', async () => {
+		const http: HttpRequest = async () => jsonResponse(500, { error: 'boom' });
+		await expect(
+			openaiProvider.complete({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		).rejects.toThrow();
+	});
+
+	it('normalises every endpoint variant to the completions path', async () => {
+		const urls: string[] = [];
+		const http: HttpRequest = async (url) => {
+			urls.push(url);
+			return jsonResponse(200, { choices: [{ message: { content: '' } }] });
+		};
+		for (const endpoint of [
+			'http://h',
+			'http://h/',
+			'http://h/v1',
+			'http://h/v1/chat/completions'
+		]) {
+			await openaiProvider.complete(
+				{ model: 'm', messages: [], maxTokens: 1 },
+				{ endpoint, apiKey: '' },
+				http
+			);
+		}
+		expect(urls).toEqual([
+			'http://h/v1/chat/completions',
+			'http://h/v1/chat/completions',
+			'http://h/v1/chat/completions',
+			'http://h/v1/chat/completions'
+		]);
+	});
+});
+
+describe('openaiProvider.probe', () => {
+	it('reports streaming support from a text/event-stream response', async () => {
+		const http: HttpRequest = async () => sseResponse(['data: [DONE]\n']);
+		expect(await openaiProvider.probe(conn, 'm', http)).toEqual({
+			ok: true,
+			supportsStreaming: true,
+			supportsTools: false
+		});
+	});
+
+	it('detects an endpoint that ignored stream and returned JSON', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, { choices: [{ message: { content: 'x' } }] });
+		expect(await openaiProvider.probe(conn, 'm', http)).toEqual({
+			ok: true,
+			supportsStreaming: false,
+			supportsTools: false
+		});
+	});
+
+	it('fails cleanly on a transport error', async () => {
+		const http: HttpRequest = async () => {
+			throw new Error('refused');
+		};
+		const result = await openaiProvider.probe(conn, 'm', http);
+		expect(result.ok).toBe(false);
+	});
+
+	it('fails on a non-2xx status', async () => {
+		const http: HttpRequest = async () => jsonResponse(401, { error: 'unauthorized' });
+		const result = await openaiProvider.probe(conn, 'm', http);
+		expect(result.ok).toBe(false);
+	});
+});
