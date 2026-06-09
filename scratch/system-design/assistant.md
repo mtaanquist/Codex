@@ -26,10 +26,11 @@ columns fit.
   there to help the writer think about their work, not to answer arbitrary
   questions.
 - Not a role-play tool. No character impersonation in UI or schema.
-- Opt-in, off by default, for every account and every story. A writer who
-  never configures an endpoint sees no Assistant UI anywhere: no tab, no
-  editor decorations, no menu items, nothing. See "Gating and
-  discoverability" below.
+- Opt-in, off by default. Enabled at the account level (configure an
+  endpoint, flip the master toggle on); once on, stories inherit it and can be
+  muted one at a time. A writer who never opts in sees no Assistant UI
+  anywhere: no tab, no editor decorations, no menu items, nothing. See
+  "Gating and discoverability" below.
 - It proposes; the human commits. The Assistant never silently changes
   authored content. Every write it makes is presented as a preview, a
   confirm, or a suggested edit the writer accepts or rejects. See "Writes
@@ -37,34 +38,52 @@ columns fit.
 
 ## Gating and discoverability
 
-The Assistant is invisible until the writer asks for it, in two stages. This
-is a hard rule, not a soft default: a writer who has not opted in must see no
-trace of the feature, the same way the asset-backed features (cover,
-edition downloads, avatar upload) hide entirely when no storage bucket is
-configured.
+The Assistant is invisible until the writer asks for it. This is a hard rule,
+not a soft default: a writer who has not opted in must see no trace of the
+feature, the same way the asset-backed features (cover, edition downloads,
+avatar upload) hide entirely when no storage bucket is configured.
 
-1. Not configured (no endpoint set on the account): there is no Assistant
-   anywhere. No Assistant tab in the right sidebar, no "Ask the Assistant" on
+Enablement lives at the account level. There are two account-level conditions
+and one per-story refinement:
+
+1. Configured: an endpoint is set on the account. If not, there is no
+   Assistant anywhere - no tab in the right sidebar, no "Ask the Assistant" on
    the editor right-click menu, no "Review this scene/chapter" on the
    left-sidebar menu, no continuation ghost-text, no suggested-prompt chips.
-   The only Assistant surface that exists is the account settings section
-   where the writer configures an endpoint. Everything else is absent from
-   the DOM, not merely disabled.
+   The only Assistant surface is the account settings section where the writer
+   configures an endpoint. Everything else is absent from the DOM, not merely
+   disabled.
 
-2. Configured but off for this story (the default for every story, even after
-   an endpoint is set): the Assistant tab appears, because it is where the
-   writer turns the Assistant on for the story; until they do, the tab shows
-   an enable prompt rather than a chat. The in-editor and in-menu surfaces
-   stay hidden: no right-click "Ask the Assistant", no left-menu review
-   items, no continuation, no co-author panel. Those appear only once the
-   Assistant is enabled for the story.
+2. Account master toggle (the kill switch): a single account-level on/off.
+   Off means the Assistant is dark everywhere, instantly, regardless of any
+   per-story state, while the endpoint config stays saved - the point of a
+   kill switch is to go dark without tearing down the setup. The writer flips
+   it on once (this is the opt-in), and kills or re-enables from the same
+   account settings section.
 
-So every editor and menu surface is gated on configured AND enabled-for-this-
-story; the tab itself is gated on configured alone (it is the on-switch). The
-gate is checked server-side (the surfaces are not rendered) and reflected in
-the layout data the pages already load, so a disabled Assistant ships no
-client code paths a curious user could trip. Turning the Assistant off again,
-at either the account or the story level, returns the UI to the hidden state.
+When both hold (configured, and the account master on), the Assistant is live
+across the writer's stories by default, with no per-story flipping. This is
+live inheritance through the `storyPreferences` pattern, not a value copied
+onto each story at creation: a story with no override follows the account.
+Copying at creation would break the kill switch, since a later account-off
+would leave each story carrying its own stale `enabled` value and the
+Assistant would stay live on them.
+
+3. Per-story mute: a story can override to disabled, muting the Assistant for
+   that one book. The override only ever subtracts - the account master stays
+   the kill switch, so a per-story setting cannot light the Assistant up when
+   the account is off. On a muted story the editor and menu surfaces hide, but
+   the Assistant tab stays as the un-mute switch.
+
+Concretely: the in-editor and in-menu surfaces (right-click "Ask the
+Assistant", left-menu review items, continuation, co-author) require
+configured AND account-on AND this-story-not-muted; the Assistant tab
+requires configured AND account-on (it is the per-story on/off). When the
+account is unconfigured or the master is off, even the tab is gone and the
+writer manages the Assistant from account settings. The gate is checked
+server-side (the surfaces are not rendered) and reflected in the layout data
+the pages already load, so a dark Assistant ships no client code paths a
+curious user could trip.
 
 ## Configuration: bring your own key
 
@@ -91,20 +110,23 @@ to work.
 The reserved `users.llm_config` and `stories.llm_config` jsonb columns hold
 this. They exist now and are inert (`{}`) in v1.
 
-- `users.llm_config` holds the per-account configuration: endpoint URL, API
-  key, a model-per-role mapping (continuation, co-author, editor, reviewer,
-  chat), and a tool-call budget (the maximum tool calls the Assistant may
-  make in one turn). The key is encrypted at rest using the existing
-  AES-256-GCM helper in `crypto.ts` (keyed from `APP_SECRET`, already used
-  for the SMTP password and the TOTP secret), stored as an encrypted string
-  inside the jsonb the same way the SMTP password is. A blank key on save
-  keeps the stored one.
+- `users.llm_config` holds the per-account configuration: the master `enabled`
+  toggle (the kill switch), endpoint URL, API key, a model-per-role mapping
+  (continuation, co-author, editor, reviewer, chat), and a tool-call budget
+  (the maximum tool calls the Assistant may make in one turn). The key is
+  encrypted at rest using the existing AES-256-GCM helper in `crypto.ts`
+  (keyed from `APP_SECRET`, already used for the SMTP password and the TOTP
+  secret), stored as an encrypted string inside the jsonb the same way the
+  SMTP password is. A blank key on save keeps the stored one.
 - `stories.llm_config` holds per-story overrides, merged over the account
-  config at request time. Per the design line, the override is model
-  selection (and the per-story on/off toggle), not a second endpoint or
-  key. The merge follows the preference-layering pattern already shipped
-  (`storyPreferences`), so "use my account setting" clears the override by
-  deleting the jsonb key.
+  config at request time. The override is model selection and a per-story
+  mute (`enabled: false`); not a second endpoint, key, or tool budget. The
+  merge follows the preference-layering pattern already shipped
+  (`storyPreferences`): a story with no `enabled` override inherits the
+  account master (so a story is on by default once the account is on), and
+  "use my account setting" clears the override by deleting the jsonb key. A
+  per-story override never overrides the account kill switch upward - account
+  off is dark everywhere.
 
 Configuration lives in the account settings (a new Assistant section) and,
 for the per-story pieces, in story settings next to the existing editor
@@ -192,9 +214,11 @@ older `design.md` line that reserved space for the chat below the Session
 tab's quick settings; that section of `design.md` needs a follow-up edit to
 match (the right sidebar now has four tabs, not three, and the Assistant is
 a distinct semantic axis: who you are working with). The Session tab keeps
-its quick settings; the per-story "Assistant for this story" on/off lives
-with the Assistant tab (greyed with a configure prompt when no endpoint is
-set, rather than hidden, so the feature is discoverable).
+its quick settings; the per-story "Assistant for this story" mute lives with
+the Assistant tab (it inherits the account default, so a story is on unless
+muted; see "Gating and discoverability"). When the account is unconfigured or
+the master toggle is off, the tab is absent entirely, not greyed - the writer
+configures and enables the Assistant from account settings.
 
 The tab, from the prototype:
 
@@ -550,8 +574,8 @@ the reconcile-sweep pattern used for stale mentions applies directly.
 ## Schema touchpoints
 
 - `users.llm_config`, `stories.llm_config`: already reserved; this fills
-  them in (endpoint, encrypted key, model-per-role; per-story override is
-  model + toggle).
+  them in (account: master `enabled`, endpoint, encrypted key, model-per-role,
+  tool-call budget; per-story override is model selection and a mute).
 - `lore_entries.activation_mode`: already reserved; context assembly
   activates it.
 - `app_settings`: new rows for the egress policy, the host whitelist, and
