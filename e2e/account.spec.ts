@@ -84,28 +84,32 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await expect(page.getByText('Assistant off')).toBeVisible();
 	await expect(gated).toHaveClass(/off/);
 
-	// Turning the kill switch off enables the Assistant; the page reloads with the
-	// config lit up.
-	await killSwitch.uncheck();
+	// Turning the kill switch off enables the Assistant; the toggle auto-submits
+	// and the page reloads with the config lit up. A click (not uncheck) avoids a
+	// race between uncheck's post-state assertion and the submit navigation.
+	await killSwitch.click();
 	await expect(page.getByText('Assistant on')).toBeVisible();
 	await expect(gated).not.toHaveClass(/off/);
 
-	// Identity saves a name and tone and reads them back after a reload.
-	await page.getByLabel('Name').fill('Margin');
-	await page.getByLabel('Style').selectOption({ label: /Concise/ });
+	// Identity saves a name and tone and reads them back after a reload. Exact
+	// labels: "Name" otherwise also matches "Display name" and "Pen name".
+	await page.getByLabel('Name', { exact: true }).fill('Margin');
+	await page.getByLabel('Style', { exact: true }).selectOption('concise');
 	await page.getByRole('button', { name: 'Save identity' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await page.reload();
-	await expect(page.getByLabel('Name')).toHaveValue('Margin');
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Margin');
 
 	// Endpoint saves a base URL; the saved key hint only appears once a key is set.
-	await page.getByLabel('Base URL').fill('http://ollama.local:11434/v1');
+	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
 	await page.getByRole('button', { name: 'Save endpoint' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await page.reload();
-	await expect(page.getByLabel('Base URL')).toHaveValue('http://ollama.local:11434/v1');
+	await expect(page.getByLabel('Base URL', { exact: true })).toHaveValue(
+		'http://ollama.local:11434/v1'
+	);
 
 	// Turn it back off so repeated runs start from the known default.
-	await page.getByRole('checkbox', { name: 'Assistant kill switch' }).check();
+	await page.getByRole('checkbox', { name: 'Assistant kill switch' }).click();
 	await expect(page.getByText('Assistant off')).toBeVisible();
 });
