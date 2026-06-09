@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
@@ -52,6 +52,33 @@
 	// the browser back button returns to the same scroll and caret instead
 	// of the top of the scene.
 	let sceneEditor = $state<SceneEditor>();
+
+	// A quick scene round-trip (A to B and back) faster than the debounced
+	// save lands would let the reload of A return stale prose, which the
+	// remounted editor then owns. Flush the open scene's pending save before
+	// any client navigation, the way splitCurrentScene already does. A full
+	// unload is left to SceneEditor's own pagehide flush.
+	let flushingNav = false;
+	beforeNavigate((nav) => {
+		if (flushingNav || nav.willUnload || !nav.to) return;
+		// Same-document hash jumps (story-view scene anchors) reload nothing.
+		if (
+			nav.from &&
+			nav.to.url.pathname === nav.from.url.pathname &&
+			nav.to.url.search === nav.from.url.search
+		)
+			return;
+		if (!sceneEditor?.isDirty()) return;
+		nav.cancel();
+		flushingNav = true;
+		const url = nav.to.url;
+		void sceneEditor.flushSave().finally(() => {
+			flushingNav = false;
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- replaying the cancelled navigation's own resolved URL
+			void goto(url);
+		});
+	});
+
 	type ScenePosition = { sceneId: string; anchor: number; scroll: number };
 	export const snapshot: Snapshot<ScenePosition | null> = {
 		capture: () => {

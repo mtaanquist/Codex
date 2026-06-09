@@ -306,6 +306,13 @@
 		await saveChain;
 	}
 
+	// Whether an edit is waiting in the debounce window. The page uses this to
+	// flush before navigating away, so a quick scene round-trip never reloads
+	// stale prose over a save still in flight.
+	export function isDirty(): boolean {
+		return dirty;
+	}
+
 	// The continuous view's shared formatting toolbar runs its commands on
 	// this view when this editor holds the caret.
 	export function getView(): EditorView | undefined {
