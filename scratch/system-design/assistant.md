@@ -26,12 +26,45 @@ columns fit.
   there to help the writer think about their work, not to answer arbitrary
   questions.
 - Not a role-play tool. No character impersonation in UI or schema.
-- Off by default for every account and every story. A writer who never
-  configures an endpoint never sees an Assistant surface.
+- Opt-in, off by default, for every account and every story. A writer who
+  never configures an endpoint sees no Assistant UI anywhere: no tab, no
+  editor decorations, no menu items, nothing. See "Gating and
+  discoverability" below.
 - It proposes; the human commits. The Assistant never silently changes
   authored content. Every write it makes is presented as a preview, a
   confirm, or a suggested edit the writer accepts or rejects. See "Writes
   are suggestions" below.
+
+## Gating and discoverability
+
+The Assistant is invisible until the writer asks for it, in two stages. This
+is a hard rule, not a soft default: a writer who has not opted in must see no
+trace of the feature, the same way the asset-backed features (cover,
+edition downloads, avatar upload) hide entirely when no storage bucket is
+configured.
+
+1. Not configured (no endpoint set on the account): there is no Assistant
+   anywhere. No Assistant tab in the right sidebar, no "Ask the Assistant" on
+   the editor right-click menu, no "Review this scene/chapter" on the
+   left-sidebar menu, no continuation ghost-text, no suggested-prompt chips.
+   The only Assistant surface that exists is the account settings section
+   where the writer configures an endpoint. Everything else is absent from
+   the DOM, not merely disabled.
+
+2. Configured but off for this story (the default for every story, even after
+   an endpoint is set): the Assistant tab appears, because it is where the
+   writer turns the Assistant on for the story; until they do, the tab shows
+   an enable prompt rather than a chat. The in-editor and in-menu surfaces
+   stay hidden: no right-click "Ask the Assistant", no left-menu review
+   items, no continuation, no co-author panel. Those appear only once the
+   Assistant is enabled for the story.
+
+So every editor and menu surface is gated on configured AND enabled-for-this-
+story; the tab itself is gated on configured alone (it is the on-switch). The
+gate is checked server-side (the surfaces are not rendered) and reflected in
+the layout data the pages already load, so a disabled Assistant ships no
+client code paths a curious user could trip. Turning the Assistant off again,
+at either the account or the story level, returns the UI to the hidden state.
 
 ## Configuration: bring your own key
 
@@ -382,6 +415,138 @@ Plus the reviewer role this document adds, also on the Review surface, which
 is really the "editor" role realised through the existing comments and
 suggestions framework rather than a bespoke margin-annotation system.
 
+## Implementation architecture
+
+This is the build plan for the spec above. It uses the patterns already in
+the codebase (server-only modules, the pg-boss worker, the review framework,
+CodeMirror compartments, `crypto.ts`, `app_settings`) rather than introducing
+new machinery. All of it is provider-neutral OpenAI-compatible; the native
+Claude path is a second adapter behind the same seam.
+
+### Module layout
+
+Everything that touches the key or the endpoint is server-only, under
+`$lib/server/llm/`:
+
+```
+$lib/server/llm/
+  gateway.ts        - the one public entry: complete(), stream(). Orchestrates
+                      config -> context -> provider -> tool loop -> stream.
+  config.ts         - read users.llm_config + stories.llm_config, merge
+                      (the storyPreferences pattern), decrypt the key.
+  egress.ts         - the SSRF guard: resolve host, validate against the admin
+                      policy, connect to the validated address.
+  providers/
+    types.ts        - the adapter interface (chatStream, supportsTools, ...).
+    openai.ts       - the OpenAI-compatible adapter (the only one at first).
+    (claude.ts)     - later, the native Anthropic adapter, same interface.
+  context/
+    assemble.ts     - tiered context builder + token budgeter.
+    sources.ts      - pulls scenes, summaries, entities, relationships, and
+                      lore (by activation_mode) from the existing queries.
+  prompts/          - per-role system prompts (shipped-fixed in v1).
+  tools/
+    registry.ts     - tool definitions (JSON schema) + a dispatch table.
+    dispatch.ts     - executes a tool call; write tools stage, never commit.
+  jobs.ts           - enqueue helpers for the worker queues (name SSOT).
+```
+
+The gateway is the only thing the rest of the app calls. The streaming
+endpoints call it; the worker calls it directly with no HTTP hop. The adapter
+interface in `providers/types.ts` is the seam: `openai.ts` today, `claude.ts`
+later, chosen from the resolved config.
+
+### Request lifecycle
+
+Two entry paths, one core:
+
+```
+Interactive:  browser -> POST /api/assistant/* (+server.ts, SSE)
+                       -> gateway.stream()
+                       -> egress check -> provider.chatStream()
+                       -> tool loop -> SSE tokens back to the browser
+
+Background:   worker job -> gateway.complete()/stream()
+                         -> same core -> writes review_suggestions etc.
+```
+
+The browser never sees the key or the endpoint URL; the server proxies, which
+is exactly why the egress guard matters and why the whole module is
+server-only.
+
+### Streaming transport
+
+Server-Sent Events from a `+server.ts` returning a `Response` that wraps a
+`ReadableStream`. No new dependency, fits adapter-node, and the provider's own
+streaming chunks map straight onto SSE events. The continuation extension and
+the chat panel consume the same event shape (token deltas, tool-call notices,
+a final done event). The worker does not stream to anyone; it consumes the
+provider stream internally and writes the result.
+
+### Surfaces, wired
+
+- Chat: `POST /api/assistant/chat`, SSE, client-held ephemeral conversation
+  (regenerate works from retained turns); persistence is a later
+  `conversations`/`messages` pair.
+- Inline: continuation is its own CodeMirror compartment (kept distinct from
+  the entity-autocomplete compartment), calling `/api/assistant/continuation`;
+  co-author is a side panel calling `/api/assistant/coauthor`.
+- Review: a worker job (or an inline endpoint for a single scene) that calls
+  the gateway and writes `review_comments` / `review_suggestions`, reanchoring
+  through the existing `review-anchor.ts`. The accept/reject/apply paths are
+  untouched.
+
+### Tool dispatch and the writes-as-suggestions invariant
+
+The tool loop lives in `tools/dispatch.ts`, capped by the writer's tool-call
+budget. The code invariant that makes "writes are suggestions" real:
+
+- Read tools (fetch scene, entity card, relationship set, mention index)
+  execute immediately and feed results back to the model. They write nothing,
+  so no confirmation.
+- Write tools (create scene, add alias, set quick detail, split scene) do not
+  mutate. They stage an artifact (a preview payload, or a `review_suggestion`
+  row) and return "staged, pending approval" to the model so it can keep
+  reasoning. Nothing reaches authored content until the human accepts in the
+  UI.
+
+This is what lets the entire write surface reuse the suggestion/accept
+machinery instead of building a parallel apply-and-undo path.
+
+### Background jobs
+
+New pg-boss queues alongside exports and backups (names in the existing queue
+SSOT): `assistant-review` (scene/chapter/story passes), `assistant-enrich`
+(entity alias/detail/summary suggestions), `assistant-summaries` (summary_md
+maintenance). Expensive derived artifacts (a character's arc summary) cache on
+the entity with a staleness watermark, mirroring `mentions_indexed_at`, and
+the reconcile-sweep pattern used for stale mentions applies directly.
+
+### Cross-cutting
+
+- Gate: every surface checks configured-and-enabled (see "Gating and
+  discoverability") before rendering or calling.
+- Rate and cost: reuse `rate-limit.ts` and the write-guard on the streaming
+  endpoints; the gateway adds the tool-call budget and a token ceiling.
+- Logging: `log.ts` structured events per completion (model, surface, token
+  usage, egress decision), without logging prose.
+- Errors: provider failures, egress denials, and timeouts become typed errors
+  the endpoints render as clean SSE error events; a blocked egress is a 4xx
+  with a clear message, not a 500.
+
+### Testing, in the three layers
+
+- Unit: context assembly and token budgeting, the egress policy decisions
+  (table-driven IP cases - the SSRF guard is exactly the kind of pure logic to
+  pin down), config merge/decrypt, prompt assembly, tool-call parsing.
+  Provider mocked.
+- Integration: the streaming endpoints and worker jobs against a throwaway
+  Postgres with a stub provider returning canned streams and tool calls -
+  asserting a write tool produces a suggestion and commits nothing, the gate
+  blocks when not configured or disabled, and review jobs write and reanchor.
+- End-to-end: one journey - configure an endpoint (a local stub), open the
+  Assistant tab, ask a question, accept a suggestion.
+
 ## Schema touchpoints
 
 - `users.llm_config`, `stories.llm_config`: already reserved; this fills
@@ -410,6 +575,21 @@ suggestions framework rather than a bespoke margin-annotation system.
 - The context token budgets and truncation strategy (calibration, needs a
   corpus).
 - Whether continuation and co-author share a model setting or split.
+- The tool loop shape for write tools: a constrained propose-once/stage
+  (leaned to above) versus a full agentic loop (also viable, especially for
+  read-heavy Q&A). The two can coexist - read tools loop, write tools stage.
+- Whether model selection should also be overridable per universe, not only
+  per account and per story (you arguably pick a model for a whole world's
+  voice). A separate question from the tool budget; would add a third merge
+  layer and a universe-level column.
+
+Settled here, recorded so it is not re-litigated:
+
+- The tool-call budget stays account-level (plus the admin ceiling), not
+  per-story or per-universe. Nothing about a story changes the
+  cost/compute trade-off; a dense universe needing more retrieval is a signal
+  to improve context assembly, not to add a per-universe dial. Revisit only
+  if a better assembler cannot close the gap.
 
 ## Sequencing sketch
 
