@@ -359,7 +359,7 @@
 
 	// A search jump selects the first occurrence of the text it arrived
 	// with, so the match is visible rather than somewhere off-screen.
-	$effect(() => {
+	function applyFind() {
 		if (!findText || !view) return;
 		const at = view.state.doc.toString().toLowerCase().indexOf(findText.toLowerCase());
 		if (at < 0) return;
@@ -368,11 +368,11 @@
 			scrollIntoView: true
 		});
 		view.focus();
-	});
+	}
 
 	// An appears-in jump lands on a mention's offset; select the word there.
 	// Clamped, because the text may have moved since the index was built.
-	$effect(() => {
+	function applyFindAt() {
 		if (findAt === null || !view) return;
 		const at = Math.min(findAt, view.state.doc.length);
 		const word = view.state.wordAt(at);
@@ -381,6 +381,17 @@
 			scrollIntoView: true
 		});
 		view.focus();
+	}
+
+	// Reapply when the jump target changes on an already-open scene. On a
+	// fresh mount these run before onMount has created the view, so they bail
+	// here and the selection is applied from onMount instead (view is a plain
+	// variable, not reactive, so assigning it does not re-run an effect).
+	$effect(() => {
+		applyFind();
+	});
+	$effect(() => {
+		applyFindAt();
 	});
 
 	// Pinning a shared name or creating an entity changes the underlines at
@@ -549,6 +560,10 @@
 				]
 			})
 		});
+		// Apply any jump the scene mounted with: the find effects already ran
+		// (and bailed) before the view existed, and will not re-run on their own.
+		applyFind();
+		applyFindAt();
 		return () => {
 			clearTimeout(saveTimer);
 			// Last-chance flush so navigating away does not lose the tail edit.
