@@ -7,7 +7,11 @@ import { bucketAssetLoader, buildStoryZip, gatherStory } from '$lib/server/expor
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const { story } = await ownedStory(params.id, locals.user!.id);
 	const content = await gatherStory(db, story);
-	const { filename, bytes } = await buildStoryZip(story, content, bucketAssetLoader(db));
+	const { filename, bytes } = await buildStoryZip(
+		story,
+		content,
+		bucketAssetLoader(db, locals.user!.id)
+	);
 	return new Response(new Uint8Array(bytes), {
 		headers: {
 			'content-type': 'application/zip',

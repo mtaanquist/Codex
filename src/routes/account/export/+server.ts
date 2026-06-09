@@ -9,7 +9,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	const { filename, bytes } = await buildAccountExport(
 		db,
 		locals.user!.id,
-		bucketAssetLoader(db),
+		bucketAssetLoader(db, locals.user!.id),
 		reviewLoader(db)
 	);
 	return new Response(new Uint8Array(bytes), {
