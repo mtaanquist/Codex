@@ -54,19 +54,14 @@ import {
 	totpStatus
 } from '$lib/server/two-factor';
 import { listPasskeys, removePasskey } from '$lib/server/passkeys';
-import { rateLimit } from '$lib/server/rate-limit';
+import { reauthLimit } from '$lib/server/reauth';
 import QRCode from 'qrcode';
 
-// The actions that re-verify the password (disabling two-factor, regenerating
-// recovery codes, removing a passkey, changing email, changing the password,
-// deleting the account) are throttled per account, the way sign-in is, so a
-// borrowed session cannot brute-force the password through them. One shared
-// bucket across the actions.
-const REAUTH_LIMIT = 10;
-const REAUTH_WINDOW_MS = 15 * 60 * 1000;
-
+// The actions that re-verify the password share one throttle (see reauthLimit),
+// so a borrowed session cannot brute-force the password through them. Passkey
+// registration is gated the same way in its own API endpoint.
 function reauthGuard(userId: string, scope: string) {
-	const limit = rateLimit(`account:reauth:${userId}`, REAUTH_LIMIT, REAUTH_WINDOW_MS);
+	const limit = reauthLimit(userId);
 	if (limit.allowed) return null;
 	const minutes = Math.ceil(limit.retryAfterSeconds / 60);
 	return fail(429, {
