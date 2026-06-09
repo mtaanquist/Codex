@@ -12,13 +12,23 @@ import type {
 // Anthropic's compatibility endpoint all expose. A native Claude adapter slots
 // behind the same Provider interface later.
 
-function endpointUrl(endpoint: string): string {
-	// Accept a bare base URL, a base ending in /v1, or a full completions URL,
-	// and normalise to the chat-completions path.
+// Resolve the `/v1` base from whatever the writer entered: a bare host, a base
+// ending in /v1, or a full completions URL.
+function baseV1(endpoint: string): string {
 	const trimmed = endpoint.replace(/\/+$/, '');
-	if (trimmed.endsWith('/chat/completions')) return trimmed;
-	if (trimmed.endsWith('/v1')) return `${trimmed}/chat/completions`;
-	return `${trimmed}/v1/chat/completions`;
+	if (trimmed.endsWith('/chat/completions')) {
+		return trimmed.slice(0, trimmed.length - '/chat/completions'.length);
+	}
+	if (trimmed.endsWith('/v1')) return trimmed;
+	return `${trimmed}/v1`;
+}
+
+function endpointUrl(endpoint: string): string {
+	return `${baseV1(endpoint)}/chat/completions`;
+}
+
+function modelsUrl(endpoint: string): string {
+	return `${baseV1(endpoint)}/models`;
 }
 
 function headers(conn: Connection): Record<string, string> {
@@ -211,5 +221,22 @@ export const openaiProvider: Provider = {
 			// Draining is best-effort; the probe already succeeded.
 		}
 		return { ok: true, supportsStreaming, supportsTools: false };
+	},
+
+	async listModels(conn, http, signal) {
+		const res = await http(modelsUrl(conn.endpoint), {
+			method: 'GET',
+			headers: headers(conn),
+			signal
+		});
+		const text = await res.text();
+		if (res.status < 200 || res.status >= 300) {
+			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
+		}
+		const json = JSON.parse(text) as { data?: { id?: unknown }[] };
+		const ids = Array.isArray(json.data)
+			? json.data.map((m) => m.id).filter((id): id is string => typeof id === 'string')
+			: [];
+		return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
 	}
 };

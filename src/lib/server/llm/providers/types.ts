@@ -116,4 +116,8 @@ export interface Provider {
 		http: HttpRequest,
 		signal?: AbortSignal
 	): Promise<ProbeResult>;
+	// The endpoint's available model ids (GET /v1/models), so the writer picks
+	// from a list instead of typing a name. Throws on a transport or non-2xx
+	// error.
+	listModels(conn: Connection, http: HttpRequest, signal?: AbortSignal): Promise<string[]>;
 }

@@ -56,6 +56,9 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 		},
 		async probe() {
 			return { ok: true, supportsStreaming: false, supportsTools: true };
+		},
+		async listModels() {
+			return [];
 		}
 	};
 	return { provider, count: () => calls, seen };
@@ -76,6 +79,9 @@ const stubProvider: Provider = {
 	},
 	async probe() {
 		return { ok: true, supportsStreaming: true, supportsTools: false };
+	},
+	async listModels() {
+		return [];
 	}
 };
 const noHttp: HttpRequest = async () => {
@@ -339,6 +345,9 @@ describe('gateway tool loop', () => {
 			},
 			async probe() {
 				return { ok: true, supportsStreaming: false, supportsTools: true };
+			},
+			async listModels() {
+				return [];
 			}
 		};
 		const text = await complete(

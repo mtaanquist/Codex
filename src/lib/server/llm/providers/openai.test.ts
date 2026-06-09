@@ -225,3 +225,45 @@ describe('openaiProvider.probe', () => {
 		expect(result.ok).toBe(false);
 	});
 });
+
+describe('openaiProvider.listModels', () => {
+	it('returns the model ids, de-duplicated and sorted', async () => {
+		let calledUrl = '';
+		const http: HttpRequest = async (url) => {
+			calledUrl = url;
+			return jsonResponse(200, {
+				data: [{ id: 'llama3.1:8b' }, { id: 'gemma2' }, { id: 'llama3.1:8b' }]
+			});
+		};
+		const models = await openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: '' }, http);
+		expect(calledUrl).toBe('http://h/v1/models');
+		expect(models).toEqual(['gemma2', 'llama3.1:8b']);
+	});
+
+	it('derives the models path from a full completions endpoint', async () => {
+		let calledUrl = '';
+		const http: HttpRequest = async (url) => {
+			calledUrl = url;
+			return jsonResponse(200, { data: [] });
+		};
+		await openaiProvider.listModels({ endpoint: 'http://h/v1/chat/completions', apiKey: '' }, http);
+		expect(calledUrl).toBe('http://h/v1/models');
+	});
+
+	it('sends the key as a bearer token when set', async () => {
+		let auth: string | undefined;
+		const http: HttpRequest = async (_url, init) => {
+			auth = init.headers['authorization'];
+			return jsonResponse(200, { data: [{ id: 'm' }] });
+		};
+		await openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: 'sk-xyz' }, http);
+		expect(auth).toBe('Bearer sk-xyz');
+	});
+
+	it('throws on a non-2xx status', async () => {
+		const http: HttpRequest = async () => jsonResponse(401, { error: 'unauthorized' });
+		await expect(
+			openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: '' }, http)
+		).rejects.toThrow();
+	});
+});
