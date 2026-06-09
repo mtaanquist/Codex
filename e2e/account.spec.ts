@@ -78,16 +78,17 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await expect(page.getByRole('heading', { name: 'Assistant', level: 1 })).toBeVisible();
 
 	// The Assistant starts off; the config block is dimmed until the kill switch
-	// is turned off. The status reads the state back.
-	const killSwitch = page.getByRole('checkbox', { name: 'Assistant kill switch' });
+	// is turned off. The status reads the state back. The real checkbox is a
+	// zero-size hidden input behind the toggle track, so drive it by clicking the
+	// wrapping label (the visible switch); toggle-xl is unique to this control.
+	const killToggle = page.locator('label.toggle-xl');
 	const gated = page.locator('[data-ai-gated]');
 	await expect(page.getByText('Assistant off')).toBeVisible();
 	await expect(gated).toHaveClass(/off/);
 
 	// Turning the kill switch off enables the Assistant; the toggle auto-submits
-	// and the page reloads with the config lit up. A click (not uncheck) avoids a
-	// race between uncheck's post-state assertion and the submit navigation.
-	await killSwitch.click();
+	// and the page reloads with the config lit up.
+	await killToggle.click();
 	await expect(page.getByText('Assistant on')).toBeVisible();
 	await expect(gated).not.toHaveClass(/off/);
 
@@ -110,6 +111,6 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	);
 
 	// Turn it back off so repeated runs start from the known default.
-	await page.getByRole('checkbox', { name: 'Assistant kill switch' }).click();
+	await killToggle.click();
 	await expect(page.getByText('Assistant off')).toBeVisible();
 });
