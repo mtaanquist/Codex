@@ -241,6 +241,37 @@
 		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
 	}
 
+	// Asks the Assistant to review one scene; it stages comments and suggested
+	// edits the author then accepts or rejects on the review screen. Runs inline
+	// (one scene is bounded), so a non-blocking banner covers the wait.
+	let reviewingScene = $state(false);
+	async function reviewScene(sceneId: string) {
+		rowMenu = null;
+		if (reviewingScene) return;
+		reviewingScene = true;
+		try {
+			const response = await fetch('/api/assistant/review', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ sceneId })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				alert(body?.message ?? 'The Assistant could not review the scene.');
+				return;
+			}
+			const { staged } = (await response.json()) as { staged: number };
+			if (staged > 0) {
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from a slug
+				await goto(`/stories/${data.story.slug}/review`);
+			} else {
+				alert('The Assistant read the scene and had no notes to add.');
+			}
+		} finally {
+			reviewingScene = false;
+		}
+	}
+
 	// Splits the open scene at the cursor, like a page break: the rest of
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
@@ -1219,6 +1250,16 @@
 			>
 				<Icon name="copy" size={13} /> Duplicate scene
 			</button>
+			{#if data.assistant.surfacesEnabled}
+				<button
+					class="row-menu-item"
+					type="button"
+					role="menuitem"
+					onclick={() => reviewScene(target.id)}
+				>
+					<Icon name="sparkles" size={13} /> Review this scene
+				</button>
+			{/if}
 			{#if pickedForMerge && mergeSelection.size >= 2}
 				<button class="row-menu-item" type="button" role="menuitem" onclick={mergeSelectedScenes}>
 					<Icon name="chapter" size={13} /> Merge {mergeSelection.size} scenes
@@ -1248,7 +1289,46 @@
 	</div>
 {/if}
 
+{#if reviewingScene}
+	<div class="assistant-review-busy" role="status" aria-live="polite">
+		<span class="arb-dot"></span> The Assistant is reviewing this scene...
+	</div>
+{/if}
+
 <style>
+	.assistant-review-busy {
+		position: fixed;
+		bottom: 18px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 60;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		padding: 8px 16px;
+		font-size: 13px;
+		color: var(--text);
+		box-shadow: var(--shadow);
+	}
+	.arb-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 99px;
+		background: var(--accent);
+		animation: arb-pulse 1.1s infinite;
+	}
+	@keyframes arb-pulse {
+		0%,
+		100% {
+			opacity: 0.3;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
 	/* A scene picked for merging keeps a quiet accent ring until the merge
 	   or the selection is cleared. */
 	.scene-row.merge-selected {
