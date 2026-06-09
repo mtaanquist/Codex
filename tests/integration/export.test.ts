@@ -3,9 +3,11 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { strFromU8, unzipSync } from 'fflate';
+import { Readable } from 'node:stream';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assets,
 	chapters,
 	characters,
 	characterStoryNotes,
@@ -15,13 +17,20 @@ import {
 	universes,
 	users
 } from '../../src/lib/server/db/schema';
-import { buildStoryZip, gatherStory, type ExportStory } from '../../src/lib/server/export';
+import {
+	bucketAssetLoader,
+	buildStoryZip,
+	gatherStory,
+	type ExportStory
+} from '../../src/lib/server/export';
 import { buildEpub } from '../../src/lib/server/epub';
+import type { AssetObjectStore } from '../../src/lib/server/assets';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 let pool: pg.Pool;
 let db: Database;
+let ownerId: string;
 let story: ExportStory & { coverAssetId: string | null };
 
 const ASSET_ID = '0b154c2d-13ef-4f3c-9a85-2f1c0a9d8e11';
@@ -43,6 +52,7 @@ beforeAll(async () => {
 		.insert(users)
 		.values({ email: 'exp@example.com', displayName: 'E', passwordHash: 'x', role: 'user' })
 		.returning();
+	ownerId = owner.id;
 	const [universe] = await db
 		.insert(universes)
 		.values({ ownerId: owner.id, name: 'U' })
@@ -191,5 +201,49 @@ describe('buildEpub', () => {
 
 		const nav = strFromU8(entries['OEBPS/nav.xhtml']);
 		expect(nav).toContain('<a href="ch1.xhtml">The Caravan</a>');
+	});
+});
+
+describe('bucketAssetLoader ownership', () => {
+	it('bundles only assets the export owner owns, never a foreign UUID in prose', async () => {
+		// One asset belongs to the export owner, an identical one to a stranger.
+		const [own] = await db
+			.insert(assets)
+			.values({
+				ownerId,
+				kind: 'inline',
+				filename: 'mine.png',
+				contentType: 'image/png',
+				byteSize: PNG.length,
+				storageKey: 'mine'
+			})
+			.returning();
+		const [stranger] = await db
+			.insert(users)
+			.values({ email: 'thief@example.com', displayName: 'T', passwordHash: 'x', role: 'user' })
+			.returning();
+		const [foreign] = await db
+			.insert(assets)
+			.values({
+				ownerId: stranger.id,
+				kind: 'inline',
+				filename: 'theirs.png',
+				contentType: 'image/png',
+				byteSize: PNG.length,
+				storageKey: 'theirs'
+			})
+			.returning();
+
+		// A store that would happily serve any key; ownership must be enforced
+		// before it is ever reached.
+		const store: AssetObjectStore = {
+			put: async () => {},
+			remove: async () => {},
+			get: async () => Readable.from([PNG])
+		};
+
+		const load = bucketAssetLoader(db, ownerId, store);
+		const loaded = await load([own.id, foreign.id]);
+		expect(loaded.map((a) => a.id)).toEqual([own.id]);
 	});
 });

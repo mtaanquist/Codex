@@ -7,7 +7,11 @@ import { ownedUniverse } from '$lib/server/universe-access';
 // lore/, and a folder per story, with images bundled.
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
-	const { filename, bytes } = await buildUniverseExport(db, universe, bucketAssetLoader(db));
+	const { filename, bytes } = await buildUniverseExport(
+		db,
+		universe,
+		bucketAssetLoader(db, locals.user!.id)
+	);
 	return new Response(new Uint8Array(bytes), {
 		headers: {
 			'content-type': 'application/zip',

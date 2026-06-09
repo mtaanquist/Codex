@@ -20,7 +20,7 @@ import {
 	universes
 } from './db/schema.ts';
 import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
-import { effectiveAssetConfig, s3AssetStore } from './assets.ts';
+import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import { extensionFor } from './media-types.ts';
 import { namesByType, type EntityType } from './entity-lookups.ts';
 
@@ -61,12 +61,24 @@ export type AssetLoader = (ids: string[]) => Promise<ExportAsset[]>;
 const MAX_EXPORT_ASSET_BYTES = 500 * 1024 * 1024;
 
 // The default loader reads from the configured bucket; absent
-// configuration it returns nothing and links stay as app paths.
-export function bucketAssetLoader(db: Database): AssetLoader {
+// configuration it returns nothing and links stay as app paths. Scoped to
+// the export owner: only assets they own are bundled, the same rule the
+// /assets/[id] owner path enforces. A foreign asset UUID written into prose
+// (its own or another account's) resolves to nothing and its link stays an
+// app path, so an export never smuggles out images the owner cannot read.
+export function bucketAssetLoader(
+	db: Database,
+	ownerId: string,
+	override?: AssetObjectStore
+): AssetLoader {
 	return async (ids) => {
-		const config = await effectiveAssetConfig(db);
-		if (!config || ids.length === 0) return [];
-		const store = s3AssetStore(config);
+		if (ids.length === 0) return [];
+		let store = override;
+		if (!store) {
+			const config = await effectiveAssetConfig(db);
+			if (!config) return [];
+			store = s3AssetStore(config);
+		}
 		const loaded: ExportAsset[] = [];
 		let total = 0;
 		let skipped = 0;
@@ -75,7 +87,10 @@ export function bucketAssetLoader(db: Database): AssetLoader {
 				skipped++;
 				continue;
 			}
-			const [row] = await db.select().from(assets).where(eq(assets.id, id));
+			const [row] = await db
+				.select()
+				.from(assets)
+				.where(and(eq(assets.id, id), eq(assets.ownerId, ownerId)));
 			if (!row) continue;
 			const chunks: Buffer[] = [];
 			for await (const chunk of await store.get(row.storageKey)) {

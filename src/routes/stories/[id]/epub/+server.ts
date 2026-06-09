@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const { filename, bytes } = await buildEpub(
 		story,
 		content,
-		bucketAssetLoader(db),
+		bucketAssetLoader(db, locals.user!.id),
 		story.coverAssetId,
 		await storyPageSetup(db, story.id)
 	);
