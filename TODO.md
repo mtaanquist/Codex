@@ -720,6 +720,24 @@ endpoint. Started 2026-06-09.
       (admin panel). The egress helpers are already unit- and integration-tested;
       the admin area 404s for the seeded regular-user e2e session, so no new e2e.
       Lint, check, and build pass locally.
+- [ ] Review surface, single-scene (third surface; branch
+      `feat/assistant-review-scene`). The Assistant-as-reviewer path, inline for
+      one scene. A new `prompts/review.ts` (`buildReviewMessage`, shipped-fixed)
+      tells the model to review one scene and leave its notes through the staging
+      tools, never the prose. `POST /api/assistant/review` (sceneId) verifies
+      ownership, re-checks the gate, assembles context, runs `gateway.complete`
+      with `role: 'reviewer'` + tools, and reports how many notes were staged by
+      counting the Assistant's pending suggestions/comments before and after. The
+      entry point is "Review this scene" on the left-sidebar scene menu (gated on
+      `surfacesEnabled`); a non-blocking banner covers the wait, then it navigates
+      to the existing author review screen where the Assistant's suggestions and
+      comments already render with their badge. Editor help gained a review note.
+      The staging mechanism (write tool stages an Assistant suggestion, owner-
+      scoped, budget-capped) is already covered by the gateway integration test;
+      a unit test covers the prompt builder. Deferred to the background-jobs PR:
+      "Review this chapter", whole-story "Review this story" (the
+      `assistant-review` worker job + completion notification), and the palette
+      command. Lint, check, unit (335), and build pass locally.
 
 ## Capability review follow-ups (2026-06-06)
 
