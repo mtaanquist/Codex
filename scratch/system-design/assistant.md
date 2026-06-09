@@ -139,11 +139,32 @@ limiter.
 Everything the writer asked for sorts onto three surfaces, distinguished by
 how they execute and where the output lands.
 
-### 1. Chat (the Session tab)
+### 1. Chat (the Assistant tab)
 
-The Session tab has reserved space below its quick settings for exactly
-this. An "Assistant for this story" toggle joins the quick settings when
-there is something to toggle.
+The Assistant is its own tab in the right sidebar, a peer of Reference,
+History, and Session (per the app-design prototype). This supersedes the
+older `design.md` line that reserved space for the chat below the Session
+tab's quick settings; that section of `design.md` needs a follow-up edit to
+match (the right sidebar now has four tabs, not three, and the Assistant is
+a distinct semantic axis: who you are working with). The Session tab keeps
+its quick settings; the per-story "Assistant for this story" on/off lives
+with the Assistant tab (greyed with a configure prompt when no endpoint is
+set, rather than hidden, so the feature is discoverable).
+
+The tab, from the prototype:
+
+- A short opening message that confirms the Assistant has the world loaded
+  ("I've read your codex for The Shattered Realms. Ask me about your
+  characters, check continuity, or work a scene.").
+- The conversation transcript.
+- Grounded suggested-prompt chips above the input when the conversation is
+  empty (the "quick actions" want), drawn from the current story and
+  entities, for example "What's at stake for Alice in Book of Ash?",
+  "Suggest a complication for the river crossing scene", "Is Bram's arc
+  consistent so far?". These are starting points, not a fixed menu; they
+  seed the three surfaces (a question, a co-author nudge, a continuity
+  review).
+- An "Ask about your story..." input with a send control.
 
 The chat is sync and streaming. It is the home of:
 
@@ -179,7 +200,7 @@ already ships.
 - "Ask the Assistant" on the editor right-click menu, over a selection, with
   submenu items:
   - Review (send the selection to the reviewer surface),
-  - Reference in chat (drop it into the Session tab chat),
+  - Reference in chat (drop it into the Assistant tab chat),
   - Check continuity (a focused continuity pass on the selection).
 
 The selection menu already exists (bold/italic/quote/list plus
@@ -383,7 +404,8 @@ Not a contract, but the natural order, foundations first:
 1. Gateway module, OpenAI-compatible adapter, egress policy + admin
    whitelist, account config UI + test connection, encryption. No surfaces
    yet.
-2. Chat (rubber duck) on the Session tab, ephemeral, with reference-in-chat.
+2. Chat (rubber duck) on the Assistant tab, ephemeral, with
+   reference-in-chat.
    The smallest surface that proves the plumbing.
 3. Context assembly tiers + grounding, exercised first by chat Q&A about the
    world.
