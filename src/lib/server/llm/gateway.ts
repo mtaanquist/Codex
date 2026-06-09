@@ -1,0 +1,221 @@
+import type { Database } from '../auth';
+import { logEvent } from '../log';
+import { resolveLlmConfig, type AssistantRole, type ResolvedConfig } from './config';
+import { egressHttpRequest, egressPolicy } from './egress';
+import { openaiProvider } from './providers/openai';
+import { buildPersonaPrompt } from './prompts/persona';
+import { dispatchToolCall, ownsStory, type ToolContext } from './tools/dispatch';
+import { toolSpecs } from './tools/registry';
+import type {
+	ChatMessage,
+	Connection,
+	HttpRequest,
+	Provider,
+	StreamEvent,
+	ToolSpec
+} from './providers/types';
+
+// The gateway is the one public entry the rest of the app calls. It resolves
+// config, enforces the egress policy, picks the model and provider, runs the
+// tool loop, and streams or buffers the answer.
+//
+// The streaming endpoint will call stream(); the worker calls complete() or
+// stream() directly with no HTTP hop. Neither path ever exposes the key or the
+// endpoint URL to the browser.
+
+export class AssistantDisabledError extends Error {
+	constructor(message = 'The Assistant is not enabled for this account.') {
+		super(message);
+		this.name = 'AssistantDisabledError';
+	}
+}
+
+// A ceiling so a single generation cannot hold a connection open indefinitely;
+// the tool-call budget bounds the agentic loop separately.
+const DEFAULT_MAX_TOKENS = 2048;
+
+export type GatewayRequest = {
+	userId: string;
+	storyId?: string;
+	role: AssistantRole;
+	messages: ChatMessage[];
+	// Offer the read/write tools this turn. Requires a story context and an
+	// endpoint that can call tools; off for plain continuation/co-author turns.
+	enableTools?: boolean;
+	maxTokens?: number;
+	temperature?: number;
+	signal?: AbortSignal;
+};
+
+// Test seam: callers may inject a provider and/or transport. Production passes
+// neither and gets the OpenAI adapter over the egress-guarded transport.
+export type GatewayDeps = {
+	provider?: Provider;
+	http?: HttpRequest;
+};
+
+function pickModel(config: ResolvedConfig, role: AssistantRole): string {
+	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
+}
+
+function selectProvider(): Provider {
+	// One provider today. The seam for a native Claude adapter, chosen from a
+	// provider discriminator on the resolved config, lands later.
+	return openaiProvider;
+}
+
+type Prepared = {
+	conn: Connection;
+	model: string;
+	messages: ChatMessage[];
+	http: HttpRequest;
+	provider: Provider;
+	// Set only when tools are active this turn (enabled, story owned, endpoint
+	// capable); the agent loop runs when present.
+	tools?: ToolSpec[];
+	toolContext?: ToolContext;
+	toolBudget: number;
+};
+
+async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
+	const resolved = await resolveLlmConfig(db, req.userId, req.storyId);
+	// The backstop gate: surfaces check this before calling, but a background
+	// caller might not, so refuse here too. surfacesEnabled is account-on and
+	// this story not muted.
+	if (!resolved.gate.surfacesEnabled) throw new AssistantDisabledError();
+	const model = pickModel(resolved.config, req.role);
+	if (!model) throw new AssistantDisabledError('No model is configured for this action.');
+	const policy = await egressPolicy(db);
+	// The persona system message rides at the front of every turn, so the
+	// Assistant's name and tone are consistent across surfaces. Any
+	// surface-supplied system message (the assembled world context) follows it.
+	const persona: ChatMessage = {
+		role: 'system',
+		content: buildPersonaPrompt(resolved.config.assistantName, resolved.config.persona)
+	};
+
+	// Tools are offered only with a story context the user owns and an endpoint
+	// that can call them; otherwise the turn is a plain completion.
+	let tools: ToolSpec[] | undefined;
+	let toolContext: ToolContext | undefined;
+	if (
+		req.enableTools &&
+		req.storyId &&
+		resolved.config.supportsTools !== false &&
+		(await ownsStory(db, req.userId, req.storyId))
+	) {
+		tools = toolSpecs();
+		toolContext = { db, userId: req.userId, storyId: req.storyId };
+	}
+
+	return {
+		conn: { endpoint: resolved.config.endpoint, apiKey: resolved.config.apiKey },
+		model,
+		messages: [persona, ...req.messages],
+		http: deps.http ?? egressHttpRequest(policy),
+		provider: deps.provider ?? selectProvider(),
+		tools,
+		toolContext,
+		toolBudget: resolved.config.toolCallBudget
+	};
+}
+
+// The agent loop: ask the model, run any tool calls it requests (read tools
+// fetch, write tools stage), feed the results back, and repeat until it answers
+// or the tool-call budget is spent. Returns the final text. Once the budget is
+// reached, tools are withdrawn so the next turn must answer, bounding the loop.
+async function runAgent(p: Prepared, req: GatewayRequest): Promise<string> {
+	const messages = [...p.messages];
+	let calls = 0;
+	for (;;) {
+		const offerTools = p.tools && calls < p.toolBudget ? p.tools : undefined;
+		const response = await p.provider.respond(
+			{
+				model: p.model,
+				messages,
+				maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+				temperature: req.temperature,
+				tools: offerTools
+			},
+			p.conn,
+			p.http,
+			req.signal
+		);
+		if (!offerTools || response.toolCalls.length === 0) return response.content;
+
+		messages.push({ role: 'assistant', content: response.content, toolCalls: response.toolCalls });
+		for (const call of response.toolCalls) {
+			calls += 1;
+			const outcome =
+				calls > p.toolBudget
+					? { result: 'Tool-call budget reached; answer with what you have.', staged: false }
+					: await dispatchToolCall(p.toolContext!, call);
+			logEvent('info', 'assistant.tool', {
+				userId: req.userId,
+				tool: call.name,
+				staged: outcome.staged
+			});
+			messages.push({ role: 'tool', content: outcome.result, toolCallId: call.id });
+		}
+	}
+}
+
+export async function* stream(
+	db: Database,
+	req: GatewayRequest,
+	deps: GatewayDeps = {}
+): AsyncGenerator<StreamEvent> {
+	const prepared = await prepare(db, req, deps);
+	logEvent('info', 'assistant.stream', {
+		userId: req.userId,
+		role: req.role,
+		model: prepared.model,
+		tools: Boolean(prepared.tools)
+	});
+	// A tool-using turn resolves its rounds buffered (tool results interleave
+	// with generation), then emits the final answer; a plain turn streams live.
+	if (prepared.tools) {
+		const content = await runAgent(prepared, req);
+		if (content) yield { type: 'token', text: content };
+		yield { type: 'done' };
+		return;
+	}
+	yield* prepared.provider.chatStream(
+		{
+			model: prepared.model,
+			messages: prepared.messages,
+			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			temperature: req.temperature
+		},
+		prepared.conn,
+		prepared.http,
+		req.signal
+	);
+}
+
+export async function complete(
+	db: Database,
+	req: GatewayRequest,
+	deps: GatewayDeps = {}
+): Promise<string> {
+	const prepared = await prepare(db, req, deps);
+	logEvent('info', 'assistant.complete', {
+		userId: req.userId,
+		role: req.role,
+		model: prepared.model,
+		tools: Boolean(prepared.tools)
+	});
+	if (prepared.tools) return runAgent(prepared, req);
+	const response = await prepared.provider.respond(
+		{
+			model: prepared.model,
+			messages: prepared.messages,
+			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			temperature: req.temperature
+		},
+		prepared.conn,
+		prepared.http,
+		req.signal
+	);
+	return response.content;
+}

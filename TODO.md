@@ -556,6 +556,116 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
 > Phase 9 (AI and interop) - or the timeline's calendar design talk,
 > whichever the author wants first.
 
+## Phase 9 - The Assistant (LLM)
+
+Full design in `scratch/system-design/assistant.md`. Building foundations
+first, surfaces later; no bundled model, bring-your-own OpenAI-compatible
+endpoint. Started 2026-06-09.
+
+- [ ] Step 1 - gateway plumbing (server-only, no surfaces). The
+      `$lib/server/llm/` module: `config.ts` (account/story `llm_config`
+      read/merge/decrypt + the pure `assistantGate` and save helpers, reusing
+      `crypto.ts` and the `storyPreferences` null-clear pattern), `egress.ts`
+      (the SSRF guard - pure `classifyAddress`, the block-private / allowlist /
+      open policy in `app_settings`, and a connect-time-`lookup` pinned request
+      that closes the DNS-rebinding window), `providers/` (the adapter seam +
+      the OpenAI-compatible adapter: streaming SSE, buffered complete,
+      test-connection probe), and `gateway.ts` (the one entry: config ->
+      egress -> provider -> stream/complete, with context-assembly and the
+      tool loop left as marked seams). No migration (the jsonb columns and
+      `app_settings` already exist). Unit + integration tests across config
+      merge/decrypt, the egress IP table and policy, the SSE parse, and the
+      gateway gate + real egress denial. Lint, check, unit (305), the new
+      integration specs, and build pass locally. Deferred to their own steps:
+      the SSE `/api/assistant/*` endpoints, all UI (account/story/admin),
+      context assembly, tools, the worker queues, the Assistant-reviewer
+      attribution, and chat persistence.
+- [ ] Step 3 (pulled ahead of the chat surface - it is pure backend) -
+      context assembly. `$lib/server/llm/context/`: `sources.ts` gathers the
+      in-scope world (story/universe frame, the current scene + neighbouring
+      scene summaries, the chapter/scene skeleton, members-or-mentioned
+      entities with quick details/aliases/relationships/per-story notes via the
+      existing `storyEntityLists` and `listEntityRelationships`, lore by the
+      reserved `activation_mode` with keyword matching, and freeform
+      story/universe notes); `assemble.ts` tiers and fits them to a token
+      budget and renders a system message, returning the source refs for a
+      later grounding step. The gathering is settled design; the budget and
+      tier-drop order are kept deliberately simple and marked provisional, per
+      the design's "needs a corpus" TODO. Owner-scoped through the story. Unit
+      tests (the pure `loreMatches`, `estimateTokens`, `selectWithinBudget`) +
+      integration (frame, scene-local, entity + per-story note, lore
+      always/keyword/manual activation, notes, owner-scoping, budget drop).
+      Not yet wired to a surface; the chat endpoint and co-author/review will
+      call `assembleContext` + `buildSystemMessage`.
+- [ ] Assistant name + persona (author request - a bit of personality). A
+      cosmetic `assistantName` and a fixed-set `persona` tone preset (balanced
+      default, concise, professional, casual, encouraging) on the account
+      `llm_config`, in a pure `prompts/persona.ts` (the spec's `prompts/` dir).
+      Deliberately not a free-form system prompt - tone presets keep the
+      Assistant a writing aid and do not reopen the role-play escape hatch the
+      design closes. The gateway prepends a persona system message (name + tone,
+      "stay in the helper role") to every turn, so the personality is consistent
+      across surfaces; any surface-supplied context message follows it. Rides in
+      the existing jsonb, no migration. Unit tests (presets, validators,
+      `buildPersonaPrompt`) + integration (save/resolve/view round-trip,
+      normalisation fallback, the gateway prepend). Frontend (a name field + a
+      tone dropdown in the account Assistant section) deferred with the rest of
+      the UI.
+- [ ] Tools and data retrieval (author request - "get it all ready for the
+      front-end"). The agent layer: - Provider tool-calling: `providers/types.ts` gains tool specs, tool
+      calls, and a `respond()` turn (replacing `complete`); `openai.ts`
+      serialises a `tools` array + tool/assistant-tool-call/tool-result
+      messages and parses `tool_calls`. - `tools/registry.ts` + `tools/dispatch.ts`: read tools (`get_scene`,
+      `get_entity`, `find_appearances`, `search_text`) wrapping existing
+      owner-scoped queries (`getEntityCard`, `entityAppearances`,
+      `searchAll`), and write tools (`suggest_edit`, `leave_comment`) that
+      _stage_ a review suggestion/comment and never touch authored content
+      (the "writes are suggestions" invariant). Every handler is scoped to
+      the context's story + user. - Gateway agent loop: `complete`/`stream` run a `respond` loop that
+      dispatches tool calls, feeds results back, and repeats until the model
+      answers or the account `toolCallBudget` is spent (then tools are
+      withdrawn to force an answer). Tools are offered only with a story the
+      user owns and an endpoint that can call them (`enableTools`). - Write-as-suggestion attribution: the Assistant is a third review author
+      via an additive `assistant` boolean on `review_comments` /
+      `review_suggestions` (migration 0052), not a synthetic reviewer row
+      (which would need a fake invitation). The display name resolves live
+      from the owner's assistant name, so a rename relabels past suggestions
+      on the fly; `isAssistant` is exposed on the views for badging. The
+      owner accepts/rejects an Assistant suggestion through the unchanged
+      decide path. - Unit tests (SSE/tool-call parse, message serialisation) + integration
+      (read-tool loop feeds results back; write tool stages a pending
+      Assistant suggestion and changes nothing, shown under the assistant
+      name and acceptable by the owner; the budget caps the loop; no tools
+      without a story). Lint, check, unit (327), the LLM + review
+      integration specs, and build pass. Deferred: structural write tools
+      (create scene/entity preview-and-confirm), the worker review/enrich/
+      summary jobs, and all UI.
+- [ ] Endpoint setup helpers (author request - non-tech-savvy setup). In
+      `llm/models.ts`, both through the egress guard: model discovery
+      (`discoverModels` / `listEndpointModels` over `GET /v1/models`, so the
+      writer picks from a dropdown instead of typing a model name) and a test
+      connection (`testAccountConnection` / `testEndpointConnection` sends a
+      tiny prompt and returns the model's reply, the SMTP "send a test"
+      analogue). Both work on the saved config or submitted values, and before
+      the master toggle is on (mid-setup). `listModels` added to the provider
+      interface + OpenAI adapter (de-duplicated, sorted ids). Note on tools:
+      the model "discovers" Codex's tools inline per request (OpenAI
+      function-calling), no MCP - tools run in-process and the endpoint only
+      needs to pass the `tools` field through to a tool-capable model. Unit
+      tests (listModels parse/path/auth) + integration (discovery and test
+      happy paths via injected provider, missing endpoint/model, real egress
+      denial). UI deferred.
+- [ ] Tool-capability detection (finishes the tools work). The probe now sends
+      a one-shot forced-optional tool request and reports `supportsTools` from
+      whether a tool call comes back (best-effort: any error or a plain answer
+      reads as no tools), alongside `supportsStreaming`. `probeAccountEndpoint`
+      / `probeEndpoint` in `llm/models.ts` expose it so the setup screen can
+      show a "tools: supported / not" line next to the discovered models; the
+      flags are meant to be saved onto the config, and the gateway already
+      withholds tools when `supportsTools` is false. Unit tests (tool call
+      detected / rejected) + integration (capabilities reported, egress
+      denial). UI deferred.
+
 ## Capability review follow-ups (2026-06-06)
 
 A general capability review (six survey passes over routes, design docs,

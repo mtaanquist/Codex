@@ -745,3 +745,153 @@ Not a contract, but the natural order, foundations first:
    recap.
 8. Deferred refinements: chat persistence and browsing; the native Claude
    adapter.
+
+## Frontend wiring map (backend status as of the feat/assistant-gateway branch)
+
+A note for the frontend agent. The server-only plumbing is built and tested
+under `src/lib/server/llm/`; the surfaces (SSE endpoints, form actions, Svelte
+UI, worker jobs) are not. This maps each feature to what it should call. Status
+markers: [built] server-side helper exists and is tested; [to build] the
+frontend agent creates it.
+
+Everything that touches the key or the endpoint is server-only. The browser
+never calls the model endpoint; a SvelteKit `+server.ts` (SSE) or a form action
+calls the gateway, which proxies through the egress guard.
+
+### Gating (render nothing when off)
+
+- [built] `accountLlmView(db, userId)` and `resolveLlmConfig(db, userId, storyId?)`
+  (`llm/config.ts`). The gate is `assistantGate(...)` -> `{ configured,
+  accountEnabled, tabEnabled, surfacesEnabled }`.
+- [to build] Feed the gate into the layout load (the way asset-backed features
+  hide when no bucket is set), so the Assistant tab, editor menu items, and
+  continuation render only when allowed. Rule: tab needs `tabEnabled`; in-editor
+  and in-menu surfaces need `surfacesEnabled`; nothing renders when not
+  `configured` or the master is off.
+
+### Account Assistant settings (configure + enable)
+
+- [built] Read: `accountLlmView` (never exposes the key; has `hasKey`,
+  `assistantName`, `persona`, `models`, `toolCallBudget`, capability flags).
+- [built] Save: `saveAccountLlmConfig(db, userId, input)` (blank `apiKey` keeps
+  the stored one; validates the endpoint). Persona presets: `PERSONAS`,
+  `Persona`, `MAX_ASSISTANT_NAME` (`llm/prompts/persona.ts`) for the tone
+  dropdown and name field.
+- [built] The master toggle (kill switch) is the `enabled` field. Keep the
+  privacy disclosure on this control (see "The kill switch as a prominent
+  control").
+- [to build] The settings page + a form action that calls `saveAccountLlmConfig`.
+
+### Endpoint setup helpers (so a non-technical writer does not type a model name)
+
+- [built] Model discovery: `discoverModels(db, userId)` (saved config) or
+  `listEndpointModels(db, conn)` (submitted-but-unsaved endpoint/key). Returns
+  sorted model ids for a dropdown. (`llm/models.ts`)
+- [built] Test connection: `testAccountConnection(db, userId, model?)` /
+  `testEndpointConnection(db, conn, model)` - sends a tiny prompt and returns the
+  model's reply.
+- [built] Capabilities: `probeAccountEndpoint(db, userId, model?)` /
+  `probeEndpoint(db, conn, model)` - returns `{ supportsStreaming, supportsTools }`
+  for a "tools: supported / not" line. Save these onto the config (via
+  `saveAccountLlmConfig`) so the gateway withholds tools when unsupported.
+- [to build] Form actions / buttons that call these and a model `<select>`.
+
+### Admin egress policy (the SSRF control)
+
+- [built] `egressPolicy(db)` / `saveEgressPolicy(db, { policy, allowlist })`
+  (`llm/egress.ts`); policy is `block-private | allowlist | open`.
+- [to build] An admin panel section (policy select + host allowlist). No help
+  article needed (admin panel).
+
+### Per-story override (the Assistant tab's mute)
+
+- [built] `saveStoryLlmOverride(db, storyId, { enabled?: false | null, models? })`
+  - `enabled: false` mutes this story, `null` clears the override (back to the
+  account default). A story can only subtract.
+- [to build] The mute control on the Assistant tab.
+
+### Chat (the Assistant tab) - sequencing step 2
+
+- [to build] `POST /api/assistant/chat` as an SSE `+server.ts`. It should:
+  1. assemble context: `assembleContext(db, { userId, storyId, sceneId?, focusText? })`
+     (`llm/context/assemble.ts`), then `buildSystemMessage(context)`;
+  2. call `stream(db, { userId, storyId, sceneId?, role: 'chat', enableTools: true,
+     messages: [systemMessage, ...clientTurns] })` (`llm/gateway.ts`);
+  3. forward the `StreamEvent`s (`token` | `done` | `error`) to the browser as SSE.
+- [built] The gateway prepends the persona system message itself and runs the
+  tool loop; the client holds the transcript (ephemeral first cut). Suggested
+  prompt chips can be seeded from `context.sources` (entities/scenes/lore).
+- [built] Grounding: `context.sources` carries entity ids, scene ids + titles,
+  and lore ids; `find_appearances` (a tool) returns mention offsets for "jump to
+  the source" links, the same way appears-in snippets already work.
+
+### Inline (editor) - sequencing step 5
+
+- [to build] `POST /api/assistant/continuation` and `/api/assistant/coauthor`
+  SSE endpoints. Continuation: `stream(..., role: 'continuation', enableTools:
+  false)`, no context needed beyond the current text the client sends. Co-author:
+  build context with `assembleContext` first, `role: 'coauthor'`.
+- [to build] The CodeMirror ghost-text extension (its own compartment, distinct
+  from entity autocomplete) and the co-author side panel (insert / edit /
+  reject).
+
+### Review (Assistant-as-reviewer) - sequencing step 4
+
+- [built] The Assistant writes through the existing review framework as a third
+  author. Single-scene review: call `stream`/`complete` with `role: 'reviewer'`
+  and `enableTools: true`; the model uses the `suggest_edit` and `leave_comment`
+  tools, which stage `review_suggestions` / review comments authored by the
+  Assistant (nothing is applied to prose).
+- [built] Render: `listSuggestions(db, storyId)` and `listThreads(db, storyId)`
+  (`review.ts`) now carry `isAssistant` (badge it) and `reviewerName` resolved
+  live from the assistant's name. Accept/reject is the unchanged
+  `decideSuggestion` / `setThreadResolved`. The existing author-review screen
+  already renders these.
+- [to build] Entry points (left-sidebar "Review this scene/chapter", story
+  settings "Review this story", palette command). Whole-story review is a
+  background worker job (see below).
+
+### Background jobs - sequencing steps 4 and 7
+
+- [to build] New pg-boss queues `assistant-review`, `assistant-enrich`,
+  `assistant-summaries` (add names to `queues.ts`, enqueue helpers to `jobs.ts`,
+  handlers in `src/worker/index.ts`). The handlers call the gateway directly
+  (`complete`/`stream`, no HTTP hop) and write through the same review/entity
+  helpers. Completion/failure rides the existing notifications matrix (a new
+  kind). None of this is built.
+
+### Tool use and structural actions - sequencing step 6
+
+- [built] Read tools (`get_scene`, `get_entity`, `find_appearances`,
+  `search_text`) and prose write tools (`suggest_edit`, `leave_comment`) in
+  `llm/tools/`. The gateway loop dispatches them, capped by the account
+  `toolCallBudget`. The frontend only renders the staged results (the
+  `isAssistant` suggestions/comments).
+- [to build] Structural write tools (create scene from a template, create an
+  entity, set a quick detail, split a scene) need a preview-and-confirm artifact
+  that does not exist yet; they are deliberately deferred. Add them as new tools
+  in `llm/tools/registry.ts` + `dispatch.ts` with a staging store when taken on.
+
+### Help and exports
+
+- [to build] A writer-facing help article under `src/lib/docs/` (configuring an
+  endpoint, the kill switch and what it sends, the three surfaces, accepting
+  suggestions), per the CLAUDE.md rule. The admin egress panel needs none.
+- [built] No new trapped content: accepted suggestions land in prose/entities,
+  which already export; ephemeral chat and derived artifacts do not ride the
+  export.
+
+### One-line server API index (all under `src/lib/server/llm/`)
+
+- `config.ts`: `accountLlmView`, `resolveLlmConfig`, `assistantGate`,
+  `saveAccountLlmConfig`, `saveStoryLlmOverride`, `ASSISTANT_ROLES`.
+- `prompts/persona.ts`: `PERSONAS`, `Persona`, `MAX_ASSISTANT_NAME`,
+  `buildPersonaPrompt`.
+- `models.ts`: `discoverModels`, `listEndpointModels`, `testAccountConnection`,
+  `testEndpointConnection`, `probeAccountEndpoint`, `probeEndpoint`.
+- `egress.ts`: `egressPolicy`, `saveEgressPolicy`.
+- `context/assemble.ts`: `assembleContext`, `buildSystemMessage`.
+- `gateway.ts`: `stream`, `complete` (the only entry the surfaces call),
+  `GatewayRequest`, `AssistantDisabledError`.
+- `review.ts` (existing): `listSuggestions`, `listThreads`, `decideSuggestion`,
+  `setThreadResolved` - now Assistant-aware (`isAssistant`).
