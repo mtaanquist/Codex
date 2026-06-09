@@ -811,6 +811,27 @@ endpoint. Started 2026-06-09.
       whole-story fallback, body fallback) that needs Postgres, so it is left for
       CI. Lint, check, and unit pass locally. Next in step 7: `assistant-summaries`
       (summary maintenance), then entity enrichment + arc summaries.
+- [ ] Summary maintenance (`assistant-summaries`, sequencing step 7; branch
+      `feat/assistant-summaries`). A background job that drafts and refreshes
+      scene and chapter `summary_md` - the derived metadata recap and context
+      assembly feed on. `summariseStory` (`llm/summaries.ts`) fills blank
+      summaries, refreshes ones the Assistant generated when the body changed
+      since, and never overwrites a summary the writer wrote by hand. Provenance +
+      staleness via a new nullable `summary_generated_at` watermark on scenes and
+      chapters (migration 0053, additive); the summary write preserves the row's
+      `updated_at` so it neither registers as an edit nor looks stale next run, and
+      chapter summaries refresh when their scenes were re-summarised this run.
+      Triggered by "Update summaries" at the top of the Assistant tab ->
+      `POST /api/assistant/summaries-job` -> `queueAssistantSummaries` (singleton
+      per story); the worker calls the gateway directly (`role: 'chat'`, no tools,
+      summaries are generated metadata not staged suggestions) and notifies on
+      completion (new `assistant_summaries` notification kind). Editor help
+      documents it. Unit tests cover the prompt builders and the `needsSummary`
+      decision matrix; an integration test with a stub provider covers the DB
+      behaviour (fill/skip-handwritten/refresh, `updated_at` preserved, chapter
+      from scenes) - needs Postgres, left for CI. Lint, check, unit, and the worker
+      import-resolution check pass locally. Next in step 7: entity enrichment +
+      character arc summaries.
 
 ## Capability review follow-ups (2026-06-06)
 

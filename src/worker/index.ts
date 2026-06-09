@@ -11,7 +11,8 @@ import {
 	PURGE_UNIVERSES_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
-	ASSISTANT_REVIEW_QUEUE
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
 } from '../lib/server/queues.ts';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -45,6 +46,7 @@ import {
 	s3AssetStore
 } from '../lib/server/assets.ts';
 import { reviewStoryScenes } from '../lib/server/llm/scene-review.ts';
+import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { eq } from 'drizzle-orm';
 
@@ -72,6 +74,7 @@ await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
+await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
 
 await boss.work<{ sceneId: string }>(MENTIONS_SCENE_QUEUE, async (jobs) => {
 	for (const job of jobs) {
@@ -181,6 +184,53 @@ await boss.work<{ userId: string; storyId: string; chapterId?: string }>(
 		}
 	}
 );
+
+// Whole-story summary maintenance: draft and refresh scene and chapter
+// summaries (the metadata that feeds recap and context). Owner re-checked at run
+// time; the writer is notified when it is done. Like the review job, the gateway
+// is called directly with no HTTP hop.
+await boss.work<{ userId: string; storyId: string }>(ASSISTANT_SUMMARIES_QUEUE, async (jobs) => {
+	for (const job of jobs) {
+		const { userId, storyId } = job.data;
+		const [story] = await db
+			.select({
+				ownerId: schema.stories.ownerId,
+				title: schema.stories.title,
+				slug: schema.stories.slug
+			})
+			.from(schema.stories)
+			.where(eq(schema.stories.id, storyId));
+		if (!story || story.ownerId !== userId) {
+			console.warn(`assistant summaries: story ${storyId} not owned by ${userId}, skipping`);
+			continue;
+		}
+		const result = await summariseStory(db, { userId, storyId });
+		const written = result.scenes + result.chapters;
+		const href = `/stories/${story.slug}`;
+		let title: string;
+		if (written === 0 && result.failed > 0) {
+			title = `The Assistant could not summarise "${story.title}". Check the endpoint in your settings.`;
+		} else if (written === 0) {
+			title = `The Assistant found nothing to summarise in "${story.title}".`;
+		} else {
+			title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
+		}
+		const digestUsers = await insertNotifications(db, [userId], 'assistant_summaries', {
+			title,
+			href
+		});
+		for (const id of digestUsers) {
+			await boss.send(
+				NOTIFICATION_DIGEST_QUEUE,
+				{ userId: id },
+				{ startAfter: 600, singletonKey: id }
+			);
+		}
+		console.log(
+			`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
+		);
+	}
+});
 
 await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs) => {
 	for (const job of jobs) {
