@@ -98,7 +98,15 @@ The conversation is not saved. It clears when you reload or leave the page.
 
 While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 
-You can also ask the Assistant to review a scene: right-click the scene in the left sidebar and choose "Review this scene". It reads the scene and leaves comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. Nothing in your scene changes until you accept a suggestion.
+To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
+
+You can also ask the Assistant to review your writing and leave comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. There are three ways in:
+
+- A single scene: right-click the scene in the left sidebar and choose "Review this scene".
+- A chapter: right-click the chapter and choose "Review this chapter".
+- The whole story: open the story's settings, go to Review, and select "Review this story with the Assistant".
+
+A chapter or whole-story review runs in the background, since it reads every scene; you get a notification when its notes are ready. Nothing in your writing changes until you accept a suggestion.
 
 To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted. This does not change your other stories or your account setting.
 
