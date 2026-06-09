@@ -268,7 +268,8 @@ export type BackupRunOptions = {
 // and the skip never fires. pg_restore renders the archive back to plain SQL,
 // which carries no timestamp, so identical data hashes identically.
 function defaultHashCommand(scratchPath: string): string[] {
-	return ['pg_restore', '--no-owner', scratchPath];
+	// `-f -` writes the plain SQL to stdout (pg_restore requires one of -f/-d).
+	return ['pg_restore', '--no-owner', '-f', '-', scratchPath];
 }
 
 async function hashDump(
