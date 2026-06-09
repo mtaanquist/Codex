@@ -120,3 +120,60 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await killToggle.click();
 	await expect(status).toHaveText('Assistant off');
 });
+
+// Lives in this file (not its own spec) so it never runs concurrently with the
+// kill-switch test above: both mutate the shared account Assistant state, and
+// tests within one file run serially.
+test('assistant tab: gated by the account switch and muted per story', async ({ page }) => {
+	const killToggle = page.locator('label.toggle-xl');
+	const status = page.locator('.ks-status');
+
+	// Turn the Assistant on first: the endpoint config below the kill switch is
+	// dimmed and not interactable while it is off. Then set an endpoint (no
+	// network: nothing is sent until a message is actually asked). The tab needs
+	// both an endpoint and the master on.
+	await page.goto('/account/assistant');
+	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
+	await expect(status).toHaveText('Assistant on');
+	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
+	await page.getByRole('button', { name: 'Save endpoint' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+
+	// A throwaway story to open the editor against.
+	const universeName = `AI gate ${Date.now()}`;
+	await page.goto('/');
+	await page.getByRole('button', { name: 'New universe' }).click();
+	await page.getByLabel('New universe').fill(universeName);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: universeName })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
+	await page.getByLabel('New story').fill('Gatekeeper');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
+	const storyUrl = page.url();
+
+	// With the account on, the Assistant tab shows; opening it reveals the chat.
+	const tab = page.locator('.rtab', { hasText: 'Assistant' });
+	await expect(tab).toBeVisible();
+	await tab.click();
+	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
+
+	// Muting subtracts the chat but keeps the tab as the un-mute switch.
+	await page.getByRole('button', { name: 'Mute for this story' }).click();
+	await expect(page.locator('.assistant-muted')).toBeVisible();
+	await expect(tab).toBeVisible();
+	await page.getByRole('button', { name: 'Turn on for this story' }).click();
+	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
+
+	// Turning the account switch off removes the tab entirely (gated, not greyed).
+	await page.goto('/account/assistant');
+	await killToggle.click();
+	await expect(status).toHaveText('Assistant off');
+	await page.goto(storyUrl);
+	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
+	await expect(page.locator('.rtab', { hasText: 'Assistant' })).toHaveCount(0);
+});

@@ -123,6 +123,37 @@ export function assistantGate(
 	};
 }
 
+// What the editor page load needs to decide what Assistant UI to render, with
+// no key decryption: whether the tab shows, whether the in-editor surfaces are
+// live, whether this story is muted, and the Assistant's display name for the
+// tab. Mirrors the gate (see assistantGate) for the layout, the way the asset
+// config feeds the pages that hide asset-backed features.
+export type AssistantLayout = {
+	tabEnabled: boolean;
+	surfacesEnabled: boolean;
+	muted: boolean;
+	name: string;
+};
+
+export async function assistantLayout(
+	db: Database,
+	userId: string,
+	storyId?: string
+): Promise<AssistantLayout> {
+	const account = await accountLlmConfig(db, userId);
+	const override = storyId ? await storyOverride(db, storyId) : undefined;
+	const gate = assistantGate(account, override);
+	return {
+		tabEnabled: gate.tabEnabled,
+		surfacesEnabled: gate.surfacesEnabled,
+		// The tab stays on a muted story to un-mute; tabEnabled-but-not-surfaces is
+		// exactly the muted state (account on, this story off).
+		muted: gate.tabEnabled && !gate.surfacesEnabled,
+		// A blank name is allowed at rest; the surfaces show a default label.
+		name: account.assistantName || 'Assistant'
+	};
+}
+
 export async function accountLlmConfig(db: Database, userId: string): Promise<StoredAccountConfig> {
 	const [row] = await db
 		.select({ llmConfig: users.llmConfig })

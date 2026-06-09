@@ -20,6 +20,7 @@ import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisi
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 import { listMentionPins } from '$lib/server/mention-pins';
 import { ownedStory } from '$lib/server/story-access';
+import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import {
 	deleteChapter,
 	destroyScene,
@@ -89,7 +90,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		pinList,
 		preferences,
 		trashedScenes,
-		pageSetup
+		pageSetup,
+		assistant
 	] = await Promise.all([
 		// The sidebar's book switcher: every story in the universe, with the
 		// chapter and word counts its menu rows show.
@@ -215,7 +217,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		listTrashedScenes(db, story.id),
 		// The preview honours the story's scene break and paragraph style so it
 		// matches the export.
-		view === 'preview' ? storyPageSetup(db, story.id) : Promise.resolve(null)
+		view === 'preview' ? storyPageSetup(db, story.id) : Promise.resolve(null),
+		// What Assistant UI to render: the tab, whether surfaces are live, the
+		// per-story mute, the Assistant's name. Absent entirely when not enabled,
+		// the way asset-backed features hide when no bucket is configured.
+		assistantLayout(db, locals.user!.id, story.id)
 	]);
 
 	const storySiblings = siblingResult.rows.map((row) => {
@@ -339,6 +345,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		view,
 		storyDoc,
 		pageSetup,
+		assistant,
 		// Carried through the story view so toggling back lands on the scene
 		// that was open before.
 		returnSceneId: url.searchParams.get('scene')
@@ -437,6 +444,21 @@ export const actions: Actions = {
 		const ok = await destroyScene(db, locals.user!.id, sceneId);
 		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
 		redirect(303, sceneReturnPath(story.slug, data));
+	},
+	// The per-story mute on the Assistant tab. A story can only subtract: muting
+	// writes enabled:false, un-muting clears the override so the story follows
+	// the account again. Neither can light the Assistant up when the account is
+	// off (the master is the kill switch). The default enhance reloads the page,
+	// so the gate re-renders.
+	muteAssistant: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { enabled: false });
+		return { scope: 'assistant-mute' };
+	},
+	unmuteAssistant: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { enabled: null });
+		return { scope: 'assistant-mute' };
 	}
 };
 
