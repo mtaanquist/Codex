@@ -57,9 +57,8 @@ Years in, your universe has grown large enough that you want to share it. You op
 ```
 universe
   ├── story (one or more)
-  │     ├── chapter (organisational container)
-  │     │     └── scene (atomic writing unit)
-  │     └── outline nodes
+  │     └── chapter (organisational container)
+  │           └── scene (atomic writing unit)
   └── characters, places, lore entries (universe-scoped; surfaced per story by reference)
 ```
 
@@ -91,7 +90,7 @@ The editor exists at two scopes: **story** and **universe**. Both use the same t
 
 This structure — universes as first-class editable surfaces, not just settings containers — is important for worldbuilders and TTRPG designers who may never write a prose "story" but need a full editor for characters, places, and lore. It's also important for novelists adding a character who'll cross multiple books: the natural home for such a character is the universe, not whichever book they happened to appear in first.
 
-Across every view at either scope, the right sidebar has four tabs: **Reference** (panels for what's in view), **History** (the revision timeline for whatever is currently being edited), **Session** (quick settings that govern how you're working in this moment), and **Assistant** (the LLM chat surface). Each tab has a distinct semantic axis: *what's in view*, *what was in view*, *how you're working with it*, and *who you're working with*. The Assistant is deferred LLM work, not in v1 (see `assistant.md` and "AI: deferred" below); the tab is its reserved home, so the chat is a peer of the other three rather than nested inside Session. A separate surface many apps ship — a command palette — is deferred, not in v1.
+Across every view at either scope, the right sidebar has four tabs: **Reference** (panels for what's in view), **History** (the revision timeline for whatever is currently being edited), **Session** (quick settings that govern how you're working in this moment), and **Assistant** (the LLM chat surface). Each tab has a distinct semantic axis: *what's in view*, *what was in view*, *how you're working with it*, and *who you're working with*. The Assistant is deferred LLM work, not in v1 (see `assistant.md` and "AI: deferred" below); the tab is its reserved home, so the chat is a peer of the other three rather than nested inside Session. A command palette (Ctrl+K), which absorbs search and cross-view navigation into one surface, was added later in Phase 7.
 
 ### The Session tab
 
@@ -111,7 +110,7 @@ A per-entity `auto_detect_mentions` flag disables matching for common-word names
 
 Where mentions are *implicit* links derived from prose, relationships are **explicit** links declared by the user. A character is the parent of another character; a character lives in a place; a place is part of a larger place. Relationships are the worldbuilding equivalent of mentions: they cross-reference entities, but the user enters them directly rather than the system discovering them.
 
-Each relationship has a typed label from a defined set — *parent of, sibling of, rival of, lives in, rules, part of,* and so on — plus optional free-text notes. The relation types ship with sensible built-in defaults (family, social, geography) and can be extended per-universe; a universe about sworn-sword hierarchies or starship crews can add the types that fit it without the tool privileging any particular genre. Direction matters: *parent of* is asymmetric, rendered as "child of" on the target's page; *sibling of* is symmetric, rendered the same on both sides. The free-text label is never user-typed — it's always picked from the defined set, so relationships stay filterable, inverse-renderable, and eventually graphable.
+Each relationship has a typed label from a defined set — *parent of, sibling of, rival of, lives in, rules, part of,* and so on — plus optional free-text notes. The relation types ship with sensible built-in defaults (family, social, geography) and can be extended per-universe; a universe about sworn-sword hierarchies or starship crews can add the types that fit it without the tool privileging any particular genre. Direction matters: *parent of* is asymmetric, rendered as "child of" on the target's page; *sibling of* is symmetric, rendered the same on both sides. The free-text label is never user-typed — it's always picked from the defined set, so relationships stay filterable, inverse-renderable, and graphable (the relationship web view shipped in v2.16.0).
 
 Relationships can be scoped to a specific story, so a reconciliation in book two doesn't have to rewrite the universe-level rival relationship that's true across the broader canon. Story-scoped relationships supersede universe-wide ones on that story's pages.
 
@@ -123,7 +122,7 @@ Building on the mention index, the editor also offers completion suggestions whi
 
 ### History
 
-Every debounced save produces a revision. Manual checkpoints can be added at any time with a short label. Revisions are polymorphic across every editable entity — scenes, chapters, characters, places, lore entries, outline nodes, notes — and surface at three scopes:
+Every debounced save produces a revision. Manual checkpoints can be added at any time with a short label. Revisions are polymorphic across every editable entity — scenes, chapters, characters, places, lore entries, notes — and surface at three scopes:
 
 - **Per-item** via the History tab in the right sidebar: shows the timeline for whatever is currently open.
 - **Per-story** via the History section of story settings: every revision in every scene, chapter, and story-scoped note, across time.
@@ -131,7 +130,7 @@ Every debounced save produces a revision. Manual checkpoints can be added at any
 
 Autosaves are pruned after ninety days; manual checkpoints are kept indefinitely. A selected revision can be previewed in the centre column (with a clear banner indicating preview mode) or restored — which, crucially, creates a new revision on top of the current one rather than overwriting it. Restoration is therefore reversible.
 
-A diff view sits alongside the timeline. Any two revisions can be compared, and a previewed revision is shown as a diff against the current text by default, with insertions and deletions marked inline. It is the same diff component wherever changes need to be shown, including a reviewer's suggested edits (see the deferred review feature in `schema.md`), so it is built once and reused.
+A diff view sits alongside the timeline. Any two revisions can be compared, and a previewed revision is shown as a diff against the current text by default, with insertions and deletions marked inline. It is the same diff component wherever changes need to be shown, including a reviewer's suggested edits (see the review feature in `schema.md`), so it is built once and reused.
 
 ### Focus mode
 
@@ -155,7 +154,7 @@ Codex assumes accounts. The same surfaces serve self-host users and hosted-insta
 
 **Sign-up.** A public sign-up page captures email, password, and display name. The account is created but unapproved: a row with `approved_at = null`. Until the operator approves, sign-in is blocked with a "your account is pending review" message. Email verification runs in parallel: a confirmation link is sent on sign-up, clicking it sets `email_verified_at`. Both gates have to pass before sign-in succeeds. The current `users.role` and `users.approved_at` columns already model this; the work is the UI, not the schema.
 
-**Approval.** A small admin page lists pending accounts with name, email, sign-up time, and approve/reject buttons. For an operator running an instance for friends, "I get a notification when someone signs up, I look at the email, I click approve" is the whole workflow. Self-rejection on the admin's part also exists for clearing out spam attempts. Invite codes are a deferred alternative: a future `invite_codes` table can short-circuit the approval gate when a valid code is presented on sign-up, but it's not v1.
+**Approval.** A small admin page lists pending accounts with name, email, sign-up time, and approve/reject buttons. For an operator running an instance for friends, "I get a notification when someone signs up, I look at the email, I click approve" is the whole workflow. Self-rejection on the admin's part also exists for clearing out spam attempts. Invite codes are an alternative, added later (Phase 6, migration 0026): an `invite_codes` table short-circuits the approval gate when a valid code is presented on sign-up.
 
 **Sign-in, password reset, sessions.** Standard session-based flows: a session cookie issued after sign-in, "forgot password" with email link, password reset, sign-out. Nothing custom unless something specifically needs it.
 
@@ -163,7 +162,7 @@ Codex assumes accounts. The same surfaces serve self-host users and hosted-insta
 
 **Plans, entitlements, and quotas.** What a user may do is expressed through a plan and its entitlements (see `schema.md`), modelled from the start so the shape is settled before it is needed. Every user is on a plan; the default plan grants everything, which is the right setting for self-host. Enforcement (rejecting a save or a create that exceeds an entitlement) is deferred until a real user makes it necessary, and billing is deferred further still: there is no payment processing and no Stripe in the foreseeable plan. A subscription layer, if it ever arrives, sets a user's `plan_id` without disturbing the rest of the model. Exploring a paid hosted tier is a deliberate someday, not a launch concern.
 
-**Distinct from collaboration.** None of the account surfaces here support shared editing or shared ownership of content. Every universe and story has a single `owner_id`. A future guest-review role is modelled in the schema but deferred: an author can invite someone (an existing user or not) to comment in threads and propose suggested edits on a single story, without that guest gaining an account or write access to the prose. See Review and collaboration in `schema.md`.
+**Distinct from collaboration.** None of the account surfaces here support shared editing or shared ownership of content. Every universe and story has a single `owner_id`. A guest-review role lets an author invite someone (an existing user or not) to comment in threads and propose suggested edits on a single story, without that guest gaining an account or write access to the prose. See Review and collaboration in `schema.md`.
 
 ## Public reading pages
 
@@ -212,7 +211,7 @@ Two things to keep separate even in writing about the deferred feature: **entity
 - **Not a chat tool.** When AI eventually arrives, the rubber-duck role will be a writing aid, not a general-purpose chat. Users wanting a chat interface have better options.
 - **Not a role-play tool.** Character dialogue belongs in the prose; no UI or schema supports character impersonation.
 - **Not a book-distribution platform.** Codex can publish reading pages to the web (see Public reading pages) and export a markdown archive, but it does not push your book into stores or produce publisher-ready files. Export to formats like DOCX with manuscript standards or a properly formatted EPUB is a someday-maybe; the primary export path is the markdown archive.
-- **Not a real-time collaboration tool.** Single-author-per-session is assumed. Review is async, not live: a future guest-review role lets an invited reviewer leave threaded comments and suggested edits that the author resolves in their own time, modelled in the schema but deferred. There is no simultaneous multi-author editing.
+- **Not a real-time collaboration tool.** Single-author-per-session is assumed. Review is async, not live: the guest-review role lets an invited reviewer leave threaded comments and suggested edits that the author resolves in their own time. There is no simultaneous multi-author editing.
 - **Not a feature-gated SaaS.** The hosted instance runs the same code anyone can install themselves, under the same MIT licence. There is no paid edition with extra features; if a difference between self-host and hosted ever appears, it will be operational (someone else runs the box) rather than functional (you get more features by paying).
 - **Not a mobile editing app.** Phones are too small to draft on meaningfully. Tablets in desktop mode work for review but aren't prioritised for authoring in v1.
 
@@ -244,11 +243,11 @@ Portability is achieved through export, not through storage format. The database
 
 - **Editing in the continuous view.** Resolved: the read-only continuous view shipped with the core writing loop, and author feedback confirmed editing in place is needed, scheduled as roadmap step 23b. What remains open is the default for scene marks inside the flow (shown or hidden) until the preferences UI exists to make it a choice.
 - **Plotlines or arcs as first-class entities.** Currently modelled through scene tags and metadata `jsonb`. May be promoted to their own table if usage shows it's needed.
-- **Command palette (Ctrl+K).** Desirable long-term, not v1. Would absorb search and cross-view navigation into one surface.
+- **Command palette (Ctrl+K).** Resolved: shipped in Phase 7, absorbing search and cross-view navigation into one surface.
 - **Assistant tab refinements (deferred with AI).** When the Assistant chat tab exists, it will need persistence, resumption, and browsing of past conversations. None of this matters until the chat exists. See `assistant.md`.
-- **Entity colours with meaning.** Character badges currently take a deterministic colour from the name. The better model: universe-defined categories with chosen colours (the `entity_categories` table already carries `color` for lore), opened up so characters and places can optionally join one - a nullable `category_id`, purely additive. Grouping the cast by colour then carries whatever meaning the author gives it (factions, families, POV tiers). Falls naturally out of step 16, when the category machinery is built for lore.
-- **How much markdown the editor should show.** Bodies are stored as markdown; today the editor shows the raw marks and the continuous view renders plain text. A proper renderer arrives with exports and the public reading pages (Phase 4), and the continuous view picks it up then. In-editor affordances (styled emphasis and headings while writing, the prototype's formatting toolbar) are candidates after that, and how much markup stays visible while writing is likely a display preference; worth testing on real authors before committing to a default.
-- **Preference layering.** Display preferences live on the user (`users.preferences`), but several (content font, density, markdown affordance, scene marks in the continuous flow) plausibly want per-story overrides merged at render time, the same user-plus-story override pattern already modelled for `llm_config`. A story-level preferences column is an additive migration when this is built.
+- **Entity colours with meaning.** Resolved: shipped in v1.2. Characters and places can join a universe-defined category that carries a colour (nullable `category_id`), grouping the cast by whatever meaning the author gives it (factions, families, POV tiers). Per-entity badge colours and images followed later (issue #305).
+- **How much markdown the editor should show.** Resolved: an `editingMode` preference (markdown or rich) shipped in Phase 7, where rich is CodeMirror live-preview (syntax marks hide except on the line being edited). The default flipped to rich in v2.25.0. The formatting toolbar and the shared renderer (exports, reading pages) shipped alongside.
+- **Preference layering.** Resolved: shipped in Phase 7 (migration 0032). `stories.preferences` jsonb holds per-story overrides merged over the user's `users.preferences` at load time, for the editor-behaviour keys; "use my account setting" clears the override.
 - **Sidebar resize.** Deferred. Current fixed widths (240 left, 280 right) are deliberately chosen; resize is polish.
 - **How aggressive revision pruning should be.** Every debounced save is probably too granular at scale. Coalescing consecutive autosaves within a short window into a single revision is an optimisation that only matters once the table grows.
-- **Guest review (reviewer role).** Schema reserves space for invitations, reviewers, comment threads, and suggested edits; the invite flow, the magic-link guest identity, and the accept/reject UI are deferred. Comments ship before suggested edits, which are the harder half.
+- **Guest review (reviewer role).** Resolved: shipped in Phase 6 — comments first (v2.8.0), then suggested edits (v2.9.0), with magic-link guest identity and the accept/reject UI.
