@@ -123,7 +123,8 @@ export async function summariseStory(
 				.where(eq(scenes.id, scene.id));
 			written += 1;
 			if (scene.chapterId) touchedChapters.add(scene.chapterId);
-		} catch {
+		} catch (err) {
+			console.error(`summaries: scene ${scene.id} failed:`, err);
 			failed += 1;
 		}
 	}
@@ -183,7 +184,8 @@ export async function summariseStory(
 				.set({ summaryMd: text, summaryGeneratedAt: new Date(), updatedAt: chapter.updatedAt })
 				.where(eq(chapters.id, chapter.id));
 			chaptersWritten += 1;
-		} catch {
+		} catch (err) {
+			console.error(`summaries: chapter ${chapter.id} failed:`, err);
 			failed += 1;
 		}
 	}
