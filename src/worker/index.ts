@@ -2,6 +2,7 @@ import { PgBoss } from 'pg-boss';
 import {
 	BACKUP_QUEUE,
 	EMAIL_QUEUE,
+	EMAIL_DEAD_LETTER_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
 	MENTIONS_SCENE_QUEUE,
 	MENTIONS_UNIVERSE_QUEUE,
@@ -68,6 +69,7 @@ await boss.createQueue(RECONCILE_MENTIONS_QUEUE);
 await boss.createQueue(EXPORT_ARTIFACTS_QUEUE);
 await boss.createQueue(BACKUP_QUEUE);
 await boss.createQueue(EMAIL_QUEUE);
+await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
@@ -245,6 +247,18 @@ await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		await sendEmail(db, job.data);
 		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
+	}
+});
+
+// Transactional email that exhausted its retries (a prolonged SMTP outage).
+// The send is given up, but it must not vanish: log it loudly so an operator
+// can resend by hand. The recipient flow already said "check your email", so
+// there is no other signal otherwise.
+await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
+	for (const job of jobs) {
+		console.error(
+			`email: DROPPED after retries - to ${job.data.to} (${job.data.subject}); SMTP likely down`
+		);
 	}
 });
 
