@@ -832,6 +832,31 @@ endpoint. Started 2026-06-09.
       from scenes) - needs Postgres, left for CI. Lint, check, unit, and the worker
       import-resolution check pass locally. Next in step 7: entity enrichment +
       character arc summaries.
+- [ ] Entity enrichment (sequencing step 7, the deferred suggestion machinery;
+      branch `feat/assistant-entity-enrichment`). The Assistant suggests new
+      aliases, quick details, and a summary for an entity, staged as suggestions
+      the writer accepts or rejects in the entity editor - the design's "lands as
+      suggestions on the entity, not an overwrite". New `entity_suggestions` table
+      (migration 0054, additive): polymorphic (entity_kind + entity_id), field
+      alias|detail|summary, owner-scoped. `entity-suggestions.ts` stages (dedup
+      against existing aliases/detail-labels/summary), lists pending, and decides:
+      accept applies the one field across the three entity kinds (lore alias ->
+      keywords) and records a 'suggestion' revision (so it shows in History and
+      rolls back); an accepted alias requeues the universe mention index. Inline,
+      sync generation: `enrichEntity` (`llm/enrich.ts`) reads where the entity
+      appears (`entityAppearances`), asks for a JSON object (no gateway tools, so
+      it works on any endpoint), and `parseEnrichResponse` pulls and validates the
+      JSON defensively. `POST /api/assistant/enrich` (gated) returns staged
+      suggestions; `POST /api/assistant/entity-suggestions/[id]` accepts/rejects
+      (no gate - acting on an existing suggestion). UI: a "Suggest details with the
+      Assistant" button + an accept/reject panel in `EntityEditor`, fed by the
+      story plan load (gate + pending suggestions for the selected entity);
+      accepting also applies to the open editor's state without a redundant save.
+      Planning help documents it. Unit tests cover the prompt + the defensive JSON
+      parse; an integration test (stub provider) covers stage/dedup, accept-applies
+      per field, reject, owner-scoping, and enrichEntity end-to-end - needs
+      Postgres, left for CI. Lint, check, and unit pass locally. Whole-universe
+      background `assistant-enrich` and character arc summaries remain for later.
 
 ## Capability review follow-ups (2026-06-06)
 

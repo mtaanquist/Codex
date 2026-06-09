@@ -41,6 +41,8 @@
 		membership = null,
 		entityHref,
 		universeRef,
+		assistantEnabled = false,
+		assistantSuggestions = [],
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -73,8 +75,20 @@
 		// When set, a settled rename offers to replace the old name across the
 		// universe's prose (the universe slug for the API path).
 		universeRef?: string;
+		// The Assistant can suggest aliases, details, and a summary for this entity
+		// (needs a story for the appearances it reads, and the account on).
+		assistantEnabled?: boolean;
+		// Pending Assistant suggestions for this entity, awaiting accept or reject.
+		assistantSuggestions?: AssistantSuggestion[];
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
+
+	type AssistantSuggestion = {
+		id: string;
+		field: 'alias' | 'detail' | 'summary';
+		label: string | null;
+		value: string;
+	};
 
 	const SAVE_DEBOUNCE_MS = 800;
 	// kind never changes for an instance; the page keys this component by
@@ -107,6 +121,73 @@
 	let details = $state((entity.details ?? []).map((detail) => ({ ...detail })));
 	// svelte-ignore state_referenced_locally
 	let notes = $state(storyNotesMd ?? '');
+
+	// Assistant suggestions for this entity. Seeded from the prop, then grown by
+	// "Suggest details" and pruned as the writer accepts or rejects each one.
+	// svelte-ignore state_referenced_locally
+	let suggestions = $state<AssistantSuggestion[]>([...assistantSuggestions]);
+	let enriching = $state(false);
+	let enrichNote = $state('');
+
+	async function runEnrich() {
+		if (enriching || !storyId) return;
+		enriching = true;
+		enrichNote = '';
+		try {
+			const response = await fetch('/api/assistant/enrich', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId, entityId: entity.id })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				enrichNote = body?.message ?? 'The Assistant could not suggest anything.';
+				return;
+			}
+			const body = (await response.json()) as { suggestions: AssistantSuggestion[] };
+			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
+			suggestions = [...suggestions, ...fresh];
+			if (fresh.length === 0) enrichNote = 'Nothing new to suggest from this story.';
+		} catch {
+			enrichNote = 'Something went wrong reaching the Assistant.';
+		} finally {
+			enriching = false;
+		}
+	}
+
+	// Apply an accepted suggestion to the open editor's state so it shows at once;
+	// the server already persisted it, so this does not trigger a save.
+	function applyLocally(s: AssistantSuggestion) {
+		if (s.field === 'summary') {
+			summary = s.value;
+		} else if (s.field === 'detail') {
+			details = [...details, { label: s.label ?? '', value: s.value }];
+		} else if (kind === 'lore') {
+			if (!keywords.includes(s.value)) keywords = [...keywords, s.value];
+		} else {
+			if (!aliases.includes(s.value)) aliases = [...aliases, s.value];
+		}
+	}
+
+	async function decideSuggestion(s: AssistantSuggestion, decision: 'accept' | 'reject') {
+		const response = await fetch(`/api/assistant/entity-suggestions/${s.id}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ decision })
+		});
+		if (!response.ok) {
+			enrichNote = 'Could not update that suggestion.';
+			return;
+		}
+		if (decision === 'accept') applyLocally(s);
+		suggestions = suggestions.filter((p) => p.id !== s.id);
+	}
+
+	function suggestionLabel(s: AssistantSuggestion): string {
+		if (s.field === 'summary') return 'Summary';
+		if (s.field === 'detail') return s.label ?? 'Detail';
+		return kind === 'lore' ? 'Keyword' : 'Alias';
+	}
 
 	// The badge override and its little menu. Colour and image post straight to
 	// the badge endpoint (not the debounced field save), then the page data
@@ -515,6 +596,46 @@
 		</div>
 	{/if}
 
+	{#if assistantEnabled && storyId}
+		<div class="assist-enrich">
+			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={runEnrich}>
+				{enriching ? 'Thinking...' : 'Suggest details with the Assistant'}
+			</button>
+			{#if enrichNote}
+				<span class="assist-note">{enrichNote}</span>
+			{/if}
+		</div>
+	{/if}
+
+	{#if suggestions.length > 0}
+		<div class="assist-suggestions">
+			<div class="section-label">Assistant suggestions</div>
+			<p class="field-hint">Drawn from where this entry appears in your prose. Accept to add it.</p>
+			{#each suggestions as s (s.id)}
+				<div class="assist-row">
+					<span class="assist-kind">{suggestionLabel(s)}</span>
+					<span class="assist-value">{s.value}</span>
+					<span class="assist-actions">
+						<button
+							class="btn btn-primary btn-sm"
+							type="button"
+							onclick={() => decideSuggestion(s, 'accept')}
+						>
+							Accept
+						</button>
+						<button
+							class="btn btn-secondary btn-sm"
+							type="button"
+							onclick={() => decideSuggestion(s, 'reject')}
+						>
+							Reject
+						</button>
+					</span>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
 	{#if kind === 'character' || kind === 'place'}
 		<div class="section-label">Aliases</div>
 		<p class="field-hint">
@@ -846,6 +967,57 @@
 	}
 	.badge-upload {
 		cursor: pointer;
+	}
+
+	.assist-enrich {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin: 12px 0 0;
+	}
+	.assist-note {
+		font-size: 12.5px;
+		color: var(--text-faint);
+	}
+	.assist-suggestions {
+		margin-top: 12px;
+		padding: 10px 12px;
+		border: 1px solid var(--accent-line);
+		border-radius: 10px;
+		background: var(--bg-card);
+	}
+	.assist-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 7px 0;
+		border-top: 1px solid var(--border);
+	}
+	.assist-row:first-of-type {
+		border-top: 0;
+	}
+	.assist-kind {
+		flex: none;
+		min-width: 64px;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-faint);
+	}
+	.assist-value {
+		flex: 1;
+		font-size: 13.5px;
+		color: var(--text);
+	}
+	.assist-actions {
+		display: inline-flex;
+		gap: 6px;
+		flex: none;
+	}
+	.btn-sm {
+		padding: 4px 10px;
+		font-size: 12.5px;
 	}
 
 	.rename-offer {

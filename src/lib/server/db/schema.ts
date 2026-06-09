@@ -1067,6 +1067,36 @@ export const reviewSuggestions = pgTable(
 	]
 );
 
+// Assistant-suggested enrichments for an entity (character/place/lore): a new
+// alias, a quick detail, or a drafted summary. They stage here pending the
+// writer's accept or reject in the entity editor; nothing changes the entity
+// until accepted. Polymorphic across the three entity tables (kind + id), so no
+// FK on entity_id; owner_id scopes accept/reject and cleanup. The value carries
+// the alias text, the detail value, or the summary text by field; label is the
+// detail label, set only for field = 'detail'.
+export const entitySuggestions = pgTable(
+	'entity_suggestions',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		entityKind: text('entity_kind', { enum: ['character', 'place', 'lore'] }).notNull(),
+		entityId: uuid('entity_id').notNull(),
+		field: text('field', { enum: ['alias', 'detail', 'summary'] }).notNull(),
+		label: text('label'),
+		value: text('value').notNull(),
+		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
+			.notNull()
+			.default('pending'),
+		decidedAt: timestamp('decided_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('entity_suggestions_entity_idx').on(table.entityKind, table.entityId, table.status)
+	]
+);
+
 // In-app notifications behind the topbar bell. payload carries the display
 // text and link target; in_app and email_wanted are stamped from the user's
 // preference matrix at creation, and emailed_at when a digest sends it.

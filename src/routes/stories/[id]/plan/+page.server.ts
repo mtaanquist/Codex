@@ -37,6 +37,8 @@ import {
 	listRelationTypes,
 	type RelationshipView
 } from '$lib/server/relationships';
+import { assistantLayout } from '$lib/server/llm/config';
+import { listPendingForEntity, type EntitySuggestion } from '$lib/server/entity-suggestions';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -134,6 +136,19 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
+	// The Assistant can enrich the open entity (suggest aliases, details, a
+	// summary) when it is on for this story; its pending suggestions ride along.
+	const assistant = await assistantLayout(db, locals.user!.id, story.id);
+	let assistantSuggestions: EntitySuggestion[] = [];
+	if (selected) {
+		assistantSuggestions = await listPendingForEntity(
+			db,
+			locals.user!.id,
+			selectedKind,
+			selected.id
+		);
+	}
+
 	const chapterList = await db
 		.select({ id: chapters.id, title: chapters.title })
 		.from(chapters)
@@ -201,7 +216,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		todoCounts,
 		revisionTarget,
 		revisionRows,
-		revisionPreview
+		revisionPreview,
+		assistantEnabled: assistant.surfacesEnabled,
+		assistantSuggestions
 	};
 };
 
