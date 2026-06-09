@@ -31,10 +31,15 @@ test('passkeys: register, sign in with one, remove it', async ({ page }) => {
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
 	await page.getByRole('link', { name: 'Security' }).click();
 
-	await page.getByLabel('Passkey name').fill('e2e device');
 	// Adding a passkey re-confirms the password, the same as removing one.
-	await page.getByLabel('Current password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Add passkey' }).click();
+	// The page has other "Current password" fields (change password, remove
+	// passkey), so scope to the add-passkey row.
+	const addRow = page.locator('.settings-actions', {
+		has: page.getByRole('button', { name: 'Add passkey' })
+	});
+	await addRow.getByLabel('Passkey name').fill('e2e device');
+	await addRow.getByLabel('Current password').fill('e2e-password');
+	await addRow.getByRole('button', { name: 'Add passkey' }).click();
 	await expect(page.getByText('Passkey added.')).toBeVisible();
 	await expect(page.getByText('e2e device')).toBeVisible();
 
