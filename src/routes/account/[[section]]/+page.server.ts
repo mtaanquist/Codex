@@ -28,6 +28,15 @@ import { users } from '$lib/server/db/schema';
 import { verifyPassword } from '$lib/server/password';
 import { queueEmail } from '$lib/server/jobs';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
+import {
+	accountLlmView,
+	ASSISTANT_ROLES,
+	saveAccountLlmConfig,
+	type ModelMap,
+	type SaveResult
+} from '$lib/server/llm/config';
+import { discoverModels, testAccountConnection } from '$lib/server/llm/models';
+import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
 import { normalisePageSetup } from '$lib/page-setup';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
@@ -67,7 +76,10 @@ function reauthGuard(userId: string, scope: string) {
 
 export const load: PageServerLoad = async ({ locals, params, url }) => {
 	// Profile rests on /account itself; the other sections have their own page.
-	if (params.section !== undefined && !['security', 'display'].includes(params.section))
+	if (
+		params.section !== undefined &&
+		!['security', 'display', 'assistant'].includes(params.section)
+	)
 		error(404, 'Not found');
 	const user = locals.user!;
 	const sessionId = locals.session!.id;
@@ -104,6 +116,10 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		profile,
 		preferences: await userPreferences(db, user.id),
 		pageSetup: await userPageSetup(db, user.id),
+		assistant: await accountLlmView(db, user.id),
+		// The tone presets, sent through so the client need not import the
+		// server-only persona module.
+		personas: PERSONAS.map((p) => ({ id: p.id, label: p.label, description: p.description })),
 		sessions: await listSessions(db, user.id, sessionId),
 		graceDays: DELETION_GRACE_DAYS,
 		twoFactor: {
@@ -117,6 +133,35 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		passkeysAvailable: secretsAvailable()
 	};
 };
+
+// The Assistant section saves in pieces (identity, endpoint, models, the kill
+// switch), each its own button. saveAccountLlmConfig replaces the whole config
+// from its input, so a partial save first reads the current view and overlays
+// only the changed fields; a blank api key keeps the stored one.
+async function patchAssistant(
+	userId: string,
+	patch: Partial<{
+		enabled: boolean;
+		assistantName: string;
+		persona: string;
+		endpoint: string;
+		apiKey: string;
+		models: ModelMap;
+	}>
+): Promise<SaveResult> {
+	const current = await accountLlmView(db, userId);
+	return saveAccountLlmConfig(db, userId, {
+		enabled: patch.enabled ?? current.enabled,
+		assistantName: patch.assistantName ?? current.assistantName,
+		persona: normalisePersona(patch.persona ?? current.persona),
+		endpoint: patch.endpoint ?? current.endpoint,
+		apiKey: patch.apiKey ?? '',
+		models: patch.models ?? current.models,
+		toolCallBudget: current.toolCallBudget,
+		supportsStreaming: current.supportsStreaming,
+		supportsTools: current.supportsTools
+	});
+}
 
 export const actions: Actions = {
 	updateName: async ({ request, locals }) => {
@@ -223,6 +268,53 @@ export const actions: Actions = {
 			dailyWordGoal
 		});
 		return { scope: 'prefs', saved: true };
+	},
+	toggleAssistant: async ({ request, locals }) => {
+		const data = await request.formData();
+		// The kill switch: checked means engaged, which turns the Assistant off.
+		const enabled = data.get('killSwitch') !== 'on';
+		const result = await patchAssistant(locals.user!.id, { enabled });
+		if (!result.ok) return fail(400, { scope: 'assistant-kill', message: result.reason });
+		return { scope: 'assistant-kill', saved: true };
+	},
+	saveAssistantIdentity: async ({ request, locals }) => {
+		const data = await request.formData();
+		const result = await patchAssistant(locals.user!.id, {
+			assistantName: String(data.get('assistantName') ?? ''),
+			persona: String(data.get('persona') ?? '')
+		});
+		if (!result.ok) return fail(400, { scope: 'assistant-identity', message: result.reason });
+		return { scope: 'assistant-identity', saved: true };
+	},
+	saveAssistantEndpoint: async ({ request, locals }) => {
+		const data = await request.formData();
+		const result = await patchAssistant(locals.user!.id, {
+			endpoint: String(data.get('endpoint') ?? ''),
+			apiKey: String(data.get('apiKey') ?? '')
+		});
+		if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
+		return { scope: 'assistant-endpoint', saved: true };
+	},
+	saveAssistantModels: async ({ request, locals }) => {
+		const data = await request.formData();
+		const models: ModelMap = {};
+		for (const role of ASSISTANT_ROLES) {
+			const value = String(data.get(role) ?? '').trim();
+			if (value) models[role] = value;
+		}
+		const result = await patchAssistant(locals.user!.id, { models });
+		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
+		return { scope: 'assistant-models', saved: true };
+	},
+	testAssistant: async ({ locals }) => {
+		const result = await testAccountConnection(db, locals.user!.id);
+		if (!result.ok) return fail(400, { scope: 'assistant-test', message: result.reason });
+		return { scope: 'assistant-test', reply: result.reply };
+	},
+	discoverAssistantModels: async ({ locals }) => {
+		const result = await discoverModels(db, locals.user!.id);
+		if (!result.ok) return fail(400, { scope: 'assistant-discover', message: result.reason });
+		return { scope: 'assistant-discover', models: result.models };
 	},
 	saveNotifications: async ({ request, locals }) => {
 		const data = await request.formData();

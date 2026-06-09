@@ -665,6 +665,27 @@ endpoint. Started 2026-06-09.
       withholds tools when `supportsTools` is false. Unit tests (tool call
       detected / rejected) + integration (capabilities reported, egress
       denial). UI deferred.
+- [ ] Account Assistant settings UI (first surface; design handed over by the
+      author as a standalone HTML mock). The Assistant section at
+      `/account/assistant` on the account sidebar shell: a kill switch (the
+      `enabled` master, read inverted - engaged means off - which dims the config
+      while off), a privacy explainer card, Identity (name + tone preset from
+      `PERSONAS`), Endpoint (base URL + API key, blank keeps the stored key, plus
+      a Test connection button), and Models per role (a Discover models button
+      fills per-role `<select>`s for all five `ASSISTANT_ROLES`). Wired through
+      new form actions (`toggleAssistant`, `saveAssistantIdentity`,
+      `saveAssistantEndpoint`, `saveAssistantModels`, `testAssistant`,
+      `discoverAssistantModels`) over the existing `saveAccountLlmConfig` /
+      `accountLlmView` / `testAccountConnection` / `discoverModels` helpers; the
+      tone presets ride through `load` so the client never imports the
+      server-only persona module. The design system CSS (killswitch, role-table,
+      attn-list) was already ported. Account help article updated with an
+      Assistant section; e2e covers the kill-switch / identity / endpoint
+      journey (no-network path). Capability probing on this screen and the other
+      surfaces (chat, inline, review, admin egress, per-story mute) stay
+      deferred. Lint, check, unit (333), the LLM + account integration specs, and
+      build pass locally; Playwright could not download a browser in the sandbox,
+      so the e2e is unverified locally and left for CI.
 
 ## Capability review follow-ups (2026-06-06)
 

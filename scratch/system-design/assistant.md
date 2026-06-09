@@ -780,7 +780,11 @@ calls the gateway, which proxies through the egress guard.
 - [built] The master toggle (kill switch) is the `enabled` field. Keep the
   privacy disclosure on this control (see "The kill switch as a prominent
   control").
-- [to build] The settings page + a form action that calls `saveAccountLlmConfig`.
+- [built] The settings page at `/account/assistant` (the account sidebar shell's
+  Assistant section). Form actions `toggleAssistant`, `saveAssistantIdentity`,
+  `saveAssistantEndpoint`, `saveAssistantModels` call `saveAccountLlmConfig` (each
+  reads the current view and overlays only its fields). The kill switch reads
+  inverted (engaged means off) and dims the config below while off.
 
 ### Endpoint setup helpers (so a non-technical writer does not type a model name)
 
@@ -794,7 +798,10 @@ calls the gateway, which proxies through the egress guard.
   `probeEndpoint(db, conn, model)` - returns `{ supportsStreaming, supportsTools }`
   for a "tools: supported / not" line. Save these onto the config (via
   `saveAccountLlmConfig`) so the gateway withholds tools when unsupported.
-- [to build] Form actions / buttons that call these and a model `<select>`.
+- [built] On `/account/assistant`: a "Test connection" button (`testAssistant`
+  action) and a "Discover models" button (`discoverAssistantModels`) that fills
+  the per-role model `<select>`s. Capability probing on this screen is deferred
+  (no "tools: supported" line yet); the probe helpers remain available.
 
 ### Admin egress policy (the SSRF control)
 

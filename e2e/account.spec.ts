@@ -72,3 +72,40 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.getByRole('button', { name: 'Save display' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 });
+
+test('account assistant: kill switch, identity, and endpoint persist', async ({ page }) => {
+	await page.goto('/account/assistant');
+	await expect(page.getByRole('heading', { name: 'Assistant', level: 1 })).toBeVisible();
+
+	// The Assistant starts off; the config block is dimmed until the kill switch
+	// is turned off. The status reads the state back.
+	const killSwitch = page.getByRole('checkbox', { name: 'Assistant kill switch' });
+	const gated = page.locator('[data-ai-gated]');
+	await expect(page.getByText('Assistant off')).toBeVisible();
+	await expect(gated).toHaveClass(/off/);
+
+	// Turning the kill switch off enables the Assistant; the page reloads with the
+	// config lit up.
+	await killSwitch.uncheck();
+	await expect(page.getByText('Assistant on')).toBeVisible();
+	await expect(gated).not.toHaveClass(/off/);
+
+	// Identity saves a name and tone and reads them back after a reload.
+	await page.getByLabel('Name').fill('Margin');
+	await page.getByLabel('Style').selectOption({ label: /Concise/ });
+	await page.getByRole('button', { name: 'Save identity' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await page.reload();
+	await expect(page.getByLabel('Name')).toHaveValue('Margin');
+
+	// Endpoint saves a base URL; the saved key hint only appears once a key is set.
+	await page.getByLabel('Base URL').fill('http://ollama.local:11434/v1');
+	await page.getByRole('button', { name: 'Save endpoint' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await page.reload();
+	await expect(page.getByLabel('Base URL')).toHaveValue('http://ollama.local:11434/v1');
+
+	// Turn it back off so repeated runs start from the known default.
+	await page.getByRole('checkbox', { name: 'Assistant kill switch' }).check();
+	await expect(page.getByText('Assistant off')).toBeVisible();
+});
