@@ -692,23 +692,25 @@ the reconcile-sweep pattern used for stale mentions applies directly.
   per account and per story (you arguably pick a model for a whole world's
   voice). A separate question from the tool budget; would add a third merge
   layer and a universe-level column.
-- Context-aware spell-check and grammar without the browser's engine. A
-  dedicated grammatical-error-correction model is small (roughly 60M-350M
-  params; a rule-based engine like LanguageTool needs no model at all), so
-  size is not the obstacle - bundling one is, since shipping a model in the
-  core stack crosses the design's "no bundled AI, bring your own endpoint"
-  line and changes the self-host footprint. Options: (1) keep spelling
-  browser-native and route context-aware grammar through the BYO endpoint as
-  the editor capability (no new infra, but needs the Assistant configured);
-  (2) an optional, off-by-default grammar service the operator can enable,
-  like assets or SMTP, for writers who want grammar without the creative AI;
-  (3) bundle a small model (declined for v1). Lean: do not bundle in v1.
-  Whatever runs must be advisory only - grammar-checking creative prose is
-  perilous, since fragments, dialect, and stylized voice read as errors - so
-  it routes through the same accept/reject suggestion surface and never
-  auto-corrects.
-
 Settled here, recorded so it is not re-litigated:
+
+- Context-aware grammar and spell-check route through the Assistant's editor
+  and reviewer capability over the bring-your-own endpoint, not a bundled
+  model. Browser-native spell-check stays for basic spelling. A dedicated
+  grammatical-error-correction model is small (roughly 60M-350M params, or
+  zero with a rule engine), so size was never the obstacle; bundling one is,
+  since shipping a model in the core stack crosses the "no bundled AI, bring
+  your own endpoint" line and changes the self-host footprint. The decisive
+  point is capability, not weight: a small GEC model only sees local context
+  (a sentence or two), while the review agent already has the whole story,
+  the entity details, and the mention index, so it catches both local grammar
+  and story-level continuity from one surface - the bundled model would only
+  do the weaker half. Grammar is therefore advisory only, delivered through
+  the existing accept/reject suggestion surface (grammar-checking creative
+  prose is perilous - fragments, dialect, and stylized voice read as errors),
+  never auto-corrected. An optional off-by-default grammar service (for
+  writers who want grammar with no creative AI at all) stays available as a
+  later escape hatch if demand appears, but is not built.
 
 - The tool-call budget stays account-level (plus the admin ceiling), not
   per-story or per-universe. Nothing about a story changes the
