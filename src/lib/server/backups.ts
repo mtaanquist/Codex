@@ -4,6 +4,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { desc, eq, inArray, isNotNull, and } from 'drizzle-orm';
@@ -282,7 +283,15 @@ async function hashDump(
 	let stderr = '';
 	child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
 	const hash = createHash('sha256');
-	for await (const chunk of child.stdout!) hash.update(chunk as Buffer);
+	// Hash line by line so the one non-deterministic part can be skipped:
+	// pg_dump 18+ wraps the script in \restrict/\unrestrict guards carrying a
+	// random nonce, which would otherwise make identical data hash differently.
+	const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+	for await (const line of lines) {
+		if (line.startsWith('\\restrict ') || line.startsWith('\\unrestrict ')) continue;
+		hash.update(line);
+		hash.update('\n');
+	}
 	const code = await exited;
 	if (code !== 0) {
 		throw new Error(`${cmd} (hash) exited with ${code}: ${stderr.slice(0, 500)}`);
