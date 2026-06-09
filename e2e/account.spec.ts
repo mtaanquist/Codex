@@ -128,14 +128,16 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	const killToggle = page.locator('label.toggle-xl');
 	const status = page.locator('.ks-status');
 
-	// Configure an endpoint and turn the Assistant on (no network: nothing is
-	// sent until a message is actually asked).
+	// Turn the Assistant on first: the endpoint config below the kill switch is
+	// dimmed and not interactable while it is off. Then set an endpoint (no
+	// network: nothing is sent until a message is actually asked). The tab needs
+	// both an endpoint and the master on.
 	await page.goto('/account/assistant');
+	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
+	await expect(status).toHaveText('Assistant on');
 	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
 	await page.getByRole('button', { name: 'Save endpoint' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
-	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
-	await expect(status).toHaveText('Assistant on');
 
 	// A throwaway story to open the editor against.
 	const universeName = `AI gate ${Date.now()}`;
