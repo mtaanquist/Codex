@@ -90,22 +90,77 @@ describe('openaiProvider.chatStream', () => {
 	});
 });
 
-describe('openaiProvider.complete', () => {
-	it('returns the message content', async () => {
+describe('openaiProvider.respond', () => {
+	it('returns the message content and no tool calls', async () => {
 		const http: HttpRequest = async () =>
 			jsonResponse(200, { choices: [{ message: { content: 'Done.' } }] });
-		const text = await openaiProvider.complete(
+		const result = await openaiProvider.respond(
 			{ model: 'm', messages: [], maxTokens: 16 },
 			conn,
 			http
 		);
-		expect(text).toBe('Done.');
+		expect(result).toEqual({ content: 'Done.', toolCalls: [] });
+	});
+
+	it('parses tool calls from the response message', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [
+					{
+						message: {
+							content: '',
+							tool_calls: [
+								{
+									id: 'c1',
+									type: 'function',
+									function: { name: 'get_scene', arguments: '{"sceneId":"s1"}' }
+								}
+							]
+						}
+					}
+				]
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.toolCalls).toEqual([
+			{ id: 'c1', name: 'get_scene', arguments: '{"sceneId":"s1"}' }
+		]);
+	});
+
+	it('sends the tools array and serialises tool-result turns', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{
+				model: 'm',
+				maxTokens: 16,
+				messages: [
+					{ role: 'user', content: 'hi' },
+					{ role: 'tool', content: 'result', toolCallId: 'c1' }
+				],
+				tools: [{ name: 'get_scene', description: 'd', parameters: { type: 'object' } }]
+			},
+			conn,
+			http
+		);
+		expect((sentBody.tools as unknown[])?.length).toBe(1);
+		expect((sentBody.messages as { role: string }[])[1]).toMatchObject({
+			role: 'tool',
+			tool_call_id: 'c1',
+			content: 'result'
+		});
 	});
 
 	it('throws on a non-2xx status', async () => {
 		const http: HttpRequest = async () => jsonResponse(500, { error: 'boom' });
 		await expect(
-			openaiProvider.complete({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+			openaiProvider.respond({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
 		).rejects.toThrow();
 	});
 
@@ -121,7 +176,7 @@ describe('openaiProvider.complete', () => {
 			'http://h/v1',
 			'http://h/v1/chat/completions'
 		]) {
-			await openaiProvider.complete(
+			await openaiProvider.respond(
 				{ model: 'm', messages: [], maxTokens: 1 },
 				{ endpoint, apiKey: '' },
 				http

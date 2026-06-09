@@ -17,6 +17,7 @@ import { signToken, verifyToken } from './crypto';
 import { recordRevision } from './revisions';
 import { reanchorPoint, reanchorRange } from '../review-anchor';
 import { wordCount } from '../word-count';
+import { normaliseAssistantName } from './llm/prompts/persona';
 
 // Guest review, stage one: invitations, guest identity, and threaded
 // comments. An author invites someone to one story by magic link; the guest
@@ -222,12 +223,32 @@ async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string)
 	return created.id;
 }
 
-export type ThreadAuthor = { userId: string } | { reviewerId: string };
+// A comment or suggestion is authored by the signed-in owner, a guest
+// reviewer, or the Assistant. The Assistant carries no FK; its display name is
+// resolved live from the owner's config (assistantDisplayName).
+export type ThreadAuthor = { userId: string } | { reviewerId: string } | { assistant: true };
 
 function commentAuthorColumns(author: ThreadAuthor) {
-	return 'userId' in author
-		? { authorUserId: author.userId, authorReviewerId: null }
-		: { authorUserId: null, authorReviewerId: author.reviewerId };
+	if ('userId' in author) {
+		return { authorUserId: author.userId, authorReviewerId: null, assistant: false };
+	}
+	if ('reviewerId' in author) {
+		return { authorUserId: null, authorReviewerId: author.reviewerId, assistant: false };
+	}
+	return { authorUserId: null, authorReviewerId: null, assistant: true };
+}
+
+// The Assistant's name to show on its comments and suggestions: the owner's
+// chosen assistant name, resolved at read time so a rename relabels everything
+// on the fly, falling back to a generic label.
+async function assistantDisplayName(db: Database, storyId: string): Promise<string> {
+	const [row] = await db
+		.select({ llmConfig: users.llmConfig })
+		.from(stories)
+		.innerJoin(users, eq(stories.ownerId, users.id))
+		.where(eq(stories.id, storyId));
+	const raw = (row?.llmConfig ?? {}) as { assistantName?: unknown };
+	return normaliseAssistantName(raw.assistantName) || 'Assistant';
 }
 
 // Opens a thread with its first comment. A null anchor is a whole-scene
@@ -350,6 +371,8 @@ export type ThreadView = {
 		body: string;
 		authorName: string;
 		isOwner: boolean;
+		// The Assistant authored it; the frontend can badge it.
+		isAssistant: boolean;
 		createdAt: Date;
 	}[];
 };
@@ -397,6 +420,10 @@ export async function listThreads(
 		)
 		.orderBy(asc(reviewComments.createdAt));
 
+	const assistantName = commentRows.some((c) => c.comment.assistant)
+		? await assistantDisplayName(db, storyId)
+		: 'Assistant';
+
 	return threadRows.map((row) => {
 		let anchor: { start: number; end: number } | null = null;
 		let anchorLost = false;
@@ -418,10 +445,13 @@ export async function listThreads(
 				.map((commentRow) => ({
 					id: commentRow.comment.id,
 					body: commentRow.comment.bodyMd,
-					authorName: commentRow.comment.authorUserId
-						? (commentRow.userName ?? 'Author')
-						: (commentRow.reviewerName ?? 'Reviewer'),
+					authorName: commentRow.comment.assistant
+						? assistantName
+						: commentRow.comment.authorUserId
+							? (commentRow.userName ?? 'Author')
+							: (commentRow.reviewerName ?? 'Reviewer'),
 					isOwner: commentRow.comment.authorUserId !== null,
+					isAssistant: commentRow.comment.assistant,
 					createdAt: commentRow.comment.createdAt
 				}))
 		};
@@ -433,11 +463,15 @@ const MAX_REPLACEMENT_LENGTH = 20000;
 // A reviewer proposes replacing [start, end) of the scene's current text with
 // the replacement (equal offsets insert, an empty replacement deletes). The
 // range is pinned to a base revision so the author's later edits re-anchor.
-// Exactly one of author_user_id / reviewer_id, mirroring comments.
+// Authored by the owner, a guest reviewer, or the Assistant, mirroring comments.
 function suggestionAuthorColumns(author: ThreadAuthor) {
-	return 'userId' in author
-		? { authorUserId: author.userId, reviewerId: null }
-		: { authorUserId: null, reviewerId: author.reviewerId };
+	if ('userId' in author) {
+		return { authorUserId: author.userId, reviewerId: null, assistant: false };
+	}
+	if ('reviewerId' in author) {
+		return { authorUserId: null, reviewerId: author.reviewerId, assistant: false };
+	}
+	return { authorUserId: null, reviewerId: null, assistant: true };
 }
 
 export async function createSuggestion(
@@ -493,6 +527,8 @@ export type SuggestionView = {
 	reviewerName: string;
 	// True when the author proposed it in their own review pass.
 	isOwner: boolean;
+	// The Assistant proposed it; the frontend can badge it.
+	isAssistant: boolean;
 	// What the suggestion replaces, as proposed against its base text.
 	original: string;
 	replacement: string;
@@ -536,6 +572,9 @@ export async function listSuggestions(db: Database, storyId: string): Promise<Su
 		.leftJoin(users, eq(reviewSuggestions.authorUserId, users.id))
 		.where(eq(reviewSuggestions.storyId, storyId))
 		.orderBy(asc(reviewSuggestions.createdAt));
+	const assistantName = rows.some((r) => r.suggestion.assistant)
+		? await assistantDisplayName(db, storyId)
+		: 'Assistant';
 	return rows.map((row) => {
 		const { rangeStart, rangeEnd } = row.suggestion;
 		// Decided suggestions keep their record but no longer point anywhere.
@@ -544,11 +583,17 @@ export async function listSuggestions(db: Database, storyId: string): Promise<Su
 				? mapSuggestionRange(row.baseBody, row.currentBody, rangeStart, rangeEnd)
 				: null;
 		const isOwner = row.suggestion.authorUserId !== null;
+		const isAssistant = row.suggestion.assistant;
 		return {
 			id: row.suggestion.id,
 			sceneId: row.suggestion.sceneId,
-			reviewerName: isOwner ? (row.ownerName ?? 'Author') : (row.reviewerName ?? 'Reviewer'),
+			reviewerName: isAssistant
+				? assistantName
+				: isOwner
+					? (row.ownerName ?? 'Author')
+					: (row.reviewerName ?? 'Reviewer'),
 			isOwner,
+			isAssistant,
 			original: row.baseBody.slice(rangeStart, rangeEnd),
 			replacement: row.suggestion.replacement,
 			status: row.suggestion.status,

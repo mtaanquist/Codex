@@ -611,6 +611,40 @@ endpoint. Started 2026-06-09.
       normalisation fallback, the gateway prepend). Frontend (a name field + a
       tone dropdown in the account Assistant section) deferred with the rest of
       the UI.
+- [ ] Tools and data retrieval (author request - "get it all ready for the
+      front-end"). The agent layer:
+      - Provider tool-calling: `providers/types.ts` gains tool specs, tool
+        calls, and a `respond()` turn (replacing `complete`); `openai.ts`
+        serialises a `tools` array + tool/assistant-tool-call/tool-result
+        messages and parses `tool_calls`.
+      - `tools/registry.ts` + `tools/dispatch.ts`: read tools (`get_scene`,
+        `get_entity`, `find_appearances`, `search_text`) wrapping existing
+        owner-scoped queries (`getEntityCard`, `entityAppearances`,
+        `searchAll`), and write tools (`suggest_edit`, `leave_comment`) that
+        *stage* a review suggestion/comment and never touch authored content
+        (the "writes are suggestions" invariant). Every handler is scoped to
+        the context's story + user.
+      - Gateway agent loop: `complete`/`stream` run a `respond` loop that
+        dispatches tool calls, feeds results back, and repeats until the model
+        answers or the account `toolCallBudget` is spent (then tools are
+        withdrawn to force an answer). Tools are offered only with a story the
+        user owns and an endpoint that can call them (`enableTools`).
+      - Write-as-suggestion attribution: the Assistant is a third review author
+        via an additive `assistant` boolean on `review_comments` /
+        `review_suggestions` (migration 0052), not a synthetic reviewer row
+        (which would need a fake invitation). The display name resolves live
+        from the owner's assistant name, so a rename relabels past suggestions
+        on the fly; `isAssistant` is exposed on the views for badging. The
+        owner accepts/rejects an Assistant suggestion through the unchanged
+        decide path.
+      - Unit tests (SSE/tool-call parse, message serialisation) + integration
+        (read-tool loop feeds results back; write tool stages a pending
+        Assistant suggestion and changes nothing, shown under the assistant
+        name and acceptable by the owner; the budget caps the loop; no tools
+        without a story). Lint, check, unit (327), the LLM + review
+        integration specs, and build pass. Deferred: structural write tools
+        (create scene/entity preview-and-confirm), the worker review/enrich/
+        summary jobs, and all UI.
 
 ## Capability review follow-ups (2026-06-06)
 

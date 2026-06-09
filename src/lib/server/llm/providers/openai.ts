@@ -1,4 +1,11 @@
-import type { CompletionRequest, Connection, Provider, StreamEvent } from './types';
+import type {
+	ChatMessage,
+	CompletionRequest,
+	Connection,
+	ProviderToolCall,
+	Provider,
+	StreamEvent
+} from './types';
 
 // The OpenAI-compatible adapter: the only provider in the first cut. It speaks
 // /v1/chat/completions, the de-facto shape Ollama, vLLM, hosted APIs, and
@@ -21,14 +28,67 @@ function headers(conn: Connection): Record<string, string> {
 	return h;
 }
 
+// Map our neutral messages onto the OpenAI wire shape, carrying assistant
+// tool-call turns and tool-result turns through unchanged.
+function serialiseMessages(messages: ChatMessage[]): unknown[] {
+	return messages.map((message) => {
+		if (message.role === 'tool') {
+			return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
+		}
+		if (message.role === 'assistant' && message.toolCalls?.length) {
+			return {
+				role: 'assistant',
+				content: message.content || null,
+				tool_calls: message.toolCalls.map((call) => ({
+					id: call.id,
+					type: 'function',
+					function: { name: call.name, arguments: call.arguments }
+				}))
+			};
+		}
+		return { role: message.role, content: message.content };
+	});
+}
+
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	return JSON.stringify({
 		model: req.model,
-		messages: req.messages,
+		messages: serialiseMessages(req.messages),
 		max_tokens: req.maxTokens,
 		...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+		...(req.tools?.length
+			? {
+					tools: req.tools.map((tool) => ({
+						type: 'function',
+						function: {
+							name: tool.name,
+							description: tool.description,
+							parameters: tool.parameters
+						}
+					})),
+					tool_choice: 'auto'
+				}
+			: {}),
 		stream
 	});
+}
+
+function parseToolCalls(raw: unknown): ProviderToolCall[] {
+	if (!Array.isArray(raw)) return [];
+	const calls: ProviderToolCall[] = [];
+	for (const item of raw) {
+		const fn = (item as { id?: unknown; function?: { name?: unknown; arguments?: unknown } })
+			?.function;
+		const id = (item as { id?: unknown }).id;
+		if (typeof id === 'string' && typeof fn?.name === 'string') {
+			calls.push({
+				id,
+				name: fn.name,
+				arguments: typeof fn.arguments === 'string' ? fn.arguments : '{}'
+			});
+		}
+	}
+	return calls;
 }
 
 function truncate(text: string, max = 300): string {
@@ -95,7 +155,7 @@ export const openaiProvider: Provider = {
 		yield* parseSse(res.body);
 	},
 
-	async complete(req, conn, http, signal) {
+	async respond(req, conn, http, signal) {
 		const res = await http(endpointUrl(conn.endpoint), {
 			method: 'POST',
 			headers: headers(conn),
@@ -106,9 +166,14 @@ export const openaiProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
-		const json = JSON.parse(text) as { choices?: { message?: { content?: unknown } }[] };
-		const content = json?.choices?.[0]?.message?.content;
-		return typeof content === 'string' ? content : '';
+		const json = JSON.parse(text) as {
+			choices?: { message?: { content?: unknown; tool_calls?: unknown } }[];
+		};
+		const message = json?.choices?.[0]?.message ?? {};
+		return {
+			content: typeof message.content === 'string' ? message.content : '',
+			toolCalls: parseToolCalls(message.tool_calls)
+		};
 	},
 
 	async probe(conn, model, http, signal) {

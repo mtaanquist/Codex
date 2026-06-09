@@ -3,11 +3,38 @@
 // native Claude adapter slots behind the same interface later, chosen from the
 // resolved config without reworking the surfaces.
 
-export type ChatRole = 'system' | 'user' | 'assistant';
+export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
 export type ChatMessage = {
 	role: ChatRole;
 	content: string;
+	// An assistant turn that requests tool calls.
+	toolCalls?: ProviderToolCall[];
+	// A tool-result turn replies to this call id.
+	toolCallId?: string;
+};
+
+// A tool the model may call (function-calling). parameters is a JSON Schema for
+// the arguments object.
+export type ToolSpec = {
+	name: string;
+	description: string;
+	parameters: Record<string, unknown>;
+};
+
+// A tool call the model emitted; arguments is a JSON string, parsed by the
+// dispatcher.
+export type ProviderToolCall = {
+	id: string;
+	name: string;
+	arguments: string;
+};
+
+// A single non-streaming turn: either final content, or a set of tool calls to
+// run before the model can continue (or both, though most endpoints pick one).
+export type ProviderResponse = {
+	content: string;
+	toolCalls: ProviderToolCall[];
 };
 
 export type CompletionRequest = {
@@ -18,6 +45,8 @@ export type CompletionRequest = {
 	maxTokens: number;
 	// Sampling temperature, left to the provider default when unset.
 	temperature?: number;
+	// Tools the model may call this turn; omitted for a plain completion.
+	tools?: ToolSpec[];
 };
 
 // A token-at-a-time stream the surfaces map straight onto Server-Sent Events.
@@ -71,14 +100,14 @@ export interface Provider {
 		http: HttpRequest,
 		signal?: AbortSignal
 	): AsyncIterable<StreamEvent>;
-	// Buffer a non-streaming completion to its full text. Throws on a transport
-	// error or a non-2xx response.
-	complete(
+	// A non-streaming turn that may request tool calls (the agent-loop step).
+	// Throws on a transport error or a non-2xx response.
+	respond(
 		req: CompletionRequest,
 		conn: Connection,
 		http: HttpRequest,
 		signal?: AbortSignal
-	): Promise<string>;
+	): Promise<ProviderResponse>;
 	// The "test connection" probe: a trivial completion that reports reachability
 	// and the endpoint's detected capabilities.
 	probe(

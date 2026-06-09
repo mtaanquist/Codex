@@ -1001,6 +1001,10 @@ export const reviewComments = pgTable(
 			.notNull(),
 		authorUserId: uuid('author_user_id').references(() => users.id),
 		authorReviewerId: uuid('author_reviewer_id').references(() => reviewers.id),
+		// The Assistant as a third author: both FK authors null, this true. The
+		// display name is resolved live from the owner's assistant config, so a
+		// rename relabels past comments on the fly.
+		assistant: boolean('assistant').notNull().default(false),
 		bodyMd: text('body_md').notNull(),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -1029,6 +1033,9 @@ export const reviewSuggestions = pgTable(
 			.notNull(),
 		authorUserId: uuid('author_user_id').references(() => users.id),
 		reviewerId: uuid('reviewer_id').references(() => reviewers.id),
+		// The Assistant as a third author (both FK authors null, this true);
+		// mirrors review_comments. The owner still accepts or rejects it.
+		assistant: boolean('assistant').notNull().default(false),
 		// The text the range was placed against.
 		baseRevisionId: uuid('base_revision_id')
 			.references(() => revisions.id)
