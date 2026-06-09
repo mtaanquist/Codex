@@ -29,11 +29,18 @@ export default async function globalSetup() {
 	// Capture the worker's output to a file rather than discarding it, so we can
 	// wait for it to come up and so a CI failure leaves something to read.
 	const log = openSync(WORKER_LOG_FILE, 'w');
-	const worker = spawn(process.execPath, ['src/worker/index.ts'], {
-		stdio: ['ignore', log, log],
-		detached: true,
-		env: process.env
-	});
+	// Start the worker the same way the app does (see package.json) so the
+	// module resolution hook is active; the worker imports app modules that use
+	// the $lib alias and extensionless paths.
+	const worker = spawn(
+		process.execPath,
+		['--import', './src/worker/register.js', 'src/worker/index.ts'],
+		{
+			stdio: ['ignore', log, log],
+			detached: true,
+			env: process.env
+		}
+	);
 	worker.unref();
 	writeFileSync(WORKER_PID_FILE, String(worker.pid));
 	const connectionString =

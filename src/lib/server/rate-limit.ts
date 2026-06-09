@@ -47,6 +47,9 @@ export function rateLimit(
 // a shared store is the prerequisite for multiple app replicas.
 const WRITE_PER_MINUTE = 600;
 const UPLOAD_PER_MINUTE = 60;
+// The writer pays their own provider, so this is not a cost cap; it bounds how
+// many long-lived Assistant streams one account can open on the single process.
+const ASSISTANT_PER_MINUTE = 60;
 
 // The autosave budget: scene, entity, and note saves all draw on it per user.
 export function writeLimit(userId: string, now: number = Date.now()): RateLimitResult {
@@ -56,6 +59,11 @@ export function writeLimit(userId: string, now: number = Date.now()): RateLimitR
 // The upload budget: image paste, drop, and cover uploads per user.
 export function uploadLimit(userId: string, now: number = Date.now()): RateLimitResult {
 	return rateLimit(`upload:${userId}`, UPLOAD_PER_MINUTE, 60 * 1000, now);
+}
+
+// The Assistant budget: chat and other generation turns per user.
+export function assistantLimit(userId: string, now: number = Date.now()): RateLimitResult {
+	return rateLimit(`assistant:${userId}`, ASSISTANT_PER_MINUTE, 60 * 1000, now);
 }
 
 // Clears all counters. For tests; not used by the app.

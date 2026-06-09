@@ -365,6 +365,27 @@
 			"when": 1780952416538,
 			"tag": "0051_author_suggestions",
 			"breakpoints": true
+		},
+		{
+			"idx": 52,
+			"version": "7",
+			"when": 1781001997956,
+			"tag": "0052_assistant_author",
+			"breakpoints": true
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1781029698737,
+			"tag": "0053_assistant_summary_watermark",
+			"breakpoints": true
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1781031677899,
+			"tag": "0054_entity_suggestions",
+			"breakpoints": true
 		}
 	]
 }

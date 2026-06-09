@@ -14,3 +14,5 @@ export const REVIEWER_DIGEST_QUEUE = 'reviewer-digest';
 export const PURGE_ACCOUNTS_QUEUE = 'purge-accounts';
 export const PURGE_UNIVERSES_QUEUE = 'purge-universes';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
+export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
+export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';

@@ -96,6 +96,31 @@
 			setTimeout(() => (copiedReviewLink = false), 1500);
 		});
 	}
+
+	// Queues a whole-story Assistant review (a background job); the owner is
+	// notified when its notes land on the review page.
+	let requestingReview = $state(false);
+	async function reviewWholeStory() {
+		if (requestingReview) return;
+		requestingReview = true;
+		try {
+			const response = await fetch('/api/assistant/review-job', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId: data.story.id })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				alert(body?.message ?? 'Could not start the review.');
+				return;
+			}
+			alert(
+				'The Assistant is reviewing your story in the background. You will be notified when its notes are ready on the review page.'
+			);
+		} finally {
+			requestingReview = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -778,6 +803,23 @@
 							any feedback.
 						</p>
 					</div>
+					{#if data.assistant.surfacesEnabled}
+						<div class="settings-group">
+							<p class="admin-block-sub" style="margin-top:0;">
+								The Assistant can read the whole story and leave its own comments and suggested
+								edits, alongside any from your reviewers. It runs in the background; you will be
+								notified when its notes are ready on the review page.
+							</p>
+							<button
+								type="button"
+								class="btn btn-primary"
+								onclick={reviewWholeStory}
+								disabled={requestingReview}
+							>
+								{requestingReview ? 'Starting...' : 'Review this story with the Assistant'}
+							</button>
+						</div>
+					{/if}
 					<div class="settings-group">
 						<form method="POST" action="?/createReviewInvite">
 							{#if form?.action === 'review' && form.message}

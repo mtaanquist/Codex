@@ -16,7 +16,9 @@ export {
 	EXPORT_ARTIFACTS_QUEUE,
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
-	REVIEWER_DIGEST_QUEUE
+	REVIEWER_DIGEST_QUEUE,
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
 } from './queues.ts';
 import {
 	MENTIONS_SCENE_QUEUE,
@@ -26,7 +28,9 @@ import {
 	EXPORT_ARTIFACTS_QUEUE,
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
-	REVIEWER_DIGEST_QUEUE
+	REVIEWER_DIGEST_QUEUE,
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
 } from './queues.ts';
 
 // How long a digest waits before sending, so a busy thread lands as one
@@ -48,6 +52,8 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
+		await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
+		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -139,6 +145,48 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 		return id !== null;
 	} catch (error) {
 		console.error('queueing export artifacts failed:', error);
+		return false;
+	}
+}
+
+// Queues a whole-story or single-chapter Assistant review. The singleton key
+// (story + chapter scope) coalesces repeat requests so a writer cannot pile up
+// duplicate passes over the same scenes while one is already running.
+export async function queueAssistantReview(input: {
+	userId: string;
+	storyId: string;
+	chapterId?: string;
+}): Promise<boolean> {
+	try {
+		const boss = await getBoss();
+		const scope = input.chapterId ? `${input.storyId}:${input.chapterId}` : input.storyId;
+		const id = await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
+			singletonKey: scope,
+			singletonSeconds: 30
+		});
+		return id !== null;
+	} catch (error) {
+		console.error('queueing assistant review failed:', error);
+		return false;
+	}
+}
+
+// Queues a whole-story summary-maintenance pass. The singleton key (the story)
+// coalesces repeat requests so a writer cannot pile up duplicate passes over the
+// same scenes while one is already running.
+export async function queueAssistantSummaries(input: {
+	userId: string;
+	storyId: string;
+}): Promise<boolean> {
+	try {
+		const boss = await getBoss();
+		const id = await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
+			singletonKey: input.storyId,
+			singletonSeconds: 30
+		});
+		return id !== null;
+	} catch (error) {
+		console.error('queueing assistant summaries failed:', error);
 		return false;
 	}
 }

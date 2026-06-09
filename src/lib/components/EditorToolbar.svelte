@@ -25,6 +25,8 @@
 		onToggleNonPrinting,
 		commandMarkersActive,
 		onToggleCommandMarkers,
+		onCoauthor,
+		coauthorActive,
 		onEnterFocus
 	}: {
 		view: () => EditorView | undefined;
@@ -43,6 +45,10 @@
 		onToggleNonPrinting?: () => void;
 		commandMarkersActive?: boolean;
 		onToggleCommandMarkers?: () => void;
+		// When set, a "Write with the Assistant" button opens the co-author panel;
+		// active marks the panel as open.
+		onCoauthor?: () => void;
+		coauthorActive?: boolean;
 		// Enters distraction-free writing.
 		onEnterFocus?: () => void;
 	} = $props();
@@ -226,6 +232,18 @@
 		</button>
 	{/if}
 	<div class="md-right">
+		{#if onCoauthor}
+			<button
+				class="md-tool md-coauthor"
+				class:is-active={coauthorActive}
+				type="button"
+				title="Write a passage with the Assistant"
+				onclick={() => onCoauthor()}
+			>
+				<Icon name="sparkles" size={15} />
+				<span class="md-tool-label">Write</span>
+			</button>
+		{/if}
 		{#if modeLabel}
 			<span class="md-hint">{modeLabel}</span>
 		{/if}
@@ -316,5 +334,15 @@
 	}
 	.md-preview:hover {
 		color: var(--text);
+	}
+	.md-coauthor {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text-muted);
+	}
+	.md-coauthor:hover,
+	.md-coauthor.is-active {
+		color: var(--accent);
 	}
 </style>

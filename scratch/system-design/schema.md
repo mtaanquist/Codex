@@ -9,9 +9,8 @@ LLM integration is explicitly deferred to post-v1 (see `design.md`). The schema 
 ```
 universe
   ├── story (one or more)
-  │     ├── chapter (organisational)
-  │     │     └── scene (atomic writing unit)
-  │     └── outline nodes
+  │     └── chapter (organisational)
+  │           └── scene (atomic writing unit)
   └── characters, places, lore entries
         (universe-scoped; surfaced per story by reference)
 ```
@@ -192,7 +191,7 @@ scenes (
   story_time            text,                            -- freeform: "Day 3 afternoon"
   characters_present    uuid[],                          -- references characters.id, GIN indexed
   status                text not null,                   -- 'outline' | 'draft' | 'revised' | 'final'
-  summary_md            text,                            -- one-line what happens; shown in sidebar and outline
+  summary_md            text,                            -- one-line what happens; shown in sidebar
   word_count            int not null default 0,          -- updated on save
   metadata              jsonb not null default '{}',
   updated_at            timestamptz not null
@@ -227,7 +226,7 @@ characters (
   body_md                 text not null default '',
   auto_detect_mentions    boolean not null default true, -- set false for common-word names ("Will", "Art")
   metadata                jsonb not null default '{}',
-  imported_from           jsonb,                         -- original card data if imported (SillyTavern etc)
+  imported_from           jsonb,                         -- reserved jsonb; unused (SillyTavern/lorebook import dropped from the roadmap)
   created_at              timestamptz not null,
   updated_at              timestamptz not null
 )
@@ -391,7 +390,9 @@ The UI never lets users enter free-form relation labels. The relation type itsel
 
 ---
 
-## Outline
+## Outline (retired)
+
+Retired in v2.26.0 (migration 0039 drops `outline_nodes` and its revisions). Scene status and the Notes view cover planning now. The schema below is kept as a record of the original design.
 
 Tree structure, independent of chapter/scene organisation. The outline can precede or diverge from the drafted structure.
 
@@ -459,9 +460,9 @@ scene_markers (
 
 ---
 
-## Review and collaboration (deferred)
+## Review and collaboration
 
-An author can invite a guest to review a single story. The guest may already be a Codex user or not; either way they are not forced to create an account. Access is by magic link, scoped to that one story, comment and suggest only, never the rest of the owner's data. Review is async, in the spirit of tracked changes and threaded comments in a word processor. None of this is in v1; the tables are reserved so the feature can be added without migrating live data.
+An author can invite a guest to review a single story. The guest may already be a Codex user or not; either way they are not forced to create an account. Access is by magic link, scoped to that one story, comment and suggest only, never the rest of the owner's data. Review is async, in the spirit of tracked changes and threaded comments in a word processor. Shipped in Phase 6: comments first (v2.8.0), then suggested edits (v2.9.0).
 
 ```sql
 review_invitations (
@@ -543,7 +544,7 @@ One polymorphic table covers history for every entity type with editable prose. 
 ```sql
 revisions (
   id            uuid primary key,
-  entity_type   text not null,   -- 'scene' | 'character' | 'place' | 'lore_entry' | 'outline_node' | 'chapter' | 'note'
+  entity_type   text not null,   -- 'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note'
   entity_id     uuid not null,
   body_md       text not null,
   reason        text,            -- 'autosave' | 'manual_checkpoint' | 'pre_import' etc
@@ -564,7 +565,7 @@ Rebuilt on every debounced save. Powers "find usages" and "appears in" for chara
 ```sql
 entity_mentions (
   id                  uuid primary key,
-  source_type         text not null,   -- 'scene' | 'outline_node' | 'note' etc
+  source_type         text not null,   -- 'scene' | 'note' etc
   source_id           uuid not null,
   target_type         text not null,   -- 'character' | 'place' | 'lore_entry'
   target_id           uuid not null,

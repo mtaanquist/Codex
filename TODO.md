@@ -556,6 +556,308 @@ for usage evidence, per the roadmap's own criteria. Started 2026-06-05.
 > Phase 9 (AI and interop) - or the timeline's calendar design talk,
 > whichever the author wants first.
 
+## Phase 9 - The Assistant (LLM)
+
+Full design in `scratch/system-design/assistant.md`. Building foundations
+first, surfaces later; no bundled model, bring-your-own OpenAI-compatible
+endpoint. Started 2026-06-09.
+
+- [ ] Step 1 - gateway plumbing (server-only, no surfaces). The
+      `$lib/server/llm/` module: `config.ts` (account/story `llm_config`
+      read/merge/decrypt + the pure `assistantGate` and save helpers, reusing
+      `crypto.ts` and the `storyPreferences` null-clear pattern), `egress.ts`
+      (the SSRF guard - pure `classifyAddress`, the block-private / allowlist /
+      open policy in `app_settings`, and a connect-time-`lookup` pinned request
+      that closes the DNS-rebinding window), `providers/` (the adapter seam +
+      the OpenAI-compatible adapter: streaming SSE, buffered complete,
+      test-connection probe), and `gateway.ts` (the one entry: config ->
+      egress -> provider -> stream/complete, with context-assembly and the
+      tool loop left as marked seams). No migration (the jsonb columns and
+      `app_settings` already exist). Unit + integration tests across config
+      merge/decrypt, the egress IP table and policy, the SSE parse, and the
+      gateway gate + real egress denial. Lint, check, unit (305), the new
+      integration specs, and build pass locally. Deferred to their own steps:
+      the SSE `/api/assistant/*` endpoints, all UI (account/story/admin),
+      context assembly, tools, the worker queues, the Assistant-reviewer
+      attribution, and chat persistence.
+- [ ] Step 3 (pulled ahead of the chat surface - it is pure backend) -
+      context assembly. `$lib/server/llm/context/`: `sources.ts` gathers the
+      in-scope world (story/universe frame, the current scene + neighbouring
+      scene summaries, the chapter/scene skeleton, members-or-mentioned
+      entities with quick details/aliases/relationships/per-story notes via the
+      existing `storyEntityLists` and `listEntityRelationships`, lore by the
+      reserved `activation_mode` with keyword matching, and freeform
+      story/universe notes); `assemble.ts` tiers and fits them to a token
+      budget and renders a system message, returning the source refs for a
+      later grounding step. The gathering is settled design; the budget and
+      tier-drop order are kept deliberately simple and marked provisional, per
+      the design's "needs a corpus" TODO. Owner-scoped through the story. Unit
+      tests (the pure `loreMatches`, `estimateTokens`, `selectWithinBudget`) +
+      integration (frame, scene-local, entity + per-story note, lore
+      always/keyword/manual activation, notes, owner-scoping, budget drop).
+      Not yet wired to a surface; the chat endpoint and co-author/review will
+      call `assembleContext` + `buildSystemMessage`.
+- [ ] Assistant name + persona (author request - a bit of personality). A
+      cosmetic `assistantName` and a fixed-set `persona` tone preset (balanced
+      default, concise, professional, casual, encouraging) on the account
+      `llm_config`, in a pure `prompts/persona.ts` (the spec's `prompts/` dir).
+      Deliberately not a free-form system prompt - tone presets keep the
+      Assistant a writing aid and do not reopen the role-play escape hatch the
+      design closes. The gateway prepends a persona system message (name + tone,
+      "stay in the helper role") to every turn, so the personality is consistent
+      across surfaces; any surface-supplied context message follows it. Rides in
+      the existing jsonb, no migration. Unit tests (presets, validators,
+      `buildPersonaPrompt`) + integration (save/resolve/view round-trip,
+      normalisation fallback, the gateway prepend). Frontend (a name field + a
+      tone dropdown in the account Assistant section) deferred with the rest of
+      the UI.
+- [ ] Tools and data retrieval (author request - "get it all ready for the
+      front-end"). The agent layer: - Provider tool-calling: `providers/types.ts` gains tool specs, tool
+      calls, and a `respond()` turn (replacing `complete`); `openai.ts`
+      serialises a `tools` array + tool/assistant-tool-call/tool-result
+      messages and parses `tool_calls`. - `tools/registry.ts` + `tools/dispatch.ts`: read tools (`get_scene`,
+      `get_entity`, `find_appearances`, `search_text`) wrapping existing
+      owner-scoped queries (`getEntityCard`, `entityAppearances`,
+      `searchAll`), and write tools (`suggest_edit`, `leave_comment`) that
+      _stage_ a review suggestion/comment and never touch authored content
+      (the "writes are suggestions" invariant). Every handler is scoped to
+      the context's story + user. - Gateway agent loop: `complete`/`stream` run a `respond` loop that
+      dispatches tool calls, feeds results back, and repeats until the model
+      answers or the account `toolCallBudget` is spent (then tools are
+      withdrawn to force an answer). Tools are offered only with a story the
+      user owns and an endpoint that can call them (`enableTools`). - Write-as-suggestion attribution: the Assistant is a third review author
+      via an additive `assistant` boolean on `review_comments` /
+      `review_suggestions` (migration 0052), not a synthetic reviewer row
+      (which would need a fake invitation). The display name resolves live
+      from the owner's assistant name, so a rename relabels past suggestions
+      on the fly; `isAssistant` is exposed on the views for badging. The
+      owner accepts/rejects an Assistant suggestion through the unchanged
+      decide path. - Unit tests (SSE/tool-call parse, message serialisation) + integration
+      (read-tool loop feeds results back; write tool stages a pending
+      Assistant suggestion and changes nothing, shown under the assistant
+      name and acceptable by the owner; the budget caps the loop; no tools
+      without a story). Lint, check, unit (327), the LLM + review
+      integration specs, and build pass. Deferred: structural write tools
+      (create scene/entity preview-and-confirm), the worker review/enrich/
+      summary jobs, and all UI.
+- [ ] Endpoint setup helpers (author request - non-tech-savvy setup). In
+      `llm/models.ts`, both through the egress guard: model discovery
+      (`discoverModels` / `listEndpointModels` over `GET /v1/models`, so the
+      writer picks from a dropdown instead of typing a model name) and a test
+      connection (`testAccountConnection` / `testEndpointConnection` sends a
+      tiny prompt and returns the model's reply, the SMTP "send a test"
+      analogue). Both work on the saved config or submitted values, and before
+      the master toggle is on (mid-setup). `listModels` added to the provider
+      interface + OpenAI adapter (de-duplicated, sorted ids). Note on tools:
+      the model "discovers" Codex's tools inline per request (OpenAI
+      function-calling), no MCP - tools run in-process and the endpoint only
+      needs to pass the `tools` field through to a tool-capable model. Unit
+      tests (listModels parse/path/auth) + integration (discovery and test
+      happy paths via injected provider, missing endpoint/model, real egress
+      denial). UI deferred.
+- [ ] Tool-capability detection (finishes the tools work). The probe now sends
+      a one-shot forced-optional tool request and reports `supportsTools` from
+      whether a tool call comes back (best-effort: any error or a plain answer
+      reads as no tools), alongside `supportsStreaming`. `probeAccountEndpoint`
+      / `probeEndpoint` in `llm/models.ts` expose it so the setup screen can
+      show a "tools: supported / not" line next to the discovered models; the
+      flags are meant to be saved onto the config, and the gateway already
+      withholds tools when `supportsTools` is false. Unit tests (tool call
+      detected / rejected) + integration (capabilities reported, egress
+      denial). UI deferred.
+- [ ] Account Assistant settings UI (first surface; design handed over by the
+      author as a standalone HTML mock). The Assistant section at
+      `/account/assistant` on the account sidebar shell: a kill switch (the
+      `enabled` master, read inverted - engaged means off - which dims the config
+      while off), a privacy explainer card, Identity (name + tone preset from
+      `PERSONAS`), Endpoint (base URL + API key, blank keeps the stored key, plus
+      a Test connection button), and Models per role (a Discover models button
+      fills per-role `<select>`s for all five `ASSISTANT_ROLES`). Wired through
+      new form actions (`toggleAssistant`, `saveAssistantIdentity`,
+      `saveAssistantEndpoint`, `saveAssistantModels`, `testAssistant`,
+      `discoverAssistantModels`) over the existing `saveAccountLlmConfig` /
+      `accountLlmView` / `testAccountConnection` / `discoverModels` helpers; the
+      tone presets ride through `load` so the client never imports the
+      server-only persona module. The design system CSS (killswitch, role-table,
+      attn-list) was already ported. Account help article updated with an
+      Assistant section; e2e covers the kill-switch / identity / endpoint
+      journey (no-network path). Capability probing on this screen and the other
+      surfaces (chat, inline, review, admin egress, per-story mute) stay
+      deferred. Lint, check, unit (333), the LLM + account integration specs, and
+      build pass locally; Playwright could not download a browser in the sandbox,
+      so the e2e is unverified locally and left for CI.
+- [ ] Chat surface + layout gate + per-story mute (second surface; branch
+      `feat/assistant-chat`). The gate finally renders something: a new
+      `assistantLayout(db, userId, storyId)` (key-free: `tabEnabled`,
+      `surfacesEnabled`, `muted`, display `name`) feeds the story editor's
+      `load`, the way asset-backed features hide when no bucket is set, so the
+      Assistant tab appears only when the account is configured and on. The tab
+      is a fourth peer of Reference/History/Session (`AssistantPanel.svelte`,
+      ported from the prototype's chat panel + CSS): an ephemeral, client-held
+      transcript, grounded starter chips drawn from the story's cast, a composer,
+      and a stop button. It streams from a new `POST /api/assistant/chat` SSE
+      `+server.ts` that verifies ownership, assembles context
+      (`assembleContext` + `buildSystemMessage`), runs `gateway.stream` with
+      `role: 'chat'` + tools, forwards `token`/`done`/`error` frames, and threads
+      the request `AbortSignal` for cancel. A per-user `assistantLimit` bounds
+      open streams. The per-story mute lives on the tab ("Mute for this story" /
+      "Turn on for this story", `muteAssistant`/`unmuteAssistant` actions over
+      `saveStoryLlmOverride`); a muted story keeps the tab to un-mute. Editor
+      help gained a "The Assistant" section. Integration test covers
+      `assistantLayout` (unconfigured / on / muted / master-off); an e2e (in
+      `account.spec.ts`, serialised with the kill-switch test) covers tab gating
+      and the mute round-trip. Deferred: persisted conversations, reference-in-
+      chat, the inline/review/admin surfaces. Lint, check, unit (333), and build
+      pass locally; the DB-backed integration and Playwright specs need Postgres /
+      a browser the sandbox lacks, so they are written but left for CI.
+- [ ] Admin egress panel (the SSRF control; branch
+      `feat/assistant-egress-admin`). The admin "AI" section (a "soon" stub
+      until now) becomes the egress policy form: a select over `block-private`
+      (default, safe for shared instances) / `allowlist` / `open`, plus a hosts
+      textarea (one per line) for the allowlist mode, wired through a `saveEgress`
+      action over the existing `egressPolicy` / `saveEgressPolicy` helpers
+      (`llm/egress.ts`). Plain-language labels, no admin help article needed
+      (admin panel). The egress helpers are already unit- and integration-tested;
+      the admin area 404s for the seeded regular-user e2e session, so no new e2e.
+      Lint, check, and build pass locally.
+- [ ] Review surface, single-scene (third surface; branch
+      `feat/assistant-review-scene`). The Assistant-as-reviewer path, inline for
+      one scene. A new `prompts/review.ts` (`buildReviewMessage`, shipped-fixed)
+      tells the model to review one scene and leave its notes through the staging
+      tools, never the prose. `POST /api/assistant/review` (sceneId) verifies
+      ownership, re-checks the gate, assembles context, runs `gateway.complete`
+      with `role: 'reviewer'` + tools, and reports how many notes were staged by
+      counting the Assistant's pending suggestions/comments before and after. The
+      entry point is "Review this scene" on the left-sidebar scene menu (gated on
+      `surfacesEnabled`); a non-blocking banner covers the wait, then it navigates
+      to the existing author review screen where the Assistant's suggestions and
+      comments already render with their badge. Editor help gained a review note.
+      The staging mechanism (write tool stages an Assistant suggestion, owner-
+      scoped, budget-capped) is already covered by the gateway integration test;
+      a unit test covers the prompt builder. Deferred to the background-jobs PR:
+      "Review this chapter", whole-story "Review this story" (the
+      `assistant-review` worker job + completion notification), and the palette
+      command. Lint, check, unit (335), and build pass locally.
+- [ ] Whole-story / chapter background review (branch
+      `feat/assistant-review-jobs`). The `assistant-review` pg-boss queue fans the
+      reviewer over every scene in scope. Shared `llm/scene-review.ts`
+      (`reviewOneScene`, `countAssistantNotes`, `reviewStoryScenes`) backs both
+      the inline endpoint (refactored onto it) and the worker job; the job loops
+      scenes, catching per-scene errors so one unreachable turn does not abandon
+      the rest, then notifies the owner (a new `assistant_review` notification
+      kind) with the staged-note count and a link to the review page. Because the
+      worker cannot import `notify.ts` (it pulls `$env` via jobs.ts), the
+      notification row insert moved to a jobs-free `notify-core.ts`
+      (`insertNotifications`) that both `notify.ts` and the worker share; the
+      worker queues the digest through its own pg-boss handle. Entry points:
+      "Review this story" in the story-settings Review section and "Review this
+      chapter" on the editor's chapter menu, both gated on `surfacesEnabled` and
+      posting to `POST /api/assistant/review-job` (`queueAssistantReview`, a
+      singleton per story+chapter scope). The live OpenAI adapter path (streaming,
+      tool-calling, model list) was verified against a real OpenAI-compatible
+      endpoint. Deferred: the palette command, and `assistant-enrich` /
+      `assistant-summaries` jobs. Lint, check, unit (335), and build pass locally;
+      the worker job and notification fan-out need Postgres/the worker, so they
+      are left for CI.
+- [ ] Inline continuation (first inline surface; branch
+      `feat/assistant-continuation`). A CodeMirror ghost-text extension
+      (`editor-continuation.ts`, its own keymap/StateField, distinct from the
+      entity autocomplete): Ctrl/Cmd+J asks the Assistant to continue the prose at
+      the cursor, the suggestion shows as grey ghost-text, Tab accepts, Esc / an
+      edit / a caret move dismisses. `POST /api/assistant/continuation`
+      (`buildContinuationMessage`, `role: 'continuation'`, no tools) returns the
+      buffered continuation; the editor inserts it only on accept (a suggestion,
+      never a silent write). Threaded through `SceneEditor` (`storyId` +
+      `assistantContinuation` props) in both the single-scene and continuous
+      views, gated on `surfacesEnabled`. Editor + shortcuts help updated. The live
+      model produced a clean in-voice continuation through the real provider path.
+      First-cut product choices (documented for the author to revisit):
+      request-on-demand via a keybinding rather than auto-on-pause (cost), and
+      buffered rather than token-streamed. Unit test covers the prompt builder;
+      the extension/endpoint need a browser+model so they are left for CI/manual.
+      Lint, check, unit (336), and build pass locally. Deferred: co-author (the
+      side panel with insert/edit/reject), auto-on-pause, and streaming.
+- [ ] Co-author (second inline surface; branch `feat/assistant-coauthor`). A
+      "Write with the Assistant" button on the editor toolbar opens a panel: the
+      writer types a brief, the Assistant drafts a passage grounded in the
+      assembled world + current scene, and the writer inserts it at the cursor,
+      edits it in place first, or discards it (nothing is written until Insert).
+      `POST /api/assistant/coauthor` (`buildCoauthorMessage`, `role: 'coauthor'`,
+      no tools, context assembled) returns the buffered draft. UI lives in
+      `SceneEditor` (owns the view for insert-at-cursor) with an `onCoauthor`
+      trigger added to `EditorToolbar`; gated on `surfacesEnabled`, single-scene
+      editor only. Verified live: a strong in-context passage through the real
+      provider path. Unit test covers the prompt builder. Completes the inline
+      surface. Deferred (own future work): streaming the draft, and the
+      structural/enrichment tools, summary jobs, recap, and persisted chat the
+      design lists as later.
+- [ ] Recap / "catch me up" (first background-enrichment surface, sequencing
+      step 7; branch `feat/assistant-recap`). A "Catch me up" control at the top
+      of the Assistant tab streams a recap of the story so far - every scene up
+      to and including the open one - into the conversation as an assistant turn.
+      `POST /api/assistant/recap` (SSE, `role: 'chat'`, no tools) assembles a
+      dedicated recap context (`assembleRecapContext` + `scenesUpTo`): the world
+      frame, the scenes in order (preferring each scene's summary, falling back to
+      a body excerpt since summaries are sparse until summary maintenance lands),
+      and the in-scope entities, fit newest-first to a provisional budget
+      (`fitRecapScenes`). `buildRecapMessage` instructs a summary of what is there,
+      not a continuation. The panel's SSE read was factored into a shared
+      `streamInto` used by both chat and recap. Editor help gained a recap
+      paragraph. Chosen sub-order rationale: scene/chapter summaries have no
+      display UI yet, so summary maintenance is invisible until a consumer exists;
+      recap is that consumer and is user-visible on its own, improving once
+      summary maintenance lands. Unit tests cover the prompt and the budgeting;
+      `assembleRecapContext` gained integration coverage (cut at the focus scene,
+      whole-story fallback, body fallback) that needs Postgres, so it is left for
+      CI. Lint, check, and unit pass locally. Next in step 7: `assistant-summaries`
+      (summary maintenance), then entity enrichment + arc summaries.
+- [ ] Summary maintenance (`assistant-summaries`, sequencing step 7; branch
+      `feat/assistant-summaries`). A background job that drafts and refreshes
+      scene and chapter `summary_md` - the derived metadata recap and context
+      assembly feed on. `summariseStory` (`llm/summaries.ts`) fills blank
+      summaries, refreshes ones the Assistant generated when the body changed
+      since, and never overwrites a summary the writer wrote by hand. Provenance +
+      staleness via a new nullable `summary_generated_at` watermark on scenes and
+      chapters (migration 0053, additive); the summary write preserves the row's
+      `updated_at` so it neither registers as an edit nor looks stale next run, and
+      chapter summaries refresh when their scenes were re-summarised this run.
+      Triggered by "Update summaries" at the top of the Assistant tab ->
+      `POST /api/assistant/summaries-job` -> `queueAssistantSummaries` (singleton
+      per story); the worker calls the gateway directly (`role: 'chat'`, no tools,
+      summaries are generated metadata not staged suggestions) and notifies on
+      completion (new `assistant_summaries` notification kind). Editor help
+      documents it. Unit tests cover the prompt builders and the `needsSummary`
+      decision matrix; an integration test with a stub provider covers the DB
+      behaviour (fill/skip-handwritten/refresh, `updated_at` preserved, chapter
+      from scenes) - needs Postgres, left for CI. Lint, check, unit, and the worker
+      import-resolution check pass locally. Next in step 7: entity enrichment +
+      character arc summaries.
+- [ ] Entity enrichment (sequencing step 7, the deferred suggestion machinery;
+      branch `feat/assistant-entity-enrichment`). The Assistant suggests new
+      aliases, quick details, and a summary for an entity, staged as suggestions
+      the writer accepts or rejects in the entity editor - the design's "lands as
+      suggestions on the entity, not an overwrite". New `entity_suggestions` table
+      (migration 0054, additive): polymorphic (entity_kind + entity_id), field
+      alias|detail|summary, owner-scoped. `entity-suggestions.ts` stages (dedup
+      against existing aliases/detail-labels/summary), lists pending, and decides:
+      accept applies the one field across the three entity kinds (lore alias ->
+      keywords) and records a 'suggestion' revision (so it shows in History and
+      rolls back); an accepted alias requeues the universe mention index. Inline,
+      sync generation: `enrichEntity` (`llm/enrich.ts`) reads where the entity
+      appears (`entityAppearances`), asks for a JSON object (no gateway tools, so
+      it works on any endpoint), and `parseEnrichResponse` pulls and validates the
+      JSON defensively. `POST /api/assistant/enrich` (gated) returns staged
+      suggestions; `POST /api/assistant/entity-suggestions/[id]` accepts/rejects
+      (no gate - acting on an existing suggestion). UI: a "Suggest details with the
+      Assistant" button + an accept/reject panel in `EntityEditor`, fed by the
+      story plan load (gate + pending suggestions for the selected entity);
+      accepting also applies to the open editor's state without a redundant save.
+      Planning help documents it. Unit tests cover the prompt + the defensive JSON
+      parse; an integration test (stub provider) covers stage/dedup, accept-applies
+      per field, reject, owner-scoping, and enrichEntity end-to-end - needs
+      Postgres, left for CI. Lint, check, and unit pass locally. Whole-universe
+      background `assistant-enrich` and character arc summaries remain for later.
+
 ## Capability review follow-ups (2026-06-06)
 
 A general capability review (six survey passes over routes, design docs,

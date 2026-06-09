@@ -1,13 +1,13 @@
 {
 	"name": "codex",
 	"private": true,
-	"version": "2.47.0",
+	"version": "3.0.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"worker": "node src/worker/index.ts",
+		"worker": "node --import ./src/worker/register.js src/worker/index.ts",
 		"migrate": "node scripts/migrate.ts",
 		"seed:admin": "node scripts/seed-admin.ts",
 		"backup": "node scripts/run-backup.ts",

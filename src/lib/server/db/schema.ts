@@ -196,6 +196,10 @@ export const chapters = pgTable('chapters', {
 	position: integer('position').notNull(),
 	title: text('title'),
 	summaryMd: text('summary_md'),
+	// When the Assistant last generated this summary. Null means it was never
+	// auto-generated (so a non-null summary here is the writer's own and is never
+	// overwritten). See scenes.summary_generated_at.
+	summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
 	metadata: jsonb('metadata').notNull().default({}),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()
@@ -229,6 +233,13 @@ export const scenes = pgTable(
 		status: text('status', { enum: SCENE_STATUSES }).notNull().default('draft'),
 		// One line of what happens; shown in the sidebar and outline.
 		summaryMd: text('summary_md'),
+		// When the Assistant last generated summary_md. Null means the summary was
+		// never auto-generated: a non-null summary with a null watermark is the
+		// writer's own and the summary job never overwrites it. The job fills a
+		// blank summary and refreshes one it generated when the body changed after
+		// this watermark; the summary write preserves updated_at so it does not
+		// look stale on the next run.
+		summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
 		// Updated on save.
 		wordCount: integer('word_count').notNull().default(0),
 		metadata: jsonb('metadata').notNull().default({}),
@@ -1001,6 +1012,10 @@ export const reviewComments = pgTable(
 			.notNull(),
 		authorUserId: uuid('author_user_id').references(() => users.id),
 		authorReviewerId: uuid('author_reviewer_id').references(() => reviewers.id),
+		// The Assistant as a third author: both FK authors null, this true. The
+		// display name is resolved live from the owner's assistant config, so a
+		// rename relabels past comments on the fly.
+		assistant: boolean('assistant').notNull().default(false),
 		bodyMd: text('body_md').notNull(),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -1029,6 +1044,9 @@ export const reviewSuggestions = pgTable(
 			.notNull(),
 		authorUserId: uuid('author_user_id').references(() => users.id),
 		reviewerId: uuid('reviewer_id').references(() => reviewers.id),
+		// The Assistant as a third author (both FK authors null, this true);
+		// mirrors review_comments. The owner still accepts or rejects it.
+		assistant: boolean('assistant').notNull().default(false),
 		// The text the range was placed against.
 		baseRevisionId: uuid('base_revision_id')
 			.references(() => revisions.id)
@@ -1046,6 +1064,36 @@ export const reviewSuggestions = pgTable(
 	(table) => [
 		index('review_suggestions_scene_idx').on(table.sceneId),
 		index('review_suggestions_story_idx').on(table.storyId)
+	]
+);
+
+// Assistant-suggested enrichments for an entity (character/place/lore): a new
+// alias, a quick detail, or a drafted summary. They stage here pending the
+// writer's accept or reject in the entity editor; nothing changes the entity
+// until accepted. Polymorphic across the three entity tables (kind + id), so no
+// FK on entity_id; owner_id scopes accept/reject and cleanup. The value carries
+// the alias text, the detail value, or the summary text by field; label is the
+// detail label, set only for field = 'detail'.
+export const entitySuggestions = pgTable(
+	'entity_suggestions',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		entityKind: text('entity_kind', { enum: ['character', 'place', 'lore'] }).notNull(),
+		entityId: uuid('entity_id').notNull(),
+		field: text('field', { enum: ['alias', 'detail', 'summary'] }).notNull(),
+		label: text('label'),
+		value: text('value').notNull(),
+		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
+			.notNull()
+			.default('pending'),
+		decidedAt: timestamp('decided_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('entity_suggestions_entity_idx').on(table.entityKind, table.entityId, table.status)
 	]
 );
 

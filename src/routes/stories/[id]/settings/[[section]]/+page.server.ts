@@ -32,6 +32,7 @@ import {
 } from '$lib/page-setup';
 import { ownedStory } from '$lib/server/story-access';
 import { uniqueSlug } from '$lib/server/slugs';
+import { assistantLayout } from '$lib/server/llm/config';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {
@@ -73,7 +74,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		preferenceOverrides,
 		accountPreferences,
 		pageSetupOverrides,
-		accountPageSetup
+		accountPageSetup,
+		assistant
 	] = await Promise.all([
 		storyTimeline(db, story.id, 30),
 		db
@@ -85,7 +87,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		storyPreferenceOverrides(db, story.id),
 		userPreferences(db, locals.user!.id),
 		storyPageSetupOverrides(db, story.id),
-		userPageSetup(db, locals.user!.id)
+		userPageSetup(db, locals.user!.id),
+		assistantLayout(db, locals.user!.id, story.id)
 	]);
 	const assetsConfigured = (await effectiveAssetConfig(db)) !== null;
 	// These sections hide when their feature is off, so their pages do too.
@@ -107,7 +110,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		accountPreferences,
 		// Same shape for the Page setup section.
 		pageSetupOverrides,
-		accountPageSetup
+		accountPageSetup,
+		// Whether to offer "Review this story" in the Review section.
+		assistant
 	};
 };
 

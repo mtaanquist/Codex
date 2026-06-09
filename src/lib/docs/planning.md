@@ -26,6 +26,10 @@ Your changes save on their own as you work, so there is no save button.
 
 Details are short facts about an entry, each with a label and a value: Status, Age, Allegiance, whatever fits. Select "Add detail" to add a row, and fill in both fields; rows missing either are not kept. The first three details show when you hover a mention in the editor, in the order they appear here, so put the most useful ones on top.
 
+## Assistant suggestions
+
+When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
+
 ## Relationships
 
 You can record how entities relate: who is whose parent, which faction holds which city. Select "Add relationship", pick a type, choose the other entity, and add a note if you like; the reverse shows on the other entry's page automatically. Click a related entity to jump to it.

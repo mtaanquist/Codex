@@ -17,6 +17,7 @@
 	import type { EditorView } from '@codemirror/view';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
+	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData, Snapshot } from './$types';
@@ -240,6 +241,56 @@
 		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
 	}
 
+	// Asks the Assistant to review one scene; it stages comments and suggested
+	// edits the author then accepts or rejects on the review screen. Runs inline
+	// (one scene is bounded), so a non-blocking banner covers the wait.
+	let reviewingScene = $state(false);
+	async function reviewScene(sceneId: string) {
+		rowMenu = null;
+		if (reviewingScene) return;
+		reviewingScene = true;
+		try {
+			const response = await fetch('/api/assistant/review', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ sceneId })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				alert(body?.message ?? 'The Assistant could not review the scene.');
+				return;
+			}
+			const { staged } = (await response.json()) as { staged: number };
+			if (staged > 0) {
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from a slug
+				await goto(`/stories/${data.story.slug}/review`);
+			} else {
+				alert('The Assistant read the scene and had no notes to add.');
+			}
+		} finally {
+			reviewingScene = false;
+		}
+	}
+
+	// Reviews a whole chapter. Too long to run inline, so it queues a background
+	// job and the owner is notified when it is ready.
+	async function reviewChapter(chapterId: string) {
+		rowMenu = null;
+		const response = await fetch('/api/assistant/review-job', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ storyId: data.story.id, chapterId })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			alert(body?.message ?? 'Could not start the chapter review.');
+			return;
+		}
+		alert(
+			'The Assistant is reviewing this chapter in the background. You will be notified when its notes are ready on the review page.'
+		);
+	}
+
 	// Splits the open scene at the cursor, like a page break: the rest of
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
@@ -351,8 +402,25 @@
 		return css;
 	});
 
-	// Right column tabs; History holds the open scene's timeline.
-	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
+	// Right column tabs; History holds the open scene's timeline. The Assistant
+	// tab appears only when the account has it configured and switched on.
+	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
+
+	// Grounded starter prompts for an empty Assistant conversation, drawn from
+	// the story's known characters so they name real entities; generic fallbacks
+	// when the cast is empty.
+	const assistantSuggestions = $derived.by(() => {
+		const characters = data.mentionEntities
+			.filter((entity) => entity.type === 'character')
+			.map((entity) => entity.name);
+		const title = data.story.title || 'this story';
+		const prompts: string[] = [];
+		if (characters[0]) prompts.push(`What's at stake for ${characters[0]} in ${title}?`);
+		prompts.push('Suggest a complication for this scene.');
+		if (characters[1]) prompts.push(`Is ${characters[1]}'s arc consistent so far?`);
+		else prompts.push('Catch me up on the story so far.');
+		return prompts;
+	});
 	// The scene's cast, grouped by entity type in this order.
 	const IN_SCENE_GROUPS = [
 		{ kind: 'character', label: 'Characters' },
@@ -847,10 +915,12 @@
 							bind:this={docEditors[scene.id]}
 							compact
 							sceneId={scene.id}
+							storyId={data.story.id}
 							title={scene.title}
 							body={scene.bodyMd}
 							entities={data.mentionEntities}
 							{mentionOptions}
+							assistantContinuation={data.assistant.surfacesEnabled}
 							autocompleteMode={data.preferences.entityAutocomplete}
 							editingMode={data.preferences.editingMode}
 							spellCheck={data.preferences.spellCheck}
@@ -936,6 +1006,8 @@
 						onToggleCommandMarkers={toggleCommandMarkers}
 						onEnterFocus={() => (focusMode.on = true)}
 						sceneId={data.selectedScene.id}
+						storyId={data.story.id}
+						assistantContinuation={data.assistant.surfacesEnabled}
 						title={data.selectedScene.title}
 						body={data.selectedScene.bodyMd}
 						{findText}
@@ -1011,9 +1083,28 @@
 						>
 							Session
 						</button>
+						{#if data.assistant.tabEnabled}
+							<button
+								class="rtab"
+								class:active={rightTab === 'assistant'}
+								type="button"
+								onclick={() => (rightTab = 'assistant')}
+							>
+								Assistant
+							</button>
+						{/if}
 					</div>
 				</div>
-				{#if rightTab === 'session'}
+				{#if rightTab === 'assistant' && data.assistant.tabEnabled}
+					<AssistantPanel
+						storyId={data.story.id}
+						sceneId={data.selectedScene?.id ?? null}
+						name={data.assistant.name}
+						storyTitle={data.story.title}
+						muted={data.assistant.muted}
+						suggestions={assistantSuggestions}
+					/>
+				{:else if rightTab === 'session'}
 					<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
 				{:else if data.selectedScene && rightTab === 'history'}
 					<RevisionHistory
@@ -1123,6 +1214,16 @@
 			>
 				<Icon name="pencil" size={13} /> Rename chapter
 			</button>
+			{#if data.assistant.surfacesEnabled}
+				<button
+					class="row-menu-item"
+					type="button"
+					role="menuitem"
+					onclick={() => reviewChapter(target.id)}
+				>
+					<Icon name="sparkles" size={13} /> Review this chapter
+				</button>
+			{/if}
 			<form method="POST" action="?/moveChapter">
 				<input type="hidden" name="chapterId" value={target.id} />
 				<input type="hidden" name="direction" value="up" />
@@ -1182,6 +1283,16 @@
 			>
 				<Icon name="copy" size={13} /> Duplicate scene
 			</button>
+			{#if data.assistant.surfacesEnabled}
+				<button
+					class="row-menu-item"
+					type="button"
+					role="menuitem"
+					onclick={() => reviewScene(target.id)}
+				>
+					<Icon name="sparkles" size={13} /> Review this scene
+				</button>
+			{/if}
 			{#if pickedForMerge && mergeSelection.size >= 2}
 				<button class="row-menu-item" type="button" role="menuitem" onclick={mergeSelectedScenes}>
 					<Icon name="chapter" size={13} /> Merge {mergeSelection.size} scenes
@@ -1211,7 +1322,46 @@
 	</div>
 {/if}
 
+{#if reviewingScene}
+	<div class="assistant-review-busy" role="status" aria-live="polite">
+		<span class="arb-dot"></span> The Assistant is reviewing this scene...
+	</div>
+{/if}
+
 <style>
+	.assistant-review-busy {
+		position: fixed;
+		bottom: 18px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 60;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		padding: 8px 16px;
+		font-size: 13px;
+		color: var(--text);
+		box-shadow: var(--shadow);
+	}
+	.arb-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 99px;
+		background: var(--accent);
+		animation: arb-pulse 1.1s infinite;
+	}
+	@keyframes arb-pulse {
+		0%,
+		100% {
+			opacity: 0.3;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
 	/* A scene picked for merging keeps a quiet accent ring until the merge
 	   or the selection is cleared. */
 	.scene-row.merge-selected {
