@@ -30,8 +30,7 @@ contacts a model on its own.
   to use the Assistant; turn it back on to stop everything at once. The settings
   below are dimmed while the Assistant is off.
 - **Identity**: give the Assistant a name and pick a style for how it writes back.
-  The name shows wherever the Assistant appears. A single story can override the
-  style later.
+  The name shows wherever the Assistant appears.
 - **Endpoint**: enter the base URL of any OpenAI-compatible endpoint, such as a
   local Ollama server or a hosted service, and an API key if it needs one. Leave
   the key blank to keep the one already saved. Select Test connection to send a

@@ -26,7 +26,7 @@ You do not have to invite anyone to use review mode. Open "Review mode" in the R
 
 ## Working through the feedback
 
-The same review page shows every thread, yours and your reviewers'. Reply to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
+The same review page shows every thread, yours and your reviewers'. If you asked the Assistant to review (from a scene, chapter, or the whole story), its comments and suggested edits appear here too, marked as the Assistant's, and you work through them the same way. Reply to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
 
 Suggested changes appear there too, showing the original text and the proposed text. Accept one to apply it to the scene (a history entry records it), or reject it - this works the same for your own suggestions and a reviewer's. You decide one at a time, in any order.
 
