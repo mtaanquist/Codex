@@ -1,13 +1,19 @@
 // The notification kinds and their account-page labels, shared by the
 // preference matrix, the bell, and the server fan-out.
 
-export const NOTIFICATION_KINDS = ['review_activity', 'review_reply', 'account_pending'] as const;
+export const NOTIFICATION_KINDS = [
+	'review_activity',
+	'review_reply',
+	'account_pending',
+	'assistant_review'
+] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
 	review_activity: 'Review activity on your stories',
 	review_reply: 'Replies to your review comments',
-	account_pending: 'New accounts awaiting approval'
+	account_pending: 'New accounts awaiting approval',
+	assistant_review: 'Assistant reviews you asked for'
 };
 
 // Only admins approve accounts, so only they see that row.

@@ -10,7 +10,8 @@ import {
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
-	REVIEWER_DIGEST_QUEUE
+	REVIEWER_DIGEST_QUEUE,
+	ASSISTANT_REVIEW_QUEUE
 } from '../lib/server/queues.ts';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -43,6 +44,9 @@ import {
 	recordAssetMigrationResult,
 	s3AssetStore
 } from '../lib/server/assets.ts';
+import { reviewStoryScenes } from '../lib/server/llm/scene-review.ts';
+import { insertNotifications } from '../lib/server/notify-core.ts';
+import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -67,6 +71,7 @@ await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
+await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 
 await boss.work<{ sceneId: string }>(MENTIONS_SCENE_QUEUE, async (jobs) => {
 	for (const job of jobs) {
@@ -124,6 +129,58 @@ await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
 	if (result.failed === 0) await clearAssetMigrationSource(db);
 	console.log(`asset migration: ${result.copied} copied, ${result.failed} failed`);
 });
+
+// Whole-story or single-chapter Assistant review: fan over the scenes in scope,
+// stage the Assistant's notes through the review tools, then tell the owner it
+// is ready (or that the endpoint could not be reached). Matches the inline
+// single-scene endpoint, just unattended and over many scenes.
+await boss.work<{ userId: string; storyId: string; chapterId?: string }>(
+	ASSISTANT_REVIEW_QUEUE,
+	async (jobs) => {
+		for (const job of jobs) {
+			const { userId, storyId, chapterId } = job.data;
+			const [story] = await db
+				.select({
+					ownerId: schema.stories.ownerId,
+					title: schema.stories.title,
+					slug: schema.stories.slug
+				})
+				.from(schema.stories)
+				.where(eq(schema.stories.id, storyId));
+			// Re-check ownership at run time: the story may have been deleted since.
+			if (!story || story.ownerId !== userId) {
+				console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
+				continue;
+			}
+			const result = await reviewStoryScenes(db, { userId, storyId, chapterId });
+			const href = `/stories/${story.slug}/review`;
+			let title: string;
+			if (result.reviewed === 0 && result.failed > 0) {
+				title = `The Assistant could not review "${story.title}". Check the endpoint in your settings.`;
+			} else if (result.notes === 0) {
+				title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
+			} else {
+				title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
+			}
+			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
+				title,
+				href
+			});
+			// Queue the recipient's batched email; 600s matches jobs.ts
+			// DIGEST_DELAY_SECONDS (not importable here - jobs.ts reads $env).
+			for (const id of digestUsers) {
+				await boss.send(
+					NOTIFICATION_DIGEST_QUEUE,
+					{ userId: id },
+					{ startAfter: 600, singletonKey: id }
+				);
+			}
+			console.log(
+				`assistant review: story ${storyId} - ${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`
+			);
+		}
+	}
+);
 
 await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs) => {
 	for (const job of jobs) {

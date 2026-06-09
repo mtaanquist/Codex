@@ -272,6 +272,25 @@
 		}
 	}
 
+	// Reviews a whole chapter. Too long to run inline, so it queues a background
+	// job and the owner is notified when it is ready.
+	async function reviewChapter(chapterId: string) {
+		rowMenu = null;
+		const response = await fetch('/api/assistant/review-job', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ storyId: data.story.id, chapterId })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			alert(body?.message ?? 'Could not start the chapter review.');
+			return;
+		}
+		alert(
+			'The Assistant is reviewing this chapter in the background. You will be notified when its notes are ready on the review page.'
+		);
+	}
+
 	// Splits the open scene at the cursor, like a page break: the rest of
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
@@ -1191,6 +1210,16 @@
 			>
 				<Icon name="pencil" size={13} /> Rename chapter
 			</button>
+			{#if data.assistant.surfacesEnabled}
+				<button
+					class="row-menu-item"
+					type="button"
+					role="menuitem"
+					onclick={() => reviewChapter(target.id)}
+				>
+					<Icon name="sparkles" size={13} /> Review this chapter
+				</button>
+			{/if}
 			<form method="POST" action="?/moveChapter">
 				<input type="hidden" name="chapterId" value={target.id} />
 				<input type="hidden" name="direction" value="up" />
