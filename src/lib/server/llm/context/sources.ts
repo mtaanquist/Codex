@@ -183,6 +183,40 @@ export async function storySkeleton(
 	};
 }
 
+export type RecapScene = {
+	id: string;
+	title: string | null;
+	summaryMd: string | null;
+	bodyMd: string;
+	status: string;
+};
+
+// The story's scenes in order, up to and including the focus scene, for a
+// recap. With no focus scene (or one not found) the whole story is returned, so
+// "catch me up" off a story with nothing open recaps everything. Bodies ride
+// along because summaries are sparse until summary maintenance fills them; the
+// assembler prefers a summary and falls back to a body excerpt.
+export async function scenesUpTo(
+	db: Database,
+	storyId: string,
+	sceneId: string | undefined
+): Promise<RecapScene[]> {
+	const ordered = await db
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			summaryMd: scenes.summaryMd,
+			bodyMd: scenes.bodyMd,
+			status: scenes.status
+		})
+		.from(scenes)
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
+		.orderBy(asc(scenes.globalPosition));
+	if (!sceneId) return ordered;
+	const index = ordered.findIndex((s) => s.id === sceneId);
+	return index === -1 ? ordered : ordered.slice(0, index + 1);
+}
+
 export type ScopeEntity = {
 	kind: ScopeKind;
 	id: string;

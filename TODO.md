@@ -791,6 +791,26 @@ endpoint. Started 2026-06-09.
       surface. Deferred (own future work): streaming the draft, and the
       structural/enrichment tools, summary jobs, recap, and persisted chat the
       design lists as later.
+- [ ] Recap / "catch me up" (first background-enrichment surface, sequencing
+      step 7; branch `feat/assistant-recap`). A "Catch me up" control at the top
+      of the Assistant tab streams a recap of the story so far - every scene up
+      to and including the open one - into the conversation as an assistant turn.
+      `POST /api/assistant/recap` (SSE, `role: 'chat'`, no tools) assembles a
+      dedicated recap context (`assembleRecapContext` + `scenesUpTo`): the world
+      frame, the scenes in order (preferring each scene's summary, falling back to
+      a body excerpt since summaries are sparse until summary maintenance lands),
+      and the in-scope entities, fit newest-first to a provisional budget
+      (`fitRecapScenes`). `buildRecapMessage` instructs a summary of what is there,
+      not a continuation. The panel's SSE read was factored into a shared
+      `streamInto` used by both chat and recap. Editor help gained a recap
+      paragraph. Chosen sub-order rationale: scene/chapter summaries have no
+      display UI yet, so summary maintenance is invisible until a consumer exists;
+      recap is that consumer and is user-visible on its own, improving once
+      summary maintenance lands. Unit tests cover the prompt and the budgeting;
+      `assembleRecapContext` gained integration coverage (cut at the focus scene,
+      whole-story fallback, body fallback) that needs Postgres, so it is left for
+      CI. Lint, check, and unit pass locally. Next in step 7: `assistant-summaries`
+      (summary maintenance), then entity enrichment + arc summaries.
 
 ## Capability review follow-ups (2026-06-06)
 

@@ -57,26 +57,18 @@
 		}
 	}
 
-	async function send(text?: string) {
-		const question = (text ?? input).trim();
-		if (!question || busy) return;
-		input = '';
-		if (composer) composer.style.height = 'auto';
-		// The turn the model answers, then an empty reply to stream into.
-		const turns: Message[] = [...messages, { role: 'user', content: question }];
-		messages = [...turns, { role: 'assistant', content: '' }];
+	// Stream a reply into the empty assistant message the caller has already
+	// pushed. Shared by chat (send) and recap (catchUp): both POST JSON and read
+	// the same token/done/error Server-Sent Event frames.
+	async function streamInto(url: string, payload: unknown) {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
 		try {
-			const response = await fetch('/api/assistant/chat', {
+			const response = await fetch(url, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					storyId,
-					sceneId,
-					messages: turns.map((m) => ({ role: m.role, content: m.content }))
-				}),
+				body: JSON.stringify(payload),
 				signal: controller.signal
 			});
 			if (!response.ok || !response.body) {
@@ -117,6 +109,29 @@
 			busy = false;
 			pending = null;
 		}
+	}
+
+	async function send(text?: string) {
+		const question = (text ?? input).trim();
+		if (!question || busy) return;
+		input = '';
+		if (composer) composer.style.height = 'auto';
+		// The turn the model answers, then an empty reply to stream into.
+		const turns: Message[] = [...messages, { role: 'user', content: question }];
+		messages = [...turns, { role: 'assistant', content: '' }];
+		await streamInto('/api/assistant/chat', {
+			storyId,
+			sceneId,
+			messages: turns.map((m) => ({ role: m.role, content: m.content }))
+		});
+	}
+
+	// Catch me up: a recap of the story so far, streamed in as an assistant turn
+	// with no question of its own.
+	async function catchUp() {
+		if (busy) return;
+		messages = [...messages, { role: 'assistant', content: '' }];
+		await streamInto('/api/assistant/recap', { storyId, sceneId });
 	}
 
 	function stop() {
@@ -168,11 +183,22 @@
 	<div class="assistant">
 		<div class="assistant-head">
 			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
-			<form method="POST" action="?/muteAssistant" use:enhance>
-				<button class="mute-link" type="submit" title="Hide the Assistant for this story">
-					Mute for this story
+			<div class="head-actions">
+				<button
+					class="head-link"
+					type="button"
+					disabled={busy}
+					title="Recap the story up to where you are"
+					onclick={catchUp}
+				>
+					Catch me up
 				</button>
-			</form>
+				<form method="POST" action="?/muteAssistant" use:enhance>
+					<button class="mute-link" type="submit" title="Hide the Assistant for this story">
+						Mute for this story
+					</button>
+				</form>
+			</div>
 		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
 			{#each messages as message, index (index)}
@@ -259,6 +285,27 @@
 		font-size: 12px;
 		font-weight: 600;
 		color: var(--text-muted);
+	}
+	.head-actions {
+		display: inline-flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.head-link {
+		border: 0;
+		background: none;
+		padding: 0;
+		font-size: 12px;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	.head-link:hover:not(:disabled) {
+		color: var(--accent);
+		text-decoration: underline;
+	}
+	.head-link:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 	.mute-link {
 		border: 0;
