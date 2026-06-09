@@ -1,46 +1,17 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import {
-	reviewComments,
-	reviewSuggestions,
-	reviewThreads,
-	scenes,
-	stories
-} from '$lib/server/db/schema';
+import { scenes, stories } from '$lib/server/db/schema';
 import { rateLimitAssistant } from '$lib/server/write-guard';
 import { assistantLayout } from '$lib/server/llm/config';
-import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import { buildReviewMessage } from '$lib/server/llm/prompts/review';
-import { AssistantDisabledError, complete } from '$lib/server/llm/gateway';
-import type { ChatMessage } from '$lib/server/llm/providers/types';
+import { AssistantDisabledError } from '$lib/server/llm/gateway';
+import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-review';
 
-// A single-scene Assistant review: the model reads the scene and the assembled
-// world, then stages review comments and suggested edits through the tools (the
-// "writes are suggestions" invariant). It runs inline (one scene is bounded);
-// the whole-story pass is a background job. Nothing reaches the prose - the
-// author accepts or rejects each note on the existing review screen.
-
-// Count the Assistant's pending notes on a scene, so the caller can report how
-// many this run added.
-async function countAssistantNotes(sceneId: string): Promise<number> {
-	const [suggestions] = await db
-		.select({ n: sql<number>`count(*)::int` })
-		.from(reviewSuggestions)
-		.where(
-			and(
-				eq(reviewSuggestions.sceneId, sceneId),
-				eq(reviewSuggestions.assistant, true),
-				eq(reviewSuggestions.status, 'pending')
-			)
-		);
-	const [comments] = await db
-		.select({ n: sql<number>`count(*)::int` })
-		.from(reviewComments)
-		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
-		.where(and(eq(reviewThreads.sceneId, sceneId), eq(reviewComments.assistant, true)));
-	return (suggestions?.n ?? 0) + (comments?.n ?? 0);
-}
+// A single-scene Assistant review, run inline (one scene is bounded). The model
+// reads the scene and the assembled world, then stages review comments and
+// suggested edits through the tools - nothing reaches the prose, the author
+// accepts or rejects each note on the existing review screen. The whole-story
+// and chapter passes are the assistant-review background job.
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const userId = locals.user!.id;
@@ -61,25 +32,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const layout = await assistantLayout(db, userId, scene.storyId);
 	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
 
-	const context = await assembleContext(db, { userId, storyId: scene.storyId, sceneId });
-	const task: ChatMessage = { role: 'user', content: buildReviewMessage(scene) };
-	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];
-
-	const before = await countAssistantNotes(sceneId);
+	const before = await countAssistantNotes(db, sceneId);
 	try {
-		await complete(db, {
+		await reviewOneScene(db, {
 			userId,
 			storyId: scene.storyId,
-			role: 'reviewer',
-			enableTools: true,
-			messages,
+			scene,
 			signal: request.signal
 		});
 	} catch (err) {
 		if (err instanceof AssistantDisabledError) error(403, err.message);
 		error(502, 'The Assistant could not complete the review. Check the endpoint in your settings.');
 	}
-	const after = await countAssistantNotes(sceneId);
+	const after = await countAssistantNotes(db, sceneId);
 
 	return new Response(JSON.stringify({ ok: true, staged: after - before }), {
 		headers: { 'content-type': 'application/json' }

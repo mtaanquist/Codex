@@ -738,6 +738,27 @@ endpoint. Started 2026-06-09.
       "Review this chapter", whole-story "Review this story" (the
       `assistant-review` worker job + completion notification), and the palette
       command. Lint, check, unit (335), and build pass locally.
+- [ ] Whole-story / chapter background review (branch
+      `feat/assistant-review-jobs`). The `assistant-review` pg-boss queue fans the
+      reviewer over every scene in scope. Shared `llm/scene-review.ts`
+      (`reviewOneScene`, `countAssistantNotes`, `reviewStoryScenes`) backs both
+      the inline endpoint (refactored onto it) and the worker job; the job loops
+      scenes, catching per-scene errors so one unreachable turn does not abandon
+      the rest, then notifies the owner (a new `assistant_review` notification
+      kind) with the staged-note count and a link to the review page. Because the
+      worker cannot import `notify.ts` (it pulls `$env` via jobs.ts), the
+      notification row insert moved to a jobs-free `notify-core.ts`
+      (`insertNotifications`) that both `notify.ts` and the worker share; the
+      worker queues the digest through its own pg-boss handle. Entry points:
+      "Review this story" in the story-settings Review section and "Review this
+      chapter" on the editor's chapter menu, both gated on `surfacesEnabled` and
+      posting to `POST /api/assistant/review-job` (`queueAssistantReview`, a
+      singleton per story+chapter scope). The live OpenAI adapter path (streaming,
+      tool-calling, model list) was verified against a real OpenAI-compatible
+      endpoint. Deferred: the palette command, and `assistant-enrich` /
+      `assistant-summaries` jobs. Lint, check, unit (335), and build pass locally;
+      the worker job and notification fan-out need Postgres/the worker, so they
+      are left for CI.
 
 ## Capability review follow-ups (2026-06-06)
 

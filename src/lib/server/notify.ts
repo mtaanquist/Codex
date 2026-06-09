@@ -1,8 +1,8 @@
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { notifications, reviewComments, reviewers, stories, users } from './db/schema';
-import { normaliseNotifications } from './preferences';
 import { queueNotificationDigest, queueReviewerDigest } from './jobs';
+import { insertNotifications } from './notify-core';
 import {
 	teaser,
 	type NotificationItem,
@@ -12,7 +12,8 @@ import {
 
 // The fan-out behind every notification: one event in, per-user rows out,
 // each stamped with the channels that user's preference matrix allows. The
-// email side rides the worker's batched digest; nothing sends from here.
+// row insert lives in notify-core (worker-safe); this adds the digest queueing
+// that the app side wants. Nothing sends from here - email rides the digest.
 
 export async function notifyUsers(
 	db: Database,
@@ -20,29 +21,7 @@ export async function notifyUsers(
 	kind: NotificationKind,
 	payload: NotificationPayload
 ): Promise<void> {
-	const ids = [...new Set(userIds)];
-	if (ids.length === 0) return;
-	const rows = await db
-		.select({ id: users.id, preferences: users.preferences })
-		.from(users)
-		.where(inArray(users.id, ids));
-	const inserts: (typeof notifications.$inferInsert)[] = [];
-	const digestUsers: string[] = [];
-	for (const row of rows) {
-		const channels = normaliseNotifications(
-			(row.preferences as Record<string, unknown>).notifications
-		)[kind];
-		if (!channels.inApp && !channels.email) continue;
-		inserts.push({
-			userId: row.id,
-			kind,
-			payload,
-			inApp: channels.inApp,
-			emailWanted: channels.email
-		});
-		if (channels.email) digestUsers.push(row.id);
-	}
-	if (inserts.length > 0) await db.insert(notifications).values(inserts);
+	const digestUsers = await insertNotifications(db, userIds, kind, payload);
 	for (const userId of digestUsers) await queueNotificationDigest(userId);
 }
 
