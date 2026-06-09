@@ -85,6 +85,27 @@ server-side (the surfaces are not rendered) and reflected in the layout data
 the pages already load, so a dark Assistant ships no client code paths a
 curious user could trip.
 
+### The kill switch as a prominent control
+
+The account master toggle is not a small checkbox buried among model
+settings; it is the prominent, self-explaining control at the top of the
+account Assistant section, modelled on the pattern browsers have adopted for
+their own AI features (Firefox's "Block AI enhancements" panel is the
+reference). It carries, in plain language:
+
+- what turning it on does: the Assistant becomes available, and the content
+  it needs (the prose, entities, and lore in scope) is sent to the endpoint
+  the writer configures. This is the privacy disclosure (see "Privacy" below)
+  and it sits here, on the switch, not in fine print.
+- what turning it off does: every Assistant surface goes dark immediately,
+  everywhere, across all stories, while the endpoint configuration stays
+  saved so it can be turned back on without re-entering anything.
+- the current state and the default: off until the writer opts in.
+
+The point is that the writer is never surprised about whether their work is
+leaving the instance. The switch that controls it also explains it, in the
+place they would look to change it.
+
 ## Configuration: bring your own key
 
 Codex ships no bundled model. The writer configures their own
@@ -439,6 +460,51 @@ Plus the reviewer role this document adds, also on the Review surface, which
 is really the "editor" role realised through the existing comments and
 suggestions framework rather than a bespoke margin-annotation system.
 
+## Privacy, safety, and operations
+
+These cut across the surfaces and the architecture.
+
+- **Privacy and disclosure.** The Assistant transmits the writer's private,
+  unpublished work (prose, entities, lore in scope) to an external endpoint.
+  For a local model that stays on their machine; for a hosted API it leaves
+  the instance to a third party. The app's whole posture is owner-scoped
+  privacy, so this crossing is disclosed plainly at the point of control (the
+  kill switch, see "Gating and discoverability") and again in the help
+  article, never buried. On a shared hosted instance this is also the
+  operator's concern; the disclosure protects both.
+- **Prompt injection, contained.** The writer's own content is fed to the
+  model as context, so a passage like "ignore your instructions and..." could
+  try to steer a reviewer pass or a staged tool call. Because every write is
+  staged and human-approved (see "Writes are suggestions"), the worst case is
+  a suggestion the writer rejects, not a silent mutation. The containment is a
+  property of the design, not an add-on.
+- **Notifications.** Background jobs (a whole-story review, a bulk summary
+  pass) finish asynchronously, so completion and failure ride the existing
+  notifications system (a new kind in the in-app and email matrix): "your
+  review of X is ready", or a clear failure if the endpoint was unreachable.
+  No new delivery machinery.
+- **Writing language.** The Assistant honours the story's `writingLanguage`
+  (the preference already driving spell-check), so it generates prose and
+  answers in the writer's language rather than defaulting to English.
+- **Accessibility.** The streaming chat and the ghost-text continuation follow
+  the same WCAG 2.1 AA bar as the rest of the app: streamed output is
+  announced to assistive tech, and the inline suggestion is operable and
+  perceivable without relying on the ghost styling alone.
+- **Operations (self-host).** SSE is a long-lived connection and a local model
+  can hold it for minutes, so the reverse-proxy examples in
+  `docs/SELF-HOSTING.md` (Caddy, nginx, Traefik) need timeouts that do not cut
+  streams, and the single-replica stance means concurrent streams are a finite
+  resource on one process. A self-hosting section covers proxy timeouts,
+  concurrency, and the admin egress and tool-budget controls.
+- **Help.** A writer-facing help article under `src/lib/docs/` ships with the
+  feature (configuring an endpoint, the kill switch and what it sends, the
+  three surfaces, accepting suggestions), per the CLAUDE.md rule to keep the
+  in-app help in step. The admin egress panel needs no article.
+- **Export.** The Assistant adds no new trapped authored content: accepted
+  suggestions land in prose and entities, which already export; ephemeral chat
+  and regenerable derived artifacts (arc summaries) do not need to ride the
+  export.
+
 ## Implementation architecture
 
 This is the build plan for the spec above. It uses the patterns already in
@@ -506,6 +572,26 @@ streaming chunks map straight onto SSE events. The continuation extension and
 the chat panel consume the same event shape (token deltas, tool-call notices,
 a final done event). The worker does not stream to anyone; it consumes the
 provider stream internally and writes the result.
+
+Cancellation runs the whole way through. A client disconnect or an explicit
+"stop generation" aborts an `AbortSignal` that the gateway threads to the
+provider fetch, so a cancelled generation actually stops the upstream work
+(and, on a metered endpoint, the spend) rather than just closing the UI. A
+slow local model can hold a connection for minutes, so the streaming path
+must not sit behind a short proxy or server timeout; see the operations note.
+
+### Provider capabilities and degradation
+
+"OpenAI-compatible" is a wide tent: many local endpoints (Ollama especially)
+do not support function-calling, and some do not stream. The adapter exposes
+what an endpoint can do (`supportsTools`, `supportsStreaming`), detected by
+the "test connection" probe and stored with the config. The surfaces degrade
+gracefully rather than erroring: chat and continuation work on any endpoint;
+the tool-driven actions (create scene, entity enrichment, structural edits)
+simply do not appear when the endpoint cannot call tools, and the config UI
+says why. A non-streaming endpoint falls back to a single buffered response
+rendered when complete. The writer is never shown a feature their endpoint
+cannot deliver.
 
 ### Surfaces, wired
 
@@ -606,6 +692,21 @@ the reconcile-sweep pattern used for stale mentions applies directly.
   per account and per story (you arguably pick a model for a whole world's
   voice). A separate question from the tool budget; would add a third merge
   layer and a universe-level column.
+- Context-aware spell-check and grammar without the browser's engine. A
+  dedicated grammatical-error-correction model is small (roughly 60M-350M
+  params; a rule-based engine like LanguageTool needs no model at all), so
+  size is not the obstacle - bundling one is, since shipping a model in the
+  core stack crosses the design's "no bundled AI, bring your own endpoint"
+  line and changes the self-host footprint. Options: (1) keep spelling
+  browser-native and route context-aware grammar through the BYO endpoint as
+  the editor capability (no new infra, but needs the Assistant configured);
+  (2) an optional, off-by-default grammar service the operator can enable,
+  like assets or SMTP, for writers who want grammar without the creative AI;
+  (3) bundle a small model (declined for v1). Lean: do not bundle in v1.
+  Whatever runs must be advisory only - grammar-checking creative prose is
+  perilous, since fragments, dialect, and stylized voice read as errors - so
+  it routes through the same accept/reject suggestion surface and never
+  auto-corrects.
 
 Settled here, recorded so it is not re-litigated:
 
@@ -614,6 +715,12 @@ Settled here, recorded so it is not re-litigated:
   cost/compute trade-off; a dense universe needing more retrieval is a signal
   to improve context assembly, not to add a per-universe dial. Revisit only
   if a better assembler cannot close the gap.
+- Per-content context exclusion (a "do not send this scene/note" flag) is not
+  built. Lore already has `activation_mode` for injection control; a
+  scene/note exclude flag is YAGNI until a real need appears.
+- Surfacing token/usage to the writer is deferred polish. `log.ts` captures
+  usage server-side; a writer-facing display can come later if wanted, BYO or
+  not.
 
 ## Sequencing sketch
 
