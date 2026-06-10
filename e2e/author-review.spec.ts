@@ -87,3 +87,68 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 		'The revised sentence. A new clause.'
 	);
 });
+
+// Accepting the last note in a scene must not yank the view to the next active
+// scene: the author should stay on the change to keep editing it.
+test('accepting the last suggestion in a scene keeps the view on that scene', async ({ page }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
+	await page.getByLabel('New universe').fill(`Stay ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Stay ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
+	await page.getByLabel('New story').fill('Stay');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await page.getByRole('button', { name: 'New chapter' }).click();
+
+	// Two scenes, each with a unique tail token the edit never touches.
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('Sceneword ONETAIL closing.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('Sceneword TWOTAIL closing.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+
+	await page.getByRole('link', { name: 'Review', exact: true }).click();
+	const prose = page.locator('.review-edit .cm-content');
+	await prose.waitFor();
+
+	async function suggestHere(replacement: string) {
+		const line = prose.locator('.cm-line').first();
+		const box = (await line.boundingBox())!;
+		await page.mouse.move(box.x + 3, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 8 });
+		await page.mouse.up();
+		await page.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
+		await page.getByLabel('Suggested text').fill(replacement);
+		await page.getByRole('button', { name: 'Save suggestion' }).click();
+		await expect(page.locator('.rv-diff-ins').filter({ hasText: replacement })).toBeVisible();
+	}
+
+	// A pending suggestion in each scene; scene two reached through the outline.
+	await suggestHere('EDITONE');
+	await page.locator('.scene-row').nth(1).click();
+	await expect(prose).toContainText('TWOTAIL');
+	await suggestHere('EDITTWO');
+
+	// Reload so the workspace defaults to the first active scene (scene one).
+	await page.reload();
+	await expect(prose).toContainText('ONETAIL');
+
+	// Accept scene one's only suggestion; the centre stays on scene one.
+	await page
+		.locator('.rv-card')
+		.filter({ hasText: 'EDITONE' })
+		.getByRole('button', { name: 'Accept suggestion' })
+		.click();
+	await expect(prose).toContainText('ONETAIL');
+	await expect(prose).not.toContainText('TWOTAIL');
+});

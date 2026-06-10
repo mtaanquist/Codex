@@ -17,7 +17,7 @@ The link opens the story in a review workspace: the chapter and scene outline on
 - They see earlier comments on the story and can reply to them from each card.
 - A trash icon on their own comment or suggested edit removes it if they change their mind. The opening comment of a thread can only be removed before anyone has replied to it.
 
-They move through the story scene by scene. The list on the left is the chapter and scene outline, with a count beside each scene that has notes and a running total at the top; clicking a scene opens it. Markers down the right edge of the page show where the notes sit. The tabs above the notes panel filter between all notes, comments, edits, and resolved ones. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
+They move through the story scene by scene. The list on the left is the chapter and scene outline, with a count beside each scene that has notes and a running total at the top; clicking a scene opens it. Markers down the right edge of the page show where the notes sit. The tabs above the notes panel filter between open notes, comments, edits, and the ones marked Done. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
 
 If a name in the manuscript is underlined, it is a character, place, or piece of lore the author has written about. Clicking it opens a short card about them; reviewers see this summary but not the author's full notes.
 

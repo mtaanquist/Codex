@@ -121,9 +121,9 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 		'The reviewer will have reservations about this gate.'
 	);
 
-	// Resolve the thread, then the Resolved filter shows both outcomes.
+	// Resolve the thread, then the Done filter shows both outcomes.
 	await page.getByRole('button', { name: 'Resolve comment' }).click();
-	await page.locator('.rv-filter', { hasText: 'Resolved' }).click();
+	await page.locator('.rv-filter', { hasText: 'Done' }).click();
 	await expect(page.locator('.rv-status.resolved')).toBeVisible();
 	await expect(page.locator('.rv-status.accepted')).toBeVisible();
 

@@ -126,6 +126,38 @@ export function buildReviewMarks(
 		}
 	}
 
+	// Under the Done filter, mark where each resolved comment or decided
+	// suggestion sat with a faint outline - just enough to find it in the text
+	// (no strikethrough, no before-text).
+	if (filter === 'resolved') {
+		for (const thread of threads) {
+			const a = thread.anchor;
+			if (thread.resolvedAt === null || !a || thread.anchorLost) continue;
+			if (a.start >= a.end || a.start < 0 || a.end > docLength) continue;
+			ranges.push({
+				from: a.start,
+				to: a.end,
+				deco: Decoration.mark({
+					class: markClass('rv-mark rv-resolved', thread.id),
+					attributes: { 'data-rid': thread.id }
+				})
+			});
+		}
+		for (const suggestion of suggestions) {
+			const a = suggestion.anchor;
+			if (suggestion.status === 'pending' || !a || suggestion.anchorLost) continue;
+			if (a.start >= a.end || a.start < 0 || a.end > docLength) continue;
+			ranges.push({
+				from: a.start,
+				to: a.end,
+				deco: Decoration.mark({
+					class: markClass('rv-mark rv-resolved', suggestion.id),
+					attributes: { 'data-rid': suggestion.id }
+				})
+			});
+		}
+	}
+
 	// Decoration.set sorts by from then start side; mark ranges and point
 	// widgets coexist as long as every range is well formed.
 	return Decoration.set(
