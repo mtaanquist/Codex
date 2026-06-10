@@ -78,19 +78,33 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await expect(suggCard.locator('.rv-reply-body')).toHaveText('Thinking about this one.');
 
 	// Accept all pending edits in the scene; the editable prose updates in place.
+	// Wait for the accept's data refresh before reading the text: the pending
+	// suggestion's ghost widget also renders the replacement, so the text
+	// check alone passes before the document itself has it - and typing into
+	// the stale document would win over the accepted text (local edits win).
+	// The Accept all button leaves with the last pending suggestion, which
+	// only happens once the refresh has landed.
 	await page.getByRole('button', { name: /^Accept all/ }).click();
+	await expect(page.getByRole('button', { name: /^Accept all/ })).toHaveCount(0);
 	await expect(prose).toContainText('The revised sentence.');
 
 	// The author can now build on the accepted text: type into the manuscript
 	// and it persists across a reload (the review save omits markers but keeps
-	// the prose).
-	await prose.click();
-	await page.keyboard.press('End');
-	await page.keyboard.type(' A new clause.');
-	// The clause must land in the live editor before the save is awaited.
+	// the prose). Locator-based key presses focus the editor themselves, so a
+	// lost click cannot send the typing elsewhere (a CI flake); and the reload
+	// waits for the save request that actually carries the clause, since the
+	// accept's own doc sync schedules an earlier, clause-less save.
+	const clauseSaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('/api/scenes/') &&
+			response.request().method() === 'PUT' &&
+			response.ok() &&
+			(response.request().postData() ?? '').includes('A new clause.')
+	);
+	await prose.press('End');
+	await prose.pressSequentially(' A new clause.');
 	await expect(prose).toContainText('A new clause.');
-	// Autosave debounces; click away and wait for the request to settle.
-	await page.waitForTimeout(2000);
+	await clauseSaved;
 	await page.reload();
 	await expect(page.locator('.review-edit .cm-content')).toContainText(
 		'The revised sentence. A new clause.'
