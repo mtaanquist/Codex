@@ -407,6 +407,13 @@
 			"when": 1781065421989,
 			"tag": "0057_publication_artifact_errors",
 			"breakpoints": true
+		},
+		{
+			"idx": 58,
+			"version": "7",
+			"when": 1781068478368,
+			"tag": "0058_session_token_hash",
+			"breakpoints": true
 		}
 	]
 }

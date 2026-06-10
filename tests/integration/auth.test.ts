@@ -95,9 +95,12 @@ describe('sessions', () => {
 		const userId = await seedUser('sessions@example.com');
 		const session = await createSession(db, userId, { userAgent: 'test', ip: '127.0.0.1' });
 
-		const result = await validateSession(db, session.id);
+		// The cookie carries the raw token, not the row id; validation is by token.
+		const result = await validateSession(db, session.token);
 		expect(result?.user.id).toBe(userId);
 		expect(result?.session.id).toBe(session.id);
+		// The id is not the bearer token: presenting it must not validate.
+		expect(await validateSession(db, session.id)).toBeNull();
 
 		const [user] = await db.select().from(users).where(eq(users.id, userId));
 		expect(user.lastLoginAt).not.toBeNull();
@@ -107,7 +110,7 @@ describe('sessions', () => {
 		const userId = await seedUser('revoked@example.com');
 		const session = await createSession(db, userId);
 		await revokeSession(db, session.id);
-		expect(await validateSession(db, session.id)).toBeNull();
+		expect(await validateSession(db, session.token)).toBeNull();
 	});
 
 	it('rejects an expired session', async () => {
@@ -117,25 +120,25 @@ describe('sessions', () => {
 			.update(sessions)
 			.set({ expiresAt: sql`now() - interval '1 minute'` })
 			.where(eq(sessions.id, session.id));
-		expect(await validateSession(db, session.id)).toBeNull();
+		expect(await validateSession(db, session.token)).toBeNull();
 	});
 
-	it('rejects a session id that does not exist', async () => {
+	it('rejects a token that matches no session', async () => {
 		expect(await validateSession(db, crypto.randomUUID())).toBeNull();
 	});
 
-	it('rejects a malformed (non-uuid) session id without throwing', async () => {
-		// A stale or hand-edited cookie used to throw on the uuid cast, 500ing
-		// every request and never clearing the cookie. It must read as no session.
-		expect(await validateSession(db, 'not-a-uuid')).toBeNull();
+	it('rejects a stale or malformed cookie without throwing', async () => {
+		// Any cookie value is hashed and compared; a garbage or empty value simply
+		// matches no row and reads as no session, so the hook can clear it.
+		expect(await validateSession(db, 'not-a-token')).toBeNull();
 		expect(await validateSession(db, '')).toBeNull();
 	});
 
 	it('drops a live session when the account is suspended', async () => {
 		const userId = await seedUser('suspend-session@example.com');
 		const session = await createSession(db, userId);
-		expect(await validateSession(db, session.id)).not.toBeNull();
+		expect(await validateSession(db, session.token)).not.toBeNull();
 		await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, userId));
-		expect(await validateSession(db, session.id)).toBeNull();
+		expect(await validateSession(db, session.token)).toBeNull();
 	});
 });

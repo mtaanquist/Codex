@@ -46,7 +46,7 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, request,
 		ip: getClientAddress()
 	});
 	logEvent('info', 'login.passkey_ok', { userId: result.user.id });
-	cookies.set(SESSION_COOKIE, session.id, {
+	cookies.set(SESSION_COOKIE, session.token, {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
