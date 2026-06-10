@@ -5,7 +5,12 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { sceneMarkers, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
-import { duplicateScene, mergeScenes, splitScene } from '../../src/lib/server/scene-split-merge';
+import {
+	duplicateScene,
+	locateSplitInStory,
+	mergeScenes,
+	splitScene
+} from '../../src/lib/server/scene-split-merge';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -131,6 +136,24 @@ describe('splitScene', () => {
 		expect(await splitScene(db, ownerId, '00000000-0000-4000-8000-000000000000', 4)).toMatchObject({
 			ok: false
 		});
+	});
+
+	it('sheds the seam whitespace whichever side of a paragraph break the cut lands', async () => {
+		// A cut at either edge of the blank line between paragraphs must leave
+		// the first scene with no trailing blank and the new scene opening with
+		// its text, not an empty line.
+		const body = 'First paragraph ends here.\n\nSecond paragraph starts here.';
+		for (const offset of ['First paragraph ends here.'.length, body.indexOf('Second paragraph')]) {
+			const scene = await makeScene(1, body);
+			const result = await splitScene(db, ownerId, scene.id, offset);
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			const [head] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+			const [tail] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+			expect(head.bodyMd).toBe('First paragraph ends here.');
+			expect(tail.bodyMd).toBe('Second paragraph starts here.');
+			await pool.query('truncate table scene_markers, scenes cascade');
+		}
 	});
 });
 
@@ -274,6 +297,87 @@ describe('mergeScenes', () => {
 			.returning();
 		expect(await mergeScenes(db, ownerId, storyId, [a.id, foreign.id])).toMatchObject({
 			ok: false
+		});
+	});
+});
+
+// The Assistant's split proposals anchor to the scene they were made against,
+// but a confirmed earlier split moves the later passages into the new scene.
+// The passage, not the scene id, is what the author confirmed, so the locate
+// follows it to whichever live scene of the story holds it now.
+describe('locateSplitInStory', () => {
+	const BODY = 'Opening beat. MIDCUT second beat. LATECUT third beat.';
+
+	it('locates in the proposed scene when the passage is still there', async () => {
+		const scene = await makeScene(1, BODY);
+		expect(await locateSplitInStory(db, ownerId, scene.id, 'MIDCUT')).toEqual({
+			ok: true,
+			sceneId: scene.id,
+			offset: BODY.indexOf('MIDCUT')
+		});
+	});
+
+	it('follows the passage into the scene a confirmed earlier split moved it to', async () => {
+		// The model proposes two splits of one scene; the author confirms the
+		// first, which moves the second split point into the new scene.
+		const scene = await makeScene(1, BODY);
+		const first = await splitScene(db, ownerId, scene.id, BODY.indexOf('MIDCUT'));
+		expect(first.ok).toBe(true);
+		if (!first.ok) return;
+
+		const located = await locateSplitInStory(db, ownerId, scene.id, 'LATECUT');
+		expect(located).toMatchObject({ ok: true, sceneId: first.newSceneId });
+		if (!located.ok) return;
+
+		// Confirming the second proposal completes the three-way split.
+		const second = await splitScene(db, ownerId, located.sceneId, located.offset);
+		expect(second.ok).toBe(true);
+		const rows = await db
+			.select({ bodyMd: scenes.bodyMd })
+			.from(scenes)
+			.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
+			.orderBy(asc(scenes.globalPosition));
+		expect(rows.map((r) => r.bodyMd)).toEqual([
+			'Opening beat.',
+			'MIDCUT second beat.',
+			'LATECUT third beat.'
+		]);
+	});
+
+	it('keeps the not-found reason when no scene holds the passage', async () => {
+		const scene = await makeScene(1, BODY);
+		await makeScene(2, 'Another scene entirely.');
+		expect(await locateSplitInStory(db, ownerId, scene.id, 'NOSUCHCUT')).toMatchObject({
+			ok: false,
+			reason: 'That exact text was not found in the scene.'
+		});
+	});
+
+	it('refuses a passage that more than one scene holds', async () => {
+		const scene = await makeScene(1, 'Original text without the cut.');
+		await makeScene(2, 'A TWICECUT here.');
+		await makeScene(3, 'And TWICECUT here too.');
+		expect(await locateSplitInStory(db, ownerId, scene.id, 'TWICECUT')).toMatchObject({
+			ok: false,
+			reason:
+				'That text appears in more than one scene; include more surrounding text to make it unique.'
+		});
+	});
+
+	it('keeps the duplicate reason when the proposed scene holds the passage twice', async () => {
+		const scene = await makeScene(1, 'A DOUBLE beat and a DOUBLE echo.');
+		await makeScene(2, 'A DOUBLE elsewhere too.');
+		const located = await locateSplitInStory(db, ownerId, scene.id, 'DOUBLE');
+		expect(located).toMatchObject({ ok: false });
+		if (located.ok) return;
+		expect(located.reason).toContain('more than once');
+	});
+
+	it('is scoped to the owner and the story', async () => {
+		const scene = await makeScene(1, BODY);
+		expect(await locateSplitInStory(db, strangerId, scene.id, 'MIDCUT')).toMatchObject({
+			ok: false,
+			reason: 'scene not found'
 		});
 	});
 });
