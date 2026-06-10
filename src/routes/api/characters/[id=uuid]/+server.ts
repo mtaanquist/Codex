@@ -5,12 +5,13 @@ import { db } from '$lib/server/db';
 import { saveCharacter } from '$lib/server/characters';
 import { queueUniverseMentions } from '$lib/server/jobs';
 import { rateLimitWrites } from '$lib/server/write-guard';
+import { checkProseLength, readJson } from '$lib/server/validation';
 import { cleanDetails } from '$lib/entity-snapshot';
 
 // Debounced autosave target for the character editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
-	const payload = (await request.json()) as {
+	const payload = await readJson<{
 		name?: unknown;
 		aliases?: unknown;
 		summaryMd?: unknown;
@@ -19,10 +20,11 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		categoryId?: unknown;
 		storyId?: unknown;
 		storyNotesMd?: unknown;
-	};
+	}>(request);
 	if (typeof payload.name !== 'string' || typeof payload.bodyMd !== 'string') {
 		error(400, 'name and bodyMd must be strings');
 	}
+	checkProseLength(payload.bodyMd);
 	const aliases = Array.isArray(payload.aliases)
 		? payload.aliases.filter((alias): alias is string => typeof alias === 'string')
 		: [];

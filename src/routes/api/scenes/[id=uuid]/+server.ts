@@ -6,6 +6,7 @@ import { scenes, stories } from '$lib/server/db/schema';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { updateMarkerAnchors } from '$lib/server/markers';
 import { rateLimitWrites } from '$lib/server/write-guard';
+import { checkProseLength, readJson } from '$lib/server/validation';
 import { recordRevision } from '$lib/server/revisions';
 import { setSceneStatus } from '$lib/server/scene-status';
 import { isSceneStatus } from '$lib/scene-status';
@@ -23,14 +24,15 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		);
 	if (!row) error(404, 'Scene not found');
 
-	const payload = (await request.json()) as {
+	const payload = await readJson<{
 		title?: unknown;
 		bodyMd?: unknown;
 		markers?: unknown;
-	};
+	}>(request);
 	if (typeof payload.bodyMd !== 'string') {
 		error(400, 'bodyMd must be a string');
 	}
+	checkProseLength(payload.bodyMd);
 	// The editor maps marker anchors through edits; they ride the autosave.
 	const anchors = Array.isArray(payload.markers)
 		? payload.markers.filter(
