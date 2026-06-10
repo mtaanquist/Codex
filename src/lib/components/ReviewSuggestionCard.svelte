@@ -34,6 +34,10 @@
 	function when(date: Date | string): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 	}
+
+	function confirmRetract(e: SubmitEvent) {
+		if (!confirm('Delete your suggested edit? This cannot be undone.')) e.preventDefault();
+	}
 </script>
 
 <!-- The card jumps to its passage in the manuscript; the label keeps its
@@ -78,8 +82,8 @@
 
 	<div class="rv-card-foot">
 		{#if pending}
-			{#if role === 'author'}
-				<div class="rv-actions">
+			<div class="rv-actions">
+				{#if role === 'author'}
 					{#if !suggestion.anchorLost}
 						<form method="POST" action="?/acceptSuggestion" use:enhance>
 							<input type="hidden" name="suggestionId" value={suggestion.id} />
@@ -94,12 +98,23 @@
 							<Icon name="close" size={14} /> Reject
 						</button>
 					</form>
-				</div>
-			{:else}
-				<div class="rv-actions">
+				{:else}
 					<span class="rv-status resolved">Waiting on the author</span>
-				</div>
-			{/if}
+				{/if}
+				{#if suggestion.mine}
+					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>
+						<input type="hidden" name="suggestionId" value={suggestion.id} />
+						<button
+							class="rv-btn icon danger"
+							type="submit"
+							title="Delete your suggestion"
+							aria-label="Delete your suggestion"
+						>
+							<Icon name="trash" size={14} />
+						</button>
+					</form>
+				{/if}
+			</div>
 		{:else}
 			<div class="rv-actions">
 				{#if suggestion.status === 'accepted'}

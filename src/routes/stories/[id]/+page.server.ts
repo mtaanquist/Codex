@@ -5,20 +5,17 @@ import { db } from '$lib/server/db';
 import {
 	chapters,
 	characters,
-	characterStoryMemberships,
 	entityCategories,
 	entityMentions,
 	loreEntries,
 	places,
-	placeStoryMemberships,
 	scenes
 } from '$lib/server/db/schema';
-import { relatedEntitySummaries } from '$lib/server/relationships';
 import { storyPreferences } from '$lib/server/preferences';
 import { storyPageSetup } from '$lib/server/page-setup';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
-import { listMentionPins } from '$lib/server/mention-pins';
+import { reviewMentionData } from '$lib/server/mention-entities';
 import { ownedStory } from '$lib/server/story-access';
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
@@ -83,14 +80,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedScene,
 		storyTodos,
 		storyDocMarkers,
-		knownCharacters,
-		knownPlaces,
-		knownLore,
+		mentionData,
 		loreCategories,
-		relatedByEntity,
-		characterMembers,
-		placeMembers,
-		pinList,
 		preferences,
 		trashedScenes,
 		pageSetup,
@@ -147,74 +138,24 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		view === 'story'
 			? listStoryMarkersByScene(db, story.id)
 			: Promise.resolve({} as Awaited<ReturnType<typeof listStoryMarkersByScene>>),
-		// Known entities feed the editor's live underlines, the autocomplete,
-		// and the hover cards: category colour and name drive the badges, the
-		// related lists become the card's chips.
-		db
-			.select({
-				id: characters.id,
-				name: characters.name,
-				aliases: characters.aliases,
-				summaryMd: characters.summaryMd,
-				details: characters.details,
-				color: entityCategories.color,
-				categoryName: entityCategories.name,
-				badgeColor: characters.badgeColor,
-				badgeAssetId: characters.badgeAssetId
-			})
-			.from(characters)
-			.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-			.where(and(eq(characters.universeId, universe.id), eq(characters.autoDetectMentions, true))),
-		db
-			.select({
-				id: places.id,
-				name: places.name,
-				aliases: places.aliases,
-				summaryMd: places.summaryMd,
-				details: places.details,
-				color: entityCategories.color,
-				categoryName: entityCategories.name,
-				badgeColor: places.badgeColor,
-				badgeAssetId: places.badgeAssetId
-			})
-			.from(places)
-			.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-			.where(and(eq(places.universeId, universe.id), eq(places.autoDetectMentions, true))),
-		db
-			.select({
-				id: loreEntries.id,
-				name: loreEntries.title,
-				keywords: loreEntries.keywords,
-				summaryMd: loreEntries.summaryMd,
-				details: loreEntries.details,
-				color: entityCategories.color,
-				categoryName: entityCategories.name,
-				badgeColor: loreEntries.badgeColor,
-				badgeAssetId: loreEntries.badgeAssetId
-			})
-			.from(loreEntries)
-			.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-			.where(
-				and(eq(loreEntries.universeId, universe.id), eq(loreEntries.autoDetectMentions, true))
-			),
+		// Known entities feed the editor's live underlines, the autocomplete, and
+		// the hover cards (category colour and name drive the badges, related
+		// lists become the card's chips), together with the disambiguation
+		// context (story members and the author's pins for shared names). The
+		// review surface uses the same shape; this is the shared loader, with the
+		// full cast since the author sees everything.
+		reviewMentionData(db, {
+			universeId: universe.id,
+			storyId: story.id,
+			sceneIds: [],
+			restrictToMentioned: false
+		}),
 		// The selection menu's lore submenu offers every category.
 		db
 			.select({ id: entityCategories.id, name: entityCategories.name })
 			.from(entityCategories)
 			.where(eq(entityCategories.universeId, universe.id))
 			.orderBy(asc(entityCategories.sortOrder), asc(entityCategories.name)),
-		relatedEntitySummaries(db, universe.id),
-		// Disambiguation context: who is declared in this story, and the
-		// author's pins for shared names.
-		db
-			.select({ id: characterStoryMemberships.characterId })
-			.from(characterStoryMemberships)
-			.where(eq(characterStoryMemberships.storyId, story.id)),
-		db
-			.select({ id: placeStoryMemberships.placeId })
-			.from(placeStoryMemberships)
-			.where(eq(placeStoryMemberships.storyId, story.id)),
-		listMentionPins(db, story.id),
 		// The user's preferences with this story's overrides applied.
 		storyPreferences(db, locals.user!.id, story.id),
 		listTrashedScenes(db, story.id),
@@ -231,31 +172,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		const r = row as { id: string; slug: string; title: string; chapters: number; words: number };
 		return { id: r.id, slug: r.slug, title: r.title, chapters: r.chapters, words: r.words };
 	});
-	const memberRows = [...characterMembers, ...placeMembers];
-	const mentionPins = Object.fromEntries(pinList);
-	const mentionEntities = [
-		...knownCharacters.map((character) => ({
-			...character,
-			type: 'character' as const,
-			related: relatedByEntity.get(character.id) ?? []
-		})),
-		...knownPlaces.map((place) => ({
-			...place,
-			type: 'place' as const,
-			related: relatedByEntity.get(place.id) ?? []
-		})),
-		...knownLore.map((entry) => ({
-			id: entry.id,
-			type: 'lore_entry' as const,
-			name: entry.name,
-			aliases: entry.keywords,
-			summaryMd: entry.summaryMd,
-			details: entry.details,
-			color: entry.color,
-			categoryName: entry.categoryName,
-			related: relatedByEntity.get(entry.id) ?? []
-		}))
-	];
+	const {
+		entities: mentionEntities,
+		storyMembers: storyMemberIds,
+		pins: mentionPins
+	} = mentionData;
 
 	// The scene-keyed wave: timeline, markers, preview, and who is mentioned
 	// in the open scene (read from the worker-built index).
@@ -345,7 +266,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		mentionEntities,
 		mentionPins,
 		loreCategories,
-		storyMemberIds: memberRows.map((row) => row.id),
+		storyMemberIds,
 		inScene,
 		view,
 		storyDoc,

@@ -29,11 +29,20 @@
 	const roleLabel = $derived(
 		author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer'
 	);
+	// The viewer can retract the whole thread only when every comment in it is
+	// their own, so a retraction never takes someone else's reply with it.
+	const canDeleteThread = $derived(
+		thread.comments.length > 0 && thread.comments.every((c) => c.mine)
+	);
 
 	let replyText = $state('');
 
 	function when(date: Date | string): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+	}
+
+	function confirmRetract(e: SubmitEvent) {
+		if (!confirm('Delete your comment? This cannot be undone.')) e.preventDefault();
 	}
 </script>
 
@@ -94,6 +103,20 @@
 						<div class="rv-reply-head">
 							<span class="rv-reply-name">{reply.authorName}</span>
 							<span class="rv-reply-when">{when(reply.createdAt)}</span>
+							{#if reply.mine}
+								<form
+									method="POST"
+									action="?/deleteComment"
+									class="rv-reply-del"
+									use:enhance
+									onsubmit={confirmRetract}
+								>
+									<input type="hidden" name="commentId" value={reply.id} />
+									<button type="submit" title="Delete your reply" aria-label="Delete your reply">
+										<Icon name="trash" size={12} />
+									</button>
+								</form>
+							{/if}
 						</div>
 						<div class="rv-reply-body">{reply.body}</div>
 					</div>
@@ -141,6 +164,19 @@
 						</button>
 					</form>
 				{/if}
+				{#if canDeleteThread}
+					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
+						<input type="hidden" name="commentId" value={root.id} />
+						<button
+							class="rv-btn icon danger"
+							type="submit"
+							title="Delete your comment"
+							aria-label="Delete your comment"
+						>
+							<Icon name="trash" size={14} />
+						</button>
+					</form>
+				{/if}
 			</div>
 		{:else}
 			<div class="rv-actions">
@@ -150,6 +186,19 @@
 						<input type="hidden" name="threadId" value={thread.id} />
 						<button class="rv-btn ghost" type="submit">
 							<Icon name="reply" size={14} /> Reopen
+						</button>
+					</form>
+				{/if}
+				{#if canDeleteThread}
+					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
+						<input type="hidden" name="commentId" value={root.id} />
+						<button
+							class="rv-btn icon danger"
+							type="submit"
+							title="Delete your comment"
+							aria-label="Delete your comment"
+						>
+							<Icon name="trash" size={14} />
 						</button>
 					</form>
 				{/if}
