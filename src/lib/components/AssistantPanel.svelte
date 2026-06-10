@@ -1,9 +1,9 @@
 <script lang="ts">
-	// The right pane's Assistant tab: an ephemeral chat with the writing
-	// Assistant, grounded in the open story. The transcript lives in the client
-	// and is lost on reload (persistence is a later refinement). The server holds
-	// the key and endpoint; this only POSTs the transcript and streams tokens
-	// back over Server-Sent Events.
+	// The right pane's Assistant tab: a chat with the writing Assistant,
+	// grounded in the open story. The conversation is kept per story and user:
+	// the server stores each completed turn and the page load seeds the panel,
+	// so it survives a reload. The server holds the key and endpoint; this only
+	// POSTs the transcript and streams tokens back over Server-Sent Events.
 	import { enhance } from '$app/forms';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { startSummariesJob } from '$lib/assistant-actions';
@@ -16,6 +16,7 @@
 		storyTitle,
 		muted,
 		suggestions = [],
+		initialMessages = [],
 		onConfirmSplit,
 		onInsert
 	}: {
@@ -29,6 +30,16 @@
 		muted: boolean;
 		// Grounded starter prompts shown when the conversation is empty.
 		suggestions?: string[];
+		// The stored conversation, loaded with the page; the panel seeds from it
+		// at mount and the client transcript carries on from there.
+		initialMessages?: {
+			role: 'user' | 'assistant';
+			content: string;
+			meta: {
+				reference?: { sceneId: string; text: string };
+				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
+			} | null;
+		}[];
 		// Confirms a proposed scene split; resolves to an error message, or null
 		// when the split landed (the page navigates to the new scene).
 		onConfirmSplit?: (proposal: { sceneId: string; before: string }) => Promise<string | null>;
@@ -60,10 +71,21 @@
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
-	// Seeded once from the story open at mount; the transcript is then client-held.
+	// Seeded once at mount from the stored conversation, falling back to a
+	// synthesized opening line (which is never stored); the transcript is then
+	// client-held until the next mount picks up the persisted turns.
 	// svelte-ignore state_referenced_locally
 	const opening = `I've read your codex for ${storyTitle}. Ask me about your characters, check continuity, or work a scene.`;
-	let messages = $state<Message[]>([{ role: 'assistant', content: opening }]);
+	// svelte-ignore state_referenced_locally
+	const seeded: Message[] = initialMessages.map((m) => ({
+		role: m.role,
+		content: m.content,
+		reference: m.meta?.reference,
+		proposals: m.meta?.proposals?.map((p) => ({ ...p }))
+	}));
+	let messages = $state<Message[]>(
+		seeded.length > 0 ? seeded : [{ role: 'assistant', content: opening }]
+	);
 	let input = $state('');
 	let busy = $state(false);
 	let composer = $state<HTMLTextAreaElement>();
@@ -179,13 +201,17 @@
 			turn.reference = reference;
 			reference = null;
 		}
-		// The turn the model answers, then an empty reply to stream into.
+		// The turn the model answers, then an empty reply to stream into. The
+		// request carries a window of recent turns; older context lives in the
+		// assembled world, not the transcript.
 		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
 		await streamInto('/api/assistant/chat', {
 			storyId,
 			sceneId,
-			messages: turns.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
+			messages: turns
+				.slice(-40)
+				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 		});
 	}
 
@@ -231,6 +257,29 @@
 
 	function stop() {
 		pending?.abort();
+	}
+
+	// Clear conversation: drops the stored transcript and starts fresh.
+	let clearing = $state(false);
+	async function clearConversation() {
+		if (clearing || busy) return;
+		if (!confirm('Clear this conversation? It cannot be brought back.')) return;
+		clearing = true;
+		try {
+			const response = await fetch('/api/assistant/chat', {
+				method: 'DELETE',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId })
+			});
+			if (!response.ok) {
+				alert('Could not clear the conversation.');
+				return;
+			}
+			messages = [{ role: 'assistant', content: opening }];
+			reference = null;
+		} finally {
+			clearing = false;
+		}
 	}
 
 	// The actions menu next to the send button; closes like the other inline
@@ -442,6 +491,16 @@
 							onclick={() => runAction(() => void updateSummaries())}
 						>
 							{summarising ? 'Starting...' : 'Update summaries'}
+						</button>
+						<button
+							class="composer-menu-item"
+							type="button"
+							role="menuitem"
+							disabled={clearing || busy}
+							title="Delete this conversation and start fresh"
+							onclick={() => runAction(() => void clearConversation())}
+						>
+							Clear conversation
 						</button>
 					</div>
 				{/if}

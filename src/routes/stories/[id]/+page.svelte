@@ -1222,6 +1222,7 @@
 						storyTitle={data.story.title}
 						muted={data.assistant.muted}
 						suggestions={assistantSuggestions}
+						initialMessages={data.assistantChat}
 						onConfirmSplit={confirmAssistantSplit}
 						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 							? (text) => sceneEditor?.insertAtCursor(text)

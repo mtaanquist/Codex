@@ -1156,6 +1156,37 @@ export const entitySuggestions = pgTable(
 	]
 );
 
+// The Assistant chat transcript, one conversation per story per user. meta
+// carries what a turn pointed at (a passage reference on user turns, staged
+// split proposals on assistant turns) so the panel can rebuild its cards.
+// Capped per conversation on append; cleared by the writer, the story's
+// delete cascade, and account purge.
+export const assistantChatMessages = pgTable(
+	'assistant_chat_messages',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		role: text('role', { enum: ['user', 'assistant'] }).notNull(),
+		content: text('content').notNull(),
+		meta: jsonb('meta').$type<AssistantChatMeta>(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('assistant_chat_messages_conv_idx').on(table.storyId, table.userId, table.createdAt)
+	]
+);
+
+// What rides beside a chat turn's text; mirrors the panel's card data.
+export type AssistantChatMeta = {
+	reference?: { sceneId: string; text: string };
+	proposals?: { sceneId: string; sceneTitle: string | null; before: string; rationale: string }[];
+};
+
 // In-app notifications behind the topbar bell. payload carries the display
 // text and link target; in_app and email_wanted are stamped from the user's
 // preference matrix at creation, and emailed_at when a digest sends it.

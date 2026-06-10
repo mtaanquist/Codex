@@ -882,8 +882,30 @@ export async function deleteSuggestion(
 	if (row.status !== 'pending') {
 		return { ok: false, reason: 'That suggestion was already decided.' };
 	}
-	await db
-		.delete(reviewSuggestions)
-		.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+	// The discussion thread goes with the retracted suggestion - but never
+	// someone else's words: once others have replied on it, the suggestion
+	// stays and gets decided instead.
+	const [thread] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(eq(reviewThreads.suggestionId, suggestionId));
+	if (thread) {
+		const discussion = await db
+			.select()
+			.from(reviewComments)
+			.where(eq(reviewComments.threadId, thread.id));
+		if (!discussion.every((comment) => ownsComment(comment, actor))) {
+			return { ok: false, reason: 'Others have replied on it; it can only be decided now.' };
+		}
+	}
+	await db.transaction(async (tx) => {
+		if (thread) {
+			await tx.delete(reviewComments).where(eq(reviewComments.threadId, thread.id));
+			await tx.delete(reviewThreads).where(eq(reviewThreads.id, thread.id));
+		}
+		await tx
+			.delete(reviewSuggestions)
+			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+	});
 	return { ok: true };
 }

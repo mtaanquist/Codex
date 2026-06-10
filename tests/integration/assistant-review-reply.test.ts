@@ -172,6 +172,54 @@ describe('ensureSuggestionThread', () => {
 	});
 });
 
+describe('retracting a suggestion with a discussion', () => {
+	it("takes its own discussion along, but never someone else's words", async () => {
+		const { deleteSuggestion } = await import('../../src/lib/server/review');
+		const start = BODY.indexOf('lazy');
+		const made = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { userId: authorId },
+			range: { start, end: start + 4 },
+			replacement: 'sleepy'
+		});
+		if (!made.ok) throw new Error(made.reason);
+		const ensured = await ensureSuggestionThread(db, { storyId, suggestionId: made.suggestionId });
+		if (!ensured.ok) throw new Error('thread not created');
+		await addComment(db, {
+			storyId,
+			threadId: ensured.threadId,
+			author: { userId: authorId },
+			body: 'My own note.'
+		});
+		// Only the actor's words in the discussion: the retraction removes both.
+		const removed = await deleteSuggestion(db, { userId: authorId }, made.suggestionId);
+		expect(removed).toEqual({ ok: true });
+		const threads = await db.select().from(reviewThreads);
+		expect(threads).toHaveLength(0);
+
+		// With the Assistant's reply in the discussion, the retraction refuses.
+		const again = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { userId: authorId },
+			range: { start, end: start + 4 },
+			replacement: 'dozy'
+		});
+		if (!again.ok) throw new Error(again.reason);
+		const thread2 = await ensureSuggestionThread(db, { storyId, suggestionId: again.suggestionId });
+		if (!thread2.ok) throw new Error('thread not created');
+		await addComment(db, {
+			storyId,
+			threadId: thread2.threadId,
+			author: { assistant: true },
+			body: 'I would keep it.'
+		});
+		const refused = await deleteSuggestion(db, { userId: authorId }, again.suggestionId);
+		expect(refused).toMatchObject({ ok: false });
+	});
+});
+
 describe('updateAssistantSuggestion', () => {
 	it('revises the replacement of a pending assistant suggestion', async () => {
 		const suggestionId = await assistantSuggestion();

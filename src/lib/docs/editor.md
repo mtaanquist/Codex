@@ -100,7 +100,7 @@ When a reply contains something you want in the manuscript, select "Insert at cu
 
 The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". Its suggestion appears in the conversation as a card quoting where the new scene would start, with its reasoning. Nothing happens until you select "Split here" on the card; the split works the same as the toolbar's split button, and you can merge the scenes back together from the sidebar if you change your mind.
 
-The conversation is not saved. It clears when you reload or leave the page.
+The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
