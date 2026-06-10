@@ -345,6 +345,96 @@ describe('gateway tool loop', () => {
 		expect(after.bodyMd).toBe('The dog sat on the mat.');
 	});
 
+	it('propose_scene_split stages nothing and surfaces a proposal frame on the stream', async () => {
+		await configure(true);
+		const body = 'The first half ends here.\n\nThe second half starts here.';
+		const { storyId, sceneId } = await seedStoryScene(body);
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{
+						id: 'c1',
+						name: 'propose_scene_split',
+						arguments: JSON.stringify({
+							sceneId,
+							before: 'The second half',
+							rationale: 'A clean change of focus.'
+						})
+					}
+				]
+			},
+			{ content: 'I propose splitting before the second half.' }
+		]);
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'where should this split?' }]
+				},
+				{ provider: script.provider, http: noHttp }
+			)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'I propose splitting before the second half.' },
+			{
+				type: 'proposal',
+				proposal: {
+					sceneId,
+					sceneTitle: 'Scene 1',
+					before: 'The second half',
+					rationale: 'A clean change of focus.'
+				}
+			},
+			{ type: 'done' }
+		]);
+		// The scene itself is untouched; the proposal lives in the transcript.
+		const [scene] = await db
+			.select({ bodyMd: scenes.bodyMd })
+			.from(scenes)
+			.where(eq(scenes.id, sceneId));
+		expect(scene.bodyMd).toBe(body);
+	});
+
+	it('a bad split point goes back to the model as a retryable tool result', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('Half and half and half again.');
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{
+						id: 'c1',
+						name: 'propose_scene_split',
+						arguments: JSON.stringify({ sceneId, before: 'half', rationale: 'x' })
+					}
+				]
+			},
+			{ content: 'I could not pin the spot down.' }
+		]);
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'split it' }]
+				},
+				{ provider: script.provider, http: noHttp }
+			)
+		);
+		// No proposal frame; the ambiguity went back as the tool result.
+		expect(events.some((e) => e.type === 'proposal')).toBe(false);
+		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
+		expect(toolMessage?.content).toMatch(/more than once/);
+	});
+
 	it('caps the loop at the tool-call budget then forces an answer', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,

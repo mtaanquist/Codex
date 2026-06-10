@@ -204,6 +204,9 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(
 		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review this scene' })
 	).toBeVisible();
+	await expect(
+		page.locator('.row-submenu').getByRole('menuitem', { name: 'Suggest where to split' })
+	).toBeVisible();
 	await page.keyboard.press('Escape');
 
 	// The Write panel captures where the cursor sits as a removable reference,

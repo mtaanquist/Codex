@@ -14,7 +14,8 @@
 		name,
 		storyTitle,
 		muted,
-		suggestions = []
+		suggestions = [],
+		onConfirmSplit
 	}: {
 		storyId: string;
 		// The open scene, sent as the focus of context assembly; null off a scene.
@@ -26,12 +27,31 @@
 		muted: boolean;
 		// Grounded starter prompts shown when the conversation is empty.
 		suggestions?: string[];
+		// Confirms a proposed scene split; resolves to an error message, or null
+		// when the split landed (the page navigates to the new scene).
+		onConfirmSplit?: (proposal: { sceneId: string; before: string }) => Promise<string | null>;
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
-	type Message = { role: 'user' | 'assistant'; content: string; reference?: ChatReference };
+	// A scene split the Assistant proposed; rendered as a card with a confirm
+	// button, plus client-side confirm state.
+	type SplitProposal = {
+		sceneId: string;
+		sceneTitle: string | null;
+		before: string;
+		rationale: string;
+		confirming?: boolean;
+		error?: string;
+	};
+	type Message = {
+		role: 'user' | 'assistant';
+		content: string;
+		reference?: ChatReference;
+		proposals?: SplitProposal[];
+	};
 	type StreamEvent =
 		| { type: 'token'; text: string }
+		| { type: 'proposal'; proposal: SplitProposal }
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
@@ -56,6 +76,32 @@
 		const last = messages[messages.length - 1];
 		if (last && last.role === 'assistant') {
 			last.content += text;
+		}
+	}
+
+	// A proposal frame attaches to the reply being streamed, rendering as a
+	// card with a confirm button under the bubble.
+	function attachProposal(proposal: SplitProposal) {
+		const last = messages[messages.length - 1];
+		if (last && last.role === 'assistant') {
+			last.proposals = [...(last.proposals ?? []), proposal];
+		}
+	}
+
+	async function confirmSplit(proposal: SplitProposal) {
+		if (!onConfirmSplit || proposal.confirming) return;
+		proposal.confirming = true;
+		proposal.error = '';
+		try {
+			const failure = await onConfirmSplit({
+				sceneId: proposal.sceneId,
+				before: proposal.before
+			});
+			if (failure) proposal.error = failure;
+		} catch {
+			proposal.error = 'Could not split the scene. Try again.';
+		} finally {
+			proposal.confirming = false;
 		}
 	}
 
@@ -96,6 +142,7 @@
 					if (!json) continue;
 					const event = JSON.parse(json) as StreamEvent;
 					if (event.type === 'token') appendToReply(event.text);
+					else if (event.type === 'proposal') attachProposal(event.proposal);
 					else if (event.type === 'error') streamError = event.message;
 				}
 			}
@@ -294,6 +341,34 @@
 								{/each}
 							{/if}
 						</div>
+						{#each message.proposals ?? [] as proposal, pi (pi)}
+							<div class="proposal">
+								<div class="proposal-head">
+									<Icon name="split" size={13} />
+									Split {proposal.sceneTitle ? `"${proposal.sceneTitle}"` : 'this scene'}
+								</div>
+								{#if proposal.rationale}
+									<p class="proposal-why">{proposal.rationale}</p>
+								{/if}
+								<div class="proposal-quote">{proposal.before}</div>
+								<div class="proposal-actions">
+									{#if onConfirmSplit}
+										<button
+											class="btn btn-primary"
+											type="button"
+											disabled={proposal.confirming}
+											onclick={() => confirmSplit(proposal)}
+										>
+											{proposal.confirming ? 'Splitting...' : 'Split here'}
+										</button>
+									{/if}
+									<span class="proposal-hint">The new scene starts at the quoted text.</span>
+								</div>
+								{#if proposal.error}
+									<p class="proposal-error" role="alert">{proposal.error}</p>
+								{/if}
+							</div>
+						{/each}
 					</div>
 				{/if}
 			{/each}
@@ -552,6 +627,52 @@
 	}
 	.composer textarea:focus {
 		border-color: var(--accent-line);
+	}
+	.proposal {
+		margin-top: 8px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--bg-card);
+		padding: 10px 12px;
+		font-size: 13px;
+	}
+	.proposal-head {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		font-weight: 600;
+		color: var(--text);
+	}
+	.proposal-why {
+		margin: 6px 0 0;
+		color: var(--text-muted);
+	}
+	.proposal-quote {
+		margin-top: 8px;
+		border-left: 3px solid var(--accent);
+		padding-left: 8px;
+		color: var(--text-muted);
+		font-size: 12.5px;
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.proposal-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-top: 10px;
+	}
+	.proposal-hint {
+		font-size: 12px;
+		color: var(--text-faint);
+	}
+	.proposal-error {
+		margin: 8px 0 0;
+		font-size: 12.5px;
+		color: var(--danger, #c0392b);
 	}
 	.msg-ref {
 		border-left: 2px solid var(--accent-contrast);

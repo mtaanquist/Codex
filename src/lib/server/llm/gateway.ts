@@ -120,12 +120,20 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 	};
 }
 
+// What a tool-using turn produced: the final text, plus any staged actions a
+// surface should render alongside it (split proposals and the like).
+type AgentResult = {
+	content: string;
+	surfaces: Extract<StreamEvent, { type: 'proposal' }>[];
+};
+
 // The agent loop: ask the model, run any tool calls it requests (read tools
 // fetch, write tools stage), feed the results back, and repeat until it answers
-// or the tool-call budget is spent. Returns the final text. Once the budget is
-// reached, tools are withdrawn so the next turn must answer, bounding the loop.
-async function runAgent(p: Prepared, req: GatewayRequest): Promise<string> {
+// or the tool-call budget is spent. Once the budget is reached, tools are
+// withdrawn so the next turn must answer, bounding the loop.
+async function runAgent(p: Prepared, req: GatewayRequest): Promise<AgentResult> {
 	const messages = [...p.messages];
+	const surfaces: AgentResult['surfaces'] = [];
 	let calls = 0;
 	for (;;) {
 		const offerTools = p.tools && calls < p.toolBudget ? p.tools : undefined;
@@ -141,7 +149,9 @@ async function runAgent(p: Prepared, req: GatewayRequest): Promise<string> {
 			p.http,
 			req.signal
 		);
-		if (!offerTools || response.toolCalls.length === 0) return response.content;
+		if (!offerTools || response.toolCalls.length === 0) {
+			return { content: response.content, surfaces };
+		}
 
 		messages.push({ role: 'assistant', content: response.content, toolCalls: response.toolCalls });
 		for (const call of response.toolCalls) {
@@ -150,6 +160,9 @@ async function runAgent(p: Prepared, req: GatewayRequest): Promise<string> {
 				calls > p.toolBudget
 					? { result: 'Tool-call budget reached; answer with what you have.', staged: false }
 					: await dispatchToolCall(p.toolContext!, call);
+			if ('surface' in outcome && outcome.surface) {
+				surfaces.push({ type: 'proposal', proposal: outcome.surface.proposal });
+			}
 			logEvent('info', 'assistant.tool', {
 				userId: req.userId,
 				tool: call.name,
@@ -175,8 +188,9 @@ export async function* stream(
 	// A tool-using turn resolves its rounds buffered (tool results interleave
 	// with generation), then emits the final answer; a plain turn streams live.
 	if (prepared.tools) {
-		const content = await runAgent(prepared, req);
+		const { content, surfaces } = await runAgent(prepared, req);
 		if (content) yield { type: 'token', text: content };
+		for (const surface of surfaces) yield surface;
 		yield { type: 'done' };
 		return;
 	}
@@ -205,7 +219,9 @@ export async function complete(
 		model: prepared.model,
 		tools: Boolean(prepared.tools)
 	});
-	if (prepared.tools) return runAgent(prepared, req);
+	// Buffered callers have no stream to carry staged surfaces; the proposals
+	// surface only on the streaming chat path.
+	if (prepared.tools) return (await runAgent(prepared, req)).content;
 	const response = await prepared.provider.respond(
 		{
 			model: prepared.model,

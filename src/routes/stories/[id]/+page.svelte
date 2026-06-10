@@ -346,6 +346,43 @@
 		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
 	}
 
+	// Confirms a split the Assistant proposed in chat. The exact passage is
+	// re-located server-side against the stored text, so the open editor's
+	// pending save lands first; on success the new scene opens.
+	async function confirmAssistantSplit(proposal: {
+		sceneId: string;
+		before: string;
+	}): Promise<string | null> {
+		const editor =
+			data.selectedScene?.id === proposal.sceneId ? sceneEditor : docEditors[proposal.sceneId];
+		await editor?.flushSave();
+		const response = await fetch(`/api/scenes/${proposal.sceneId}/split`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ before: proposal.before })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			return body?.message ?? 'Could not split the scene.';
+		}
+		const { newSceneId } = (await response.json()) as { newSceneId: string };
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
+		return null;
+	}
+
+	// "Suggest where to split": a canned chat turn naming the scene, so the
+	// Assistant reads it and stages a split proposal to confirm.
+	function suggestSplit(sceneId: string) {
+		rowMenu = null;
+		const scene = data.scenes.find((s) => s.id === sceneId);
+		const label = scene?.title ? `the scene "${scene.title}"` : 'this scene';
+		assistantIntent.pending = {
+			kind: 'send',
+			text: `Suggest a natural place to split ${label} (scene id: ${sceneId}) in two. Read the scene first, then propose the split for me to confirm.`
+		};
+	}
+
 	// Chapters start expanded; collapsing is per-visit state.
 	let collapsed = new SvelteSet<string>();
 
@@ -545,7 +582,11 @@
 	]);
 	let docEditors: Record<
 		string,
-		| { focusEdge: (edge: 'start' | 'end') => void; getView: () => EditorView | undefined }
+		| {
+				focusEdge: (edge: 'start' | 'end') => void;
+				getView: () => EditorView | undefined;
+				flushSave: () => Promise<void>;
+		  }
 		| undefined
 	> = $state({});
 
@@ -1196,6 +1237,7 @@
 						storyTitle={data.story.title}
 						muted={data.assistant.muted}
 						suggestions={assistantSuggestions}
+						onConfirmSplit={confirmAssistantSplit}
 					/>
 				{:else if rightTab === 'session'}
 					<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
@@ -1432,6 +1474,14 @@
 								onclick={() => reviewScene(target.id)}
 							>
 								Review this scene
+							</button>
+							<button
+								class="row-menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => suggestSplit(target.id)}
+							>
+								Suggest where to split
 							</button>
 						</div>
 					{/if}
