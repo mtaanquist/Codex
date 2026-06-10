@@ -48,7 +48,8 @@ async function currentEdition(storyId: string) {
 			id: publications.id,
 			versionLabel: publications.versionLabel,
 			downloadsPublic: publications.downloadsPublic,
-			publishedAt: publications.publishedAt
+			publishedAt: publications.publishedAt,
+			artifactErrors: publications.artifactErrors
 		})
 		.from(publications)
 		.where(and(eq(publications.storyId, storyId), eq(publications.isCurrent, true)));

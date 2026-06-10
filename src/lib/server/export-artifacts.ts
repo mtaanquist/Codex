@@ -285,6 +285,12 @@ export async function generateEditionArtifacts(
 			failed.push({ format, error: error instanceof Error ? error.message : String(error) });
 		}
 	}
+	// Persist the failures so the owner's settings page can show which downloads
+	// could not be built and why, instead of the failure only reaching the log.
+	await db
+		.update(publications)
+		.set({ artifactErrors: failed })
+		.where(eq(publications.id, publicationId));
 	return { ok: true, stored, failed };
 }
 

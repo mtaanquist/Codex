@@ -5,6 +5,7 @@ import { createSession, SESSION_COOKIE } from '$lib/server/auth';
 import {
 	consumeRecoveryCode,
 	consumeTotpChallenge,
+	peekTotpChallenge,
 	readTotpChallenge,
 	TOTP_CHALLENGE_COOKIE,
 	verifyUserTotp
@@ -47,6 +48,14 @@ export const actions: Actions = {
 				recovery: useRecovery,
 				message: 'Too many attempts. Wait a few minutes and try again.'
 			});
+		}
+
+		// Validate the challenge cookie before spending anything: a stale or
+		// replayed cookie must not burn a single-use recovery code. The cookie is
+		// actually consumed below, once the code is verified.
+		if (!(await peekTotpChallenge(db, cookies.get(TOTP_CHALLENGE_COOKIE)))) {
+			cookies.delete(TOTP_CHALLENGE_COOKIE, { path: '/' });
+			redirect(303, '/login');
 		}
 
 		const ok = useRecovery

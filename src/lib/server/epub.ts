@@ -1,4 +1,5 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
+import { slugify } from '../slug.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
 import { cssEscape, DEFAULT_PAGE_SETUP, lineHeight, type PageSetup } from '../page-setup.ts';
 import type { AssetLoader, ExportAsset, ExportStory, StoryContent } from './export.ts';
@@ -157,7 +158,9 @@ ${spineItems.join('\n')}
 	}
 
 	return {
-		filename: `${story.title ? story.title.replace(/[^\w-]+/g, '-') : 'story'}.epub`,
+		// Slugify like the zip and PDF paths, so a non-ASCII title yields a clean
+		// ASCII filename instead of a mangled one.
+		filename: `${slugify(story.title, 'story')}.epub`,
 		bytes: zipSync(files)
 	};
 }

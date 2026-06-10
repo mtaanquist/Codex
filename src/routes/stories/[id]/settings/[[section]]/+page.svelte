@@ -764,6 +764,15 @@
 										again.
 									</p>
 								{/if}
+								{#if data.edition.artifactErrors.length > 0}
+									<p class="field-hint" style="color:var(--danger);">
+										Some downloads could not be built on the last run:
+										{data.edition.artifactErrors
+											.map((e) => `${e.format.toUpperCase()} (${e.error})`)
+											.join(', ')}. A PDF needs the headless browser set up on the server; ask an
+										administrator, then generate again.
+									</p>
+								{/if}
 								<form method="POST" action="?/regenerateExports">
 									<div class="settings-actions">
 										<button class="btn" type="submit">Generate again</button>

@@ -160,10 +160,15 @@ export async function queueEmail(message: EmailMessage): Promise<void> {
 export async function queueExportArtifacts(publicationId: string): Promise<boolean> {
 	try {
 		const boss = await getBoss();
+		// A wide dedup window plus singletonNextSlot: a regeneration requested
+		// while one is in flight is deferred to run once after it, rather than
+		// interleaving S3 puts and row upserts for the same edition. Artifact
+		// builds (PDF via headless Chromium) can take a while, so the window is
+		// minutes, not seconds.
 		const id = await boss.send(
 			EXPORT_ARTIFACTS_QUEUE,
 			{ publicationId },
-			{ singletonKey: publicationId, singletonSeconds: 10 }
+			{ singletonKey: publicationId, singletonSeconds: 300, singletonNextSlot: true }
 		);
 		return id !== null;
 	} catch (error) {

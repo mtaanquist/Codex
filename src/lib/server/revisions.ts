@@ -71,8 +71,24 @@ export async function recordRevision(
 	options: { label?: string; snapshot?: EntitySnapshot | null } = {}
 ): Promise<{ recorded: boolean }> {
 	const snapshot = options.snapshot ?? null;
-	if (reason === 'autosave') {
-		const [latest] = await db
+	if (reason !== 'autosave') {
+		await db.insert(revisions).values({
+			entityType,
+			entityId,
+			bodyMd,
+			snapshot,
+			reason,
+			label: options.label?.trim() || null
+		});
+		return { recorded: true };
+	}
+	// Read-latest then coalesce-or-insert is a check-then-act race: two tabs
+	// saving the same entity at once could both read the same latest row and
+	// both write. A per-entity transaction-scoped advisory lock serialises them,
+	// so the second save sees the first's result.
+	return await db.transaction(async (tx) => {
+		await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${entityType}:${entityId}`}))`);
+		const [latest] = await tx
 			.select({
 				id: revisions.id,
 				bodyMd: revisions.bodyMd,
@@ -91,24 +107,24 @@ export async function recordRevision(
 			latest &&
 			latest.reason === 'autosave' &&
 			Date.now() - latest.createdAt.getTime() < AUTOSAVE_COALESCE_MS &&
-			!(entityType === 'scene' && (await isPinnedBaseRevision(db, latest.id)))
+			!(entityType === 'scene' && (await isPinnedBaseRevision(tx, latest.id)))
 		) {
-			await db
+			await tx
 				.update(revisions)
 				.set({ bodyMd, snapshot, createdAt: sql`now()` })
 				.where(eq(revisions.id, latest.id));
 			return { recorded: true };
 		}
-	}
-	await db.insert(revisions).values({
-		entityType,
-		entityId,
-		bodyMd,
-		snapshot,
-		reason,
-		label: options.label?.trim() || null
+		await tx.insert(revisions).values({
+			entityType,
+			entityId,
+			bodyMd,
+			snapshot,
+			reason,
+			label: options.label?.trim() || null
+		});
+		return { recorded: true };
 	});
-	return { recorded: true };
 }
 
 export function isSnapshotType(type: RevisionEntityType): type is EntityType {
@@ -677,7 +693,15 @@ export async function storyTimeline(
 		})
 		.from(revisions)
 		.innerJoin(scenes, eq(revisions.entityId, scenes.id))
-		.where(and(eq(revisions.entityType, 'scene'), eq(scenes.storyId, storyId)))
+		.where(
+			and(
+				eq(revisions.entityType, 'scene'),
+				eq(scenes.storyId, storyId),
+				// A trashed scene's history stays out of the live timeline, the same
+				// as the universe timeline.
+				isNull(scenes.deletedAt)
+			)
+		)
 		.orderBy(desc(revisions.createdAt))
 		.limit(limit);
 	return mergeTimelines([sceneRows], limit);

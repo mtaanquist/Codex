@@ -722,6 +722,13 @@ export const publications = pgTable(
 		// PDF artifacts from the public story page.
 		downloadsPublic: boolean('downloads_public').notNull().default(false),
 		isCurrent: boolean('is_current').notNull().default(true),
+		// The formats that failed to build on the last artifact run, with why, so
+		// the owner can see (and an admin can fix) why a download is missing.
+		// Cleared when a run produces them.
+		artifactErrors: jsonb('artifact_errors')
+			.$type<{ format: string; error: string }[]>()
+			.notNull()
+			.default([]),
 		// Set by an admin takedown; hides the edition without deleting the source.
 		removedAt: timestamp('removed_at', { withTimezone: true }),
 		publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow()

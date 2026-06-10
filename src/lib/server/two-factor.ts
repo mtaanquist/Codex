@@ -253,3 +253,19 @@ export async function consumeTotpChallenge(
 		.returning({ userId: userTotp.userId });
 	return row?.userId ?? null;
 }
+
+// Validates the challenge cookie without spending it, so the caller can reject
+// a stale or replayed cookie before consuming a single-use recovery code. The
+// real consume still happens after the code is verified.
+export async function peekTotpChallenge(
+	db: Database,
+	token: string | undefined
+): Promise<string | null> {
+	const parsed = parseTotpChallenge(token);
+	if (!parsed) return null;
+	const [row] = await db
+		.select({ userId: userTotp.userId })
+		.from(userTotp)
+		.where(and(eq(userTotp.userId, parsed.userId), eq(userTotp.challenge, parsed.nonce)));
+	return row?.userId ?? null;
+}

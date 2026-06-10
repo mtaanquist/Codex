@@ -28,6 +28,7 @@ import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
 import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
 	buildUserDigest,
@@ -281,7 +282,9 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs)
 await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		await sendEmail(db, job.data);
-		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
+		// Structured, with the recipient masked and the subject (which embeds
+		// story titles) omitted, so account PII does not sit in the logs.
+		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
 	}
 });
 
@@ -291,9 +294,7 @@ await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 // there is no other signal otherwise.
 await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		console.error(
-			`email: DROPPED after retries - to ${job.data.to} (${job.data.subject}); SMTP likely down`
-		);
+		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
 	}
 });
 
