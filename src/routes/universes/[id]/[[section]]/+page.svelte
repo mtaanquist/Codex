@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
+	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -463,26 +464,17 @@
 								Everything in this universe, bundled into a single archive.
 							</p>
 						</div>
-						<div class="danger-row">
-							<div class="danger-row-text">
-								<h3 class="danger-row-title">Markdown archive</h3>
-								<p class="danger-row-body">
-									A zip of markdown files organised into folders: characters, places, lore, and one
-									folder per story, each with YAML front matter and bundled images.
-								</p>
-							</div>
-							<div class="danger-row-actions">
-								<!-- eslint-disable svelte/no-navigation-without-resolve (download endpoint) -->
-								<a
-									class="btn btn-secondary"
-									href="/universes/{data.universe.slug}/export/download"
-									download
-								>
-									Download .zip
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							</div>
-						</div>
+						<p class="danger-row-body">
+							A zip of markdown files organised into folders: characters, places, lore, and one
+							folder per story, each with YAML front matter and bundled images.
+						</p>
+						<ExportPanel
+							scope="universe"
+							targetId={data.universe.id}
+							formats={[{ format: 'zip', label: 'markdown archive (.zip)' }]}
+							exports={data.exports}
+							assetsConfigured={data.assetsConfigured}
+						/>
 					</div>
 
 					<div class="admin-block">

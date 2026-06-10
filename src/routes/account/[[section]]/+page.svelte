@@ -16,6 +16,7 @@
 	import { WRITING_LANGUAGES } from '$lib/writing-languages';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -1182,9 +1183,12 @@
 							</p>
 						</div>
 						<div class="admin-card">
-							<a class="btn btn-secondary" href={resolve('/account/export')} data-sveltekit-reload
-								>Download everything</a
-							>
+							<ExportPanel
+								scope="account"
+								formats={[{ format: 'zip', label: 'everything (.zip)' }]}
+								exports={data.exports}
+								assetsConfigured={data.assetsConfigured}
+							/>
 						</div>
 					</div>
 

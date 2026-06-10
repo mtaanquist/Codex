@@ -26,7 +26,9 @@ import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/accoun
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { users } from '$lib/server/db/schema';
 import { verifyPassword } from '$lib/server/password';
-import { queueEmail } from '$lib/server/jobs';
+import { queueEmail, queueUserExport } from '$lib/server/jobs';
+import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
+import { exportLimit } from '$lib/server/rate-limit';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
 import {
 	accountLlmView,
@@ -126,7 +128,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		},
 		totpSetup,
 		passkeys: await listPasskeys(db, user.id),
-		passkeysAvailable: secretsAvailable()
+		passkeysAvailable: secretsAvailable(),
+		exports: await listUserExports(db, user.id, { scope: 'account' })
 	};
 };
 
@@ -160,6 +163,21 @@ async function patchAssistant(
 }
 
 export const actions: Actions = {
+	requestExport: async ({ locals }) => {
+		if (!exportLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				scope: 'export',
+				message: 'Too many exports just now. Try again shortly.'
+			});
+		}
+		const result = await requestExport(db, locals.user!.id, { scope: 'account', format: 'zip' });
+		if (!result.ok) return fail(400, { scope: 'export', message: result.reason });
+		if (!(await queueUserExport(result.id))) {
+			await markExportFailed(db, result.id, 'Could not start the export.');
+			return fail(503, { scope: 'export', message: 'Could not start the export. Try again.' });
+		}
+		return { scope: 'export', queued: true };
+	},
 	updateName: async ({ request, locals }) => {
 		const data = await request.formData();
 		const result = await saveIdentity(db, locals.user!.id, {

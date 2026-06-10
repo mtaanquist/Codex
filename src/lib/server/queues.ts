@@ -12,6 +12,7 @@ export const EMAIL_QUEUE = 'send-email';
 // can see what was dropped instead of it vanishing into pg-boss's failed rows.
 export const EMAIL_DEAD_LETTER_QUEUE = 'send-email-dead-letter';
 export const EXPORT_ARTIFACTS_QUEUE = 'export-artifacts';
+export const USER_EXPORT_QUEUE = 'user-export';
 export const NOTIFICATION_DIGEST_QUEUE = 'notification-digest';
 export const REVIEWER_DIGEST_QUEUE = 'reviewer-digest';
 export const PURGE_ACCOUNTS_QUEUE = 'purge-accounts';

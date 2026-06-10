@@ -15,6 +15,7 @@ export {
 	EMAIL_QUEUE,
 	EMAIL_DEAD_LETTER_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
+	USER_EXPORT_QUEUE,
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
@@ -28,6 +29,7 @@ import {
 	EMAIL_QUEUE,
 	EMAIL_DEAD_LETTER_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
+	USER_EXPORT_QUEUE,
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
@@ -52,6 +54,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(EMAIL_QUEUE);
 		await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 		await boss.createQueue(EXPORT_ARTIFACTS_QUEUE);
+		await boss.createQueue(USER_EXPORT_QUEUE);
 		await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
@@ -165,6 +168,21 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 		return id !== null;
 	} catch (error) {
 		console.error('queueing export artifacts failed:', error);
+		return false;
+	}
+}
+
+// Queues a user-requested export (account, story, or universe archive, or a
+// story EPUB). The heavy build runs in the worker so it never blocks the web
+// process; the page shows the finished file once it lands. Returns whether the
+// enqueue succeeded so the caller can mark the row failed if it did not.
+export async function queueUserExport(exportId: string): Promise<boolean> {
+	try {
+		const boss = await getBoss();
+		const id = await boss.send(USER_EXPORT_QUEUE, { exportId }, { singletonKey: exportId });
+		return id !== null;
+	} catch (error) {
+		console.error('queueing user export failed:', error);
 		return false;
 	}
 }
