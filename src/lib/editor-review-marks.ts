@@ -170,6 +170,21 @@ export function buildReviewMarks(
 // filter change; between dispatches the field maps the set through edits.
 export const setReviewMarks = StateEffect.define<DecorationSet>();
 
+// Drops every decoration belonging to the given note ids. Dispatched alongside
+// the text change when an accepted suggestion is applied to the live document,
+// so its strike-through and ghost do not linger over the new prose while the
+// page data catches up.
+export const removeReviewMarks = StateEffect.define<string[]>();
+
+// The note id a decoration belongs to: marks carry it as a data attribute,
+// ghost widgets carry it on the widget itself.
+function ridOf(deco: Decoration): string | undefined {
+	return (
+		(deco.spec.attributes?.['data-rid'] as string | undefined) ??
+		(deco.spec.widget as GhostWidget | undefined)?.rid
+	);
+}
+
 const reviewMarksField = StateField.define<DecorationSet>({
 	create() {
 		return Decoration.none;
@@ -178,6 +193,15 @@ const reviewMarksField = StateField.define<DecorationSet>({
 		value = value.map(tr.changes);
 		for (const effect of tr.effects) {
 			if (effect.is(setReviewMarks)) value = effect.value;
+			if (effect.is(removeReviewMarks)) {
+				const ids = effect.value;
+				value = value.update({
+					filter: (_from, _to, deco) => {
+						const rid = ridOf(deco);
+						return !rid || !ids.includes(rid);
+					}
+				});
+			}
 		}
 		return value;
 	},
@@ -230,7 +254,10 @@ export function reviewMarksExtension(opts: {
 			let found: { start: number; end: number } | null = null;
 			const cursor = set.iter();
 			while (cursor.value) {
-				if ((cursor.value.spec.attributes?.['data-rid'] as string | undefined) === rid) {
+				// An insert suggestion has no mark range, only its ghost widget, so
+				// the widget's id counts too; for a replace the mark range comes
+				// first in the set and wins.
+				if (ridOf(cursor.value) === rid) {
 					found = { start: cursor.from, end: cursor.to };
 					break;
 				}

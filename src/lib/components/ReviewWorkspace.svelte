@@ -110,6 +110,10 @@
 
 	let filter = $state<ReviewFilter>('all');
 	let focusedId = $state<string | null>(null);
+	// The author's live editor, so a confirmed accept can be folded into the
+	// open document at once instead of waiting for the page data to reload
+	// (an autosave in that window would overwrite the accepted text).
+	let editorRef = $state<ReviewEditor>();
 	let query = $state('');
 	let composer = $state<Composer | null>(null);
 	// On a narrow screen the three panes stack behind a tab bar; on desktop the
@@ -285,6 +289,7 @@
 						<!-- The author reads and edits the manuscript in place: accept a
 						     suggestion, then build on it. -->
 						<ReviewEditor
+							bind:this={editorRef}
 							scene={selectedScene}
 							chapterTitle={selectedScene.chapterTitle}
 							threads={sceneThreads}
@@ -342,6 +347,7 @@
 					{composer}
 					onCloseComposer={() => (composer = null)}
 					onStartSceneComment={startSceneComment}
+					onAccepted={role === 'author' ? (ids) => editorRef?.applyAccepted(ids) : null}
 					{assistant}
 					onAssistantReply={assistant ? assistantReply : null}
 				/>

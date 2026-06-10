@@ -16,6 +16,7 @@
 		role,
 		focused,
 		onFocus,
+		onAccepted = null,
 		assistant = null,
 		onAssistantReply = null
 	}: {
@@ -26,6 +27,10 @@
 		focused: boolean;
 		// Clicking the card jumps to and pulses its passage in the manuscript.
 		onFocus: (id: string) => void;
+		// Called with the suggestion id the moment the server confirms an
+		// accept, before the page data reloads, so the author's live editor can
+		// apply the change at once.
+		onAccepted?: ((ids: string[]) => void) | null;
 		// Set when the Assistant answers replies on its suggestions (author
 		// page, Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;
@@ -104,7 +109,15 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="rv-quick" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 				{#if !suggestion.anchorLost}
-					<form method="POST" action="?/acceptSuggestion" use:enhance>
+					<form
+						method="POST"
+						action="?/acceptSuggestion"
+						use:enhance={() =>
+							async ({ result, update }) => {
+								if (result.type === 'success') onAccepted?.([suggestion.id]);
+								await update();
+							}}
+					>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
 						<button
 							class="rv-quick-btn accept"
