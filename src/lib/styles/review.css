@@ -1128,3 +1128,41 @@
 	display: inline-flex;
 	transform: rotate(180deg);
 }
+
+/* ---- review marks inside the editable CodeMirror centre (author) ---- */
+.review-edit .cm-content .rv-mark {
+	cursor: pointer;
+	border-radius: 3px;
+	-webkit-box-decoration-break: clone;
+	box-decoration-break: clone;
+	transition:
+		background 0.14s,
+		box-shadow 0.14s;
+}
+.review-edit .cm-content .rv-comment {
+	background: color-mix(in oklab, var(--auth) 15%, transparent);
+	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
+	padding: 0 1px;
+}
+.review-edit .cm-content .rv-del,
+.review-edit .cm-content .rv-replace {
+	color: var(--text-faint);
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in oklab, var(--auth) 70%, var(--text-faint));
+	background: color-mix(in oklab, var(--auth) 9%, transparent);
+	padding: 0 1px;
+}
+/* The proposed replacement/insertion rides as a non-editable ghost. */
+.review-edit .cm-content .rv-ghost {
+	color: var(--auth);
+	text-decoration: none;
+	border-bottom: 2px solid color-mix(in oklab, var(--auth) 60%, transparent);
+	cursor: pointer;
+	white-space: pre-wrap;
+}
+.review-edit .cm-content .rv-mark.is-focused {
+	box-shadow:
+		0 0 0 2px var(--bg-canvas),
+		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	background: color-mix(in oklab, var(--auth) 24%, transparent);
+}
