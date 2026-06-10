@@ -2,11 +2,14 @@ name: Release image
 
 # Builds the production image when a release is tagged and publishes it to
 # GitHub Container Registry, so a deployment can pull a versioned image
-# instead of building from source.
+# instead of building from source. Also dispatchable at a tag ref: the
+# Release workflow pushes its tag with the workflow token, which does not
+# trigger the push event, so it dispatches this workflow instead.
 on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 permissions:
   contents: read
