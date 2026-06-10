@@ -220,6 +220,13 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.coauthor-ref')).toHaveCount(0);
 	await page.locator('.coauthor-x').click();
 
+	// The command palette carries the Assistant's quick actions while it is on.
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(page.locator('.palette')).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Review this scene' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
 	await page.getByRole('button', { name: 'Mute for this story' }).click();
 	await expect(page.locator('.assistant-muted')).toBeVisible();
@@ -250,4 +257,11 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' })).toHaveCount(
 		0
 	);
+	await page.keyboard.press('Escape');
+
+	// And the palette drops the Assistant commands.
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(page.locator('.palette')).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Focus mode' })).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toHaveCount(0);
 });

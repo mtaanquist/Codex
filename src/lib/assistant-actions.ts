@@ -1,0 +1,43 @@
+// Client-side Assistant actions shared by the story page and the command
+// palette, so the fetch-and-feedback logic lives once. Server-side gating is
+// re-checked by every endpoint; these just drive the requests.
+import { goto } from '$app/navigation';
+
+// Asks the Assistant to review one scene inline. Stages comments and
+// suggested edits, then opens the review page when anything was staged.
+export async function reviewSceneWithAssistant(sceneId: string, reviewHref: string): Promise<void> {
+	const response = await fetch('/api/assistant/review', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ sceneId })
+	});
+	if (!response.ok) {
+		const body = (await response.json().catch(() => null)) as { message?: string } | null;
+		alert(body?.message ?? 'The Assistant could not review the scene.');
+		return;
+	}
+	const { staged } = (await response.json()) as { staged: number };
+	if (staged > 0) {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from a slug
+		await goto(reviewHref);
+	} else {
+		alert('The Assistant read the scene and had no notes to add.');
+	}
+}
+
+// Kicks off the background summary pass; the writer is notified when it ends.
+export async function startSummariesJob(storyId: string): Promise<void> {
+	const response = await fetch('/api/assistant/summaries-job', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ storyId })
+	});
+	if (!response.ok) {
+		const body = (await response.json().catch(() => null)) as { message?: string } | null;
+		alert(body?.message ?? 'Could not start the summary pass.');
+		return;
+	}
+	alert(
+		'The Assistant is updating your scene and chapter summaries in the background. You will be notified when it is done.'
+	);
+}

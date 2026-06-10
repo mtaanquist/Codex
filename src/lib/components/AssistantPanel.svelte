@@ -6,6 +6,7 @@
 	// back over Server-Sent Events.
 	import { enhance } from '$app/forms';
 	import { assistantIntent } from '$lib/assistant.svelte';
+	import { startSummariesJob } from '$lib/assistant-actions';
 	import Icon from './Icon.svelte';
 
 	let {
@@ -222,19 +223,7 @@
 		if (summarising) return;
 		summarising = true;
 		try {
-			const response = await fetch('/api/assistant/summaries-job', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId })
-			});
-			if (!response.ok) {
-				const body = (await response.json().catch(() => null)) as { message?: string } | null;
-				alert(body?.message ?? 'Could not start the summary pass.');
-				return;
-			}
-			alert(
-				'The Assistant is updating your scene and chapter summaries in the background. You will be notified when it is done.'
-			);
+			await startSummariesJob(storyId);
 		} finally {
 			summarising = false;
 		}

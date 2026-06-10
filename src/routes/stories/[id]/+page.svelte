@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { assistantIntent } from '$lib/assistant.svelte';
+	import { reviewSceneWithAssistant } from '$lib/assistant-actions';
 	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
@@ -278,23 +279,7 @@
 		if (reviewingScene) return;
 		reviewingScene = true;
 		try {
-			const response = await fetch('/api/assistant/review', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ sceneId })
-			});
-			if (!response.ok) {
-				const body = (await response.json().catch(() => null)) as { message?: string } | null;
-				alert(body?.message ?? 'The Assistant could not review the scene.');
-				return;
-			}
-			const { staged } = (await response.json()) as { staged: number };
-			if (staged > 0) {
-				// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from a slug
-				await goto(`/stories/${data.story.slug}/review`);
-			} else {
-				alert('The Assistant read the scene and had no notes to add.');
-			}
+			await reviewSceneWithAssistant(sceneId, `/stories/${data.story.slug}/review`);
 		} finally {
 			reviewingScene = false;
 		}
