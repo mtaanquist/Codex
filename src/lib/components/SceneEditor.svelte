@@ -153,9 +153,33 @@
 	let coauthorInput = $state<HTMLTextAreaElement>();
 	let coauthorPending: AbortController | null = null;
 
+	// Where the writer is in the prose when the panel opens: the selection if
+	// there is one, otherwise the text leading up to the cursor. Shown as a
+	// removable chip and sent with the brief, so "continue from here" works.
+	type CoauthorReference = { kind: 'selection' | 'cursor'; text: string };
+	const COAUTHOR_CURSOR_CHARS = 400;
+	let coauthorReference = $state<CoauthorReference | null>(null);
+
+	function captureCoauthorReference(): CoauthorReference | null {
+		if (!view) return null;
+		const range = view.state.selection.main;
+		if (!range.empty) {
+			const text = view.state.sliceDoc(range.from, range.to).trim();
+			return text ? { kind: 'selection', text } : null;
+		}
+		const from = Math.max(0, range.head - COAUTHOR_CURSOR_CHARS);
+		const text = view.state.sliceDoc(from, range.head);
+		// A truncated slice may open mid-word; drop the partial word.
+		const trimmed = (from > 0 ? text.replace(/^\S*\s/, '') : text).trim();
+		return trimmed ? { kind: 'cursor', text: trimmed } : null;
+	}
+
 	function toggleCoauthor() {
 		coauthorOpen = !coauthorOpen;
-		if (coauthorOpen) setTimeout(() => coauthorInput?.focus(), 0);
+		if (coauthorOpen) {
+			coauthorReference = captureCoauthorReference();
+			setTimeout(() => coauthorInput?.focus(), 0);
+		}
 	}
 
 	async function generateCoauthor() {
@@ -170,7 +194,7 @@
 			const response = await fetch('/api/assistant/coauthor', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, sceneId, instruction }),
+				body: JSON.stringify({ storyId, sceneId, instruction, reference: coauthorReference }),
 				signal: controller.signal
 			});
 			if (!response.ok) {
@@ -208,6 +232,7 @@
 		coauthorInstruction = '';
 		coauthorResult = '';
 		coauthorError = '';
+		coauthorReference = null;
 	}
 
 	// The editor owns the value after mount; the page keys this component by
@@ -623,6 +648,25 @@
 					<button class="coauthor-x" type="button" title="Close" onclick={discardCoauthor}>x</button
 					>
 				</div>
+				{#if coauthorReference}
+					<div class="coauthor-ref" role="note">
+						<span class="coauthor-ref-kind">
+							{coauthorReference.kind === 'selection' ? 'Pointing at:' : 'Continuing from:'}
+						</span>
+						<span class="coauthor-ref-text" title={coauthorReference.text}>
+							{coauthorReference.text}
+						</span>
+						<button
+							class="coauthor-ref-x"
+							type="button"
+							title="Remove the reference"
+							aria-label="Remove the reference"
+							onclick={() => (coauthorReference = null)}
+						>
+							x
+						</button>
+					</div>
+				{/if}
 				<textarea
 					bind:this={coauthorInput}
 					class="coauthor-brief"
@@ -877,6 +921,42 @@
 		padding: 2px 6px;
 	}
 	.coauthor-x:hover {
+		color: var(--text);
+	}
+	.coauthor-ref {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 7px 10px;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: 8px;
+		background: var(--bg-inset);
+		font-size: 12.5px;
+		color: var(--text-muted);
+	}
+	.coauthor-ref-kind {
+		flex: none;
+		font-weight: 600;
+	}
+	.coauthor-ref-text {
+		flex: 1;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.coauthor-ref-x {
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+		font-size: 13px;
+		line-height: 1;
+		padding: 0 2px;
+	}
+	.coauthor-ref-x:hover {
 		color: var(--text);
 	}
 	.coauthor-brief,

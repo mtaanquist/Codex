@@ -157,10 +157,14 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	const storyUrl = page.url();
 
 	// With the account on, the Assistant tab shows; opening it reveals the chat.
+	// The click retries: right after the create-story navigation the page may
+	// not be hydrated yet, and a pre-hydration click goes nowhere.
 	const tab = page.locator('.rtab', { hasText: 'Assistant' });
 	await expect(tab).toBeVisible();
-	await tab.click();
-	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
+	await expect(async () => {
+		await tab.click();
+		await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible({ timeout: 2000 });
+	}).toPass();
 
 	// The recap and summary actions live in the menu next to the send button;
 	// the header keeps the mute link.
@@ -201,6 +205,17 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review this scene' })
 	).toBeVisible();
 	await page.keyboard.press('Escape');
+
+	// The Write panel captures where the cursor sits as a removable reference,
+	// so "continue from here" has something to continue from.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.locator('.md-coauthor').click();
+	await expect(page.locator('.coauthor-ref')).toContainText('Continuing from:');
+	await expect(page.locator('.coauthor-ref')).toContainText('The gate stood open.');
+	await page.getByRole('button', { name: 'Remove the reference' }).click();
+	await expect(page.locator('.coauthor-ref')).toHaveCount(0);
+	await page.locator('.coauthor-x').click();
 
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
 	await page.getByRole('button', { name: 'Mute for this story' }).click();
