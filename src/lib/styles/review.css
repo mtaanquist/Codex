@@ -1165,4 +1165,15 @@
 		0 0 0 2px var(--bg-canvas),
 		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
 	background: color-mix(in oklab, var(--auth) 24%, transparent);
+	animation: rvPulse 0.6s ease;
+}
+
+/* The editable centre's prose column matches the read-only surface: same serif
+   measure and rhythm, so switching roles does not reflow the manuscript. */
+.review-edit {
+	max-width: 660px;
+}
+.review-edit .cm-scroller {
+	font-size: 19px;
+	line-height: 1.72;
 }

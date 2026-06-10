@@ -34,6 +34,10 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	}
 	checkProseLength(payload.bodyMd);
 	// The editor maps marker anchors through edits; they ride the autosave.
+	// A review save omits markers entirely (the review centre does not load
+	// them): when the field is absent, leave the stored anchors untouched
+	// rather than wiping them with an empty set.
+	const touchMarkers = payload.markers !== undefined;
 	const anchors = Array.isArray(payload.markers)
 		? payload.markers.filter(
 				(marker): marker is { id: string; anchorStart: number; anchorEnd: number } =>
@@ -53,7 +57,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		.set({ title, bodyMd: payload.bodyMd, wordCount: count })
 		.where(eq(scenes.id, row.id));
 	await recordRevision(db, 'scene', row.id, payload.bodyMd);
-	await updateMarkerAnchors(db, row.id, anchors, payload.bodyMd.length);
+	if (touchMarkers) await updateMarkerAnchors(db, row.id, anchors, payload.bodyMd.length);
 	await queueSceneMentions(row.id);
 
 	return json({ savedAt: new Date().toISOString(), wordCount: count });

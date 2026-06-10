@@ -2,6 +2,7 @@
 	import SidebarSearch from './SidebarSearch.svelte';
 	import ReviewNav from './ReviewNav.svelte';
 	import ReviewSurface from './ReviewSurface.svelte';
+	import ReviewEditor from './ReviewEditor.svelte';
 	import ReviewPanel from './ReviewPanel.svelte';
 	import type { Composer } from './ReviewPanel.svelte';
 	import type { MentionEntity } from '$lib/editor-mentions';
@@ -13,6 +14,7 @@
 		threads,
 		suggestions,
 		role,
+		storyId = null,
 		canSuggest = true,
 		seg = null,
 		entities = [],
@@ -25,6 +27,8 @@
 		threads: ReviewThread[];
 		suggestions: ReviewSuggestion[];
 		role: 'author' | 'guest';
+		// The owning story; the author's editable centre autosaves against it.
+		storyId?: string | null;
 		canSuggest?: boolean;
 		// The mode switcher links, shown on the author side only.
 		seg?: { writeHref: string; planHref: string; notesHref: string } | null;
@@ -213,22 +217,42 @@
 		<main class="pane center">
 			{#if selectedScene}
 				{#key selectedScene.id}
-					<ReviewSurface
-						scene={selectedScene}
-						chapterTitle={selectedScene.chapterTitle}
-						threads={sceneThreads}
-						suggestions={sceneSuggestions}
-						{filter}
-						{focusedId}
-						setFocused={focusFromSurface}
-						{canSuggest}
-						{entities}
-						{mentionMembers}
-						{mentionPins}
-						{entityHref}
-						onStartComment={startComment}
-						onStartSuggest={startSuggest}
-					/>
+					{#if role === 'author' && storyId}
+						<!-- The author reads and edits the manuscript in place: accept a
+						     suggestion, then build on it. -->
+						<ReviewEditor
+							scene={selectedScene}
+							chapterTitle={selectedScene.chapterTitle}
+							threads={sceneThreads}
+							suggestions={sceneSuggestions}
+							{filter}
+							{focusedId}
+							setFocused={focusFromSurface}
+							{canSuggest}
+							{entities}
+							{mentionMembers}
+							{mentionPins}
+							onStartComment={startComment}
+							onStartSuggest={startSuggest}
+						/>
+					{:else}
+						<ReviewSurface
+							scene={selectedScene}
+							chapterTitle={selectedScene.chapterTitle}
+							threads={sceneThreads}
+							suggestions={sceneSuggestions}
+							{filter}
+							{focusedId}
+							setFocused={focusFromSurface}
+							{canSuggest}
+							{entities}
+							{mentionMembers}
+							{mentionPins}
+							{entityHref}
+							onStartComment={startComment}
+							onStartSuggest={startSuggest}
+						/>
+					{/if}
 				{/key}
 			{:else}
 				<div class="rv-empty-scene">This story has no scenes to review yet.</div>

@@ -22,16 +22,22 @@ class GhostWidget extends WidgetType {
 	constructor(
 		readonly text: string,
 		readonly color: string,
-		readonly rid: string
+		readonly rid: string,
+		readonly focused: boolean
 	) {
 		super();
 	}
 	eq(other: GhostWidget) {
-		return other.text === this.text && other.color === this.color && other.rid === this.rid;
+		return (
+			other.text === this.text &&
+			other.color === this.color &&
+			other.rid === this.rid &&
+			other.focused === this.focused
+		);
 	}
 	toDOM() {
 		const ins = document.createElement('ins');
-		ins.className = 'rv-ins-t rv-ghost';
+		ins.className = this.focused ? 'rv-ins-t rv-ghost rv-mark is-focused' : 'rv-ins-t rv-ghost';
 		ins.textContent = this.text;
 		ins.style.setProperty('--auth', this.color);
 		ins.dataset.rid = this.rid;
@@ -60,9 +66,11 @@ export function buildReviewMarks(
 	threads: ReviewThread[],
 	suggestions: ReviewSuggestion[],
 	filter: ReviewFilter,
-	docLength: number
+	docLength: number,
+	focusedId: string | null = null
 ): DecorationSet {
 	const ranges: { from: number; to: number; deco: Decoration }[] = [];
+	const markClass = (base: string, id: string) => (id === focusedId ? `${base} is-focused` : base);
 
 	for (const thread of threads) {
 		if (!commentInline(thread, filter)) continue;
@@ -73,7 +81,7 @@ export function buildReviewMarks(
 			from: a.start,
 			to: a.end,
 			deco: Decoration.mark({
-				class: 'rv-mark rv-comment',
+				class: markClass('rv-mark rv-comment', thread.id),
 				attributes: { 'data-rid': thread.id, style: `--auth:${color}` }
 			})
 		});
@@ -84,13 +92,14 @@ export function buildReviewMarks(
 		const a = suggestion.anchor!;
 		const color = authorColor(suggestionAuthor(suggestion));
 		const kind = suggestionKind(suggestion);
+		const focused = suggestion.id === focusedId;
 		if (kind === 'insert') {
 			if (a.start < 0 || a.start > docLength) continue;
 			ranges.push({
 				from: a.start,
 				to: a.start,
 				deco: Decoration.widget({
-					widget: new GhostWidget(suggestion.replacement, color, suggestion.id),
+					widget: new GhostWidget(suggestion.replacement, color, suggestion.id, focused),
 					side: 1
 				})
 			});
@@ -101,7 +110,7 @@ export function buildReviewMarks(
 			from: a.start,
 			to: a.end,
 			deco: Decoration.mark({
-				class: `rv-mark rv-${kind === 'delete' ? 'del' : 'replace'}`,
+				class: markClass(`rv-mark rv-${kind === 'delete' ? 'del' : 'replace'}`, suggestion.id),
 				attributes: { 'data-rid': suggestion.id, style: `--auth:${color}` }
 			})
 		});
@@ -110,7 +119,7 @@ export function buildReviewMarks(
 				from: a.end,
 				to: a.end,
 				deco: Decoration.widget({
-					widget: new GhostWidget(suggestion.replacement, color, suggestion.id),
+					widget: new GhostWidget(suggestion.replacement, color, suggestion.id, focused),
 					side: 1
 				})
 			});
