@@ -42,6 +42,12 @@ export type GatewayRequest = {
 	// Offer the read/write tools this turn. Requires a story context and an
 	// endpoint that can call tools; off for plain continuation/co-author turns.
 	enableTools?: boolean;
+	// Restrict the offered tools to this set (the review-reply turn names the
+	// scoped tools here); the default set otherwise.
+	toolNames?: string[];
+	// Targets for the scoped tools, fixed server-side and never taken from the
+	// model's arguments.
+	toolScope?: { threadId?: string; suggestionId?: string };
 	maxTokens?: number;
 	temperature?: number;
 	signal?: AbortSignal;
@@ -104,8 +110,8 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		resolved.config.supportsTools !== false &&
 		(await ownsStory(db, req.userId, req.storyId))
 	) {
-		tools = toolSpecs();
-		toolContext = { db, userId: req.userId, storyId: req.storyId };
+		tools = toolSpecs(req.toolNames);
+		toolContext = { db, userId: req.userId, storyId: req.storyId, scope: req.toolScope };
 	}
 
 	return {

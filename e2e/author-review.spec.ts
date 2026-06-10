@@ -70,6 +70,13 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await page.getByRole('button', { name: 'Save suggestion' }).click();
 	await expect(page.locator('.rv-diff-ins')).toHaveText('The revised sentence.');
 
+	// A pending suggestion's card takes replies: the discussion thread is
+	// created on the first one and renders on the card.
+	const suggCard = page.locator('.rv-card.sugg');
+	await suggCard.getByLabel('Reply', { exact: true }).fill('Thinking about this one.');
+	await suggCard.getByRole('button', { name: 'Send reply' }).click();
+	await expect(suggCard.locator('.rv-reply-body')).toHaveText('Thinking about this one.');
+
 	// Accept all pending edits in the scene; the editable prose updates in place.
 	await page.getByRole('button', { name: /^Accept all/ }).click();
 	await expect(prose).toContainText('The revised sentence.');
@@ -80,6 +87,8 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await prose.click();
 	await page.keyboard.press('End');
 	await page.keyboard.type(' A new clause.');
+	// The clause must land in the live editor before the save is awaited.
+	await expect(prose).toContainText('A new clause.');
 	// Autosave debounces; click away and wait for the request to settle.
 	await page.waitForTimeout(2000);
 	await page.reload();

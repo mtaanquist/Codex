@@ -9,7 +9,9 @@
 		excerpt,
 		role,
 		focused,
-		onFocus
+		onFocus,
+		assistant = null,
+		onAssistantReply = null
 	}: {
 		thread: ReviewThread;
 		// The anchored passage, sliced from the live scene text; null for a
@@ -19,6 +21,10 @@
 		focused: boolean;
 		// Clicking the card jumps to and pulses its passage in the manuscript.
 		onFocus: (id: string) => void;
+		// Set when the Assistant answers replies in threads it opened (author
+		// page, Assistant live); carries its display name for the waiting note.
+		assistant?: { name: string } | null;
+		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
 	} = $props();
 
 	const author = $derived(threadAuthor(thread));
@@ -36,6 +42,21 @@
 	);
 
 	let replyText = $state('');
+
+	// The Assistant answers in threads it opened: a posted reply triggers its
+	// turn, with a waiting note until the fresh thread loads in.
+	let assistantBusy = $state(false);
+	const assistantAnswers = $derived(Boolean(assistant && onAssistantReply && root?.isAssistant));
+
+	async function triggerAssistant() {
+		if (!onAssistantReply || assistantBusy) return;
+		assistantBusy = true;
+		try {
+			await onAssistantReply(thread.id);
+		} finally {
+			assistantBusy = false;
+		}
+	}
 
 	function when(date: Date | string): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -145,14 +166,22 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 		{#if open}
+			{#if assistantBusy && assistant}
+				<div class="rv-assistant-wait">
+					<Icon name="sparkles" size={12} />
+					{assistant.name} is replying...
+				</div>
+			{/if}
 			<form
 				method="POST"
 				action="?/reply"
 				class="rv-reply"
 				use:enhance={() =>
-					({ update }) => {
+					async ({ result, update }) => {
 						replyText = '';
-						return update({ reset: false });
+						await update({ reset: false });
+						// The author replied in the Assistant's thread; it answers.
+						if (assistantAnswers && result.type === 'success') void triggerAssistant();
 					}}
 			>
 				<input type="hidden" name="threadId" value={thread.id} />

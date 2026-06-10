@@ -3,7 +3,12 @@ import type { Database } from '../../auth';
 import { scenes, stories } from '../../db/schema';
 import { entityAppearances, getEntityCard } from '../../plan-data';
 import { searchAll } from '../../search';
-import { createSuggestion, createThread } from '../../review';
+import {
+	addComment,
+	createSuggestion,
+	createThread,
+	updateAssistantSuggestion
+} from '../../review';
 import { locateSplitBefore } from '$lib/scene-split-locate';
 import { storySkeleton, type SceneSummary } from '../context/sources';
 import type { ProviderToolCall, SplitProposal } from '../providers/types';
@@ -15,7 +20,15 @@ import { findTool } from './registry';
 // context's story and user, so a tool cannot reach another author's work even
 // if the model invents an id.
 
-export type ToolContext = { db: Database; userId: string; storyId: string };
+export type ToolContext = {
+	db: Database;
+	userId: string;
+	storyId: string;
+	// Targets for the scoped tools (reply_in_thread, update_suggestion), fixed
+	// by the calling surface so the model cannot reach another thread or
+	// suggestion even by inventing ids.
+	scope?: { threadId?: string; suggestionId?: string };
+};
 
 export type ToolOutcome = {
 	// The text fed back to the model as the tool result.
@@ -82,6 +95,10 @@ export async function dispatchToolCall(
 					before: asString(args.before),
 					rationale: asString(args.rationale)
 				});
+			case 'reply_in_thread':
+				return replyInThread(ctx, asString(args.comment));
+			case 'update_suggestion':
+				return updateSuggestion(ctx, asString(args.replacement));
 			default:
 				return { result: `Unhandled tool: ${call.name}.`, staged: false };
 		}
@@ -255,6 +272,42 @@ async function proposeSceneSplit(
 				rationale: input.rationale.trim()
 			}
 		}
+	};
+}
+
+// The scoped reply: posts into the thread fixed by the calling surface, as
+// the Assistant. No thread id crosses the model boundary.
+async function replyInThread(ctx: ToolContext, comment: string): Promise<ToolOutcome> {
+	const threadId = ctx.scope?.threadId;
+	if (!threadId) return { result: 'There is no thread under discussion.', staged: false };
+	if (!comment.trim()) return { result: 'Provide the reply text.', staged: false };
+	const result = await addComment(ctx.db, {
+		storyId: ctx.storyId,
+		threadId,
+		author: { assistant: true },
+		body: comment
+	});
+	if (!result.ok) return { result: result.reason, staged: false };
+	return { result: 'Your reply was posted to the thread.', staged: true };
+}
+
+// The scoped revision: amends the Assistant's own pending suggestion fixed by
+// the calling surface. updateAssistantSuggestion enforces authorship and the
+// pending status.
+async function updateSuggestion(ctx: ToolContext, replacement: string): Promise<ToolOutcome> {
+	const suggestionId = ctx.scope?.suggestionId;
+	if (!suggestionId) {
+		return { result: 'There is no suggestion under discussion.', staged: false };
+	}
+	const result = await updateAssistantSuggestion(ctx.db, {
+		storyId: ctx.storyId,
+		suggestionId,
+		replacement
+	});
+	if (!result.ok) return { result: result.reason, staged: false };
+	return {
+		result: 'Your suggestion now proposes the revised text; the author still decides on it.',
+		staged: true
 	};
 }
 

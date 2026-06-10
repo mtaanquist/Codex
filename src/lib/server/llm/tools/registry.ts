@@ -8,7 +8,10 @@ import type { ToolSpec } from '../providers/types';
 
 export type ToolKind = 'read' | 'write';
 
-export type ToolDef = ToolSpec & { kind: ToolKind };
+// A scoped tool acts on a target carried in the dispatch context (a review
+// thread, a suggestion) rather than on ids the model supplies, and is only
+// offered when a surface names it explicitly - never in the default set.
+export type ToolDef = ToolSpec & { kind: ToolKind; scoped?: boolean };
 
 function obj(properties: Record<string, unknown>, required: string[]): Record<string, unknown> {
 	return { type: 'object', properties, required, additionalProperties: false };
@@ -96,12 +99,34 @@ export const TOOLS: ToolDef[] = [
 			},
 			['sceneId', 'comment']
 		)
+	},
+	{
+		kind: 'write',
+		scoped: true,
+		name: 'reply_in_thread',
+		description:
+			'Reply in the review thread under discussion. The reply is posted under your name; the thread is fixed by the request, not chosen here.',
+		parameters: obj({ comment: str('The reply text.') }, ['comment'])
+	},
+	{
+		kind: 'write',
+		scoped: true,
+		name: 'update_suggestion',
+		description:
+			'Revise the replacement text of your own pending suggestion under discussion. The passage it replaces stays the same; only the proposed new text changes. The suggestion is fixed by the request, not chosen here.',
+		parameters: obj({ replacement: str('The revised replacement text.') }, ['replacement'])
 	}
 ];
 
-export function toolSpecs(): ToolSpec[] {
-	return TOOLS.map(({ kind, ...spec }) => {
+// The specs offered to the model: the default set leaves the scoped tools
+// out; a surface that needs them names them explicitly.
+export function toolSpecs(names?: string[]): ToolSpec[] {
+	const picked = names
+		? TOOLS.filter((tool) => names.includes(tool.name))
+		: TOOLS.filter((tool) => !tool.scoped);
+	return picked.map(({ kind, scoped, ...spec }) => {
 		void kind;
+		void scoped;
 		return spec;
 	});
 }

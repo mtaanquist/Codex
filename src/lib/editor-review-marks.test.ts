@@ -37,6 +37,7 @@ function thread(over: Partial<ReviewThread> = {}): ReviewThread {
 	return {
 		id: 't1',
 		sceneId: 's1',
+		suggestionId: null,
 		anchor: { start: 2, end: 6 },
 		anchorLost: false,
 		resolvedAt: null,

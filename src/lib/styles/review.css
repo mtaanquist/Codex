@@ -475,6 +475,18 @@
 	padding: 4px 8px;
 	margin-bottom: 10px;
 }
+/* The Assistant is generating its answer to a reply in its thread. */
+.rv-assistant-wait {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	color: var(--cat-violet, var(--text-muted));
+	background: var(--bg-inset);
+	border-radius: 6px;
+	padding: 4px 8px;
+	margin-bottom: 8px;
+}
 .rv-draft-input {
 	width: 100%;
 	box-sizing: border-box;

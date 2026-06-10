@@ -306,6 +306,43 @@ export async function createThread(
 	return { ok: true, threadId };
 }
 
+// A suggestion's discussion thread, created lazily on the first reply. The
+// thread carries no anchor or opening comment of its own: the suggestion's
+// card is the anchor, and the first reply is the first comment. Idempotent -
+// the unique suggestion_id makes a concurrent first reply settle on one row.
+export async function ensureSuggestionThread(
+	db: Database,
+	input: { storyId: string; suggestionId: string }
+): Promise<{ ok: true; threadId: string } | { ok: false; reason: string }> {
+	const [suggestion] = await db
+		.select({ id: reviewSuggestions.id, sceneId: reviewSuggestions.sceneId })
+		.from(reviewSuggestions)
+		.where(
+			and(
+				eq(reviewSuggestions.id, input.suggestionId),
+				eq(reviewSuggestions.storyId, input.storyId)
+			)
+		);
+	if (!suggestion) return { ok: false, reason: 'That suggestion does not exist.' };
+	const [created] = await db
+		.insert(reviewThreads)
+		.values({
+			storyId: input.storyId,
+			sceneId: suggestion.sceneId,
+			suggestionId: suggestion.id
+		})
+		.onConflictDoNothing({ target: reviewThreads.suggestionId })
+		.returning({ id: reviewThreads.id });
+	if (created) return { ok: true, threadId: created.id };
+	const [existing] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(eq(reviewThreads.suggestionId, suggestion.id));
+	return existing
+		? { ok: true, threadId: existing.id }
+		: { ok: false, reason: 'That thread could not be created.' };
+}
+
 // Replies to an existing thread. The caller has already established the
 // author's right to this story; the thread only needs to belong to it.
 export async function addComment(
@@ -360,6 +397,9 @@ export async function setThreadResolved(
 export type ThreadView = {
 	id: string;
 	sceneId: string;
+	// Set when this thread is a suggestion's discussion; it renders on that
+	// suggestion's card, not in the standalone comment list.
+	suggestionId: string | null;
 	// The anchor mapped onto the current text; null for whole-scene comments
 	// and for anchors that no longer fit (anchorLost says which).
 	anchor: { start: number; end: number } | null;
@@ -453,6 +493,7 @@ export async function listThreads(
 		return {
 			id: row.thread.id,
 			sceneId: row.thread.sceneId,
+			suggestionId: row.thread.suggestionId,
 			anchor,
 			anchorLost,
 			resolvedAt: row.thread.resolvedAt,
@@ -634,6 +675,38 @@ export async function listSuggestions(
 			decidedAt: row.suggestion.decidedAt
 		};
 	});
+}
+
+// Revises the replacement text of the Assistant's own pending suggestion -
+// the discussion path where the author asks for a change and the Assistant
+// amends what it proposed. Never touches another author's suggestion or a
+// decided one, and only the replacement: the anchored range stays put.
+export async function updateAssistantSuggestion(
+	db: Database,
+	input: { storyId: string; suggestionId: string; replacement: string }
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
+		return { ok: false, reason: 'That suggestion is too long.' };
+	}
+	const updated = await db
+		.update(reviewSuggestions)
+		.set({ replacement: input.replacement })
+		.where(
+			and(
+				eq(reviewSuggestions.id, input.suggestionId),
+				eq(reviewSuggestions.storyId, input.storyId),
+				eq(reviewSuggestions.assistant, true),
+				eq(reviewSuggestions.status, 'pending')
+			)
+		)
+		.returning({ id: reviewSuggestions.id });
+	if (updated.length === 0) {
+		return {
+			ok: false,
+			reason: 'Only the Assistant can revise its own suggestion, and only while it is pending.'
+		};
+	}
+	return { ok: true };
 }
 
 // The author's decision. Rejection only records it; acceptance re-anchors

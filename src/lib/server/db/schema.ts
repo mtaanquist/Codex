@@ -1044,6 +1044,12 @@ export const reviewThreads = pgTable(
 		anchorStart: integer('anchor_start'),
 		anchorEnd: integer('anchor_end'),
 		baseRevisionId: uuid('base_revision_id').references(() => revisions.id),
+		// Set when the thread is a suggestion's discussion, created lazily on
+		// the first reply to that suggestion. Such threads render on the
+		// suggestion's card and stay off the standalone comment lists.
+		suggestionId: uuid('suggestion_id')
+			.references(() => reviewSuggestions.id)
+			.unique(),
 		resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 		resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
