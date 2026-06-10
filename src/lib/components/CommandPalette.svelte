@@ -22,6 +22,9 @@
 	let selected = $state(0);
 	let inputEl = $state<HTMLInputElement>();
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	// Bumped on every search; a stale in-flight fetch checks it and bails.
+	let searchSeq = 0;
+	let listEl = $state<HTMLDivElement>();
 
 	const TYPE_LABELS: Record<string, string> = {
 		universe: 'Universe',
@@ -223,14 +226,20 @@
 		clearTimeout(searchTimer);
 		const value = query.trim();
 		if (value === '') {
+			searchSeq++;
 			results = [];
 			selected = 0;
 			return;
 		}
 		searchTimer = setTimeout(async () => {
+			// A sequence guard: a slow response for an earlier query must not land
+			// after a faster one for a later query and replace newer results.
+			const seq = ++searchSeq;
 			const response = await fetch(`/api/search?q=${encodeURIComponent(value)}`);
-			if (!response.ok) return;
-			results = (await response.json()).results;
+			if (seq !== searchSeq || !response.ok) return;
+			const data = await response.json();
+			if (seq !== searchSeq) return;
+			results = data.results;
 			selected = 0;
 		}, 150);
 	}
@@ -267,6 +276,13 @@
 			inputEl?.focus();
 		}
 	});
+
+	// Keep the highlighted result visible: past a screenful the keyboard
+	// selection would otherwise scroll out of the list while Enter still ran it.
+	$effect(() => {
+		void selected;
+		listEl?.querySelector('.palette-item.active')?.scrollIntoView({ block: 'nearest' });
+	});
 </script>
 
 <svelte:window onkeydown={onGlobalKey} />
@@ -290,8 +306,8 @@
 				placeholder="Search, or type a command..."
 				aria-label="Search everything"
 			/>
-			<div class="palette-list" role="listbox" aria-label="Results">
-				{#each items as item, index (item.kind + item.label + (item.sublabel ?? ''))}
+			<div class="palette-list" role="listbox" aria-label="Results" bind:this={listEl}>
+				{#each items as item, index (index)}
 					<button
 						class="palette-item"
 						class:active={index === selected}

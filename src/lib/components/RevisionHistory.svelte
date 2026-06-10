@@ -61,15 +61,19 @@
 	async function checkpoint(event: SubmitEvent) {
 		event.preventDefault();
 		saving = true;
-		const response = await fetch('/api/revisions', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ entityType, entityId, label })
-		});
-		saving = false;
-		if (response.ok) {
-			label = '';
-			await invalidateAll();
+		try {
+			const response = await fetch('/api/revisions', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ entityType, entityId, label })
+			});
+			if (response.ok) {
+				label = '';
+				await invalidateAll();
+			}
+		} finally {
+			// A network-level rejection must not leave the button stuck disabled.
+			saving = false;
 		}
 	}
 </script>
