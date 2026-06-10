@@ -717,6 +717,9 @@
 					<a class="seg-btn" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>Plan</a>
 					<a class="seg-btn" href={resolve('/stories/[id]/notes', { id: data.story.slug })}>Notes</a
 					>
+					<a class="seg-btn" href={resolve('/stories/[id]/review', { id: data.story.slug })}
+						>Review</a
+					>
 				</div>
 				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>

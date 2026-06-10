@@ -26,6 +26,7 @@
 		planPath,
 		notesHref,
 		writeHref,
+		reviewHref,
 		boardHref,
 		boardActive = false,
 		boardLabel = 'Scene board',
@@ -49,6 +50,8 @@
 		notesHref: string;
 		// Present at story scope only; the universe Plan has no Write view.
 		writeHref?: string;
+		// Present at story scope only; the universe Plan has no Review view.
+		reviewHref?: string;
 		// Returns to the board after something else filled the centre: the
 		// scene board at story scope, the story board at universe scope.
 		boardHref?: string;
@@ -103,6 +106,10 @@
 			<button class="seg-btn active" type="button">Plan</button>
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 			<a class="seg-btn" href={notesHref}>Notes</a>
+			{#if reviewHref}
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+				<a class="seg-btn" href={reviewHref}>Review</a>
+			{/if}
 		</div>
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>

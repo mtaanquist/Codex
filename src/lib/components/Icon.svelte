@@ -113,7 +113,22 @@
 		'indent-increase': ['M3 8l4 4-4 4', 'M21 12H11', 'M21 6H11', 'M21 18H11'],
 		'indent-decrease': ['M7 8l-4 4 4 4', 'M21 12H11', 'M21 6H11', 'M21 18H11'],
 		// Overflow ("more") menu: three dots.
-		more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01']
+		more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
+		// Review: a speech bubble for comments, and the same with a plus.
+		comment: [
+			'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z'
+		],
+		'comment-plus': [
+			'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z',
+			'M12 8v5',
+			'M9.5 10.5h5'
+		],
+		// A pencil over a line: suggest an edit.
+		suggest: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z', 'M14 6l3 3'],
+		check: ['M20 6 9 17l-5-5'],
+		'check-circle': ['M22 11.1V12a10 10 0 1 1-5.9-9.1', 'M22 4 12 14.1l-3-3'],
+		close: ['M18 6 6 18', 'M6 6l12 12'],
+		reply: ['M9 17l-5-5 5-5', 'M4 12h11a5 5 0 0 1 5 5v2']
 	} as const;
 
 	export type IconName = keyof typeof PATHS;

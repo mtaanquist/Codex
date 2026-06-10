@@ -18,6 +18,7 @@ import {
 	REVIEWER_COOKIE
 } from '$lib/server/review';
 import { gatherStory } from '$lib/server/export';
+import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { rateLimit } from '$lib/server/rate-limit';
 import { MAX_REVIEW_BODY } from '$lib/server/validation';
@@ -70,20 +71,32 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 	const storyId = resolved.invitation.storyId;
 	const [story] = await db.select().from(stories).where(eq(stories.id, storyId));
 	const content = await gatherStory(db, story);
+	const scenes = content.scenes.map((scene) => ({
+		id: scene.id!,
+		chapterId: scene.chapterId,
+		title: scene.title,
+		bodyMd: scene.bodyMd
+	}));
+	// A guest sees only the cast that actually appears in the manuscript, and
+	// only the quick card - never the author's full worldbuilding.
+	const mentions = await reviewMentionData(db, {
+		universeId: story.universeId,
+		storyId,
+		sceneIds: scenes.map((scene) => scene.id),
+		restrictToMentioned: true
+	});
 	return {
 		state: 'review' as const,
 		storyTitle: resolved.storyTitle,
 		reviewerName: reviewer.displayName,
 		canSuggest: resolved.invitation.canSuggest,
 		chapters: content.chapters,
-		scenes: content.scenes.map((scene) => ({
-			id: scene.id!,
-			chapterId: scene.chapterId,
-			title: scene.title,
-			bodyMd: scene.bodyMd
-		})),
+		scenes,
 		threads: await listThreads(db, storyId, reanchorRange),
-		suggestions: await listSuggestions(db, storyId)
+		suggestions: await listSuggestions(db, storyId),
+		mentionEntities: mentions.entities,
+		mentionMembers: mentions.storyMembers,
+		mentionPins: mentions.pins
 	};
 };
 

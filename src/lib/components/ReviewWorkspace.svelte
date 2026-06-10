@@ -1,0 +1,202 @@
+<script lang="ts">
+	import SidebarSearch from './SidebarSearch.svelte';
+	import ReviewNav from './ReviewNav.svelte';
+	import ReviewSurface from './ReviewSurface.svelte';
+	import ReviewPanel from './ReviewPanel.svelte';
+	import type { Composer } from './ReviewPanel.svelte';
+	import type { MentionEntity } from '$lib/editor-mentions';
+	import type { ReviewFilter, ReviewSuggestion, ReviewThread } from '$lib/review-ui';
+
+	let {
+		chapters,
+		scenes,
+		threads,
+		suggestions,
+		role,
+		canSuggest = true,
+		seg = null,
+		entities = [],
+		mentionMembers = [],
+		mentionPins = {},
+		entityHref = null
+	}: {
+		chapters: { id: string; title: string | null }[];
+		scenes: { id: string; chapterId: string | null; title: string | null; bodyMd: string }[];
+		threads: ReviewThread[];
+		suggestions: ReviewSuggestion[];
+		role: 'author' | 'guest';
+		canSuggest?: boolean;
+		// The mode switcher links, shown on the author side only.
+		seg?: { writeHref: string; planHref: string; notesHref: string } | null;
+		// Entity mention data for the centre's highlights and quick cards.
+		entities?: MentionEntity[];
+		mentionMembers?: string[];
+		mentionPins?: Record<string, string>;
+		entityHref?: ((entity: MentionEntity) => string) | null;
+	} = $props();
+
+	// Scenes in reading order, each tagged with its chapter label, so the nav
+	// and the centre header agree on where a scene sits.
+	const orderedScenes = $derived.by(() => {
+		const out: {
+			id: string;
+			chapterId: string | null;
+			title: string | null;
+			bodyMd: string;
+			chapterTitle: string;
+		}[] = [];
+		chapters.forEach((chapter, i) => {
+			const label = chapter.title ?? `Chapter ${i + 1}`;
+			for (const scene of scenes.filter((s) => s.chapterId === chapter.id)) {
+				out.push({ ...scene, chapterTitle: label });
+			}
+		});
+		for (const scene of scenes.filter((s) => s.chapterId === null)) {
+			out.push({ ...scene, chapterTitle: 'Unfiled scenes' });
+		}
+		return out;
+	});
+
+	let filter = $state<ReviewFilter>('all');
+	let focusedId = $state<string | null>(null);
+	let query = $state('');
+	let composer = $state<Composer | null>(null);
+
+	// Default to the first scene that has open activity, else the first scene.
+	const firstActive = $derived(
+		orderedScenes.find(
+			(s) =>
+				threads.some((t) => t.sceneId === s.id && t.resolvedAt === null) ||
+				suggestions.some((su) => su.sceneId === s.id && su.status === 'pending')
+		)?.id
+	);
+	let chosenSceneId = $state<string | null>(null);
+	const selectedSceneId = $derived(chosenSceneId ?? firstActive ?? orderedScenes[0]?.id ?? '');
+	const selectedScene = $derived(orderedScenes.find((s) => s.id === selectedSceneId));
+
+	const sceneThreads = $derived(threads.filter((t) => t.sceneId === selectedSceneId));
+	const sceneSuggestions = $derived(suggestions.filter((s) => s.sceneId === selectedSceneId));
+
+	function selectScene(id: string) {
+		if (id !== selectedSceneId) {
+			chosenSceneId = id;
+			composer = null;
+		}
+	}
+
+	function navSelect(sceneId: string, itemId: string) {
+		selectScene(sceneId);
+		focusedId = itemId;
+	}
+
+	function startComment(sel: { start: number; end: number; text: string }) {
+		composer = {
+			sceneId: selectedSceneId,
+			start: sel.start,
+			end: sel.end,
+			text: sel.text,
+			mode: 'comment',
+			anchored: true
+		};
+	}
+	function startSuggest(sel: { start: number; end: number; text: string }) {
+		composer = {
+			sceneId: selectedSceneId,
+			start: sel.start,
+			end: sel.end,
+			text: sel.text,
+			mode: 'suggest',
+			anchored: true
+		};
+	}
+	function startSceneComment() {
+		composer = {
+			sceneId: selectedSceneId,
+			start: 0,
+			end: 0,
+			text: '',
+			mode: 'comment',
+			anchored: false
+		};
+	}
+</script>
+
+<div class="body">
+	<aside class="pane left">
+		<div class="left-head">
+			<div class="seg full">
+				{#if seg}
+					<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the paths) -->
+					<a class="seg-btn" href={seg.writeHref}>Write</a>
+					<a class="seg-btn" href={seg.planHref}>Plan</a>
+					<a class="seg-btn" href={seg.notesHref}>Notes</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{:else}
+					<!-- A reviewer stays in review mode; the other views are out of reach. -->
+					<button class="seg-btn" type="button" disabled>Write</button>
+					<button class="seg-btn" type="button" disabled>Plan</button>
+					<button class="seg-btn" type="button" disabled>Notes</button>
+				{/if}
+				<button class="seg-btn active" type="button">Review</button>
+			</div>
+			<SidebarSearch bind:query placeholder="Search comments and edits..." />
+		</div>
+		<div class="left-scroll">
+			<ReviewNav
+				scenes={orderedScenes}
+				{threads}
+				{suggestions}
+				{filter}
+				setFilter={(f) => (filter = f)}
+				{focusedId}
+				{selectedSceneId}
+				onSelect={navSelect}
+				{query}
+			/>
+		</div>
+	</aside>
+
+	<main class="pane center">
+		{#if selectedScene}
+			{#key selectedScene.id}
+				<ReviewSurface
+					scene={selectedScene}
+					chapterTitle={selectedScene.chapterTitle}
+					threads={sceneThreads}
+					suggestions={sceneSuggestions}
+					{filter}
+					{focusedId}
+					setFocused={(id) => (focusedId = id)}
+					{canSuggest}
+					{entities}
+					{mentionMembers}
+					{mentionPins}
+					{entityHref}
+					onStartComment={startComment}
+					onStartSuggest={startSuggest}
+				/>
+			{/key}
+		{:else}
+			<div class="rv-empty-scene">This story has no scenes to review yet.</div>
+		{/if}
+	</main>
+
+	<aside class="pane right">
+		{#if selectedScene}
+			<ReviewPanel
+				scene={selectedScene}
+				threads={sceneThreads}
+				suggestions={sceneSuggestions}
+				{filter}
+				setFilter={(f) => (filter = f)}
+				{focusedId}
+				setFocused={(id) => (focusedId = id)}
+				{role}
+				{canSuggest}
+				{composer}
+				onCloseComposer={() => (composer = null)}
+				onStartSceneComment={startSceneComment}
+			/>
+		{/if}
+	</aside>
+</div>
