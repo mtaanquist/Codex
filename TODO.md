@@ -361,6 +361,26 @@ consistency fix); and the help doc covers clickable names. No schema
 change. Integration + e2e (incl. a new review quick-card spec) + help
 docs updated.
 
+Review-build match + editable centre (2026-06-10, branch
+`feat/review-build-match`): v3.2.0 was built from the standalone
+`review.jsx` mock, not `review-build.html` (the full app booted into
+review mode), so the shipped cards and panel drifted from the current
+design. Reconciled the cards and panel to the build (header-corner
+quick actions: open comment -> resolve, open suggestion -> accept +
+reject; type pill only on decided/resolved cards; `.rv-quote` accent
+quote; composer takes over the panel). Then made the author's review
+centre the real editor: the manuscript is now editable in place
+(CodeMirror), with comment highlights and tracked suggestions drawn as
+decorations over the live text (inserts/replacements ride as
+non-editable ghost widgets) - accept a suggestion, then keep building
+on it. Guests stay on the read-only surface. The scene autosave omits
+markers, and the scene PUT endpoint leaves stored marker anchors
+untouched when the field is absent (so a review save never wipes a
+scene's TODO markers). New `ReviewEditor.svelte` + `editor-review-marks`
+StateField layer; `buildReviewMarks` unit-tested; review e2e updated for
+the editor-based centre plus accept-then-edit-persists. No schema
+change. Released as v3.3.0.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
