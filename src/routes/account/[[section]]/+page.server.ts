@@ -26,7 +26,9 @@ import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/accoun
 import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
 import { users } from '$lib/server/db/schema';
 import { verifyPassword } from '$lib/server/password';
-import { queueEmail } from '$lib/server/jobs';
+import { queueEmail, queueUserExport } from '$lib/server/jobs';
+import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
+import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
 import {
 	accountLlmView,
@@ -54,18 +56,14 @@ import {
 	totpStatus
 } from '$lib/server/two-factor';
 import { listPasskeys, removePasskey } from '$lib/server/passkeys';
-import { rateLimit } from '$lib/server/rate-limit';
+import { reauthLimit } from '$lib/server/reauth';
 import QRCode from 'qrcode';
 
-// The actions that re-verify the password (disabling two-factor, regenerating
-// recovery codes, removing a passkey, changing email, deleting the account) are
-// throttled per account, the way sign-in is, so a borrowed session cannot
-// brute-force the password through them. One shared bucket across the actions.
-const REAUTH_LIMIT = 10;
-const REAUTH_WINDOW_MS = 15 * 60 * 1000;
-
+// The actions that re-verify the password share one throttle (see reauthLimit),
+// so a borrowed session cannot brute-force the password through them. Passkey
+// registration is gated the same way in its own API endpoint.
 function reauthGuard(userId: string, scope: string) {
-	const limit = rateLimit(`account:reauth:${userId}`, REAUTH_LIMIT, REAUTH_WINDOW_MS);
+	const limit = reauthLimit(userId);
 	if (limit.allowed) return null;
 	const minutes = Math.ceil(limit.retryAfterSeconds / 60);
 	return fail(429, {
@@ -130,7 +128,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		},
 		totpSetup,
 		passkeys: await listPasskeys(db, user.id),
-		passkeysAvailable: secretsAvailable()
+		passkeysAvailable: secretsAvailable(),
+		exports: await listUserExports(db, user.id, { scope: 'account' })
 	};
 };
 
@@ -164,6 +163,21 @@ async function patchAssistant(
 }
 
 export const actions: Actions = {
+	requestExport: async ({ locals }) => {
+		if (!exportLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				scope: 'export',
+				message: 'Too many exports just now. Try again shortly.'
+			});
+		}
+		const result = await requestExport(db, locals.user!.id, { scope: 'account', format: 'zip' });
+		if (!result.ok) return fail(400, { scope: 'export', message: result.reason });
+		if (!(await queueUserExport(result.id))) {
+			await markExportFailed(db, result.id, 'Could not start the export.');
+			return fail(503, { scope: 'export', message: 'Could not start the export. Try again.' });
+		}
+		return { scope: 'export', queued: true };
+	},
 	updateName: async ({ request, locals }) => {
 		const data = await request.formData();
 		const result = await saveIdentity(db, locals.user!.id, {
@@ -186,6 +200,12 @@ export const actions: Actions = {
 		return { scope: 'profile', saved: true };
 	},
 	uploadAvatar: async ({ request, locals }) => {
+		if (!uploadLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				scope: 'avatar',
+				message: 'Too many uploads just now. Try again shortly.'
+			});
+		}
 		const config = await effectiveAssetConfig(db);
 		if (!config) {
 			return fail(503, { scope: 'avatar', message: 'Image uploads are not configured.' });
@@ -451,6 +471,8 @@ export const actions: Actions = {
 		return { scope: 'email', sent: true };
 	},
 	changePassword: async ({ request, locals }) => {
+		const limited = reauthGuard(locals.user!.id, 'password');
+		if (limited) return limited;
 		const data = await request.formData();
 		const result = await changePassword(
 			db,

@@ -2,6 +2,7 @@ import { PgBoss } from 'pg-boss';
 import {
 	BACKUP_QUEUE,
 	EMAIL_QUEUE,
+	EMAIL_DEAD_LETTER_QUEUE,
 	EXPORT_ARTIFACTS_QUEUE,
 	MENTIONS_SCENE_QUEUE,
 	MENTIONS_UNIVERSE_QUEUE,
@@ -11,6 +12,7 @@ import {
 	PURGE_UNIVERSES_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
+	USER_EXPORT_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE
 } from '../lib/server/queues.ts';
@@ -23,8 +25,10 @@ import {
 	reconcileMentions
 } from '../lib/server/mentions.ts';
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
+import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
 import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
 	buildUserDigest,
@@ -68,11 +72,13 @@ await boss.createQueue(RECONCILE_MENTIONS_QUEUE);
 await boss.createQueue(EXPORT_ARTIFACTS_QUEUE);
 await boss.createQueue(BACKUP_QUEUE);
 await boss.createQueue(EMAIL_QUEUE);
+await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
+await boss.createQueue(USER_EXPORT_QUEUE);
 await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
 
@@ -131,6 +137,38 @@ await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
 	await recordAssetMigrationResult(db, { finishedAt: new Date().toISOString(), ...result });
 	if (result.failed === 0) await clearAssetMigrationSource(db);
 	console.log(`asset migration: ${result.copied} copied, ${result.failed} failed`);
+});
+
+// Builds a user-requested export (account, story, or universe archive, or a
+// story EPUB) off the web request path, stores it in the asset bucket, and
+// tells the owner it is ready to download. Old exports are swept after each run.
+await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
+	for (const job of jobs) {
+		const config = await effectiveAssetConfig(db);
+		if (!config) {
+			console.warn(`export: ${job.data.exportId} skipped, asset storage not configured`);
+			continue;
+		}
+		const store = s3AssetStore(config);
+		const result = await runUserExport(db, job.data.exportId, store);
+		if (!result.ok) {
+			console.warn(`export: ${job.data.exportId} failed (${result.reason})`);
+			continue;
+		}
+		await pruneOwnerExports(db, store, result.ownerId);
+		const digestUsers = await insertNotifications(db, [result.ownerId], 'export_ready', {
+			title: 'Your export is ready to download.',
+			href: `/exports/${job.data.exportId}`
+		});
+		for (const id of digestUsers) {
+			await boss.send(
+				NOTIFICATION_DIGEST_QUEUE,
+				{ userId: id },
+				{ startAfter: 600, singletonKey: id }
+			);
+		}
+		console.log(`export: ${job.data.exportId} ready`);
+	}
 });
 
 // Whole-story or single-chapter Assistant review: fan over the scenes in scope,
@@ -244,7 +282,19 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs)
 await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		await sendEmail(db, job.data);
-		console.log(`email: sent to ${job.data.to} (${job.data.subject})`);
+		// Structured, with the recipient masked and the subject (which embeds
+		// story titles) omitted, so account PII does not sit in the logs.
+		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
+	}
+});
+
+// Transactional email that exhausted its retries (a prolonged SMTP outage).
+// The send is given up, but it must not vanish: log it loudly so an operator
+// can resend by hand. The recipient flow already said "check your email", so
+// there is no other signal otherwise.
+await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
+	for (const job of jobs) {
+		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
 	}
 });
 

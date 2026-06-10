@@ -3,6 +3,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { sessions, users } from './db/schema';
 import type * as schema from './db/schema';
 import { verifyPassword } from './password';
+import { isUuid } from '../slug';
 
 // The database is passed in rather than imported so the same functions run
 // against the app database and the integration tests' throwaway one.
@@ -80,6 +81,11 @@ export async function createSession(
 }
 
 export async function validateSession(db: Database, sessionId: string) {
+	// sessions.id is a uuid column. A stale or hand-edited cookie that is not
+	// a uuid would make Postgres throw on the cast, which in the hook becomes
+	// a 500 on every route (including /login) that the cookie is never cleared
+	// from. Treat it as no session so the hook deletes the bad cookie.
+	if (!isUuid(sessionId)) return null;
 	const [row] = await db
 		.select({ session: sessions, user: users })
 		.from(sessions)

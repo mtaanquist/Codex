@@ -1,0 +1,1 @@
+ALTER TABLE "publications" ADD COLUMN "artifact_errors" jsonb DEFAULT '[]'::jsonb NOT NULL;

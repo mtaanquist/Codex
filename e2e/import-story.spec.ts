@@ -49,8 +49,18 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 	await page.getByPlaceholder('Notes that apply only to this story.').fill('Keeps the gate.');
 	await noteSave;
 
-	// Download the export and feed it back through the import form.
-	const archive = await page.request.get(`/stories/${storySlug}/export`);
+	// Prepare the export (built in the worker), wait for it to land, then feed
+	// it back through the import form.
+	const exportUrl = `/stories/${storySlug}/settings/export`;
+	await page.goto(exportUrl);
+	await page.getByRole('button', { name: 'Prepare markdown (.zip)' }).click();
+	const downloadLink = page.locator('.export-row a', { hasText: 'Download' }).first();
+	await expect(async () => {
+		// Navigate by GET; page.reload() here would re-submit the prepare POST.
+		await page.goto(exportUrl);
+		await expect(downloadLink).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 60_000 });
+	const archive = await page.request.get((await downloadLink.getAttribute('href'))!);
 	expect(archive.status()).toBe(200);
 	const zipBytes = await archive.body();
 

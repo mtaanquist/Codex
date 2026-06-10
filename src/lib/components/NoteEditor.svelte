@@ -54,6 +54,24 @@
 		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
 	}
 
+	// A reload or tab close inside the debounce window would drop the last
+	// edit, since component teardown does not run on browser unload. Flush the
+	// pending save with a request that outlives the page, the way SceneEditor
+	// does for scene prose.
+	function flushOnPageHide() {
+		if (!dirty || !view) return;
+		clearTimeout(saveTimer);
+		dirty = false;
+		void fetch(`/api/notes/${note.id}`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			keepalive: true,
+			body: JSON.stringify({ title, bodyMd: view.state.doc.toString() })
+		}).catch(() => {
+			dirty = true;
+		});
+	}
+
 	onMount(() => {
 		view = new EditorView({
 			parent: editorEl,
@@ -75,6 +93,8 @@
 		};
 	});
 </script>
+
+<svelte:window onpagehide={flushOnPageHide} />
 
 <div class="detail">
 	<div class="detail-head">

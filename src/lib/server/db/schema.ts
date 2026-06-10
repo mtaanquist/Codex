@@ -184,28 +184,35 @@ export const stories = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date())
 	},
-	(table) => [uniqueIndex('stories_owner_slug_idx').on(table.ownerId, table.slug)]
+	(table) => [
+		uniqueIndex('stories_owner_slug_idx').on(table.ownerId, table.slug),
+		index('stories_universe_idx').on(table.universeId)
+	]
 );
 
 // Chapters are organisational only; prose lives on scenes.
-export const chapters = pgTable('chapters', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	storyId: uuid('story_id')
-		.references(() => stories.id)
-		.notNull(),
-	position: integer('position').notNull(),
-	title: text('title'),
-	summaryMd: text('summary_md'),
-	// When the Assistant last generated this summary. Null means it was never
-	// auto-generated (so a non-null summary here is the writer's own and is never
-	// overwritten). See scenes.summary_generated_at.
-	summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
-	metadata: jsonb('metadata').notNull().default({}),
-	updatedAt: timestamp('updated_at', { withTimezone: true })
-		.notNull()
-		.defaultNow()
-		.$onUpdate(() => new Date())
-});
+export const chapters = pgTable(
+	'chapters',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		position: integer('position').notNull(),
+		title: text('title'),
+		summaryMd: text('summary_md'),
+		// When the Assistant last generated this summary. Null means it was never
+		// auto-generated (so a non-null summary here is the writer's own and is never
+		// overwritten). See scenes.summary_generated_at.
+		summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
+		metadata: jsonb('metadata').notNull().default({}),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date())
+	},
+	(table) => [index('chapters_story_idx').on(table.storyId)]
+);
 
 export const scenes = pgTable(
 	'scenes',
@@ -259,7 +266,9 @@ export const scenes = pgTable(
 		index('scenes_characters_present_gin').using('gin', table.charactersPresent),
 		// Trigram index behind the palette's body-text search; migration 0037
 		// creates the pg_trgm extension it needs.
-		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops'))
+		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops')),
+		// Every story open, scene list, and mention sweep filters on story_id.
+		index('scenes_story_idx').on(table.storyId)
 	]
 );
 
@@ -305,7 +314,8 @@ export const characters = pgTable(
 	(table) => [
 		// The palette search filters by owner and substring-matches the name.
 		index('characters_owner_idx').on(table.ownerId),
-		index('characters_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops'))
+		index('characters_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops')),
+		index('characters_universe_idx').on(table.universeId)
 	]
 );
 
@@ -388,7 +398,8 @@ export const loreEntries = pgTable(
 	(table) => [
 		// The palette search filters by owner and substring-matches the title.
 		index('lore_entries_owner_idx').on(table.ownerId),
-		index('lore_entries_title_trgm_idx').using('gin', table.title.op('gin_trgm_ops'))
+		index('lore_entries_title_trgm_idx').using('gin', table.title.op('gin_trgm_ops')),
+		index('lore_entries_universe_idx').on(table.universeId)
 	]
 );
 
@@ -450,7 +461,8 @@ export const places = pgTable(
 	(table) => [
 		// The palette search filters by owner and substring-matches the name.
 		index('places_owner_idx').on(table.ownerId),
-		index('places_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops'))
+		index('places_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops')),
+		index('places_universe_idx').on(table.universeId)
 	]
 );
 
@@ -710,6 +722,13 @@ export const publications = pgTable(
 		// PDF artifacts from the public story page.
 		downloadsPublic: boolean('downloads_public').notNull().default(false),
 		isCurrent: boolean('is_current').notNull().default(true),
+		// The formats that failed to build on the last artifact run, with why, so
+		// the owner can see (and an admin can fix) why a download is missing.
+		// Cleared when a run produces them.
+		artifactErrors: jsonb('artifact_errors')
+			.$type<{ format: string; error: string }[]>()
+			.notNull()
+			.default([]),
 		// Set by an admin takedown; hides the edition without deleting the source.
 		removedAt: timestamp('removed_at', { withTimezone: true }),
 		publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow()
@@ -788,6 +807,36 @@ export const assets = pgTable('assets', {
 	height: integer('height'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
+
+// A user-requested export (account, story, or universe; zip or EPUB), built by
+// the worker and stored in the asset bucket so the heavy in-memory build never
+// runs on the web request path. The owner downloads the finished file from
+// /exports/[id]; old ones expire and are swept.
+export const userExports = pgTable(
+	'user_exports',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		scope: text('scope', { enum: ['account', 'story', 'universe'] }).notNull(),
+		// The story or universe id; null for an account export.
+		targetId: uuid('target_id'),
+		format: text('format', { enum: ['zip', 'epub'] }).notNull(),
+		status: text('status', { enum: ['pending', 'ready', 'failed'] })
+			.notNull()
+			.default('pending'),
+		// Set once the worker has built and stored the file.
+		storageKey: text('storage_key'),
+		filename: text('filename'),
+		contentType: text('content_type'),
+		byteSize: bigint('byte_size', { mode: 'number' }),
+		error: text('error'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		expiresAt: timestamp('expires_at', { withTimezone: true })
+	},
+	(table) => [index('user_exports_owner_idx').on(table.ownerId, table.createdAt.desc())]
+);
 
 // A flagged spot in a scene to return to: a selection marked by hand, with
 // a checkable state. Plain "TODO:" lines in prose are detected from the

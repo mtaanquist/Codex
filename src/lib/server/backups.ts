@@ -4,6 +4,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { desc, eq, inArray, isNotNull, and } from 'drizzle-orm';
@@ -149,6 +150,20 @@ export function backupKeyTime(key: string): Date | null {
 	return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// The newest real backup under the prefix. Only keys this code wrote count:
+// a leftover connection-probe object (s3-client.ts) sorts after the codex-*
+// keys and would otherwise be picked as "latest", then fail pg_restore on
+// bytes that are not an archive.
+export function latestBackupKey(keys: string[]): string | null {
+	let best: { key: string; time: number } | null = null;
+	for (const key of keys) {
+		const time = backupKeyTime(key)?.getTime();
+		if (time === undefined) continue;
+		if (!best || time > best.time) best = { key, time };
+	}
+	return best?.key ?? null;
+}
+
 // Tiered pruning: keep everything from the recent window, the newest per
 // UTC day out to keepDays, and anything whose name cannot be parsed
 // (never delete what is not understood).
@@ -242,8 +257,47 @@ export type BackupRunOptions = {
 	databaseUrl?: string;
 	// The dump command, injectable for tests; production uses pg_dump.
 	dumpCommand?: string[];
+	// How the unchanged-since-last-run hash is derived from the scratch dump.
+	// Injectable for tests; production renders the archive as plain SQL with
+	// pg_restore (see hashDump).
+	hashCommand?: (scratchPath: string) => string[];
 	now?: Date;
 };
+
+// The custom-format archive embeds its creation timestamp in the header, so
+// hashing the dump bytes makes two dumps of identical data differ every time
+// and the skip never fires. pg_restore renders the archive back to plain SQL,
+// which carries no timestamp, so identical data hashes identically.
+function defaultHashCommand(scratchPath: string): string[] {
+	// `-f -` writes the plain SQL to stdout (pg_restore requires one of -f/-d).
+	return ['pg_restore', '--no-owner', '-f', '-', scratchPath];
+}
+
+async function hashDump(
+	scratchPath: string,
+	build: (scratchPath: string) => string[] = defaultHashCommand
+): Promise<string> {
+	const [cmd, ...args] = build(scratchPath);
+	const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+	const exited = exitCode(child);
+	let stderr = '';
+	child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+	const hash = createHash('sha256');
+	// Hash line by line so the one non-deterministic part can be skipped:
+	// pg_dump 18+ wraps the script in \restrict/\unrestrict guards carrying a
+	// random nonce, which would otherwise make identical data hash differently.
+	const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+	for await (const line of lines) {
+		if (line.startsWith('\\restrict ') || line.startsWith('\\unrestrict ')) continue;
+		hash.update(line);
+		hash.update('\n');
+	}
+	const code = await exited;
+	if (code !== 0) {
+		throw new Error(`${cmd} (hash) exited with ${code}: ${stderr.slice(0, 500)}`);
+	}
+	return hash.digest('hex');
+}
 
 // One full backup: dump to a scratch file, skip the upload when nothing
 // changed since the last run, otherwise upload and prune. Failures are
@@ -273,6 +327,10 @@ export async function runBackup(
 			// Queue state is transient and pg-boss recreates its schema on
 			// start; its partitioned tables also break pg_restore --clean.
 			'--exclude-schema=pgboss',
+			// This run writes a backup_runs row before dumping, so including the
+			// table would make every dump differ from the last and defeat the
+			// unchanged-hour skip. It is operational evidence, not user data.
+			'--exclude-table=backup_runs',
 			'--dbname',
 			databaseUrl
 		];
@@ -285,15 +343,15 @@ export async function runBackup(
 
 		// To a scratch file first: nothing reaches the bucket until the dump
 		// is known whole, and the hash decides whether it needs to at all.
-		const hash = createHash('sha256');
-		dump.stdout?.on('data', (chunk: Buffer) => hash.update(chunk));
 		await pipeline(dump.stdout!, createWriteStream(scratch));
 		const code = await exited;
 		if (code !== 0) {
 			throw new Error(`${cmd} exited with ${code}: ${stderr.slice(0, 500)}`);
 		}
-		const contentHash = hash.digest('hex');
 		const sizeBytes = (await stat(scratch)).size;
+		// Hash a deterministic rendering of the dump, not its raw bytes, so the
+		// unchanged-hour skip below actually fires (see hashDump).
+		const contentHash = await hashDump(scratch, options.hashCommand);
 
 		// Same bytes as the last run: record the cadence, upload nothing.
 		const [previous] = await db

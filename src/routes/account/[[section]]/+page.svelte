@@ -16,6 +16,7 @@
 	import { WRITING_LANGUAGES } from '$lib/writing-languages';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -114,6 +115,7 @@
 	// Adding a passkey is a browser ceremony, not a form post: fetch the
 	// creation options, hand them to the authenticator, post the result back.
 	let passkeyName = $state('');
+	let passkeyPassword = $state('');
 	let passkeyError = $state<string | null>(null);
 	let passkeyAdded = $state(false);
 	let passkeyBusy = $state(false);
@@ -122,7 +124,13 @@
 		passkeyError = null;
 		passkeyAdded = false;
 		try {
-			const optionsResponse = await fetch('/api/passkeys/register-options', { method: 'POST' });
+			// Adding a passkey re-checks the current password, the same as removing
+			// one, so a borrowed session cannot plant a durable credential.
+			const optionsResponse = await fetch('/api/passkeys/register-options', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ password: passkeyPassword })
+			});
 			if (!optionsResponse.ok) {
 				throw new Error((await optionsResponse.json()).message ?? 'Could not start.');
 			}
@@ -137,6 +145,7 @@
 				throw new Error((await verifyResponse.json()).message ?? 'Could not verify.');
 			}
 			passkeyName = '';
+			passkeyPassword = '';
 			passkeyAdded = true;
 			await invalidateAll();
 		} catch (err) {
@@ -1080,10 +1089,19 @@
 										bind:value={passkeyName}
 										style="max-width:240px;"
 									/>
+									<input
+										class="input"
+										type="password"
+										placeholder="Current password"
+										autocomplete="current-password"
+										aria-label="Current password"
+										bind:value={passkeyPassword}
+										style="max-width:240px;"
+									/>
 									<button
 										type="button"
 										class="btn btn-primary"
-										disabled={passkeyBusy}
+										disabled={passkeyBusy || !passkeyPassword}
 										onclick={addPasskey}
 									>
 										{passkeyBusy ? 'Waiting for your device...' : 'Add passkey'}
@@ -1165,9 +1183,12 @@
 							</p>
 						</div>
 						<div class="admin-card">
-							<a class="btn btn-secondary" href={resolve('/account/export')} data-sveltekit-reload
-								>Download everything</a
-							>
+							<ExportPanel
+								scope="account"
+								formats={[{ format: 'zip', label: 'everything (.zip)' }]}
+								exports={data.exports}
+								assetsConfigured={data.assetsConfigured}
+							/>
 						</div>
 					</div>
 

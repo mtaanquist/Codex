@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
@@ -52,6 +52,33 @@
 	// the browser back button returns to the same scroll and caret instead
 	// of the top of the scene.
 	let sceneEditor = $state<SceneEditor>();
+
+	// A quick scene round-trip (A to B and back) faster than the debounced
+	// save lands would let the reload of A return stale prose, which the
+	// remounted editor then owns. Flush the open scene's pending save before
+	// any client navigation, the way splitCurrentScene already does. A full
+	// unload is left to SceneEditor's own pagehide flush.
+	let flushingNav = false;
+	beforeNavigate((nav) => {
+		if (flushingNav || nav.willUnload || !nav.to) return;
+		// Same-document hash jumps (story-view scene anchors) reload nothing.
+		if (
+			nav.from &&
+			nav.to.url.pathname === nav.from.url.pathname &&
+			nav.to.url.search === nav.from.url.search
+		)
+			return;
+		if (!sceneEditor?.isDirty()) return;
+		nav.cancel();
+		flushingNav = true;
+		const url = nav.to.url;
+		void sceneEditor.flushSave().finally(() => {
+			flushingNav = false;
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- replaying the cancelled navigation's own resolved URL
+			void goto(url);
+		});
+	});
+
 	type ScenePosition = { sceneId: string; anchor: number; scroll: number };
 	export const snapshot: Snapshot<ScenePosition | null> = {
 		capture: () => {
@@ -333,11 +360,51 @@
 		| { kind: 'chapter'; id: string; index: number }
 		| { kind: 'scene'; id: string };
 	let rowMenu = $state<{ x: number; y: number; target: RowMenuTarget } | null>(null);
+	let rowMenuEl = $state<HTMLDivElement>();
+	let rowMenuTrigger: HTMLElement | null = null;
 
 	function openRowMenu(event: MouseEvent, target: RowMenuTarget) {
 		event.preventDefault();
-		rowMenu = { x: event.clientX, y: event.clientY, target };
+		rowMenuTrigger = event.currentTarget as HTMLElement;
+		// A keyboard-invoked context menu (Shift+F10) reports (0,0); anchor it to
+		// the row instead of dropping it in the corner.
+		if (event.clientX === 0 && event.clientY === 0) {
+			const rect = rowMenuTrigger.getBoundingClientRect();
+			rowMenu = { x: rect.left, y: rect.bottom, target };
+		} else {
+			rowMenu = { x: event.clientX, y: event.clientY, target };
+		}
 	}
+
+	function closeRowMenu(refocus = false) {
+		rowMenu = null;
+		if (refocus) rowMenuTrigger?.focus();
+		rowMenuTrigger = null;
+	}
+
+	function onRowMenuKey(event: KeyboardEvent) {
+		const items = rowMenuEl
+			? [...rowMenuEl.querySelectorAll<HTMLButtonElement>('.row-menu-item')]
+			: [];
+		const current = items.indexOf(document.activeElement as HTMLButtonElement);
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			closeRowMenu(true);
+		} else if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			items[Math.min(current + 1, items.length - 1)]?.focus();
+		} else if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			items[Math.max(current - 1, 0)]?.focus();
+		}
+	}
+
+	// Move focus into the menu when it opens, so keyboard users can act on it.
+	$effect(() => {
+		if (rowMenu && rowMenuEl) {
+			rowMenuEl.querySelector<HTMLButtonElement>('.row-menu-item')?.focus();
+		}
+	});
 
 	// The book switcher's menu, toggled from the sidebar header.
 	let storyMenuOpen = $state(false);
@@ -1201,7 +1268,14 @@
 
 {#if rowMenu}
 	{@const target = rowMenu.target}
-	<div class="row-menu" role="menu" style="left: {rowMenu.x}px; top: {rowMenu.y}px;">
+	<div
+		class="row-menu"
+		role="menu"
+		tabindex="-1"
+		bind:this={rowMenuEl}
+		onkeydown={onRowMenuKey}
+		style="left: {rowMenu.x}px; top: {rowMenu.y}px;"
+	>
 		{#if target.kind === 'chapter'}
 			<button
 				class="row-menu-item"

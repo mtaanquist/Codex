@@ -13,7 +13,14 @@ import {
 	listReviewInvitations,
 	revokeReviewInvitation
 } from '$lib/server/review';
-import { queueExportArtifacts } from '$lib/server/jobs';
+import { queueExportArtifacts, queueUserExport } from '$lib/server/jobs';
+import {
+	listUserExports,
+	markExportFailed,
+	requestExport,
+	type ExportFormat
+} from '$lib/server/user-exports';
+import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
 import { deleteStory } from '$lib/server/story-delete';
 import { publications, users } from '$lib/server/db/schema';
 import {
@@ -41,7 +48,8 @@ async function currentEdition(storyId: string) {
 			id: publications.id,
 			versionLabel: publications.versionLabel,
 			downloadsPublic: publications.downloadsPublic,
-			publishedAt: publications.publishedAt
+			publishedAt: publications.publishedAt,
+			artifactErrors: publications.artifactErrors
 		})
 		.from(publications)
 		.where(and(eq(publications.storyId, storyId), eq(publications.isCurrent, true)));
@@ -103,6 +111,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		archive,
 		edition,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
+		exports: await listUserExports(db, locals.user!.id, { scope: 'story', targetId: story.id }),
 		reviewInvitations,
 		// For the Editor section: which keys this story overrides, and the
 		// account values the inherit options fall back to.
@@ -117,6 +126,31 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 };
 
 export const actions: Actions = {
+	requestExport: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		if (!exportLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				action: 'export',
+				message: 'Too many exports just now. Try again shortly.'
+			});
+		}
+		const data = await request.formData();
+		const format = String(data.get('format') ?? 'zip');
+		if (format !== 'zip' && format !== 'epub') {
+			return fail(400, { action: 'export', message: 'Choose a zip or an EPUB.' });
+		}
+		const result = await requestExport(db, locals.user!.id, {
+			scope: 'story',
+			targetId: story.id,
+			format: format as ExportFormat
+		});
+		if (!result.ok) return fail(400, { action: 'export', message: result.reason });
+		if (!(await queueUserExport(result.id))) {
+			await markExportFailed(db, result.id, 'Could not start the export.');
+			return fail(503, { action: 'export', message: 'Could not start the export. Try again.' });
+		}
+		return { action: 'export', queued: true };
+	},
 	update: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
@@ -318,6 +352,12 @@ export const actions: Actions = {
 	},
 	setCover: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
+		if (!uploadLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				action: 'cover',
+				message: 'Too many uploads just now. Try again shortly.'
+			});
+		}
 		const config = await effectiveAssetConfig(db);
 		if (!config) {
 			return fail(400, { action: 'cover', message: 'Assets are not configured on this server.' });

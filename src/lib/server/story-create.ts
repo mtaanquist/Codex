@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import { isUniqueViolation } from './db';
 import { entityCategories, stories, universes } from './db/schema';
@@ -32,17 +32,16 @@ export async function createStoryInUniverse(
 export const STANDALONE_UNIVERSE_NAME = 'Standalone stories';
 
 export async function standaloneUniverse(db: Database, ownerId: string) {
-	const existing = await db
+	// Look up the standalone row regardless of liveness: the partial unique
+	// index allows only one per owner whether live or trashed, so a trashed
+	// row still blocks an insert. If the owner trashed it, revive it rather
+	// than let the insert fail and drop their new story into a trashed
+	// universe (invisible, then purged after the trash window).
+	const [existing] = await db
 		.select()
 		.from(universes)
-		.where(
-			and(
-				eq(universes.ownerId, ownerId),
-				eq(universes.standalone, true),
-				isNull(universes.deletedAt)
-			)
-		);
-	if (existing.length > 0) return existing[0];
+		.where(and(eq(universes.ownerId, ownerId), eq(universes.standalone, true)));
+	if (existing) return reviveIfTrashed(db, existing);
 	try {
 		const [created] = await db
 			.insert(universes)
@@ -67,6 +66,13 @@ export async function standaloneUniverse(db: Database, ownerId: string) {
 			.select()
 			.from(universes)
 			.where(and(eq(universes.ownerId, ownerId), eq(universes.standalone, true)));
-		return winner;
+		return reviveIfTrashed(db, winner);
 	}
+}
+
+// Brings a trashed standalone universe back so a new story has a live home.
+async function reviveIfTrashed(db: Database, universe: typeof universes.$inferSelect) {
+	if (!universe.deletedAt) return universe;
+	await db.update(universes).set({ deletedAt: null }).where(eq(universes.id, universe.id));
+	return { ...universe, deletedAt: null };
 }

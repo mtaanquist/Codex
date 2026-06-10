@@ -10,6 +10,10 @@ import { listCategories, saveCategories, universeContents } from '$lib/server/ca
 import { trashUniverse, UNIVERSE_TRASH_DAYS } from '$lib/server/universe-lifecycle';
 import { parseStoryZip, StoryZipError, type ImportPlan } from '$lib/import-markdown';
 import { previewImport, runImport } from '$lib/server/import-story';
+import { effectiveAssetConfig } from '$lib/server/assets';
+import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
+import { queueUserExport } from '$lib/server/jobs';
+import { exportLimit } from '$lib/server/rate-limit';
 
 // The uploaded story archive, parsed, or a fail() the action returns as-is.
 async function planFromUpload(data: FormData) {
@@ -45,11 +49,36 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		categories,
 		timeline,
 		revisionCount,
-		trashDays: UNIVERSE_TRASH_DAYS
+		trashDays: UNIVERSE_TRASH_DAYS,
+		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
+		exports: await listUserExports(db, locals.user!.id, {
+			scope: 'universe',
+			targetId: universe.id
+		})
 	};
 };
 
 export const actions: Actions = {
+	requestExport: async ({ params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		if (!exportLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				action: 'export',
+				message: 'Too many exports just now. Try again shortly.'
+			});
+		}
+		const result = await requestExport(db, locals.user!.id, {
+			scope: 'universe',
+			targetId: universe.id,
+			format: 'zip'
+		});
+		if (!result.ok) return fail(400, { action: 'export', message: result.reason });
+		if (!(await queueUserExport(result.id))) {
+			await markExportFailed(db, result.id, 'Could not start the export.');
+			return fail(503, { action: 'export', message: 'Could not start the export. Try again.' });
+		}
+		return { action: 'export', queued: true };
+	},
 	update: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		const data = await request.formData();

@@ -13,8 +13,11 @@ import { logEvent } from '$lib/server/log';
 
 const VERIFY_TTL_MINUTES = 60 * 24;
 // Per-address, so repeated sign-ups for one email cannot bomb it with
-// verification mail; a legitimate sign-up happens once.
+// verification mail; a legitimate sign-up happens once. The per-IP tier stops
+// one host creating unlimited accounts (and mailing distinct addresses) on an
+// open-mode instance, the way login is throttled per IP as well as per email.
 const SIGNUP_LIMIT = 5;
+const SIGNUP_IP_LIMIT = 20;
 const SIGNUP_WINDOW_MS = 60 * 60 * 1000;
 
 // An invite link (/signup?code=...) prefills the code field. The mode decides
@@ -27,7 +30,7 @@ export const load: PageServerLoad = async ({ url }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, url }) => {
+	default: async ({ request, url, getClientAddress }) => {
 		const data = await request.formData();
 		const email = String(data.get('email') ?? '');
 		const password = String(data.get('password') ?? '');
@@ -42,7 +45,10 @@ export const actions: Actions = {
 
 		// On the limit, return the same response without registering or mailing,
 		// so the page still reveals nothing about whether the address is taken.
-		if (cleanEmail && !rateLimit(`signup:${cleanEmail}`, SIGNUP_LIMIT, SIGNUP_WINDOW_MS).allowed) {
+		const overLimit =
+			!rateLimit(`signup:ip:${getClientAddress()}`, SIGNUP_IP_LIMIT, SIGNUP_WINDOW_MS).allowed ||
+			(cleanEmail && !rateLimit(`signup:${cleanEmail}`, SIGNUP_LIMIT, SIGNUP_WINDOW_MS).allowed);
+		if (overLimit) {
 			logEvent('warn', 'signup.rate_limited', { email: cleanEmail });
 			return { sent: true, pendingApproval };
 		}

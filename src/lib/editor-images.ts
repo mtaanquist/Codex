@@ -41,6 +41,10 @@ export function imageUploadExtension(universeId: string): Extension {
 	// Replace a placeholder's current (mapped) range; a null replacement just
 	// removes it, the failed-upload case.
 	function clear(view: EditorView, id: number, replacement: string | null) {
+		// The upload can resolve after the editor was torn down (a scene switch
+		// mid-upload); dispatching on a destroyed view throws. Its DOM is detached
+		// once destroyed, so skip the update.
+		if (!view.dom.isConnected) return;
 		const marker = view.state.field(pendingField).find((p) => p.id === id);
 		if (!marker) return;
 		view.dispatch({

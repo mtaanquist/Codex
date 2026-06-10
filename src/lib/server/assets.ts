@@ -5,7 +5,7 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sd
 import type { Database } from './auth';
 import { assets, exportArtifacts, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
-import { IMAGE_TYPES } from './media-types.ts';
+import { sniffImageType } from './media-types.ts';
 import { encryptSecret, secretsAvailable } from './crypto.ts';
 import {
 	clearSetting,
@@ -142,12 +142,16 @@ export async function createAsset(
 	userId: string,
 	input: AssetInput
 ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
-	if (!IMAGE_TYPES.has(input.contentType)) {
-		return { ok: false, reason: 'only png, jpeg, webp, gif, and avif images are supported' };
-	}
 	if (input.bytes.length === 0) return { ok: false, reason: 'the file is empty' };
 	if (input.bytes.length > MAX_ASSET_BYTES) {
 		return { ok: false, reason: 'the file is larger than 10 MB' };
+	}
+	// Trust the bytes, not the client-supplied content type: sniff the magic
+	// number and store (and later serve) the detected type, so arbitrary bytes
+	// cannot be stashed under an image label.
+	const contentType = sniffImageType(input.bytes);
+	if (!contentType) {
+		return { ok: false, reason: 'only png, jpeg, webp, gif, and avif images are supported' };
 	}
 	if (input.universeId) {
 		const [universe] = await db
@@ -159,7 +163,7 @@ export async function createAsset(
 
 	const id = randomUUID();
 	const storageKey = `${config.prefix}/${id}`;
-	await store.put(storageKey, input.bytes, input.contentType);
+	await store.put(storageKey, input.bytes, contentType);
 	try {
 		await db.insert(assets).values({
 			id,
@@ -167,7 +171,7 @@ export async function createAsset(
 			universeId: input.universeId,
 			kind: input.kind,
 			filename: input.filename.slice(0, 255) || 'upload',
-			contentType: input.contentType,
+			contentType,
 			byteSize: input.bytes.length,
 			storageKey
 		});

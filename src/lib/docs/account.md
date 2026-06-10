@@ -65,7 +65,9 @@ its own and fall back to these with a "use my account setting" option.
 
 ## Getting your work out
 
-The Security section has two ways to take your work with you. Export downloads a
+The Security section has two ways to take your work with you. Export prepares a
 single zip of everything you own: every universe, story, scene, entity, note,
-and uploaded image, all as markdown. Delete removes your account and everything
-in it. See [keeping your account secure](/docs/security) for both.
+and uploaded image, all as markdown. It is built in the background and appears
+ready to download a moment later (a bell notification tells you when). Delete
+removes your account and everything in it. See
+[keeping your account secure](/docs/security) for both.

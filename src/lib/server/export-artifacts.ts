@@ -187,7 +187,8 @@ export async function generateEditionArtifacts(
 			descriptionMd: publications.descriptionMd,
 			content: publications.content,
 			removedAt: publications.removedAt,
-			coverAssetId: stories.coverAssetId
+			coverAssetId: stories.coverAssetId,
+			ownerId: stories.ownerId
 		})
 		.from(publications)
 		.innerJoin(stories, eq(publications.storyId, stories.id))
@@ -208,7 +209,7 @@ export async function generateEditionArtifacts(
 		descriptionMd: edition.descriptionMd
 	};
 	const content = editionStoryContent(edition.content as EditionContent);
-	const loadAssets = deps.loadAssets ?? bucketAssetLoader(db);
+	const loadAssets = deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId);
 	const renderPdf = deps.renderPdf ?? renderEditionPdf;
 	const slug = slugify(edition.title, 'story');
 
@@ -284,6 +285,12 @@ export async function generateEditionArtifacts(
 			failed.push({ format, error: error instanceof Error ? error.message : String(error) });
 		}
 	}
+	// Persist the failures so the owner's settings page can show which downloads
+	// could not be built and why, instead of the failure only reaching the log.
+	await db
+		.update(publications)
+		.set({ artifactErrors: failed })
+		.where(eq(publications.id, publicationId));
 	return { ok: true, stored, failed };
 }
 
