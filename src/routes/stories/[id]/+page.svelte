@@ -360,11 +360,51 @@
 		| { kind: 'chapter'; id: string; index: number }
 		| { kind: 'scene'; id: string };
 	let rowMenu = $state<{ x: number; y: number; target: RowMenuTarget } | null>(null);
+	let rowMenuEl = $state<HTMLDivElement>();
+	let rowMenuTrigger: HTMLElement | null = null;
 
 	function openRowMenu(event: MouseEvent, target: RowMenuTarget) {
 		event.preventDefault();
-		rowMenu = { x: event.clientX, y: event.clientY, target };
+		rowMenuTrigger = event.currentTarget as HTMLElement;
+		// A keyboard-invoked context menu (Shift+F10) reports (0,0); anchor it to
+		// the row instead of dropping it in the corner.
+		if (event.clientX === 0 && event.clientY === 0) {
+			const rect = rowMenuTrigger.getBoundingClientRect();
+			rowMenu = { x: rect.left, y: rect.bottom, target };
+		} else {
+			rowMenu = { x: event.clientX, y: event.clientY, target };
+		}
 	}
+
+	function closeRowMenu(refocus = false) {
+		rowMenu = null;
+		if (refocus) rowMenuTrigger?.focus();
+		rowMenuTrigger = null;
+	}
+
+	function onRowMenuKey(event: KeyboardEvent) {
+		const items = rowMenuEl
+			? [...rowMenuEl.querySelectorAll<HTMLButtonElement>('.row-menu-item')]
+			: [];
+		const current = items.indexOf(document.activeElement as HTMLButtonElement);
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			closeRowMenu(true);
+		} else if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			items[Math.min(current + 1, items.length - 1)]?.focus();
+		} else if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			items[Math.max(current - 1, 0)]?.focus();
+		}
+	}
+
+	// Move focus into the menu when it opens, so keyboard users can act on it.
+	$effect(() => {
+		if (rowMenu && rowMenuEl) {
+			rowMenuEl.querySelector<HTMLButtonElement>('.row-menu-item')?.focus();
+		}
+	});
 
 	// The book switcher's menu, toggled from the sidebar header.
 	let storyMenuOpen = $state(false);
@@ -1228,7 +1268,14 @@
 
 {#if rowMenu}
 	{@const target = rowMenu.target}
-	<div class="row-menu" role="menu" style="left: {rowMenu.x}px; top: {rowMenu.y}px;">
+	<div
+		class="row-menu"
+		role="menu"
+		tabindex="-1"
+		bind:this={rowMenuEl}
+		onkeydown={onRowMenuKey}
+		style="left: {rowMenu.x}px; top: {rowMenu.y}px;"
+	>
 		{#if target.kind === 'chapter'}
 			<button
 				class="row-menu-item"
