@@ -13,6 +13,7 @@ import {
 	setThreadResolved
 } from '$lib/server/review';
 import { gatherStory } from '$lib/server/export';
+import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { notifyThreadReviewers } from '$lib/server/notify';
@@ -22,19 +23,31 @@ import { teaser } from '$lib/notifications';
 // story, against the current text, with reply and resolve.
 
 export const load: PageServerLoad = async ({ params, locals }) => {
-	const { story } = await ownedStory(params.id, locals.user!.id);
+	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 	const content = await gatherStory(db, story);
+	const scenes = content.scenes.map((scene) => ({
+		id: scene.id!,
+		chapterId: scene.chapterId,
+		title: scene.title,
+		bodyMd: scene.bodyMd
+	}));
+	// The author sees the full cast in their own review, like the editor.
+	const mentions = await reviewMentionData(db, {
+		universeId: story.universeId,
+		storyId: story.id,
+		sceneIds: scenes.map((scene) => scene.id),
+		restrictToMentioned: false
+	});
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
+		universe: { slug: universe.slug, name: universe.name },
 		chapters: content.chapters,
-		scenes: content.scenes.map((scene) => ({
-			id: scene.id!,
-			chapterId: scene.chapterId,
-			title: scene.title,
-			bodyMd: scene.bodyMd
-		})),
+		scenes,
 		threads: await listThreads(db, story.id, reanchorRange),
-		suggestions: await listSuggestions(db, story.id)
+		suggestions: await listSuggestions(db, story.id),
+		mentionEntities: mentions.entities,
+		mentionMembers: mentions.storyMembers,
+		mentionPins: mentions.pins
 	};
 };
 

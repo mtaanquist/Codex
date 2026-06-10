@@ -12,6 +12,7 @@
 		notesPath,
 		planHref,
 		writeHref,
+		reviewHref,
 		universeNotes = [],
 		universeNotesPath,
 		form
@@ -22,6 +23,8 @@
 		planHref: string;
 		// Present at story scope only; the universe Notes view has no Write.
 		writeHref?: string;
+		// Present at story scope only; the universe Notes view has no Review.
+		reviewHref?: string;
 		// Universe notes shown read-only at story scope, linking to the universe
 		// Notes view to edit. Empty at universe scope.
 		universeNotes?: NoteListItem[];
@@ -50,6 +53,10 @@
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 			<a class="seg-btn" href={planHref}>Plan</a>
 			<button class="seg-btn active" type="button">Notes</button>
+			{#if reviewHref}
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+				<a class="seg-btn" href={reviewHref}>Review</a>
+			{/if}
 		</div>
 		<SidebarSearch bind:query placeholder="Filter notes..." />
 	</div>

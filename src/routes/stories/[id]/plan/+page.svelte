@@ -49,6 +49,7 @@
 			{planPath}
 			notesHref={resolve('/stories/[id]/notes', { id: data.story.slug })}
 			writeHref={resolve('/stories/[id]', { id: data.story.slug })}
+			reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 			boardHref={planPath}
 			boardActive={!data.selected}
 			{form}

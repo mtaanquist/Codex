@@ -44,6 +44,7 @@
 			{notesPath}
 			planHref={resolve('/stories/[id]/plan', { id: data.story.slug })}
 			writeHref={resolve('/stories/[id]', { id: data.story.slug })}
+			reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 			{form}
 		/>
 		<main class="pane center">
