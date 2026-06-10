@@ -1,16 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { EditorView } from '@codemirror/view';
-	import { EditorState } from '@codemirror/state';
-	import Icon, { type IconName } from './Icon.svelte';
-	import { proseExtensions } from '$lib/editor';
+	import { Compartment, EditorState } from '@codemirror/state';
+	import Icon from './Icon.svelte';
+	import EditorToolbar from './EditorToolbar.svelte';
 	import {
-		setHeading,
-		toggleBold,
-		toggleBulletList,
-		toggleItalic,
-		toggleQuote
-	} from '$lib/editor-format';
+		commandMarkerExtensions,
+		nonPrintingFor,
+		proseExtensions,
+		type MarkVisibility
+	} from '$lib/editor';
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 	import {
 		buildReviewMarks,
@@ -40,6 +39,8 @@
 		mentionMembers,
 		mentionPins,
 		entityHref,
+		nonPrintingMarks = 'hidden',
+		commandMarkers = 'shown',
 		onStartComment,
 		onStartSuggest
 	}: {
@@ -51,6 +52,10 @@
 		focusedId: string | null;
 		setFocused: (id: string | null) => void;
 		canSuggest: boolean;
+		// The editor view toggles, shared with the Write editor and persisted per
+		// user; mirrored locally so a toggle takes effect at once.
+		nonPrintingMarks?: MarkVisibility;
+		commandMarkers?: MarkVisibility;
 		entities: MentionEntity[];
 		mentionMembers: string[];
 		mentionPins: Record<string, string>;
@@ -78,6 +83,31 @@
 	// own typing. Seeded from the initial prop on purpose.
 	// svelte-ignore state_referenced_locally
 	let appliedBody = scene.bodyMd;
+
+	// View toggles, mirrored locally and persisted for the user the same way the
+	// Write editor does, so the choice carries between the two.
+	// svelte-ignore state_referenced_locally
+	let nonPrinting = $state<MarkVisibility>(nonPrintingMarks);
+	// svelte-ignore state_referenced_locally
+	let commands = $state<MarkVisibility>(commandMarkers);
+	const nonPrintingCompartment = new Compartment();
+	const alignmentCompartment = new Compartment();
+
+	function persistEditorView(patch: { nonPrintingMarks?: string; commandMarkers?: string }) {
+		void fetch('/api/editor-view', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(patch)
+		}).catch(() => {});
+	}
+	function toggleNonPrinting() {
+		nonPrinting = nonPrinting === 'shown' ? 'hidden' : 'shown';
+		persistEditorView({ nonPrintingMarks: nonPrinting });
+	}
+	function toggleCommandMarkers() {
+		commands = commands === 'shown' ? 'hidden' : 'shown';
+		persistEditorView({ commandMarkers: commands });
+	}
 
 	async function save() {
 		if (!view) return;
@@ -211,12 +241,6 @@
 		};
 	}
 
-	function applyTool(command: (view: EditorView) => boolean) {
-		if (!view) return;
-		view.focus();
-		command(view);
-	}
-
 	// A new comment or edit anchors against the saved text, so flush first; the
 	// offsets we captured then line up with the body the server holds.
 	async function startComment() {
@@ -260,10 +284,30 @@
 		recomputeGeometry();
 	});
 
+	// Flip the view toggles at runtime by reconfiguring their compartments.
+	$effect(() => {
+		const extension = nonPrintingFor(nonPrinting);
+		if (!view) return;
+		view.dispatch({ effects: nonPrintingCompartment.reconfigure(extension) });
+	});
+	$effect(() => {
+		const extension = commandMarkerExtensions(commands);
+		if (!view) return;
+		view.dispatch({ effects: alignmentCompartment.reconfigure(extension) });
+	});
+
 	// Bring the focused passage into view when focus arrives from the panel/nav.
+	// A whole-scene comment has no anchor, so take the reader to the scene start.
 	$effect(() => {
 		const id = focusedId;
 		if (!id || !view) return;
+		const whole =
+			threads.some((t) => t.id === id && !t.anchor) ||
+			suggestions.some((s) => s.id === id && !s.anchor);
+		if (whole) {
+			view.dispatch({ effects: EditorView.scrollIntoView(0, { y: 'start' }) });
+			return;
+		}
 		const a = handle?.anchorOf(view, id);
 		if (a) view.dispatch({ effects: EditorView.scrollIntoView(a.start, { y: 'center' }) });
 	});
@@ -284,7 +328,13 @@
 							scheduleSave();
 							recomputeGeometry();
 						},
-						editingMode: 'markdown'
+						editingMode: 'markdown',
+						nonPrintingMarks: nonPrinting,
+						commandMarkers: commands,
+						compartments: {
+							nonPrinting: nonPrintingCompartment,
+							alignment: alignmentCompartment
+						}
 					}),
 					mentionExtensions(entities, {
 						storyMembers: mentionMembers,
@@ -314,56 +364,19 @@
 		};
 	});
 
-	// The review centre's minimal formatting bar (matches the design's RV_TOOLS):
-	// headings, bold, italic, quote, list. Separators carry no command.
-	type Tool =
-		| { sep: true }
-		| {
-				id: string;
-				label?: string;
-				icon?: IconName;
-				title: string;
-				run: (view: EditorView) => boolean;
-		  };
-	const RV_TOOLS: Tool[] = [
-		{ id: 'h1', label: 'H1', title: 'Heading 1', run: setHeading(1) },
-		{ id: 'h2', label: 'H2', title: 'Heading 2', run: setHeading(2) },
-		{ id: 'h3', label: 'H3', title: 'Heading 3', run: setHeading(3) },
-		{ sep: true },
-		{ id: 'bold', icon: 'bold', title: 'Bold (Ctrl+B)', run: toggleBold },
-		{ id: 'italic', icon: 'italic', title: 'Italic (Ctrl+I)', run: toggleItalic },
-		{ sep: true },
-		{ id: 'quote', icon: 'quote', title: 'Quote', run: toggleQuote },
-		{ id: 'list', icon: 'list', title: 'Bullet list', run: toggleBulletList }
-	];
-
 	const openComments = $derived(threads.filter((t) => t.resolvedAt === null).length);
 	const openSugg = $derived(suggestions.filter((s) => s.status === 'pending').length);
 </script>
 
 <div class="md-editor review-editor">
-	<div class="md-toolbar">
-		{#each RV_TOOLS as tool, i (i)}
-			{#if 'sep' in tool}
-				<span class="md-sep"></span>
-			{:else}
-				<button
-					class="md-tool"
-					type="button"
-					title={tool.title}
-					onmousedown={(e) => e.preventDefault()}
-					onclick={() => applyTool(tool.run)}
-				>
-					{#if tool.icon}
-						<Icon name={tool.icon} size={16} />
-					{:else}
-						<span class="md-tool-label">{tool.label}</span>
-					{/if}
-				</button>
-			{/if}
-		{/each}
-		<span class="md-hint">Editing - select text to comment</span>
-	</div>
+	<EditorToolbar
+		view={() => view}
+		modeLabel="Editing - select text to comment"
+		nonPrintingActive={nonPrinting === 'shown'}
+		onToggleNonPrinting={toggleNonPrinting}
+		commandMarkersActive={commands === 'shown'}
+		onToggleCommandMarkers={toggleCommandMarkers}
+	/>
 
 	<div class="editor-scroll review-scroll" bind:this={scrollEl}>
 		<div class="review-doc" bind:this={docEl}>

@@ -77,6 +77,7 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 		id: scene.id!,
 		chapterId: scene.chapterId,
 		title: scene.title,
+		status: scene.status ?? 'todo',
 		bodyMd: scene.bodyMd
 	}));
 	// A guest sees only the cast that actually appears in the manuscript, and

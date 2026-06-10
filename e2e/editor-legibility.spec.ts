@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { toggleView, viewChecked } from './toolbar';
 
 const DEFAULTS = { nonPrintingMarks: 'hidden', commandMarkers: 'hidden' };
 
@@ -35,32 +36,24 @@ test('Enter makes a paragraph; the view toggles show marks and persist', async (
 	await page.keyboard.type('Beta');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	// The view toggles live in the overflow ("View options") menu and are off
-	// by default. Turning non-printing on shows the pilcrow glyphs (end of
-	// "Alpha" and on the blank line between the paragraphs).
-	await page.getByRole('button', { name: 'View options' }).click();
-	const nonPrinting = page.getByRole('menuitemcheckbox', { name: /non-printing characters/ });
-	await expect(nonPrinting).toHaveAttribute('aria-checked', 'false');
-	await nonPrinting.click();
-	await expect(nonPrinting).toHaveAttribute('aria-checked', 'true');
+	// The view toggles are off by default (inline on a wide bar, or in the "More
+	// tools" overflow menu when it is narrow). Turning non-printing on shows the
+	// pilcrow glyphs (end of "Alpha" and on the blank line between paragraphs).
+	expect(await viewChecked(page, /non-printing characters/)).toBe(false);
+	await expect(page.locator('.cm-np-para')).toHaveCount(0);
+	await toggleView(page, /non-printing characters/);
 	await expect(page.locator('.cm-np-para')).toHaveCount(2);
 
-	// Command markers are also off by default (click to show), in the same menu.
-	const commandMarkers = page.getByRole('menuitemcheckbox', { name: /command markers/ });
-	await expect(commandMarkers).toHaveAttribute('aria-checked', 'false');
-	await commandMarkers.click();
-	await expect(commandMarkers).toHaveAttribute('aria-checked', 'true');
+	// Command markers are also off by default; click to show.
+	expect(await viewChecked(page, /command markers/)).toBe(false);
+	await toggleView(page, /command markers/);
 
-	// Both settings are remembered across a reload.
+	// Both settings are remembered across a reload: the marks still show, and
+	// the toggles read as on.
 	await page.reload();
-	await page.getByRole('button', { name: 'View options' }).click();
-	await expect(
-		page.getByRole('menuitemcheckbox', { name: /non-printing characters/ })
-	).toHaveAttribute('aria-checked', 'true');
-	await expect(page.getByRole('menuitemcheckbox', { name: /command markers/ })).toHaveAttribute(
-		'aria-checked',
-		'true'
-	);
+	await expect(page.locator('.cm-np-para')).toHaveCount(2);
+	expect(await viewChecked(page, /non-printing characters/)).toBe(true);
+	expect(await viewChecked(page, /command markers/)).toBe(true);
 
 	// The Preview confirms two separate paragraphs, not one merged block.
 	await page.locator('.md-toolbar a.md-preview').click();

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { clickTool } from './toolbar';
 
 // Increase/decrease indent: a toolbar button steps a paragraph's block indent,
 // stored as a \indent marker that renders as a left margin in the editor and
@@ -27,9 +28,8 @@ test('a paragraph can be indented from the toolbar, in the editor and preview', 
 	await page.keyboard.type('A paragraph.');
 
 	// Increase the indent twice.
-	const increase = page.getByRole('button', { name: 'Increase indent (Ctrl+])' });
-	await increase.click();
-	await increase.click();
+	await clickTool(page, 'Increase indent (Ctrl+])');
+	await clickTool(page, 'Increase indent (Ctrl+])');
 	// The marker is stored in the text, and the line is shifted right.
 	await expect(page.locator('.cm-content')).toContainText('\\indent2');
 	const lineMargin = await page
@@ -44,7 +44,7 @@ test('a paragraph can be indented from the toolbar, in the editor and preview', 
 	const saved = page.waitForResponse(
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
-	await page.getByRole('button', { name: 'Decrease indent (Ctrl+[)' }).click();
+	await clickTool(page, 'Decrease indent (Ctrl+[)');
 	await expect(page.locator('.cm-content')).toContainText('\\indent ');
 	await expect(page.locator('.cm-content')).not.toContainText('\\indent2');
 	await saved;
