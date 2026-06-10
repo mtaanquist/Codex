@@ -479,6 +479,20 @@ flaky under it - drag selection corrupts text even at the base commit
 there - so CI's real browser gates it). Live-model verification of the
 new prompts is left for the author's endpoint.
 
+Review accept race (2026-06-10, post-v3.4.0): chasing the author-review
+spec flake exposed a real data-loss window, not just a test problem.
+The review editor only learned of an accepted suggestion when the page
+data reloaded, and its local-edits-win sync meant any autosave carrying
+unsaved or in-flight typing in that window silently reverted the
+accepted text. Fixed by folding the accepted change into the live
+document the moment the server confirms it: decide/accept-all report
+the applied ids, the cards and panel hand them to the editor before the
+data refresh, and the editor applies each replacement at its live
+anchor (the marks field maps anchors through typing; anchorOf now also
+resolves insert ghosts) while dropping the decided marks in the same
+transaction. The spec deflake (#390) and a new e2e that accepts and
+types with no settling wait both ride the same branch history.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

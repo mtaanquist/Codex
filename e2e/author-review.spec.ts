@@ -175,3 +175,62 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 	await expect(prose).toContainText('ONETAIL');
 	await expect(prose).not.toContainText('TWOTAIL');
 });
+
+// Accepting a suggestion and typing straight away must keep both: the accepted
+// text is folded into the live editor the moment the server confirms it, so an
+// autosave of the in-flight typing can never revert the accept.
+test('typing immediately after an accept keeps the accepted text', async ({ page }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	const stamp = Date.now();
+	await page.getByRole('button', { name: 'New universe' }).click();
+	await page.getByLabel('New universe').fill(`Race ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await page.goto('/');
+	await page
+		.locator('.universe-section', { hasText: `Race ${stamp}` })
+		.getByRole('button', { name: 'New story in this universe' })
+		.click();
+	await page.getByLabel('New story').fill('Race');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('Keyword BASETAIL closing.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+
+	await page.getByRole('link', { name: 'Review', exact: true }).click();
+	const prose = page.locator('.review-edit .cm-content');
+	await prose.waitFor();
+
+	// Select the opening of the line and suggest a replacement for it.
+	const line = prose.locator('.cm-line').first();
+	const box = (await line.boundingBox())!;
+	await page.mouse.move(box.x + 3, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 8 });
+	await page.mouse.up();
+	await page.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
+	await page.getByLabel('Suggested text').fill('REPLACED');
+	await page.getByRole('button', { name: 'Save suggestion' }).click();
+	await expect(page.locator('.rv-diff-ins')).toHaveText('REPLACED');
+
+	// Accept and type at once, with no wait for the page data to refresh - the
+	// exact window where a stale autosave used to overwrite the accept. The
+	// save that persists the typing must carry the accepted text too.
+	const saved = page.waitForResponse(
+		(response) =>
+			response.url().includes('/api/scenes/') &&
+			response.request().method() === 'PUT' &&
+			response.ok() &&
+			(response.request().postData() ?? '').includes('TYPEDTAIL') &&
+			(response.request().postData() ?? '').includes('REPLACED')
+	);
+	await page.getByRole('button', { name: 'Accept suggestion' }).click();
+	await prose.press('End');
+	await prose.pressSequentially(' TYPEDTAIL');
+	await saved;
+	await page.reload();
+	await expect(page.locator('.review-edit .cm-content')).toContainText('REPLACED');
+	await expect(page.locator('.review-edit .cm-content')).toContainText('TYPEDTAIL');
+});

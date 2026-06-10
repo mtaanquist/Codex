@@ -314,15 +314,20 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 });
 
 describe('acceptAllInScene', () => {
-	it('accepts every pending suggestion in the scene', async () => {
+	it('accepts every pending suggestion in the scene, reporting the applied ids in order', async () => {
 		const quick = BODY.indexOf('quick');
-		await suggest({ start: quick, end: quick + 5 }, 'swift');
+		const first = (await suggest({ start: quick, end: quick + 5 }, 'swift')) as {
+			suggestionId: string;
+		};
 		const lazy = BODY.indexOf('lazy');
-		await suggest({ start: lazy, end: lazy + 4 }, 'sleepy');
+		const second = (await suggest({ start: lazy, end: lazy + 4 }, 'sleepy')) as {
+			suggestionId: string;
+		};
 
 		expect(await acceptAllInScene(db, authorId, storyId, sceneId)).toEqual({
 			accepted: 2,
-			failed: 0
+			failed: 0,
+			acceptedIds: [first.suggestionId, second.suggestionId]
 		});
 		const body = await sceneBody();
 		expect(body).toContain('swift');
@@ -332,7 +337,9 @@ describe('acceptAllInScene', () => {
 
 	it('counts a suggestion whose passage was rewritten as failed, applying the rest', async () => {
 		const quick = BODY.indexOf('quick');
-		await suggest({ start: quick, end: quick + 5 }, 'swift');
+		const applied = (await suggest({ start: quick, end: quick + 5 }, 'swift')) as {
+			suggestionId: string;
+		};
 		const fox = BODY.indexOf('brown fox');
 		await suggest({ start: fox, end: fox + 'brown fox'.length }, 'red vixen');
 		// The author rewrites the second suggestion's passage out from under it.
@@ -344,6 +351,7 @@ describe('acceptAllInScene', () => {
 		const result = await acceptAllInScene(db, authorId, storyId, sceneId);
 		expect(result.accepted).toBe(1);
 		expect(result.failed).toBe(1);
+		expect(result.acceptedIds).toEqual([applied.suggestionId]);
 		expect(await sceneBody()).toContain('swift');
 	});
 });

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { DecorationSet } from '@codemirror/view';
-import { buildReviewMarks } from './editor-review-marks';
+import { EditorState } from '@codemirror/state';
+import type { DecorationSet, EditorView } from '@codemirror/view';
+import {
+	buildReviewMarks,
+	removeReviewMarks,
+	reviewMarksExtension,
+	setReviewMarks
+} from './editor-review-marks';
 import type { ReviewFilter, ReviewSuggestion, ReviewThread } from './review-ui';
 
 // A flattened view of a decoration, enough to assert against without a DOM.
@@ -158,5 +164,54 @@ describe('buildReviewMarks', () => {
 		const sugg = flat.find((f) => f.rid === 'g1' && f.class);
 		expect(comment?.class).toContain('is-focused');
 		expect(sugg?.class).not.toContain('is-focused');
+	});
+});
+
+// The live field behaviour the editor's accept handling leans on: anchors that
+// map through edits, lookup by note id (including ghost-only inserts), and
+// dropping a decided suggestion's marks alongside the text change.
+describe('review marks field', () => {
+	const doc = 'The cat sat on the mat.';
+
+	function stateWith(threads: ReviewThread[], suggestions: ReviewSuggestion[]) {
+		const handle = reviewMarksExtension({ onFocusMark: () => {}, onGeometry: () => {} });
+		let state = EditorState.create({ doc, extensions: handle.extension });
+		state = state.update({
+			effects: setReviewMarks.of(buildReviewMarks(threads, suggestions, ALL, doc.length))
+		}).state;
+		// anchorOf only reads view.state, so a state wrapper stands in for a view.
+		const viewOf = (s: EditorState) => ({ state: s }) as unknown as EditorView;
+		return { handle, state, viewOf };
+	}
+
+	it('finds a replace suggestion by id at its mark range', () => {
+		const { handle, state, viewOf } = stateWith([], [suggestion()]);
+		expect(handle.anchorOf(viewOf(state), 'g1')).toEqual({ start: 4, end: 7 });
+	});
+
+	it('finds an insert suggestion by id through its ghost widget', () => {
+		const ins = suggestion({ original: '', replacement: 'new ' });
+		const { handle, state, viewOf } = stateWith([], [ins]);
+		expect(handle.anchorOf(viewOf(state), 'g1')).toEqual({ start: 4, end: 4 });
+	});
+
+	it('maps anchors through edits made before them', () => {
+		const { handle, state, viewOf } = stateWith([thread()], [suggestion()]);
+		const typed = state.update({ changes: { from: 0, to: 0, insert: 'Look. ' } }).state;
+		expect(handle.anchorOf(viewOf(typed), 'g1')).toEqual({ start: 10, end: 13 });
+		expect(handle.anchorOf(viewOf(typed), 't1')).toEqual({ start: 8, end: 12 });
+	});
+
+	it('drops all of a suggestion marks on removeReviewMarks, keeping the rest', () => {
+		// A replace carries two decorations (mark + ghost); both must go, and the
+		// unrelated comment mark ("sat") must survive the applied change.
+		const aside = thread({ anchor: { start: 8, end: 11 } });
+		const { handle, state, viewOf } = stateWith([aside], [suggestion()]);
+		const applied = state.update({
+			changes: { from: 4, to: 7, insert: 'dog' },
+			effects: removeReviewMarks.of(['g1'])
+		}).state;
+		expect(handle.anchorOf(viewOf(applied), 'g1')).toBeNull();
+		expect(handle.anchorOf(viewOf(applied), 't1')).toEqual({ start: 8, end: 11 });
 	});
 });

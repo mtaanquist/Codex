@@ -13,6 +13,7 @@
 	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
 	import {
 		buildReviewMarks,
+		removeReviewMarks,
 		reviewMarksExtension,
 		setReviewMarks,
 		type ReviewMarksHandle
@@ -162,6 +163,27 @@
 		}).catch(() => {
 			dirty = true;
 		});
+	}
+
+	// Folds suggestions the server just accepted into the live document, at
+	// their anchors as mapped through any typing the author has done meanwhile.
+	// Without this the editor only learns of an accept when the page data
+	// reloads, and an autosave of the still-old document in that window (or of
+	// unsaved edits from before the accept) would silently overwrite the
+	// accepted text. Applied one at a time in the server's order, so a later
+	// anchor maps through an earlier application the same way it did there.
+	export function applyAccepted(ids: string[]) {
+		if (!view || !handle) return;
+		for (const id of ids) {
+			const suggestion = suggestions.find((s) => s.id === id);
+			if (!suggestion || suggestion.status !== 'pending') continue;
+			const a = handle.anchorOf(view, id);
+			if (!a) continue;
+			view.dispatch({
+				changes: { from: a.start, to: a.end, insert: suggestion.replacement },
+				effects: removeReviewMarks.of([id])
+			});
+		}
 	}
 
 	function rebuildMarks() {

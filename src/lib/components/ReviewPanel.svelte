@@ -37,6 +37,7 @@
 		composer,
 		onCloseComposer,
 		onStartSceneComment,
+		onAccepted = null,
 		assistant = null,
 		onAssistantReply = null
 	}: {
@@ -54,6 +55,10 @@
 		composer: Composer | null;
 		onCloseComposer: () => void;
 		onStartSceneComment: () => void;
+		// Called with the applied suggestion ids the moment the server confirms
+		// an accept, before the page data reloads, so the author's live editor
+		// can apply the changes at once.
+		onAccepted?: ((ids: string[]) => void) | null;
 		// Set when the Assistant answers replies in its threads (author page,
 		// Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;
@@ -244,7 +249,21 @@
 				{/each}
 			</div>
 			{#if role === 'author' && nAcceptable > 0}
-				<form method="POST" action="?/acceptAll" use:enhance onsubmit={confirmAcceptAll}>
+				<form
+					method="POST"
+					action="?/acceptAll"
+					use:enhance={() =>
+						async ({ result, update }) => {
+							if (result.type === 'success') {
+								const ids = result.data?.acceptedIds;
+								if (Array.isArray(ids)) {
+									onAccepted?.(ids.filter((id): id is string => typeof id === 'string'));
+								}
+							}
+							await update();
+						}}
+					onsubmit={confirmAcceptAll}
+				>
 					<input type="hidden" name="sceneId" value={scene.id} />
 					<button class="rv-acceptall" type="submit">
 						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{nAcceptable === 1
@@ -289,6 +308,7 @@
 						{role}
 						focused={focusedId === card.id}
 						onFocus={setFocused}
+						{onAccepted}
 						{assistant}
 						{onAssistantReply}
 					/>
