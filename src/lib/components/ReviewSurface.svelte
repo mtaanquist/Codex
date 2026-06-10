@@ -82,12 +82,24 @@
 		)
 	);
 
-	// The quick card for a clicked mention.
+	// The quick card for a mention, opened by mouse or keyboard.
 	let card = $state<{ entity: MentionEntity; x: number; y: number } | null>(null);
-	function openCard(entityId: string, event: MouseEvent) {
+	let popEl = $state<HTMLElement>();
+	function showCard(entityId: string, x: number, y: number) {
 		const entity = entityById.get(entityId);
 		if (!entity) return;
-		card = { entity, x: event.clientX, y: event.clientY };
+		card = { entity, x, y };
+	}
+	function openCardAtPointer(entityId: string, event: MouseEvent) {
+		event.stopPropagation();
+		showCard(entityId, event.clientX, event.clientY);
+	}
+	// Enter or Space on a focused mention opens its card under the word.
+	function openCardFromKey(entityId: string, event: KeyboardEvent) {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		const r = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		showCard(entityId, r.left + r.width / 2, r.bottom);
 	}
 	$effect(() => {
 		if (!card) return;
@@ -102,6 +114,22 @@
 			document.removeEventListener('mousedown', dismiss);
 			document.removeEventListener('keydown', dismiss);
 		};
+	});
+	// Keep the card on screen: centre it on the point, nudge it back from either
+	// side it would overflow, and flip it above the word when it would spill off
+	// the bottom.
+	$effect(() => {
+		if (!card || !popEl) return;
+		void card.x;
+		void card.y;
+		popEl.style.transform = 'translate(-50%, 10px)';
+		const r = popEl.getBoundingClientRect();
+		const m = 8;
+		let dx = 0;
+		if (r.right > window.innerWidth - m) dx = window.innerWidth - m - r.right;
+		if (r.left + dx < m) dx = m - r.left;
+		const ty = r.bottom > window.innerHeight - m ? -(r.height + 10) : 10;
+		popEl.style.transform = `translate(calc(-50% + ${dx}px), ${ty}px)`;
 	});
 
 	const openComments = $derived(threads.filter((t) => t.resolvedAt === null).length);
@@ -288,12 +316,9 @@
 							class="ref-word"
 							data-entity-id={run.entityId}
 							role="button"
-							tabindex="-1"
-							onclick={(e) => {
-								e.stopPropagation();
-								openCard(run.entityId, e);
-							}}
-							onkeydown={() => {}}>{run.text}</span
+							tabindex="0"
+							onclick={(e) => openCardAtPointer(run.entityId, e)}
+							onkeydown={(e) => openCardFromKey(run.entityId, e)}>{run.text}</span
 						>{:else if run.kind === 'comment'}<span
 							class="rv-mark rv-comment"
 							class:is-focused={focusedId === run.id}
@@ -390,7 +415,7 @@
 </div>
 
 {#if card}
-	<div class="rv-cardpop" style="left: {card.x}px; top: {card.y}px;">
+	<div class="rv-cardpop" bind:this={popEl} style="left: {card.x}px; top: {card.y}px;">
 		<EntityQuickCard entity={card.entity} href={entityHref ? entityHref(card.entity) : null} />
 	</div>
 {/if}

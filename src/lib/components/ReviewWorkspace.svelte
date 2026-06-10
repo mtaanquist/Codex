@@ -61,6 +61,9 @@
 	let focusedId = $state<string | null>(null);
 	let query = $state('');
 	let composer = $state<Composer | null>(null);
+	// On a narrow screen the three panes stack behind a tab bar; on desktop the
+	// tab bar is hidden and all three show side by side.
+	let mobileTab = $state<'nav' | 'read' | 'notes'>('read');
 
 	// Default to the first scene that has open activity, else the first scene.
 	const firstActive = $derived(
@@ -76,6 +79,11 @@
 
 	const sceneThreads = $derived(threads.filter((t) => t.sceneId === selectedSceneId));
 	const sceneSuggestions = $derived(suggestions.filter((s) => s.sceneId === selectedSceneId));
+	// Open items in the selected scene, surfaced as a badge on the Notes tab.
+	const sceneOpen = $derived(
+		sceneThreads.filter((t) => t.resolvedAt === null).length +
+			sceneSuggestions.filter((s) => s.status === 'pending').length
+	);
 
 	function selectScene(id: string) {
 		if (id !== selectedSceneId) {
@@ -87,116 +95,163 @@
 	function navSelect(sceneId: string, itemId: string) {
 		selectScene(sceneId);
 		focusedId = itemId;
+		// Picking an item from the jump-list shows the manuscript on mobile.
+		mobileTab = 'read';
+	}
+
+	// Clicking a card jumps to its passage; clicking a mark jumps to its note.
+	// On mobile that means switching to the pane the target lives in.
+	function focusFromPanel(id: string | null) {
+		focusedId = id;
+		mobileTab = 'read';
+	}
+	function focusFromSurface(id: string | null) {
+		focusedId = id;
+		mobileTab = 'notes';
+	}
+
+	function openComposer(c: Composer) {
+		composer = c;
+		// The composer lives in the right panel; show it on mobile.
+		mobileTab = 'notes';
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
-		composer = {
+		openComposer({
 			sceneId: selectedSceneId,
 			start: sel.start,
 			end: sel.end,
 			text: sel.text,
 			mode: 'comment',
 			anchored: true
-		};
+		});
 	}
 	function startSuggest(sel: { start: number; end: number; text: string }) {
-		composer = {
+		openComposer({
 			sceneId: selectedSceneId,
 			start: sel.start,
 			end: sel.end,
 			text: sel.text,
 			mode: 'suggest',
 			anchored: true
-		};
+		});
 	}
 	function startSceneComment() {
-		composer = {
+		openComposer({
 			sceneId: selectedSceneId,
 			start: 0,
 			end: 0,
 			text: '',
 			mode: 'comment',
 			anchored: false
-		};
+		});
 	}
 </script>
 
-<div class="body">
-	<aside class="pane left">
-		<div class="left-head">
-			<div class="seg full">
-				{#if seg}
-					<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the paths) -->
-					<a class="seg-btn" href={seg.writeHref}>Write</a>
-					<a class="seg-btn" href={seg.planHref}>Plan</a>
-					<a class="seg-btn" href={seg.notesHref}>Notes</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
-				{:else}
-					<!-- A reviewer stays in review mode; the other views are out of reach. -->
-					<button class="seg-btn" type="button" disabled>Write</button>
-					<button class="seg-btn" type="button" disabled>Plan</button>
-					<button class="seg-btn" type="button" disabled>Notes</button>
-				{/if}
-				<button class="seg-btn active" type="button">Review</button>
+<div class="review-shell">
+	<nav class="rv-mtabs" aria-label="Review sections">
+		<button
+			class="rv-mtab"
+			class:active={mobileTab === 'nav'}
+			type="button"
+			onclick={() => (mobileTab = 'nav')}
+		>
+			Scenes
+		</button>
+		<button
+			class="rv-mtab"
+			class:active={mobileTab === 'read'}
+			type="button"
+			onclick={() => (mobileTab = 'read')}
+		>
+			Manuscript
+		</button>
+		<button
+			class="rv-mtab"
+			class:active={mobileTab === 'notes'}
+			type="button"
+			onclick={() => (mobileTab = 'notes')}
+		>
+			Notes{#if sceneOpen > 0}<span class="rv-mtab-n">{sceneOpen}</span>{/if}
+		</button>
+	</nav>
+	<div class="body" data-mtab={mobileTab}>
+		<aside class="pane left">
+			<div class="left-head">
+				<div class="seg full">
+					{#if seg}
+						<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the paths) -->
+						<a class="seg-btn" href={seg.writeHref}>Write</a>
+						<a class="seg-btn" href={seg.planHref}>Plan</a>
+						<a class="seg-btn" href={seg.notesHref}>Notes</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					{:else}
+						<!-- A reviewer stays in review mode; the other views are out of reach. -->
+						<button class="seg-btn" type="button" disabled>Write</button>
+						<button class="seg-btn" type="button" disabled>Plan</button>
+						<button class="seg-btn" type="button" disabled>Notes</button>
+					{/if}
+					<button class="seg-btn active" type="button">Review</button>
+				</div>
+				<SidebarSearch bind:query placeholder="Search comments and edits..." />
 			</div>
-			<SidebarSearch bind:query placeholder="Search comments and edits..." />
-		</div>
-		<div class="left-scroll">
-			<ReviewNav
-				scenes={orderedScenes}
-				{threads}
-				{suggestions}
-				{filter}
-				setFilter={(f) => (filter = f)}
-				{focusedId}
-				{selectedSceneId}
-				onSelect={navSelect}
-				{query}
-			/>
-		</div>
-	</aside>
+			<div class="left-scroll">
+				<ReviewNav
+					scenes={orderedScenes}
+					{threads}
+					{suggestions}
+					{filter}
+					setFilter={(f) => (filter = f)}
+					{focusedId}
+					{selectedSceneId}
+					onSelect={navSelect}
+					{query}
+				/>
+			</div>
+		</aside>
 
-	<main class="pane center">
-		{#if selectedScene}
-			{#key selectedScene.id}
-				<ReviewSurface
+		<main class="pane center">
+			{#if selectedScene}
+				{#key selectedScene.id}
+					<ReviewSurface
+						scene={selectedScene}
+						chapterTitle={selectedScene.chapterTitle}
+						threads={sceneThreads}
+						suggestions={sceneSuggestions}
+						{filter}
+						{focusedId}
+						setFocused={focusFromSurface}
+						{canSuggest}
+						{entities}
+						{mentionMembers}
+						{mentionPins}
+						{entityHref}
+						onStartComment={startComment}
+						onStartSuggest={startSuggest}
+					/>
+				{/key}
+			{:else}
+				<div class="rv-empty-scene">This story has no scenes to review yet.</div>
+			{/if}
+		</main>
+
+		<aside class="pane right">
+			{#if selectedScene}
+				<ReviewPanel
 					scene={selectedScene}
-					chapterTitle={selectedScene.chapterTitle}
 					threads={sceneThreads}
 					suggestions={sceneSuggestions}
 					{filter}
+					setFilter={(f) => (filter = f)}
 					{focusedId}
-					setFocused={(id) => (focusedId = id)}
+					setFocused={focusFromPanel}
+					{role}
 					{canSuggest}
-					{entities}
-					{mentionMembers}
-					{mentionPins}
-					{entityHref}
-					onStartComment={startComment}
-					onStartSuggest={startSuggest}
+					{composer}
+					onCloseComposer={() => (composer = null)}
+					onStartSceneComment={startSceneComment}
 				/>
-			{/key}
-		{:else}
-			<div class="rv-empty-scene">This story has no scenes to review yet.</div>
-		{/if}
-	</main>
-
-	<aside class="pane right">
-		{#if selectedScene}
-			<ReviewPanel
-				scene={selectedScene}
-				threads={sceneThreads}
-				suggestions={sceneSuggestions}
-				{filter}
-				setFilter={(f) => (filter = f)}
-				{focusedId}
-				setFocused={(id) => (focusedId = id)}
-				{role}
-				{canSuggest}
-				{composer}
-				onCloseComposer={() => (composer = null)}
-				onStartSceneComment={startSceneComment}
-			/>
-		{/if}
-	</aside>
+			{/if}
+		</aside>
+	</div>
 </div>

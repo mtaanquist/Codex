@@ -4,6 +4,8 @@ import { expect, test } from '@playwright/test';
 // comment and a suggested edit, then accepts the suggestion - the same surface
 // guests use, now driven by the logged-in author on the three-column workspace.
 test('the author can comment and suggest in their own review mode', async ({ page }) => {
+	// Retracting a comment and Accept all both ask for confirmation.
+	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
@@ -55,6 +57,10 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	// Attributed to the author.
 	await expect(card.locator('.rv-role')).toHaveText('Author');
 
+	// The author retracts their own comment from its card.
+	await card.getByRole('button', { name: 'Delete your comment' }).click();
+	await expect(card).toHaveCount(0);
+
 	// Select again and suggest a replacement.
 	await selectProse();
 	await page.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
@@ -62,7 +68,7 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await page.getByRole('button', { name: 'Save suggestion' }).click();
 	await expect(page.locator('.rv-diff-ins')).toHaveText('The revised sentence.');
 
-	// Accept the author's own suggestion; it applies to the scene text.
-	await page.getByRole('button', { name: 'Accept' }).click();
+	// Accept all pending edits in the scene; it applies to the scene text.
+	await page.getByRole('button', { name: /^Accept all/ }).click();
 	await expect(page.locator('.review-prose')).toContainText('The revised sentence.');
 });

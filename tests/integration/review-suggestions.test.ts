@@ -20,9 +20,11 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 process.env.APP_SECRET = process.env.APP_SECRET || 'review-test-secret';
 
 const {
+	acceptAllInScene,
 	createReviewInvitation,
 	createSuggestion,
 	decideSuggestion,
+	deleteSuggestion,
 	ensureReviewer,
 	listSuggestions
 } = await import('../../src/lib/server/review');
@@ -263,6 +265,86 @@ describe('decideSuggestion', () => {
 			ok: false
 		});
 		expect(await sceneBody()).toBe(BODY);
+	});
+});
+
+describe('deleteSuggestion (retract your own pending edit)', () => {
+	it('a reviewer retracts their own pending suggestion and flags it as theirs', async () => {
+		const start = BODY.indexOf('brown fox');
+		const made = (await suggest({ start, end: start + 'brown fox'.length }, 'red vixen')) as {
+			ok: true;
+			suggestionId: string;
+		};
+		// The mine flag follows whoever is viewing.
+		const [asReviewer] = await listSuggestions(db, storyId, { reviewerId });
+		expect(asReviewer.mine).toBe(true);
+		const [asAuthor] = await listSuggestions(db, storyId, { userId: authorId });
+		expect(asAuthor.mine).toBe(false);
+
+		expect(await deleteSuggestion(db, { reviewerId }, made.suggestionId)).toMatchObject({
+			ok: true
+		});
+		expect(await listSuggestions(db, storyId)).toEqual([]);
+	});
+
+	it('refuses to delete a foreign suggestion or a decided one', async () => {
+		const start = BODY.indexOf('brown fox');
+		const made = (await suggest({ start, end: start + 'brown fox'.length }, 'red vixen')) as {
+			ok: true;
+			suggestionId: string;
+		};
+		// The author did not write the guest's suggestion.
+		expect(await deleteSuggestion(db, { userId: authorId }, made.suggestionId)).toMatchObject({
+			ok: false
+		});
+		// Once decided, even its own author can no longer retract it.
+		const lazy = BODY.indexOf('lazy');
+		const own = (await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { userId: authorId },
+			range: { start: lazy, end: lazy + 4 },
+			replacement: 'happy'
+		})) as { ok: true; suggestionId: string };
+		await decideSuggestion(db, authorId, own.suggestionId, false);
+		expect(await deleteSuggestion(db, { userId: authorId }, own.suggestionId)).toMatchObject({
+			ok: false
+		});
+	});
+});
+
+describe('acceptAllInScene', () => {
+	it('accepts every pending suggestion in the scene', async () => {
+		const quick = BODY.indexOf('quick');
+		await suggest({ start: quick, end: quick + 5 }, 'swift');
+		const lazy = BODY.indexOf('lazy');
+		await suggest({ start: lazy, end: lazy + 4 }, 'sleepy');
+
+		expect(await acceptAllInScene(db, authorId, storyId, sceneId)).toEqual({
+			accepted: 2,
+			failed: 0
+		});
+		const body = await sceneBody();
+		expect(body).toContain('swift');
+		expect(body).toContain('sleepy');
+		expect((await listSuggestions(db, storyId)).every((s) => s.status === 'accepted')).toBe(true);
+	});
+
+	it('counts a suggestion whose passage was rewritten as failed, applying the rest', async () => {
+		const quick = BODY.indexOf('quick');
+		await suggest({ start: quick, end: quick + 5 }, 'swift');
+		const fox = BODY.indexOf('brown fox');
+		await suggest({ start: fox, end: fox + 'brown fox'.length }, 'red vixen');
+		// The author rewrites the second suggestion's passage out from under it.
+		await db
+			.update(scenes)
+			.set({ bodyMd: BODY.replace('brown fox', 'green hare') })
+			.where(eq(scenes.id, sceneId));
+
+		const result = await acceptAllInScene(db, authorId, storyId, sceneId);
+		expect(result.accepted).toBe(1);
+		expect(result.failed).toBe(1);
+		expect(await sceneBody()).toContain('swift');
 	});
 });
 

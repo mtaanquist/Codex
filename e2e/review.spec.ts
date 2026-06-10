@@ -115,7 +115,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 
 	// Accept the suggested change: the prose updates in place.
 	await expect(page.locator('.rv-diff-ins')).toHaveText('reservations');
-	await page.getByRole('button', { name: 'Accept' }).click();
+	await page.getByRole('button', { name: 'Accept', exact: true }).click();
 	await expect(page.locator('.review-prose')).toContainText(
 		'The reviewer will have reservations about this gate.'
 	);
