@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-// In review mode an entity mention is a click-to-open quick card: the same
-// summary a reviewer sees. Here the author opens it from their own review,
-// where the card also offers the full-details link.
-test('review: clicking an entity mention opens its quick card', async ({ page }) => {
+// In the author's review mode an entity mention is a hover card in the live
+// editor: the same summary a reviewer sees, plus the full-details link.
+test('review: hovering an entity mention opens its quick card', async ({ page }) => {
 	await page.goto('/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
@@ -32,21 +31,21 @@ test('review: clicking an entity mention opens its quick card', async ({ page })
 	await page.getByRole('menuitem', { name: 'New character' }).click();
 	await expect(page.locator('.cm-content .ref-word', { hasText: 'Veylan' })).toBeVisible();
 
-	// Enter review mode; the name renders as a clickable mention.
+	// Enter review mode; the name renders as an underlined mention in the editor.
 	await page.getByRole('link', { name: 'Review', exact: true }).click();
 	await expect(page).toHaveURL(`${storyPath}/review`);
-	const mention = page.locator('.review-prose .ref-word', { hasText: 'Veylan' });
+	const mention = page.locator('.review-edit .cm-content .ref-word', { hasText: 'Veylan' });
 	await expect(mention).toBeVisible();
 
-	// Clicking it opens the quick card with the entity's name; the author's card
+	// Hovering it opens the quick card with the entity's name; the author's card
 	// offers the full-details link (a reviewer's would not).
-	await mention.click();
-	const card = page.locator('.rv-cardpop');
+	await mention.hover();
+	const card = page.locator('.entity-card');
 	await expect(card).toBeVisible();
 	await expect(card.locator('.pop-name')).toHaveText('Veylan');
 	await expect(card.locator('.pop-open')).toBeVisible();
 
-	// Escape dismisses it.
-	await page.keyboard.press('Escape');
+	// Moving the pointer away dismisses it.
+	await page.mouse.move(2, 2);
 	await expect(card).toHaveCount(0);
 });

@@ -232,6 +232,7 @@
 							{entities}
 							{mentionMembers}
 							{mentionPins}
+							{entityHref}
 							onStartComment={startComment}
 							onStartSuggest={startSuggest}
 						/>

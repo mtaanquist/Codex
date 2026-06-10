@@ -28,19 +28,21 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await page.keyboard.type('The original sentence.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	// Enter the author's review mode via the new Review tab.
+	// Enter the author's review mode via the new Review tab. The author's centre
+	// is the real editor (CodeMirror), so the manuscript is editable in place.
 	await page.getByRole('link', { name: 'Review', exact: true }).click();
 	await expect(page).toHaveURL(`${storyPath}/review`);
-	const prose = page.locator('.review-prose');
+	const prose = page.locator('.review-edit .cm-content');
 	await expect(prose).toContainText('The original sentence.');
 
-	// A real drag across the line selects it and fires the mouseup the surface
-	// listens for, raising the floating toolbar.
+	// A real drag across the line selects it and raises the floating toolbar
+	// (the editor positions it from CodeMirror's selection).
 	async function selectProse() {
-		const box = (await prose.boundingBox())!;
-		await page.mouse.move(box.x + 3, box.y + 10);
+		const line = prose.locator('.cm-line').first();
+		const box = (await line.boundingBox())!;
+		await page.mouse.move(box.x + 3, box.y + box.height / 2);
 		await page.mouse.down();
-		await page.mouse.move(box.x + box.width - 3, box.y + 10, { steps: 10 });
+		await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2, { steps: 10 });
 		await page.mouse.up();
 	}
 
@@ -68,7 +70,20 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await page.getByRole('button', { name: 'Save suggestion' }).click();
 	await expect(page.locator('.rv-diff-ins')).toHaveText('The revised sentence.');
 
-	// Accept all pending edits in the scene; it applies to the scene text.
+	// Accept all pending edits in the scene; the editable prose updates in place.
 	await page.getByRole('button', { name: /^Accept all/ }).click();
-	await expect(page.locator('.review-prose')).toContainText('The revised sentence.');
+	await expect(prose).toContainText('The revised sentence.');
+
+	// The author can now build on the accepted text: type into the manuscript
+	// and it persists across a reload (the review save omits markers but keeps
+	// the prose).
+	await prose.click();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' A new clause.');
+	// Autosave debounces; click away and wait for the request to settle.
+	await page.waitForTimeout(2000);
+	await page.reload();
+	await expect(page.locator('.review-edit .cm-content')).toContainText(
+		'The revised sentence. A new clause.'
+	);
 });

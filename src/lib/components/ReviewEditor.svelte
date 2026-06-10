@@ -39,6 +39,7 @@
 		entities,
 		mentionMembers,
 		mentionPins,
+		entityHref,
 		onStartComment,
 		onStartSuggest
 	}: {
@@ -53,6 +54,8 @@
 		entities: MentionEntity[];
 		mentionMembers: string[];
 		mentionPins: Record<string, string>;
+		// Where a mention's hover card points for full details; null for reviewers.
+		entityHref: ((entity: MentionEntity) => string) | null;
 		onStartComment: (sel: { start: number; end: number; text: string }) => void;
 		onStartSuggest: (sel: { start: number; end: number; text: string }) => void;
 	} = $props();
@@ -283,7 +286,18 @@
 						},
 						editingMode: 'markdown'
 					}),
-					mentionExtensions(entities, { storyMembers: mentionMembers, pins: mentionPins }),
+					mentionExtensions(entities, {
+						storyMembers: mentionMembers,
+						pins: mentionPins,
+						// The hover card's full-details link resolves the entity back to its
+						// page; reviewers get no link.
+						entityHref: entityHref
+							? (ref) => {
+									const full = entities.find((e) => e.id === ref.id);
+									return full ? entityHref(full) : '#';
+								}
+							: undefined
+					}),
 					handle.extension
 				]
 			})
