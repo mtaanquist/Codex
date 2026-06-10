@@ -19,6 +19,7 @@ import { reviewMentionData } from '$lib/server/mention-entities';
 import { ownedStory } from '$lib/server/story-access';
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
+import { listChat } from '$lib/server/llm/chat-history';
 import {
 	deleteChapter,
 	destroyScene,
@@ -249,11 +250,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		].sort((a, b) => a.name.localeCompare(b.name));
 	}
 
+	// The stored conversation seeds the Assistant tab; nothing to load while
+	// the tab is gated off.
+	const assistantChat = assistant.tabEnabled ? await listChat(db, locals.user!.id, story.id) : [];
+
 	return {
 		trashedScenes,
 		story,
 		universe,
 		preferences,
+		assistantChat,
 		storySiblings,
 		chapters: chapterList,
 		scenes: sceneList,

@@ -11,6 +11,7 @@ import {
 	decideSuggestion,
 	deleteComment,
 	deleteSuggestion,
+	ensureSuggestionThread,
 	listSuggestions,
 	listThreads,
 	setThreadResolved
@@ -20,7 +21,8 @@ import { storyPreferences } from '$lib/server/preferences';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
-import { notifyThreadReviewers } from '$lib/server/notify';
+import { assistantLayout } from '$lib/server/llm/config';
+import { notifySuggestionDiscussion, notifyThreadReviewers } from '$lib/server/notify';
 import { teaser } from '$lib/notifications';
 
 // The author's side of a review: every thread guests have left on the
@@ -54,7 +56,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins,
 		// The editor view toggles, shared with the Write editor.
-		preferences: await storyPreferences(db, locals.user!.id, story.id)
+		preferences: await storyPreferences(db, locals.user!.id, story.id),
+		// Whether the Assistant answers in its threads here, and under what name.
+		assistant: await assistantLayout(db, locals.user!.id, story.id)
 	};
 };
 
@@ -118,6 +122,36 @@ export const actions: Actions = {
 			detail: teaser(String(data.get('body') ?? ''))
 		});
 		return { done: true };
+	},
+	// The author replying on a suggestion's card: its discussion thread is
+	// created on the first reply. Returns the thread id so the client can have
+	// the Assistant answer in it when the suggestion is the Assistant's.
+	replySuggestion: async ({ params, request, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const suggestionId = String(data.get('suggestionId') ?? '');
+		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
+		const thread = await ensureSuggestionThread(db, { storyId: story.id, suggestionId });
+		if (!thread.ok) return fail(400, { message: thread.reason });
+		const body = String(data.get('body') ?? '');
+		const result = await addComment(db, {
+			storyId: story.id,
+			threadId: thread.threadId,
+			author: { userId: locals.user!.id },
+			body
+		});
+		if (!result.ok) return fail(400, { message: result.reason });
+		// The suggestion's reviewer hears about the discussion even before they
+		// have commented in it; so does everyone already in the thread.
+		await notifySuggestionDiscussion(
+			db,
+			{ suggestionId, threadId: thread.threadId },
+			{
+				title: `${locals.user!.displayName} replied on your suggested edit on "${story.title}"`,
+				detail: teaser(body)
+			}
+		);
+		return { done: true, threadId: thread.threadId };
 	},
 	resolve: async ({ params, request, locals }) => {
 		await ownedStory(params.id, locals.user!.id);

@@ -49,9 +49,22 @@ export type CompletionRequest = {
 	tools?: ToolSpec[];
 };
 
+// A scene-split the Assistant proposed through its tool: where the new scene
+// starts (exact text, re-located at confirm time) and why. Rendered as a card
+// in the chat transcript; nothing happens until the writer confirms.
+export type SplitProposal = {
+	sceneId: string;
+	sceneTitle: string | null;
+	before: string;
+	rationale: string;
+};
+
 // A token-at-a-time stream the surfaces map straight onto Server-Sent Events.
+// Tool-staged proposals ride the same stream as their own frames; clients that
+// predate a frame type ignore it.
 export type StreamEvent =
 	| { type: 'token'; text: string }
+	| { type: 'proposal'; proposal: SplitProposal }
 	| { type: 'done' }
 	| { type: 'error'; message: string };
 

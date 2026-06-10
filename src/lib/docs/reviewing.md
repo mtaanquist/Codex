@@ -37,6 +37,10 @@ The right panel shows every note on the open scene, yours and your reviewers', e
 
 A suggested change shows the original text struck through and the proposed text beside it, both on its card and in the scene. Accept one to apply it to the scene (a history entry records it), or reject it - this works the same for your own suggestions and a reviewer's. The accept and reject controls sit in the top corner of each card. You decide one at a time, in any order, or use "Accept all" above the cards to apply every pending edit in the open scene at once. Once a change is in, you can carry on editing it in the manuscript. A comment or suggested edit you left yourself carries a trash icon to remove it; to clear a reviewer's note, resolve the comment or reject the edit rather than deleting it.
 
+A pending suggestion's card also takes replies, so you can talk a proposed edit over before deciding on it. Reviewers see and join these conversations like any thread.
+
+When the Assistant is set up and a note came from it, replying on that note makes the Assistant answer you right there. Ask it why it suggested something, or ask for a different wording: it can revise its own pending suggestion, and the card updates with the new proposal. It never decides anything - accepting or rejecting stays yours - and it only ever responds to you, never to your reviewers.
+
 Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text, and a suggestion can no longer be accepted, only rejected.
 
 ## Hearing about activity

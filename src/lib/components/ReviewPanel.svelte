@@ -27,6 +27,7 @@
 		scene,
 		threads,
 		suggestions,
+		discussions = new Map(),
 		filter,
 		setFilter,
 		focusedId,
@@ -35,11 +36,15 @@
 		canSuggest,
 		composer,
 		onCloseComposer,
-		onStartSceneComment
+		onStartSceneComment,
+		assistant = null,
+		onAssistantReply = null
 	}: {
 		scene: { id: string; bodyMd: string };
 		threads: ReviewThread[];
 		suggestions: ReviewSuggestion[];
+		// Suggestion discussions, keyed by suggestion id; rendered on the cards.
+		discussions?: Map<string, ReviewThread>;
 		filter: ReviewFilter;
 		setFilter: (f: ReviewFilter) => void;
 		focusedId: string | null;
@@ -49,6 +54,10 @@
 		composer: Composer | null;
 		onCloseComposer: () => void;
 		onStartSceneComment: () => void;
+		// Set when the Assistant answers replies in its threads (author page,
+		// Assistant live); carries its display name for the waiting note.
+		assistant?: { name: string } | null;
+		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
 	} = $props();
 
 	const nComments = $derived(threads.filter((t) => t.resolvedAt === null).length);
@@ -270,13 +279,18 @@
 						{role}
 						focused={focusedId === card.id}
 						onFocus={setFocused}
+						{assistant}
+						{onAssistantReply}
 					/>
 				{:else}
 					<ReviewSuggestionCard
 						suggestion={card.suggestion}
+						discussion={discussions.get(card.suggestion.id) ?? null}
 						{role}
 						focused={focusedId === card.id}
 						onFocus={setFocused}
+						{assistant}
+						{onAssistantReply}
 					/>
 				{/if}
 			{/each}

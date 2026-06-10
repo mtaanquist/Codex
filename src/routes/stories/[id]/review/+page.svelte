@@ -45,6 +45,7 @@
 		{entityHref}
 		nonPrintingMarks={data.preferences.nonPrintingMarks}
 		commandMarkers={data.preferences.commandMarkers}
+		assistant={data.assistant.surfacesEnabled ? { name: data.assistant.name } : null}
 	/>
 </div>
 

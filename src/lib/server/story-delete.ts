@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from './auth';
 import type { AssetObjectStore } from './assets';
 import {
+	assistantChatMessages,
 	chapters,
 	characterStoryMemberships,
 	characterStoryNotes,
@@ -59,7 +60,7 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 
 	// Review rows before revisions and scenes: threads and suggestions
 	// reference both, and guests are personal data that goes with the story.
-	await tx.delete(reviewSuggestions).where(eq(reviewSuggestions.storyId, storyId));
+	// Threads go first: a suggestion's discussion thread references it.
 	const threadRows = await tx
 		.select({ id: reviewThreads.id })
 		.from(reviewThreads)
@@ -73,6 +74,7 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		);
 	}
 	await tx.delete(reviewThreads).where(eq(reviewThreads.storyId, storyId));
+	await tx.delete(reviewSuggestions).where(eq(reviewSuggestions.storyId, storyId));
 	const invitationRows = await tx
 		.select({ id: reviewInvitations.id })
 		.from(reviewInvitations)
@@ -86,6 +88,9 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		);
 	}
 	await tx.delete(reviewInvitations).where(eq(reviewInvitations.storyId, storyId));
+
+	// The Assistant chat transcripts on this story.
+	await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.storyId, storyId));
 
 	if (sceneIds.length > 0) {
 		await tx.delete(sceneMarkers).where(inArray(sceneMarkers.sceneId, sceneIds));

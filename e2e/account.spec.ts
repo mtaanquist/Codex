@@ -157,10 +157,75 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	const storyUrl = page.url();
 
 	// With the account on, the Assistant tab shows; opening it reveals the chat.
+	// The click retries: right after the create-story navigation the page may
+	// not be hydrated yet, and a pre-hydration click goes nowhere.
 	const tab = page.locator('.rtab', { hasText: 'Assistant' });
 	await expect(tab).toBeVisible();
-	await tab.click();
-	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
+	await expect(async () => {
+		await tab.click();
+		await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible({ timeout: 2000 });
+	}).toPass();
+
+	// The recap and summary actions live in the menu next to the send button;
+	// the header keeps the mute link.
+	await page.getByRole('button', { name: 'More actions' }).click();
+	await expect(page.getByRole('menuitem', { name: 'Catch me up' })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'Update summaries' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('menuitem', { name: 'Catch me up' })).toHaveCount(0);
+
+	// With the Assistant live, a text selection's right-click menu offers an
+	// Assistant submenu; asking about the selection puts a reference chip into
+	// the chat composer, removable before sending.
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('The gate stood open.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.locator('.cm-content').click({ button: 'right' });
+	await expect(page.locator('.sel-menu')).toBeVisible();
+	await page.locator('.sel-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
+	await page
+		.locator('.sel-submenu')
+		.getByRole('menuitem', { name: 'Ask the Assistant about this' })
+		.click();
+	await expect(page.locator('.sel-menu')).not.toBeVisible();
+	await expect(page.locator('.ref-chip')).toContainText('The gate stood open.');
+	await page.getByRole('button', { name: 'Remove the reference' }).click();
+	await expect(page.locator('.ref-chip')).toHaveCount(0);
+
+	// The sidebar row menu groups its assistant actions the same way.
+	await page.locator('.scene-row').first().click({ button: 'right' });
+	await expect(page.locator('.row-menu')).toBeVisible();
+	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
+	await expect(
+		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review this scene' })
+	).toBeVisible();
+	await expect(
+		page.locator('.row-submenu').getByRole('menuitem', { name: 'Suggest where to split' })
+	).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	// The Write panel captures where the cursor sits as a removable reference,
+	// so "continue from here" has something to continue from.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.locator('.md-coauthor').click();
+	await expect(page.locator('.coauthor-ref')).toContainText('Continuing from:');
+	await expect(page.locator('.coauthor-ref')).toContainText('The gate stood open.');
+	await page.getByRole('button', { name: 'Remove the reference' }).click();
+	await expect(page.locator('.coauthor-ref')).toHaveCount(0);
+	await page.locator('.coauthor-x').click();
+
+	// The command palette carries the Assistant's quick actions while it is on.
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(page.locator('.palette')).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Review this scene' })).toBeVisible();
+	await page.keyboard.press('Escape');
 
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
 	await page.getByRole('button', { name: 'Mute for this story' }).click();
@@ -176,4 +241,27 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await page.goto(storyUrl);
 	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
 	await expect(page.locator('.rtab', { hasText: 'Assistant' })).toHaveCount(0);
+
+	// And the menus carry no Assistant entries while it is off.
+	await expect(page.locator('.cm-content')).toBeVisible();
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.locator('.cm-content').click({ button: 'right' });
+	await expect(page.locator('.sel-menu')).toBeVisible();
+	await expect(page.locator('.sel-menu').getByRole('menuitem', { name: 'Assistant' })).toHaveCount(
+		0
+	);
+	await page.keyboard.press('Escape');
+	await page.locator('.scene-row').first().click({ button: 'right' });
+	await expect(page.locator('.row-menu')).toBeVisible();
+	await expect(page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' })).toHaveCount(
+		0
+	);
+	await page.keyboard.press('Escape');
+
+	// And the palette drops the Assistant commands.
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(page.locator('.palette')).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Focus mode' })).toBeVisible();
+	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toHaveCount(0);
 });

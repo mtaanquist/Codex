@@ -415,6 +415,70 @@ only under that filter, no strikethrough or before-text). (6) The notes
 panel filter pills renamed: All -> Open, Resolved -> Done. Unit + e2e
 coverage added for the scene-pin and the resolved marks. No schema change.
 
+Assistant feedback batch (2026-06-10, branch `claude/dreamy-edison-faa9dp`;
+first real use of the Assistant. Author decisions taken up front:
+automatic review replies, discussion threads on suggestions, and all
+three ride-along extras). Nine commits, each shippable:
+
+- [x] Outline scene ids: the model could not read scenes beyond the open
+      one (the rendered story outline carried no ids for get_scene - the
+      author's "chapter two" test). Ids now ride the outline and
+      nearby-scene lines, the system message mentions the scene tools on
+      tool-capable turns only, and a list_scenes read tool covers the
+      budget-dropped case.
+- [x] Composer menu: "Catch me up" and "Update summaries" moved from the
+      Assistant tab header into a menu next to the send button; the mute
+      link keeps the header. "Clear conversation" joined later.
+- [x] Assistant submenus: the sidebar row menu and the editor selection
+      menu group assistant actions under an Assistant flyout (the lore
+      category pattern). The selection menu gains "Ask the Assistant about
+      this": the passage rides to the chat composer as a removable
+      reference chip via a small intent bus (assistant.svelte.ts), carried
+      as data on the user turn and folded into the model-bound message
+      server-side (prompts/reference.ts).
+- [x] Coauthor reference: the Write panel captures the selection or the
+      text before the cursor as a removable chip and sends it with the
+      brief, so "continue from here" lands in the right place.
+- [x] Scene-split proposals: a propose_scene_split write tool stages a
+      proposal (exact start text + rationale, validated by a shared pure
+      locator) that the gateway forwards as a new `proposal` SSE frame;
+      the chat panel renders a card with "Split here", and confirming
+      re-locates the text server-side at that moment before the existing
+      splitScene path. The scene row submenu gains "Suggest where to
+      split" (a canned chat turn). Nothing changes without the confirm.
+- [x] Review replies: suggestions gained a lazily created discussion
+      thread (migration 0059, unique nullable suggestion_id on
+      review_threads); pending suggestion cards take replies on both
+      review pages, with reviewer notifications deduplicated across the
+      suggestion author and thread commenters. Replying in a thread the
+      Assistant opened triggers its answer automatically:
+      POST /api/assistant/review-reply (owner-only, assistant-rooted
+      threads only) runs a reviewer turn with scoped tools
+      (reply_in_thread, update_suggestion) whose targets are fixed
+      server-side; update_suggestion only revises the Assistant's own
+      pending replacement, and prose without a tool call is staged as the
+      reply. Guests can never trigger it. Delete-order fixes rode along
+      (threads before suggestions in the cascades; retracting a
+      suggestion takes only its own discussion).
+- [x] Insert at cursor: completed chat replies offer "Insert at cursor"
+      while a single scene editor is open.
+- [x] Palette commands: Ask the Assistant, Catch me up, Update summaries,
+      and Review this scene on the write page, gated like the other
+      surfaces; the scene-review and summaries fetches moved to a shared
+      assistant-actions client helper.
+- [x] Persisted chat: assistant_chat_messages (migration 0060), one
+      conversation per story per user; turns persist as they complete
+      (references and proposals in meta), the page seeds the panel, Clear
+      conversation deletes, conversations cap at a recent window, and the
+      rows ride the story delete and account purge.
+
+Lint, check, and the full unit + integration suite (890) pass locally
+against Postgres; the account, selection-menu, review, and split e2e
+specs pass against a substitute Chromium (the author-review spec is
+flaky under it - drag selection corrupts text even at the base commit
+there - so CI's real browser gates it). Live-model verification of the
+new prompts is left for the author's endpoint.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

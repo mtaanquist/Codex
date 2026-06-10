@@ -1,6 +1,13 @@
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { notifications, reviewComments, reviewers, stories, users } from './db/schema';
+import {
+	notifications,
+	reviewComments,
+	reviewers,
+	reviewSuggestions,
+	stories,
+	users
+} from './db/schema';
 import { queueNotificationDigest, queueReviewerDigest } from './jobs';
 import { insertNotifications } from './notify-core';
 import {
@@ -60,9 +67,30 @@ export async function notifyReviewActivity(
 	});
 }
 
+// The shared fan-out for reviewer-facing replies: reviewers with accounts get
+// the bell and their own digest, guests with an email get the reviewer
+// digest, guests without stay silent.
+type ReviewerRow = {
+	reviewerId: string;
+	userId: string | null;
+	email: string | null;
+	optedOut: Date | null;
+};
+
+async function fanOutToReviewers(
+	db: Database,
+	rows: ReviewerRow[],
+	payload: NotificationPayload
+): Promise<void> {
+	const accountIds = rows.filter((row) => row.userId).map((row) => row.userId!);
+	await notifyUsers(db, accountIds, 'review_reply', payload);
+	for (const row of rows) {
+		if (!row.userId && row.email && !row.optedOut) await queueReviewerDigest(row.reviewerId);
+	}
+}
+
 // Review replies fan out to everyone who commented in the thread except the
-// author: reviewers with accounts get the bell and their own digest, guests
-// with an email get the reviewer digest, guests without stay silent.
+// author.
 export async function notifyThreadReviewers(
 	db: Database,
 	threadId: string,
@@ -78,11 +106,39 @@ export async function notifyThreadReviewers(
 		.from(reviewComments)
 		.innerJoin(reviewers, eq(reviewComments.authorReviewerId, reviewers.id))
 		.where(eq(reviewComments.threadId, threadId));
-	const accountIds = rows.filter((row) => row.userId).map((row) => row.userId!);
-	await notifyUsers(db, accountIds, 'review_reply', payload);
-	for (const row of rows) {
-		if (!row.userId && row.email && !row.optedOut) await queueReviewerDigest(row.reviewerId);
-	}
+	await fanOutToReviewers(db, rows, payload);
+}
+
+// A reply in a suggestion's discussion reaches the suggestion's own reviewer
+// (who may not have commented in the fresh thread yet) and everyone who has,
+// deduplicated so nobody hears twice.
+export async function notifySuggestionDiscussion(
+	db: Database,
+	target: { suggestionId: string; threadId: string },
+	payload: NotificationPayload
+): Promise<void> {
+	const fromSuggestion = await db
+		.selectDistinct({
+			reviewerId: reviewers.id,
+			userId: reviewers.userId,
+			email: reviewers.email,
+			optedOut: reviewers.emailOptOutAt
+		})
+		.from(reviewSuggestions)
+		.innerJoin(reviewers, eq(reviewSuggestions.reviewerId, reviewers.id))
+		.where(eq(reviewSuggestions.id, target.suggestionId));
+	const fromThread = await db
+		.selectDistinct({
+			reviewerId: reviewers.id,
+			userId: reviewers.userId,
+			email: reviewers.email,
+			optedOut: reviewers.emailOptOutAt
+		})
+		.from(reviewComments)
+		.innerJoin(reviewers, eq(reviewComments.authorReviewerId, reviewers.id))
+		.where(eq(reviewComments.threadId, target.threadId));
+	const unique = new Map([...fromSuggestion, ...fromThread].map((row) => [row.reviewerId, row]));
+	await fanOutToReviewers(db, [...unique.values()], payload);
 }
 
 const BELL_LIMIT = 20;

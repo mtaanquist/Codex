@@ -49,7 +49,9 @@ export async function reviewOneScene(
 		sceneId: opts.scene.id
 	});
 	const task: ChatMessage = { role: 'user', content: buildReviewMessage(opts.scene) };
-	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];
+	const messages: ChatMessage[] = context
+		? [buildSystemMessage(context, { tools: true }), task]
+		: [task];
 	await complete(db, {
 		userId: opts.userId,
 		storyId: opts.storyId,
