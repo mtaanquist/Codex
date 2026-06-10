@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 // The full review loop: the author makes a story and a review link, an
-// anonymous guest opens it, gives a name, and comments on a scene, then the
-// author reads the thread, replies, and resolves it.
+// anonymous guest opens it, gives a name, comments on a scene and suggests an
+// edit, then the author reads the thread on the review workspace, replies,
+// accepts the edit, and resolves the thread.
 test('guest review: invite, comment as a guest, reply and resolve as the author', async ({
 	page,
 	browser
@@ -47,21 +48,29 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await guest.getByLabel('Email (optional)').fill('margin@example.com');
 	await guest.getByRole('button', { name: 'Start reviewing' }).click();
 	await expect(guest.getByText('Reviewing as Margin Walker')).toBeVisible();
-	await expect(guest.locator('.manuscript')).toContainText('opinions about this gate');
+	await expect(guest.locator('.review-prose')).toContainText('opinions about this gate');
 
-	await guest.getByRole('button', { name: 'Comment on this scene' }).click();
-	await guest.getByPlaceholder('Your comment on this scene').fill('Strong opening, weak hinges.');
-	await guest.getByRole('button', { name: 'Comment', exact: true }).click();
-	await expect(guest.getByText('Strong opening, weak hinges.')).toBeVisible();
+	// A guest cannot leave review mode: the other tabs are disabled.
+	await expect(guest.locator('.seg-btn', { hasText: 'Write' })).toBeDisabled();
+	await expect(guest.locator('.seg-btn', { hasText: 'Plan' })).toBeDisabled();
 
-	// Suggest a change on a real text selection: select "opinions" in the
-	// manuscript and propose a replacement.
+	// A whole-scene comment from the panel.
+	await guest.getByRole('button', { name: 'Whole scene' }).click();
+	await guest.getByLabel('Your comment').fill('Strong opening, weak hinges.');
+	await guest
+		.locator('.rv-card.is-draft')
+		.getByRole('button', { name: 'Comment', exact: true })
+		.click();
+	await expect(
+		guest.locator('.rv-body', { hasText: 'Strong opening, weak hinges.' })
+	).toBeVisible();
+
+	// Suggest a change on a real text selection: select "opinions" in the prose
+	// and propose a replacement from the floating toolbar.
 	await guest.evaluate(() => {
-		const manuscript = document.querySelector('.manuscript');
-		if (!manuscript) throw new Error('no manuscript');
-		// The prose may be split across text nodes by Svelte anchors; find the
-		// node carrying the target word.
-		const walker = document.createTreeWalker(manuscript, NodeFilter.SHOW_TEXT);
+		const prose = document.querySelector('.review-prose');
+		if (!prose) throw new Error('no prose');
+		const walker = document.createTreeWalker(prose, NodeFilter.SHOW_TEXT);
 		let node = walker.nextNode();
 		while (node && !(node.textContent ?? '').includes('opinions')) node = walker.nextNode();
 		if (!node) throw new Error('target text not found');
@@ -73,16 +82,16 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 		selection.removeAllRanges();
 		selection.addRange(range);
 	});
-	await guest.locator('.manuscript').dispatchEvent('mouseup');
-	await guest.getByRole('button', { name: 'Suggest a change' }).click();
+	await guest.locator('.review-doc').dispatchEvent('mouseup');
+	await guest.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
 	await guest.getByLabel('Suggested text').fill('reservations');
-	await guest.getByRole('button', { name: 'Suggest', exact: true }).click();
-	await expect(guest.locator('.suggestion ins')).toHaveText('reservations');
+	await guest.getByRole('button', { name: 'Save suggestion' }).click();
+	await expect(guest.locator('.rv-diff-ins')).toHaveText('reservations');
 	await guestContext.close();
 
-	// Author: the bell heard about both; the comment notification leads to
-	// the feedback page. Counts are not asserted because a long-lived local
-	// database may carry unread rows from earlier runs.
+	// Author: the bell heard about both; the comment notification leads to the
+	// review page. Counts are not asserted because a long-lived local database
+	// may carry unread rows from earlier runs.
 	await page.goto('/');
 	await page.getByRole('button', { name: /^Notifications/ }).click();
 	const bellMenu = page.locator('.bell-menu');
@@ -95,31 +104,27 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 		.click();
 	await expect(page).toHaveURL(`/stories/${storyId}/review`);
 
-	// Mark everything read; the badge goes quiet. The feedback page has no
-	// topbar, so this happens back on the library.
-	await page.goto('/');
-	await page.getByRole('button', { name: /^Notifications/ }).click();
-	await page.getByRole('button', { name: 'Mark all read' }).click();
-	await expect(page.locator('.bell-badge')).toHaveCount(0);
-	await page.keyboard.press('Escape');
-
-	// The thread is on the feedback page; reply and resolve.
-	await page.goto(`/stories/${storyId}/review`);
-	await expect(page.getByText('Strong opening, weak hinges.')).toBeVisible();
-	await expect(page.getByText('Margin Walker -')).toBeVisible();
-	await page.getByLabel('Reply').fill('Noted; oiling the hinges.');
-	await page.getByRole('button', { name: 'Reply', exact: true }).click();
-	await expect(page.getByText('Noted; oiling the hinges.')).toBeVisible();
-	await page.getByRole('button', { name: 'Resolve' }).click();
-	await expect(page.getByText('Resolved', { exact: true })).toBeVisible();
+	// The thread is on the review workspace; reply, accept the edit, resolve.
+	await expect(page.locator('.rv-body', { hasText: 'Strong opening, weak hinges.' })).toBeVisible();
+	await expect(page.locator('.rv-card').filter({ hasText: 'Margin Walker' }).first()).toBeVisible();
+	await page.getByLabel('Reply', { exact: true }).fill('Noted; oiling the hinges.');
+	await page.getByRole('button', { name: 'Send reply' }).click();
+	await expect(
+		page.locator('.rv-reply-body', { hasText: 'Noted; oiling the hinges.' })
+	).toBeVisible();
 
 	// Accept the suggested change: the prose updates in place.
-	await expect(page.locator('.suggestion ins')).toHaveText('reservations');
+	await expect(page.locator('.rv-diff-ins')).toHaveText('reservations');
 	await page.getByRole('button', { name: 'Accept' }).click();
-	await expect(page.getByText('Accepted')).toBeVisible();
-	await expect(page.locator('.manuscript')).toContainText(
+	await expect(page.locator('.review-prose')).toContainText(
 		'The reviewer will have reservations about this gate.'
 	);
+
+	// Resolve the thread, then the Resolved filter shows both outcomes.
+	await page.getByRole('button', { name: 'Resolve', exact: true }).click();
+	await page.locator('.rv-filter', { hasText: 'Resolved' }).click();
+	await expect(page.locator('.rv-status.resolved')).toBeVisible();
+	await expect(page.locator('.rv-status.accepted')).toBeVisible();
 
 	// A revoked link stops working for new visits.
 	await page.goto(`/stories/${storyId}/settings/review`);

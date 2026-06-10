@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 // #301: the author opens their own story in review mode and leaves their own
 // comment and a suggested edit, then accepts the suggestion - the same surface
-// guests use, now driven by the logged-in author.
+// guests use, now driven by the logged-in author on the three-column workspace.
 test('the author can comment and suggest in their own review mode', async ({ page }) => {
 	await page.goto('/');
 	const stamp = Date.now();
@@ -26,39 +26,43 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await page.keyboard.type('The original sentence.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	// Enter the author's review mode.
-	await page.goto(`${storyPath}/review`);
-	const manuscript = page.locator('.manuscript').first();
-	await expect(manuscript).toContainText('The original sentence.');
+	// Enter the author's review mode via the new Review tab.
+	await page.getByRole('link', { name: 'Review', exact: true }).click();
+	await expect(page).toHaveURL(`${storyPath}/review`);
+	const prose = page.locator('.review-prose');
+	await expect(prose).toContainText('The original sentence.');
 
-	// A real drag across the line selects it and fires the mouseup the editor
-	// listens for. (selectText alone does not trigger the handler.)
-	async function selectManuscript() {
-		const box = (await manuscript.boundingBox())!;
-		await page.mouse.move(box.x + 3, box.y + box.height / 2);
+	// A real drag across the line selects it and fires the mouseup the surface
+	// listens for, raising the floating toolbar.
+	async function selectProse() {
+		const box = (await prose.boundingBox())!;
+		await page.mouse.move(box.x + 3, box.y + 10);
 		await page.mouse.down();
-		await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2, { steps: 10 });
+		await page.mouse.move(box.x + box.width - 3, box.y + 10, { steps: 10 });
 		await page.mouse.up();
 	}
 
-	// Select the passage and leave a comment.
-	await selectManuscript();
-	await page.locator('.comment-box textarea[name="body"]').fill('Tighten this line.');
-	await page.locator('.comment-box button[type="submit"]').click();
-	const thread = page.locator('.thread').first();
-	await expect(thread).toContainText('Tighten this line.');
-	// Attributed to the author (owner styling).
-	await expect(thread.locator('.comment.owner')).toHaveCount(1);
+	// Select the passage and leave a comment from the draft card.
+	await selectProse();
+	await page.locator('.rv-seltool').getByRole('button', { name: 'Comment' }).click();
+	await page.getByLabel('Your comment').fill('Tighten this line.');
+	await page
+		.locator('.rv-card.is-draft')
+		.getByRole('button', { name: 'Comment', exact: true })
+		.click();
+	const card = page.locator('.rv-card').filter({ hasText: 'Tighten this line.' });
+	await expect(card).toBeVisible();
+	// Attributed to the author.
+	await expect(card.locator('.rv-role')).toHaveText('Author');
 
 	// Select again and suggest a replacement.
-	await selectManuscript();
-	await page.getByRole('button', { name: 'Suggest a change' }).click();
-	await page.locator('.comment-box textarea[name="replacement"]').fill('The revised sentence.');
-	await page.locator('.comment-box button[type="submit"]').click();
-	const suggestion = page.locator('.suggestion').first();
-	await expect(suggestion).toContainText('The revised sentence.');
+	await selectProse();
+	await page.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
+	await page.getByLabel('Suggested text').fill('The revised sentence.');
+	await page.getByRole('button', { name: 'Save suggestion' }).click();
+	await expect(page.locator('.rv-diff-ins')).toHaveText('The revised sentence.');
 
-	// Accept the author's own suggestion; it applies to the scene.
-	await suggestion.getByRole('button', { name: 'Accept' }).click();
-	await expect(page.locator('.manuscript').first()).toContainText('The revised sentence.');
+	// Accept the author's own suggestion; it applies to the scene text.
+	await page.getByRole('button', { name: 'Accept' }).click();
+	await expect(page.locator('.review-prose')).toContainText('The revised sentence.');
 });

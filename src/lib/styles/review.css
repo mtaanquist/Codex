@@ -1,0 +1,876 @@
+/* Review mode: the read-and-review surface (centre), the thread panel (right),
+   and the jump-list (left). Ported from the Claude Design handoff. Colours come
+   from the per-author --auth custom property each element sets. */
+
+/* ---- centre: read-and-review surface ---- */
+.review-scroll {
+	height: 100%;
+}
+.review-doc {
+	position: relative;
+	max-width: 824px;
+	margin: 0 auto;
+	padding: 44px 60px 160px 30px;
+}
+.review-head {
+	margin-bottom: 26px;
+}
+.review-kicker {
+	font-size: 11.5px;
+	font-weight: 650;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin-bottom: 10px;
+}
+.review-title {
+	font-family: var(--font-serif);
+	font-size: 34px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	margin: 0 0 12px;
+}
+.review-subline {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	font-size: 12.5px;
+	color: var(--text-muted);
+}
+.rv-sub-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	border-radius: 99px;
+	padding: 3px 11px;
+}
+.rv-sub-chip svg {
+	color: var(--text-faint);
+}
+
+.review-prose {
+	font-family: var(--font-content);
+	font-size: 19px;
+	line-height: 1.72;
+	color: var(--text);
+	max-width: 660px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	text-wrap: pretty;
+}
+
+/* inline marks */
+.rv-mark {
+	cursor: pointer;
+	border-radius: 3px;
+	-webkit-box-decoration-break: clone;
+	box-decoration-break: clone;
+	transition:
+		background 0.14s,
+		box-shadow 0.14s;
+}
+.rv-comment {
+	background: color-mix(in oklab, var(--auth) 15%, transparent);
+	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
+	padding: 0 1px;
+}
+.rv-comment:hover {
+	background: color-mix(in oklab, var(--auth) 26%, transparent);
+}
+.rv-ins-t {
+	color: var(--auth);
+	text-decoration: none;
+	border-bottom: 2px solid color-mix(in oklab, var(--auth) 60%, transparent);
+}
+.rv-del-t {
+	color: var(--text-faint);
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in oklab, var(--auth) 70%, var(--text-faint));
+}
+.rv-replace .rv-del-t {
+	margin-right: 3px;
+}
+.rv-mark.rv-ins,
+.rv-mark.rv-del,
+.rv-mark.rv-replace {
+	background: color-mix(in oklab, var(--auth) 9%, transparent);
+	padding: 1px 2px;
+}
+.rv-mark.rv-ins:hover,
+.rv-mark.rv-del:hover,
+.rv-mark.rv-replace:hover {
+	background: color-mix(in oklab, var(--auth) 18%, transparent);
+}
+.rv-mark.is-focused {
+	box-shadow:
+		0 0 0 2px var(--bg-canvas),
+		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	background: color-mix(in oklab, var(--auth) 24%, transparent);
+	animation: rvPulse 0.6s ease;
+}
+@keyframes rvPulse {
+	0% {
+		box-shadow:
+			0 0 0 2px var(--bg-canvas),
+			0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	}
+	50% {
+		box-shadow:
+			0 0 0 2px var(--bg-canvas),
+			0 0 0 8px color-mix(in oklab, var(--auth) 24%, transparent);
+	}
+	100% {
+		box-shadow:
+			0 0 0 2px var(--bg-canvas),
+			0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	}
+}
+
+/* margin rail */
+.review-rail {
+	position: absolute;
+	top: 0;
+	right: 6px;
+	width: 40px;
+	height: 100%;
+	pointer-events: none;
+}
+.rv-marker {
+	position: absolute;
+	right: 4px;
+	width: 26px;
+	height: 26px;
+	border-radius: 8px;
+	pointer-events: auto;
+	border: 1px solid color-mix(in oklab, var(--auth) 45%, transparent);
+	background: color-mix(in oklab, var(--auth) 16%, var(--bg-canvas));
+	color: var(--auth);
+	display: grid;
+	place-items: center;
+	transition:
+		transform 0.12s,
+		box-shadow 0.14s,
+		background 0.14s;
+}
+.rv-marker:hover {
+	transform: translateX(-2px);
+	box-shadow: var(--shadow);
+}
+.rv-marker.is-focused {
+	background: var(--auth);
+	color: #fff;
+	border-color: transparent;
+	box-shadow: 0 0 0 4px color-mix(in oklab, var(--auth) 20%, transparent);
+}
+
+/* floating selection toolbar */
+.rv-seltool {
+	position: absolute;
+	z-index: 40;
+	transform: translate(-50%, calc(-100% - 10px));
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px;
+	background: var(--bg-elevated);
+	border: 1px solid var(--border-strong);
+	border-radius: 11px;
+	box-shadow: var(--shadow);
+	white-space: nowrap;
+	animation: popIn 0.12s ease;
+}
+.rv-seltool button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border: 0;
+	background: none;
+	color: var(--text);
+	font-size: 12.5px;
+	font-weight: 600;
+	padding: 6px 10px;
+	border-radius: 7px;
+	cursor: pointer;
+}
+.rv-seltool button:hover {
+	background: var(--bg-hover);
+	color: var(--accent);
+}
+.rv-seltool button svg {
+	color: var(--text-muted);
+}
+.rv-seltool button:hover svg {
+	color: var(--accent);
+}
+.rv-seltool-sep {
+	width: 1px;
+	height: 18px;
+	background: var(--border);
+}
+
+.rv-empty-scene {
+	color: var(--text-faint);
+	font-size: 14px;
+	font-family: var(--font-content);
+	padding: 60px 20px;
+	text-align: center;
+}
+
+/* ---- right: review thread panel ---- */
+.review-panel {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+.rv-panel-head {
+	flex: none;
+	padding: 12px 12px 10px;
+	border-bottom: 1px solid var(--border);
+}
+.rv-panel-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 10px;
+}
+.rv-panel-title > span {
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: -0.005em;
+}
+.rv-scene-comment {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	border: 1px solid var(--border);
+	background: var(--bg-card);
+	color: var(--text-muted);
+	font-size: 11.5px;
+	font-weight: 600;
+	padding: 4px 9px;
+	border-radius: 7px;
+	cursor: pointer;
+}
+.rv-scene-comment:hover {
+	border-color: var(--accent-line);
+	color: var(--accent);
+}
+.rv-filters {
+	display: flex;
+	gap: 2px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 3px;
+}
+.rv-filter {
+	flex: 1;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	border: 0;
+	background: none;
+	color: var(--text-muted);
+	font-size: 11.5px;
+	font-weight: 550;
+	padding: 6px 3px;
+	border-radius: 7px;
+	cursor: pointer;
+}
+.rv-filter:hover {
+	color: var(--text);
+}
+.rv-filter.active {
+	background: var(--bg-elevated);
+	color: var(--text);
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.16),
+		inset 0 0 0 1px var(--border);
+}
+.rv-filter-n {
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+	background: var(--bg-active);
+	border-radius: 99px;
+	padding: 0 5px;
+	min-width: 16px;
+	text-align: center;
+}
+.rv-filter.active .rv-filter-n {
+	color: var(--text-muted);
+}
+
+.rv-panel-scroll {
+	flex: 1;
+	overflow: auto;
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.rv-panel-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 11px;
+	text-align: center;
+	color: var(--text-faint);
+	font-size: 13px;
+	line-height: 1.5;
+	padding: 48px 24px;
+}
+.rv-panel-empty svg {
+	color: var(--text-faint);
+	opacity: 0.6;
+}
+
+/* review card */
+.rv-card {
+	position: relative;
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 13px 14px 14px;
+	cursor: pointer;
+	transition:
+		border-color 0.14s,
+		box-shadow 0.14s;
+	overflow: hidden;
+}
+.rv-card::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 3px;
+	background: var(--auth);
+	opacity: 0.55;
+}
+.rv-card:hover {
+	border-color: var(--border-strong);
+}
+.rv-card.is-focused {
+	border-color: color-mix(in oklab, var(--auth) 55%, transparent);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--auth) 13%, transparent);
+}
+.rv-card.is-focused::before {
+	opacity: 1;
+}
+.rv-card-top {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	margin-bottom: 11px;
+}
+.rv-av {
+	border-radius: 7px;
+	color: #fff;
+	display: grid;
+	place-items: center;
+	font-weight: 700;
+	flex: none;
+	line-height: 1;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.rv-who {
+	flex: 1;
+	min-width: 0;
+}
+.rv-who-name {
+	font-size: 13px;
+	font-weight: 650;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.rv-role {
+	font-size: 10px;
+	color: var(--text-faint);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin-left: 5px;
+}
+.rv-when {
+	font-size: 11.5px;
+	color: var(--text-faint);
+	margin-top: 1px;
+}
+.rv-type-pill {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	padding: 3px 8px;
+	border-radius: 99px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	color: var(--text-muted);
+}
+.rv-type-pill svg {
+	opacity: 0.8;
+}
+
+.rv-card-quote {
+	font-family: var(--font-content);
+	font-size: 13.5px;
+	font-style: italic;
+	line-height: 1.45;
+	color: var(--text-muted);
+	border-left: 2px solid color-mix(in oklab, var(--auth) 55%, transparent);
+	padding-left: 10px;
+	margin-bottom: 10px;
+}
+.rv-scene-wide {
+	font-size: 11px;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin-bottom: 10px;
+}
+.rv-body {
+	font-size: 13.5px;
+	line-height: 1.55;
+	color: var(--text);
+	white-space: pre-wrap;
+}
+.rv-anchor-lost {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	color: var(--status-revised, var(--text-muted));
+	background: var(--bg-inset);
+	border-radius: 6px;
+	padding: 4px 8px;
+	margin-bottom: 10px;
+}
+.rv-draft-input {
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 66px;
+	resize: vertical;
+	border: 1px solid var(--accent-line);
+	border-radius: 9px;
+	background: var(--bg);
+	padding: 9px 11px;
+	font-family: var(--font-ui);
+	font-size: 13.5px;
+	line-height: 1.5;
+	color: var(--text);
+	outline: none;
+	box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* suggestion draft + diff */
+.rv-card.is-draft {
+	cursor: default;
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--auth) 14%, transparent);
+	border-color: color-mix(in oklab, var(--auth) 50%, transparent);
+}
+.rv-draft-from {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 6px 8px;
+	margin-bottom: 11px;
+}
+.rv-draft-k {
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.rv-draft-to {
+	display: block;
+	margin-bottom: 6px;
+}
+.rv-draft-orig {
+	font-family: var(--font-content);
+	font-size: 14px;
+	color: var(--text-muted);
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in oklab, var(--auth) 60%, var(--text-faint));
+}
+.rv-draft-help {
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--text-faint);
+	margin: 8px 0 11px;
+}
+.rv-btn:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.rv-btn.solid:disabled:hover {
+	background: var(--accent);
+}
+
+.rv-diff {
+	font-family: var(--font-content);
+	font-size: 14.5px;
+	line-height: 1.55;
+	margin-bottom: 10px;
+}
+.rv-diff-del {
+	color: var(--text-faint);
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in oklab, var(--auth) 60%, var(--text-faint));
+	margin-right: 7px;
+}
+.rv-diff-ins {
+	color: var(--auth);
+	font-weight: 550;
+	border-bottom: 2px solid color-mix(in oklab, var(--auth) 45%, transparent);
+}
+.rv-rationale {
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: var(--text-muted);
+	margin-bottom: 11px;
+}
+
+.rv-replies {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+	margin: 0 0 11px;
+	padding-left: 11px;
+	border-left: 1px solid var(--border);
+}
+.rv-reply-row {
+	display: flex;
+	gap: 8px;
+}
+.rv-reply-main {
+	flex: 1;
+	min-width: 0;
+}
+.rv-reply-head {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+}
+.rv-reply-name {
+	font-size: 12px;
+	font-weight: 650;
+}
+.rv-reply-when {
+	font-size: 10.5px;
+	color: var(--text-faint);
+}
+.rv-reply-body {
+	font-size: 12.5px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	margin-top: 1px;
+	white-space: pre-wrap;
+}
+
+.rv-reply {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	margin: 0 0 11px;
+}
+.rv-reply input {
+	flex: 1;
+	min-width: 0;
+	height: 32px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-inset);
+	padding: 0 11px;
+	font-size: 12.5px;
+	color: var(--text);
+	outline: none;
+}
+.rv-reply input:focus {
+	border-color: var(--accent-line);
+	box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.rv-reply-send {
+	flex: none;
+	width: 32px;
+	height: 32px;
+	border: 1px solid var(--border);
+	background: var(--bg-inset);
+	border-radius: 8px;
+	color: var(--text-muted);
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+}
+.rv-reply-send:not(:disabled):hover {
+	color: var(--accent);
+	border-color: var(--accent-line);
+}
+.rv-reply-send:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.rv-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 7px;
+}
+.rv-actions form {
+	display: contents;
+}
+.rv-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	border: 1px solid var(--border);
+	background: var(--bg-card);
+	color: var(--text);
+	font-size: 12.5px;
+	font-weight: 600;
+	padding: 6px 11px;
+	border-radius: 8px;
+	cursor: pointer;
+}
+.rv-btn:hover {
+	border-color: var(--border-strong);
+}
+.rv-btn svg {
+	flex: none;
+}
+.rv-btn.solid {
+	background: var(--accent);
+	color: var(--accent-contrast);
+	border-color: transparent;
+}
+.rv-btn.solid:hover {
+	background: color-mix(in oklab, var(--accent) 88%, #fff);
+}
+.rv-btn.accept {
+	color: var(--status-final);
+	background: color-mix(in oklab, var(--status-final) 12%, transparent);
+	border-color: color-mix(in oklab, var(--status-final) 38%, transparent);
+}
+.rv-btn.accept:hover {
+	background: color-mix(in oklab, var(--status-final) 20%, transparent);
+}
+.rv-btn.ghost {
+	background: none;
+	border-color: transparent;
+	color: var(--text-muted);
+}
+.rv-btn.ghost:hover {
+	background: var(--bg-hover);
+	color: var(--text);
+}
+.rv-btn.ghost.danger {
+	color: var(--danger);
+}
+.rv-btn.ghost.danger:hover {
+	background: var(--danger-soft);
+}
+
+.rv-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	font-weight: 650;
+	padding: 5px 10px;
+	border-radius: 99px;
+}
+.rv-status.accepted {
+	color: var(--status-final);
+	background: color-mix(in oklab, var(--status-final) 13%, transparent);
+}
+.rv-status.rejected {
+	color: var(--text-muted);
+	background: var(--bg-inset);
+}
+.rv-status.resolved {
+	color: var(--accent);
+	background: var(--accent-soft);
+}
+
+/* ---- left: review jump-list ---- */
+.review-nav {
+	padding: 6px 2px 24px;
+}
+.rv-nav-stat {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
+	padding: 8px 10px 12px;
+}
+.rv-nav-stat-n {
+	font-family: var(--font-serif);
+	font-size: 27px;
+	font-weight: 600;
+	line-height: 1;
+}
+.rv-nav-stat-l {
+	font-size: 12px;
+	color: var(--text-muted);
+	line-height: 1.3;
+}
+.rv-nav-filters {
+	display: flex;
+	gap: 2px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	border-radius: 9px;
+	padding: 3px;
+	margin: 0 6px 8px;
+}
+.rv-nav-filter {
+	flex: 1;
+	border: 0;
+	background: none;
+	color: var(--text-muted);
+	font-size: 11px;
+	font-weight: 550;
+	padding: 5px 3px;
+	border-radius: 6px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.rv-nav-filter:hover {
+	color: var(--text);
+}
+.rv-nav-filter.active {
+	background: var(--bg-elevated);
+	color: var(--text);
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.16),
+		inset 0 0 0 1px var(--border);
+}
+.rv-nav-group {
+	margin-bottom: 6px;
+}
+.rv-nav-scene {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 11px 10px 5px;
+}
+.rv-nav-scene-name {
+	font-size: 11.5px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.rv-nav-scene.active .rv-nav-scene-name {
+	color: var(--accent);
+}
+.rv-nav-scene-meta {
+	font-size: 10.5px;
+	color: var(--text-faint);
+	flex: none;
+	white-space: nowrap;
+}
+.rv-nav-row {
+	display: flex;
+	gap: 9px;
+	align-items: flex-start;
+	width: 100%;
+	text-align: left;
+	border: 0;
+	background: none;
+	padding: 7px 9px;
+	border-radius: 8px;
+	color: var(--text);
+	cursor: pointer;
+}
+.rv-nav-row:hover {
+	background: var(--bg-hover);
+}
+.rv-nav-row.active {
+	background: var(--bg-active);
+}
+.rv-nav-ic {
+	flex: none;
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	display: grid;
+	place-items: center;
+	color: var(--auth);
+	background: color-mix(in oklab, var(--auth) 15%, transparent);
+	margin-top: 1px;
+}
+.rv-nav-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.rv-nav-snip {
+	font-size: 12.5px;
+	line-height: 1.35;
+	color: var(--text);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.rv-nav-by {
+	font-size: 11px;
+	color: var(--text-faint);
+	text-transform: capitalize;
+}
+.rv-nav-empty {
+	font-size: 12.5px;
+	color: var(--text-faint);
+	padding: 12px 10px;
+	line-height: 1.5;
+}
+
+/* Entity mentions in the review prose open a quick card on click. */
+.review-prose .ref-word {
+	cursor: pointer;
+}
+.rv-cardpop {
+	position: fixed;
+	z-index: 60;
+	transform: translate(-50%, 10px);
+	max-width: min(320px, 90vw);
+	animation: popIn 0.12s ease;
+}
+
+/* A reviewer cannot leave review mode, so the other pills read as disabled. */
+.seg-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* The guest header is a stripped topbar: story title and who is reviewing. */
+.review-guest-bar {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.review-guest-bar .rg-title {
+	font-weight: 650;
+	font-size: 14px;
+}
+.review-guest-bar .rg-who {
+	font-size: 12.5px;
+	color: var(--text-muted);
+}

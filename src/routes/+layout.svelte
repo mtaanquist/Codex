@@ -10,6 +10,7 @@
 	import '$lib/styles/pages.css';
 	import '$lib/styles/admin.css';
 	import '$lib/styles/editor.css';
+	import '$lib/styles/review.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';
