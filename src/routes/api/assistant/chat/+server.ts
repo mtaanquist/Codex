@@ -61,7 +61,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The assembled world rides as a system message after the gateway's persona
 	// message; null when the story is empty or not owned (already checked).
 	const context = await assembleContext(db, { userId, storyId: story.id, sceneId });
-	const messages: ChatMessage[] = context ? [buildSystemMessage(context), ...turns] : turns;
+	const messages: ChatMessage[] = context
+		? [buildSystemMessage(context, { tools: true }), ...turns]
+		: turns;
 
 	const encoder = new TextEncoder();
 	const frame = (event: StreamEvent) => encoder.encode(`data: ${JSON.stringify(event)}\n\n`);

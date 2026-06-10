@@ -4,6 +4,7 @@ import { scenes, stories } from '../../db/schema';
 import { entityAppearances, getEntityCard } from '../../plan-data';
 import { searchAll } from '../../search';
 import { createSuggestion, createThread } from '../../review';
+import { storySkeleton, type SceneSummary } from '../context/sources';
 import type { ProviderToolCall } from '../providers/types';
 import { findTool } from './registry';
 
@@ -49,6 +50,8 @@ export async function dispatchToolCall(
 	}
 	try {
 		switch (call.name) {
+			case 'list_scenes':
+				return { result: await listScenes(ctx), staged: false };
 			case 'get_scene':
 				return { result: await getScene(ctx, asString(args.sceneId)), staged: false };
 			case 'get_entity':
@@ -105,6 +108,27 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 			)
 		);
 	return row ?? null;
+}
+
+// The chapter and scene skeleton, so the model can find a scene's id and read
+// it with get_scene. ctx.storyId is owner-verified by the gateway before any
+// tool runs, so the skeleton query needs no further scoping.
+async function listScenes(ctx: ToolContext): Promise<string> {
+	const skeleton = await storySkeleton(ctx.db, ctx.storyId);
+	const scene = (s: SceneSummary) => ({
+		id: s.id,
+		title: s.title,
+		status: s.status,
+		summary: s.summaryMd
+	});
+	return JSON.stringify({
+		chapters: skeleton.chapters.map((c) => ({
+			title: c.title,
+			summary: c.summaryMd,
+			scenes: c.scenes.map(scene)
+		})),
+		unfiledScenes: skeleton.orphans.map(scene)
+	});
 }
 
 async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {

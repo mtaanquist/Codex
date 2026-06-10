@@ -254,6 +254,37 @@ describe('gateway tool loop', () => {
 		expect(toolMessage?.content).toContain('tolled over the harbour');
 	});
 
+	it('list_scenes returns the chapter and scene skeleton with ids', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('A quiet opening.');
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'list_scenes', arguments: '{}' }]
+			},
+			{ content: 'One scene so far.' }
+		]);
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'what scenes are there?' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(text).toBe('One scene so far.');
+		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
+		const listed = JSON.parse(toolMessage!.content) as {
+			chapters: unknown[];
+			unfiledScenes: { id: string; title: string | null }[];
+		};
+		// The seeded scene has no chapter, so it lists as unfiled, id included.
+		expect(listed.unfiledScenes.map((s) => s.id)).toContain(sceneId);
+	});
+
 	it('a write tool stages a suggestion authored by the Assistant and changes nothing', async () => {
 		await configure(true, 'balanced', 'Muse');
 		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');

@@ -19,6 +19,13 @@ const str = (description: string) => ({ type: 'string', description });
 export const TOOLS: ToolDef[] = [
 	{
 		kind: 'read',
+		name: 'list_scenes',
+		description:
+			"List the story's chapters and scenes in order, with each scene's id, title, status, and summary. Use the ids with get_scene to read a scene in full.",
+		parameters: obj({}, [])
+	},
+	{
+		kind: 'read',
 		name: 'get_scene',
 		description: "Fetch a scene's title, status, summary, and full prose body by its id.",
 		parameters: obj({ sceneId: str('The scene id.') }, ['sceneId'])
