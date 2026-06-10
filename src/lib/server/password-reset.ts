@@ -6,6 +6,9 @@ import { consumeToken, issueToken, revokeTokens } from './tokens';
 
 const MIN_PASSWORD = 8;
 const RESET_TTL_MINUTES = 60;
+// A uuid that matches no account, used to run the same query for an unknown
+// address as for a known one.
+const NO_USER = '00000000-0000-0000-0000-000000000000';
 
 // Issues a reset token for an existing account and returns the raw value for
 // the emailed link, or null when no account matches. The caller shows the same
@@ -13,12 +16,13 @@ const RESET_TTL_MINUTES = 60;
 export async function requestPasswordReset(db: Database, email: string): Promise<string | null> {
 	const normalized = email.trim().toLowerCase();
 	const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, normalized));
-	if (!user) return null;
-	// Revoke any earlier outstanding reset links before issuing the new one, so
-	// only the most recent link is ever live (a leaked older one is dead).
+	// Run the same transaction whether or not the address is registered, so the
+	// response time does not reveal which (login equalises the same way). For an
+	// unknown address the revoke matches nothing and no token is issued. Revoking
+	// any earlier outstanding link first keeps only the most recent one live.
 	return await db.transaction(async (tx) => {
-		await revokeTokens(tx, user.id, 'password_reset');
-		return issueToken(tx, user.id, 'password_reset', RESET_TTL_MINUTES);
+		await revokeTokens(tx, user?.id ?? NO_USER, 'password_reset');
+		return user ? issueToken(tx, user.id, 'password_reset', RESET_TTL_MINUTES) : null;
 	});
 }
 

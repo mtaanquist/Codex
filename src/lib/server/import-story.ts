@@ -13,7 +13,6 @@ import {
 	scenes,
 	stories
 } from './db/schema';
-import { isUniqueViolation } from './db';
 import { uniqueSlug } from './slugs';
 import { wordCount } from '../word-count';
 import { rewriteBundledAssetLinks, type ImportedNote, type ImportPlan } from '../import-markdown';
@@ -161,8 +160,18 @@ export async function runImport(
 
 	const resolutions = await resolveNotes(db, universe.id, plan.notes);
 
-	const insertStory = (slug: string) =>
-		db
+	// The slug is picked up front; the story row itself is inserted inside the
+	// transaction below, so a failure partway through the import rolls the empty
+	// story away rather than leaving a visible shell.
+	const slug = await uniqueSlug(db, 'stories', universe.ownerId, plan.story.title, 'story');
+
+	let sceneCount = 0;
+	let notesAttached = 0;
+	let entitiesCreated = 0;
+	let notesSkipped = 0;
+
+	const story = await db.transaction(async (tx) => {
+		const [created] = await tx
 			.insert(stories)
 			.values({
 				universeId: universe.id,
@@ -174,25 +183,7 @@ export async function runImport(
 				slug
 			})
 			.returning({ id: stories.id, slug: stories.slug });
-	let story;
-	try {
-		[story] = await insertStory(
-			await uniqueSlug(db, 'stories', universe.ownerId, plan.story.title, 'story')
-		);
-	} catch (err) {
-		// A concurrent create took the slug between the pick and the insert.
-		if (!isUniqueViolation(err)) throw err;
-		[story] = await insertStory(
-			await uniqueSlug(db, 'stories', universe.ownerId, plan.story.title, 'story')
-		);
-	}
-
-	let sceneCount = 0;
-	let notesAttached = 0;
-	let entitiesCreated = 0;
-	let notesSkipped = 0;
-
-	await db.transaction(async (tx) => {
+		const story = created;
 		let globalPosition = 0;
 		const insertScene = async (
 			scene: ImportPlan['unfiled'][number],
@@ -275,6 +266,7 @@ export async function runImport(
 			}
 			notesAttached += 1;
 		}
+		return story;
 	});
 
 	// One universe-wide rebuild covers every imported scene.

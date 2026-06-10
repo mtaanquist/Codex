@@ -13,3 +13,11 @@ export function logEvent(
 	if (level === 'error') console.error(line);
 	else console.log(line);
 }
+
+// Masks an email for logs: keeps the first character and the domain, so an
+// operator can recognise an account without the full address sitting in logs.
+export function redactEmail(email: string): string {
+	const at = email.indexOf('@');
+	if (at <= 0) return '***';
+	return `${email[0]}***${email.slice(at)}`;
+}
