@@ -73,6 +73,43 @@ export async function appendChat(
 	}
 }
 
+// Marks a stored split proposal as confirmed (recording what the split
+// created) or clears that mark after a revert, so the card's state survives
+// a reload. The proposal is matched by its scene and passage across the
+// user's conversation for the story; every match updates, so a re-proposed
+// point stays consistent. Returns whether anything matched.
+export async function setProposalConfirmed(
+	db: Database,
+	userId: string,
+	storyId: string,
+	key: { sceneId: string; before: string },
+	confirmed: { splitSceneId: string; newSceneId: string } | null
+): Promise<boolean> {
+	const rows = await db
+		.select({ id: assistantChatMessages.id, meta: assistantChatMessages.meta })
+		.from(assistantChatMessages)
+		.where(
+			and(eq(assistantChatMessages.userId, userId), eq(assistantChatMessages.storyId, storyId))
+		);
+	let matched = false;
+	for (const row of rows) {
+		if (!row.meta?.proposals?.some((p) => p.sceneId === key.sceneId && p.before === key.before)) {
+			continue;
+		}
+		matched = true;
+		const proposals = row.meta.proposals.map((p) =>
+			p.sceneId === key.sceneId && p.before === key.before
+				? { ...p, confirmed: confirmed ?? undefined }
+				: p
+		);
+		await db
+			.update(assistantChatMessages)
+			.set({ meta: { ...row.meta, proposals } })
+			.where(eq(assistantChatMessages.id, row.id));
+	}
+	return matched;
+}
+
 export async function clearChat(db: Database, userId: string, storyId: string): Promise<void> {
 	await db
 		.delete(assistantChatMessages)

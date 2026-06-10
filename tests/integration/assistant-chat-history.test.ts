@@ -16,7 +16,8 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'chat-history-test-secret';
 
-const { appendChat, clearChat, listChat } = await import('../../src/lib/server/llm/chat-history');
+const { appendChat, clearChat, listChat, setProposalConfirmed } =
+	await import('../../src/lib/server/llm/chat-history');
 const { deleteStory } = await import('../../src/lib/server/story-delete');
 const { purgeAccount } = await import('../../src/lib/server/account-deletion');
 
@@ -123,5 +124,85 @@ describe('chat history', () => {
 		await purgeAccount(db, userId, null);
 		const afterPurge = await db.select().from(assistantChatMessages);
 		expect(afterPurge).toHaveLength(0);
+	});
+});
+
+// The decided state of a split proposal card rides on its stored turn, so a
+// confirm survives a reload and a revert reopens the card.
+describe('setProposalConfirmed', () => {
+	const proposal = {
+		sceneId: '00000000-0000-4000-8000-000000000001',
+		sceneTitle: null,
+		before: 'Dawn came.',
+		rationale: 'A natural break.'
+	};
+
+	it('marks the matching proposal confirmed and clears it again', async () => {
+		await appendChat(db, userId, storyId, {
+			role: 'assistant',
+			content: 'I propose a split.',
+			meta: { proposals: [proposal, { ...proposal, before: 'Another point.' }] }
+		});
+
+		const confirmed = {
+			splitSceneId: proposal.sceneId,
+			newSceneId: '00000000-0000-4000-8000-000000000002'
+		};
+		expect(
+			await setProposalConfirmed(
+				db,
+				userId,
+				storyId,
+				{ sceneId: proposal.sceneId, before: proposal.before },
+				confirmed
+			)
+		).toBe(true);
+		let [turn] = await listChat(db, userId, storyId);
+		expect(turn.meta?.proposals?.[0].confirmed).toEqual(confirmed);
+		// The other proposal on the same turn is untouched.
+		expect(turn.meta?.proposals?.[1].confirmed).toBeUndefined();
+
+		// The revert clears the mark.
+		expect(
+			await setProposalConfirmed(
+				db,
+				userId,
+				storyId,
+				{ sceneId: proposal.sceneId, before: proposal.before },
+				null
+			)
+		).toBe(true);
+		[turn] = await listChat(db, userId, storyId);
+		expect(turn.meta?.proposals?.[0].confirmed).toBeUndefined();
+	});
+
+	it('reports no match for an unknown proposal and leaves other users alone', async () => {
+		await appendChat(db, userId, storyId, {
+			role: 'assistant',
+			content: 'I propose a split.',
+			meta: { proposals: [proposal] }
+		});
+		expect(
+			await setProposalConfirmed(
+				db,
+				userId,
+				storyId,
+				{ sceneId: proposal.sceneId, before: 'Different words.' },
+				{ splitSceneId: 'x', newSceneId: 'y' }
+			)
+		).toBe(false);
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'O', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		expect(
+			await setProposalConfirmed(
+				db,
+				other.id,
+				storyId,
+				{ sceneId: proposal.sceneId, before: proposal.before },
+				{ splitSceneId: 'x', newSceneId: 'y' }
+			)
+		).toBe(false);
 	});
 });

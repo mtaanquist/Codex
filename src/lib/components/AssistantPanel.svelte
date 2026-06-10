@@ -18,6 +18,7 @@
 		suggestions = [],
 		initialMessages = [],
 		onConfirmSplit,
+		onRevertSplit,
 		onInsert
 	}: {
 		storyId: string;
@@ -40,9 +41,18 @@
 				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			} | null;
 		}[];
-		// Confirms a proposed scene split; resolves to an error message, or null
-		// when the split landed (the page navigates to the new scene).
-		onConfirmSplit?: (proposal: { sceneId: string; before: string }) => Promise<string | null>;
+		// Confirms a proposed scene split; resolves to the created scene pair (the
+		// page navigates to the new scene) or an error message.
+		onConfirmSplit?: (proposal: {
+			sceneId: string;
+			before: string;
+		}) => Promise<{ error: string } | { splitSceneId: string; newSceneId: string }>;
+		// Reverts a confirmed split: the two halves merge back into one scene.
+		onRevertSplit?: (proposal: {
+			sceneId: string;
+			before: string;
+			confirmed: { splitSceneId: string; newSceneId: string };
+		}) => Promise<string | null>;
 		// Inserts a reply's text into the open scene editor at the cursor; only
 		// passed when a single scene editor is open.
 		onInsert?: (text: string) => void;
@@ -56,7 +66,11 @@
 		sceneTitle: string | null;
 		before: string;
 		rationale: string;
+		// Set once the split landed; the card shows it as done and offers the
+		// revert. Persisted with the turn, so it survives a reload.
+		confirmed?: { splitSceneId: string; newSceneId: string };
 		confirming?: boolean;
+		reverting?: boolean;
 		error?: string;
 	};
 	type Message = {
@@ -120,15 +134,35 @@
 		proposal.confirming = true;
 		proposal.error = '';
 		try {
-			const failure = await onConfirmSplit({
+			const result = await onConfirmSplit({
 				sceneId: proposal.sceneId,
 				before: proposal.before
 			});
-			if (failure) proposal.error = failure;
+			if ('error' in result) proposal.error = result.error;
+			else proposal.confirmed = result;
 		} catch {
 			proposal.error = 'Could not split the scene. Try again.';
 		} finally {
 			proposal.confirming = false;
+		}
+	}
+
+	async function revertSplit(proposal: SplitProposal) {
+		if (!onRevertSplit || !proposal.confirmed || proposal.reverting) return;
+		proposal.reverting = true;
+		proposal.error = '';
+		try {
+			const failure = await onRevertSplit({
+				sceneId: proposal.sceneId,
+				before: proposal.before,
+				confirmed: proposal.confirmed
+			});
+			if (failure) proposal.error = failure;
+			else proposal.confirmed = undefined;
+		} catch {
+			proposal.error = 'Could not merge the scenes back. Try again.';
+		} finally {
+			proposal.reverting = false;
 		}
 	}
 
@@ -404,17 +438,34 @@
 								{/if}
 								<div class="proposal-quote">{proposal.before}</div>
 								<div class="proposal-actions">
-									{#if onConfirmSplit}
-										<button
-											class="btn btn-primary"
-											type="button"
-											disabled={proposal.confirming}
-											onclick={() => confirmSplit(proposal)}
-										>
-											{proposal.confirming ? 'Splitting...' : 'Split here'}
+									{#if proposal.confirmed}
+										<button class="btn btn-primary" type="button" disabled>
+											<Icon name="check" size={12} /> Split
 										</button>
+										{#if onRevertSplit}
+											<button
+												class="btn"
+												type="button"
+												disabled={proposal.reverting}
+												onclick={() => revertSplit(proposal)}
+											>
+												{proposal.reverting ? 'Merging back...' : 'Revert'}
+											</button>
+										{/if}
+										<span class="proposal-hint">Revert merges the two scenes back into one.</span>
+									{:else}
+										{#if onConfirmSplit}
+											<button
+												class="btn btn-primary"
+												type="button"
+												disabled={proposal.confirming}
+												onclick={() => confirmSplit(proposal)}
+											>
+												{proposal.confirming ? 'Splitting...' : 'Split here'}
+											</button>
+										{/if}
+										<span class="proposal-hint">The new scene starts at the quoted text.</span>
 									{/if}
-									<span class="proposal-hint">The new scene starts at the quoted text.</span>
 								</div>
 								{#if proposal.error}
 									<p class="proposal-error" role="alert">{proposal.error}</p>

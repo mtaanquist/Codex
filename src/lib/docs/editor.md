@@ -98,7 +98,7 @@ To ask about a particular passage, select it in the editor, right-click, and cho
 
 When a reply contains something you want in the manuscript, select "Insert at cursor" under it to drop the reply's text into the open scene where your cursor is. The action only shows while a single scene is open in the editor.
 
-The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". Its suggestion appears in the conversation as a card quoting where the new scene would start, with its reasoning. Nothing happens until you select "Split here" on the card; the split works the same as the toolbar's split button, and you can merge the scenes back together from the sidebar if you change your mind.
+The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". Its suggestion appears in the conversation as a card quoting the text the new scene would start with, alongside its reasoning. Nothing happens until you select "Split here" on the card. A confirmed card shows the split as done and offers "Revert", which merges the two scenes back into one. If the Assistant proposes several splits for one scene, confirm them in any order; each cut lands at its quoted text even after the earlier ones move it into a new scene.
 
 The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
 

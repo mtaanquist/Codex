@@ -92,7 +92,9 @@ export async function dispatchToolCall(
 			case 'propose_scene_split':
 				return proposeSceneSplit(ctx, {
 					sceneId: asString(args.sceneId),
-					before: asString(args.before),
+					// The old parameter name rides as a fallback for any provider
+					// still answering against a cached tool schema.
+					before: asString(args.newSceneStart) || asString(args.before),
 					rationale: asString(args.rationale)
 				});
 			case 'reply_in_thread':

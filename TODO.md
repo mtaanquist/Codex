@@ -493,6 +493,22 @@ resolves insert ghosts) while dropping the decided marks in the same
 transaction. The spec deflake (#390) and a new e2e that accepts and
 types with no settling wait both ride the same branch history.
 
+Split proposal follow-ups (2026-06-10, post-v3.4.0, from first real use):
+(1) When the model proposed several splits of one scene, only the first
+confirmed: the later passages had moved into the scene that split
+created. locateSplitInStory follows the passage to whichever live scene
+of the story holds it now (unique across scenes, then unique within);
+the split endpoint re-targets through it. (2) The model passed the text
+the first scene should end with, cutting before it: the tool parameter
+renamed to newSceneStart with a worked example in the description (the
+old name still lands for cached schemas), and the canned sidebar turn
+asks for the new scene's opening words. (3) Seam whitespace was already
+shed on both sides by splitScene; pinned with a test. (4) Proposal
+cards now show a confirmed split as done with a Revert that merges the
+two scenes back (merge-scenes), the decided state persisted on the
+stored chat turn (confirmed on the meta proposal entry, no migration)
+so it survives reloads.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

@@ -331,13 +331,29 @@
 		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
 	}
 
+	// Records a proposal card's outcome on its stored chat turn, so the card
+	// stays decided (or reopens after a revert) across reloads. Best effort:
+	// the split or merge itself already landed.
+	function persistProposalState(
+		proposal: { sceneId: string; before: string },
+		confirmed: { splitSceneId: string; newSceneId: string } | null
+	) {
+		void fetch(`/api/stories/${data.story.id}/assistant-proposal`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ sceneId: proposal.sceneId, before: proposal.before, confirmed })
+		}).catch(() => {});
+	}
+
 	// Confirms a split the Assistant proposed in chat. The exact passage is
 	// re-located server-side against the stored text, so the open editor's
-	// pending save lands first; on success the new scene opens.
+	// pending save lands first; on success the new scene opens. The passage
+	// may have moved into another scene (an earlier confirmed proposal), so
+	// the response names the scene that was actually cut.
 	async function confirmAssistantSplit(proposal: {
 		sceneId: string;
 		before: string;
-	}): Promise<string | null> {
+	}): Promise<{ error: string } | { splitSceneId: string; newSceneId: string }> {
 		const editor =
 			data.selectedScene?.id === proposal.sceneId ? sceneEditor : docEditors[proposal.sceneId];
 		await editor?.flushSave();
@@ -348,11 +364,44 @@
 		});
 		if (!response.ok) {
 			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			return body?.message ?? 'Could not split the scene.';
+			return { error: body?.message ?? 'Could not split the scene.' };
 		}
-		const { newSceneId } = (await response.json()) as { newSceneId: string };
+		const { newSceneId, splitSceneId } = (await response.json()) as {
+			newSceneId: string;
+			splitSceneId: string;
+		};
+		persistProposalState(proposal, { splitSceneId, newSceneId });
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
+		return { splitSceneId, newSceneId };
+	}
+
+	// Reverts a confirmed split from its proposal card: the two halves merge
+	// back into one scene and the card reopens.
+	async function revertAssistantSplit(proposal: {
+		sceneId: string;
+		before: string;
+		confirmed: { splitSceneId: string; newSceneId: string };
+	}): Promise<string | null> {
+		for (const id of [proposal.confirmed.splitSceneId, proposal.confirmed.newSceneId]) {
+			const editor = data.selectedScene?.id === id ? sceneEditor : docEditors[id];
+			await editor?.flushSave();
+		}
+		const response = await fetch(`/api/stories/${data.story.id}/merge-scenes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				sceneIds: [proposal.confirmed.splitSceneId, proposal.confirmed.newSceneId]
+			})
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			return body?.message ?? 'Could not merge the scenes back.';
+		}
+		const { targetSceneId } = (await response.json()) as { targetSceneId: string };
+		persistProposalState(proposal, null);
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+		await goto(`${storyPath}?scene=${targetSceneId}`, { invalidateAll: true });
 		return null;
 	}
 
@@ -364,7 +413,7 @@
 		const label = scene?.title ? `the scene "${scene.title}"` : 'this scene';
 		assistantIntent.pending = {
 			kind: 'send',
-			text: `Suggest a natural place to split ${label} (scene id: ${sceneId}) in two. Read the scene first, then propose the split for me to confirm.`
+			text: `Suggest a natural place to split ${label} (scene id: ${sceneId}) in two. Read the scene first, then propose the split for me to confirm, quoting the exact words the new scene should open with.`
 		};
 	}
 
@@ -1224,6 +1273,7 @@
 						suggestions={assistantSuggestions}
 						initialMessages={data.assistantChat}
 						onConfirmSplit={confirmAssistantSplit}
+						onRevertSplit={revertAssistantSplit}
 						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 							? (text) => sceneEditor?.insertAtCursor(text)
 							: undefined}
