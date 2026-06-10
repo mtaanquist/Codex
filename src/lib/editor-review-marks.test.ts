@@ -134,6 +134,24 @@ describe('buildReviewMarks', () => {
 		).toHaveLength(0);
 	});
 
+	it('draws faint resolved marks only under the Done filter', () => {
+		const resolvedThread = thread({ resolvedAt: '2026-02-01' });
+		const decided = suggestion({ id: 'g1', status: 'accepted' });
+		// Not shown under the open filters.
+		expect(flatten(buildReviewMarks([resolvedThread], [decided], ALL, 100))).toHaveLength(0);
+		// Shown, faint, with no strikethrough or ghost, under Done.
+		const flat = flatten(buildReviewMarks([resolvedThread], [decided], 'resolved', 100));
+		expect(flat).toHaveLength(2);
+		expect(flat.every((f) => f.class?.includes('rv-resolved'))).toBe(true);
+		expect(flat.some((f) => f.widgetText)).toBe(false);
+		expect(flat.some((f) => f.class?.includes('rv-del'))).toBe(false);
+	});
+
+	it('skips a resolved mark whose anchor was lost', () => {
+		const lost = thread({ resolvedAt: '2026-02-01', anchorLost: true });
+		expect(flatten(buildReviewMarks([lost], [], 'resolved', 100))).toHaveLength(0);
+	});
+
 	it('bakes the focus highlight into the matching mark only', () => {
 		const flat = flatten(buildReviewMarks([thread()], [suggestion()], ALL, 100, 't1'));
 		const comment = flat.find((f) => f.rid === 't1');

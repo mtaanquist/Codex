@@ -618,6 +618,30 @@ function mapSuggestionRange(
 	return reanchorRange(baseText, currentText, start, end);
 }
 
+// Where a decided suggestion now sits, so the Done view can point at it: the
+// accepted replacement (the new text it left behind) or the rejected original
+// (still in place). Null when there is nothing to mark or it cannot be found.
+function decidedAnchor(
+	status: 'accepted' | 'rejected',
+	baseText: string,
+	currentText: string,
+	start: number,
+	end: number,
+	replacement: string
+): { start: number; end: number } | null {
+	if (status === 'rejected') {
+		// Rejection left the text untouched, so the original passage maps as-is.
+		if (start === end) return null; // a rejected insertion left no text
+		return reanchorRange(baseText, currentText, start, end);
+	}
+	// Accepted: the replacement now occupies the spot the original held.
+	if (replacement.length === 0) return null; // a deletion leaves nothing to mark
+	const point = reanchorPoint(baseText, currentText, start);
+	if (point === null) return null;
+	const at = { start: point, end: point + replacement.length };
+	return at.end <= currentText.length ? at : null;
+}
+
 export async function listSuggestions(
 	db: Database,
 	storyId: string,
@@ -643,11 +667,19 @@ export async function listSuggestions(
 		: 'Assistant';
 	return rows.map((row) => {
 		const { rangeStart, rangeEnd } = row.suggestion;
-		// Decided suggestions keep their record but no longer point anywhere.
+		// A pending suggestion anchors to where it would apply; a decided one
+		// anchors to where it now sits, so the Done view can point at it.
 		const anchor =
 			row.suggestion.status === 'pending'
 				? mapSuggestionRange(row.baseBody, row.currentBody, rangeStart, rangeEnd)
-				: null;
+				: decidedAnchor(
+						row.suggestion.status,
+						row.baseBody,
+						row.currentBody,
+						rangeStart,
+						rangeEnd,
+						row.suggestion.replacement
+					);
 		const isOwner = row.suggestion.authorUserId !== null;
 		const isAssistant = row.suggestion.assistant;
 		const mine = viewer

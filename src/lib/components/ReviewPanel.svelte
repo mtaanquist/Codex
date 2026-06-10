@@ -83,10 +83,10 @@
 	}
 
 	const FILTERS = $derived([
-		{ id: 'all' as const, label: 'All', n: nComments + nSugg },
+		{ id: 'all' as const, label: 'Open', n: nComments + nSugg },
 		{ id: 'comments' as const, label: 'Comments', n: nComments },
 		{ id: 'suggestions' as const, label: 'Edits', n: nSugg },
-		{ id: 'resolved' as const, label: 'Resolved', n: nResolved }
+		{ id: 'resolved' as const, label: 'Done', n: nResolved }
 	]);
 
 	// Threads and suggestions for this scene that pass the filter, in document
