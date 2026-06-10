@@ -36,9 +36,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 	event.locals.session = null;
 
-	const sessionId = event.cookies.get(SESSION_COOKIE);
-	if (sessionId) {
-		const result = await validateSession(db, sessionId);
+	const token = event.cookies.get(SESSION_COOKIE);
+	if (token) {
+		const result = await validateSession(db, token);
 		if (result) {
 			event.locals.user = result.user;
 			event.locals.session = result.session;

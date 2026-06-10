@@ -139,9 +139,11 @@ describe('setUserSuspended', () => {
 			.insert(users)
 			.values({ email: 'sub@example.com', displayName: 'Sub', passwordHash: 'x', role: 'user' })
 			.returning({ id: users.id });
-		await db
-			.insert(sessions)
-			.values({ userId: user.id, expiresAt: new Date(Date.now() + 3_600_000) });
+		await db.insert(sessions).values({
+			userId: user.id,
+			tokenHash: crypto.randomUUID(),
+			expiresAt: new Date(Date.now() + 3_600_000)
+		});
 
 		expect(await setUserSuspended(db, user.id, true)).toBe(true);
 		const [row] = await db.select().from(users).where(eq(users.id, user.id));

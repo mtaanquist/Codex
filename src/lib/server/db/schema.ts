@@ -87,6 +87,10 @@ export const users = pgTable('users', {
 // carries the session id.
 export const sessions = pgTable('sessions', {
 	id: uuid('id').primaryKey().defaultRandom(),
+	// The cookie carries a random token; only its hash is stored, so a read-only
+	// database exposure cannot be replayed as a live session. The id stays an
+	// internal, non-secret key for listing and revoking sessions.
+	tokenHash: text('token_hash').notNull().unique(),
 	userId: uuid('user_id')
 		.references(() => users.id)
 		.notNull(),

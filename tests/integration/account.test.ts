@@ -29,7 +29,7 @@ let userId: string;
 async function newSession() {
 	const [row] = await db
 		.insert(sessions)
-		.values({ userId, expiresAt: new Date(Date.now() + 60_000) })
+		.values({ userId, tokenHash: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60_000) })
 		.returning({ id: sessions.id });
 	return row.id;
 }

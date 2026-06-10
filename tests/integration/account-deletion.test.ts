@@ -146,7 +146,11 @@ async function seedFullAccount(ownerId: string) {
 		})
 		.returning();
 	await db.insert(publicationAssets).values({ publicationId: pub.id, assetId: asset.id });
-	await db.insert(sessions).values({ userId: ownerId, expiresAt: new Date(Date.now() + 60_000) });
+	await db.insert(sessions).values({
+		userId: ownerId,
+		tokenHash: crypto.randomUUID(),
+		expiresAt: new Date(Date.now() + 60_000)
+	});
 }
 
 beforeAll(async () => {
@@ -248,7 +252,7 @@ describe('scheduleAccountDeletion and cancel', () => {
 
 		// A session opened while the deletion is pending dies at validation.
 		const blocked = await createSession(db, userId);
-		expect(await validateSession(db, blocked.id)).toBeNull();
+		expect(await validateSession(db, blocked.token)).toBeNull();
 
 		expect(await cancelAccountDeletion(db, token)).toBe(true);
 		const [restored] = await db.select().from(users).where(eq(users.id, userId));

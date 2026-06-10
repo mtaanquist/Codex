@@ -82,7 +82,7 @@ export const actions: Actions = {
 			ip: getClientAddress()
 		});
 		logEvent('info', 'login.ok', { userId: result.user.id });
-		cookies.set(SESSION_COOKIE, session.id, {
+		cookies.set(SESSION_COOKIE, session.token, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',
