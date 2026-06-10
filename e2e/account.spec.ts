@@ -162,6 +162,14 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await tab.click();
 	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
 
+	// The recap and summary actions live in the menu next to the send button;
+	// the header keeps the mute link.
+	await page.getByRole('button', { name: 'More actions' }).click();
+	await expect(page.getByRole('menuitem', { name: 'Catch me up' })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'Update summaries' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('menuitem', { name: 'Catch me up' })).toHaveCount(0);
+
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
 	await page.getByRole('button', { name: 'Mute for this story' }).click();
 	await expect(page.locator('.assistant-muted')).toBeVisible();

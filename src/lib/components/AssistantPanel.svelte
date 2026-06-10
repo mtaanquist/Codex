@@ -164,6 +164,28 @@
 		pending?.abort();
 	}
 
+	// The actions menu next to the send button; closes like the other inline
+	// menus, on an outside press or Escape.
+	let actionsOpen = $state(false);
+
+	function runAction(action: () => void) {
+		actionsOpen = false;
+		action();
+	}
+
+	function onWindowPointerDown(event: MouseEvent) {
+		if (!actionsOpen) return;
+		const target = event.target as HTMLElement | null;
+		if (!target?.closest('.composer-menu-wrap')) actionsOpen = false;
+	}
+
+	function onWindowKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && actionsOpen) {
+			event.preventDefault();
+			actionsOpen = false;
+		}
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
@@ -195,6 +217,8 @@
 	}
 </script>
 
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />
+
 {#if muted}
 	<div class="assistant-muted">
 		<p>The Assistant is off for this story.</p>
@@ -210,24 +234,6 @@
 		<div class="assistant-head">
 			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
 			<div class="head-actions">
-				<button
-					class="head-link"
-					type="button"
-					disabled={busy}
-					title="Recap the story up to where you are"
-					onclick={catchUp}
-				>
-					Catch me up
-				</button>
-				<button
-					class="head-link"
-					type="button"
-					disabled={summarising}
-					title="Draft and refresh scene and chapter summaries in the background"
-					onclick={updateSummaries}
-				>
-					{summarising ? 'Starting...' : 'Update summaries'}
-				</button>
 				<form method="POST" action="?/muteAssistant" use:enhance>
 					<button class="mute-link" type="submit" title="Hide the Assistant for this story">
 						Mute for this story
@@ -279,6 +285,42 @@
 				oninput={grow}
 				onkeydown={onKeydown}
 			></textarea>
+			<div class="composer-menu-wrap">
+				<button
+					class="menu-btn"
+					type="button"
+					title="More actions"
+					aria-haspopup="menu"
+					aria-expanded={actionsOpen}
+					onclick={() => (actionsOpen = !actionsOpen)}
+				>
+					<Icon name="more" size={16} />
+				</button>
+				{#if actionsOpen}
+					<div class="composer-menu" role="menu">
+						<button
+							class="composer-menu-item"
+							type="button"
+							role="menuitem"
+							disabled={busy}
+							title="Recap the story up to where you are"
+							onclick={() => runAction(() => void catchUp())}
+						>
+							Catch me up
+						</button>
+						<button
+							class="composer-menu-item"
+							type="button"
+							role="menuitem"
+							disabled={summarising}
+							title="Draft and refresh scene and chapter summaries in the background"
+							onclick={() => runAction(() => void updateSummaries())}
+						>
+							{summarising ? 'Starting...' : 'Update summaries'}
+						</button>
+					</div>
+				{/if}
+			</div>
 			{#if busy}
 				<button class="send-btn" type="button" title="Stop generating" onclick={stop}>
 					<span class="stop-glyph"></span>
@@ -327,22 +369,6 @@
 		justify-content: flex-end;
 		align-items: center;
 		gap: 6px 12px;
-	}
-	.head-link {
-		border: 0;
-		background: none;
-		padding: 0;
-		font-size: 12px;
-		color: var(--text-muted);
-		cursor: pointer;
-	}
-	.head-link:hover:not(:disabled) {
-		color: var(--accent);
-		text-decoration: underline;
-	}
-	.head-link:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 	.mute-link {
 		border: 0;
@@ -479,6 +505,56 @@
 	}
 	.composer textarea:focus {
 		border-color: var(--accent-line);
+	}
+	.composer-menu-wrap {
+		position: relative;
+		flex: none;
+	}
+	.menu-btn {
+		width: 36px;
+		height: 36px;
+		border-radius: 9px;
+		border: 1px solid var(--border);
+		background: var(--bg-card);
+		color: var(--text-muted);
+		display: grid;
+		place-items: center;
+		cursor: pointer;
+	}
+	.menu-btn:hover {
+		color: var(--text);
+		border-color: var(--border-strong);
+	}
+	.composer-menu {
+		position: absolute;
+		bottom: 42px;
+		right: 0;
+		z-index: 60;
+		min-width: 190px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+	}
+	.composer-menu-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		background: none;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: 13px;
+		padding: 6px 7px;
+		border-radius: 5px;
+		cursor: default;
+	}
+	.composer-menu-item:hover:not(:disabled) {
+		background: var(--accent-soft);
+	}
+	.composer-menu-item:disabled {
+		color: var(--text-faint);
 	}
 	.send-btn {
 		flex: none;

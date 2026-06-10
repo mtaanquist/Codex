@@ -96,9 +96,9 @@ When you have set up the Assistant on your account page, an Assistant tab appear
 
 The conversation is not saved. It clears when you reload or leave the page.
 
-When you come back to a story after time away, select "Catch me up" at the top of the tab. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
+When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
-Select "Update summaries" at the top of the tab to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
+Select "Update summaries" from the menu next to the send button to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
 
 While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 
