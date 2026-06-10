@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import ReviewNav from './ReviewNav.svelte';
 	import ReviewSurface from './ReviewSurface.svelte';
@@ -6,6 +7,7 @@
 	import ReviewPanel from './ReviewPanel.svelte';
 	import type { Composer } from './ReviewPanel.svelte';
 	import type { MentionEntity } from '$lib/editor-mentions';
+	import type { MarkVisibility } from '$lib/editor';
 	import type { ReviewFilter, ReviewSuggestion, ReviewThread } from '$lib/review-ui';
 
 	let {
@@ -15,20 +17,31 @@
 		suggestions,
 		role,
 		storyId = null,
+		book = null,
 		canSuggest = true,
 		seg = null,
 		entities = [],
 		mentionMembers = [],
 		mentionPins = {},
-		entityHref = null
+		entityHref = null,
+		nonPrintingMarks = 'hidden',
+		commandMarkers = 'shown'
 	}: {
 		chapters: { id: string; title: string | null }[];
-		scenes: { id: string; chapterId: string | null; title: string | null; bodyMd: string }[];
+		scenes: {
+			id: string;
+			chapterId: string | null;
+			title: string | null;
+			status?: string | null;
+			bodyMd: string;
+		}[];
 		threads: ReviewThread[];
 		suggestions: ReviewSuggestion[];
 		role: 'author' | 'guest';
 		// The owning story; the author's editable centre autosaves against it.
 		storyId?: string | null;
+		// The book header above the outline (title plus universe); null hides it.
+		book?: { title: string; subtitle: string | null } | null;
 		canSuggest?: boolean;
 		// The mode switcher links, shown on the author side only.
 		seg?: { writeHref: string; planHref: string; notesHref: string } | null;
@@ -37,6 +50,9 @@
 		mentionMembers?: string[];
 		mentionPins?: Record<string, string>;
 		entityHref?: ((entity: MentionEntity) => string) | null;
+		// The author editor's view toggles, persisted per user.
+		nonPrintingMarks?: MarkVisibility;
+		commandMarkers?: MarkVisibility;
 	} = $props();
 
 	// Scenes in reading order, each tagged with its chapter label, so the nav
@@ -46,6 +62,7 @@
 			id: string;
 			chapterId: string | null;
 			title: string | null;
+			status?: string | null;
 			bodyMd: string;
 			chapterTitle: string;
 		}[] = [];
@@ -96,10 +113,9 @@
 		}
 	}
 
-	function navSelect(sceneId: string, itemId: string) {
+	function navSelectScene(sceneId: string) {
 		selectScene(sceneId);
-		focusedId = itemId;
-		// Picking an item from the jump-list shows the manuscript on mobile.
+		// Picking a scene from the outline shows the manuscript on mobile.
 		mobileTab = 'read';
 	}
 
@@ -197,18 +213,28 @@
 					{/if}
 					<button class="seg-btn active" type="button">Review</button>
 				</div>
-				<SidebarSearch bind:query placeholder="Search comments and edits..." />
+				<SidebarSearch bind:query placeholder="Search chapters and scenes..." />
 			</div>
 			<div class="left-scroll">
+				{#if book}
+					<div class="outline-head">
+						<span class="story-switch as-label">
+							<span class="story-book"><Icon name="book" size={15} /></span>
+							<span class="story-id">
+								<span class="story-title">{book.title}</span>
+								{#if book.subtitle}<span class="story-universe">{book.subtitle}</span>{/if}
+							</span>
+						</span>
+					</div>
+				{/if}
 				<ReviewNav
+					{chapters}
 					scenes={orderedScenes}
 					{threads}
 					{suggestions}
 					{filter}
-					setFilter={(f) => (filter = f)}
-					{focusedId}
 					{selectedSceneId}
-					onSelect={navSelect}
+					onSelect={navSelectScene}
 					{query}
 				/>
 			</div>
@@ -233,6 +259,8 @@
 							{mentionMembers}
 							{mentionPins}
 							{entityHref}
+							{nonPrintingMarks}
+							{commandMarkers}
 							onStartComment={startComment}
 							onStartSuggest={startSuggest}
 						/>

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { clickTool } from './toolbar';
 
 // The whole-story view is the editor (it carries the formatting toolbar);
 // Preview beside it is the read-only, export-faithful render: alignment is
@@ -35,7 +36,7 @@ test('whole-story view has the toolbar; preview hides the markers', async ({ pag
 			response.request().method() === 'PUT' &&
 			response.ok()
 	);
-	await page.getByRole('button', { name: 'Align center' }).click();
+	await clickTool(page, 'Align center');
 	await expect(page.locator('.cm-content')).toContainText('\\center Centered line.');
 	await alignSave;
 

@@ -10,14 +10,14 @@ Each link is its own invitation. If you want feedback from three people, make th
 
 ## What the reviewer sees
 
-The link opens the story in a review workspace: a list of notes on the left, the scene to read in the middle, and the comment threads on the right. The reviewer gives a name (or, if they have an account here and are signed in, their own name is used), then reads and comments:
+The link opens the story in a review workspace: the chapter and scene outline on the left, the scene to read in the middle, and the comment threads on the right. The reviewer gives a name (or, if they have an account here and are signed in, their own name is used), then reads and comments:
 
 - Selecting a passage brings up a small toolbar to comment on exactly those words.
 - The "Whole scene" button at the top of the right panel comments on the scene as a whole.
 - They see earlier comments on the story and can reply to them from each card.
 - A trash icon on their own comment or suggested edit removes it if they change their mind. The opening comment of a thread can only be removed before anyone has replied to it.
 
-They move through the story scene by scene. The list on the left groups every note by scene; clicking one jumps to that scene and highlights the passage. Markers down the right edge of the page show where the notes sit. The tabs at the top of each side filter between all notes, comments, edits, and resolved ones. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
+They move through the story scene by scene. The list on the left is the chapter and scene outline, with a count beside each scene that has notes and a running total at the top; clicking a scene opens it. Markers down the right edge of the page show where the notes sit. The tabs above the notes panel filter between all notes, comments, edits, and resolved ones. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
 
 If a name in the manuscript is underlined, it is a character, place, or piece of lore the author has written about. Clicking it opens a short card about them; reviewers see this summary but not the author's full notes.
 
@@ -29,7 +29,7 @@ Reviewers only ever see this one story. They never change your text directly - a
 
 You do not have to invite anyone to use review mode. Open Review from the story's left-hand tabs (Write, Plan, Notes, Review), or from "Review mode" in the Review section of settings, to read your manuscript and leave your own comments and suggested edits, the same way a reviewer would. Your notes are marked as yours, and any reviewers you have invited see them too, so you can offer a second opinion of your own.
 
-Unlike a reviewer, you can also edit the manuscript right here. The middle of the review workspace is the live editor, with a small formatting bar at the top, so you can fix a line on the spot instead of switching back to Write. This is what makes accepting a suggestion useful: take the change, then keep shaping it. Selecting a passage still brings up the toolbar to comment or suggest an edit on those words.
+Unlike a reviewer, you can also edit the manuscript right here. The middle of the review workspace is the live editor, with the same formatting bar as the writing editor, so you can fix a line on the spot instead of switching back to Write. This is what makes accepting a suggestion useful: take the change, then keep shaping it. Selecting a passage still brings up the toolbar to comment or suggest an edit on those words.
 
 ## Working through the feedback
 

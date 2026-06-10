@@ -381,6 +381,24 @@ StateField layer; `buildReviewMarks` unit-tested; review e2e updated for
 the editor-based centre plus accept-then-edit-persists. No schema
 change. Released as v3.3.0.
 
+Review polish follow-up (2026-06-10, post-v3.3.0): four fixes from
+testing v3.3.0. (1) The review left rail is now the Write outline tree
+(chapters and scenes, read-only) with a per-scene review count in place
+of the word count and a running total at the top, matching
+`review-build.html`, instead of the flat jump-list it had shipped as;
+the filter pills moved off the left (they live on the notes panel).
+(2) The four-mode seg (Write/Plan/Notes/Review) no longer overflows the
+rail (`.seg.full .seg-btn` shrinks and trims its padding). (3) Clicking
+a whole-scene comment now scrolls to the top of the scene (it has no
+anchor) in both the author editor and the guest surface. (4) The review
+editor reuses the shared `EditorToolbar` (so it gains alignment, indent,
+and the non-printing/command-marker view toggles); that toolbar is now
+responsive - tools that do not fit collapse into a "More tools" overflow
+menu that disappears entirely when everything fits. Author review load
+now reads `storyPreferences` for the toggles. e2e: a `toolbar.ts` helper
+reaches a tool inline-or-in-menu; split/indent/align/legibility specs
+use it. No schema change.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
