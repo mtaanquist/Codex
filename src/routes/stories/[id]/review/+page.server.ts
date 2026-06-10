@@ -16,6 +16,7 @@ import {
 	setThreadResolved
 } from '$lib/server/review';
 import { gatherStory } from '$lib/server/export';
+import { storyPreferences } from '$lib/server/preferences';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
@@ -32,6 +33,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		id: scene.id!,
 		chapterId: scene.chapterId,
 		title: scene.title,
+		status: scene.status ?? 'todo',
 		bodyMd: scene.bodyMd
 	}));
 	// The author sees the full cast in their own review, like the editor.
@@ -50,7 +52,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		suggestions: await listSuggestions(db, story.id, { userId: locals.user!.id }),
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
-		mentionPins: mentions.pins
+		mentionPins: mentions.pins,
+		// The editor view toggles, shared with the Write editor.
+		preferences: await storyPreferences(db, locals.user!.id, story.id)
 	};
 };
 

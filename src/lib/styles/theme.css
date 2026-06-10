@@ -173,6 +173,11 @@
 }
 .seg.full .seg-btn {
 	flex: 1;
+	/* Four modes (Write/Plan/Notes/Review) share the sidebar width; let the
+	   buttons shrink and trim their padding so none overflows the rail. */
+	min-width: 0;
+	padding-left: 7px;
+	padding-right: 7px;
 }
 .seg-btn {
 	border: 0;

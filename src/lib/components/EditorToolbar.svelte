@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
-	import Icon from './Icon.svelte';
+	import Icon, { type IconName } from './Icon.svelte';
 	import {
 		decreaseIndent,
 		increaseIndent,
@@ -13,8 +14,10 @@
 	} from '$lib/editor-format';
 	import { ALIGNMENTS } from '$lib/alignment';
 
-	// The formatting bar above a prose editor: headings, bold, italic,
-	// quote, list. Buttons act on the editor and hand focus straight back.
+	// The formatting bar above a prose editor: headings, bold, italic, quote,
+	// list, alignment, indent, and the view toggles. Buttons act on the editor
+	// and hand focus straight back. Tools that do not fit the width collapse into
+	// a "more" menu, so the bar never overflows.
 	let {
 		view,
 		modeLabel,
@@ -60,178 +63,296 @@
 		editor.focus();
 	}
 
-	// The overflow ("more") menu holds the view toggles, off the crowded main
-	// row. Closes on an outside click.
-	let viewMenuOpen = $state(false);
-	let viewMenuWrap = $state<HTMLElement>();
+	type Item =
+		| { kind: 'sep' }
+		| { kind: 'cmd'; id: string; title: string; label?: string; icon?: IconName; act: () => void }
+		| {
+				kind: 'toggle';
+				id: string;
+				title: string;
+				menuLabel: string;
+				icon: IconName;
+				active: boolean;
+				toggle: () => void;
+		  };
+
+	// The ordered main-tool list. The same descriptors render inline (icon
+	// button) or, once overflowed, as a row in the "more" menu.
+	const items = $derived.by(() => {
+		const out: Item[] = [
+			{ kind: 'cmd', id: 'h1', title: 'Heading 1', label: 'H1', act: () => run(setHeading(1)) },
+			{ kind: 'cmd', id: 'h2', title: 'Heading 2', label: 'H2', act: () => run(setHeading(2)) },
+			{ kind: 'cmd', id: 'h3', title: 'Heading 3', label: 'H3', act: () => run(setHeading(3)) },
+			{ kind: 'sep' },
+			{ kind: 'cmd', id: 'bold', title: 'Bold (Ctrl+B)', icon: 'bold', act: () => run(toggleBold) },
+			{
+				kind: 'cmd',
+				id: 'italic',
+				title: 'Italic (Ctrl+I)',
+				icon: 'italic',
+				act: () => run(toggleItalic)
+			},
+			{ kind: 'sep' },
+			{ kind: 'cmd', id: 'quote', title: 'Quote', icon: 'quote', act: () => run(toggleQuote) },
+			{
+				kind: 'cmd',
+				id: 'list',
+				title: 'Bullet list',
+				icon: 'list',
+				act: () => run(toggleBulletList)
+			},
+			{ kind: 'sep' },
+			...ALIGNMENTS.map(
+				(align): Item => ({
+					kind: 'cmd',
+					id: `align-${align}`,
+					title: `Align ${align}`,
+					icon: `align-${align}` as IconName,
+					act: () => run(setAlignment(align))
+				})
+			),
+			{ kind: 'sep' },
+			{
+				kind: 'cmd',
+				id: 'indent-dec',
+				title: 'Decrease indent (Ctrl+[)',
+				icon: 'indent-decrease',
+				act: () => run(decreaseIndent)
+			},
+			{
+				kind: 'cmd',
+				id: 'indent-inc',
+				title: 'Increase indent (Ctrl+])',
+				icon: 'indent-increase',
+				act: () => run(increaseIndent)
+			}
+		];
+		const toggles: Item[] = [];
+		if (onToggleNonPrinting) {
+			toggles.push({
+				kind: 'toggle',
+				id: 'nonprint',
+				title: 'Show non-printing characters',
+				menuLabel: 'Show non-printing characters',
+				icon: 'pilcrow',
+				active: !!nonPrintingActive,
+				toggle: onToggleNonPrinting
+			});
+		}
+		if (onToggleCommandMarkers) {
+			toggles.push({
+				kind: 'toggle',
+				id: 'cmdmark',
+				title: 'Show command markers (\\center, \\indent)',
+				menuLabel: 'Show command markers (\\center, \\indent)',
+				icon: 'eye',
+				active: !!commandMarkersActive,
+				toggle: onToggleCommandMarkers
+			});
+		}
+		if (toggles.length) out.push({ kind: 'sep' }, ...toggles);
+		if (onSplitScene) {
+			out.push(
+				{ kind: 'sep' },
+				{
+					kind: 'cmd',
+					id: 'split',
+					title: 'Split scene at cursor',
+					icon: 'split',
+					act: () => onSplitScene()
+				}
+			);
+		}
+		return out;
+	});
+
+	// How many leading items fit on the bar; the rest move into the menu. Starts
+	// at "all" so the server render and the first paint show the full bar.
+	let visibleCount = $state(Number.MAX_SAFE_INTEGER);
+	let barEl = $state<HTMLElement>();
+	let rightEl = $state<HTMLElement>();
+	let measureEl = $state<HTMLElement>();
+
+	// The visible run, with any separator that would dangle before the "more"
+	// button trimmed off; and the overflow, with separators dropped.
+	const visible = $derived.by(() => {
+		const list = items.slice(0, visibleCount);
+		while (list.length && list[list.length - 1].kind === 'sep') list.pop();
+		return list;
+	});
+	const overflow = $derived(items.slice(visibleCount).filter((it) => it.kind !== 'sep'));
+
+	function recompute() {
+		if (!barEl || !measureEl) return;
+		const kids = Array.from(measureEl.children) as HTMLElement[];
+		if (kids.length < 1) return;
+		const moreEl = kids[kids.length - 1];
+		const toolEls = kids.slice(0, kids.length - 1);
+		const styles = getComputedStyle(barEl);
+		const padL = parseFloat(styles.paddingLeft) || 0;
+		const padR = parseFloat(styles.paddingRight) || 0;
+		const rightW = rightEl ? rightEl.offsetWidth : 0;
+		const gap = 3;
+		const avail = barEl.clientWidth - padL - padR - (rightW > 0 ? rightW + gap : 0);
+		const base = measureEl.getBoundingClientRect().left;
+		// Cumulative right edge through each tool, gaps and separator margins
+		// included (so the maths matches the real flex layout).
+		const cum = toolEls.map((el) => el.getBoundingClientRect().right - base);
+		const totalAll = cum.length ? cum[cum.length - 1] : 0;
+		if (totalAll <= avail) {
+			visibleCount = items.length;
+			return;
+		}
+		const moreW = moreEl.getBoundingClientRect().width + gap;
+		const budget = avail - moreW;
+		let count = 0;
+		for (let i = 0; i < cum.length; i++) {
+			if (cum[i] <= budget) count = i + 1;
+			else break;
+		}
+		visibleCount = count;
+	}
+
+	onMount(() => {
+		recompute();
+		const ro = new ResizeObserver(() => recompute());
+		if (barEl) ro.observe(barEl);
+		return () => ro.disconnect();
+	});
+
+	// Re-measure when the tool set itself changes (a toggle appears, the mode
+	// switches). Reading `items` ties the effect to those changes.
 	$effect(() => {
-		if (!viewMenuOpen) return;
+		void items;
+		recompute();
+	});
+
+	// The "more" menu. Closes on an outside click.
+	let menuOpen = $state(false);
+	let menuWrap = $state<HTMLElement>();
+	$effect(() => {
+		if (!menuOpen) return;
 		const onClick = (event: MouseEvent) => {
-			if (viewMenuWrap && !viewMenuWrap.contains(event.target as Node)) viewMenuOpen = false;
+			if (menuWrap && !menuWrap.contains(event.target as Node)) menuOpen = false;
 		};
 		window.addEventListener('click', onClick, true);
 		return () => window.removeEventListener('click', onClick, true);
 	});
+	// A vanished overflow (the bar grew) must not leave a stale open menu.
+	$effect(() => {
+		if (overflow.length === 0) menuOpen = false;
+	});
 </script>
 
-<div class="md-toolbar">
-	<button
-		class="md-tool"
-		type="button"
-		title="Heading 1"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(setHeading(1))}
-	>
-		<span class="md-tool-label">H1</span>
-	</button>
-	<button
-		class="md-tool"
-		type="button"
-		title="Heading 2"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(setHeading(2))}
-	>
-		<span class="md-tool-label">H2</span>
-	</button>
-	<button
-		class="md-tool"
-		type="button"
-		title="Heading 3"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(setHeading(3))}
-	>
-		<span class="md-tool-label">H3</span>
-	</button>
-	<span class="md-sep"></span>
-	<button
-		class="md-tool"
-		type="button"
-		title="Bold (Ctrl+B)"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(toggleBold)}
-	>
-		<Icon name="bold" size={16} />
-	</button>
-	<button
-		class="md-tool"
-		type="button"
-		title="Italic (Ctrl+I)"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(toggleItalic)}
-	>
-		<Icon name="italic" size={16} />
-	</button>
-	<span class="md-sep"></span>
-	<button
-		class="md-tool"
-		type="button"
-		title="Quote"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(toggleQuote)}
-	>
-		<Icon name="quote" size={16} />
-	</button>
-	<button
-		class="md-tool"
-		type="button"
-		title="Bullet list"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(toggleBulletList)}
-	>
-		<Icon name="list" size={16} />
-	</button>
-	<span class="md-sep"></span>
-	{#each ALIGNMENTS as align (align)}
-		<button
-			class="md-tool"
-			type="button"
-			title="Align {align}"
-			onmousedown={(event) => event.preventDefault()}
-			onclick={() => run(setAlignment(align))}
-		>
-			<Icon name="align-{align}" size={16} />
-		</button>
-	{/each}
-	<span class="md-sep"></span>
-	<button
-		class="md-tool"
-		type="button"
-		title="Decrease indent (Ctrl+[)"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(decreaseIndent)}
-	>
-		<Icon name="indent-decrease" size={16} />
-	</button>
-	<button
-		class="md-tool"
-		type="button"
-		title="Increase indent (Ctrl+])"
-		onmousedown={(event) => event.preventDefault()}
-		onclick={() => run(increaseIndent)}
-	>
-		<Icon name="indent-increase" size={16} />
-	</button>
-	{#if onToggleNonPrinting || onToggleCommandMarkers}
-		<span class="md-sep"></span>
-		<div class="md-overflow" bind:this={viewMenuWrap}>
+<div class="md-toolbar" bind:this={barEl}>
+	<!-- Off-screen full-width copy used only to measure each tool's natural size.
+	     The zero-size clip keeps the wide row from ever adding a scrollbar. -->
+	<div class="md-measure-clip" aria-hidden="true">
+		<div class="md-measure" bind:this={measureEl}>
+			{#each items as item (item.kind === 'sep' ? `sep-${items.indexOf(item)}` : item.id)}
+				{#if item.kind === 'sep'}
+					<span class="md-sep"></span>
+				{:else if item.kind === 'cmd'}
+					<span class="md-tool"
+						>{#if item.icon}<Icon name={item.icon} size={16} />{:else}<span class="md-tool-label"
+								>{item.label}</span
+							>{/if}</span
+					>
+				{:else}
+					<span class="md-tool"><Icon name={item.icon} size={16} /></span>
+				{/if}
+			{/each}
+			<span class="md-tool"><Icon name="more" size={16} /></span>
+		</div>
+	</div>
+
+	{#each visible as item, i (item.kind === 'sep' ? `sep-${i}` : item.id)}
+		{#if item.kind === 'sep'}
+			<span class="md-sep"></span>
+		{:else if item.kind === 'cmd'}
 			<button
 				class="md-tool"
-				class:is-active={viewMenuOpen}
 				type="button"
-				aria-label="View options"
-				title="View options"
-				aria-haspopup="menu"
-				aria-expanded={viewMenuOpen}
+				title={item.title}
 				onmousedown={(event) => event.preventDefault()}
-				onclick={() => (viewMenuOpen = !viewMenuOpen)}
+				onclick={item.act}
+			>
+				{#if item.icon}
+					<Icon name={item.icon} size={16} />
+				{:else}
+					<span class="md-tool-label">{item.label}</span>
+				{/if}
+			</button>
+		{:else}
+			<button
+				class="md-tool"
+				class:is-active={item.active}
+				type="button"
+				title={item.title}
+				aria-pressed={item.active}
+				onmousedown={(event) => event.preventDefault()}
+				onclick={item.toggle}
+			>
+				<Icon name={item.icon} size={16} />
+			</button>
+		{/if}
+	{/each}
+
+	{#if overflow.length > 0}
+		<span class="md-sep"></span>
+		<div class="md-overflow" bind:this={menuWrap}>
+			<button
+				class="md-tool"
+				class:is-active={menuOpen}
+				type="button"
+				aria-label="More tools"
+				title="More tools"
+				aria-haspopup="menu"
+				aria-expanded={menuOpen}
+				onmousedown={(event) => event.preventDefault()}
+				onclick={() => (menuOpen = !menuOpen)}
 			>
 				<Icon name="more" size={16} />
 			</button>
-			{#if viewMenuOpen}
+			{#if menuOpen}
 				<div class="md-menu" role="menu">
-					{#if onToggleNonPrinting}
-						<button
-							class="md-menu-item"
-							type="button"
-							role="menuitemcheckbox"
-							aria-checked={nonPrintingActive}
-							onmousedown={(event) => event.preventDefault()}
-							onclick={() => onToggleNonPrinting()}
-						>
-							<span class="md-menu-check">{nonPrintingActive ? '✓' : ''}</span>
-							Show non-printing characters
-						</button>
-					{/if}
-					{#if onToggleCommandMarkers}
-						<button
-							class="md-menu-item"
-							type="button"
-							role="menuitemcheckbox"
-							aria-checked={commandMarkersActive}
-							onmousedown={(event) => event.preventDefault()}
-							onclick={() => onToggleCommandMarkers()}
-						>
-							<span class="md-menu-check">{commandMarkersActive ? '✓' : ''}</span>
-							Show command markers (\center, \indent)
-						</button>
-					{/if}
+					{#each overflow as item (item.id)}
+						{#if item.kind === 'cmd'}
+							<button
+								class="md-menu-item"
+								type="button"
+								role="menuitem"
+								onmousedown={(event) => event.preventDefault()}
+								onclick={() => {
+									item.act();
+									menuOpen = false;
+								}}
+							>
+								<span class="md-menu-ic">
+									{#if item.icon}<Icon name={item.icon} size={15} />{:else}{item.label}{/if}
+								</span>
+								{item.title}
+							</button>
+						{:else}
+							<button
+								class="md-menu-item"
+								type="button"
+								role="menuitemcheckbox"
+								aria-checked={item.active}
+								onmousedown={(event) => event.preventDefault()}
+								onclick={() => item.toggle()}
+							>
+								<span class="md-menu-check">{item.active ? '✓' : ''}</span>
+								{item.menuLabel}
+							</button>
+						{/if}
+					{/each}
 				</div>
 			{/if}
 		</div>
 	{/if}
-	{#if onSplitScene}
-		<span class="md-sep"></span>
-		<button
-			class="md-tool"
-			type="button"
-			title="Split scene at cursor"
-			onmousedown={(event) => event.preventDefault()}
-			onclick={() => onSplitScene()}
-		>
-			<Icon name="split" size={16} />
-		</button>
-	{/if}
-	<div class="md-right">
+
+	<div class="md-right" bind:this={rightEl}>
 		{#if onCoauthor}
 			<button
 				class="md-tool md-coauthor"
@@ -275,6 +396,29 @@
 </div>
 
 <style>
+	/* Measures every tool's natural width off-screen so the overflow split can be
+	   computed without the visible bar ever wrapping. The clip is a zero-size box
+	   so the wide row never adds a scrollbar; the row inside still lays out (and
+	   so measures) at its full natural width. */
+	.md-measure-clip {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 0;
+		height: 0;
+		overflow: hidden;
+		visibility: hidden;
+		pointer-events: none;
+	}
+	.md-measure {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		padding: 0;
+		margin: 0;
+		width: max-content;
+		white-space: nowrap;
+	}
 	.md-overflow {
 		position: relative;
 		display: inline-flex;
@@ -309,12 +453,18 @@
 	.md-menu-item:hover {
 		background: var(--bg-hover);
 	}
-	.md-menu-check {
-		display: inline-block;
-		width: 1em;
+	.md-menu-check,
+	.md-menu-ic {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.2em;
 		flex: none;
 		color: var(--accent);
 		font-weight: 700;
+	}
+	.md-menu-ic {
+		color: var(--text-muted);
 	}
 	.md-right {
 		margin-left: auto;

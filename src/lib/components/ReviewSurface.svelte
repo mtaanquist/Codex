@@ -189,7 +189,14 @@
 		const id = focusedId;
 		if (!id || !docEl || !scrollEl) return;
 		const el = docEl.querySelector<HTMLElement>(`[data-rid="${CSS.escape(id)}"]`);
-		if (!el) return;
+		if (!el) {
+			// A whole-scene comment has no inline mark; show the top of the scene.
+			const whole =
+				threads.some((t) => t.id === id && !t.anchor) ||
+				suggestions.some((s) => s.id === id && !s.anchor);
+			if (whole) scrollEl.scrollTop = 0;
+			return;
+		}
 		const er = el.getBoundingClientRect();
 		const sr = scrollEl.getBoundingClientRect();
 		if (er.top < sr.top + 50 || er.bottom > sr.bottom - 50) {
