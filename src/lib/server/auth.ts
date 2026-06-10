@@ -1,9 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { sessions, users } from './db/schema';
 import type * as schema from './db/schema';
 import { verifyPassword } from './password';
-import { isUuid } from '../slug';
+import { hashToken } from './tokens';
 
 // The database is passed in rather than imported so the same functions run
 // against the app database and the integration tests' throwaway one.
@@ -64,10 +65,14 @@ export async function createSession(
 	userId: string,
 	meta: { userAgent?: string | null; ip?: string | null } = {}
 ) {
+	// The raw token goes in the cookie; the row keeps only its hash. The returned
+	// token is the only time the raw value exists, so the caller must set it now.
+	const token = randomBytes(32).toString('base64url');
 	const [session] = await db
 		.insert(sessions)
 		.values({
 			userId,
+			tokenHash: hashToken(token),
 			expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
 			userAgent: meta.userAgent ?? null,
 			ip: meta.ip ?? null
@@ -77,22 +82,21 @@ export async function createSession(
 		.update(users)
 		.set({ lastLoginAt: sql`now()` })
 		.where(eq(users.id, userId));
-	return session;
+	return { ...session, token };
 }
 
-export async function validateSession(db: Database, sessionId: string) {
-	// sessions.id is a uuid column. A stale or hand-edited cookie that is not
-	// a uuid would make Postgres throw on the cast, which in the hook becomes
-	// a 500 on every route (including /login) that the cookie is never cleared
-	// from. Treat it as no session so the hook deletes the bad cookie.
-	if (!isUuid(sessionId)) return null;
+export async function validateSession(db: Database, token: string) {
+	// The cookie carries a random token; the lookup is by its hash, so a leaked
+	// row cannot be replayed. Any non-matching or empty cookie simply finds no
+	// row and reads as no session, which lets the hook clear a stale cookie.
+	if (!token) return null;
 	const [row] = await db
 		.select({ session: sessions, user: users })
 		.from(sessions)
 		.innerJoin(users, eq(sessions.userId, users.id))
 		.where(
 			and(
-				eq(sessions.id, sessionId),
+				eq(sessions.tokenHash, hashToken(token)),
 				isNull(sessions.revokedAt),
 				gt(sessions.expiresAt, sql`now()`)
 			)
@@ -106,7 +110,7 @@ export async function validateSession(db: Database, sessionId: string) {
 		await db
 			.update(sessions)
 			.set({ lastSeenAt: sql`now()` })
-			.where(and(eq(sessions.id, sessionId), lt(sessions.lastSeenAt, sql`now()`)));
+			.where(and(eq(sessions.id, row.session.id), lt(sessions.lastSeenAt, sql`now()`)));
 	}
 
 	const user: SessionUser = {

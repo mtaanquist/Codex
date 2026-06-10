@@ -82,7 +82,7 @@ export const actions: Actions = {
 			ip: getClientAddress()
 		});
 		cookies.delete(TOTP_CHALLENGE_COOKIE, { path: '/' });
-		cookies.set(SESSION_COOKIE, session.id, {
+		cookies.set(SESSION_COOKIE, session.token, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',

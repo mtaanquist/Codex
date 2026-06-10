@@ -64,7 +64,9 @@ describe('requestPasswordReset', () => {
 
 describe('resetPassword', () => {
 	it('sets the new password and revokes existing sessions', async () => {
-		await db.insert(sessions).values({ userId, expiresAt: new Date(Date.now() + 60_000) });
+		await db
+			.insert(sessions)
+			.values({ userId, tokenHash: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60_000) });
 		const token = (await requestPasswordReset(db, 'reset@example.com')) as string;
 
 		const result = await resetPassword(db, token, 'brand-new-password');
