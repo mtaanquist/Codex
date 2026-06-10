@@ -131,39 +131,18 @@
 </script>
 
 <div class="review-panel">
-	<div class="rv-panel-head">
-		<div class="rv-panel-title">
-			<span>Review</span>
-			<button class="rv-scene-comment" type="button" onclick={onStartSceneComment}>
-				<Icon name="comment-plus" size={13} /> Whole scene
+	{#if composer && composer.sceneId === scene.id}
+		<!-- Drafting takes over the panel: other notes are tucked away. -->
+		<div class="inspector-head">
+			<button class="back-btn" type="button" onclick={onCloseComposer}>
+				<span class="rv-back-ic"><Icon name="chevron" size={14} /></span> Back
 			</button>
+			<span class="inspector-kind">{composer.mode === 'suggest' ? 'Suggestion' : 'Comment'}</span>
 		</div>
-		<div class="rv-filters">
-			{#each FILTERS as f (f.id)}
-				<button
-					class="rv-filter"
-					class:active={filter === f.id}
-					type="button"
-					onclick={() => setFilter(f.id)}
-				>
-					{f.label}<span class="rv-filter-n">{f.n}</span>
-				</button>
-			{/each}
-		</div>
-		{#if role === 'author' && nAcceptable > 0}
-			<form method="POST" action="?/acceptAll" use:enhance onsubmit={confirmAcceptAll}>
-				<input type="hidden" name="sceneId" value={scene.id} />
-				<button class="rv-acceptall" type="submit">
-					<Icon name="check" size={13} /> Accept all {nAcceptable} edit{nAcceptable === 1
-						? ''
-						: 's'}
-				</button>
-			</form>
-		{/if}
-	</div>
-
-	<div class="rv-panel-scroll" bind:this={scrollEl}>
-		{#if composer && composer.sceneId === scene.id}
+		<div class="rv-panel-scroll">
+			<div class="rv-compose-hint">
+				Other notes are tucked away while you write. They'll return as soon as you save or cancel.
+			</div>
 			<form
 				method="POST"
 				action={composer.mode === 'suggest' ? '?/suggest' : '?/comment'}
@@ -216,7 +195,7 @@
 					</div>
 				{:else}
 					{#if composer.anchored}
-						<div class="rv-card-quote" style="--auth: var(--accent);">"{composer.text}"</div>
+						<div class="rv-quote" style="--auth: var(--accent);">"{composer.text}"</div>
 					{/if}
 					<textarea
 						name="body"
@@ -234,40 +213,73 @@
 					<button class="rv-btn ghost" type="button" onclick={onCloseComposer}>Cancel</button>
 				</div>
 			</form>
-		{/if}
-
-		{#if cards.length === 0 && !composer}
-			<div class="rv-panel-empty">
-				<Icon name="check-circle" size={26} />
-				<div>
-					{#if filter === 'resolved'}
-						Nothing resolved in this scene yet.
-					{:else}
-						No open notes here. Select text in the manuscript to leave a comment{canSuggest
-							? ' or suggest an edit'
-							: ''}.
-					{/if}
-				</div>
+		</div>
+	{:else}
+		<div class="rv-panel-head">
+			<div class="rv-panel-title">
+				<span>Review</span>
+				<button class="rv-scene-comment" type="button" onclick={onStartSceneComment}>
+					<Icon name="comment-plus" size={13} /> Whole scene
+				</button>
 			</div>
-		{/if}
-
-		{#each cards as card (card.id)}
-			{#if card.type === 'comment'}
-				<ReviewCommentCard
-					thread={card.thread}
-					excerpt={card.excerpt}
-					{role}
-					focused={focusedId === card.id}
-					onFocus={setFocused}
-				/>
-			{:else}
-				<ReviewSuggestionCard
-					suggestion={card.suggestion}
-					{role}
-					focused={focusedId === card.id}
-					onFocus={setFocused}
-				/>
+			<div class="rv-filters">
+				{#each FILTERS as f (f.id)}
+					<button
+						class="rv-filter"
+						class:active={filter === f.id}
+						type="button"
+						onclick={() => setFilter(f.id)}
+					>
+						{f.label}<span class="rv-filter-n">{f.n}</span>
+					</button>
+				{/each}
+			</div>
+			{#if role === 'author' && nAcceptable > 0}
+				<form method="POST" action="?/acceptAll" use:enhance onsubmit={confirmAcceptAll}>
+					<input type="hidden" name="sceneId" value={scene.id} />
+					<button class="rv-acceptall" type="submit">
+						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{nAcceptable === 1
+							? ''
+							: 's'}
+					</button>
+				</form>
 			{/if}
-		{/each}
-	</div>
+		</div>
+
+		<div class="rv-panel-scroll" bind:this={scrollEl}>
+			{#if cards.length === 0}
+				<div class="rv-panel-empty">
+					<Icon name="check-circle" size={26} />
+					<div>
+						{#if filter === 'resolved'}
+							Nothing resolved in this scene yet.
+						{:else}
+							No open notes here. Select text in the manuscript to leave a comment{canSuggest
+								? ' or suggest an edit'
+								: ''}.
+						{/if}
+					</div>
+				</div>
+			{/if}
+
+			{#each cards as card (card.id)}
+				{#if card.type === 'comment'}
+					<ReviewCommentCard
+						thread={card.thread}
+						excerpt={card.excerpt}
+						{role}
+						focused={focusedId === card.id}
+						onFocus={setFocused}
+					/>
+				{:else}
+					<ReviewSuggestionCard
+						suggestion={card.suggestion}
+						{role}
+						focused={focusedId === card.id}
+						onFocus={setFocused}
+					/>
+				{/if}
+			{/each}
+		</div>
+	{/if}
 </div>

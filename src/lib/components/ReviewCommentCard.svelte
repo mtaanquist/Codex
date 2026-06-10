@@ -72,7 +72,24 @@
 			<div class="rv-who-name">{root.authorName} <span class="rv-role">{roleLabel}</span></div>
 			<div class="rv-when">{when(root.createdAt)}</div>
 		</div>
-		<span class="rv-type-pill"><Icon name="comment" size={11} /> Comment</span>
+		{#if open && role === 'author'}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="rv-quick" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+				<form method="POST" action="?/resolve" use:enhance>
+					<input type="hidden" name="threadId" value={thread.id} />
+					<button
+						class="rv-quick-btn resolve"
+						type="submit"
+						title="Resolve comment"
+						aria-label="Resolve comment"
+					>
+						<Icon name="check" size={15} />
+					</button>
+				</form>
+			</div>
+		{:else}
+			<span class="rv-type-pill comment"><Icon name="comment" size={11} /> Comment</span>
+		{/if}
 	</div>
 
 	{#if thread.anchorLost}
@@ -80,7 +97,7 @@
 			<Icon name="close" size={12} /> The text this pointed at has changed.
 		</div>
 	{:else if excerpt}
-		<div class="rv-card-quote">"{excerpt}"</div>
+		<div class="rv-quote">"{excerpt}"</div>
 	{:else}
 		<div class="rv-scene-wide">On the whole scene</div>
 	{/if}
@@ -125,7 +142,8 @@
 		</div>
 	{/if}
 
-	<div class="rv-card-foot">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 		{#if open}
 			<form
 				method="POST"
@@ -155,29 +173,16 @@
 					<Icon name="reply" size={15} />
 				</button>
 			</form>
-			<div class="rv-actions">
-				{#if role === 'author'}
-					<form method="POST" action="?/resolve" use:enhance>
-						<input type="hidden" name="threadId" value={thread.id} />
-						<button class="rv-btn solid" type="submit">
-							<Icon name="check-circle" size={14} /> Resolve
-						</button>
-					</form>
-				{/if}
-				{#if canDeleteThread}
+			{#if canDeleteThread}
+				<div class="rv-actions">
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
-						<button
-							class="rv-btn icon danger"
-							type="submit"
-							title="Delete your comment"
-							aria-label="Delete your comment"
-						>
-							<Icon name="trash" size={14} />
+						<button class="rv-btn ghost danger" type="submit">
+							<Icon name="trash" size={14} /> Delete
 						</button>
 					</form>
-				{/if}
-			</div>
+				</div>
+			{/if}
 		{:else}
 			<div class="rv-actions">
 				<span class="rv-status resolved"><Icon name="check-circle" size={12} /> Resolved</span>
@@ -192,13 +197,8 @@
 				{#if canDeleteThread}
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
-						<button
-							class="rv-btn icon danger"
-							type="submit"
-							title="Delete your comment"
-							aria-label="Delete your comment"
-						>
-							<Icon name="trash" size={14} />
+						<button class="rv-btn ghost danger" type="submit">
+							<Icon name="trash" size={14} /> Delete
 						</button>
 					</form>
 				{/if}
