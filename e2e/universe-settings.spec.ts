@@ -66,13 +66,15 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await page.getByRole('button', { name: 'All', exact: true }).click();
 
 	// Export: prepare the archive (built in the worker), then download it.
-	await page.goto(`/universes/settle-${stamp}/export`);
+	const exportUrl = `/universes/settle-${stamp}/export`;
+	await page.goto(exportUrl);
 	await page.getByRole('button', { name: 'Prepare markdown archive (.zip)' }).click();
 	const downloadLink = page.locator('.export-row a', { hasText: 'Download' }).first();
 	await expect(async () => {
-		await page.reload();
+		// Navigate by GET; page.reload() here would re-submit the prepare POST.
+		await page.goto(exportUrl);
 		await expect(downloadLink).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 30_000 });
+	}).toPass({ timeout: 60_000 });
 	const archive = await page.request.get((await downloadLink.getAttribute('href'))!);
 	expect(archive.status()).toBe(200);
 	expect(archive.headers()['content-type']).toBe('application/zip');

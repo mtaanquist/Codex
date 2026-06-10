@@ -7,6 +7,8 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	chapters,
+	characters,
+	entityCategories,
 	scenes,
 	stories,
 	universes,
@@ -87,6 +89,19 @@ beforeAll(async () => {
 		globalPosition: 1,
 		title: 'Departure',
 		bodyMd: 'The gate opened.'
+	});
+	// Mirror the universe-settings e2e: a category and a character with a
+	// summary, so the universe export exercises the same shape it does there.
+	const [category] = await db
+		.insert(entityCategories)
+		.values({ universeId, ownerId, name: 'Mythos', sortOrder: 0 })
+		.returning();
+	await db.insert(characters).values({
+		universeId,
+		ownerId,
+		name: 'Histor',
+		categoryId: category.id,
+		summaryMd: 'Keeper of the record.'
 	});
 });
 

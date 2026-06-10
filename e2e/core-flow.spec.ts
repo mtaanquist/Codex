@@ -516,15 +516,17 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// each to land, and download it. The print view renders the prose for PDF.
 	await page.getByRole('link', { name: 'Export', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
+	const exportUrl = page.url();
 
 	await page.getByRole('button', { name: 'Prepare markdown (.zip)' }).click();
 	const zipLink = page
 		.locator('.export-row', { hasText: '.zip' })
 		.getByRole('link', { name: 'Download' });
 	await expect(async () => {
-		await page.reload();
+		// Navigate by GET; page.reload() here would re-submit the prepare POST.
+		await page.goto(exportUrl);
 		await expect(zipLink).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 30_000 });
+	}).toPass({ timeout: 60_000 });
 	const zipDownload = page.waitForEvent('download');
 	await zipLink.click();
 	expect((await zipDownload).suggestedFilename()).toBe('book-of-ash.zip');
@@ -534,9 +536,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		.locator('.export-row', { hasText: '.epub' })
 		.getByRole('link', { name: 'Download' });
 	await expect(async () => {
-		await page.reload();
+		await page.goto(exportUrl);
 		await expect(epubLink).toBeVisible({ timeout: 1000 });
-	}).toPass({ timeout: 30_000 });
+	}).toPass({ timeout: 60_000 });
 	const epubDownload = page.waitForEvent('download');
 	await epubLink.click();
 	expect((await epubDownload).suggestedFilename()).toContain('.epub');

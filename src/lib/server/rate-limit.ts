@@ -67,9 +67,11 @@ export function assistantLimit(userId: string, now: number = Date.now()): RateLi
 }
 
 // The export budget: requesting an account, story, or universe export per user.
-// Each request enqueues a heavy worker build, so the bucket is small and the
-// window is long.
-const EXPORT_PER_HOUR = 20;
+// Each request enqueues a heavy worker build, but the worker processes them one
+// at a time and prunes to a handful of stored files, so this only needs to stop
+// a runaway loop, not ration ordinary use (a writer may export several stories
+// at once).
+const EXPORT_PER_HOUR = 60;
 export function exportLimit(userId: string, now: number = Date.now()): RateLimitResult {
 	return rateLimit(`export:${userId}`, EXPORT_PER_HOUR, 3600 * 1000, now);
 }
