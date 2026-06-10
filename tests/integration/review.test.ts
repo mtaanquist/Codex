@@ -23,6 +23,7 @@ const {
 	addComment,
 	createReviewInvitation,
 	createThread,
+	deleteComment,
 	ensureReviewer,
 	invitationByToken,
 	issueReviewerToken,
@@ -261,6 +262,104 @@ describe('threads and comments', () => {
 				body: 'x'
 			})
 		).toMatchObject({ ok: false });
+	});
+});
+
+describe('deleteComment (retract your own)', () => {
+	it('a reviewer retracts their own reply, leaving the root and others', async () => {
+		const { id } = await invite();
+		const robin = await guest(id);
+		const created = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { reviewerId: robin.id },
+			body: 'Root by Robin.'
+		});
+		if (!created.ok) throw new Error('no thread');
+		await addComment(db, {
+			storyId,
+			threadId: created.threadId,
+			author: { userId: authorId },
+			body: 'Author reply.'
+		});
+		await addComment(db, {
+			storyId,
+			threadId: created.threadId,
+			author: { reviewerId: robin.id },
+			body: 'Robin reply.'
+		});
+
+		const [before] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
+		const robinReply = before.comments.find((c) => c.body === 'Robin reply.')!;
+		expect(robinReply.mine).toBe(true);
+		expect(before.comments.find((c) => c.body === 'Author reply.')!.mine).toBe(false);
+
+		expect(await deleteComment(db, { reviewerId: robin.id }, robinReply.id)).toMatchObject({
+			ok: true
+		});
+		const [after] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
+		expect(after.comments.map((c) => c.body)).toEqual(['Root by Robin.', 'Author reply.']);
+	});
+
+	it('retracts the opening comment only when no one else has joined the thread', async () => {
+		const { id } = await invite();
+		const robin = await guest(id);
+		const solo = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { reviewerId: robin.id },
+			body: 'Solo.'
+		});
+		if (!solo.ok) throw new Error('no thread');
+		const [soloView] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
+		expect(
+			await deleteComment(db, { reviewerId: robin.id }, soloView.comments[0].id)
+		).toMatchObject({ ok: true });
+		expect(await listThreads(db, storyId, reanchorRange)).toEqual([]);
+
+		// A root the author has replied to cannot be retracted; resolve instead.
+		const replied = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { reviewerId: robin.id },
+			body: 'Has a reply.'
+		});
+		if (!replied.ok) throw new Error('no thread');
+		await addComment(db, {
+			storyId,
+			threadId: replied.threadId,
+			author: { userId: authorId },
+			body: 'Replying.'
+		});
+		const [withReply] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
+		expect(
+			await deleteComment(db, { reviewerId: robin.id }, withReply.comments[0].id)
+		).toMatchObject({ ok: false });
+		expect((await listThreads(db, storyId, reanchorRange)).length).toBe(1);
+	});
+
+	it('refuses to delete a comment the actor did not write', async () => {
+		const { id } = await invite();
+		const robin = await guest(id);
+		const created = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { userId: authorId },
+			body: 'Author root.'
+		});
+		if (!created.ok) throw new Error('no thread');
+		const [thread] = await listThreads(db, storyId, reanchorRange);
+		expect(await deleteComment(db, { reviewerId: robin.id }, thread.comments[0].id)).toMatchObject({
+			ok: false
+		});
+		expect(await deleteComment(db, { userId: strangerId }, thread.comments[0].id)).toMatchObject({
+			ok: false
+		});
+		expect((await listThreads(db, storyId, reanchorRange)).length).toBe(1);
 	});
 });
 

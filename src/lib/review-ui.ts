@@ -56,6 +56,8 @@ export type ReviewComment = {
 	authorName: string;
 	isOwner: boolean;
 	isAssistant: boolean;
+	// The current viewer authored this comment, so they may retract it.
+	mine: boolean;
 	createdAt: Date | string;
 };
 export type ReviewThread = {
@@ -73,6 +75,9 @@ export type ReviewSuggestion = {
 	reviewerName: string;
 	isOwner: boolean;
 	isAssistant: boolean;
+	// The current viewer authored this suggestion, so they may retract it while
+	// it is still pending.
+	mine: boolean;
 	original: string;
 	replacement: string;
 	status: 'pending' | 'accepted' | 'rejected';

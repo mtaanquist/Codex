@@ -57,6 +57,21 @@
 		threads.filter((t) => t.resolvedAt !== null).length +
 			suggestions.filter((s) => s.status !== 'pending').length
 	);
+	// Pending suggestions whose passage still matches, so "Accept all" has
+	// something to apply. Anchor-lost ones can only be rejected.
+	const nAcceptable = $derived(
+		suggestions.filter((s) => s.status === 'pending' && !s.anchorLost).length
+	);
+
+	function confirmAcceptAll(e: SubmitEvent) {
+		if (
+			!confirm(
+				`Accept all ${nAcceptable} suggested edit${nAcceptable === 1 ? '' : 's'} in this scene? This updates the manuscript.`
+			)
+		) {
+			e.preventDefault();
+		}
+	}
 
 	const FILTERS = $derived([
 		{ id: 'all' as const, label: 'All', n: nComments + nSugg },
@@ -135,6 +150,16 @@
 				</button>
 			{/each}
 		</div>
+		{#if role === 'author' && nAcceptable > 0}
+			<form method="POST" action="?/acceptAll" use:enhance onsubmit={confirmAcceptAll}>
+				<input type="hidden" name="sceneId" value={scene.id} />
+				<button class="rv-acceptall" type="submit">
+					<Icon name="check" size={13} /> Accept all {nAcceptable} edit{nAcceptable === 1
+						? ''
+						: 's'}
+				</button>
+			</form>
+		{/if}
 	</div>
 
 	<div class="rv-panel-scroll" bind:this={scrollEl}>

@@ -8,6 +8,8 @@ import {
 	addComment,
 	createSuggestion,
 	createThread,
+	deleteComment,
+	deleteSuggestion,
 	ensureReviewer,
 	invitationByToken,
 	issueReviewerToken,
@@ -92,8 +94,8 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 		canSuggest: resolved.invitation.canSuggest,
 		chapters: content.chapters,
 		scenes,
-		threads: await listThreads(db, storyId, reanchorRange),
-		suggestions: await listSuggestions(db, storyId),
+		threads: await listThreads(db, storyId, reanchorRange, { reviewerId: reviewer.id }),
+		suggestions: await listSuggestions(db, storyId, { reviewerId: reviewer.id }),
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins
@@ -204,6 +206,32 @@ export const actions: Actions = {
 			'replied',
 			body
 		);
+		return { commented: true };
+	},
+	// A reviewer retracting a comment of their own.
+	deleteComment: async ({ params, request, cookies }) => {
+		const { resolved, access } = await currentReviewer(params.token, cookies.get(REVIEWER_COOKIE));
+		if (resolved.status !== 'ok' || !access) {
+			return fail(403, { message: 'This link no longer works.' });
+		}
+		const data = await request.formData();
+		const commentId = String(data.get('commentId') ?? '');
+		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
+		const result = await deleteComment(db, { reviewerId: access.reviewer.id }, commentId);
+		if (!result.ok) return fail(400, { message: result.reason });
+		return { commented: true };
+	},
+	// A reviewer retracting a suggestion of their own while it is still pending.
+	deleteSuggestion: async ({ params, request, cookies }) => {
+		const { resolved, access } = await currentReviewer(params.token, cookies.get(REVIEWER_COOKIE));
+		if (resolved.status !== 'ok' || !access) {
+			return fail(403, { message: 'This link no longer works.' });
+		}
+		const data = await request.formData();
+		const suggestionId = String(data.get('suggestionId') ?? '');
+		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
+		const result = await deleteSuggestion(db, { reviewerId: access.reviewer.id }, suggestionId);
+		if (!result.ok) return fail(400, { message: result.reason });
 		return { commented: true };
 	}
 };

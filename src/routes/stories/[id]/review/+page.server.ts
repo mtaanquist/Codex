@@ -4,10 +4,13 @@ import { ownedStory } from '$lib/server/story-access';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
+	acceptAllInScene,
 	addComment,
 	createSuggestion,
 	createThread,
 	decideSuggestion,
+	deleteComment,
+	deleteSuggestion,
 	listSuggestions,
 	listThreads,
 	setThreadResolved
@@ -43,8 +46,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		universe: { slug: universe.slug, name: universe.name },
 		chapters: content.chapters,
 		scenes,
-		threads: await listThreads(db, story.id, reanchorRange),
-		suggestions: await listSuggestions(db, story.id),
+		threads: await listThreads(db, story.id, reanchorRange, { userId: locals.user!.id }),
+		suggestions: await listSuggestions(db, story.id, { userId: locals.user!.id }),
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins
@@ -147,6 +150,37 @@ export const actions: Actions = {
 		const suggestionId = String(data.get('suggestionId') ?? '');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const result = await decideSuggestion(db, locals.user!.id, suggestionId, false);
+		if (!result.ok) return fail(400, { message: result.reason });
+		return { done: true };
+	},
+	// Accepts every pending suggestion in one scene at once.
+	acceptAll: async ({ params, request, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const sceneId = String(data.get('sceneId') ?? '');
+		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
+		const result = await acceptAllInScene(db, locals.user!.id, story.id, sceneId);
+		// The body changed; keep the mention index in step.
+		if (result.accepted > 0) await queueSceneMentions(sceneId);
+		return { done: true };
+	},
+	// The author retracting a comment of their own.
+	deleteComment: async ({ params, request, locals }) => {
+		await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const commentId = String(data.get('commentId') ?? '');
+		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
+		const result = await deleteComment(db, { userId: locals.user!.id }, commentId);
+		if (!result.ok) return fail(400, { message: result.reason });
+		return { done: true };
+	},
+	// The author retracting a suggestion of their own while it is still pending.
+	deleteSuggestion: async ({ params, request, locals }) => {
+		await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const suggestionId = String(data.get('suggestionId') ?? '');
+		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
+		const result = await deleteSuggestion(db, { userId: locals.user!.id }, suggestionId);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	}

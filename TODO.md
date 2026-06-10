@@ -331,6 +331,36 @@ Author review mode batch (2026-06-08, branch `feat/author-review-mode`;
      navigating, since review links are stored hash-only and cannot be
      rebuilt into the email or bell. Shipped as v2.30.0.
 
+Review redesign (2026-06-10, branch `feat/review-page-redesign`):
+ported the Claude Design "Review mode" onto the editor's three-column
+app shell so both the author review (`/stories/[id]/review`) and the
+guest link (`/review/[token]`) read like the Write view - left
+jump-list, centre read-and-review surface with author-coloured marks
+and a margin rail, right thread panel. Reviewers are locked to review
+mode (other pills disabled) and see entity mentions as click-to-open
+quick cards only, never the full details (guest payload trimmed
+server-side). Frontend rebuild only: every server action and the
+schema unchanged. Shipped as v3.2.0 (#371, #372).
+
+Review follow-up (2026-06-10, branch
+`feat/review-responsive-and-bulk-actions`): the guest page collapses
+to a tab bar (Scenes / Manuscript / Notes) under 820px so phone
+reviewers get a single column again; "Accept all" applies every
+pending edit in a scene at once (acceptAllInScene, owner-only); and an
+author or reviewer can retract their own comment or pending suggestion
+(deleteComment / deleteSuggestion, scoped to the actor - the opening
+comment of a thread only goes when no one else has replied, so a
+retraction never destroys others' words; clearing a reviewer's note is
+still resolve/reject, not delete). Same branch also took the review
+polish backlog: entity mentions in the review prose are keyboard
+reachable (tab-focusable, Enter/Space opens the quick card) and the
+card clamps to the viewport (flips above near the bottom edge); the
+Write load now shares `reviewMentionData` instead of duplicating the
+entity query (lore mentions gain their badge fields as a side
+consistency fix); and the help doc covers clickable names. No schema
+change. Integration + e2e (incl. a new review quick-card spec) + help
+docs updated.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

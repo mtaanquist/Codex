@@ -373,9 +373,25 @@ export type ThreadView = {
 		isOwner: boolean;
 		// The Assistant authored it; the frontend can badge it.
 		isAssistant: boolean;
+		// The viewer passed to listThreads authored it, so they may retract it.
+		mine: boolean;
 		createdAt: Date;
 	}[];
 };
+
+// Whoever is looking at the review: the signed-in owner, or a guest reviewer.
+// Used to flag their own comments and suggestions as retractable.
+export type ReviewViewer = { userId: string } | { reviewerId: string };
+
+function ownsComment(
+	comment: { authorUserId: string | null; authorReviewerId: string | null },
+	viewer: ReviewViewer | undefined
+): boolean {
+	if (!viewer) return false;
+	return 'userId' in viewer
+		? comment.authorUserId === viewer.userId
+		: comment.authorReviewerId === viewer.reviewerId;
+}
 
 // Threads for a set of scenes, with comments and attribution, anchors
 // re-mapped against the current scene text by the caller-supplied mapper
@@ -388,7 +404,8 @@ export async function listThreads(
 		currentText: string,
 		start: number,
 		end: number
-	) => { start: number; end: number } | null
+	) => { start: number; end: number } | null,
+	viewer?: ReviewViewer
 ): Promise<ThreadView[]> {
 	const threadRows = await db
 		.select({
@@ -452,6 +469,7 @@ export async function listThreads(
 							: (commentRow.reviewerName ?? 'Reviewer'),
 					isOwner: commentRow.comment.authorUserId !== null,
 					isAssistant: commentRow.comment.assistant,
+					mine: ownsComment(commentRow.comment, viewer),
 					createdAt: commentRow.comment.createdAt
 				}))
 		};
@@ -529,6 +547,9 @@ export type SuggestionView = {
 	isOwner: boolean;
 	// The Assistant proposed it; the frontend can badge it.
 	isAssistant: boolean;
+	// The viewer passed to listSuggestions proposed it, so they may retract it
+	// while it is still pending.
+	mine: boolean;
 	// What the suggestion replaces, as proposed against its base text.
 	original: string;
 	replacement: string;
@@ -556,7 +577,11 @@ function mapSuggestionRange(
 	return reanchorRange(baseText, currentText, start, end);
 }
 
-export async function listSuggestions(db: Database, storyId: string): Promise<SuggestionView[]> {
+export async function listSuggestions(
+	db: Database,
+	storyId: string,
+	viewer?: ReviewViewer
+): Promise<SuggestionView[]> {
 	const rows = await db
 		.select({
 			suggestion: reviewSuggestions,
@@ -584,6 +609,11 @@ export async function listSuggestions(db: Database, storyId: string): Promise<Su
 				: null;
 		const isOwner = row.suggestion.authorUserId !== null;
 		const isAssistant = row.suggestion.assistant;
+		const mine = viewer
+			? 'userId' in viewer
+				? row.suggestion.authorUserId === viewer.userId
+				: row.suggestion.reviewerId === viewer.reviewerId
+			: false;
 		return {
 			id: row.suggestion.id,
 			sceneId: row.suggestion.sceneId,
@@ -594,6 +624,7 @@ export async function listSuggestions(db: Database, storyId: string): Promise<Su
 					: (row.reviewerName ?? 'Reviewer'),
 			isOwner,
 			isAssistant,
+			mine,
 			original: row.baseBody.slice(rangeStart, rangeEnd),
 			replacement: row.suggestion.replacement,
 			status: row.suggestion.status,
@@ -691,4 +722,95 @@ export async function decideSuggestion(
 	);
 	if (!applied.ok) return applied;
 	return { ok: true, sceneId: row.scene.id };
+}
+
+// Accepts every pending suggestion in one scene, in creation order. Each accept
+// re-anchors against the now-current text, so applying them one after another
+// stays correct; a suggestion whose passage was rewritten cannot apply and is
+// counted as failed rather than aborting the rest. Ownership is enforced per
+// suggestion by decideSuggestion.
+export async function acceptAllInScene(
+	db: Database,
+	userId: string,
+	storyId: string,
+	sceneId: string
+): Promise<{ accepted: number; failed: number }> {
+	const rows = await db
+		.select({ id: reviewSuggestions.id })
+		.from(reviewSuggestions)
+		.where(
+			and(
+				eq(reviewSuggestions.storyId, storyId),
+				eq(reviewSuggestions.sceneId, sceneId),
+				eq(reviewSuggestions.status, 'pending')
+			)
+		)
+		.orderBy(asc(reviewSuggestions.createdAt));
+	let accepted = 0;
+	let failed = 0;
+	for (const row of rows) {
+		const result = await decideSuggestion(db, userId, row.id, true);
+		if (result.ok) accepted++;
+		else failed++;
+	}
+	return { accepted, failed };
+}
+
+// Retracts a comment the viewer authored. A reply is removed on its own; the
+// thread's opening comment can only be removed when no one else has joined the
+// thread (so a retraction never takes someone else's reply with it), and then
+// the whole thread goes. The Assistant's comments are not retractable here.
+export async function deleteComment(
+	db: Database,
+	actor: ReviewViewer,
+	commentId: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+	const [target] = await db.select().from(reviewComments).where(eq(reviewComments.id, commentId));
+	if (!target) return { ok: false, reason: 'That comment does not exist.' };
+	if (!ownsComment(target, actor)) {
+		return { ok: false, reason: 'You can only delete your own comments.' };
+	}
+	const all = await db
+		.select()
+		.from(reviewComments)
+		.where(eq(reviewComments.threadId, target.threadId))
+		.orderBy(asc(reviewComments.createdAt));
+	const isRoot = all[0]?.id === commentId;
+	if (!isRoot) {
+		await db.delete(reviewComments).where(eq(reviewComments.id, commentId));
+		return { ok: true };
+	}
+	if (!all.every((comment) => ownsComment(comment, actor))) {
+		return { ok: false, reason: 'Others have replied; resolve the thread instead.' };
+	}
+	await db.transaction(async (tx) => {
+		await tx.delete(reviewComments).where(eq(reviewComments.threadId, target.threadId));
+		await tx.delete(reviewThreads).where(eq(reviewThreads.id, target.threadId));
+	});
+	return { ok: true };
+}
+
+// Retracts a pending suggestion the viewer proposed. A decided suggestion is
+// part of the record (and an accepted one already changed the text), so it
+// stays.
+export async function deleteSuggestion(
+	db: Database,
+	actor: ReviewViewer,
+	suggestionId: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+	const [row] = await db
+		.select()
+		.from(reviewSuggestions)
+		.where(eq(reviewSuggestions.id, suggestionId));
+	if (!row) return { ok: false, reason: 'That suggestion does not exist.' };
+	const mine =
+		'userId' in actor ? row.authorUserId === actor.userId : row.reviewerId === actor.reviewerId;
+	if (!mine) return { ok: false, reason: 'You can only delete your own suggestions.' };
+	if (row.status !== 'pending') {
+		return { ok: false, reason: 'That suggestion was already decided.' };
+	}
+	await db
+		.delete(reviewSuggestions)
+		.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+	return { ok: true };
 }
