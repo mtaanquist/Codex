@@ -1238,6 +1238,9 @@
 						muted={data.assistant.muted}
 						suggestions={assistantSuggestions}
 						onConfirmSplit={confirmAssistantSplit}
+						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
+							? (text) => sceneEditor?.insertAtCursor(text)
+							: undefined}
 					/>
 				{:else if rightTab === 'session'}
 					<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />

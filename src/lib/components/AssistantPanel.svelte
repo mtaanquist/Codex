@@ -15,7 +15,8 @@
 		storyTitle,
 		muted,
 		suggestions = [],
-		onConfirmSplit
+		onConfirmSplit,
+		onInsert
 	}: {
 		storyId: string;
 		// The open scene, sent as the focus of context assembly; null off a scene.
@@ -30,6 +31,9 @@
 		// Confirms a proposed scene split; resolves to an error message, or null
 		// when the split landed (the page navigates to the new scene).
 		onConfirmSplit?: (proposal: { sceneId: string; before: string }) => Promise<string | null>;
+		// Inserts a reply's text into the open scene editor at the cursor; only
+		// passed when a single scene editor is open.
+		onInsert?: (text: string) => void;
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
@@ -341,6 +345,16 @@
 								{/each}
 							{/if}
 						</div>
+						{#if onInsert && message.content && !(busy && index === messages.length - 1) && index > 0}
+							<button
+								class="msg-insert"
+								type="button"
+								title="Insert this reply into the scene at the cursor"
+								onclick={() => onInsert(message.content)}
+							>
+								<Icon name="plus" size={12} /> Insert at cursor
+							</button>
+						{/if}
 						{#each message.proposals ?? [] as proposal, pi (pi)}
 							<div class="proposal">
 								<div class="proposal-head">
@@ -627,6 +641,22 @@
 	}
 	.composer textarea:focus {
 		border-color: var(--accent-line);
+	}
+	.msg-insert {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		margin-top: 6px;
+		border: 0;
+		background: none;
+		padding: 0;
+		font-size: 12px;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+	.msg-insert:hover {
+		color: var(--accent);
+		text-decoration: underline;
 	}
 	.proposal {
 		margin-top: 8px;

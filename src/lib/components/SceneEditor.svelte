@@ -349,6 +349,20 @@
 		return view;
 	}
 
+	// Inserts text at the caret, like the coauthor panel's Insert does; the
+	// Assistant tab uses it to drop a chat reply into the scene.
+	export function insertAtCursor(text: string) {
+		if (!view || !text) return;
+		const head = view.state.selection.main.head;
+		view.dispatch({
+			changes: { from: head, insert: text },
+			selection: { anchor: head + text.length },
+			scrollIntoView: true
+		});
+		scheduleSave();
+		view.focus();
+	}
+
 	// Lets the page place the caret when focus crosses a scene boundary.
 	export function focusEdge(edge: 'start' | 'end') {
 		if (!view) return;
