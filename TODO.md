@@ -399,6 +399,22 @@ now reads `storyPreferences` for the toggles. e2e: a `toolbar.ts` helper
 reaches a tool inline-or-in-menu; split/indent/align/legibility specs
 use it. No schema change.
 
+Review polish follow-up 2 (2026-06-10, post-v3.3.1): six smaller fixes
+from a second pass. (1) Outline scene/chapter names left-aligned (they
+are buttons now, whose UA default is centred) and (2) their hover/active
+background restored (the button reset was beating the shared rule by
+source order). (3) Air below a comment body so the replies and reply box
+do not crowd the text (`.rv-body` margin). (4) Accepting or resolving the
+last open note in a scene no longer yanks the centre to the next active
+scene: the shown scene is pinned once chosen, so the author stays on the
+change to keep editing (root cause: `selectedSceneId` fell back to the
+re-deciding `firstActive` while `chosenSceneId` was null). (5) Clicking a
+resolved/decided note under the Done filter now shows a faint neutral
+outline where it sat (new `rv-resolved` mark in `buildReviewMarks`, drawn
+only under that filter, no strikethrough or before-text). (6) The notes
+panel filter pills renamed: All -> Open, Resolved -> Done. Unit + e2e
+coverage added for the scene-pin and the resolved marks. No schema change.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

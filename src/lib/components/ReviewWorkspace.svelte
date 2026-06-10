@@ -98,6 +98,14 @@
 	const selectedSceneId = $derived(chosenSceneId ?? firstActive ?? orderedScenes[0]?.id ?? '');
 	const selectedScene = $derived(orderedScenes.find((s) => s.id === selectedSceneId));
 
+	// Pin the scene the moment one is shown. Without this, "first scene with
+	// activity" keeps re-deciding as items are worked: accepting or resolving the
+	// last note in a scene would yank the view to the next active scene, away
+	// from the change the author may still want to edit.
+	$effect(() => {
+		if (chosenSceneId === null && selectedSceneId) chosenSceneId = selectedSceneId;
+	});
+
 	const sceneThreads = $derived(threads.filter((t) => t.sceneId === selectedSceneId));
 	const sceneSuggestions = $derived(suggestions.filter((s) => s.sceneId === selectedSceneId));
 	// Open items in the selected scene, surfaced as a badge on the Notes tab.
