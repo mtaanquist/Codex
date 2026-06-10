@@ -177,7 +177,7 @@
 				<div class="rv-actions">
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
-						<button class="rv-btn ghost danger" type="submit">
+						<button class="rv-btn ghost danger" type="submit" aria-label="Delete your comment">
 							<Icon name="trash" size={14} /> Delete
 						</button>
 					</form>
@@ -197,7 +197,7 @@
 				{#if canDeleteThread}
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
-						<button class="rv-btn ghost danger" type="submit">
+						<button class="rv-btn ghost danger" type="submit" aria-label="Delete your comment">
 							<Icon name="trash" size={14} /> Delete
 						</button>
 					</form>

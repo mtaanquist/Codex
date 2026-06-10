@@ -119,7 +119,11 @@
 				<div class="rv-actions">
 					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
-						<button class="rv-btn ghost danger" type="submit">
+						<button
+							class="rv-btn ghost danger"
+							type="submit"
+							aria-label="Delete your suggested edit"
+						>
 							<Icon name="trash" size={14} /> Delete
 						</button>
 					</form>
