@@ -1,12 +1,14 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { ownedStory } from '$lib/server/story-access';
 import { duplicateScene } from '$lib/server/scene-split-merge';
 import { queueSceneMentions } from '$lib/server/jobs';
 
 // Duplicates a scene as a full copy directly after the original.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	await ownedStory(params.id, locals.user!.id);
 	const payload = (await request.json()) as { sceneId?: unknown };
 	if (typeof payload.sceneId !== 'string') {

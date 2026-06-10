@@ -7,6 +7,7 @@ import {
 	setEntityBadgeColor,
 	setEntityBadgeImage
 } from '$lib/server/entity-badge';
+import { rateLimitUploads } from '$lib/server/write-guard';
 
 // The entity badge: PUT sets a palette colour (null clears it), POST uploads
 // an image, DELETE removes the image. Owner-scoped inside the helpers, which
@@ -22,6 +23,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 };
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitUploads(locals.user!.id);
 	const config = await effectiveAssetConfig(db);
 	if (!config) error(503, 'image uploads are not configured');
 	const data = await request.formData();

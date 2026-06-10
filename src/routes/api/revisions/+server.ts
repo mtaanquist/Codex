@@ -1,12 +1,14 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { createCheckpoint, type RevisionEntityType } from '$lib/server/revisions';
 
 const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'note'] as const;
 
 // Creates a manual checkpoint of the entity's current text.
 export const POST: RequestHandler = async ({ request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const payload = (await request.json()) as {
 		entityType?: unknown;
 		entityId?: unknown;

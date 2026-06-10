@@ -26,6 +26,7 @@ export async function verifyAccountPassword(
 }
 
 const MAX_PEN_NAME = 120;
+const MAX_DISPLAY_NAME = 120;
 
 // Saves the always-editable identity fields: the required display name and the
 // optional pen name (the name stories are published under when it differs).
@@ -34,7 +35,9 @@ export async function saveIdentity(
 	userId: string,
 	input: { displayName: string; penName: string }
 ): Promise<AccountResult> {
-	const name = input.displayName.trim();
+	// Capped like the pen name: the display name renders on every page that
+	// shows the author, so an unbounded value should not reach the database.
+	const name = input.displayName.trim().slice(0, MAX_DISPLAY_NAME);
 	if (!name) return { ok: false, reason: 'Enter a display name.' };
 	const pen = input.penName.trim().slice(0, MAX_PEN_NAME);
 	await db

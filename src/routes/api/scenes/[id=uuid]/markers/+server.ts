@@ -2,10 +2,12 @@ import { error, json } from '@sveltejs/kit';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { createMarker } from '$lib/server/markers';
 
 // Turns the editor's current selection into a checkable marker.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const payload = (await request.json()) as {
 		anchorStart?: unknown;
 		anchorEnd?: unknown;

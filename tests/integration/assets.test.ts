@@ -117,8 +117,13 @@ describe('createAsset', () => {
 			contentType: 'image/png',
 			bytes: PNG
 		};
+		// Bytes that are not a recognised image are refused, whatever the
+		// client-supplied content type claims (here a PNG label over plain text).
 		expect(
-			await createAsset(db, store, config, ownerId, { ...base, contentType: 'image/svg+xml' })
+			await createAsset(db, store, config, ownerId, {
+				...base,
+				bytes: Buffer.from('this is not an image')
+			})
 		).toMatchObject({ ok: false });
 		expect(
 			await createAsset(db, store, config, ownerId, { ...base, bytes: Buffer.alloc(0) })

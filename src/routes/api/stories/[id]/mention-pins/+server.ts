@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { clearMentionPin, setMentionPin } from '$lib/server/mention-pins';
 import { stories } from '$lib/server/db/schema';
 import { queueUniverseMentions } from '$lib/server/jobs';
@@ -21,6 +22,7 @@ async function requeue(storyId: string) {
 
 // Pins which entity an ambiguous name means in this story.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const payload = (await request.json()) as {
 		name?: unknown;
 		targetType?: unknown;
@@ -49,6 +51,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 };
 
 export const DELETE: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const payload = (await request.json()) as { name?: unknown };
 	if (typeof payload.name !== 'string') error(400, 'name is required');
 	const removed = await clearMentionPin(db, locals.user!.id, params.id, payload.name);

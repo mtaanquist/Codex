@@ -28,7 +28,7 @@ import { users } from '$lib/server/db/schema';
 import { verifyPassword } from '$lib/server/password';
 import { queueEmail, queueUserExport } from '$lib/server/jobs';
 import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
-import { exportLimit } from '$lib/server/rate-limit';
+import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
 import {
 	accountLlmView,
@@ -200,6 +200,12 @@ export const actions: Actions = {
 		return { scope: 'profile', saved: true };
 	},
 	uploadAvatar: async ({ request, locals }) => {
+		if (!uploadLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				scope: 'avatar',
+				message: 'Too many uploads just now. Try again shortly.'
+			});
+		}
 		const config = await effectiveAssetConfig(db);
 		if (!config) {
 			return fail(503, { scope: 'avatar', message: 'Image uploads are not configured.' });

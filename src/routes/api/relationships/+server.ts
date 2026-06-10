@@ -2,11 +2,13 @@ import { error, json } from '@sveltejs/kit';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { rateLimitWrites } from '$lib/server/write-guard';
 import { createRelationship } from '$lib/server/relationships';
 
 const KINDS = ['character', 'place', 'lore'] as const;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const payload = (await request.json()) as {
 		fromKind?: unknown;
 		fromId?: unknown;

@@ -20,7 +20,7 @@ import {
 	requestExport,
 	type ExportFormat
 } from '$lib/server/user-exports';
-import { exportLimit } from '$lib/server/rate-limit';
+import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
 import { deleteStory } from '$lib/server/story-delete';
 import { publications, users } from '$lib/server/db/schema';
 import {
@@ -351,6 +351,12 @@ export const actions: Actions = {
 	},
 	setCover: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
+		if (!uploadLimit(locals.user!.id).allowed) {
+			return fail(429, {
+				action: 'cover',
+				message: 'Too many uploads just now. Try again shortly.'
+			});
+		}
 		const config = await effectiveAssetConfig(db);
 		if (!config) {
 			return fail(400, { action: 'cover', message: 'Assets are not configured on this server.' });
