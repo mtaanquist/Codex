@@ -1,0 +1,57 @@
+name: Release
+
+# Tags a released version on main and publishes the GitHub release. Exists so
+# a remote session that can merge release PRs but cannot push tags can finish
+# the release flow; run it after the release PR has landed on main. The tag is
+# pushed with the workflow token, which GitHub deliberately keeps from
+# triggering the tag-push image build, so this dispatches the image workflow
+# itself at the new tag.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag, X.Y.Z; must match package.json on main'
+        required: true
+      notes:
+        description: 'Release notes; left empty, GitHub generates them'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag-and-release:
+    name: Tag and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - name: Verify the version matches main
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$VERSION" ]; then
+            echo "package.json on main is $pkg, not $VERSION; merge the release PR first"
+            exit 1
+          fi
+      - name: Tag main and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          tag="v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag"
+          git push origin "$tag"
+          if [ -n "$NOTES" ]; then
+            gh release create "$tag" --title "$tag" --notes "$NOTES"
+          else
+            gh release create "$tag" --title "$tag" --generate-notes
+          fi
+          gh workflow run release-image.yml --ref "$tag"
