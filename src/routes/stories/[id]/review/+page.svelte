@@ -36,6 +36,7 @@
 		threads={data.threads}
 		suggestions={data.suggestions}
 		role="author"
+		storyId={data.story.id}
 		{seg}
 		entities={data.mentionEntities}
 		mentionMembers={data.mentionMembers}

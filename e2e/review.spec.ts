@@ -113,15 +113,16 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 		page.locator('.rv-reply-body', { hasText: 'Noted; oiling the hinges.' })
 	).toBeVisible();
 
-	// Accept the suggested change: the prose updates in place.
+	// Accept the suggested change from the card's header-corner control: the
+	// author's editable prose updates in place.
 	await expect(page.locator('.rv-diff-ins')).toHaveText('reservations');
-	await page.getByRole('button', { name: 'Accept', exact: true }).click();
-	await expect(page.locator('.review-prose')).toContainText(
+	await page.getByRole('button', { name: 'Accept suggestion' }).click();
+	await expect(page.locator('.review-edit .cm-content')).toContainText(
 		'The reviewer will have reservations about this gate.'
 	);
 
 	// Resolve the thread, then the Resolved filter shows both outcomes.
-	await page.getByRole('button', { name: 'Resolve', exact: true }).click();
+	await page.getByRole('button', { name: 'Resolve comment' }).click();
 	await page.locator('.rv-filter', { hasText: 'Resolved' }).click();
 	await expect(page.locator('.rv-status.resolved')).toBeVisible();
 	await expect(page.locator('.rv-status.accepted')).toBeVisible();

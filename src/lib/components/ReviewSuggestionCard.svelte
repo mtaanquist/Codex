@@ -30,6 +30,8 @@
 		author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer'
 	);
 	const pending = $derived(suggestion.status === 'pending');
+	// The author works an open suggestion straight from the card corner.
+	const canDecide = $derived(role === 'author' && pending);
 
 	function when(date: Date | string): string {
 		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -44,7 +46,7 @@
      accessible name off the action buttons inside it. -->
 <div
 	id="rv-card-{suggestion.id}"
-	class="rv-card"
+	class="rv-card sugg"
 	class:is-focused={focused}
 	style="--auth: {color};"
 	role="button"
@@ -66,7 +68,37 @@
 			</div>
 			<div class="rv-when">{when(suggestion.createdAt)}</div>
 		</div>
-		<span class="rv-type-pill"><Icon name="suggest" size={11} /> {verb}</span>
+		{#if canDecide}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="rv-quick" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+				{#if !suggestion.anchorLost}
+					<form method="POST" action="?/acceptSuggestion" use:enhance>
+						<input type="hidden" name="suggestionId" value={suggestion.id} />
+						<button
+							class="rv-quick-btn accept"
+							type="submit"
+							title="Accept suggestion"
+							aria-label="Accept suggestion"
+						>
+							<Icon name="check" size={15} />
+						</button>
+					</form>
+				{/if}
+				<form method="POST" action="?/rejectSuggestion" use:enhance>
+					<input type="hidden" name="suggestionId" value={suggestion.id} />
+					<button
+						class="rv-quick-btn reject"
+						type="submit"
+						title="Reject suggestion"
+						aria-label="Reject suggestion"
+					>
+						<Icon name="close" size={15} />
+					</button>
+				</form>
+			</div>
+		{:else}
+			<span class="rv-type-pill sugg"><Icon name="suggest" size={11} /> {verb}</span>
+		{/if}
 	</div>
 
 	<div class="rv-diff">
@@ -80,41 +112,27 @@
 		</div>
 	{/if}
 
-	<div class="rv-card-foot">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 		{#if pending}
-			<div class="rv-actions">
-				{#if role === 'author'}
-					{#if !suggestion.anchorLost}
-						<form method="POST" action="?/acceptSuggestion" use:enhance>
-							<input type="hidden" name="suggestionId" value={suggestion.id} />
-							<button class="rv-btn accept" type="submit">
-								<Icon name="check" size={14} /> Accept
-							</button>
-						</form>
-					{/if}
-					<form method="POST" action="?/rejectSuggestion" use:enhance>
-						<input type="hidden" name="suggestionId" value={suggestion.id} />
-						<button class="rv-btn ghost" type="submit">
-							<Icon name="close" size={14} /> Reject
-						</button>
-					</form>
-				{:else}
-					<span class="rv-status resolved">Waiting on the author</span>
-				{/if}
-				{#if suggestion.mine}
+			{#if suggestion.mine}
+				<div class="rv-actions">
 					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
 						<button
-							class="rv-btn icon danger"
+							class="rv-btn ghost danger"
 							type="submit"
-							title="Delete your suggestion"
-							aria-label="Delete your suggestion"
+							aria-label="Delete your suggested edit"
 						>
-							<Icon name="trash" size={14} />
+							<Icon name="trash" size={14} /> Delete
 						</button>
 					</form>
-				{/if}
-			</div>
+				</div>
+			{:else if role === 'guest'}
+				<div class="rv-actions">
+					<span class="rv-status resolved">Waiting on the author</span>
+				</div>
+			{/if}
 		{:else}
 			<div class="rv-actions">
 				{#if suggestion.status === 'accepted'}
