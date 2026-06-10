@@ -1,0 +1,3 @@
+ALTER TABLE "review_threads" ADD COLUMN "suggestion_id" uuid;--> statement-breakpoint
+ALTER TABLE "review_threads" ADD CONSTRAINT "review_threads_suggestion_id_review_suggestions_id_fk" FOREIGN KEY ("suggestion_id") REFERENCES "public"."review_suggestions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "review_threads" ADD CONSTRAINT "review_threads_suggestion_id_unique" UNIQUE("suggestion_id");

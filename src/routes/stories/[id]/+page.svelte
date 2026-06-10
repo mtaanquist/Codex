@@ -4,6 +4,8 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
+	import { assistantIntent } from '$lib/assistant.svelte';
+	import { reviewSceneWithAssistant } from '$lib/assistant-actions';
 	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
@@ -277,23 +279,7 @@
 		if (reviewingScene) return;
 		reviewingScene = true;
 		try {
-			const response = await fetch('/api/assistant/review', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ sceneId })
-			});
-			if (!response.ok) {
-				const body = (await response.json().catch(() => null)) as { message?: string } | null;
-				alert(body?.message ?? 'The Assistant could not review the scene.');
-				return;
-			}
-			const { staged } = (await response.json()) as { staged: number };
-			if (staged > 0) {
-				// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from a slug
-				await goto(`/stories/${data.story.slug}/review`);
-			} else {
-				alert('The Assistant read the scene and had no notes to add.');
-			}
+			await reviewSceneWithAssistant(sceneId, `/stories/${data.story.slug}/review`);
 		} finally {
 			reviewingScene = false;
 		}
@@ -345,6 +331,43 @@
 		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
 	}
 
+	// Confirms a split the Assistant proposed in chat. The exact passage is
+	// re-located server-side against the stored text, so the open editor's
+	// pending save lands first; on success the new scene opens.
+	async function confirmAssistantSplit(proposal: {
+		sceneId: string;
+		before: string;
+	}): Promise<string | null> {
+		const editor =
+			data.selectedScene?.id === proposal.sceneId ? sceneEditor : docEditors[proposal.sceneId];
+		await editor?.flushSave();
+		const response = await fetch(`/api/scenes/${proposal.sceneId}/split`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ before: proposal.before })
+		});
+		if (!response.ok) {
+			const body = (await response.json().catch(() => null)) as { message?: string } | null;
+			return body?.message ?? 'Could not split the scene.';
+		}
+		const { newSceneId } = (await response.json()) as { newSceneId: string };
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
+		return null;
+	}
+
+	// "Suggest where to split": a canned chat turn naming the scene, so the
+	// Assistant reads it and stages a split proposal to confirm.
+	function suggestSplit(sceneId: string) {
+		rowMenu = null;
+		const scene = data.scenes.find((s) => s.id === sceneId);
+		const label = scene?.title ? `the scene "${scene.title}"` : 'this scene';
+		assistantIntent.pending = {
+			kind: 'send',
+			text: `Suggest a natural place to split ${label} (scene id: ${sceneId}) in two. Read the scene first, then propose the split for me to confirm.`
+		};
+	}
+
 	// Chapters start expanded; collapsing is per-visit state.
 	let collapsed = new SvelteSet<string>();
 
@@ -363,8 +386,12 @@
 	let rowMenuEl = $state<HTMLDivElement>();
 	let rowMenuTrigger: HTMLElement | null = null;
 
+	// The Assistant flyout inside the row menu; reset whenever the menu opens.
+	let rowSubOpen = $state(false);
+
 	function openRowMenu(event: MouseEvent, target: RowMenuTarget) {
 		event.preventDefault();
+		rowSubOpen = false;
 		rowMenuTrigger = event.currentTarget as HTMLElement;
 		// A keyboard-invoked context menu (Shift+F10) reports (0,0); anchor it to
 		// the row instead of dropping it in the corner.
@@ -473,6 +500,18 @@
 	// tab appears only when the account has it configured and switched on.
 	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
 
+	// An Assistant intent (from a menu here or the command palette) opens the
+	// tab; the panel consumes the intent itself once it renders.
+	$effect(() => {
+		if (assistantIntent.pending && data.assistant.tabEnabled) rightTab = 'assistant';
+	});
+
+	// "Ask the Assistant about this" on an editor selection: the passage goes
+	// into the chat composer as a reference and the writer asks their question.
+	function askAssistant(sceneId: string, text: string) {
+		assistantIntent.pending = { kind: 'reference', sceneId, text };
+	}
+
 	// Grounded starter prompts for an empty Assistant conversation, drawn from
 	// the story's known characters so they name real entities; generic fallbacks
 	// when the cast is empty.
@@ -528,7 +567,11 @@
 	]);
 	let docEditors: Record<
 		string,
-		| { focusEdge: (edge: 'start' | 'end') => void; getView: () => EditorView | undefined }
+		| {
+				focusEdge: (edge: 'start' | 'end') => void;
+				getView: () => EditorView | undefined;
+				flushSave: () => Promise<void>;
+		  }
 		| undefined
 	> = $state({});
 
@@ -1001,6 +1044,9 @@
 							markers={data.storyDocMarkers[scene.id] ?? []}
 							loreCategories={data.loreCategories}
 							onCreateEntity={createEntity}
+							onAskAssistant={data.assistant.surfacesEnabled
+								? (text) => askAssistant(scene.id, text)
+								: undefined}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
 							onFocus={() => (activeDocId = scene.id)}
 							onStatus={(status) => {
@@ -1092,6 +1138,9 @@
 						markers={data.sceneMarkers}
 						loreCategories={data.loreCategories}
 						onCreateEntity={createEntity}
+						onAskAssistant={data.assistant.surfacesEnabled
+							? (text) => askAssistant(data.selectedScene!.id, text)
+							: undefined}
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.
@@ -1173,6 +1222,11 @@
 						storyTitle={data.story.title}
 						muted={data.assistant.muted}
 						suggestions={assistantSuggestions}
+						initialMessages={data.assistantChat}
+						onConfirmSplit={confirmAssistantSplit}
+						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
+							? (text) => sceneEditor?.insertAtCursor(text)
+							: undefined}
 					/>
 				{:else if rightTab === 'session'}
 					<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
@@ -1292,14 +1346,36 @@
 				<Icon name="pencil" size={13} /> Rename chapter
 			</button>
 			{#if data.assistant.surfacesEnabled}
-				<button
-					class="row-menu-item"
-					type="button"
-					role="menuitem"
-					onclick={() => reviewChapter(target.id)}
+				<div
+					class="row-sub"
+					role="presentation"
+					onmouseenter={() => (rowSubOpen = true)}
+					onmouseleave={() => (rowSubOpen = false)}
 				>
-					<Icon name="sparkles" size={13} /> Review this chapter
-				</button>
+					<button
+						class="row-menu-item row-sub-trigger"
+						type="button"
+						role="menuitem"
+						aria-haspopup="menu"
+						aria-expanded={rowSubOpen}
+						onclick={() => (rowSubOpen = !rowSubOpen)}
+					>
+						<span class="row-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
+						<Icon name="chevron" size={12} />
+					</button>
+					{#if rowSubOpen}
+						<div class="row-submenu" role="menu">
+							<button
+								class="row-menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => reviewChapter(target.id)}
+							>
+								Review this chapter
+							</button>
+						</div>
+					{/if}
+				</div>
 			{/if}
 			<form method="POST" action="?/moveChapter">
 				<input type="hidden" name="chapterId" value={target.id} />
@@ -1361,14 +1437,44 @@
 				<Icon name="copy" size={13} /> Duplicate scene
 			</button>
 			{#if data.assistant.surfacesEnabled}
-				<button
-					class="row-menu-item"
-					type="button"
-					role="menuitem"
-					onclick={() => reviewScene(target.id)}
+				<div
+					class="row-sub"
+					role="presentation"
+					onmouseenter={() => (rowSubOpen = true)}
+					onmouseleave={() => (rowSubOpen = false)}
 				>
-					<Icon name="sparkles" size={13} /> Review this scene
-				</button>
+					<button
+						class="row-menu-item row-sub-trigger"
+						type="button"
+						role="menuitem"
+						aria-haspopup="menu"
+						aria-expanded={rowSubOpen}
+						onclick={() => (rowSubOpen = !rowSubOpen)}
+					>
+						<span class="row-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
+						<Icon name="chevron" size={12} />
+					</button>
+					{#if rowSubOpen}
+						<div class="row-submenu" role="menu">
+							<button
+								class="row-menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => reviewScene(target.id)}
+							>
+								Review this scene
+							</button>
+							<button
+								class="row-menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => suggestSplit(target.id)}
+							>
+								Suggest where to split
+							</button>
+						</div>
+					{/if}
+				</div>
 			{/if}
 			{#if pickedForMerge && mergeSelection.size >= 2}
 				<button class="row-menu-item" type="button" role="menuitem" onclick={mergeSelectedScenes}>
@@ -1476,6 +1582,30 @@
 	}
 	.row-menu-item:hover:not(:disabled) {
 		background: var(--accent-soft);
+	}
+	/* The Assistant flyout, the editor selection menu's submenu pattern. */
+	.row-sub {
+		position: relative;
+	}
+	.row-sub-trigger {
+		justify-content: space-between;
+	}
+	.row-sub-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.row-submenu {
+		position: absolute;
+		left: calc(100% - 2px);
+		top: -7px;
+		min-width: 180px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+		z-index: 61;
 	}
 	.row-menu-item:disabled {
 		color: var(--text-faint);

@@ -8,7 +8,10 @@ import type { ToolSpec } from '../providers/types';
 
 export type ToolKind = 'read' | 'write';
 
-export type ToolDef = ToolSpec & { kind: ToolKind };
+// A scoped tool acts on a target carried in the dispatch context (a review
+// thread, a suggestion) rather than on ids the model supplies, and is only
+// offered when a surface names it explicitly - never in the default set.
+export type ToolDef = ToolSpec & { kind: ToolKind; scoped?: boolean };
 
 function obj(properties: Record<string, unknown>, required: string[]): Record<string, unknown> {
 	return { type: 'object', properties, required, additionalProperties: false };
@@ -17,6 +20,13 @@ function obj(properties: Record<string, unknown>, required: string[]): Record<st
 const str = (description: string) => ({ type: 'string', description });
 
 export const TOOLS: ToolDef[] = [
+	{
+		kind: 'read',
+		name: 'list_scenes',
+		description:
+			"List the story's chapters and scenes in order, with each scene's id, title, status, and summary. Use the ids with get_scene to read a scene in full.",
+		parameters: obj({}, [])
+	},
 	{
 		kind: 'read',
 		name: 'get_scene',
@@ -60,6 +70,22 @@ export const TOOLS: ToolDef[] = [
 	},
 	{
 		kind: 'write',
+		name: 'propose_scene_split',
+		description:
+			'Propose splitting a scene in two at a point you choose. The writer sees the proposal with your reasoning and confirms or ignores it; nothing changes until they confirm. The split point is where the new scene begins.',
+		parameters: obj(
+			{
+				sceneId: str('The scene id.'),
+				before: str(
+					'The exact text the new scene should start at (must occur exactly once in the scene).'
+				),
+				rationale: str('One or two sentences on why this is a natural break.')
+			},
+			['sceneId', 'before', 'rationale']
+		)
+	},
+	{
+		kind: 'write',
 		name: 'leave_comment',
 		description:
 			'Leave a review comment on a scene, optionally anchored to a quoted passage. Staged for the author like a guest reviewer comment.',
@@ -73,12 +99,34 @@ export const TOOLS: ToolDef[] = [
 			},
 			['sceneId', 'comment']
 		)
+	},
+	{
+		kind: 'write',
+		scoped: true,
+		name: 'reply_in_thread',
+		description:
+			'Reply in the review thread under discussion. The reply is posted under your name; the thread is fixed by the request, not chosen here.',
+		parameters: obj({ comment: str('The reply text.') }, ['comment'])
+	},
+	{
+		kind: 'write',
+		scoped: true,
+		name: 'update_suggestion',
+		description:
+			'Revise the replacement text of your own pending suggestion under discussion. The passage it replaces stays the same; only the proposed new text changes. The suggestion is fixed by the request, not chosen here.',
+		parameters: obj({ replacement: str('The revised replacement text.') }, ['replacement'])
 	}
 ];
 
-export function toolSpecs(): ToolSpec[] {
-	return TOOLS.map(({ kind, ...spec }) => {
+// The specs offered to the model: the default set leaves the scoped tools
+// out; a surface that needs them names them explicitly.
+export function toolSpecs(names?: string[]): ToolSpec[] {
+	const picked = names
+		? TOOLS.filter((tool) => names.includes(tool.name))
+		: TOOLS.filter((tool) => !tool.scoped);
+	return picked.map(({ kind, scoped, ...spec }) => {
 		void kind;
+		void scoped;
 		return spec;
 	});
 }

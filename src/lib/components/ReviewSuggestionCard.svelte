@@ -6,20 +6,30 @@
 		authorColor,
 		suggestionAuthor,
 		suggestionKind,
-		type ReviewSuggestion
+		type ReviewSuggestion,
+		type ReviewThread
 	} from '$lib/review-ui';
 
 	let {
 		suggestion,
+		discussion = null,
 		role,
 		focused,
-		onFocus
+		onFocus,
+		assistant = null,
+		onAssistantReply = null
 	}: {
 		suggestion: ReviewSuggestion;
+		// The suggestion's discussion thread, once someone has replied on it.
+		discussion?: ReviewThread | null;
 		role: 'author' | 'guest';
 		focused: boolean;
 		// Clicking the card jumps to and pulses its passage in the manuscript.
 		onFocus: (id: string) => void;
+		// Set when the Assistant answers replies on its suggestions (author
+		// page, Assistant live); carries its display name for the waiting note.
+		assistant?: { name: string } | null;
+		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
 	} = $props();
 
 	const author = $derived(suggestionAuthor(suggestion));
@@ -39,6 +49,28 @@
 
 	function confirmRetract(e: SubmitEvent) {
 		if (!confirm('Delete your suggested edit? This cannot be undone.')) e.preventDefault();
+	}
+
+	// The discussion on this suggestion: every comment of its lazily created
+	// thread (it has no opening comment of its own).
+	const replies = $derived(discussion?.comments ?? []);
+	let replyText = $state('');
+
+	// The Assistant answers replies on its own pending suggestions; the thread
+	// id comes back from the reply action that created or found the thread.
+	let assistantBusy = $state(false);
+	const assistantAnswers = $derived(
+		Boolean(assistant && onAssistantReply && suggestion.isAssistant && pending)
+	);
+
+	async function triggerAssistant(threadId: string) {
+		if (!onAssistantReply || assistantBusy) return;
+		assistantBusy = true;
+		try {
+			await onAssistantReply(threadId);
+		} finally {
+			assistantBusy = false;
+		}
 	}
 </script>
 
@@ -112,9 +144,74 @@
 		</div>
 	{/if}
 
+	{#if replies.length > 0}
+		<div class="rv-replies">
+			{#each replies as reply (reply.id)}
+				<div class="rv-reply-row">
+					<ReviewAvatar
+						author={{
+							isOwner: reply.isOwner,
+							isAssistant: reply.isAssistant,
+							name: reply.authorName
+						}}
+						size={20}
+					/>
+					<div class="rv-reply-main">
+						<div class="rv-reply-head">
+							<span class="rv-reply-name">{reply.authorName}</span>
+							<span class="rv-reply-when">{when(reply.createdAt)}</span>
+						</div>
+						<div class="rv-reply-body">{reply.body}</div>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 		{#if pending}
+			{#if assistantBusy && assistant}
+				<div class="rv-assistant-wait">
+					<Icon name="sparkles" size={12} />
+					{assistant.name} is replying...
+				</div>
+			{/if}
+			<form
+				method="POST"
+				action="?/replySuggestion"
+				class="rv-reply"
+				use:enhance={() =>
+					async ({ result, update }) => {
+						replyText = '';
+						await update({ reset: false });
+						// The author replied on the Assistant's suggestion; it answers
+						// in the thread the action just created or found.
+						const threadId =
+							result.type === 'success' && typeof result.data?.threadId === 'string'
+								? result.data.threadId
+								: null;
+						if (assistantAnswers && threadId) void triggerAssistant(threadId);
+					}}
+			>
+				<input type="hidden" name="suggestionId" value={suggestion.id} />
+				<input
+					type="text"
+					name="body"
+					placeholder="Reply..."
+					aria-label="Reply"
+					bind:value={replyText}
+					required
+				/>
+				<button
+					class="rv-reply-send"
+					type="submit"
+					disabled={!replyText.trim()}
+					aria-label="Send reply"
+				>
+					<Icon name="reply" size={15} />
+				</button>
+			</form>
 			{#if suggestion.mine}
 				<div class="rv-actions">
 					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>

@@ -94,20 +94,26 @@ The History tab on the right keeps past versions of the open scene. Use "Checkpo
 
 When you have set up the Assistant on your account page, an Assistant tab appears on the right alongside Reference, History, and Session. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
 
-The conversation is not saved. It clears when you reload or leave the page.
+To ask about a particular passage, select it in the editor, right-click, and choose Assistant, then "Ask the Assistant about this". The passage appears above the chat box as a quote; type your question and send, or select the x on the quote to drop it.
 
-When you come back to a story after time away, select "Catch me up" at the top of the tab. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
+When a reply contains something you want in the manuscript, select "Insert at cursor" under it to drop the reply's text into the open scene where your cursor is. The action only shows while a single scene is open in the editor.
 
-Select "Update summaries" at the top of the tab to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
+The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". Its suggestion appears in the conversation as a card quoting where the new scene would start, with its reasoning. Nothing happens until you select "Split here" on the card; the split works the same as the toolbar's split button, and you can merge the scenes back together from the sidebar if you change your mind.
+
+The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
+
+When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
+
+Select "Update summaries" from the menu next to the send button to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
 
 While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 
-To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
+To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. The panel shows where you are in the prose - the text you had selected, or the passage leading up to your cursor - so a brief like "continue from here" picks up in the right place; select the x on that quote if you do not want it sent. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
 
 You can also ask the Assistant to review your writing and leave comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. There are three ways in:
 
-- A single scene: right-click the scene in the left sidebar and choose "Review this scene".
-- A chapter: right-click the chapter and choose "Review this chapter".
+- A single scene: right-click the scene in the left sidebar and choose Assistant, then "Review this scene".
+- A chapter: right-click the chapter and choose Assistant, then "Review this chapter".
 - The whole story: open the story's settings, go to Review, and select "Review this story with the Assistant".
 
 A chapter or whole-story review runs in the background, since it reads every scene; you get a notification when its notes are ready. Nothing in your writing changes until you accept a suggestion.

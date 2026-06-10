@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import ReviewNav from './ReviewNav.svelte';
@@ -25,7 +26,8 @@
 		mentionPins = {},
 		entityHref = null,
 		nonPrintingMarks = 'hidden',
-		commandMarkers = 'shown'
+		commandMarkers = 'shown',
+		assistant = null
 	}: {
 		chapters: { id: string; title: string | null }[];
 		scenes: {
@@ -53,6 +55,10 @@
 		// The author editor's view toggles, persisted per user.
 		nonPrintingMarks?: MarkVisibility;
 		commandMarkers?: MarkVisibility;
+		// Set on the author page when the Assistant is live for this story: a
+		// reply in a thread the Assistant opened triggers its answer. Never set
+		// on the guest page.
+		assistant?: { name: string } | null;
 	} = $props();
 
 	// Scenes in reading order, each tagged with its chapter label, so the nav
@@ -78,6 +84,30 @@
 		return out;
 	});
 
+	// Suggestion-linked threads render on their suggestion's card; everything
+	// else (the nav counts, the centre marks, the panel's comment list) sees
+	// only the standalone threads.
+	const standaloneThreads = $derived(threads.filter((t) => !t.suggestionId));
+	const discussions = $derived(
+		new Map(threads.filter((t) => t.suggestionId).map((t) => [t.suggestionId!, t]))
+	);
+
+	// The Assistant answering in its own threads: POST the trigger, then pull
+	// the fresh thread in. Failures stay quiet - the author's reply already
+	// landed; the Assistant just has not answered.
+	async function assistantReply(threadId: string) {
+		try {
+			await fetch('/api/assistant/review-reply', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ threadId })
+			});
+		} catch {
+			// reported by the missing reply itself
+		}
+		await invalidateAll();
+	}
+
 	let filter = $state<ReviewFilter>('all');
 	let focusedId = $state<string | null>(null);
 	let query = $state('');
@@ -90,7 +120,7 @@
 	const firstActive = $derived(
 		orderedScenes.find(
 			(s) =>
-				threads.some((t) => t.sceneId === s.id && t.resolvedAt === null) ||
+				standaloneThreads.some((t) => t.sceneId === s.id && t.resolvedAt === null) ||
 				suggestions.some((su) => su.sceneId === s.id && su.status === 'pending')
 		)?.id
 	);
@@ -106,7 +136,7 @@
 		if (chosenSceneId === null && selectedSceneId) chosenSceneId = selectedSceneId;
 	});
 
-	const sceneThreads = $derived(threads.filter((t) => t.sceneId === selectedSceneId));
+	const sceneThreads = $derived(standaloneThreads.filter((t) => t.sceneId === selectedSceneId));
 	const sceneSuggestions = $derived(suggestions.filter((s) => s.sceneId === selectedSceneId));
 	// Open items in the selected scene, surfaced as a badge on the Notes tab.
 	const sceneOpen = $derived(
@@ -238,7 +268,7 @@
 				<ReviewNav
 					{chapters}
 					scenes={orderedScenes}
-					{threads}
+					threads={standaloneThreads}
 					{suggestions}
 					{filter}
 					{selectedSceneId}
@@ -302,6 +332,7 @@
 					scene={selectedScene}
 					threads={sceneThreads}
 					suggestions={sceneSuggestions}
+					{discussions}
 					{filter}
 					setFilter={(f) => (filter = f)}
 					{focusedId}
@@ -311,6 +342,8 @@
 					{composer}
 					onCloseComposer={() => (composer = null)}
 					onStartSceneComment={startSceneComment}
+					{assistant}
+					onAssistantReply={assistant ? assistantReply : null}
 				/>
 			{/if}
 		</aside>
