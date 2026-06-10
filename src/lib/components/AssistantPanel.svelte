@@ -5,6 +5,7 @@
 	// the key and endpoint; this only POSTs the transcript and streams tokens
 	// back over Server-Sent Events.
 	import { enhance } from '$app/forms';
+	import { assistantIntent } from '$lib/assistant.svelte';
 	import Icon from './Icon.svelte';
 
 	let {
@@ -27,7 +28,8 @@
 		suggestions?: string[];
 	} = $props();
 
-	type Message = { role: 'user' | 'assistant'; content: string };
+	type ChatReference = { sceneId: string; text: string };
+	type Message = { role: 'user' | 'assistant'; content: string; reference?: ChatReference };
 	type StreamEvent =
 		| { type: 'token'; text: string }
 		| { type: 'done' }
@@ -111,20 +113,47 @@
 		}
 	}
 
+	// A passage the next message points at, set from "Ask the Assistant about
+	// this" on a selection; shown as a chip the writer can remove before sending.
+	let reference = $state<ChatReference | null>(null);
+
 	async function send(text?: string) {
 		const question = (text ?? input).trim();
 		if (!question || busy) return;
 		input = '';
 		if (composer) composer.style.height = 'auto';
+		const turn: Message = { role: 'user', content: question };
+		if (reference) {
+			turn.reference = reference;
+			reference = null;
+		}
 		// The turn the model answers, then an empty reply to stream into.
-		const turns: Message[] = [...messages, { role: 'user', content: question }];
+		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
 		await streamInto('/api/assistant/chat', {
 			storyId,
 			sceneId,
-			messages: turns.map((m) => ({ role: m.role, content: m.content }))
+			messages: turns.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 		});
 	}
+
+	// Intents raised by the editor menus or the command palette: the page has
+	// already switched the right pane here; the panel acts on the intent.
+	$effect(() => {
+		const intent = assistantIntent.pending;
+		if (!intent || muted) return;
+		assistantIntent.pending = null;
+		if (intent.kind === 'reference') {
+			reference = { sceneId: intent.sceneId, text: intent.text };
+			composer?.focus();
+		} else if (intent.kind === 'send') {
+			void send(intent.text);
+		} else if (intent.kind === 'catchup') {
+			void catchUp();
+		} else if (intent.kind === 'focus') {
+			composer?.focus();
+		}
+	});
 
 	// Catch me up: a recap of the story so far, streamed in as an assistant turn
 	// with no question of its own.
@@ -244,7 +273,11 @@
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
 			{#each messages as message, index (index)}
 				{#if message.role === 'user'}
-					<div class="msg user">{message.content}</div>
+					<div class="msg user">
+						{#if message.reference}
+							<div class="msg-ref">{message.reference.text}</div>
+						{/if}{message.content}
+					</div>
 				{:else}
 					<div class="msg assistant-msg">
 						<div class="who"><Icon name="sparkles" size={12} /> {name}</div>
@@ -276,6 +309,20 @@
 			</div>
 		{/if}
 
+		{#if reference}
+			<div class="ref-chip" role="note">
+				<span class="ref-quote" title={reference.text}>{reference.text}</span>
+				<button
+					class="ref-x"
+					type="button"
+					title="Remove the reference"
+					aria-label="Remove the reference"
+					onclick={() => (reference = null)}
+				>
+					x
+				</button>
+			</div>
+		{/if}
 		<div class="composer">
 			<textarea
 				bind:this={composer}
@@ -505,6 +552,51 @@
 	}
 	.composer textarea:focus {
 		border-color: var(--accent-line);
+	}
+	.msg-ref {
+		border-left: 2px solid var(--accent-contrast);
+		opacity: 0.85;
+		padding-left: 8px;
+		margin-bottom: 6px;
+		font-size: 12.5px;
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.ref-chip {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		margin: 0 12px;
+		padding: 7px 10px;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: 8px;
+		background: var(--bg-card);
+		font-size: 12.5px;
+		color: var(--text-muted);
+	}
+	.ref-quote {
+		flex: 1;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.ref-x {
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+		font-size: 13px;
+		line-height: 1;
+		padding: 0 2px;
+	}
+	.ref-x:hover {
+		color: var(--text);
 	}
 	.composer-menu-wrap {
 		position: relative;

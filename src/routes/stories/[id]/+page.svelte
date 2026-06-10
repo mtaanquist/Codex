@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
+	import { assistantIntent } from '$lib/assistant.svelte';
 	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
@@ -363,8 +364,12 @@
 	let rowMenuEl = $state<HTMLDivElement>();
 	let rowMenuTrigger: HTMLElement | null = null;
 
+	// The Assistant flyout inside the row menu; reset whenever the menu opens.
+	let rowSubOpen = $state(false);
+
 	function openRowMenu(event: MouseEvent, target: RowMenuTarget) {
 		event.preventDefault();
+		rowSubOpen = false;
 		rowMenuTrigger = event.currentTarget as HTMLElement;
 		// A keyboard-invoked context menu (Shift+F10) reports (0,0); anchor it to
 		// the row instead of dropping it in the corner.
@@ -472,6 +477,18 @@
 	// Right column tabs; History holds the open scene's timeline. The Assistant
 	// tab appears only when the account has it configured and switched on.
 	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
+
+	// An Assistant intent (from a menu here or the command palette) opens the
+	// tab; the panel consumes the intent itself once it renders.
+	$effect(() => {
+		if (assistantIntent.pending && data.assistant.tabEnabled) rightTab = 'assistant';
+	});
+
+	// "Ask the Assistant about this" on an editor selection: the passage goes
+	// into the chat composer as a reference and the writer asks their question.
+	function askAssistant(sceneId: string, text: string) {
+		assistantIntent.pending = { kind: 'reference', sceneId, text };
+	}
 
 	// Grounded starter prompts for an empty Assistant conversation, drawn from
 	// the story's known characters so they name real entities; generic fallbacks
@@ -1001,6 +1018,9 @@
 							markers={data.storyDocMarkers[scene.id] ?? []}
 							loreCategories={data.loreCategories}
 							onCreateEntity={createEntity}
+							onAskAssistant={data.assistant.surfacesEnabled
+								? (text) => askAssistant(scene.id, text)
+								: undefined}
 							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
 							onFocus={() => (activeDocId = scene.id)}
 							onStatus={(status) => {
@@ -1092,6 +1112,9 @@
 						markers={data.sceneMarkers}
 						loreCategories={data.loreCategories}
 						onCreateEntity={createEntity}
+						onAskAssistant={data.assistant.surfacesEnabled
+							? (text) => askAssistant(data.selectedScene!.id, text)
+							: undefined}
 						onStatus={(status) => {
 							saveStatus = status;
 							// Refresh the tree so the sidebar name and word count track edits.
@@ -1292,14 +1315,36 @@
 				<Icon name="pencil" size={13} /> Rename chapter
 			</button>
 			{#if data.assistant.surfacesEnabled}
-				<button
-					class="row-menu-item"
-					type="button"
-					role="menuitem"
-					onclick={() => reviewChapter(target.id)}
+				<div
+					class="row-sub"
+					role="presentation"
+					onmouseenter={() => (rowSubOpen = true)}
+					onmouseleave={() => (rowSubOpen = false)}
 				>
-					<Icon name="sparkles" size={13} /> Review this chapter
-				</button>
+					<button
+						class="row-menu-item row-sub-trigger"
+						type="button"
+						role="menuitem"
+						aria-haspopup="menu"
+						aria-expanded={rowSubOpen}
+						onclick={() => (rowSubOpen = !rowSubOpen)}
+					>
+						<span class="row-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
+						<Icon name="chevron" size={12} />
+					</button>
+					{#if rowSubOpen}
+						<div class="row-submenu" role="menu">
+							<button
+								class="row-menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => reviewChapter(target.id)}
+							>
+								Review this chapter
+							</button>
+						</div>
+					{/if}
+				</div>
 			{/if}
 			<form method="POST" action="?/moveChapter">
 				<input type="hidden" name="chapterId" value={target.id} />
@@ -1361,14 +1406,36 @@
 				<Icon name="copy" size={13} /> Duplicate scene
 			</button>
 			{#if data.assistant.surfacesEnabled}
-				<button
-					class="row-menu-item"
-					type="button"
-					role="menuitem"
-					onclick={() => reviewScene(target.id)}
+				<div
+					class="row-sub"
+					role="presentation"
+					onmouseenter={() => (rowSubOpen = true)}
+					onmouseleave={() => (rowSubOpen = false)}
 				>
-					<Icon name="sparkles" size={13} /> Review this scene
-				</button>
+					<button
+						class="row-menu-item row-sub-trigger"
+						type="button"
+						role="menuitem"
+						aria-haspopup="menu"
+						aria-expanded={rowSubOpen}
+						onclick={() => (rowSubOpen = !rowSubOpen)}
+					>
+						<span class="row-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
+						<Icon name="chevron" size={12} />
+					</button>
+					{#if rowSubOpen}
+						<div class="row-submenu" role="menu">
+							<button
+								class="row-menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => reviewScene(target.id)}
+							>
+								Review this scene
+							</button>
+						</div>
+					{/if}
+				</div>
 			{/if}
 			{#if pickedForMerge && mergeSelection.size >= 2}
 				<button class="row-menu-item" type="button" role="menuitem" onclick={mergeSelectedScenes}>
@@ -1476,6 +1543,30 @@
 	}
 	.row-menu-item:hover:not(:disabled) {
 		background: var(--accent-soft);
+	}
+	/* The Assistant flyout, the editor selection menu's submenu pattern. */
+	.row-sub {
+		position: relative;
+	}
+	.row-sub-trigger {
+		justify-content: space-between;
+	}
+	.row-sub-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.row-submenu {
+		position: absolute;
+		left: calc(100% - 2px);
+		top: -7px;
+		min-width: 180px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		box-shadow: var(--shadow);
+		padding: 6px;
+		z-index: 61;
 	}
 	.row-menu-item:disabled {
 		color: var(--text-faint);

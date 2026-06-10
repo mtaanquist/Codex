@@ -43,6 +43,7 @@
 		loreCategories = [],
 		onCrossBoundary,
 		onCreateEntity,
+		onAskAssistant,
 		onSplitScene,
 		onFocus,
 		storyView,
@@ -93,6 +94,10 @@
 			name: string,
 			categoryId?: string
 		) => Promise<string | null>;
+		// When set, the selection menu offers an Assistant submenu whose "Ask
+		// the Assistant about this" hands the raw selected text over (the page
+		// puts it into the chat composer as a reference).
+		onAskAssistant?: (text: string) => void;
 		// When set, the toolbar offers splitting the scene at the cursor.
 		onSplitScene?: () => void;
 		// The continuous view's shared toolbar acts on whichever stitched
@@ -418,7 +423,7 @@
 	// browser's spelling suggestions stay reachable on a plain caret click.
 	// The handler sits on the pane wrapper rather than the prose column, so
 	// the margins around the centered text behave like the text itself.
-	let selectionMenu = $state<{ x: number; y: number; name: string } | null>(null);
+	let selectionMenu = $state<{ x: number; y: number; name: string; raw: string } | null>(null);
 	let menuBusy = $state(false);
 	let menuError = $state('');
 
@@ -426,24 +431,35 @@
 		if (view) openSelectionMenu(event, view);
 	}
 
-	// The lore item's category flyout; reset whenever the menu opens.
+	// The flyout submenus (lore categories, Assistant); reset whenever the
+	// menu opens.
 	let loreSubOpen = $state(false);
+	let assistantSubOpen = $state(false);
 
 	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
 		const range = editor.state.selection.main;
 		if (range.empty) return false;
-		const name = editor.state.sliceDoc(range.from, range.to).replace(/\s+/g, ' ').trim();
+		const raw = editor.state.sliceDoc(range.from, range.to);
+		const name = raw.replace(/\s+/g, ' ').trim();
 		if (!name) return false;
 		event.preventDefault();
 		menuError = '';
 		menuBusy = false;
 		loreSubOpen = false;
+		assistantSubOpen = false;
 		selectionMenu = {
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
-			name
+			name,
+			raw
 		};
 		return true;
+	}
+
+	function askAssistant() {
+		if (!onAskAssistant || !selectionMenu) return;
+		onAskAssistant(selectionMenu.raw);
+		closeSelectionMenu();
 	}
 
 	function closeSelectionMenu() {
@@ -721,12 +737,41 @@
 				<Icon name="list" size={15} />
 			</button>
 		</div>
-		{#if onCreateEntity}
+		{#if onCreateEntity || onAskAssistant}
 			<div class="sel-menu-label">
 				"{selectionMenu.name.length > 32
 					? `${selectionMenu.name.slice(0, 32)}...`
 					: selectionMenu.name}"
 			</div>
+		{/if}
+		{#if onAskAssistant}
+			<div
+				class="sel-sub"
+				role="presentation"
+				onmouseenter={() => (assistantSubOpen = true)}
+				onmouseleave={() => (assistantSubOpen = false)}
+			>
+				<button
+					class="sel-create sel-sub-trigger"
+					type="button"
+					role="menuitem"
+					aria-haspopup="menu"
+					aria-expanded={assistantSubOpen}
+					onclick={() => (assistantSubOpen = !assistantSubOpen)}
+				>
+					<span class="sel-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
+					<Icon name="chevron" size={12} />
+				</button>
+				{#if assistantSubOpen}
+					<div class="sel-submenu" role="menu">
+						<button class="sel-create" type="button" role="menuitem" onclick={askAssistant}>
+							Ask the Assistant about this
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
+		{#if onCreateEntity}
 			<button
 				class="sel-create"
 				type="button"
@@ -964,6 +1009,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
+	}
+	.sel-sub-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
 	}
 	.sel-submenu {
 		position: absolute;

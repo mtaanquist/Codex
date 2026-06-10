@@ -5,6 +5,7 @@ import { rateLimitAssistant } from '$lib/server/write-guard';
 import { assistantLayout } from '$lib/server/llm/config';
 import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
 import { AssistantDisabledError, stream } from '$lib/server/llm/gateway';
+import { foldReference, readReference } from '$lib/server/llm/prompts/reference';
 import type { ChatMessage, StreamEvent } from '$lib/server/llm/providers/types';
 
 // The chat surface: the browser POSTs its transcript and the open scene, the
@@ -17,7 +18,9 @@ import type { ChatMessage, StreamEvent } from '$lib/server/llm/providers/types';
 // re-checked here.
 
 // Only the writer's own user/assistant turns are accepted; system and tool
-// messages are the server's to add, never the client's.
+// messages are the server's to add, never the client's. A user turn may carry
+// a reference to a passage of the open story, folded into the content the
+// model sees while the client keeps it as data for the transcript chip.
 function readTurns(raw: unknown): ChatMessage[] {
 	if (!Array.isArray(raw)) error(400, 'messages must be an array.');
 	const turns: ChatMessage[] = [];
@@ -26,7 +29,9 @@ function readTurns(raw: unknown): ChatMessage[] {
 		const role = (item as { role?: unknown }).role;
 		const content = (item as { content?: unknown }).content;
 		if ((role === 'user' || role === 'assistant') && typeof content === 'string') {
-			turns.push({ role, content });
+			const reference =
+				role === 'user' ? readReference((item as { reference?: unknown }).reference) : null;
+			turns.push({ role, content: reference ? foldReference(content, reference) : content });
 		}
 	}
 	if (turns.length === 0) error(400, 'Send at least one message.');
