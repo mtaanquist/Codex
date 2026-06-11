@@ -18,6 +18,7 @@ import { recordRevision } from './revisions';
 import { reanchorPoint, reanchorRange } from '../review-anchor';
 import { wordCount } from '../word-count';
 import { normaliseAssistantName } from './llm/prompts/persona';
+import { EMAIL_RE } from './signup';
 
 // Guest review, stage one: invitations, guest identity, and threaded
 // comments. An author invites someone to one story by magic link; the guest
@@ -129,7 +130,6 @@ export async function invitationByToken(db: Database, token: string) {
 // row under the name they give.
 // A light shape check; the address only ever receives reply digests, so a
 // bad one just means no email.
-const REVIEWER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function ensureReviewer(
 	db: Database,
@@ -161,7 +161,7 @@ export async function ensureReviewer(
 		.values({
 			invitationId,
 			displayName,
-			email: REVIEWER_EMAIL_RE.test(email) ? email : null
+			email: EMAIL_RE.test(email) ? email : null
 		})
 		.returning();
 	return row;

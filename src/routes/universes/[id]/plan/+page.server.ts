@@ -93,7 +93,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		planEntityLists(db, universe.id),
 		// Guard the uuid casts: a tampered query value would throw in Postgres
 		// and 500 instead of being ignored.
-		entityId && isUuid(entityId) ? resolvePlanEntity(db, universe.id, entityId) : Promise.resolve(null)
+		entityId && isUuid(entityId)
+			? resolvePlanEntity(db, universe.id, entityId)
+			: Promise.resolve(null)
 	]);
 	const selected = resolved?.entity ?? null;
 	const selectedKind: EntityKind = resolved?.kind ?? 'character';

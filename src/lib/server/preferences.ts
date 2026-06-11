@@ -1,4 +1,5 @@
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { jsonbMergePatch } from './jsonb-patch';
 import type { Database } from './auth';
 import { stories, users } from './db/schema';
 import type { AutocompleteMode } from '$lib/editor-autocomplete';
@@ -173,17 +174,12 @@ export async function saveStoryPreferences(
 	storyId: string,
 	patch: Partial<Record<StoryPreferenceKey, string | null>>
 ) {
-	const set: Record<string, string> = {};
-	const clear: string[] = [];
-	for (const key of STORY_PREFERENCE_KEYS) {
-		const value = patch[key];
-		if (value === undefined) continue;
-		if (value === null) clear.push(key);
-		else set[key] = value;
-	}
-	let expression: SQL = sql`${stories.preferences} || ${JSON.stringify(set)}::jsonb`;
-	for (const key of clear) {
-		expression = sql`(${expression}) - ${key}::text`;
-	}
-	await db.update(stories).set({ preferences: expression }).where(eq(stories.id, storyId));
+	// Only the known override keys reach the jsonb patch.
+	const filtered = Object.fromEntries(
+		STORY_PREFERENCE_KEYS.filter((key) => patch[key] !== undefined).map((key) => [key, patch[key]])
+	);
+	await db
+		.update(stories)
+		.set({ preferences: jsonbMergePatch(stories.preferences, filtered) })
+		.where(eq(stories.id, storyId));
 }

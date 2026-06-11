@@ -1,7 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db, isUniqueViolation } from '$lib/server/db';
+import { db } from '$lib/server/db';
+import { isUniqueViolation } from '$lib/server/db-errors';
 import { entityCategories, universes } from '$lib/server/db/schema';
 import { uniqueSlug } from '$lib/server/slugs';
 import { isUuid } from '$lib/slug';

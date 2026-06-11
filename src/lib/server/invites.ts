@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { inviteCodes } from './db/schema.ts';
+import { isUniqueViolation } from './db-errors';
 
 // Invite codes skip the admin approval queue at sign-up. The admin mints a
 // code (optionally limited by uses and expiry), shares it, and a sign-up that
@@ -49,7 +50,7 @@ export async function createInviteCode(
 				.returning();
 			return row;
 		} catch (err) {
-			const duplicate = (err as { cause?: { code?: string } }).cause?.code === '23505';
+			const duplicate = isUniqueViolation(err);
 			if (!duplicate || attempt >= 2) throw err;
 		}
 	}

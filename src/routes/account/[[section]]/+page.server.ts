@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { isUuid } from '$lib/slug';
 import {
 	changePassword,
 	claimHandle,
@@ -23,9 +24,8 @@ import {
 	setUserAvatar
 } from '$lib/server/assets';
 import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/account-deletion';
-import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
+import { SESSION_COOKIE } from '$lib/server/auth';
 import { users } from '$lib/server/db/schema';
-import { verifyPassword } from '$lib/server/password';
 import { queueEmail, queueUserExport } from '$lib/server/jobs';
 import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
 import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
@@ -440,18 +440,10 @@ export const actions: Actions = {
 			return fail(400, { scope: 'passkeys', message: 'That password is not right.' });
 		}
 		const id = String(data.get('passkeyId') ?? '');
-		if (
-			!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ||
-			!(await removePasskey(db, locals.user!.id, id))
-		) {
+		if (!isUuid(id) || !(await removePasskey(db, locals.user!.id, id))) {
 			return fail(400, { scope: 'passkeys', message: 'That passkey could not be removed.' });
 		}
 		return { scope: 'passkeys', removed: true };
-	},
-	signout: async ({ locals, cookies }) => {
-		if (locals.session) await revokeSession(db, locals.session.id);
-		cookies.delete(SESSION_COOKIE, { path: '/' });
-		redirect(303, '/login');
 	},
 	changeEmail: async ({ request, locals, url }) => {
 		const limited = reauthGuard(locals.user!.id, 'email');
@@ -501,13 +493,8 @@ export const actions: Actions = {
 		const limited = reauthGuard(locals.user!.id, 'delete');
 		if (limited) return limited;
 		const data = await request.formData();
-		const password = String(data.get('password') ?? '');
-		const [account] = await db
-			.select({ passwordHash: users.passwordHash })
-			.from(users)
-			.where(eq(users.id, locals.user!.id));
-		if (!account || !(await verifyPassword(account.passwordHash, password))) {
-			return fail(400, { scope: 'delete', message: 'That is not your password.' });
+		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+			return fail(400, { scope: 'delete', message: 'That password is not right.' });
 		}
 		const token = await scheduleAccountDeletion(db, locals.user!.id);
 		const origin = env.ORIGIN ?? url.origin;

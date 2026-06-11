@@ -1,17 +1,8 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { sceneMarkers, scenes, stories } from './db/schema';
+import { sceneMarkers, scenes } from './db/schema';
+import { ownedScene } from './scene-access';
 import { findTodoLines } from '$lib/todo-markers';
-
-// Loads a scene with an ownership check through its story.
-async function ownedScene(db: Database, sceneId: string, userId: string) {
-	const [row] = await db
-		.select({ id: scenes.id, bodyMd: scenes.bodyMd, storyId: scenes.storyId })
-		.from(scenes)
-		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
-	return row ?? null;
-}
 
 // A selection turned into a checkable marker. Anchors are clamped to the
 // scene body so a stale client cannot write ranges past the end.
@@ -23,7 +14,7 @@ export async function createMarker(
 	anchorEnd: number,
 	bodyMd?: string
 ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
-	const scene = await ownedScene(db, sceneId, userId);
+	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return { ok: false, reason: 'scene not found' };
 	const length = scene.bodyMd.length;
 	const start = Math.max(0, Math.min(anchorStart, length));

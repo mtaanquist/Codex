@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	chapters,
@@ -11,26 +11,12 @@ import {
 	scenes,
 	stories
 } from './db/schema';
+import { ownedScene } from './scene-access';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
 // revisions, markers, and review threads) so restore is instant; only its
 // mention rows go, since every panel reads those live. Delete forever removes
 // everything the scene owns, mirroring the per-scene slice of story deletion.
-
-async function ownedScene(db: Database, userId: string, sceneId: string, deleted: boolean) {
-	const [row] = await db
-		.select({ id: scenes.id, storyId: scenes.storyId, chapterId: scenes.chapterId })
-		.from(scenes)
-		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(
-			and(
-				eq(scenes.id, sceneId),
-				eq(stories.ownerId, userId),
-				deleted ? isNotNull(scenes.deletedAt) : isNull(scenes.deletedAt)
-			)
-		);
-	return row ?? null;
-}
 
 async function ownedChapter(db: Database, userId: string, chapterId: string) {
 	const [row] = await db
@@ -44,7 +30,7 @@ async function ownedChapter(db: Database, userId: string, chapterId: string) {
 /** Moves a scene to the story's trash. Mention rows go at once so panels and
  * the heatmap stop counting it; everything else stays for restore. */
 export async function trashScene(db: Database, userId: string, sceneId: string): Promise<boolean> {
-	const scene = await ownedScene(db, userId, sceneId, false);
+	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
 		await tx
@@ -66,7 +52,7 @@ export async function restoreScene(
 	userId: string,
 	sceneId: string
 ): Promise<boolean> {
-	const scene = await ownedScene(db, userId, sceneId, true);
+	const scene = await ownedScene(db, userId, sceneId, { deleted: true });
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
 		// The chapter may have been deleted while the scene sat in the trash.
@@ -102,7 +88,7 @@ export async function destroyScene(
 	userId: string,
 	sceneId: string
 ): Promise<boolean> {
-	const scene = await ownedScene(db, userId, sceneId, true);
+	const scene = await ownedScene(db, userId, sceneId, { deleted: true });
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
 		// Threads before suggestions: a suggestion's discussion thread

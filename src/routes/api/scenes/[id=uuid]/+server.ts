@@ -1,8 +1,9 @@
 import { error, json } from '@sveltejs/kit';
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { scenes, stories } from '$lib/server/db/schema';
+import { scenes } from '$lib/server/db/schema';
+import { ownedScene } from '$lib/server/scene-access';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { updateMarkerAnchors } from '$lib/server/markers';
 import { rateLimitWrites } from '$lib/server/write-guard';
@@ -15,13 +16,7 @@ import { wordCount } from '$lib/word-count';
 // Debounced autosave target for the scene editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
-	const [row] = await db
-		.select({ id: scenes.id })
-		.from(scenes)
-		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(
-			and(eq(scenes.id, params.id), eq(stories.ownerId, locals.user!.id), isNull(scenes.deletedAt))
-		);
+	const row = await ownedScene(db, locals.user!.id, params.id);
 	if (!row) error(404, 'Scene not found');
 
 	const payload = await readJson<{

@@ -168,14 +168,7 @@ export async function signupMode(db: Database): Promise<SignupMode> {
 }
 
 export async function saveSignupMode(db: Database, mode: SignupMode): Promise<void> {
-	const value = { mode };
-	await db
-		.insert(appSettings)
-		.values({ key: SIGNUP_KEY, value })
-		.onConflictDoUpdate({
-			target: appSettings.key,
-			set: { value, updatedAt: sql`now()` }
-		});
+	await writeSetting(db, SIGNUP_KEY, { mode });
 }
 
 // What the worker needs to actually send: the password is decrypted here.
@@ -313,12 +306,6 @@ export async function saveSmtp(
 		from: input.from.trim() || 'Codex <no-reply@localhost>',
 		passwordEnc
 	};
-	await db
-		.insert(appSettings)
-		.values({ key: SMTP_KEY, value })
-		.onConflictDoUpdate({
-			target: appSettings.key,
-			set: { value, updatedAt: sql`now()` }
-		});
+	await writeSetting(db, SMTP_KEY, value);
 	return { ok: true };
 }

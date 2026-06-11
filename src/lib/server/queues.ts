@@ -20,3 +20,8 @@ export const PURGE_UNIVERSES_QUEUE = 'purge-universes';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
 export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
 export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
+
+// How long a notification digest waits before sending, so a busy thread
+// lands as one email instead of one per comment. Lives here (not jobs.ts,
+// which reads $env) so the worker can import it too.
+export const DIGEST_DELAY_SECONDS = 600;
