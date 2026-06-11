@@ -1,10 +1,12 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
+import {
+	readAssistantPayload,
+	requireAssistantStory,
+	throwAssistantError
+} from '$lib/server/llm/assistant-route';
 import { buildContinuationMessage } from '$lib/server/llm/prompts/continuation';
-import { AssistantDisabledError, complete } from '$lib/server/llm/gateway';
+import { complete } from '$lib/server/llm/gateway';
 
 // Inline continuation: the editor sends the prose before the cursor and gets a
 // short continuation back, shown as ghost-text the writer accepts with Tab.
@@ -13,30 +15,24 @@ import { AssistantDisabledError, complete } from '$lib/server/llm/gateway';
 // when the writer accepts.
 
 const MAX_CONTINUATION_TOKENS = 400;
+// The prompt builder only uses the tail of the prose; refuse a pathological
+// payload rather than carrying it through the request.
+const MAX_TEXT_BEFORE_CHARS = 50_000;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as {
+	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
 		textBefore?: unknown;
 		maxTokens?: unknown;
-	} | null;
-	const storyId = payload && typeof payload.storyId === 'string' ? payload.storyId : '';
-	const textBefore = payload && typeof payload.textBefore === 'string' ? payload.textBefore : '';
-	if (!storyId) error(400, 'storyId is required.');
-	if (!textBefore.trim()) error(400, 'Nothing to continue from.');
+	}>(request, locals);
+	const rawText = typeof payload.textBefore === 'string' ? payload.textBefore : '';
+	if (!rawText.trim()) error(400, 'Nothing to continue from.');
+	const textBefore = rawText.slice(-MAX_TEXT_BEFORE_CHARS);
 	const maxTokens =
-		payload && typeof payload.maxTokens === 'number' && payload.maxTokens > 0
+		typeof payload.maxTokens === 'number' && payload.maxTokens > 0
 			? Math.min(Math.floor(payload.maxTokens), MAX_CONTINUATION_TOKENS)
 			: 220;
-
-	// 404s unless the user owns the story.
-	const { story } = await ownedStory(storyId, userId);
-
-	const layout = await assistantLayout(db, userId, story.id);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	const story = await requireAssistantStory(userId, payload.storyId);
 
 	let text: string;
 	try {
@@ -50,8 +46,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			signal: request.signal
 		});
 	} catch (err) {
-		if (err instanceof AssistantDisabledError) error(403, err.message);
-		error(502, 'The Assistant could not continue the passage.');
+		throwAssistantError(err, 'The Assistant could not continue the passage.');
 	}
 
 	return new Response(JSON.stringify({ text: text.trim() }), {

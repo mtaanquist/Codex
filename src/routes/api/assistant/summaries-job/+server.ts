@@ -1,8 +1,5 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
+import { readAssistantPayload, requireAssistantStory } from '$lib/server/llm/assistant-route';
 import { queueAssistantSummaries } from '$lib/server/jobs';
 
 // Queues whole-story summary maintenance as a background job (it reads every
@@ -12,18 +9,8 @@ import { queueAssistantSummaries } from '$lib/server/jobs';
 // finishes.
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as { storyId?: unknown } | null;
-	const storyRef = payload && typeof payload.storyId === 'string' ? payload.storyId : '';
-	if (!storyRef) error(400, 'storyId is required.');
-
-	// 404s unless the user owns the story.
-	const { story } = await ownedStory(storyRef, userId);
-
-	const layout = await assistantLayout(db, userId, story.id);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	const { userId, payload } = await readAssistantPayload<{ storyId?: unknown }>(request, locals);
+	const story = await requireAssistantStory(userId, payload.storyId);
 
 	const queued = await queueAssistantSummaries({ userId, storyId: story.id });
 	if (!queued) error(503, 'Could not start the summary pass. Try again in a moment.');

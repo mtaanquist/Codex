@@ -60,7 +60,7 @@ export type GatewayDeps = {
 	http?: HttpRequest;
 };
 
-function pickModel(config: ResolvedConfig, role: AssistantRole): string {
+export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
 	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
 }
 

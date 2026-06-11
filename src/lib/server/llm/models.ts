@@ -3,6 +3,7 @@ import { resolveLlmConfig } from './config';
 import { egressHttpRequest, egressPolicy } from './egress';
 import { openaiProvider } from './providers/openai';
 import type { Connection, HttpRequest, ProbeResult, Provider } from './providers/types';
+import { pickModel } from './gateway';
 
 // Endpoint setup helpers, all through the same egress guard as completions, for
 // the account Assistant settings (UI deferred):
@@ -98,7 +99,7 @@ export async function testAccountConnection(
 	deps: DiscoveryDeps = {}
 ): Promise<TestConnectionResult> {
 	const { config } = await resolveLlmConfig(db, userId);
-	const chosen = model?.trim() || config.models.chat || Object.values(config.models)[0] || '';
+	const chosen = model?.trim() || pickModel(config, 'chat');
 	return testEndpointConnection(
 		db,
 		{ endpoint: config.endpoint, apiKey: config.apiKey },
@@ -132,6 +133,6 @@ export async function probeAccountEndpoint(
 	deps: DiscoveryDeps = {}
 ): Promise<ProbeResult> {
 	const { config } = await resolveLlmConfig(db, userId);
-	const chosen = model?.trim() || config.models.chat || Object.values(config.models)[0] || '';
+	const chosen = model?.trim() || pickModel(config, 'chat');
 	return probeEndpoint(db, { endpoint: config.endpoint, apiKey: config.apiKey }, chosen, deps);
 }
