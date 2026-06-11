@@ -24,6 +24,7 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData, Snapshot } from './$types';
 	import { dismiss } from '$lib/dismiss';
+	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -791,15 +792,14 @@
 	<div class="body">
 		<aside class="pane left">
 			<div class="left-head">
-				<div class="seg full">
-					<button class="seg-btn active" type="button">Write</button>
-					<a class="seg-btn" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>Plan</a>
-					<a class="seg-btn" href={resolve('/stories/[id]/notes', { id: data.story.slug })}>Notes</a
-					>
-					<a class="seg-btn" href={resolve('/stories/[id]/review', { id: data.story.slug })}
-						>Review</a
-					>
-				</div>
+				<ModeSwitcher
+					active="write"
+					hrefs={{
+						plan: resolve('/stories/[id]/plan', { id: data.story.slug }),
+						notes: resolve('/stories/[id]/notes', { id: data.story.slug }),
+						review: resolve('/stories/[id]/review', { id: data.story.slug })
+					}}
+				/>
 				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>
 			<div class="left-scroll">
