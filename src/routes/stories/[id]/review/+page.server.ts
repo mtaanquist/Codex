@@ -18,6 +18,7 @@ import {
 } from '$lib/server/review';
 import { gatherStory } from '$lib/server/export';
 import { storyPreferences } from '$lib/server/preferences';
+import { storyPageSetup } from '$lib/server/page-setup';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
@@ -57,6 +58,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		mentionPins: mentions.pins,
 		// The editor view toggles, shared with the Write editor.
 		preferences: await storyPreferences(db, locals.user!.id, story.id),
+		// The default text alignment for the editable centre, like the Write editor.
+		pageSetup: await storyPageSetup(db, story.id),
 		// Whether the Assistant answers in its threads here, and under what name.
 		assistant: await assistantLayout(db, locals.user!.id, story.id)
 	};

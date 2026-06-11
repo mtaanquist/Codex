@@ -1108,8 +1108,9 @@
 	max-width: 660px;
 }
 .review-edit .cm-scroller {
+	font-family: var(--editor-font, var(--font-content));
 	font-size: 19px;
-	line-height: 1.72;
+	line-height: var(--editor-line-height, 1.72);
 }
 
 /* The fixed error toast both review pages float over the workspace. */

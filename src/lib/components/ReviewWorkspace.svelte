@@ -29,6 +29,7 @@
 		entityHref = null,
 		nonPrintingMarks = 'hidden',
 		commandMarkers = 'shown',
+		editorStyle,
 		assistant = null,
 		onSaveStatus = () => {}
 	}: {
@@ -58,6 +59,9 @@
 		// The author editor's view toggles, persisted per user.
 		nonPrintingMarks?: MarkVisibility;
 		commandMarkers?: MarkVisibility;
+		// The author's editor-appearance CSS variables for the editable centre;
+		// unset on the guest page.
+		editorStyle?: string;
 		// Set on the author page when the Assistant is live for this story: a
 		// reply in a thread the Assistant opened triggers its answer. Never set
 		// on the guest page.
@@ -301,6 +305,7 @@
 							{entityHref}
 							{nonPrintingMarks}
 							{commandMarkers}
+							{editorStyle}
 							onStartComment={startComment}
 							onStartSuggest={startSuggest}
 							onStatus={onSaveStatus}

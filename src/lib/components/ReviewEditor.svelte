@@ -50,6 +50,7 @@
 		entityHref,
 		nonPrintingMarks = 'hidden',
 		commandMarkers = 'shown',
+		editorStyle,
 		onStartComment,
 		onStartSuggest,
 		onStatus = () => {}
@@ -66,6 +67,10 @@
 		// user; mirrored locally so a toggle takes effect at once.
 		nonPrintingMarks?: MarkVisibility;
 		commandMarkers?: MarkVisibility;
+		// The writer's editor-appearance CSS variables (font, line spacing,
+		// default alignment), so the review centre matches the Write editor.
+		// Absent for guest reviewers, who keep the default typography.
+		editorStyle?: string;
 		entities: MentionEntity[];
 		mentionMembers: string[];
 		mentionPins: Record<string, string>;
@@ -366,7 +371,7 @@
 				openSuggestions={openSugg}
 			/>
 
-			<div class="review-edit editor-cm" bind:this={editorEl}></div>
+			<div class="review-edit editor-cm" style={editorStyle} bind:this={editorEl}></div>
 
 			<ReviewMarginRail {markers} {focusedId} {setFocused} />
 

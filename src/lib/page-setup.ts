@@ -229,6 +229,29 @@ export function fontFamilyCss(setup: PageSetup): string {
 	return fontFamilyFor(setup.font, setup.fontCustom);
 }
 
+// The inline CSS variables that style a writing surface (the Write editor and
+// the review centre): the writer's own font and line spacing, plus the shared
+// default alignment from page setup. The font var is left unset for the
+// 'default' choice so the surface keeps the app's content font.
+export function editorStyleVars(appearance: {
+	editorFont: PageFont;
+	editorFontCustom: string;
+	editorLineSpacing: LineSpacing;
+	editorLineSpacingCm: number;
+	textAlign: Alignment;
+}): string {
+	const parts = [
+		`--editor-line-height: ${lineHeightFor(appearance.editorLineSpacing, appearance.editorLineSpacingCm)}`,
+		`--editor-align: ${appearance.textAlign}`
+	];
+	if (appearance.editorFont !== 'default') {
+		parts.push(
+			`--editor-font: ${fontFamilyFor(appearance.editorFont, appearance.editorFontCustom)}`
+		);
+	}
+	return `${parts.join('; ')};`;
+}
+
 // The text-column width of a single page: page width less both side margins
 // (the inner side carries the gutter). Used to size the in-app preview faithfully.
 export function contentWidthCss(setup: PageSetup): string {

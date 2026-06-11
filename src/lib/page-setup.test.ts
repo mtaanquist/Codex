@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_PAGE_SETUP,
 	contentWidthCss,
+	editorStyleVars,
 	fontFamilyCss,
 	fontFamilyFor,
 	isLineSpacing,
@@ -13,6 +14,37 @@ import {
 	pageCss,
 	pdfRenderOptions
 } from './page-setup';
+
+describe('editorStyleVars', () => {
+	const base = {
+		editorFont: 'default' as const,
+		editorFontCustom: '',
+		editorLineSpacing: 'normal' as const,
+		editorLineSpacingCm: 0.7,
+		textAlign: 'left' as const
+	};
+
+	it('omits the font var for the default font so the surface keeps its own', () => {
+		const css = editorStyleVars(base);
+		expect(css).toContain('--editor-line-height: 1.6');
+		expect(css).toContain('--editor-align: left');
+		expect(css).not.toContain('--editor-font');
+	});
+
+	it('sets a custom font, custom line height, and alignment', () => {
+		const css = editorStyleVars({
+			...base,
+			editorFont: 'custom',
+			editorFontCustom: 'EB Garamond',
+			editorLineSpacing: 'custom',
+			editorLineSpacingCm: 0.9,
+			textAlign: 'justify'
+		});
+		expect(css).toContain("--editor-font: 'EB Garamond', Georgia, 'Times New Roman', serif");
+		expect(css).toContain('--editor-line-height: 0.9cm');
+		expect(css).toContain('--editor-align: justify');
+	});
+});
 
 describe('font and line-spacing validators and builders', () => {
 	it('recognises the known keys and rejects the rest', () => {
