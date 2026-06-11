@@ -4,6 +4,7 @@
 	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import { editorStyleVars } from '$lib/page-setup';
+	import { focusMode } from '$lib/focus-mode.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -33,7 +34,7 @@
 	<title>{data.story.title} - Review - Codex</title>
 </svelte:head>
 
-<div class="app">
+<div class="app" class:focus-mode={focusMode.on}>
 	<TopBar
 		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		story={{ slug: data.story.slug, title: data.story.title }}
@@ -48,6 +49,7 @@
 		suggestions={data.suggestions}
 		role="author"
 		storyId={data.story.id}
+		storySlug={data.story.slug}
 		book={{ title: data.story.title, subtitle: data.universe.name }}
 		{seg}
 		entities={data.mentionEntities}

@@ -6,6 +6,7 @@
 	import ReviewMarginRail from './ReviewMarginRail.svelte';
 	import ReviewSelectionToolbar from './ReviewSelectionToolbar.svelte';
 	import EditorToolbar from './EditorToolbar.svelte';
+	import type { ViewItem } from './ViewMenu.svelte';
 	import {
 		commandMarkerExtensions,
 		nonPrintingFor,
@@ -51,6 +52,7 @@
 		nonPrintingMarks = 'hidden',
 		commandMarkers = 'shown',
 		editorStyle,
+		viewMenu,
 		onStartComment,
 		onStartSuggest,
 		onStatus = () => {}
@@ -71,6 +73,9 @@
 		// default alignment), so the review centre matches the Write editor.
 		// Absent for guest reviewers, who keep the default typography.
 		editorStyle?: string;
+		// The View dropdown (Edit, Preview, Focus, Print), the same as the Write
+		// toolbar.
+		viewMenu?: ViewItem[];
 		entities: MentionEntity[];
 		mentionMembers: string[];
 		mentionPins: Record<string, string>;
@@ -355,7 +360,7 @@
 <div class="md-editor review-editor">
 	<EditorToolbar
 		view={() => view}
-		modeLabel="Editing - select text to comment"
+		{viewMenu}
 		nonPrintingActive={nonPrinting === 'shown'}
 		onToggleNonPrinting={toggleNonPrinting}
 		commandMarkersActive={commands === 'shown'}

@@ -62,9 +62,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.getByPlaceholder('Untitled scene')).toBeVisible();
 	await expect(page.locator('.scene-row.active .scene-name')).toHaveText('Untitled scene');
 
-	// Focus mode hides the chrome; Esc brings it back. The control sits on the
-	// editor's formatting bar, so it needs a scene open.
-	await page.getByRole('button', { name: 'Focus mode' }).click();
+	// Focus mode hides the chrome; Esc brings it back. It lives in the View
+	// menu on the editor's formatting bar, so it needs a scene open.
+	await page.getByTitle('Switch view').click();
+	await page.getByRole('menuitem', { name: 'Focus' }).click();
 	await expect(page.locator('.topbar')).toBeHidden();
 	await page.keyboard.press('Escape');
 	await expect(page.locator('.topbar')).toBeVisible();

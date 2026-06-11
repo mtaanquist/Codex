@@ -40,30 +40,28 @@ test('whole-story view has the toolbar; preview hides the markers', async ({ pag
 	await expect(page.locator('.cm-content')).toContainText('\\center Centered line.');
 	await alignSave;
 
-	// The scene editor's own toolbar offers Preview directly, without first
-	// opening the whole-story view (#308). It opens the export render; return
-	// to the scene to carry on with the whole-story checks below.
+	// The scene editor's own toolbar offers Preview from the View menu, without
+	// first opening the whole-story view (#308). It opens the export render;
+	// return to the scene to carry on with the whole-story checks below.
 	const sceneUrl = page.url();
-	const scenePreview = page.locator('.md-toolbar a.md-preview');
-	await expect(scenePreview).toBeVisible();
-	await scenePreview.click();
+	await page.getByTitle('Switch view').click();
+	await page.getByRole('menuitem', { name: 'Preview' }).click();
 	await expect(page).toHaveURL(/view=preview/);
 	await expect(page.locator('.story-preview')).toContainText('Centered line.');
 	await page.goto(sceneUrl);
 	await expect(page.locator('.cm-content')).toContainText('Centered line.');
 
 	// Read the whole story: still the editor, so the formatting toolbar is
-	// there alongside a Preview button.
+	// there alongside the View menu.
 	await page.getByTitle('Read the whole story').click();
 	await expect(page).toHaveURL(/view=story/);
 	await expect(page.locator('.md-toolbar')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Bold (Ctrl+B)' })).toBeVisible();
-	const previewLink = page.locator('.md-toolbar a.md-preview');
-	await expect(previewLink).toBeVisible();
 
-	// Preview: read-only, export-faithful. The text shows, the \center marker
-	// does not, and the paragraph is actually centered.
-	await previewLink.click();
+	// Preview from the View menu: read-only, export-faithful. The text shows,
+	// the \center marker does not, and the paragraph is actually centered.
+	await page.getByTitle('Switch view').click();
+	await page.getByRole('menuitem', { name: 'Preview' }).click();
 	await expect(page).toHaveURL(/view=preview/);
 	const preview = page.locator('.story-preview');
 	await expect(preview).toContainText('Centered line.');

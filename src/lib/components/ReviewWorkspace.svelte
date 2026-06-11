@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import ReviewNav from './ReviewNav.svelte';
@@ -11,7 +12,9 @@
 	import type { MarkVisibility } from '$lib/editor';
 	import type { ReviewFilter, ReviewSuggestion, ReviewThread } from '$lib/review-ui';
 	import type { SaveStatus } from './SceneEditor.svelte';
+	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
+	import { focusMode } from '$lib/focus-mode.svelte';
 
 	let {
 		chapters,
@@ -20,6 +23,7 @@
 		suggestions,
 		role,
 		storyId = null,
+		storySlug = null,
 		book = null,
 		canSuggest = true,
 		seg = null,
@@ -46,6 +50,8 @@
 		role: 'author' | 'guest';
 		// The owning story; the author's editable centre autosaves against it.
 		storyId?: string | null;
+		// The story slug, for the View dropdown's links to Preview and Print.
+		storySlug?: string | null;
 		// The book header above the outline (title plus universe); null hides it.
 		book?: { title: string; subtitle: string | null } | null;
 		canSuggest?: boolean;
@@ -151,6 +157,29 @@
 
 	const sceneThreads = $derived(standaloneThreads.filter((t) => t.sceneId === selectedSceneId));
 	const sceneSuggestions = $derived(suggestions.filter((s) => s.sceneId === selectedSceneId));
+
+	// The View dropdown for the editable centre, the same control as the Write
+	// toolbar: Edit (here), Preview and Print (the export views), and a
+	// distraction-free Focus that hides the side panes.
+	const storyHref = $derived(storySlug ? resolve('/stories/[id]', { id: storySlug }) : '');
+	const viewMenu = $derived<ViewItem[]>(
+		storyHref
+			? [
+					{ id: 'edit', label: 'Edit', icon: 'pencil', current: true },
+					{
+						id: 'preview',
+						label: 'Preview',
+						icon: 'book',
+						href: `${storyHref}?view=preview&scene=${selectedSceneId}`
+					},
+					{ id: 'focus', label: 'Focus', icon: 'expand', onSelect: () => (focusMode.on = true) },
+					{ id: 'print', label: 'Print', icon: 'print', href: `${storyHref}/print` }
+				]
+			: []
+	);
+	function onWindowKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && focusMode.on) focusMode.on = false;
+	}
 	// Open items in the selected scene, surfaced as a badge on the Notes tab.
 	const sceneOpen = $derived(
 		sceneThreads.filter((t) => t.resolvedAt === null).length +
@@ -218,6 +247,8 @@
 		});
 	}
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div class="review-shell">
 	<nav class="rv-mtabs" aria-label="Review sections">
@@ -306,6 +337,7 @@
 							{nonPrintingMarks}
 							{commandMarkers}
 							{editorStyle}
+							{viewMenu}
 							onStartComment={startComment}
 							onStartSuggest={startSuggest}
 							onStatus={onSaveStatus}
