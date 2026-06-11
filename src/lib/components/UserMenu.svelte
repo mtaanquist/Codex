@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
+	import { flipTheme } from '$lib/theme';
 
 	type MenuUser = { displayName: string; email: string; isAdmin: boolean };
 	const user = $derived(page.data.user as MenuUser | null);
@@ -16,27 +17,11 @@
 	let open = $state(false);
 	let root = $state<HTMLElement>();
 
-	// Flip data-theme now for an instant response, mirror it to localStorage so a
-	// reload keeps it, and persist it to the account so the next navigation (where
-	// the layout re-applies the saved preference) does not revert it. Accent is
-	// left untouched.
+	// Accent is left untouched; flipTheme handles the flip, the localStorage
+	// mirror, and the account persist.
 	let dark = $state(browser && document.documentElement.getAttribute('data-theme') === 'dark');
 	function toggleTheme() {
-		const next = dark ? 'light' : 'dark';
-		document.documentElement.setAttribute('data-theme', next);
-		try {
-			localStorage.setItem('codex-theme', next);
-		} catch {
-			/* preference just does not persist */
-		}
-		dark = !dark;
-		fetch('/api/appearance', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ theme: next })
-		}).catch(() => {
-			/* the optimistic flip stands; it just will not survive a reload */
-		});
+		dark = flipTheme(true) === 'dark';
 	}
 
 	function onWindowClick(event: MouseEvent) {

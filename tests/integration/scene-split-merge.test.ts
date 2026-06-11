@@ -279,6 +279,22 @@ describe('mergeScenes', () => {
 		expect(markers[0]).toMatchObject({ anchorStart: 10, anchorEnd: 14 });
 	});
 
+	it('moves an unanchored marker to the target with its anchors still null', async () => {
+		const a = await makeScene(1, 'One.');
+		const b = await makeScene(2, 'Two two.');
+		await db
+			.insert(sceneMarkers)
+			.values({ sceneId: b.id, ownerId, anchorStart: null, anchorEnd: null });
+
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+
+		const markers = await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, a.id));
+		expect(markers).toHaveLength(1);
+		// An unanchored marker must not come out pinned at the merge seam.
+		expect(markers[0]).toMatchObject({ anchorStart: null, anchorEnd: null });
+	});
+
 	it('refuses fewer than two scenes, foreign scenes, and cross-story mixes', async () => {
 		const a = await makeScene(1, 'One.');
 		const b = await makeScene(2, 'Two.');
