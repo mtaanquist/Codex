@@ -13,6 +13,7 @@
 		toggleQuote
 	} from '$lib/editor-format';
 	import { ALIGNMENTS } from '$lib/alignment';
+	import { dismiss } from '$lib/dismiss';
 
 	// The formatting bar above a prose editor: headings, bold, italic, quote,
 	// list, alignment, indent, and the view toggles. Buttons act on the editor
@@ -227,17 +228,8 @@
 		recompute();
 	});
 
-	// The "more" menu. Closes on an outside click.
+	// The "more" menu. Closes on an outside press or Escape.
 	let menuOpen = $state(false);
-	let menuWrap = $state<HTMLElement>();
-	$effect(() => {
-		if (!menuOpen) return;
-		const onClick = (event: MouseEvent) => {
-			if (menuWrap && !menuWrap.contains(event.target as Node)) menuOpen = false;
-		};
-		window.addEventListener('click', onClick, true);
-		return () => window.removeEventListener('click', onClick, true);
-	});
 	// A vanished overflow (the bar grew) must not leave a stale open menu.
 	$effect(() => {
 		if (overflow.length === 0) menuOpen = false;
@@ -300,7 +292,7 @@
 
 	{#if overflow.length > 0}
 		<span class="md-sep"></span>
-		<div class="md-overflow" bind:this={menuWrap}>
+		<div class="md-overflow" use:dismiss={{ enabled: menuOpen, close: () => (menuOpen = false) }}>
 			<button
 				class="md-tool"
 				class:is-active={menuOpen}

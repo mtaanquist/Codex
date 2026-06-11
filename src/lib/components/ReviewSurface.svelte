@@ -3,6 +3,7 @@
 	import EntityQuickCard from './EntityQuickCard.svelte';
 	import { detectMentions, type MentionTarget } from '$lib/mention-detect';
 	import type { MentionEntity } from '$lib/editor-mentions';
+	import { dismiss } from '$lib/dismiss';
 	import {
 		reviewProse,
 		threadAuthor,
@@ -101,20 +102,6 @@
 		const r = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		showCard(entityId, r.left + r.width / 2, r.bottom);
 	}
-	$effect(() => {
-		if (!card) return;
-		function dismiss(e: Event) {
-			if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-			if (e.type === 'mousedown' && (e.target as HTMLElement).closest('.rv-cardpop')) return;
-			card = null;
-		}
-		document.addEventListener('mousedown', dismiss);
-		document.addEventListener('keydown', dismiss);
-		return () => {
-			document.removeEventListener('mousedown', dismiss);
-			document.removeEventListener('keydown', dismiss);
-		};
-	});
 	// Keep the card on screen: centre it on the point, nudge it back from either
 	// side it would overflow, and flip it above the word when it would spill off
 	// the bottom.
@@ -422,7 +409,12 @@
 </div>
 
 {#if card}
-	<div class="rv-cardpop" bind:this={popEl} style="left: {card.x}px; top: {card.y}px;">
+	<div
+		class="rv-cardpop"
+		bind:this={popEl}
+		use:dismiss={{ close: () => (card = null) }}
+		style="left: {card.x}px; top: {card.y}px;"
+	>
 		<EntityQuickCard entity={card.entity} href={entityHref ? entityHref(card.entity) : null} />
 	</div>
 {/if}

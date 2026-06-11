@@ -12,6 +12,7 @@
 	import EntityBadge from './EntityBadge.svelte';
 	import TagInput from './TagInput.svelte';
 	import { createAutosave } from '$lib/autosave';
+	import { dismiss } from '$lib/dismiss';
 	import type { SaveStatus } from '$lib/autosave';
 
 	type RelationTypeOption = {
@@ -198,17 +199,7 @@
 	// svelte-ignore state_referenced_locally
 	let badgeAssetId = $state(entity.badgeAssetId ?? null);
 	let badgeMenuOpen = $state(false);
-	let badgeWrap = $state<HTMLElement>();
 	const categoryColor = $derived(categories.find((c) => c.id === categoryValue)?.color ?? null);
-
-	$effect(() => {
-		if (!badgeMenuOpen) return;
-		const onClick = (event: MouseEvent) => {
-			if (badgeWrap && !badgeWrap.contains(event.target as Node)) badgeMenuOpen = false;
-		};
-		window.addEventListener('click', onClick, true);
-		return () => window.removeEventListener('click', onClick, true);
-	});
 
 	async function pickBadgeColour(color: string | null) {
 		badgeColor = color;
@@ -499,7 +490,7 @@
 
 <div class="detail">
 	<div class="detail-head">
-		<div class="badge-pick" bind:this={badgeWrap}>
+		<div class="badge-pick" use:dismiss={{ enabled: badgeMenuOpen, close: () => (badgeMenuOpen = false) }}>
 			<button
 				class="badge-pick-btn"
 				type="button"

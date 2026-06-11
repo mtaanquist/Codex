@@ -6,6 +6,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { createAutosave, type SaveStatus } from '$lib/autosave';
+	import { dismiss } from '$lib/dismiss';
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -518,19 +519,6 @@
 		}
 	}
 
-	function onWindowPointerDown(event: MouseEvent) {
-		if (!selectionMenu) return;
-		const target = event.target as HTMLElement | null;
-		if (!target?.closest('.sel-menu')) closeSelectionMenu();
-	}
-
-	function onWindowKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && selectionMenu) {
-			event.preventDefault();
-			closeSelectionMenu();
-			view?.focus();
-		}
-	}
 
 	// Leaving the title field commits the rename at once instead of waiting
 	// out the debounce, so a rename right before a reload is already saved.
@@ -700,14 +688,13 @@
 	</div>
 {/if}
 
-<svelte:window
-	onmousedown={onWindowPointerDown}
-	onkeydown={onWindowKeydown}
-	onpagehide={autosave.flushOnPageHide}
-/>
+<svelte:window onpagehide={autosave.flushOnPageHide} />
 
 {#if selectionMenu}
-	<div class="sel-menu" role="menu" style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;">
+	<div
+		class="sel-menu"
+		role="menu"
+		use:dismiss={{ close: closeSelectionMenu, refocus: () => view?.focus() }} style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;">
 		<div class="sel-menu-formats">
 			<button
 				class="sel-format"

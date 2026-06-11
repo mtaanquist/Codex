@@ -23,6 +23,7 @@
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData, Snapshot } from './$types';
+	import { dismiss } from '$lib/dismiss';
 
 	let { data }: { data: PageData } = $props();
 
@@ -485,11 +486,6 @@
 	// The book switcher's menu, toggled from the sidebar header.
 	let storyMenuOpen = $state(false);
 
-	function onWindowPointerDown(event: MouseEvent) {
-		const target = event.target as HTMLElement | null;
-		if (storyMenuOpen && !target?.closest('.outline-head')) storyMenuOpen = false;
-		if (rowMenu && !target?.closest('.row-menu')) rowMenu = null;
-	}
 
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
@@ -706,18 +702,9 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key !== 'Escape') return;
-		if (storyMenuOpen) {
-			storyMenuOpen = false;
-			return;
-		}
-		if (rowMenu) {
-			rowMenu = null;
-			return;
-		}
-		focusMode.on = false;
+		// Open menus consume Escape in the dismiss action before this fires.
+		if (e.key === 'Escape') focusMode.on = false;
 	}}
-	onpointerdown={onWindowPointerDown}
 />
 
 <svelte:head>
@@ -817,7 +804,10 @@
 			</div>
 			<div class="left-scroll">
 				<div class="outline">
-					<div class="outline-head">
+					<div
+						class="outline-head"
+						use:dismiss={{ enabled: storyMenuOpen, close: () => (storyMenuOpen = false) }}
+					>
 						<!-- The book switcher: with more than one story in the
 						     universe, the header opens a menu to jump between them. -->
 						<button
@@ -1380,6 +1370,7 @@
 		role="menu"
 		tabindex="-1"
 		bind:this={rowMenuEl}
+		use:dismiss={{ close: () => (rowMenu = null) }}
 		onkeydown={onRowMenuKey}
 		style="left: {rowMenu.x}px; top: {rowMenu.y}px;"
 	>

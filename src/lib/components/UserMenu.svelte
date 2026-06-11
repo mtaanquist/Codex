@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { flipTheme } from '$lib/theme';
+	import { dismiss } from '$lib/dismiss';
 
 	type MenuUser = { displayName: string; email: string; isAdmin: boolean };
 	const user = $derived(page.data.user as MenuUser | null);
@@ -15,7 +16,6 @@
 	}
 
 	let open = $state(false);
-	let root = $state<HTMLElement>();
 
 	// Accent is left untouched; flipTheme handles the flip, the localStorage
 	// mirror, and the account persist.
@@ -24,18 +24,14 @@
 		dark = flipTheme(true) === 'dark';
 	}
 
-	function onWindowClick(event: MouseEvent) {
-		if (open && root && !root.contains(event.target as Node)) open = false;
-	}
-	function onWindowKey(event: KeyboardEvent) {
-		if (event.key === 'Escape') open = false;
-	}
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onWindowKey} />
-
 {#if user}
-	<div class="avatar-menu" class:open bind:this={root}>
+	<div
+		class="avatar-menu"
+		class:open
+		use:dismiss={{ enabled: open, close: () => (open = false) }}
+	>
 		<button
 			class="avatar"
 			type="button"

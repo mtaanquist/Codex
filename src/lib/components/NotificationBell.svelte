@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import type { NotificationItem } from '$lib/notifications';
+	import { dismiss } from '$lib/dismiss';
 
 	// The topbar bell: unread badge, a dropdown of recent notifications,
 	// click marks read and follows the link when there is one.
@@ -10,7 +11,6 @@
 	let items = $state<NotificationItem[]>([]);
 	let open = $state(false);
 	let loaded = $state(false);
-	let root = $state<HTMLElement>();
 
 	async function load() {
 		try {
@@ -74,17 +74,9 @@
 		return `${Math.floor(hours / 24)}d`;
 	}
 
-	function onWindowClick(event: MouseEvent) {
-		if (open && root && !root.contains(event.target as Node)) open = false;
-	}
-	function onWindowKey(event: KeyboardEvent) {
-		if (event.key === 'Escape') open = false;
-	}
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onWindowKey} />
-
-<div class="bell" bind:this={root}>
+<div class="bell" use:dismiss={{ enabled: open, close: () => (open = false) }}>
 	<button
 		class="icon-btn bell-btn"
 		type="button"
