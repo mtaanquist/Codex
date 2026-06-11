@@ -31,8 +31,20 @@
 	let psFont = $state(data.pageSetup.font);
 	// svelte-ignore state_referenced_locally
 	let psLineSpacing = $state(data.pageSetup.lineSpacing);
+	// The same reveal, for the editor-appearance form.
+	// svelte-ignore state_referenced_locally
+	let edFont = $state(data.preferences.editorFont);
+	// svelte-ignore state_referenced_locally
+	let edLineSpacing = $state(data.preferences.editorLineSpacing);
 
-	type Section = 'profile' | 'security' | 'assistant' | 'display';
+	type Section =
+		| 'profile'
+		| 'security'
+		| 'assistant'
+		| 'display'
+		| 'editor'
+		| 'notifications'
+		| 'pagesetup';
 
 	// Each section is its own page (/account/security, /account/display);
 	// a plain /account is the profile. Forms post to the section they sit
@@ -320,6 +332,50 @@
 						/><line x1="12" y1="17" x2="12" y2="21" /></svg
 					>
 					<span class="lbl">Display</span>
+				</a>
+				<a class="nav-item" class:active={active === 'editor'} href={sectionHref('editor')}>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg
+					>
+					<span class="lbl">Editor</span>
+				</a>
+				<a
+					class="nav-item"
+					class:active={active === 'notifications'}
+					href={sectionHref('notifications')}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path
+							d="M13.7 21a2 2 0 0 1-3.4 0"
+						/></svg
+					>
+					<span class="lbl">Notifications</span>
+				</a>
+				<a class="nav-item" class:active={active === 'pagesetup'} href={sectionHref('pagesetup')}>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path
+							d="M14 2v6h6"
+						/><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" /></svg
+					>
+					<span class="lbl">Page setup</span>
 				</a>
 
 				{#if data.isAdmin}
@@ -1553,7 +1609,7 @@
 					<div class="admin-head">
 						<p class="admin-eyebrow">Account</p>
 						<h1 class="admin-title">Display</h1>
-						<p class="admin-lede">How the app looks, and how the editor behaves while you write.</p>
+						<p class="admin-lede">The colour theme and accent used across the app.</p>
 					</div>
 
 					<div class="admin-block">
@@ -1661,6 +1717,91 @@
 										>
 									{/if}
 									<button type="submit" class="btn btn-primary">Save display</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				</section>
+
+				<section class="admin-section" class:active={active === 'editor'}>
+					<div class="admin-head">
+						<p class="admin-eyebrow">Account</p>
+						<h1 class="admin-title">Editor</h1>
+						<p class="admin-lede">
+							How the writing area looks, and how the editor helps while you type.
+						</p>
+					</div>
+
+					<div class="admin-block">
+						<div class="admin-block-head">
+							<h2 class="admin-block-title">Writing appearance</h2>
+							<p class="admin-block-sub">
+								The font and line spacing of the writing area. This is separate from page setup,
+								which is how exports are typeset.
+							</p>
+						</div>
+						<div class="settings-group">
+							<form method="POST" action="?/saveEditorAppearance">
+								<div class="field">
+									<label for="ed-font">Font</label>
+									<select id="ed-font" class="select" name="editorFont" bind:value={edFont}>
+										{#each Object.entries(PAGE_FONTS) as [value, font] (value)}
+											<option {value}>{font.label}</option>
+										{/each}
+									</select>
+									{#if edFont === 'custom'}
+										<input
+											class="input"
+											type="text"
+											name="editorFontCustom"
+											maxlength="50"
+											placeholder="Font name, e.g. Garamond"
+											value={data.preferences.editorFontCustom}
+										/>
+										<p class="field-hint">
+											Type the name of a font installed on this device. If it is not found, the
+											default writing font is used instead.
+										</p>
+									{/if}
+								</div>
+								<div class="field">
+									<label for="ed-linespacing">Line spacing</label>
+									<select
+										id="ed-linespacing"
+										class="select"
+										name="editorLineSpacing"
+										bind:value={edLineSpacing}
+									>
+										{#each Object.entries(LINE_SPACINGS) as [value, option] (value)}
+											<option {value}>{option.label}</option>
+										{/each}
+									</select>
+									{#if edLineSpacing === 'custom'}
+										<input
+											class="input"
+											type="number"
+											name="editorLineSpacingCm"
+											min={LINE_SPACING_CM_MIN}
+											max={LINE_SPACING_CM_MAX}
+											step="0.05"
+											value={data.preferences.editorLineSpacingCm}
+										/>
+										<p class="field-hint">
+											The height of each line in centimetres, from {LINE_SPACING_CM_MIN} to {LINE_SPACING_CM_MAX}.
+										</p>
+									{/if}
+								</div>
+								<div class="settings-actions">
+									{#if form?.scope === 'editorappearance' && form.message}
+										<span class="field-hint" role="alert" style="color:var(--danger);"
+											>{form.message}</span
+										>
+									{:else if form?.scope === 'editorappearance' && form.saved}
+										<span class="field-hint" role="status" style="color:var(--status-final);"
+											>Saved.</span
+										>
+									{/if}
+									<button type="submit" class="btn btn-primary">Save writing appearance</button>
 								</div>
 							</form>
 						</div>
@@ -1875,15 +2016,19 @@
 							</form>
 						</div>
 					</div>
+				</section>
+
+				<section class="admin-section" class:active={active === 'notifications'}>
+					<div class="admin-head">
+						<p class="admin-eyebrow">Account</p>
+						<h1 class="admin-title">Notifications</h1>
+						<p class="admin-lede">
+							What reaches you, and where: the bell in the top bar, email, both, or neither. Emails
+							arrive batched, so a busy hour sends one message.
+						</p>
+					</div>
 
 					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Notifications</h2>
-							<p class="admin-block-sub">
-								What reaches you, and where: the bell in the top bar, email, both, or neither.
-								Emails arrive batched, so a busy hour sends one message.
-							</p>
-						</div>
 						<div class="settings-group">
 							<form method="POST" action="?/saveNotifications">
 								<table class="notify-grid">
@@ -1929,15 +2074,19 @@
 							</form>
 						</div>
 					</div>
+				</section>
+
+				<section class="admin-section" class:active={active === 'pagesetup'}>
+					<div class="admin-head">
+						<p class="admin-eyebrow">Account</p>
+						<h1 class="admin-title">Page setup</h1>
+						<p class="admin-lede">
+							How print and PDF output is typeset. These are your defaults; a story can override
+							them in its own settings.
+						</p>
+					</div>
 
 					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Page setup</h2>
-							<p class="admin-block-sub">
-								How print and PDF output is typeset. These are your defaults; a story can override
-								them in its own settings.
-							</p>
-						</div>
 						<div class="settings-group">
 							<form method="POST" action="?/savePageSetup">
 								<div class="field">

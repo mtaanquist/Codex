@@ -24,7 +24,6 @@
 	import { continuationExtensions } from '$lib/editor-continuation';
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
-	import { fontFamilyCss, lineHeightCss, type PageSetup } from '$lib/page-setup';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import Icon from './Icon.svelte';
 
@@ -45,7 +44,7 @@
 		findText = null,
 		findAt = null,
 		compact = false,
-		pageSetup = null,
+		editorStyle,
 		loreCategories = [],
 		onCrossBoundary,
 		onCreateEntity,
@@ -89,10 +88,11 @@
 		// input, no toolbar, and vertical arrows at the edges hand focus to
 		// neighbours.
 		compact?: boolean;
-		// The story's effective page setup, so the writing surface shows the
-		// chosen font, line spacing, and default alignment. Null in the entity
-		// editors, which keep the editor's own typography.
-		pageSetup?: PageSetup | null;
+		// Inline CSS variables that style the writing surface (font, line
+		// spacing, default alignment), built by the page from the writer's
+		// editor-appearance preferences. Absent in the entity editors, which
+		// keep the editor's own typography.
+		editorStyle?: string;
 		// The universe's categories; with more than one, the selection menu's
 		// lore item grows a submenu to pick where the entry files.
 		loreCategories?: { id: string; name: string }[];
@@ -127,19 +127,6 @@
 		onEnterFocus?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
-
-	// The writing surface's typography, driven by the story's page setup. The
-	// font var is left unset for the 'default' choice so the editor keeps its
-	// own content font; line spacing and alignment always carry over.
-	const editorTypeStyle = $derived.by(() => {
-		if (!pageSetup) return undefined;
-		const parts = [
-			`--editor-line-height: ${lineHeightCss(pageSetup)}`,
-			`--editor-align: ${pageSetup.textAlign}`
-		];
-		if (pageSetup.font !== 'default') parts.push(`--editor-font: ${fontFamilyCss(pageSetup)}`);
-		return `${parts.join('; ')};`;
-	});
 
 	// Autosave fires on a pause, not on every keystroke; the revision history
 	// coalesces these so a burst of saves is one timeline entry.
@@ -598,7 +585,7 @@
 	<div
 		class="editor compact"
 		role="presentation"
-		style={editorTypeStyle}
+		style={editorStyle}
 		oncontextmenu={onPaneContextMenu}
 	>
 		<div class="editor-cm" bind:this={editorEl}></div>
@@ -702,7 +689,7 @@
 			bind:this={scrollEl}
 			oncontextmenu={onPaneContextMenu}
 		>
-			<div class="editor" style={editorTypeStyle}>
+			<div class="editor" style={editorStyle}>
 				<input
 					class="editor-title-input"
 					type="text"

@@ -40,7 +40,13 @@ import {
 import { discoverModels, testAccountConnection } from '$lib/server/llm/models';
 import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
-import { normalisePageSetup } from '$lib/page-setup';
+import {
+	clampLineSpacingCm,
+	isLineSpacing,
+	isPageFont,
+	normalisePageSetup,
+	sanitiseFontName
+} from '$lib/page-setup';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
 import { isAccentColor, isConcreteTheme, isTheme, normaliseAccent } from '$lib/appearance';
 import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
@@ -76,7 +82,9 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	// Profile rests on /account itself; the other sections have their own page.
 	if (
 		params.section !== undefined &&
-		!['security', 'display', 'assistant'].includes(params.section)
+		!['security', 'display', 'editor', 'notifications', 'pagesetup', 'assistant'].includes(
+			params.section
+		)
 	)
 		error(404, 'Not found');
 	const user = locals.user!;
@@ -288,6 +296,22 @@ export const actions: Actions = {
 			dailyWordGoal
 		});
 		return { scope: 'prefs', saved: true };
+	},
+	saveEditorAppearance: async ({ request, locals }) => {
+		const data = await request.formData();
+		const font = String(data.get('editorFont') ?? '');
+		const lineSpacing = String(data.get('editorLineSpacing') ?? '');
+		if (!isPageFont(font)) return fail(400, { scope: 'editorappearance', message: 'Pick a font.' });
+		if (!isLineSpacing(lineSpacing)) {
+			return fail(400, { scope: 'editorappearance', message: 'Pick a line spacing.' });
+		}
+		await savePreferences(db, locals.user!.id, {
+			editorFont: font,
+			editorFontCustom: sanitiseFontName(data.get('editorFontCustom')),
+			editorLineSpacing: lineSpacing,
+			editorLineSpacingCm: clampLineSpacingCm(data.get('editorLineSpacingCm'))
+		});
+		return { scope: 'editorappearance', saved: true };
 	},
 	toggleAssistant: async ({ request, locals }) => {
 		const data = await request.formData();
