@@ -48,28 +48,26 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	const bogus = await page.request.get('/account/nonsense');
 	expect(bogus.status()).toBe(404);
 
-	// Display: the notification matrix saves a per-kind channel choice and
-	// reads it back. The admin-only row is absent for a regular account.
-	await page.getByRole('link', { name: 'Display' }).click();
+	// Notifications: the matrix saves a per-kind channel choice and reads it
+	// back, auto-saving on each toggle. The admin-only row is absent for a
+	// regular account.
+	await page.getByRole('link', { name: 'Notifications' }).click();
 	const replyEmail = page.getByLabel('Replies to your review comments by email');
 	await expect(page.getByLabel('New accounts awaiting approval in app')).toHaveCount(0);
 	await replyEmail.uncheck();
-	await page.getByRole('button', { name: 'Save notifications' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await expect(replyEmail).not.toBeChecked();
 	await replyEmail.check();
-	await page.getByRole('button', { name: 'Save notifications' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 
-	// A saved theme applies app-wide via the data-theme attribute.
+	// Display: a saved theme applies app-wide via the data-theme attribute.
+	await page.getByRole('link', { name: 'Display' }).click();
 	await page.getByLabel('Theme').selectOption('dark');
-	await page.getByRole('button', { name: 'Save display' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
 	// Reset so repeated runs start from a known theme.
 	await page.getByLabel('Theme').selectOption('system');
-	await page.getByRole('button', { name: 'Save display' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 });
 

@@ -10,11 +10,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Repeated runs share the seeded user, so pin the preferences to their
 	// defaults before exercising them later. They live on the account page now.
 	await page.goto('/account');
-	await page.getByRole('link', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
+	// These settings auto-save on change; the last change confirms with "Saved.".
 	await page.getByLabel('Editing mode').selectOption('rich');
-	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.goto('/');
 
@@ -333,9 +333,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Ghost mode comes from the user preference: an unambiguous prefix
 	// shows the rest of the name, and Tab accepts it.
 	await page.goto('/account');
-	await page.getByRole('link', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('ghost');
-	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.goto(proseSceneUrl);
 	await page.locator('.cm-content').click();
@@ -551,9 +550,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Scene marks in the story view follow the display preference.
 	await page.goto('/account');
-	await page.getByRole('link', { name: 'Display' }).click();
+	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
-	await page.getByRole('button', { name: 'Save preferences' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.goto(`${proseSceneUrl}&view=story`);
 	await expect(page.locator('.doc-scene').first()).toBeVisible();
