@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "reviewers_invitation_user_unique" ON "reviewers" USING btree ("invitation_id","user_id") WHERE user_id is not null;

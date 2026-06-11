@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from './password';
 import { consumeToken, issueToken, revokeTokens } from './tokens';
 import { isUniqueViolation } from './db-errors.ts';
 import { EMAIL_RE } from './signup.ts';
+import { MAX_DISPLAY_NAME } from './validation.ts';
 
 const MIN_PASSWORD = 8;
 const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
@@ -27,7 +28,6 @@ export async function verifyAccountPassword(
 }
 
 const MAX_PEN_NAME = 120;
-const MAX_DISPLAY_NAME = 120;
 
 // Saves the always-editable identity fields: the required display name and the
 // optional pen name (the name stories are published under when it differs).

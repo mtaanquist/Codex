@@ -8,8 +8,6 @@ import { error } from '@sveltejs/kit';
 export const MAX_PROSE_CHARS = 2_000_000;
 // A name shown wherever the author is rendered.
 export const MAX_DISPLAY_NAME = 120;
-// A reviewer comment or suggested-edit body.
-export const MAX_REVIEW_BODY = 20_000;
 
 // Parses a JSON request body, returning a clean 400 instead of a 500 when the
 // body is missing or malformed. The bare request.json() throws a SyntaxError on

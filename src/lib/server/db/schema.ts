@@ -1025,7 +1025,15 @@ export const reviewers = pgTable(
 		lastNotifiedAt: timestamp('last_notified_at', { withTimezone: true }),
 		emailOptOutAt: timestamp('email_opt_out_at', { withTimezone: true })
 	},
-	(table) => [index('reviewers_invitation_idx').on(table.invitationId)]
+	(table) => [
+		index('reviewers_invitation_idx').on(table.invitationId),
+		// One reviewer row per signed-in user per invitation; without this,
+		// concurrent first requests could create two and split attribution.
+		// Guests have a null userId and may hold many rows.
+		uniqueIndex('reviewers_invitation_user_unique')
+			.on(table.invitationId, table.userId)
+			.where(sql`user_id is not null`)
+	]
 );
 
 // A comment thread on a scene: anchored to a character range in body_md

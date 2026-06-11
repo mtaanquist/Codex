@@ -488,6 +488,48 @@ describe('gateway tool loop', () => {
 		expect(calls).toBe(3);
 	});
 
+	it('refuses a tool call the turn did not offer and stages nothing', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// The turn offers only read tools; the model calls suggest_edit anyway
+		// (a cached schema, or it ignored the prompt).
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{
+						id: 'c1',
+						name: 'suggest_edit',
+						arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+					}
+				]
+			},
+			{ content: 'understood' }
+		]);
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				toolNames: ['list_scenes', 'get_scene'],
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(text).toBe('understood');
+		// The refusal went back as a retryable tool result.
+		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
+		expect(toolMessage?.content).toContain('not available in this turn');
+		// Nothing was staged.
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(0);
+	});
+
 	it('does not offer tools without a story context', async () => {
 		await configure(true);
 		const script = scriptedProvider([{ content: 'plain answer' }]);
