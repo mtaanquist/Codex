@@ -28,6 +28,10 @@ export type ToolContext = {
 	// by the calling surface so the model cannot reach another thread or
 	// suggestion even by inventing ids.
 	scope?: { threadId?: string; suggestionId?: string };
+	// The tools actually offered this turn. A call to anything else is refused:
+	// the prompt-level restriction ("do not leave new comments elsewhere") must
+	// hold even when the model ignores it or answers a cached tool schema.
+	allowedTools?: string[];
 };
 
 export type ToolOutcome = {
@@ -59,6 +63,12 @@ export async function dispatchToolCall(
 ): Promise<ToolOutcome> {
 	const tool = findTool(call.name);
 	if (!tool) return { result: `Unknown tool: ${call.name}.`, staged: false };
+	if (ctx.allowedTools && !ctx.allowedTools.includes(call.name)) {
+		return {
+			result: `The tool ${call.name} is not available in this turn. Use one of the offered tools.`,
+			staged: false
+		};
+	}
 	let args: Record<string, unknown>;
 	try {
 		args = call.arguments ? JSON.parse(call.arguments) : {};

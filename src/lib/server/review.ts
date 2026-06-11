@@ -27,6 +27,8 @@ import { EMAIL_RE } from './signup.ts';
 // link token's hash is stored, and revoking an invitation cuts access while
 // keeping the threads.
 
+// The body caps live here, in the functions every caller goes through
+// (author actions, guest actions, assistant tools), not per route.
 const MAX_COMMENT_LENGTH = 5000;
 const REVIEWER_COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -137,20 +139,23 @@ export async function ensureReviewer(
 	identity: { userId: string; displayName: string } | { displayName: string; email?: string }
 ) {
 	if ('userId' in identity) {
-		const [existing] = await db
-			.select()
-			.from(reviewers)
-			.where(and(eq(reviewers.invitationId, invitationId), eq(reviewers.userId, identity.userId)));
-		if (existing) return existing;
-		const [row] = await db
+		// Upsert against the partial unique index so two concurrent first
+		// requests settle on one row instead of splitting attribution.
+		const [created] = await db
 			.insert(reviewers)
 			.values({
 				invitationId,
 				userId: identity.userId,
 				displayName: identity.displayName
 			})
+			.onConflictDoNothing()
 			.returning();
-		return row;
+		if (created) return created;
+		const [existing] = await db
+			.select()
+			.from(reviewers)
+			.where(and(eq(reviewers.invitationId, invitationId), eq(reviewers.userId, identity.userId)));
+		return existing;
 	}
 	const displayName = identity.displayName.trim();
 	if (!displayName) return null;
@@ -207,7 +212,11 @@ export async function reviewerAccess(db: Database, reviewerId: string, storyId: 
 
 // The base revision a new thread pins its anchor to: the latest scene
 // revision when it matches the current text, else a fresh snapshot, so the
-// anchor always has the exact text it was placed against.
+// anchor always has the exact text it was placed against. Must run inside a
+// transaction holding the scene's revision advisory lock (sceneRevisionLock):
+// between reading the latest revision here and the caller pinning it, an
+// unserialised autosave could roll the revision's body forward and the anchor
+// would point at text it was never placed on.
 async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string): Promise<string> {
 	const [latest] = await db
 		.select({ id: revisions.id, bodyMd: revisions.bodyMd })
@@ -221,6 +230,12 @@ async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string)
 		.values({ entityType: 'scene', entityId: sceneId, bodyMd, reason: 'autosave' })
 		.returning({ id: revisions.id });
 	return created.id;
+}
+
+// The same per-entity advisory lock recordRevision takes for autosave
+// coalescing, so pinning a base revision serialises against autosaves.
+async function sceneRevisionLock(db: Database, sceneId: string): Promise<void> {
+	await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`scene:${sceneId}`}))`);
 }
 
 // A comment or suggestion is authored by the signed-in owner, a guest
@@ -284,8 +299,12 @@ export async function createThread(
 		return { ok: false, reason: 'That selection no longer matches the text.' };
 	}
 
-	const baseRevisionId = input.anchor ? await ensureBaseRevision(db, scene.id, scene.bodyMd) : null;
 	const threadId = await db.transaction(async (tx) => {
+		let baseRevisionId: string | null = null;
+		if (input.anchor) {
+			await sceneRevisionLock(tx, scene.id);
+			baseRevisionId = await ensureBaseRevision(tx, scene.id, scene.bodyMd);
+		}
 		const [thread] = await tx
 			.insert(reviewThreads)
 			.values({
@@ -354,16 +373,24 @@ export async function addComment(
 	if (body.length > MAX_COMMENT_LENGTH) {
 		return { ok: false, reason: 'That comment is too long.' };
 	}
-	const [thread] = await db
-		.select({ id: reviewThreads.id })
-		.from(reviewThreads)
-		.where(and(eq(reviewThreads.id, input.threadId), eq(reviewThreads.storyId, input.storyId)));
-	if (!thread) return { ok: false, reason: 'That thread does not exist.' };
-	await db.insert(reviewComments).values({
-		threadId: thread.id,
-		...commentAuthorColumns(input.author),
-		bodyMd: body
+	// The thread row is locked with the insert so a reply cannot land between
+	// a retraction's "everyone here is me" check and its delete; the retraction
+	// takes the same lock.
+	const inserted = await db.transaction(async (tx) => {
+		const [thread] = await tx
+			.select({ id: reviewThreads.id })
+			.from(reviewThreads)
+			.where(and(eq(reviewThreads.id, input.threadId), eq(reviewThreads.storyId, input.storyId)))
+			.for('update');
+		if (!thread) return false;
+		await tx.insert(reviewComments).values({
+			threadId: thread.id,
+			...commentAuthorColumns(input.author),
+			bodyMd: body
+		});
+		return true;
 	});
+	if (!inserted) return { ok: false, reason: 'That thread does not exist.' };
 	return { ok: true };
 }
 
@@ -564,19 +591,22 @@ export async function createSuggestion(
 		return { ok: false, reason: 'That suggestion changes nothing.' };
 	}
 
-	const baseRevisionId = await ensureBaseRevision(db, scene.id, scene.bodyMd);
-	const [row] = await db
-		.insert(reviewSuggestions)
-		.values({
-			storyId: input.storyId,
-			sceneId: input.sceneId,
-			...suggestionAuthorColumns(input.author),
-			baseRevisionId,
-			rangeStart: start,
-			rangeEnd: end,
-			replacement: input.replacement
-		})
-		.returning({ id: reviewSuggestions.id });
+	const [row] = await db.transaction(async (tx) => {
+		await sceneRevisionLock(tx, scene.id);
+		const baseRevisionId = await ensureBaseRevision(tx, scene.id, scene.bodyMd);
+		return await tx
+			.insert(reviewSuggestions)
+			.values({
+				storyId: input.storyId,
+				sceneId: input.sceneId,
+				...suggestionAuthorColumns(input.author),
+				baseRevisionId,
+				rangeStart: start,
+				rangeEnd: end,
+				replacement: input.replacement
+			})
+			.returning({ id: reviewSuggestions.id });
+	});
 	return { ok: true, suggestionId: row.id };
 }
 
@@ -877,24 +907,32 @@ export async function deleteComment(
 	if (!ownsComment(target, actor)) {
 		return { ok: false, reason: 'You can only delete your own comments.' };
 	}
-	const all = await db
-		.select()
-		.from(reviewComments)
-		.where(eq(reviewComments.threadId, target.threadId))
-		.orderBy(asc(reviewComments.createdAt));
-	const isRoot = all[0]?.id === commentId;
-	if (!isRoot) {
-		await db.delete(reviewComments).where(eq(reviewComments.id, commentId));
-		return { ok: true };
-	}
-	if (!all.every((comment) => ownsComment(comment, actor))) {
-		return { ok: false, reason: 'Others have replied; resolve the thread instead.' };
-	}
-	await db.transaction(async (tx) => {
+	// Checked and deleted under the thread's row lock (addComment takes the
+	// same lock), so a reply cannot land between the "everyone here is me"
+	// check and the delete and vanish with the thread.
+	return await db.transaction(async (tx) => {
+		await tx
+			.select({ id: reviewThreads.id })
+			.from(reviewThreads)
+			.where(eq(reviewThreads.id, target.threadId))
+			.for('update');
+		const all = await tx
+			.select()
+			.from(reviewComments)
+			.where(eq(reviewComments.threadId, target.threadId))
+			.orderBy(asc(reviewComments.createdAt));
+		const isRoot = all[0]?.id === commentId;
+		if (!isRoot) {
+			await tx.delete(reviewComments).where(eq(reviewComments.id, commentId));
+			return { ok: true };
+		}
+		if (!all.every((comment) => ownsComment(comment, actor))) {
+			return { ok: false, reason: 'Others have replied; resolve the thread instead.' };
+		}
 		await tx.delete(reviewComments).where(eq(reviewComments.threadId, target.threadId));
 		await tx.delete(reviewThreads).where(eq(reviewThreads.id, target.threadId));
+		return { ok: true };
 	});
-	return { ok: true };
 }
 
 // Retracts a pending suggestion the viewer proposed. A decided suggestion is
@@ -918,28 +956,29 @@ export async function deleteSuggestion(
 	}
 	// The discussion thread goes with the retracted suggestion - but never
 	// someone else's words: once others have replied on it, the suggestion
-	// stays and gets decided instead.
-	const [thread] = await db
-		.select({ id: reviewThreads.id })
-		.from(reviewThreads)
-		.where(eq(reviewThreads.suggestionId, suggestionId));
-	if (thread) {
-		const discussion = await db
-			.select()
-			.from(reviewComments)
-			.where(eq(reviewComments.threadId, thread.id));
-		if (!discussion.every((comment) => ownsComment(comment, actor))) {
-			return { ok: false, reason: 'Others have replied on it; it can only be decided now.' };
-		}
-	}
-	await db.transaction(async (tx) => {
+	// stays and gets decided instead. Checked under the thread's row lock
+	// (addComment takes the same lock) so a reply cannot land between the
+	// check and the delete.
+	return await db.transaction(async (tx) => {
+		const [thread] = await tx
+			.select({ id: reviewThreads.id })
+			.from(reviewThreads)
+			.where(eq(reviewThreads.suggestionId, suggestionId))
+			.for('update');
 		if (thread) {
+			const discussion = await tx
+				.select()
+				.from(reviewComments)
+				.where(eq(reviewComments.threadId, thread.id));
+			if (!discussion.every((comment) => ownsComment(comment, actor))) {
+				return { ok: false, reason: 'Others have replied on it; it can only be decided now.' };
+			}
 			await tx.delete(reviewComments).where(eq(reviewComments.threadId, thread.id));
 			await tx.delete(reviewThreads).where(eq(reviewThreads.id, thread.id));
 		}
 		await tx
 			.delete(reviewSuggestions)
 			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+		return { ok: true };
 	});
-	return { ok: true };
 }

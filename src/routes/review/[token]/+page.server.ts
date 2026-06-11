@@ -24,7 +24,6 @@ import { gatherStory } from '$lib/server/export';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { rateLimit } from '$lib/server/rate-limit';
-import { MAX_REVIEW_BODY } from '$lib/server/validation';
 import { notifyReviewActivity } from '$lib/server/notify';
 
 // The guest's door into a review: the magic link. A bad, revoked, or expired
@@ -134,7 +133,7 @@ export const actions: Actions = {
 				: null;
 		const sceneId = String(data.get('sceneId') ?? '');
 		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
-		const body = String(data.get('body') ?? '').slice(0, MAX_REVIEW_BODY);
+		const body = String(data.get('body') ?? '');
 		const result = await createThread(db, {
 			storyId: resolved.invitation.storyId,
 			sceneId,
@@ -171,7 +170,7 @@ export const actions: Actions = {
 			sceneId,
 			author: { reviewerId: access.reviewer.id },
 			range: { start: Number(data.get('start')), end: Number(data.get('end')) },
-			replacement: String(data.get('replacement') ?? '').slice(0, MAX_REVIEW_BODY)
+			replacement: String(data.get('replacement') ?? '')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
 		await notifyReviewActivity(
@@ -193,7 +192,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
 		if (!isUuid(threadId)) return fail(400, { message: 'That thread does not exist.' });
-		const body = String(data.get('body') ?? '').slice(0, MAX_REVIEW_BODY);
+		const body = String(data.get('body') ?? '');
 		const result = await addComment(db, {
 			storyId: resolved.invitation.storyId,
 			threadId,
@@ -229,7 +228,7 @@ export const actions: Actions = {
 			suggestionId
 		});
 		if (!thread.ok) return fail(400, { message: thread.reason });
-		const body = String(data.get('body') ?? '').slice(0, MAX_REVIEW_BODY);
+		const body = String(data.get('body') ?? '');
 		const result = await addComment(db, {
 			storyId: resolved.invitation.storyId,
 			threadId: thread.threadId,
