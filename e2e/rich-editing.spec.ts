@@ -59,8 +59,8 @@ test('rich editing: toolbar formats, marks hide by default, override shows them'
 	// settings overrides.
 	await page.goto(`/stories/${storyId}/settings/editor`);
 	await page.getByLabel('Editing mode').selectOption('markdown');
+	// These settings auto-save on change; the last change confirms with "Saved.".
 	await page.getByLabel('Writing language').selectOption('Dansk');
-	await page.getByRole('button', { name: 'Save editor settings' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 
 	// Back in the editor the marks stay visible as typed, and the language

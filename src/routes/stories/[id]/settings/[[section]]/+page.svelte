@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { enhance } from '$app/forms';
+	import { beforeNavigate } from '$app/navigation';
+	import { autosaveSubmit, autosubmitForm, flushFocusedField } from '$lib/autosave-form';
 	import { entityColor } from '$lib/entity-color';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
@@ -44,6 +47,10 @@
 	let stFont = $state((data.pageSetupOverrides.font as string) ?? '');
 	// svelte-ignore state_referenced_locally
 	let stLineSpacing = $state((data.pageSetupOverrides.lineSpacing as string) ?? '');
+
+	// The settings forms (Editor, Page setup, Goals) save on change instead of
+	// with a button; see $lib/autosave-form.
+	beforeNavigate(flushFocusedField);
 
 	const coverColor = $derived(entityColor(data.story.title));
 
@@ -132,6 +139,8 @@
 		}
 	}
 </script>
+
+<svelte:window onpagehide={flushFocusedField} />
 
 <svelte:head>
 	<title>{data.story.title} - Settings - Codex</title>
@@ -245,7 +254,12 @@
 						</p>
 					</div>
 					<div class="settings-group">
-						<form method="POST" action="?/savePreferences">
+						<form
+							method="POST"
+							action="?/savePreferences"
+							use:enhance={autosaveSubmit}
+							onchange={autosubmitForm}
+						>
 							{#if form?.action === 'prefs' && form.message}
 								<p class="form-error" role="alert">{form.message}</p>
 							{/if}
@@ -345,7 +359,6 @@
 										>Saved.</span
 									>
 								{/if}
-								<button class="btn btn-primary" type="submit">Save editor settings</button>
 							</div>
 						</form>
 					</div>
@@ -360,7 +373,12 @@
 						</p>
 					</div>
 					<div class="settings-group">
-						<form method="POST" action="?/savePageSetup">
+						<form
+							method="POST"
+							action="?/savePageSetup"
+							use:enhance={autosaveSubmit}
+							onchange={autosubmitForm}
+						>
 							{#if form?.action === 'pagesetup' && form.message}
 								<p class="form-error" role="alert">{form.message}</p>
 							{/if}
@@ -599,7 +617,6 @@
 										>Saved.</span
 									>
 								{/if}
-								<button class="btn btn-primary" type="submit">Save page setup</button>
 							</div>
 						</form>
 					</div>
@@ -614,7 +631,12 @@
 						</p>
 					</div>
 					<div class="settings-group">
-						<form method="POST" action="?/saveGoals">
+						<form
+							method="POST"
+							action="?/saveGoals"
+							use:enhance={autosaveSubmit}
+							onchange={autosubmitForm}
+						>
 							<div class="field-grid">
 								<div class="field">
 									<label for="goal-target">Target words (optional)</label>
@@ -650,7 +672,6 @@
 										>Saved.</span
 									>
 								{/if}
-								<button class="btn btn-primary" type="submit">Save goals</button>
 							</div>
 						</form>
 					</div>

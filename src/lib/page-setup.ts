@@ -123,12 +123,22 @@ function isKey<T extends string>(record: Record<T, unknown>, value: unknown): va
 	return typeof value === 'string' && value in record;
 }
 
-function sanitiseFontName(raw: unknown): string {
+export function isPageFont(value: unknown): value is PageFont {
+	return isKey(PAGE_FONTS, value);
+}
+
+export function isLineSpacing(value: unknown): value is LineSpacing {
+	return isKey(LINE_SPACINGS, value);
+}
+
+// Reused by the editor-appearance preferences, which store the same kind of
+// font name and custom line height as page setup.
+export function sanitiseFontName(raw: unknown): string {
 	if (typeof raw !== 'string') return '';
 	return raw.replace(FONT_NAME_DISALLOWED, '').replace(/\s+/g, ' ').trim().slice(0, MAX_FONT_NAME);
 }
 
-function clampLineSpacingCm(raw: unknown): number {
+export function clampLineSpacingCm(raw: unknown): number {
 	const value = typeof raw === 'number' ? raw : Number(raw);
 	if (!Number.isFinite(value)) return DEFAULT_PAGE_SETUP.lineSpacingCm;
 	return Math.min(
@@ -193,21 +203,30 @@ export function cssEscape(text: string): string {
 // geometry through pdf options instead (Chromium's header/footer layer
 // needs it there), so @page is optional.
 
-// The CSS line-height for a setup, shared by every surface so they never
-// drift: a unitless multiplier for the presets, or a physical length for a
-// custom value.
-export function lineHeightCss(setup: PageSetup): string {
-	if (setup.lineSpacing === 'custom') return `${setup.lineSpacingCm}cm`;
-	return String(LINE_SPACINGS[setup.lineSpacing].lineHeight);
+// The CSS line-height for a font/spacing pair, shared by every surface (and
+// the editor) so they never drift: a unitless multiplier for the presets, or
+// a physical length for a custom value.
+export function lineHeightFor(lineSpacing: LineSpacing, lineSpacingCm: number): string {
+	if (lineSpacing === 'custom') return `${lineSpacingCm}cm`;
+	return String(LINE_SPACINGS[lineSpacing].lineHeight);
 }
 
-// The CSS font-family for a setup. A custom family is quoted and followed by
-// the default stack, so an unknown family simply falls back to the default.
-export function fontFamilyCss(setup: PageSetup): string {
-	if (setup.font === 'custom' && setup.fontCustom) {
-		return `'${cssEscape(setup.fontCustom)}', ${PAGE_FONTS.custom.css}`;
+export function lineHeightCss(setup: PageSetup): string {
+	return lineHeightFor(setup.lineSpacing, setup.lineSpacingCm);
+}
+
+// The CSS font-family for a font choice. A custom family is quoted and
+// followed by the default stack, so an unknown family simply falls back to
+// the default.
+export function fontFamilyFor(font: PageFont, fontCustom: string): string {
+	if (font === 'custom' && fontCustom) {
+		return `'${cssEscape(fontCustom)}', ${PAGE_FONTS.custom.css}`;
 	}
-	return PAGE_FONTS[setup.font].css;
+	return PAGE_FONTS[font].css;
+}
+
+export function fontFamilyCss(setup: PageSetup): string {
+	return fontFamilyFor(setup.font, setup.fontCustom);
 }
 
 // The text-column width of a single page: page width less both side margins
