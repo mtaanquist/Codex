@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { isUuid } from '$lib/slug';
 import { effectiveAssetConfig } from '$lib/server/assets';
 import {
 	chapters,
@@ -60,11 +61,13 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		availablePlaces: universeLists.places.filter((row) => !inStory.has(row.id))
 	};
 
+	// Guard the uuid casts: a tampered query value would throw in Postgres
+	// and 500 instead of being ignored.
 	const entityId = url.searchParams.get('entity');
 	let selected = null;
 	let selectedKind: EntityKind = 'character';
 	let storyNotesMd = '';
-	if (entityId) {
+	if (entityId && isUuid(entityId)) {
 		const resolved = await resolvePlanEntity(db, universe.id, entityId);
 		if (resolved) {
 			selected = resolved.entity;
@@ -192,7 +195,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	if (revisionTarget) {
 		revisionRows = await listRevisions(db, revisionTarget.type, revisionTarget.id);
 		const revisionId = url.searchParams.get('revision');
-		if (revisionId) {
+		if (revisionId && isUuid(revisionId)) {
 			revisionPreview =
 				(await getRevision(db, revisionId, revisionTarget.type, revisionTarget.id)) ?? null;
 		}
@@ -237,7 +240,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const kind = String(data.get('kind') ?? '');
 		const entityId = String(data.get('entityId') ?? '');
-		if ((kind !== 'character' && kind !== 'place') || !entityId) {
+		if ((kind !== 'character' && kind !== 'place') || !isUuid(entityId)) {
 			return fail(400, { kind: 'member', message: 'Pick an entity to add.' });
 		}
 		const result = await declareMembership(db, locals.user!.id, kind, entityId, story.id);

@@ -11,7 +11,7 @@ import {
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
 import { recordEntityRevision } from './revisions';
-import { isUniqueViolation } from './db';
+import { isUniqueViolation } from './db-errors.ts';
 
 export type { EntityType };
 

@@ -5,12 +5,13 @@ import { rateLimitWrites } from '$lib/server/write-guard';
 import { ownedStory } from '$lib/server/story-access';
 import { duplicateScene } from '$lib/server/scene-split-merge';
 import { queueSceneMentions } from '$lib/server/jobs';
+import { readJson } from '$lib/server/validation';
 
 // Duplicates a scene as a full copy directly after the original.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
 	await ownedStory(params.id, locals.user!.id);
-	const payload = (await request.json()) as { sceneId?: unknown };
+	const payload = await readJson<{ sceneId?: unknown }>(request);
 	if (typeof payload.sceneId !== 'string') {
 		error(400, 'sceneId must be a string');
 	}

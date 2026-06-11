@@ -5,12 +5,13 @@ import { rateLimitWrites } from '$lib/server/write-guard';
 import { ownedStory } from '$lib/server/story-access';
 import { mergeScenes } from '$lib/server/scene-split-merge';
 import { queueSceneMentions } from '$lib/server/jobs';
+import { readJson } from '$lib/server/validation';
 
 // Merges the named scenes, in story order, into the earliest of them.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
 	const { story } = await ownedStory(params.id, locals.user!.id);
-	const payload = (await request.json()) as { sceneIds?: unknown };
+	const payload = await readJson<{ sceneIds?: unknown }>(request);
 	const sceneIds = Array.isArray(payload.sceneIds)
 		? payload.sceneIds.filter((id): id is string => typeof id === 'string')
 		: [];

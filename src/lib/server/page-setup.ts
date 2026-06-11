@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { stories, users } from './db/schema.ts';
 import { mergePageSetup, type PageSetup } from '../page-setup.ts';
+import { jsonbMergePatch } from './jsonb-patch.ts';
 
 // Loading and saving print/PDF page setup. The worker reaches this when it
 // generates edition artifacts, so relative value imports carry explicit
@@ -56,16 +57,8 @@ export async function saveStoryPageSetup(
 	storyId: string,
 	patch: Partial<Record<keyof PageSetup, string | number | boolean | null>>
 ) {
-	const set: Record<string, string | number | boolean> = {};
-	const clear: string[] = [];
-	for (const [key, value] of Object.entries(patch)) {
-		if (value === undefined) continue;
-		if (value === null) clear.push(key);
-		else set[key] = value;
-	}
-	let expression = sql`${stories.pageSetup} || ${JSON.stringify(set)}::jsonb`;
-	for (const key of clear) {
-		expression = sql`(${expression}) - ${key}::text`;
-	}
-	await db.update(stories).set({ pageSetup: expression }).where(eq(stories.id, storyId));
+	await db
+		.update(stories)
+		.set({ pageSetup: jsonbMergePatch(stories.pageSetup, patch) })
+		.where(eq(stories.id, storyId));
 }

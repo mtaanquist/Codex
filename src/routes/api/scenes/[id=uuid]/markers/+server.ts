@@ -4,15 +4,16 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { createMarker } from '$lib/server/markers';
+import { readJson } from '$lib/server/validation';
 
 // Turns the editor's current selection into a checkable marker.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
-	const payload = (await request.json()) as {
+	const payload = await readJson<{
 		anchorStart?: unknown;
 		anchorEnd?: unknown;
 		bodyMd?: unknown;
-	};
+	}>(request);
 	if (typeof payload.anchorStart !== 'number' || typeof payload.anchorEnd !== 'number') {
 		error(400, 'anchorStart and anchorEnd must be numbers');
 	}

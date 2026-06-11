@@ -14,7 +14,8 @@ import {
 	REVIEWER_DIGEST_QUEUE,
 	USER_EXPORT_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE
+	ASSISTANT_SUMMARIES_QUEUE,
+	DIGEST_DELAY_SECONDS
 } from '../lib/server/queues.ts';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -60,6 +61,17 @@ const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@loc
 
 const db = drizzle(new pg.Pool({ connectionString }), { schema });
 const boss = new PgBoss(connectionString);
+
+// Queues each recipient's batched digest email after the shared delay.
+async function queueDigests(userIds: string[]) {
+	for (const id of userIds) {
+		await boss.send(
+			NOTIFICATION_DIGEST_QUEUE,
+			{ userId: id },
+			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: id }
+		);
+	}
+}
 
 boss.on('error', (error) => {
 	console.error('pg-boss error:', error);
@@ -160,13 +172,7 @@ await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 			title: 'Your export is ready to download.',
 			href: `/exports/${job.data.exportId}`
 		});
-		for (const id of digestUsers) {
-			await boss.send(
-				NOTIFICATION_DIGEST_QUEUE,
-				{ userId: id },
-				{ startAfter: 600, singletonKey: id }
-			);
-		}
+		await queueDigests(digestUsers);
 		console.log(`export: ${job.data.exportId} ready`);
 	}
 });
@@ -207,15 +213,7 @@ await boss.work<{ userId: string; storyId: string; chapterId?: string }>(
 				title,
 				href
 			});
-			// Queue the recipient's batched email; 600s matches jobs.ts
-			// DIGEST_DELAY_SECONDS (not importable here - jobs.ts reads $env).
-			for (const id of digestUsers) {
-				await boss.send(
-					NOTIFICATION_DIGEST_QUEUE,
-					{ userId: id },
-					{ startAfter: 600, singletonKey: id }
-				);
-			}
+			await queueDigests(digestUsers);
 			console.log(
 				`assistant review: story ${storyId} - ${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`
 			);
@@ -257,13 +255,7 @@ await boss.work<{ userId: string; storyId: string }>(ASSISTANT_SUMMARIES_QUEUE, 
 			title,
 			href
 		});
-		for (const id of digestUsers) {
-			await boss.send(
-				NOTIFICATION_DIGEST_QUEUE,
-				{ userId: id },
-				{ startAfter: 600, singletonKey: id }
-			);
-		}
+		await queueDigests(digestUsers);
 		console.log(
 			`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
 		);

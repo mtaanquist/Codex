@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import { publicationAssets, publications, stories, users } from './db/schema';
 import { gatherStory } from './export';
 import { findAssetReferences } from '$lib/markdown';
+import { isUniqueViolation } from './db-errors.ts';
 
 // Publishing freezes the story's current prose into an edition; the
 // public reading pages serve only these snapshots, never live drafts.
@@ -92,7 +93,7 @@ export async function publishStory(
 	} catch (error) {
 		// The partial unique index caught a concurrent publish of the same
 		// story; the loser rolls back rather than leaving two current rows.
-		if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
+		if (isUniqueViolation(error)) {
 			return { ok: false, reason: 'another publish just happened; reload and try again' };
 		}
 		throw error;
