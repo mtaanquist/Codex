@@ -15,6 +15,14 @@ import {
 	type Theme
 } from '$lib/appearance';
 import { NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
+import {
+	clampLineSpacingCm,
+	isLineSpacing,
+	isPageFont,
+	sanitiseFontName,
+	type LineSpacing,
+	type PageFont
+} from '$lib/page-setup';
 
 export type UserPreferences = {
 	entityAutocomplete: AutocompleteMode;
@@ -46,6 +54,14 @@ export type UserPreferences = {
 	// Per-kind notification channels (the bell and the email digest), both
 	// on unless turned off.
 	notifications: NotificationMatrix;
+	// How the writing surface looks: the editor's own font and line spacing,
+	// kept separate from page setup, which is the print/export typesetting.
+	// The default alignment is not here; it rides with page setup because it
+	// is content (a per-paragraph marker) that travels into the export.
+	editorFont: PageFont;
+	editorFontCustom: string;
+	editorLineSpacing: LineSpacing;
+	editorLineSpacingCm: number;
 	// The colour theme and accent applied across the app.
 	theme: Theme;
 	// Which concrete palette "Follow system" resolves to on each side of the
@@ -93,6 +109,10 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 			typeof raw.writingLanguage === 'string' && LANGUAGE_TAG.test(raw.writingLanguage)
 				? raw.writingLanguage
 				: '',
+		editorFont: isPageFont(raw.editorFont) ? raw.editorFont : 'default',
+		editorFontCustom: sanitiseFontName(raw.editorFontCustom),
+		editorLineSpacing: isLineSpacing(raw.editorLineSpacing) ? raw.editorLineSpacing : 'normal',
+		editorLineSpacingCm: clampLineSpacingCm(raw.editorLineSpacingCm),
 		sessionStreak: raw.sessionStreak === 'hidden' ? 'hidden' : 'shown',
 		dailyWordGoal: normaliseWordGoal(raw.dailyWordGoal),
 		notifications: normaliseNotifications(raw.notifications),

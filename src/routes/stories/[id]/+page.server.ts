@@ -160,9 +160,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		// The user's preferences with this story's overrides applied.
 		storyPreferences(db, locals.user!.id, story.id),
 		listTrashedScenes(db, story.id),
-		// The preview honours the story's scene break and paragraph style so it
-		// matches the export.
-		view === 'preview' ? storyPageSetup(db, story.id) : Promise.resolve(null),
+		// Loaded for every editor view, not just preview: the editor shows the
+		// story's default text alignment, and the preview also honours the scene
+		// break and paragraph style so it matches the export.
+		storyPageSetup(db, story.id),
 		// What Assistant UI to render: the tab, whether surfaces are live, the
 		// per-story mute, the Assistant's name. Absent entirely when not enabled,
 		// the way asset-backed features hide when no bucket is configured.

@@ -32,8 +32,9 @@ test('page setup line spacing reflects in the story preview', async ({ page }) =
 	// Set this story to double line spacing and a wide gutter.
 	await page.goto(`${storyPath}/settings/pagesetup`);
 	await page.locator('select[name="lineSpacing"]').selectOption('double');
+	// Page setup auto-saves on change; wait for the confirmation before leaving.
 	await page.locator('select[name="gutter"]').selectOption('wide');
-	await page.getByRole('button', { name: 'Save page setup' }).click();
+	await expect(page.getByText('Saved.')).toBeVisible();
 
 	// The preview shows the prose at double spacing and a constrained column.
 	await page.goto(`${storyPath}?view=preview`);

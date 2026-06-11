@@ -92,6 +92,41 @@ describe('appearance preferences', () => {
 	});
 });
 
+describe('editor appearance preferences', () => {
+	it('defaults the writing font and line spacing', async () => {
+		const prefs = await userPreferences(db, userId);
+		expect(prefs.editorFont).toBe('default');
+		expect(prefs.editorFontCustom).toBe('');
+		expect(prefs.editorLineSpacing).toBe('normal');
+		expect(prefs.editorLineSpacingCm).toBe(0.7);
+	});
+
+	it('round-trips a custom writing font and line spacing, sanitising and clamping', async () => {
+		await savePreferences(db, userId, {
+			editorFont: 'custom',
+			editorFontCustom: '  EB Garamond  ',
+			editorLineSpacing: 'custom',
+			editorLineSpacingCm: 5
+		});
+		const prefs = await userPreferences(db, userId);
+		expect(prefs.editorFont).toBe('custom');
+		expect(prefs.editorFontCustom).toBe('EB Garamond');
+		expect(prefs.editorLineSpacing).toBe('custom');
+		// Out-of-range centimetres clamp to the allowed maximum.
+		expect(prefs.editorLineSpacingCm).toBe(2);
+	});
+
+	it('falls back when a stored writing font is unrecognised', async () => {
+		await db
+			.update(users)
+			.set({ preferences: { editorFont: 'wingdings', editorLineSpacing: 'triple' } })
+			.where(eq(users.id, userId));
+		const prefs = await userPreferences(db, userId);
+		expect(prefs.editorFont).toBe('default');
+		expect(prefs.editorLineSpacing).toBe('normal');
+	});
+});
+
 describe('story preference overrides', () => {
 	it('a story override wins over the account setting', async () => {
 		await savePreferences(db, userId, { entityAutocomplete: 'ghost' });

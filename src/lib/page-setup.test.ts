@@ -3,12 +3,35 @@ import {
 	DEFAULT_PAGE_SETUP,
 	contentWidthCss,
 	fontFamilyCss,
+	fontFamilyFor,
+	isLineSpacing,
+	isPageFont,
 	lineHeightCss,
+	lineHeightFor,
 	mergePageSetup,
 	normalisePageSetup,
 	pageCss,
 	pdfRenderOptions
 } from './page-setup';
+
+describe('font and line-spacing validators and builders', () => {
+	it('recognises the known keys and rejects the rest', () => {
+		expect(isPageFont('custom')).toBe(true);
+		expect(isPageFont('default')).toBe(true);
+		expect(isPageFont('wingdings')).toBe(false);
+		expect(isLineSpacing('custom')).toBe(true);
+		expect(isLineSpacing('triple')).toBe(false);
+	});
+
+	it('builds a family and line height from raw choices', () => {
+		expect(fontFamilyFor('custom', 'EB Garamond')).toBe(
+			"'EB Garamond', Georgia, 'Times New Roman', serif"
+		);
+		expect(fontFamilyFor('default', '')).toBe("Georgia, 'Times New Roman', serif");
+		expect(lineHeightFor('double', 0.7)).toBe('2.1');
+		expect(lineHeightFor('custom', 0.85)).toBe('0.85cm');
+	});
+});
 
 describe('normalisePageSetup', () => {
 	it('returns the defaults for an empty record', () => {

@@ -30,7 +30,7 @@ Write markdown and it styles in place: **bold** shows bold, # headings show larg
 
 The four alignment buttons set how the paragraphs under the selection sit on the page: left, centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; the left button removes it, so the paragraph follows the default alignment.
 
-Paragraphs without a marker use the default text alignment from your page setup (left unless you change it). The writing surface also shows the font and line spacing from your page setup, so what you see while writing matches the export. Set these under Page setup on your account page, or per story in its settings.
+Paragraphs without a marker use the default text alignment from your page setup (left unless you change it), set under Page setup on your account page or per story in its settings. The writing area's own font and line spacing are separate: set those under Editor on your account page, so you can write in one font on screen and export in another.
 
 The two indent buttons beside them step the selected paragraphs in from the left and back out again (Ctrl+] and Ctrl+[, Cmd on a Mac). Like alignment, the indent is written as a marker (\indent) that rides with the text and shows everywhere, including exports.
 
