@@ -537,6 +537,8 @@
 }
 /* Chapters collapse on click and act on right-click; only scenes drag,
    so the grab cursor stays off here. */
+/* The rows render as buttons (Review) or anchors (Write), so the recipe
+   neutralises both elements' chrome here instead of per screen. */
 .chapter-row {
 	display: flex;
 	align-items: center;
@@ -545,6 +547,13 @@
 	border-radius: 8px;
 	cursor: pointer;
 	user-select: none;
+	width: 100%;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: var(--text);
+	text-align: left;
+	text-decoration: none;
 }
 .chapter-row:hover {
 	background: var(--bg-hover);
@@ -598,6 +607,13 @@
 	cursor: grab;
 	user-select: none;
 	position: relative;
+	width: 100%;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: var(--text);
+	text-align: left;
+	text-decoration: none;
 }
 .scene-row:active {
 	cursor: grabbing;

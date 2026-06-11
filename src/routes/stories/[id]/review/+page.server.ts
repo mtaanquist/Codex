@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		id: scene.id!,
 		chapterId: scene.chapterId,
 		title: scene.title,
-		status: scene.status ?? 'todo',
+		status: scene.status,
 		bodyMd: scene.bodyMd
 	}));
 	// The author sees the full cast in their own review, like the editor.

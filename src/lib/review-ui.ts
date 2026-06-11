@@ -30,6 +30,11 @@ export function authorColor(author: AuthorRef): string {
 }
 
 // One or two initials for the avatar.
+// The byline role chip next to an author's name.
+export function roleLabel(author: AuthorRef): string {
+	return author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer';
+}
+
 export function authorInitials(name: string): string {
 	const parts = name.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) return '?';
@@ -304,4 +309,16 @@ export function suggestionSnippet(suggestion: { original: string; replacement: s
 	if (kind === 'insert') return `Insert "${clip(suggestion.replacement, 40)}"`;
 	if (kind === 'delete') return `Delete "${clip(suggestion.original, 40)}"`;
 	return `"${clip(suggestion.original, 22)}" to "${clip(suggestion.replacement, 22)}"`;
+}
+
+// Nudges stacked margin markers apart so each stays clickable: sorted by
+// top, each marker sits at least the spacing below the previous one.
+export function nudgeMarkers<M extends { top: number }>(markers: M[], spacing = 32): M[] {
+	const sorted = [...markers].sort((a, b) => a.top - b.top);
+	let last = -Infinity;
+	for (const marker of sorted) {
+		if (marker.top < last + spacing) marker.top = last + spacing;
+		last = marker.top;
+	}
+	return sorted;
 }

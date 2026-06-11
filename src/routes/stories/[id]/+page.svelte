@@ -26,6 +26,11 @@
 	import { dismiss } from '$lib/dismiss';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
+	import {
+		toggleCommandMarkers as toggleCommandMarkersView,
+		toggleNonPrintingMarks
+	} from '$lib/editor-view';
+	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
 
 	let { data }: { data: PageData } = $props();
 
@@ -37,20 +42,11 @@
 	let nonPrintingMarks = $state(data.preferences.nonPrintingMarks);
 	// svelte-ignore state_referenced_locally
 	let commandMarkers = $state(data.preferences.commandMarkers);
-	function persistEditorView(patch: { nonPrintingMarks?: string; commandMarkers?: string }) {
-		void fetch('/api/editor-view', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(patch)
-		}).catch(() => {});
-	}
 	function toggleNonPrinting() {
-		nonPrintingMarks = nonPrintingMarks === 'shown' ? 'hidden' : 'shown';
-		persistEditorView({ nonPrintingMarks });
+		nonPrintingMarks = toggleNonPrintingMarks(nonPrintingMarks);
 	}
 	function toggleCommandMarkers() {
-		commandMarkers = commandMarkers === 'shown' ? 'hidden' : 'shown';
-		persistEditorView({ commandMarkers });
+		commandMarkers = toggleCommandMarkersView(commandMarkers);
 	}
 
 	// Where the writer was in the open scene, kept with the history entry:
@@ -585,14 +581,7 @@
 	// While filtering, chapters stay open and dragging is off.
 	let sidebarQuery = $state('');
 	const sceneQuery = $derived(sidebarQuery.trim().toLowerCase());
-	function nameMatches(title: string | null, fallback: string) {
-		return (title ?? fallback).toLowerCase().includes(sceneQuery);
-	}
-	const visibleOrphans = $derived(
-		sceneQuery === ''
-			? orphanScenes
-			: orphanScenes.filter((scene) => nameMatches(scene.title, 'Untitled scene'))
-	);
+	const visibleOrphans = $derived(filterOrphanScenes(sceneQuery, orphanScenes));
 
 	function docScenes(chapterId: string | null) {
 		return (data.storyDoc ?? []).filter((scene) => scene.chapterId === chapterId);
@@ -847,15 +836,15 @@
 					</div>
 					<div class="chapters">
 						{#each data.chapters as chapter, index (chapter.id)}
-							{@const chapterMatch =
-								sceneQuery === '' || nameMatches(chapter.title, `Chapter ${index + 1}`)}
-							{@const list = chapterMatch
-								? chapterScenes(chapter.id)
-								: chapterScenes(chapter.id).filter((scene) =>
-										nameMatches(scene.title, 'Untitled scene')
-									)}
+							{@const filtered = filterChapter(
+								sceneQuery,
+								chapter.title,
+								`Chapter ${index + 1}`,
+								chapterScenes(chapter.id)
+							)}
+							{@const list = filtered.scenes}
 							{@const open = sceneQuery !== '' || !collapsed.has(chapter.id)}
-							{#if chapterMatch || list.length > 0}
+							{#if filtered.visible}
 								<div class="chapter">
 									{#if renamingChapterId === chapter.id}
 										<form class="chapter-rename" method="POST" action="?/renameChapter">
@@ -982,7 +971,7 @@
 								</div>
 							</div>
 						{/if}
-						{#if sceneQuery !== '' && visibleOrphans.length === 0 && !data.chapters.some((chapter, index) => nameMatches(chapter.title, `Chapter ${index + 1}`) || chapterScenes(chapter.id).some( (scene) => nameMatches(scene.title, 'Untitled scene') ))}
+						{#if sceneQuery !== '' && visibleOrphans.length === 0 && !data.chapters.some((chapter, index) => filterChapter(sceneQuery, chapter.title, `Chapter ${index + 1}`, chapterScenes(chapter.id)).visible)}
 							<div class="search-empty">No chapters or scenes match.</div>
 						{/if}
 						{#if sceneQuery === ''}
@@ -1653,23 +1642,8 @@
 	.row-menu-item.turn-down :global(svg) {
 		transform: rotate(90deg);
 	}
-	.chapter-row {
-		width: 100%;
-		border: 0;
-		background: none;
-		text-align: left;
-	}
-	/* The button reset above outranks the theme's hover by cascade order,
-	   so restate it. */
-	.chapter-row:hover {
-		background: var(--bg-hover);
-	}
 	.chapter-row.as-label:hover {
 		background: none;
-	}
-	.scene-row {
-		text-decoration: none;
-		color: inherit;
 	}
 	main.pane.center {
 		scroll-behavior: smooth;

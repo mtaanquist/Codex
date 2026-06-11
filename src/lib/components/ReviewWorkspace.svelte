@@ -252,7 +252,7 @@
 						? { write: seg.writeHref, plan: seg.planHref, notes: seg.notesHref }
 						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
 				/>
-				<SidebarSearch bind:query placeholder="Search chapters and scenes..." />
+				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />
 			</div>
 			<div class="left-scroll">
 				{#if book}

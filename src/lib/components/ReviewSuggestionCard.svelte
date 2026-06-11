@@ -2,8 +2,10 @@
 	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
+	import ReviewReplyRow from './ReviewReplyRow.svelte';
 	import { formatDateTime } from '$lib/format';
 	import {
+		roleLabel,
 		authorColor,
 		suggestionAuthor,
 		suggestionKind,
@@ -42,9 +44,7 @@
 	const color = $derived(authorColor(author));
 	const kind = $derived(suggestionKind(suggestion));
 	const verb = $derived(kind === 'insert' ? 'Insert' : kind === 'delete' ? 'Delete' : 'Replace');
-	const roleLabel = $derived(
-		author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer'
-	);
+	const byline = $derived(roleLabel(author));
 	const pending = $derived(suggestion.status === 'pending');
 	// The author works an open suggestion straight from the card corner.
 	const canDecide = $derived(role === 'author' && pending);
@@ -98,7 +98,7 @@
 		<ReviewAvatar {author} />
 		<div class="rv-who">
 			<div class="rv-who-name">
-				{suggestion.reviewerName} <span class="rv-role">{roleLabel}</span>
+				{suggestion.reviewerName} <span class="rv-role">{byline}</span>
 			</div>
 			<div class="rv-when">{formatDateTime(suggestion.createdAt)}</div>
 		</div>
@@ -157,23 +157,7 @@
 	{#if replies.length > 0}
 		<div class="rv-replies">
 			{#each replies as reply (reply.id)}
-				<div class="rv-reply-row">
-					<ReviewAvatar
-						author={{
-							isOwner: reply.isOwner,
-							isAssistant: reply.isAssistant,
-							name: reply.authorName
-						}}
-						size={20}
-					/>
-					<div class="rv-reply-main">
-						<div class="rv-reply-head">
-							<span class="rv-reply-name">{reply.authorName}</span>
-							<span class="rv-reply-when">{formatDateTime(reply.createdAt)}</span>
-						</div>
-						<div class="rv-reply-body">{reply.body}</div>
-					</div>
-				</div>
+				<ReviewReplyRow {reply} />
 			{/each}
 		</div>
 	{/if}

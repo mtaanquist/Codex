@@ -53,21 +53,3 @@
 		onSaveStatus={(status) => (saveStatus = status)}
 	/>
 </div>
-
-<style>
-	.review-error {
-		position: fixed;
-		top: 60px;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 50;
-		margin: 0;
-		padding: 8px 16px;
-		background: var(--danger-soft);
-		color: var(--danger);
-		border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
-		border-radius: var(--radius-md);
-		font-size: 13px;
-		box-shadow: var(--shadow);
-	}
-</style>
