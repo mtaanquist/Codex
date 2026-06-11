@@ -6,7 +6,7 @@
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { reviewSceneWithAssistant, startSummariesJob } from '$lib/assistant-actions';
-	import type { SearchResult } from '$lib/server/search';
+	import type { SearchResult } from '$lib/wire-types';
 
 	// The command palette: Ctrl+K (or the topbar button) opens it; type to
 	// search everything you own and to filter the commands that fit where

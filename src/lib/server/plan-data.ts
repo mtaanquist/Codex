@@ -1,3 +1,4 @@
+import type { EntityCardData } from '$lib/wire-types';
 import { and, asc, count, eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
@@ -158,20 +159,7 @@ export async function entityMentionCount(
 	return row?.total ?? 0;
 }
 
-export type EntityCardData = {
-	id: string;
-	kind: EntityKind;
-	name: string;
-	categoryName: string | null;
-	categoryColor: string | null;
-	badgeColor: string | null;
-	badgeAssetId: string | null;
-	aliases: string[];
-	summaryMd: string | null;
-	bodyMd: string;
-	details: { label: string; value: string }[];
-	related: { id: string; name: string; kind: EntityKind; label: string }[];
-};
+export type { EntityCardData } from '$lib/wire-types';
 
 // An entity by id with its category, details, and typed relationships, for
 // the editor's read-only entity card. Owner-scoped, so a foreign id resolves
