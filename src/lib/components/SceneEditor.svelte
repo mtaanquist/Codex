@@ -25,6 +25,7 @@
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
+	import type { ViewItem } from './ViewMenu.svelte';
 	import Icon from './Icon.svelte';
 
 	let {
@@ -52,12 +53,11 @@
 		onSplitScene,
 		onFocus,
 		storyView,
-		previewHref,
+		viewMenu,
 		nonPrintingMarks = 'hidden',
 		commandMarkers = 'shown',
 		onToggleNonPrinting,
 		onToggleCommandMarkers,
-		onEnterFocus,
 		onStatus
 	}: {
 		sceneId: string;
@@ -115,8 +115,8 @@
 		onFocus?: () => void;
 		// Editor-view controls carried on the formatting bar.
 		storyView?: { active: boolean; toggleHref: string };
-		// When set, a Preview button on the bar opens the read-only export view.
-		previewHref?: string;
+		// The View dropdown (Edit, Preview, Focus, Print) on the formatting bar.
+		viewMenu?: ViewItem[];
 		// The prose-view toggles, shared across every editor in the story. The
 		// toggle callbacks are only passed where the toolbar is shown (the
 		// scene editor); the stitched editors just take the values.
@@ -124,7 +124,6 @@
 		commandMarkers?: MarkVisibility;
 		onToggleNonPrinting?: () => void;
 		onToggleCommandMarkers?: () => void;
-		onEnterFocus?: () => void;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -596,17 +595,15 @@
 	<div class="md-editor">
 		<EditorToolbar
 			view={() => view}
-			modeLabel={editingMode === 'rich' ? 'Rich text' : 'Markdown'}
 			{onSplitScene}
 			{storyView}
-			{previewHref}
+			{viewMenu}
 			nonPrintingActive={nonPrintingMarks === 'shown'}
 			{onToggleNonPrinting}
 			commandMarkersActive={commandMarkers === 'shown'}
 			{onToggleCommandMarkers}
 			onCoauthor={assistantContinuation && storyId ? toggleCoauthor : undefined}
 			coauthorActive={coauthorOpen}
-			{onEnterFocus}
 		/>
 		{#if coauthorOpen}
 			<div class="coauthor-panel">

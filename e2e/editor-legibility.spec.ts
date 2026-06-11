@@ -56,7 +56,8 @@ test('Enter makes a paragraph; the view toggles show marks and persist', async (
 	expect(await viewChecked(page, /command markers/)).toBe(true);
 
 	// The Preview confirms two separate paragraphs, not one merged block.
-	await page.locator('.md-toolbar a.md-preview').click();
+	await page.getByTitle('Switch view').click();
+	await page.getByRole('menuitem', { name: 'Preview' }).click();
 	await expect(page).toHaveURL(/view=preview/);
 	const paras = page.locator('.story-preview p');
 	await expect(paras).toHaveCount(2);

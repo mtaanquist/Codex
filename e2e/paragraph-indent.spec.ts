@@ -50,7 +50,8 @@ test('a paragraph can be indented from the toolbar, in the editor and preview', 
 	await saved;
 
 	// The preview renders the indent as a left margin, marker gone.
-	await page.locator('.md-toolbar a.md-preview').click();
+	await page.getByTitle('Switch view').click();
+	await page.getByRole('menuitem', { name: 'Preview' }).click();
 	await expect(page).toHaveURL(/view=preview/);
 	const para = page.locator('.story-preview p', { hasText: 'A paragraph.' });
 	await expect(para).toHaveAttribute('style', /margin-left: calc\(1 \* 1\.5em\)/);
