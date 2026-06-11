@@ -3,11 +3,18 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
+	import { editorStyleVars } from '$lib/page-setup';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let saveStatus = $state<SaveStatus>('idle');
+
+	// The editable centre matches the Write editor's font, line spacing, and
+	// default alignment.
+	const editorStyle = $derived(
+		editorStyleVars({ ...data.preferences, textAlign: data.pageSetup.textAlign })
+	);
 
 	// The author's own review pass: read the manuscript scene by scene, leave
 	// comments and suggested edits, and work through everything guests have
@@ -49,6 +56,7 @@
 		{entityHref}
 		nonPrintingMarks={data.preferences.nonPrintingMarks}
 		commandMarkers={data.preferences.commandMarkers}
+		{editorStyle}
 		assistant={data.assistant.surfacesEnabled ? { name: data.assistant.name } : null}
 		onSaveStatus={(status) => (saveStatus = status)}
 	/>
