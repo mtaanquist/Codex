@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { renderMarkdown } from '$lib/markdown';
-	import { PAGE_FONTS, contentWidthCss, lineHeight, type PageSetup } from '$lib/page-setup';
+	import { contentWidthCss, fontFamilyCss, lineHeightCss, type PageSetup } from '$lib/page-setup';
 	import { focusMode } from '$lib/focus-mode.svelte';
 
 	let {
@@ -39,8 +39,9 @@
 		if (setup) {
 			css +=
 				` max-width: ${contentWidthCss(setup)};` +
-				` font-family: ${PAGE_FONTS[setup.font].css};` +
-				` font-size: ${setup.fontSize}pt; line-height: ${lineHeight(setup)};`;
+				` font-family: ${fontFamilyCss(setup)};` +
+				` font-size: ${setup.fontSize}pt; line-height: ${lineHeightCss(setup)};` +
+				` --page-align: ${setup.textAlign};`;
 		}
 		return css;
 	});
@@ -141,6 +142,7 @@
 	.story-preview :global(p) {
 		margin: 0 0 0.2rem;
 		text-indent: 1.5em;
+		text-align: var(--page-align, left);
 	}
 	.story-preview.spaced :global(p) {
 		margin: 0 0 0.85em;

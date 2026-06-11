@@ -8,10 +8,13 @@
 	import {
 		FONT_SIZES,
 		GUTTERS,
+		LINE_SPACING_CM_MAX,
+		LINE_SPACING_CM_MIN,
 		LINE_SPACINGS,
 		PAGE_FONTS,
 		PAGE_MARGINS,
-		PAGE_SIZES
+		PAGE_SIZES,
+		TEXT_ALIGNS
 	} from '$lib/page-setup';
 	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
@@ -35,6 +38,12 @@
 	// every save, so the initial value is the current one.
 	// svelte-ignore state_referenced_locally
 	let sceneBreakMode = $state('sceneBreak' in data.pageSetupOverrides ? 'custom' : '');
+	// Page-setup selects that reveal a companion input; '' means the story
+	// inherits the account setting.
+	// svelte-ignore state_referenced_locally
+	let stFont = $state((data.pageSetupOverrides.font as string) ?? '');
+	// svelte-ignore state_referenced_locally
+	let stLineSpacing = $state((data.pageSetupOverrides.lineSpacing as string) ?? '');
 
 	const coverColor = $derived(entityColor(data.story.title));
 
@@ -390,12 +399,7 @@
 								</div>
 								<div class="field">
 									<label for="st-font">Font</label>
-									<select
-										id="st-font"
-										class="select"
-										name="font"
-										value={(data.pageSetupOverrides.font as string) ?? ''}
-									>
+									<select id="st-font" class="select" name="font" bind:value={stFont}>
 										<option value="">
 											Use my account setting ({PAGE_FONTS[data.accountPageSetup.font].label})
 										</option>
@@ -403,6 +407,20 @@
 											<option {value}>{font.label}</option>
 										{/each}
 									</select>
+									{#if stFont === 'custom'}
+										<input
+											class="input"
+											type="text"
+											name="fontCustom"
+											maxlength="50"
+											placeholder="Font name, e.g. Garamond"
+											value={(data.pageSetupOverrides.fontCustom as string) ?? ''}
+										/>
+										<p class="field-hint">
+											Type the name of a font installed on the reading device. If it is not found,
+											the default font is used instead.
+										</p>
+									{/if}
 								</div>
 								<div class="field">
 									<label for="st-fontsize">Font size</label>
@@ -444,13 +462,43 @@
 									id="st-linespacing"
 									class="select"
 									name="lineSpacing"
-									value={(data.pageSetupOverrides.lineSpacing as string) ?? ''}
+									bind:value={stLineSpacing}
 								>
 									<option value="">
 										Use my account setting ({LINE_SPACINGS[data.accountPageSetup.lineSpacing]
 											.label})
 									</option>
 									{#each Object.entries(LINE_SPACINGS) as [value, option] (value)}
+										<option {value}>{option.label}</option>
+									{/each}
+								</select>
+								{#if stLineSpacing === 'custom'}
+									<input
+										class="input"
+										type="number"
+										name="lineSpacingCm"
+										min={LINE_SPACING_CM_MIN}
+										max={LINE_SPACING_CM_MAX}
+										step="0.05"
+										value={(data.pageSetupOverrides.lineSpacingCm as number) ?? ''}
+									/>
+									<p class="field-hint">
+										The height of each line in centimetres, from {LINE_SPACING_CM_MIN} to {LINE_SPACING_CM_MAX}.
+									</p>
+								{/if}
+							</div>
+							<div class="field">
+								<label for="st-align">Text alignment</label>
+								<select
+									id="st-align"
+									class="select"
+									name="textAlign"
+									value={(data.pageSetupOverrides.textAlign as string) ?? ''}
+								>
+									<option value="">
+										Use my account setting ({TEXT_ALIGNS[data.accountPageSetup.textAlign].label})
+									</option>
+									{#each Object.entries(TEXT_ALIGNS) as [value, option] (value)}
 										<option {value}>{option.label}</option>
 									{/each}
 								</select>

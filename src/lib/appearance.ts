@@ -2,13 +2,41 @@
 // the accent colour. Kept free of any browser- or server-only imports so both
 // the layout that applies them and the account form that saves them can use it.
 
-export type Theme = 'system' | 'light' | 'dark';
+// A concrete palette applied to the document via the data-theme attribute.
+// 'warm' is a warmer light palette alongside the plain 'light'.
+export type ConcreteTheme = 'light' | 'warm' | 'dark';
+// The account choice: a concrete palette, or 'system' to follow the OS and
+// resolve through the two mappings below.
+export type Theme = 'system' | ConcreteTheme;
 
-export const THEMES: Theme[] = ['system', 'light', 'dark'];
+export const THEMES: Theme[] = ['system', 'light', 'warm', 'dark'];
 export const DEFAULT_THEME: Theme = 'system';
 
+// The concrete palettes offered for each side of the system preference.
+export const LIGHT_THEMES: ConcreteTheme[] = ['light', 'warm'];
+export const DARK_THEMES: ConcreteTheme[] = ['dark'];
+export const DEFAULT_SYSTEM_LIGHT: ConcreteTheme = 'light';
+export const DEFAULT_SYSTEM_DARK: ConcreteTheme = 'dark';
+
 export function isTheme(value: unknown): value is Theme {
-	return value === 'system' || value === 'light' || value === 'dark';
+	return value === 'system' || value === 'light' || value === 'warm' || value === 'dark';
+}
+
+export function isConcreteTheme(value: unknown): value is ConcreteTheme {
+	return value === 'light' || value === 'warm' || value === 'dark';
+}
+
+// The palette to apply: an explicit choice as-is, or the matching system
+// mapping when following the OS. Shared by the client, the pre-paint script's
+// logic, and the tests so they never disagree.
+export function resolveTheme(
+	theme: Theme,
+	systemLight: ConcreteTheme,
+	systemDark: ConcreteTheme,
+	prefersDark: boolean
+): ConcreteTheme {
+	if (theme !== 'system') return theme;
+	return prefersDark ? systemDark : systemLight;
 }
 
 // The accent presets offered as swatches, matching the design. A custom colour

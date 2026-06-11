@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_PAGE_SETUP,
 	contentWidthCss,
+	fontFamilyCss,
+	lineHeightCss,
 	mergePageSetup,
 	normalisePageSetup,
 	pageCss,
@@ -21,6 +23,7 @@ describe('normalisePageSetup', () => {
 			fontSize: 11,
 			paragraphStyle: 'spaced',
 			lineSpacing: 'double',
+			textAlign: 'justify',
 			gutter: 'wide',
 			sceneBreak: ' ~ ~ ~ ',
 			pageNumbers: true,
@@ -30,9 +33,12 @@ describe('normalisePageSetup', () => {
 			pageSize: '6x9',
 			margins: 'wide',
 			font: 'times',
+			fontCustom: '',
 			fontSize: 11,
 			paragraphStyle: 'spaced',
 			lineSpacing: 'double',
+			lineSpacingCm: 0.7,
+			textAlign: 'justify',
 			gutter: 'wide',
 			sceneBreak: '~ ~ ~',
 			pageNumbers: true,
@@ -47,18 +53,68 @@ describe('normalisePageSetup', () => {
 			font: 'comic-sans',
 			fontSize: 7,
 			lineSpacing: 'triple',
+			textAlign: 'middle',
 			gutter: 'huge'
 		});
 		expect(setup.pageSize).toBe('a4');
-		expect(setup.font).toBe('georgia');
+		expect(setup.font).toBe('default');
 		expect(setup.fontSize).toBe(12);
 		expect(setup.lineSpacing).toBe('normal');
+		expect(setup.textAlign).toBe('left');
 		expect(setup.gutter).toBe('none');
 	});
 
 	it('caps a runaway scene break and allows blank', () => {
 		expect(normalisePageSetup({ sceneBreak: 'x'.repeat(60) }).sceneBreak).toHaveLength(20);
 		expect(normalisePageSetup({ sceneBreak: '' }).sceneBreak).toBe('');
+	});
+
+	it('sanitises a custom font name to a safe charset and length', () => {
+		expect(normalisePageSetup({ font: 'custom', fontCustom: '  EB Garamond  ' }).fontCustom).toBe(
+			'EB Garamond'
+		);
+		// Quotes, angle brackets, and other punctuation are stripped.
+		expect(normalisePageSetup({ fontCustom: 'Bad";}</style>' }).fontCustom).toBe('Badstyle');
+		expect(normalisePageSetup({ fontCustom: 'x'.repeat(80) }).fontCustom).toHaveLength(50);
+		expect(normalisePageSetup({ fontCustom: 42 }).fontCustom).toBe('');
+	});
+
+	it('clamps a custom line spacing in centimetres', () => {
+		expect(normalisePageSetup({ lineSpacing: 'custom', lineSpacingCm: 0.9 }).lineSpacingCm).toBe(
+			0.9
+		);
+		// Out-of-range values clamp to the allowed bounds.
+		expect(normalisePageSetup({ lineSpacingCm: 5 }).lineSpacingCm).toBe(2);
+		expect(normalisePageSetup({ lineSpacingCm: 0.05 }).lineSpacingCm).toBe(0.3);
+		// A non-number falls back to the default.
+		expect(normalisePageSetup({ lineSpacingCm: 'tall' }).lineSpacingCm).toBe(0.7);
+	});
+});
+
+describe('fontFamilyCss', () => {
+	it('renders the default and named families from the table', () => {
+		expect(fontFamilyCss(DEFAULT_PAGE_SETUP)).toBe("Georgia, 'Times New Roman', serif");
+		expect(fontFamilyCss({ ...DEFAULT_PAGE_SETUP, font: 'sans' })).toContain('Arial');
+	});
+
+	it('quotes a custom family ahead of the fallback stack, and falls back when blank', () => {
+		expect(
+			fontFamilyCss({ ...DEFAULT_PAGE_SETUP, font: 'custom', fontCustom: 'EB Garamond' })
+		).toBe("'EB Garamond', Georgia, 'Times New Roman', serif");
+		// Custom selected but no name typed: the default stack stands.
+		expect(fontFamilyCss({ ...DEFAULT_PAGE_SETUP, font: 'custom', fontCustom: '' })).toBe(
+			"Georgia, 'Times New Roman', serif"
+		);
+	});
+});
+
+describe('lineHeightCss', () => {
+	it('returns a multiplier for presets and a length for a custom value', () => {
+		expect(lineHeightCss(DEFAULT_PAGE_SETUP)).toBe('1.6');
+		expect(lineHeightCss({ ...DEFAULT_PAGE_SETUP, lineSpacing: 'double' })).toBe('2.1');
+		expect(
+			lineHeightCss({ ...DEFAULT_PAGE_SETUP, lineSpacing: 'custom', lineSpacingCm: 0.9 })
+		).toBe('0.9cm');
 	});
 });
 
@@ -105,6 +161,25 @@ describe('pageCss', () => {
 		expect(pageCss({ ...DEFAULT_PAGE_SETUP, lineSpacing: 'double' })).toContain(
 			'line-height: 2.1;'
 		);
+	});
+
+	it('takes a custom line height in centimetres', () => {
+		expect(pageCss({ ...DEFAULT_PAGE_SETUP, lineSpacing: 'custom', lineSpacingCm: 0.9 })).toContain(
+			'line-height: 0.9cm;'
+		);
+	});
+
+	it('sets the default paragraph alignment, leaving the marker overrides intact', () => {
+		expect(pageCss(DEFAULT_PAGE_SETUP)).toContain('.chapter p { text-align: left;');
+		const justified = pageCss({ ...DEFAULT_PAGE_SETUP, textAlign: 'justify' });
+		expect(justified).toContain('.chapter p { text-align: justify;');
+		// The per-paragraph marker classes still carry their own alignment.
+		expect(justified).toContain('.chapter p.align-center { text-align: center;');
+	});
+
+	it('uses a quoted custom font ahead of the fallback stack', () => {
+		const css = pageCss({ ...DEFAULT_PAGE_SETUP, font: 'custom', fontCustom: 'EB Garamond' });
+		expect(css).toContain("font-family: 'EB Garamond', Georgia, 'Times New Roman', serif;");
 	});
 
 	it('emits mirrored @page margins for a binding gutter', () => {

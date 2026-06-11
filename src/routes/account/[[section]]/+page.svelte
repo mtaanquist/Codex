@@ -3,14 +3,17 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
-	import { ACCENT_PRESETS } from '$lib/appearance';
+	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
 	import {
 		FONT_SIZES,
 		GUTTERS,
+		LINE_SPACING_CM_MAX,
+		LINE_SPACING_CM_MIN,
 		LINE_SPACINGS,
 		PAGE_FONTS,
 		PAGE_MARGINS,
-		PAGE_SIZES
+		PAGE_SIZES,
+		TEXT_ALIGNS
 	} from '$lib/page-setup';
 	import { ADMIN_KINDS, NOTIFICATION_KINDS, NOTIFICATION_LABELS } from '$lib/notifications';
 	import { WRITING_LANGUAGES } from '$lib/writing-languages';
@@ -21,6 +24,13 @@
 	import { formatDateTime } from '$lib/format';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Page-setup selects that reveal a companion input: the custom font name
+	// and the custom line spacing in centimetres.
+	// svelte-ignore state_referenced_locally
+	let psFont = $state(data.pageSetup.font);
+	// svelte-ignore state_referenced_locally
+	let psLineSpacing = $state(data.pageSetup.lineSpacing);
 
 	type Section = 'profile' | 'security' | 'assistant' | 'display';
 
@@ -55,14 +65,20 @@
 	}
 	const linksJson = $derived(JSON.stringify(links.filter((link) => link.url.trim())));
 
+	const THEME_LABELS = { light: 'Light', warm: 'Warm', dark: 'Dark' } as const;
+
 	// Appearance preview: local state seeded from the saved preferences, applied
 	// live as the user edits. Saving persists it; the layout re-applies on load.
 	// svelte-ignore state_referenced_locally
 	let theme = $state(data.preferences.theme);
 	// svelte-ignore state_referenced_locally
+	let systemLightTheme = $state(data.preferences.systemLightTheme);
+	// svelte-ignore state_referenced_locally
+	let systemDarkTheme = $state(data.preferences.systemDarkTheme);
+	// svelte-ignore state_referenced_locally
 	let accent = $state(data.preferences.accent);
 	$effect(() => {
-		if (browser) applyAppearance(theme, accent);
+		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
 	});
 
 	// The Assistant's kill switch reads inverted: engaged (checked) means off.
@@ -1552,9 +1568,39 @@
 									<select id="theme-pref" class="select" name="theme" bind:value={theme}>
 										<option value="system">Follow system</option>
 										<option value="light">Light</option>
+										<option value="warm">Warm</option>
 										<option value="dark">Dark</option>
 									</select>
 								</div>
+
+								{#if theme === 'system'}
+									<div class="field">
+										<label for="sys-light">When my system is light, use</label>
+										<select
+											id="sys-light"
+											class="select"
+											name="systemLightTheme"
+											bind:value={systemLightTheme}
+										>
+											{#each LIGHT_THEMES as value (value)}
+												<option {value}>{THEME_LABELS[value]}</option>
+											{/each}
+										</select>
+									</div>
+									<div class="field">
+										<label for="sys-dark">When my system is dark, use</label>
+										<select
+											id="sys-dark"
+											class="select"
+											name="systemDarkTheme"
+											bind:value={systemDarkTheme}
+										>
+											{#each DARK_THEMES as value (value)}
+												<option {value}>{THEME_LABELS[value]}</option>
+											{/each}
+										</select>
+									</div>
+								{/if}
 
 								<div class="field" style="margin-bottom:0;">
 									<!-- svelte-ignore a11y_label_has_associated_control -->
@@ -1922,11 +1968,25 @@
 								</div>
 								<div class="field">
 									<label for="ps-font">Font</label>
-									<select id="ps-font" class="select" name="font" value={data.pageSetup.font}>
+									<select id="ps-font" class="select" name="font" bind:value={psFont}>
 										{#each Object.entries(PAGE_FONTS) as [value, font] (value)}
 											<option {value}>{font.label}</option>
 										{/each}
 									</select>
+									{#if psFont === 'custom'}
+										<input
+											class="input"
+											type="text"
+											name="fontCustom"
+											maxlength="50"
+											placeholder="Font name, e.g. Garamond"
+											value={data.pageSetup.fontCustom}
+										/>
+										<p class="field-hint">
+											Type the name of a font installed on the reading device. If it is not found,
+											the default font is used instead.
+										</p>
+									{/if}
 								</div>
 								<div class="field">
 									<label for="ps-fontsize">Font size</label>
@@ -1959,12 +2019,42 @@
 										id="ps-linespacing"
 										class="select"
 										name="lineSpacing"
-										value={data.pageSetup.lineSpacing}
+										bind:value={psLineSpacing}
 									>
 										{#each Object.entries(LINE_SPACINGS) as [value, option] (value)}
 											<option {value}>{option.label}</option>
 										{/each}
 									</select>
+									{#if psLineSpacing === 'custom'}
+										<input
+											class="input"
+											type="number"
+											name="lineSpacingCm"
+											min={LINE_SPACING_CM_MIN}
+											max={LINE_SPACING_CM_MAX}
+											step="0.05"
+											value={data.pageSetup.lineSpacingCm}
+										/>
+										<p class="field-hint">
+											The height of each line in centimetres, from {LINE_SPACING_CM_MIN} to {LINE_SPACING_CM_MAX}.
+										</p>
+									{/if}
+								</div>
+								<div class="field">
+									<label for="ps-align">Text alignment</label>
+									<select
+										id="ps-align"
+										class="select"
+										name="textAlign"
+										value={data.pageSetup.textAlign}
+									>
+										{#each Object.entries(TEXT_ALIGNS) as [value, option] (value)}
+											<option {value}>{option.label}</option>
+										{/each}
+									</select>
+									<p class="field-hint">
+										The alignment of paragraphs without their own alignment marker.
+									</p>
 								</div>
 								<div class="field">
 									<label for="ps-gutter">Binding gutter</label>

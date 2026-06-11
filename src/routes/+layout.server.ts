@@ -9,7 +9,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	if (!locals.user) return { appearance: null, user: null };
 	const prefs = await userPreferences(db, locals.user.id);
 	return {
-		appearance: { theme: prefs.theme, accent: prefs.accent },
+		appearance: {
+			theme: prefs.theme,
+			systemLightTheme: prefs.systemLightTheme,
+			systemDarkTheme: prefs.systemDarkTheme,
+			accent: prefs.accent
+		},
 		// Drives the avatar menu in the top bars.
 		user: {
 			displayName: locals.user.displayName,
