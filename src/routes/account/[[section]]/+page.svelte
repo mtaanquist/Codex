@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
-	import { invalidateAll } from '$app/navigation';
+	import { enhance } from '$app/forms';
+	import { beforeNavigate, invalidateAll } from '$app/navigation';
+	import { autosaveSubmit, autosubmitForm, flushFocusedField } from '$lib/autosave-form';
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
 	import {
 		FONT_SIZES,
@@ -36,6 +39,10 @@
 	let edFont = $state(data.preferences.editorFont);
 	// svelte-ignore state_referenced_locally
 	let edLineSpacing = $state(data.preferences.editorLineSpacing);
+
+	// The preference forms (Display, Editor, Notifications, Page setup) save on
+	// change instead of with a button; see $lib/autosave-form.
+	beforeNavigate(flushFocusedField);
 
 	type Section =
 		| 'profile'
@@ -92,6 +99,15 @@
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
 	});
+
+	// The accent swatches set state rather than a form value, so saving waits a
+	// tick for the hidden input to catch up before submitting the form.
+	let appearanceForm = $state<HTMLFormElement>();
+	async function pickAccent(value: string) {
+		accent = value;
+		await tick();
+		appearanceForm?.requestSubmit();
+	}
 
 	// The Assistant's kill switch reads inverted: engaged (checked) means off.
 	// Submitting on change flips the master switch with a single round trip.
@@ -243,6 +259,8 @@
 		NOTIFICATION_KINDS.filter((kind) => data.user?.isAdmin || !ADMIN_KINDS.includes(kind))
 	);
 </script>
+
+<svelte:window onpagehide={flushFocusedField} />
 
 <svelte:head>
 	<title>Account - Codex</title>
@@ -1618,7 +1636,13 @@
 							<p class="admin-block-sub">The colour theme and accent used across the app.</p>
 						</div>
 						<div class="settings-group">
-							<form method="POST" action="?/saveAppearance">
+							<form
+								method="POST"
+								action="?/saveAppearance"
+								bind:this={appearanceForm}
+								use:enhance={autosaveSubmit}
+								onchange={autosubmitForm}
+							>
 								<div class="field">
 									<label for="theme-pref">Theme</label>
 									<select id="theme-pref" class="select" name="theme" bind:value={theme}>
@@ -1673,7 +1697,7 @@
 												role="radio"
 												aria-checked={accent === preset.value}
 												aria-label={preset.name}
-												onclick={() => (accent = preset.value)}
+												onclick={() => pickAccent(preset.value)}
 											>
 												<svg
 													viewBox="0 0 16 16"
@@ -1716,7 +1740,6 @@
 											>Saved.</span
 										>
 									{/if}
-									<button type="submit" class="btn btn-primary">Save display</button>
 								</div>
 							</form>
 						</div>
@@ -1741,7 +1764,12 @@
 							</p>
 						</div>
 						<div class="settings-group">
-							<form method="POST" action="?/saveEditorAppearance">
+							<form
+								method="POST"
+								action="?/saveEditorAppearance"
+								use:enhance={autosaveSubmit}
+								onchange={autosubmitForm}
+							>
 								<div class="field">
 									<label for="ed-font">Font</label>
 									<select id="ed-font" class="select" name="editorFont" bind:value={edFont}>
@@ -1801,7 +1829,6 @@
 											>Saved.</span
 										>
 									{/if}
-									<button type="submit" class="btn btn-primary">Save writing appearance</button>
 								</div>
 							</form>
 						</div>
@@ -1813,7 +1840,12 @@
 							<p class="admin-block-sub">How the editor helps while you type.</p>
 						</div>
 						<div class="settings-group">
-							<form method="POST" action="?/savePreferences">
+							<form
+								method="POST"
+								action="?/savePreferences"
+								use:enhance={autosaveSubmit}
+								onchange={autosubmitForm}
+							>
 								<div class="behavior-card">
 									<div class="behavior-head">
 										<span class="behavior-title">Entity autocomplete</span>
@@ -2011,7 +2043,6 @@
 											>Saved.</span
 										>
 									{/if}
-									<button type="submit" class="btn btn-primary">Save preferences</button>
 								</div>
 							</form>
 						</div>
@@ -2030,7 +2061,12 @@
 
 					<div class="admin-block">
 						<div class="settings-group">
-							<form method="POST" action="?/saveNotifications">
+							<form
+								method="POST"
+								action="?/saveNotifications"
+								use:enhance={autosaveSubmit}
+								onchange={autosubmitForm}
+							>
 								<table class="notify-grid">
 									<thead>
 										<tr>
@@ -2069,7 +2105,6 @@
 											>Saved.</span
 										>
 									{/if}
-									<button type="submit" class="btn btn-primary">Save notifications</button>
 								</div>
 							</form>
 						</div>
@@ -2088,7 +2123,12 @@
 
 					<div class="admin-block">
 						<div class="settings-group">
-							<form method="POST" action="?/savePageSetup">
+							<form
+								method="POST"
+								action="?/savePageSetup"
+								use:enhance={autosaveSubmit}
+								onchange={autosubmitForm}
+							>
 								<div class="field">
 									<label for="ps-size">Page size</label>
 									<select
@@ -2258,7 +2298,6 @@
 											>Saved.</span
 										>
 									{/if}
-									<button type="submit" class="btn btn-primary">Save page setup</button>
 								</div>
 							</form>
 						</div>
