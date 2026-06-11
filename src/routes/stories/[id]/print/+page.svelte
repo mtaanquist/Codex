@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { renderMarkdown } from '$lib/markdown';
-	import { PAGE_FONTS, lineHeight, pageRuleCss } from '$lib/page-setup';
+	import { fontFamilyCss, lineHeightCss, pageRuleCss } from '$lib/page-setup';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -16,8 +16,9 @@
 	const setup = $derived(data.pageSetup);
 	const sceneBreakText = $derived(setup.sceneBreak.replaceAll('\\', '\\\\').replaceAll('"', '\\"'));
 	const pageVars = $derived(
-		`font-family: ${PAGE_FONTS[setup.font].css}; font-size: ${setup.fontSize}pt; ` +
-			`line-height: ${lineHeight(setup)}; --scene-break: "${sceneBreakText}";`
+		`font-family: ${fontFamilyCss(setup)}; font-size: ${setup.fontSize}pt; ` +
+			`line-height: ${lineHeightCss(setup)}; --page-align: ${setup.textAlign}; ` +
+			`--scene-break: "${sceneBreakText}";`
 	);
 	const pageRule = $derived(pageRuleCss(setup));
 </script>
@@ -113,6 +114,7 @@
 	.chapter :global(p) {
 		margin: 0 0 0.2rem;
 		text-indent: 1.5em;
+		text-align: var(--page-align, left);
 	}
 	.spaced .chapter :global(p) {
 		margin: 0 0 0.8em;

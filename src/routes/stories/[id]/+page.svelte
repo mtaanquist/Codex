@@ -567,6 +567,7 @@
 						<SceneEditor
 							bind:this={docEditors[scene.id]}
 							compact
+							pageSetup={data.pageSetup}
 							sceneId={scene.id}
 							storyId={data.story.id}
 							title={scene.title}
@@ -660,6 +661,7 @@
 				{#key data.selectedScene.id}
 					<SceneEditor
 						bind:this={sceneEditor}
+						pageSetup={data.pageSetup}
 						onSplitScene={splitCurrentScene}
 						storyView={{ active: inWholeStory, toggleHref }}
 						previewHref={`${storyPath}?view=preview&scene=${data.selectedScene.id}`}

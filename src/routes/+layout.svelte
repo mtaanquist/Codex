@@ -25,7 +25,12 @@
 	// keys so the next load matches without a flash.
 	$effect(() => {
 		if (!browser || !data.appearance) return;
-		applyAppearance(data.appearance.theme, data.appearance.accent);
+		applyAppearance(
+			data.appearance.theme,
+			data.appearance.accent,
+			data.appearance.systemLightTheme,
+			data.appearance.systemDarkTheme
+		);
 	});
 </script>
 

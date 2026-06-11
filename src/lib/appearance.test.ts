@@ -3,18 +3,44 @@ import {
 	ACCENT_PRESETS,
 	DEFAULT_ACCENT,
 	isAccentColor,
+	isConcreteTheme,
 	isTheme,
-	normaliseAccent
+	normaliseAccent,
+	resolveTheme
 } from './appearance';
 
 describe('isTheme', () => {
-	it('accepts the three themes and rejects anything else', () => {
+	it('accepts the four themes and rejects anything else', () => {
 		expect(isTheme('system')).toBe(true);
 		expect(isTheme('light')).toBe(true);
+		expect(isTheme('warm')).toBe(true);
 		expect(isTheme('dark')).toBe(true);
 		expect(isTheme('Dark')).toBe(false);
 		expect(isTheme('')).toBe(false);
 		expect(isTheme(undefined)).toBe(false);
+	});
+});
+
+describe('isConcreteTheme', () => {
+	it('accepts the palettes but not "system"', () => {
+		expect(isConcreteTheme('light')).toBe(true);
+		expect(isConcreteTheme('warm')).toBe(true);
+		expect(isConcreteTheme('dark')).toBe(true);
+		expect(isConcreteTheme('system')).toBe(false);
+		expect(isConcreteTheme(undefined)).toBe(false);
+	});
+});
+
+describe('resolveTheme', () => {
+	it('returns an explicit choice unchanged, ignoring the OS preference', () => {
+		expect(resolveTheme('warm', 'light', 'dark', true)).toBe('warm');
+		expect(resolveTheme('light', 'warm', 'dark', true)).toBe('light');
+		expect(resolveTheme('dark', 'light', 'dark', false)).toBe('dark');
+	});
+	it('follows the system mappings for "system"', () => {
+		expect(resolveTheme('system', 'warm', 'dark', false)).toBe('warm');
+		expect(resolveTheme('system', 'warm', 'dark', true)).toBe('dark');
+		expect(resolveTheme('system', 'light', 'dark', false)).toBe('light');
 	});
 });
 

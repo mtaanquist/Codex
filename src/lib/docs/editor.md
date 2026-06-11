@@ -28,7 +28,9 @@ Right-click a scene in the sidebar and choose "Delete scene". A deleted scene go
 
 Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I (Cmd on a Mac) do bold and italic from the keyboard.
 
-The four alignment buttons set how the paragraphs under the selection sit on the page: left (the default), centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; choose left to remove it.
+The four alignment buttons set how the paragraphs under the selection sit on the page: left, centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; the left button removes it, so the paragraph follows the default alignment.
+
+Paragraphs without a marker use the default text alignment from your page setup (left unless you change it). The writing surface also shows the font and line spacing from your page setup, so what you see while writing matches the export. Set these under Page setup on your account page, or per story in its settings.
 
 The two indent buttons beside them step the selected paragraphs in from the left and back out again (Ctrl+] and Ctrl+[, Cmd on a Mac). Like alignment, the indent is written as a marker (\indent) that rides with the text and shows everywhere, including exports.
 

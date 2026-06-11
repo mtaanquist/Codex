@@ -9,10 +9,21 @@
 			// the top bar writes the same localStorage key.
 			(function () {
 				var theme = 'light';
+				function concrete(v, fallback) {
+					return v === 'light' || v === 'warm' || v === 'dark' ? v : fallback;
+				}
 				try {
 					var stored = localStorage.getItem('codex-theme');
-					if (stored === 'light' || stored === 'dark') theme = stored;
-					else if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
+					if (stored === 'light' || stored === 'warm' || stored === 'dark') {
+						theme = stored;
+					} else {
+						// No stored choice means "follow system": resolve through the
+						// saved light/dark mappings.
+						var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+						theme = prefersDark
+							? concrete(localStorage.getItem('codex-system-dark'), 'dark')
+							: concrete(localStorage.getItem('codex-system-light'), 'light');
+					}
 				} catch (e) {
 					/* default stands */
 				}
