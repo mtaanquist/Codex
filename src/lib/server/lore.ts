@@ -13,6 +13,8 @@ export type LoreSave = {
 	bodyMd: string;
 	// Quick details; undefined leaves them unchanged.
 	details?: EntityDetail[];
+	// A lore entry always has a category (NOT NULL in the schema), so unlike
+	// characters and places there is no null-to-clear option here.
 	categoryId?: string;
 	// When present, the per-story "In this book" notes are upserted too.
 	storyId?: string;

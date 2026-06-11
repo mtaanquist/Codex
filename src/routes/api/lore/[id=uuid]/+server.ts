@@ -35,6 +35,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		summaryMd: typeof payload.summaryMd === 'string' ? payload.summaryMd : null,
 		bodyMd: payload.bodyMd,
 		details: payload.details !== undefined ? cleanDetails(payload.details) : undefined,
+		// Unlike characters and places, lore_entries.category_id is NOT NULL
+		// in the schema, so null is not accepted here to clear it.
 		categoryId: typeof payload.categoryId === 'string' ? payload.categoryId : undefined,
 		storyId: typeof payload.storyId === 'string' ? payload.storyId : undefined,
 		storyNotesMd: typeof payload.storyNotesMd === 'string' ? payload.storyNotesMd : undefined

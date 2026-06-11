@@ -13,6 +13,7 @@ import {
 	universes,
 	userTotp,
 	users,
+	userExports,
 	authTokens,
 	webauthnCredentials
 } from './db/schema.ts';
@@ -102,6 +103,12 @@ export async function purgeAccount(
 		.from(exportArtifacts)
 		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
 		.where(eq(publications.ownerId, userId));
+	// User-requested export archives; their rows cascade with the user, so the
+	// bucket keys must be captured now or the objects leak forever.
+	const userExportRows = await db
+		.select({ storageKey: userExports.storageKey })
+		.from(userExports)
+		.where(and(eq(userExports.ownerId, userId), isNotNull(userExports.storageKey)));
 
 	const purged = await db.transaction(async (tx) => {
 		// Re-assert the schedule under a row lock: a cancellation that landed
@@ -157,5 +164,8 @@ export async function purgeAccount(
 	if (purged && store) {
 		for (const asset of assetRows) await store.remove(asset.storageKey).catch(() => {});
 		for (const artifact of artifactRows) await store.remove(artifact.storageKey).catch(() => {});
+		for (const userExport of userExportRows) {
+			if (userExport.storageKey) await store.remove(userExport.storageKey).catch(() => {});
+		}
 	}
 }

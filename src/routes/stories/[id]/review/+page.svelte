@@ -2,9 +2,12 @@
 	import { resolve } from '$app/paths';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
+	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	let saveStatus = $state<SaveStatus>('idle');
 
 	// The author's own review pass: read the manuscript scene by scene, leave
 	// comments and suggested edits, and work through everything guests have
@@ -28,6 +31,7 @@
 		universe={{ slug: data.universe.slug, name: data.universe.name }}
 		story={{ slug: data.story.slug, title: data.story.title }}
 		help={{ topic: 'reviewing', label: 'reviewing' }}
+		{saveStatus}
 	/>
 	{#if form?.message}<p class="review-error" role="alert">{form.message}</p>{/if}
 	<ReviewWorkspace
@@ -46,6 +50,7 @@
 		nonPrintingMarks={data.preferences.nonPrintingMarks}
 		commandMarkers={data.preferences.commandMarkers}
 		assistant={data.assistant.surfacesEnabled ? { name: data.assistant.name } : null}
+		onSaveStatus={(status) => (saveStatus = status)}
 	/>
 </div>
 
