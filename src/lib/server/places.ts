@@ -1,8 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { recordEntityRevision } from './revisions';
-import { categoryInUniverse, ownsStoryInUniverse } from './entity-lookups';
-import { places, placeStoryNotes } from './db/schema';
+import { saveEntity, type EntitySaveResult } from './entity-save.ts';
 import type { EntityDetail } from '$lib/entity-snapshot';
 
 export type PlaceSave = {
@@ -19,81 +16,14 @@ export type PlaceSave = {
 	storyNotesMd?: string;
 };
 
+// The shared save flow lives in entity-save.ts; this maps the place shape
+// (aliases) onto it.
 export async function savePlace(
 	db: Database,
 	placeId: string,
 	userId: string,
 	save: PlaceSave
-): Promise<
-	{ ok: true; universeId: string; mentionsAffected: boolean } | { ok: false; reason: string }
-> {
-	const [place] = await db
-		.select({
-			id: places.id,
-			universeId: places.universeId,
-			name: places.name,
-			aliases: places.aliases
-		})
-		.from(places)
-		.where(and(eq(places.id, placeId), eq(places.ownerId, userId)));
-	if (!place) return { ok: false, reason: 'place not found' };
-
-	const name = save.name.trim();
-	if (!name) return { ok: false, reason: 'the place needs a name' };
-	const aliases = save.aliases.map((alias) => alias.trim()).filter((alias) => alias !== '');
-
-	// Only a changed name or alias set can add or remove mentions; body and
-	// summary edits should not trigger a universe-wide reindex.
-	const mentionsAffected =
-		name !== place.name ||
-		aliases.length !== place.aliases.length ||
-		aliases.some((alias, index) => alias !== place.aliases[index]);
-
-	if (
-		save.categoryId != null &&
-		!(await categoryInUniverse(db, save.categoryId, place.universeId))
-	) {
-		return { ok: false, reason: 'category not found' };
-	}
-
-	// Validate the optional story BEFORE anything is written: the old
-	// ordering persisted the save, then reported failure and skipped the
-	// mention reindex (review finding #191).
-	if (
-		save.storyId !== undefined &&
-		!(await ownsStoryInUniverse(db, save.storyId, userId, place.universeId))
-	) {
-		return { ok: false, reason: 'story not found' };
-	}
-
-	// One transaction so the entity update, its History snapshot, and the
-	// story-note upsert commit together rather than leaving the entity changed
-	// with no matching revision on a part-way failure.
-	await db.transaction(async (tx) => {
-		await tx
-			.update(places)
-			.set({
-				name,
-				aliases,
-				summaryMd: save.summaryMd?.trim() || null,
-				bodyMd: save.bodyMd,
-				...(save.details !== undefined ? { details: save.details } : {}),
-				...(save.categoryId !== undefined ? { categoryId: save.categoryId } : {})
-			})
-			.where(eq(places.id, place.id));
-		// Full snapshot, so summary, category, and detail changes register in
-		// History even when the body is untouched.
-		await recordEntityRevision(tx, 'place', place.id);
-
-		if (save.storyId !== undefined) {
-			await tx
-				.insert(placeStoryNotes)
-				.values({ placeId: place.id, storyId: save.storyId, notesMd: save.storyNotesMd ?? '' })
-				.onConflictDoUpdate({
-					target: [placeStoryNotes.placeId, placeStoryNotes.storyId],
-					set: { notesMd: save.storyNotesMd ?? '', updatedAt: sql`now()` }
-				});
-		}
-	});
-	return { ok: true, universeId: place.universeId, mentionsAffected };
+): Promise<EntitySaveResult> {
+	const { aliases, ...rest } = save;
+	return await saveEntity(db, 'place', placeId, userId, { ...rest, tags: aliases });
 }
