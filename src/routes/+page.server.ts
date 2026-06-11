@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db, isUniqueViolation } from '$lib/server/db';
 import { entityCategories, universes } from '$lib/server/db/schema';
 import { uniqueSlug } from '$lib/server/slugs';
+import { isUuid } from '$lib/slug';
 import { createStoryInUniverse, standaloneUniverse } from '$lib/server/story-create';
 import { relativeTime, storyStatus } from '$lib/dashboard';
 import {
@@ -143,6 +144,10 @@ export const actions: Actions = {
 		if (!title) {
 			return fail(400, { scope: 'story', universeId, message: 'Give the story a title.' });
 		}
+		// Guard the uuid cast: a tampered id would throw in Postgres and 500.
+		if (!isUuid(universeId)) {
+			return fail(404, { scope: 'story', universeId, message: 'That universe does not exist.' });
+		}
 		const [universe] = await db
 			.select({ id: universes.id })
 			.from(universes)
@@ -168,14 +173,22 @@ export const actions: Actions = {
 	restoreUniverse: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const ok = await restoreUniverse(db, locals.user.id, String(data.get('universeId') ?? ''));
+		const universeId = String(data.get('universeId') ?? '');
+		if (!isUuid(universeId)) {
+			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
+		}
+		const ok = await restoreUniverse(db, locals.user.id, universeId);
 		if (!ok) return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		return { scope: 'trash', restored: true };
 	},
 	destroyUniverse: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const result = await destroyUniverse(db, locals.user.id, String(data.get('universeId') ?? ''));
+		const universeId = String(data.get('universeId') ?? '');
+		if (!isUuid(universeId)) {
+			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
+		}
+		const result = await destroyUniverse(db, locals.user.id, universeId);
 		if (!result.ok) {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}

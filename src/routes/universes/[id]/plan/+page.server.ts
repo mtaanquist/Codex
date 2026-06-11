@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
+import { isUuid } from '$lib/slug';
 import { effectiveAssetConfig } from '$lib/server/assets';
 import { storyStatus } from '$lib/dashboard';
 import { ownedUniverse } from '$lib/server/universe-access';
@@ -90,7 +91,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const entityId = url.searchParams.get('entity');
 	const [lists, resolved] = await Promise.all([
 		planEntityLists(db, universe.id),
-		entityId ? resolvePlanEntity(db, universe.id, entityId) : Promise.resolve(null)
+		// Guard the uuid casts: a tampered query value would throw in Postgres
+		// and 500 instead of being ignored.
+		entityId && isUuid(entityId) ? resolvePlanEntity(db, universe.id, entityId) : Promise.resolve(null)
 	]);
 	const selected = resolved?.entity ?? null;
 	const selectedKind: EntityKind = resolved?.kind ?? 'character';
@@ -127,7 +130,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionTarget
 			? listRevisions(db, revisionTarget.type, revisionTarget.id)
 			: Promise.resolve([] as RevisionRow[]),
-		revisionTarget && revisionId
+		revisionTarget && revisionId && isUuid(revisionId)
 			? getRevision(db, revisionId, revisionTarget.type, revisionTarget.id).then((r) => r ?? null)
 			: Promise.resolve(null),
 		selected ? Promise.resolve([] as StoryBoardRow[]) : loadStoryBoard(universe.id)

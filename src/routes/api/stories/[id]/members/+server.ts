@@ -2,15 +2,18 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { declareMembership, removeMembership } from '$lib/server/membership';
+import { readJson } from '$lib/server/validation';
+import { rateLimitWrites } from '$lib/server/write-guard';
 
 // Declares or removes an entity's membership of the story, depending on
 // the boolean in the payload.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
-	const payload = (await request.json()) as {
+	rateLimitWrites(locals.user!.id);
+	const payload = await readJson<{
 		kind?: unknown;
 		entityId?: unknown;
 		member?: unknown;
-	};
+	}>(request);
 	if (
 		(payload.kind !== 'character' && payload.kind !== 'place') ||
 		typeof payload.entityId !== 'string' ||

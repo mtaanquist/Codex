@@ -4,15 +4,18 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { stories } from '$lib/server/db/schema';
 import { applySceneOrder, type SceneOrder } from '$lib/server/scene-order';
+import { readJson } from '$lib/server/validation';
+import { rateLimitWrites } from '$lib/server/write-guard';
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	rateLimitWrites(locals.user!.id);
 	const [story] = await db
 		.select({ id: stories.id })
 		.from(stories)
 		.where(and(eq(stories.id, params.id), eq(stories.ownerId, locals.user!.id)));
 	if (!story) error(404, 'Story not found');
 
-	const payload = (await request.json()) as SceneOrder;
+	const payload = await readJson<SceneOrder>(request);
 	if (!Array.isArray(payload?.chapters) || !Array.isArray(payload?.orphanSceneIds)) {
 		error(400, 'order must have chapters and orphanSceneIds arrays');
 	}

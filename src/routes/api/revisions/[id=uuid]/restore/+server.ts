@@ -4,13 +4,16 @@ import { db } from '$lib/server/db';
 import { throwActionError } from '$lib/server/action-result';
 import { queueSceneMentions, queueUniverseMentions } from '$lib/server/jobs';
 import { restoreRevision, type RevisionEntityType } from '$lib/server/revisions';
+import { readJson } from '$lib/server/validation';
+import { rateLimitWrites } from '$lib/server/write-guard';
 
 const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'note'] as const;
 
 // Replaces the entity's text with the revision's; a new 'restore' revision
 // lands on top of the timeline, so nothing is overwritten.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
-	const payload = (await request.json()) as { entityType?: unknown; entityId?: unknown };
+	rateLimitWrites(locals.user!.id);
+	const payload = await readJson<{ entityType?: unknown; entityId?: unknown }>(request);
 	if (
 		!REVISABLE.includes(payload.entityType as (typeof REVISABLE)[number]) ||
 		typeof payload.entityId !== 'string'

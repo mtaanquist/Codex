@@ -66,7 +66,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 // Status changes come from the scene board, separate from the autosave: no
 // revision, no mention rebuild, just the ladder position.
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
-	const payload = (await request.json()) as { status?: unknown };
+	rateLimitWrites(locals.user!.id);
+	const payload = await readJson<{ status?: unknown }>(request);
 	if (!isSceneStatus(payload.status)) {
 		error(400, 'status must be one of outline, draft, revised, final');
 	}

@@ -4,18 +4,19 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { createRelationship } from '$lib/server/relationships';
+import { readJson } from '$lib/server/validation';
 
 const KINDS = ['character', 'place', 'lore'] as const;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	rateLimitWrites(locals.user!.id);
-	const payload = (await request.json()) as {
+	const payload = await readJson<{
 		fromKind?: unknown;
 		fromId?: unknown;
 		relationTypeId?: unknown;
 		toId?: unknown;
 		notesMd?: unknown;
-	};
+	}>(request);
 	if (
 		!KINDS.includes(payload.fromKind as (typeof KINDS)[number]) ||
 		typeof payload.fromId !== 'string' ||
