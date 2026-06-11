@@ -4,6 +4,8 @@
 	import { deserialize } from '$app/forms';
 	import { closePalette, openPalette, palette } from '$lib/palette.svelte';
 	import { focusMode } from '$lib/focus-mode.svelte';
+	import { assistantIntent } from '$lib/assistant.svelte';
+	import { reviewSceneWithAssistant, startSummariesJob } from '$lib/assistant-actions';
 	import type { SearchResult } from '$lib/server/search';
 
 	// The command palette: Ctrl+K (or the topbar button) opens it; type to
@@ -81,6 +83,56 @@
 					closePalette();
 				}
 			});
+			// The Assistant's quick actions, gated like its other surfaces; the
+			// write page's data carries the gate and the open story.
+			const assistant = page.data.assistant as
+				| { surfacesEnabled: boolean; name: string }
+				| undefined;
+			const storyId = (page.data.story as { id: string; slug: string } | undefined)?.id;
+			const storySlug = (page.data.story as { id: string; slug: string } | undefined)?.slug;
+			const sceneId = (page.data.selectedScene as { id: string } | null | undefined)?.id;
+			if (assistant?.surfacesEnabled && storyId && storySlug) {
+				list.push(
+					{
+						label: 'Ask the Assistant',
+						sublabel: 'Open the chat on the right',
+						kind: 'Command',
+						run: () => {
+							assistantIntent.pending = { kind: 'focus' };
+							closePalette();
+						}
+					},
+					{
+						label: 'Catch me up',
+						sublabel: 'A recap of the story so far',
+						kind: 'Command',
+						run: () => {
+							assistantIntent.pending = { kind: 'catchup' };
+							closePalette();
+						}
+					},
+					{
+						label: 'Update summaries',
+						sublabel: 'Draft and refresh scene and chapter summaries',
+						kind: 'Command',
+						run: async () => {
+							closePalette();
+							await startSummariesJob(storyId);
+						}
+					}
+				);
+				if (sceneId) {
+					list.push({
+						label: 'Review this scene',
+						sublabel: 'The Assistant leaves comments and suggested edits',
+						kind: 'Command',
+						run: async () => {
+							closePalette();
+							await reviewSceneWithAssistant(sceneId, `/stories/${storySlug}/review`);
+						}
+					});
+				}
+			}
 		}
 		if (storyMatch) {
 			const storyRef = storyMatch[1];

@@ -154,10 +154,20 @@ const PREAMBLE =
 	'and lore. Ground your answers in this material and say when something is not ' +
 	'covered here rather than inventing it.';
 
+// Appended only when the turn offers tools; a tool-less surface must not be
+// told about tools it cannot call.
+const TOOL_HINT =
+	'Any scene can be read in full with the get_scene tool using the scene ids ' +
+	'shown in the outline; list_scenes returns the full chapter and scene list.';
+
 // Wrap assembled context as a system message for the gateway. The surfaces call
 // this, then hand the messages to the gateway; the gateway stays generic.
-export function buildSystemMessage(context: AssembledContext): ChatMessage {
-	return { role: 'system', content: `${PREAMBLE}\n\n${context.text}` };
+export function buildSystemMessage(
+	context: AssembledContext,
+	options?: { tools?: boolean }
+): ChatMessage {
+	const head = options?.tools ? `${PREAMBLE} ${TOOL_HINT}` : PREAMBLE;
+	return { role: 'system', content: `${head}\n\n${context.text}` };
 }
 
 // Recap ("catch me up"): the story so far, up to and including the open scene.
@@ -253,8 +263,9 @@ function renderSceneLocal(neighbourhood: {
 	if (before.length || after.length) {
 		lines.push('', '### Nearby scenes');
 		for (const n of before)
-			lines.push(`- Before${title(n.title)}: ${n.summaryMd ?? '(no summary)'}`);
-		for (const n of after) lines.push(`- After${title(n.title)}: ${n.summaryMd ?? '(no summary)'}`);
+			lines.push(`- Before${title(n.title)} (scene id: ${n.id}): ${n.summaryMd ?? '(no summary)'}`);
+		for (const n of after)
+			lines.push(`- After${title(n.title)} (scene id: ${n.id}): ${n.summaryMd ?? '(no summary)'}`);
 	}
 	return lines.join('\n');
 }
@@ -280,7 +291,9 @@ function renderSkeleton(skeleton: {
 }
 
 function renderSceneSummaryLine(scene: SceneSummary): string {
-	return `- ${scene.title ?? 'Untitled'} [${scene.status}]: ${scene.summaryMd ?? '(no summary)'}`;
+	// The id rides along so a tool-capable turn can read any scene in full
+	// with get_scene, not just the one in focus.
+	return `- ${scene.title ?? 'Untitled'} [${scene.status}] (scene id: ${scene.id}): ${scene.summaryMd ?? '(no summary)'}`;
 }
 
 function renderEntities(entities: ScopeEntity[]): string {

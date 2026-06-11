@@ -11,6 +11,7 @@ import {
 	deleteComment,
 	deleteSuggestion,
 	ensureReviewer,
+	ensureSuggestionThread,
 	invitationByToken,
 	issueReviewerToken,
 	listSuggestions,
@@ -77,6 +78,7 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 		id: scene.id!,
 		chapterId: scene.chapterId,
 		title: scene.title,
+		status: scene.status ?? 'todo',
 		bodyMd: scene.bodyMd
 	}));
 	// A guest sees only the cast that actually appears in the manuscript, and
@@ -195,6 +197,42 @@ export const actions: Actions = {
 		const result = await addComment(db, {
 			storyId: resolved.invitation.storyId,
 			threadId,
+			author: { reviewerId: access.reviewer.id },
+			body
+		});
+		if (!result.ok) return fail(400, { message: result.reason });
+		await notifyReviewActivity(
+			db,
+			resolved.invitation.storyId,
+			access.reviewer.displayName,
+			'replied',
+			body
+		);
+		return { commented: true };
+	},
+	// A reviewer replying on a suggestion's card: the discussion thread is
+	// created on the first reply. Guests discuss here like in any thread; the
+	// Assistant only ever answers when the owner replies, never a guest.
+	replySuggestion: async ({ params, request, cookies }) => {
+		const { resolved, access } = await currentReviewer(params.token, cookies.get(REVIEWER_COOKIE));
+		if (resolved.status !== 'ok' || !access) {
+			return fail(403, { message: 'This link no longer works.' });
+		}
+		if (!rateLimit(`review:${access.reviewer.id}`, COMMENT_LIMIT, COMMENT_WINDOW_MS).allowed) {
+			return fail(429, { message: 'Slow down a moment, then try again.' });
+		}
+		const data = await request.formData();
+		const suggestionId = String(data.get('suggestionId') ?? '');
+		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
+		const thread = await ensureSuggestionThread(db, {
+			storyId: resolved.invitation.storyId,
+			suggestionId
+		});
+		if (!thread.ok) return fail(400, { message: thread.reason });
+		const body = String(data.get('body') ?? '').slice(0, MAX_REVIEW_BODY);
+		const result = await addComment(db, {
+			storyId: resolved.invitation.storyId,
+			threadId: thread.threadId,
 			author: { reviewerId: access.reviewer.id },
 			body
 		});

@@ -8,6 +8,7 @@ import { assistantLayout } from '$lib/server/llm/config';
 import { assembleRecapContext } from '$lib/server/llm/context/assemble';
 import { buildRecapMessage } from '$lib/server/llm/prompts/recap';
 import { AssistantDisabledError, stream } from '$lib/server/llm/gateway';
+import { appendChat } from '$lib/server/llm/chat-history';
 import type { ChatMessage, StreamEvent } from '$lib/server/llm/providers/types';
 
 // Recap ("catch me up"): the server assembles the story so far - every scene up
@@ -58,6 +59,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const body = new ReadableStream<Uint8Array>({
 		async start(controller) {
+			// The recap joins the stored conversation as an assistant turn once
+			// its stream ends cleanly.
+			let reply = '';
 			try {
 				for await (const event of stream(db, {
 					userId,
@@ -68,7 +72,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					signal: request.signal
 				})) {
 					controller.enqueue(frame(event));
-					if (event.type === 'done' || event.type === 'error') break;
+					if (event.type === 'token') reply += event.text;
+					if (event.type === 'done') {
+						if (reply.trim()) {
+							await appendChat(db, userId, story.id, {
+								role: 'assistant',
+								content: reply,
+								meta: null
+							});
+						}
+						break;
+					}
+					if (event.type === 'error') break;
 				}
 			} catch (err) {
 				if (!request.signal.aborted) {

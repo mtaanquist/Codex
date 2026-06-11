@@ -43,6 +43,7 @@
 		loreCategories = [],
 		onCrossBoundary,
 		onCreateEntity,
+		onAskAssistant,
 		onSplitScene,
 		onFocus,
 		storyView,
@@ -93,6 +94,10 @@
 			name: string,
 			categoryId?: string
 		) => Promise<string | null>;
+		// When set, the selection menu offers an Assistant submenu whose "Ask
+		// the Assistant about this" hands the raw selected text over (the page
+		// puts it into the chat composer as a reference).
+		onAskAssistant?: (text: string) => void;
 		// When set, the toolbar offers splitting the scene at the cursor.
 		onSplitScene?: () => void;
 		// The continuous view's shared toolbar acts on whichever stitched
@@ -148,9 +153,33 @@
 	let coauthorInput = $state<HTMLTextAreaElement>();
 	let coauthorPending: AbortController | null = null;
 
+	// Where the writer is in the prose when the panel opens: the selection if
+	// there is one, otherwise the text leading up to the cursor. Shown as a
+	// removable chip and sent with the brief, so "continue from here" works.
+	type CoauthorReference = { kind: 'selection' | 'cursor'; text: string };
+	const COAUTHOR_CURSOR_CHARS = 400;
+	let coauthorReference = $state<CoauthorReference | null>(null);
+
+	function captureCoauthorReference(): CoauthorReference | null {
+		if (!view) return null;
+		const range = view.state.selection.main;
+		if (!range.empty) {
+			const text = view.state.sliceDoc(range.from, range.to).trim();
+			return text ? { kind: 'selection', text } : null;
+		}
+		const from = Math.max(0, range.head - COAUTHOR_CURSOR_CHARS);
+		const text = view.state.sliceDoc(from, range.head);
+		// A truncated slice may open mid-word; drop the partial word.
+		const trimmed = (from > 0 ? text.replace(/^\S*\s/, '') : text).trim();
+		return trimmed ? { kind: 'cursor', text: trimmed } : null;
+	}
+
 	function toggleCoauthor() {
 		coauthorOpen = !coauthorOpen;
-		if (coauthorOpen) setTimeout(() => coauthorInput?.focus(), 0);
+		if (coauthorOpen) {
+			coauthorReference = captureCoauthorReference();
+			setTimeout(() => coauthorInput?.focus(), 0);
+		}
 	}
 
 	async function generateCoauthor() {
@@ -165,7 +194,7 @@
 			const response = await fetch('/api/assistant/coauthor', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, sceneId, instruction }),
+				body: JSON.stringify({ storyId, sceneId, instruction, reference: coauthorReference }),
 				signal: controller.signal
 			});
 			if (!response.ok) {
@@ -203,6 +232,7 @@
 		coauthorInstruction = '';
 		coauthorResult = '';
 		coauthorError = '';
+		coauthorReference = null;
 	}
 
 	// The editor owns the value after mount; the page keys this component by
@@ -319,6 +349,20 @@
 		return view;
 	}
 
+	// Inserts text at the caret, like the coauthor panel's Insert does; the
+	// Assistant tab uses it to drop a chat reply into the scene.
+	export function insertAtCursor(text: string) {
+		if (!view || !text) return;
+		const head = view.state.selection.main.head;
+		view.dispatch({
+			changes: { from: head, insert: text },
+			selection: { anchor: head + text.length },
+			scrollIntoView: true
+		});
+		scheduleSave();
+		view.focus();
+	}
+
 	// Lets the page place the caret when focus crosses a scene boundary.
 	export function focusEdge(edge: 'start' | 'end') {
 		if (!view) return;
@@ -418,7 +462,7 @@
 	// browser's spelling suggestions stay reachable on a plain caret click.
 	// The handler sits on the pane wrapper rather than the prose column, so
 	// the margins around the centered text behave like the text itself.
-	let selectionMenu = $state<{ x: number; y: number; name: string } | null>(null);
+	let selectionMenu = $state<{ x: number; y: number; name: string; raw: string } | null>(null);
 	let menuBusy = $state(false);
 	let menuError = $state('');
 
@@ -426,24 +470,35 @@
 		if (view) openSelectionMenu(event, view);
 	}
 
-	// The lore item's category flyout; reset whenever the menu opens.
+	// The flyout submenus (lore categories, Assistant); reset whenever the
+	// menu opens.
 	let loreSubOpen = $state(false);
+	let assistantSubOpen = $state(false);
 
 	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
 		const range = editor.state.selection.main;
 		if (range.empty) return false;
-		const name = editor.state.sliceDoc(range.from, range.to).replace(/\s+/g, ' ').trim();
+		const raw = editor.state.sliceDoc(range.from, range.to);
+		const name = raw.replace(/\s+/g, ' ').trim();
 		if (!name) return false;
 		event.preventDefault();
 		menuError = '';
 		menuBusy = false;
 		loreSubOpen = false;
+		assistantSubOpen = false;
 		selectionMenu = {
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
-			name
+			name,
+			raw
 		};
 		return true;
+	}
+
+	function askAssistant() {
+		if (!onAskAssistant || !selectionMenu) return;
+		onAskAssistant(selectionMenu.raw);
+		closeSelectionMenu();
 	}
 
 	function closeSelectionMenu() {
@@ -607,6 +662,25 @@
 					<button class="coauthor-x" type="button" title="Close" onclick={discardCoauthor}>x</button
 					>
 				</div>
+				{#if coauthorReference}
+					<div class="coauthor-ref" role="note">
+						<span class="coauthor-ref-kind">
+							{coauthorReference.kind === 'selection' ? 'Pointing at:' : 'Continuing from:'}
+						</span>
+						<span class="coauthor-ref-text" title={coauthorReference.text}>
+							{coauthorReference.text}
+						</span>
+						<button
+							class="coauthor-ref-x"
+							type="button"
+							title="Remove the reference"
+							aria-label="Remove the reference"
+							onclick={() => (coauthorReference = null)}
+						>
+							x
+						</button>
+					</div>
+				{/if}
 				<textarea
 					bind:this={coauthorInput}
 					class="coauthor-brief"
@@ -721,12 +795,41 @@
 				<Icon name="list" size={15} />
 			</button>
 		</div>
-		{#if onCreateEntity}
+		{#if onCreateEntity || onAskAssistant}
 			<div class="sel-menu-label">
 				"{selectionMenu.name.length > 32
 					? `${selectionMenu.name.slice(0, 32)}...`
 					: selectionMenu.name}"
 			</div>
+		{/if}
+		{#if onAskAssistant}
+			<div
+				class="sel-sub"
+				role="presentation"
+				onmouseenter={() => (assistantSubOpen = true)}
+				onmouseleave={() => (assistantSubOpen = false)}
+			>
+				<button
+					class="sel-create sel-sub-trigger"
+					type="button"
+					role="menuitem"
+					aria-haspopup="menu"
+					aria-expanded={assistantSubOpen}
+					onclick={() => (assistantSubOpen = !assistantSubOpen)}
+				>
+					<span class="sel-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
+					<Icon name="chevron" size={12} />
+				</button>
+				{#if assistantSubOpen}
+					<div class="sel-submenu" role="menu">
+						<button class="sel-create" type="button" role="menuitem" onclick={askAssistant}>
+							Ask the Assistant about this
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
+		{#if onCreateEntity}
 			<button
 				class="sel-create"
 				type="button"
@@ -832,6 +935,42 @@
 		padding: 2px 6px;
 	}
 	.coauthor-x:hover {
+		color: var(--text);
+	}
+	.coauthor-ref {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		padding: 7px 10px;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: 8px;
+		background: var(--bg-inset);
+		font-size: 12.5px;
+		color: var(--text-muted);
+	}
+	.coauthor-ref-kind {
+		flex: none;
+		font-weight: 600;
+	}
+	.coauthor-ref-text {
+		flex: 1;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.coauthor-ref-x {
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+		font-size: 13px;
+		line-height: 1;
+		padding: 0 2px;
+	}
+	.coauthor-ref-x:hover {
 		color: var(--text);
 	}
 	.coauthor-brief,
@@ -964,6 +1103,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
+	}
+	.sel-sub-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
 	}
 	.sel-submenu {
 		position: absolute;

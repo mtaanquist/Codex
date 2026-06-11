@@ -63,6 +63,9 @@ export type ReviewComment = {
 export type ReviewThread = {
 	id: string;
 	sceneId: string;
+	// Set when the thread is a suggestion's discussion; it renders on that
+	// suggestion's card and stays out of the standalone comment list.
+	suggestionId: string | null;
 	anchor: { start: number; end: number } | null;
 	anchorLost: boolean;
 	resolvedAt: Date | string | null;

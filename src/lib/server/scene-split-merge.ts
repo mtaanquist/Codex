@@ -1,8 +1,9 @@
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { wordCount } from '$lib/word-count';
+import { locateSplitBefore } from '$lib/scene-split-locate';
 
 // Splitting and merging scenes. Both run in one transaction and record a
 // revision for every body they change; the caller queues the mention
@@ -123,6 +124,47 @@ export async function splitScene(
 	});
 
 	return { ok: true, newSceneId };
+}
+
+/**
+ * Finds where a proposed split passage lives now. The Assistant's proposals
+ * anchor to the scene they were made against, but confirming an earlier
+ * proposal moves the later split points into the scene that split created.
+ * The passage, not the scene id, is what the writer confirmed, so the locate
+ * follows it: when the proposed scene no longer holds the text at all, the
+ * one live scene of the story that does is split instead. Any other failure
+ * (the text duplicated within the scene, or at its start) keeps its reason.
+ */
+export async function locateSplitInStory(
+	db: Database,
+	userId: string,
+	sceneId: string,
+	before: string
+): Promise<{ ok: true; sceneId: string; offset: number } | { ok: false; reason: string }> {
+	const scene = await ownedLiveScene(db, userId, sceneId);
+	if (!scene) return { ok: false, reason: 'scene not found' };
+	const here = locateSplitBefore(scene.bodyMd, before);
+	if (here.ok) return { ok: true, sceneId, offset: here.offset };
+	if (scene.bodyMd.includes(before)) return here;
+
+	const siblings = await db
+		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
+		.from(scenes)
+		.where(
+			and(eq(scenes.storyId, scene.storyId), isNull(scenes.deletedAt), ne(scenes.id, sceneId))
+		);
+	const holders = siblings.filter((sibling) => sibling.bodyMd.includes(before));
+	if (holders.length === 0) return here;
+	if (holders.length > 1) {
+		return {
+			ok: false,
+			reason:
+				'That text appears in more than one scene; include more surrounding text to make it unique.'
+		};
+	}
+	const there = locateSplitBefore(holders[0].bodyMd, before);
+	if (!there.ok) return there;
+	return { ok: true, sceneId: holders[0].id, offset: there.offset };
 }
 
 /**

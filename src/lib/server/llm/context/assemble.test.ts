@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { estimateTokens, selectWithinBudget, type ContextTier } from './assemble';
+import {
+	buildSystemMessage,
+	estimateTokens,
+	selectWithinBudget,
+	type AssembledContext,
+	type ContextTier
+} from './assemble';
 
 describe('estimateTokens', () => {
 	it('approximates four characters per token', () => {
@@ -35,6 +41,22 @@ describe('selectWithinBudget', () => {
 		const result = selectWithinBudget([tier('frame', 4), { name: 'empty', text: '   ' }], 1000);
 		expect(result.includedTiers).toEqual(['frame']);
 		expect(result.droppedTiers).toEqual([]);
+	});
+
+	it('mentions the scene tools only on tool-capable turns', () => {
+		const context: AssembledContext = {
+			text: 'world context',
+			estimatedTokens: 2,
+			budgetTokens: 100,
+			includedTiers: ['frame'],
+			droppedTiers: [],
+			sources: { entities: [], scenes: [], lore: [] }
+		};
+		expect(buildSystemMessage(context).content).not.toContain('get_scene');
+		const withTools = buildSystemMessage(context, { tools: true }).content;
+		expect(withTools).toContain('get_scene');
+		expect(withTools).toContain('list_scenes');
+		expect(withTools).toContain('world context');
 	});
 
 	it('joins included tiers with a blank line', () => {

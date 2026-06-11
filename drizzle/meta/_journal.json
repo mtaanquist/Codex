@@ -414,6 +414,20 @@
 			"when": 1781068478368,
 			"tag": "0058_session_token_hash",
 			"breakpoints": true
+		},
+		{
+			"idx": 59,
+			"version": "7",
+			"when": 1781112496427,
+			"tag": "0059_review_suggestion_threads",
+			"breakpoints": true
+		},
+		{
+			"idx": 60,
+			"version": "7",
+			"when": 1781115263666,
+			"tag": "0060_assistant_chat",
+			"breakpoints": true
 		}
 	]
 }

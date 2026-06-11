@@ -1,164 +1,176 @@
 <script lang="ts">
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import Icon from './Icon.svelte';
 	import {
-		anchorPos,
-		authorColor,
-		suggestionAuthor,
 		suggestionInFilter,
-		suggestionSnippet,
-		threadAuthor,
 		threadInFilter,
-		type AuthorRef,
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
 	} from '$lib/review-ui';
 
 	let {
+		chapters,
 		scenes,
 		threads,
 		suggestions,
 		filter,
-		setFilter,
-		focusedId,
 		selectedSceneId,
 		onSelect,
 		query
 	}: {
-		// All scenes in document order, with their chapter label.
-		scenes: { id: string; title: string | null; chapterTitle: string }[];
+		chapters: { id: string; title: string | null }[];
+		// All scenes, tagged with their chapter, in document order.
+		scenes: {
+			id: string;
+			chapterId: string | null;
+			title: string | null;
+			status?: string | null;
+		}[];
 		threads: ReviewThread[];
 		suggestions: ReviewSuggestion[];
 		filter: ReviewFilter;
-		setFilter: (f: ReviewFilter) => void;
-		focusedId: string | null;
 		selectedSceneId: string;
-		onSelect: (sceneId: string, itemId: string) => void;
+		onSelect: (sceneId: string) => void;
 		query: string;
 	} = $props();
 
-	const FILTERS: { id: ReviewFilter; label: string }[] = [
-		{ id: 'all', label: 'All' },
-		{ id: 'comments', label: 'Comments' },
-		{ id: 'suggestions', label: 'Edits' },
-		{ id: 'resolved', label: 'Resolved' }
-	];
-
-	type Item = {
-		id: string;
-		sceneId: string;
-		type: 'comment' | 'suggestion';
-		author: AuthorRef;
-		snippet: string;
-		by: string;
-		pos: number;
-	};
-
-	const totalOpen = $derived(
-		threads.filter((t) => t.resolvedAt === null).length +
-			suggestions.filter((s) => s.status === 'pending').length
-	);
-
-	const items = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		const list: Item[] = [];
+	// Review items per scene, honoring the active filter, counted the same way
+	// the right panel lists them so the badges and the panel always agree.
+	const countByScene = $derived.by(() => {
+		const m = new SvelteMap<string, number>();
 		for (const t of threads) {
-			if (!threadInFilter(t, filter)) continue;
-			const author = threadAuthor(t);
-			const body = t.comments[0]?.body ?? '';
-			const snippet = body.trim().slice(0, 70) || 'Comment';
-			const status = t.resolvedAt ? ' - resolved' : '';
-			list.push({
-				id: t.id,
-				sceneId: t.sceneId,
-				type: 'comment',
-				author,
-				snippet,
-				by: author.name + status,
-				pos: anchorPos(t.anchor)
-			});
+			if (threadInFilter(t, filter)) m.set(t.sceneId, (m.get(t.sceneId) ?? 0) + 1);
 		}
 		for (const s of suggestions) {
-			if (!suggestionInFilter(s, filter)) continue;
-			const author = suggestionAuthor(s);
-			const status = s.status !== 'pending' ? ` - ${s.status}` : '';
-			list.push({
-				id: s.id,
-				sceneId: s.sceneId,
-				type: 'suggestion',
-				author,
-				snippet: suggestionSnippet(s),
-				by: author.name + status,
-				pos: anchorPos(s.anchor)
+			if (suggestionInFilter(s, filter)) m.set(s.sceneId, (m.get(s.sceneId) ?? 0) + 1);
+		}
+		return m;
+	});
+	const total = $derived([...countByScene.values()].reduce((a, b) => a + b, 0));
+	const statWord = $derived(filter === 'resolved' ? 'resolved' : 'open');
+
+	// Collapsed chapters; a search forces every match open.
+	let collapsed = new SvelteSet<string>();
+
+	const q = $derived(query.trim().toLowerCase());
+	function nameMatches(title: string | null, fallback: string) {
+		return (title ?? fallback).toLowerCase().includes(q);
+	}
+
+	function scenesIn(chapterId: string | null) {
+		return scenes.filter((s) => s.chapterId === chapterId);
+	}
+
+	// Chapters (and the unfiled bucket) with their visible scenes, dropping any
+	// that the search hides entirely.
+	const groups = $derived.by(() => {
+		const out: {
+			id: string | null;
+			label: string;
+			scenes: typeof scenes;
+			count: number;
+			total: number;
+		}[] = [];
+		chapters.forEach((chapter, i) => {
+			const fallback = `Chapter ${i + 1}`;
+			const all = scenesIn(chapter.id);
+			const chapterMatch = q === '' || nameMatches(chapter.title, fallback);
+			const list = chapterMatch ? all : all.filter((s) => nameMatches(s.title, 'Untitled scene'));
+			if (!chapterMatch && list.length === 0) return;
+			out.push({
+				id: chapter.id,
+				label: chapter.title ?? fallback,
+				scenes: list,
+				count: list.reduce((n, s) => n + (countByScene.get(s.id) ?? 0), 0),
+				total: all.length
+			});
+		});
+		const orphans = scenesIn(null);
+		const orphanList =
+			q === '' ? orphans : orphans.filter((s) => nameMatches(s.title, 'Untitled scene'));
+		if (orphanList.length > 0) {
+			out.push({
+				id: null,
+				label: 'Unfiled scenes',
+				scenes: orphanList,
+				count: orphanList.reduce((n, s) => n + (countByScene.get(s.id) ?? 0), 0),
+				total: orphans.length
 			});
 		}
-		const filtered = q
-			? list.filter((it) => (it.snippet + ' ' + it.by).toLowerCase().includes(q))
-			: list;
-		return filtered.sort((a, b) => a.pos - b.pos);
+		return out;
 	});
 
-	// Group items under their scene, keeping the scenes in document order.
-	const groups = $derived.by(() =>
-		scenes
-			.map((scene) => ({ scene, list: items.filter((it) => it.sceneId === scene.id) }))
-			.filter((group) => group.list.length > 0)
-	);
+	function toggle(id: string | null) {
+		if (id === null) return;
+		if (collapsed.has(id)) collapsed.delete(id);
+		else collapsed.add(id);
+	}
 </script>
 
-<div class="review-nav">
-	<div class="rv-nav-stat">
-		<span class="rv-nav-stat-n">{totalOpen}</span>
-		<span class="rv-nav-stat-l"
-			>open {totalOpen === 1 ? 'item' : 'items'} across the manuscript</span
-		>
+<div class="review-outline">
+	<div class="rv-out-stat">
+		<span class="rv-out-n">{total}</span>
+		{statWord}
+		{total === 1 ? 'item' : 'items'} across the manuscript
 	</div>
 
-	<div class="rv-nav-filters">
-		{#each FILTERS as f (f.id)}
-			<button
-				class="rv-nav-filter"
-				class:active={filter === f.id}
-				type="button"
-				onclick={() => setFilter(f.id)}
-			>
-				{f.label}
-			</button>
+	<div class="outline">
+		{#if groups.length === 0}
+			<div class="search-empty">
+				{#if q}
+					No chapters or scenes match.
+				{:else}
+					This story has no scenes yet.
+				{/if}
+			</div>
+		{/if}
+
+		{#each groups as group (group.id ?? 'unfiled')}
+			{@const open = q !== '' || group.id === null || !collapsed.has(group.id)}
+			<div class="chapter">
+				{#if group.id === null}
+					<span class="chapter-row as-label">
+						<span class="chapter-name">{group.label}</span>
+						<span class="chapter-meta">
+							{group.total}{#if group.count > 0}<!--
+							--> &middot;
+								<span class="chapter-count">{group.count}</span>{/if}
+						</span>
+					</span>
+				{:else}
+					<button class="chapter-row" type="button" onclick={() => toggle(group.id)}>
+						<span class="tw" class:open><Icon name="chevron" size={12} /></span>
+						<span class="chapter-name">{group.label}</span>
+						<span class="chapter-meta">
+							{group.total}{#if group.count > 0}<!--
+							--> &middot;
+								<span class="chapter-count">{group.count}</span>{/if}
+						</span>
+					</button>
+				{/if}
+
+				{#if open}
+					<div class="scenes">
+						{#each group.scenes as scene (scene.id)}
+							{@const n = countByScene.get(scene.id) ?? 0}
+							<button
+								class="scene-row"
+								class:active={scene.id === selectedSceneId}
+								type="button"
+								onclick={() => onSelect(scene.id)}
+							>
+								<span
+									class="scene-status st-{scene.status ?? 'todo'}"
+									title={scene.status ?? 'todo'}
+								></span>
+								<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+								{#if n > 0}<span class="scene-count">{n}</span>{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		{/each}
 	</div>
-
-	{#if groups.length === 0}
-		<div class="rv-nav-empty">
-			{#if query.trim()}
-				No review items match "{query}".
-			{:else}
-				Nothing here. Switch filters, or open a scene and select text to add a note.
-			{/if}
-		</div>
-	{/if}
-
-	{#each groups as group (group.scene.id)}
-		<div class="rv-nav-group">
-			<div class="rv-nav-scene" class:active={group.scene.id === selectedSceneId}>
-				<span class="rv-nav-scene-name">{group.scene.title ?? 'Untitled scene'}</span>
-				<span class="rv-nav-scene-meta">{group.scene.chapterTitle}</span>
-			</div>
-			{#each group.list as it (it.id)}
-				<button
-					class="rv-nav-row"
-					class:active={focusedId === it.id}
-					type="button"
-					onclick={() => onSelect(it.sceneId, it.id)}
-				>
-					<span class="rv-nav-ic" style="--auth: {authorColor(it.author)};">
-						<Icon name={it.type === 'comment' ? 'comment' : 'suggest'} size={13} />
-					</span>
-					<span class="rv-nav-text">
-						<span class="rv-nav-snip">{it.snippet}</span>
-						<span class="rv-nav-by">{it.by}</span>
-					</span>
-				</button>
-			{/each}
-		</div>
-	{/each}
 </div>

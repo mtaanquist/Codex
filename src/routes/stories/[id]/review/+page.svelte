@@ -36,11 +36,16 @@
 		threads={data.threads}
 		suggestions={data.suggestions}
 		role="author"
+		storyId={data.story.id}
+		book={{ title: data.story.title, subtitle: data.universe.name }}
 		{seg}
 		entities={data.mentionEntities}
 		mentionMembers={data.mentionMembers}
 		mentionPins={data.mentionPins}
 		{entityHref}
+		nonPrintingMarks={data.preferences.nonPrintingMarks}
+		commandMarkers={data.preferences.commandMarkers}
+		assistant={data.assistant.surfacesEnabled ? { name: data.assistant.name } : null}
 	/>
 </div>
 

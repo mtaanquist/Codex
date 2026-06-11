@@ -361,6 +361,154 @@ consistency fix); and the help doc covers clickable names. No schema
 change. Integration + e2e (incl. a new review quick-card spec) + help
 docs updated.
 
+Review-build match + editable centre (2026-06-10, branch
+`feat/review-build-match`): v3.2.0 was built from the standalone
+`review.jsx` mock, not `review-build.html` (the full app booted into
+review mode), so the shipped cards and panel drifted from the current
+design. Reconciled the cards and panel to the build (header-corner
+quick actions: open comment -> resolve, open suggestion -> accept +
+reject; type pill only on decided/resolved cards; `.rv-quote` accent
+quote; composer takes over the panel). Then made the author's review
+centre the real editor: the manuscript is now editable in place
+(CodeMirror), with comment highlights and tracked suggestions drawn as
+decorations over the live text (inserts/replacements ride as
+non-editable ghost widgets) - accept a suggestion, then keep building
+on it. Guests stay on the read-only surface. The scene autosave omits
+markers, and the scene PUT endpoint leaves stored marker anchors
+untouched when the field is absent (so a review save never wipes a
+scene's TODO markers). New `ReviewEditor.svelte` + `editor-review-marks`
+StateField layer; `buildReviewMarks` unit-tested; review e2e updated for
+the editor-based centre plus accept-then-edit-persists. No schema
+change. Released as v3.3.0.
+
+Review polish follow-up (2026-06-10, post-v3.3.0): four fixes from
+testing v3.3.0. (1) The review left rail is now the Write outline tree
+(chapters and scenes, read-only) with a per-scene review count in place
+of the word count and a running total at the top, matching
+`review-build.html`, instead of the flat jump-list it had shipped as;
+the filter pills moved off the left (they live on the notes panel).
+(2) The four-mode seg (Write/Plan/Notes/Review) no longer overflows the
+rail (`.seg.full .seg-btn` shrinks and trims its padding). (3) Clicking
+a whole-scene comment now scrolls to the top of the scene (it has no
+anchor) in both the author editor and the guest surface. (4) The review
+editor reuses the shared `EditorToolbar` (so it gains alignment, indent,
+and the non-printing/command-marker view toggles); that toolbar is now
+responsive - tools that do not fit collapse into a "More tools" overflow
+menu that disappears entirely when everything fits. Author review load
+now reads `storyPreferences` for the toggles. e2e: a `toolbar.ts` helper
+reaches a tool inline-or-in-menu; split/indent/align/legibility specs
+use it. No schema change.
+
+Review polish follow-up 2 (2026-06-10, post-v3.3.1): six smaller fixes
+from a second pass. (1) Outline scene/chapter names left-aligned (they
+are buttons now, whose UA default is centred) and (2) their hover/active
+background restored (the button reset was beating the shared rule by
+source order). (3) Air below a comment body so the replies and reply box
+do not crowd the text (`.rv-body` margin). (4) Accepting or resolving the
+last open note in a scene no longer yanks the centre to the next active
+scene: the shown scene is pinned once chosen, so the author stays on the
+change to keep editing (root cause: `selectedSceneId` fell back to the
+re-deciding `firstActive` while `chosenSceneId` was null). (5) Clicking a
+resolved/decided note under the Done filter now shows a faint neutral
+outline where it sat (new `rv-resolved` mark in `buildReviewMarks`, drawn
+only under that filter, no strikethrough or before-text). (6) The notes
+panel filter pills renamed: All -> Open, Resolved -> Done. Unit + e2e
+coverage added for the scene-pin and the resolved marks. No schema change.
+
+Assistant feedback batch (2026-06-10, branch `claude/dreamy-edison-faa9dp`;
+first real use of the Assistant. Author decisions taken up front:
+automatic review replies, discussion threads on suggestions, and all
+three ride-along extras). Nine commits, each shippable:
+
+- [x] Outline scene ids: the model could not read scenes beyond the open
+      one (the rendered story outline carried no ids for get_scene - the
+      author's "chapter two" test). Ids now ride the outline and
+      nearby-scene lines, the system message mentions the scene tools on
+      tool-capable turns only, and a list_scenes read tool covers the
+      budget-dropped case.
+- [x] Composer menu: "Catch me up" and "Update summaries" moved from the
+      Assistant tab header into a menu next to the send button; the mute
+      link keeps the header. "Clear conversation" joined later.
+- [x] Assistant submenus: the sidebar row menu and the editor selection
+      menu group assistant actions under an Assistant flyout (the lore
+      category pattern). The selection menu gains "Ask the Assistant about
+      this": the passage rides to the chat composer as a removable
+      reference chip via a small intent bus (assistant.svelte.ts), carried
+      as data on the user turn and folded into the model-bound message
+      server-side (prompts/reference.ts).
+- [x] Coauthor reference: the Write panel captures the selection or the
+      text before the cursor as a removable chip and sends it with the
+      brief, so "continue from here" lands in the right place.
+- [x] Scene-split proposals: a propose_scene_split write tool stages a
+      proposal (exact start text + rationale, validated by a shared pure
+      locator) that the gateway forwards as a new `proposal` SSE frame;
+      the chat panel renders a card with "Split here", and confirming
+      re-locates the text server-side at that moment before the existing
+      splitScene path. The scene row submenu gains "Suggest where to
+      split" (a canned chat turn). Nothing changes without the confirm.
+- [x] Review replies: suggestions gained a lazily created discussion
+      thread (migration 0059, unique nullable suggestion_id on
+      review_threads); pending suggestion cards take replies on both
+      review pages, with reviewer notifications deduplicated across the
+      suggestion author and thread commenters. Replying in a thread the
+      Assistant opened triggers its answer automatically:
+      POST /api/assistant/review-reply (owner-only, assistant-rooted
+      threads only) runs a reviewer turn with scoped tools
+      (reply_in_thread, update_suggestion) whose targets are fixed
+      server-side; update_suggestion only revises the Assistant's own
+      pending replacement, and prose without a tool call is staged as the
+      reply. Guests can never trigger it. Delete-order fixes rode along
+      (threads before suggestions in the cascades; retracting a
+      suggestion takes only its own discussion).
+- [x] Insert at cursor: completed chat replies offer "Insert at cursor"
+      while a single scene editor is open.
+- [x] Palette commands: Ask the Assistant, Catch me up, Update summaries,
+      and Review this scene on the write page, gated like the other
+      surfaces; the scene-review and summaries fetches moved to a shared
+      assistant-actions client helper.
+- [x] Persisted chat: assistant_chat_messages (migration 0060), one
+      conversation per story per user; turns persist as they complete
+      (references and proposals in meta), the page seeds the panel, Clear
+      conversation deletes, conversations cap at a recent window, and the
+      rows ride the story delete and account purge.
+
+Lint, check, and the full unit + integration suite (890) pass locally
+against Postgres; the account, selection-menu, review, and split e2e
+specs pass against a substitute Chromium (the author-review spec is
+flaky under it - drag selection corrupts text even at the base commit
+there - so CI's real browser gates it). Live-model verification of the
+new prompts is left for the author's endpoint.
+
+Review accept race (2026-06-10, post-v3.4.0): chasing the author-review
+spec flake exposed a real data-loss window, not just a test problem.
+The review editor only learned of an accepted suggestion when the page
+data reloaded, and its local-edits-win sync meant any autosave carrying
+unsaved or in-flight typing in that window silently reverted the
+accepted text. Fixed by folding the accepted change into the live
+document the moment the server confirms it: decide/accept-all report
+the applied ids, the cards and panel hand them to the editor before the
+data refresh, and the editor applies each replacement at its live
+anchor (the marks field maps anchors through typing; anchorOf now also
+resolves insert ghosts) while dropping the decided marks in the same
+transaction. The spec deflake (#390) and a new e2e that accepts and
+types with no settling wait both ride the same branch history.
+
+Split proposal follow-ups (2026-06-10, post-v3.4.0, from first real use):
+(1) When the model proposed several splits of one scene, only the first
+confirmed: the later passages had moved into the scene that split
+created. locateSplitInStory follows the passage to whichever live scene
+of the story holds it now (unique across scenes, then unique within);
+the split endpoint re-targets through it. (2) The model passed the text
+the first scene should end with, cutting before it: the tool parameter
+renamed to newSceneStart with a worked example in the description (the
+old name still lands for cached schemas), and the canned sidebar turn
+asks for the new scene's opening words. (3) Seam whitespace was already
+shed on both sides by splitScene; pinned with a test. (4) Proposal
+cards now show a confirmed split as done with a Revert that merges the
+two scenes back (merge-scenes), the decided state persisted on the
+stored chat turn (confirmed on the meta proposal entry, no migration)
+so it survives reloads.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

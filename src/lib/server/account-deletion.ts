@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import type { AssetObjectStore } from './assets';
 import {
 	assets,
+	assistantChatMessages,
 	exportArtifacts,
 	notifications,
 	publications,
@@ -135,6 +136,11 @@ export async function purgeAccount(
 			.update(reviewers)
 			.set({ userId: null, displayName: 'Deleted account', email: null })
 			.where(eq(reviewers.userId, userId));
+
+		// Assistant chat transcripts the user holds anywhere (their own stories'
+		// transcripts already went with the universes above; this is the
+		// belt-and-braces sweep by user).
+		await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.userId, userId));
 
 		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));

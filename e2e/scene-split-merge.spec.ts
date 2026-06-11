@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { clickTool } from './toolbar';
 
 // Splitting a scene at the cursor and merging scenes back together from
 // the sidebar's right-click menu.
@@ -31,7 +32,7 @@ test('split a scene at the cursor, then merge the halves back', async ({ page })
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 	await page.keyboard.press('Home');
 
-	await page.getByRole('button', { name: 'Split scene at cursor' }).click();
+	await clickTool(page, 'Split scene at cursor');
 
 	// The split lands in the new untitled scene holding the second half.
 	await expect(page.locator('.scene-row')).toHaveCount(2);

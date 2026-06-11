@@ -220,6 +220,16 @@ describe('assembleContext', () => {
 		expect(context!.text).toContain('Iron does not rust here.');
 	});
 
+	it('renders scene ids in the outline and nearby-scene lines', async () => {
+		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		// The outline line for the non-focus scene carries its id, so a
+		// tool-capable turn can read it in full with get_scene.
+		expect(context!.text).toContain(`(scene id: ${scene2Id}): A calm walk south.`);
+		expect(context!.text).toContain(`(scene id: ${scene1Id}): Alice and Bram meet.`);
+		// The nearby-scenes line under the current scene carries the id too.
+		expect(context!.text).toContain(`- After "The Quiet Road" (scene id: ${scene2Id})`);
+	});
+
 	it('keeps only the frame under a tiny budget, dropping the rest', async () => {
 		const context = await assembleContext(db, {
 			userId: ownerId,

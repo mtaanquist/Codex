@@ -254,6 +254,37 @@ describe('gateway tool loop', () => {
 		expect(toolMessage?.content).toContain('tolled over the harbour');
 	});
 
+	it('list_scenes returns the chapter and scene skeleton with ids', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('A quiet opening.');
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'list_scenes', arguments: '{}' }]
+			},
+			{ content: 'One scene so far.' }
+		]);
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'what scenes are there?' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(text).toBe('One scene so far.');
+		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
+		const listed = JSON.parse(toolMessage!.content) as {
+			chapters: unknown[];
+			unfiledScenes: { id: string; title: string | null }[];
+		};
+		// The seeded scene has no chapter, so it lists as unfiled, id included.
+		expect(listed.unfiledScenes.map((s) => s.id)).toContain(sceneId);
+	});
+
 	it('a write tool stages a suggestion authored by the Assistant and changes nothing', async () => {
 		await configure(true, 'balanced', 'Muse');
 		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
@@ -312,6 +343,97 @@ describe('gateway tool loop', () => {
 			.from(scenes)
 			.where(eq(scenes.id, sceneId));
 		expect(after.bodyMd).toBe('The dog sat on the mat.');
+	});
+
+	it('propose_scene_split stages nothing and surfaces a proposal frame on the stream', async () => {
+		await configure(true);
+		const body = 'The first half ends here.\n\nThe second half starts here.';
+		const { storyId, sceneId } = await seedStoryScene(body);
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{
+						id: 'c1',
+						name: 'propose_scene_split',
+						arguments: JSON.stringify({
+							sceneId,
+							newSceneStart: 'The second half',
+							rationale: 'A clean change of focus.'
+						})
+					}
+				]
+			},
+			{ content: 'I propose splitting before the second half.' }
+		]);
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'where should this split?' }]
+				},
+				{ provider: script.provider, http: noHttp }
+			)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'I propose splitting before the second half.' },
+			{
+				type: 'proposal',
+				proposal: {
+					sceneId,
+					sceneTitle: 'Scene 1',
+					before: 'The second half',
+					rationale: 'A clean change of focus.'
+				}
+			},
+			{ type: 'done' }
+		]);
+		// The scene itself is untouched; the proposal lives in the transcript.
+		const [scene] = await db
+			.select({ bodyMd: scenes.bodyMd })
+			.from(scenes)
+			.where(eq(scenes.id, sceneId));
+		expect(scene.bodyMd).toBe(body);
+	});
+
+	it('a bad split point goes back to the model as a retryable tool result', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('Half and half and half again.');
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{
+						id: 'c1',
+						name: 'propose_scene_split',
+						// The legacy parameter name still lands (cached tool schemas).
+						arguments: JSON.stringify({ sceneId, before: 'half', rationale: 'x' })
+					}
+				]
+			},
+			{ content: 'I could not pin the spot down.' }
+		]);
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'split it' }]
+				},
+				{ provider: script.provider, http: noHttp }
+			)
+		);
+		// No proposal frame; the ambiguity went back as the tool result.
+		expect(events.some((e) => e.type === 'proposal')).toBe(false);
+		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
+		expect(toolMessage?.content).toMatch(/more than once/);
 	});
 
 	it('caps the loop at the tool-call budget then forces an answer', async () => {

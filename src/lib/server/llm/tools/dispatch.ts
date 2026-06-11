@@ -3,8 +3,15 @@ import type { Database } from '../../auth';
 import { scenes, stories } from '../../db/schema';
 import { entityAppearances, getEntityCard } from '../../plan-data';
 import { searchAll } from '../../search';
-import { createSuggestion, createThread } from '../../review';
-import type { ProviderToolCall } from '../providers/types';
+import {
+	addComment,
+	createSuggestion,
+	createThread,
+	updateAssistantSuggestion
+} from '../../review';
+import { locateSplitBefore } from '$lib/scene-split-locate';
+import { storySkeleton, type SceneSummary } from '../context/sources';
+import type { ProviderToolCall, SplitProposal } from '../providers/types';
 import { findTool } from './registry';
 
 // Executes one tool call within an owner-scoped story context. Read tools query
@@ -13,13 +20,24 @@ import { findTool } from './registry';
 // context's story and user, so a tool cannot reach another author's work even
 // if the model invents an id.
 
-export type ToolContext = { db: Database; userId: string; storyId: string };
+export type ToolContext = {
+	db: Database;
+	userId: string;
+	storyId: string;
+	// Targets for the scoped tools (reply_in_thread, update_suggestion), fixed
+	// by the calling surface so the model cannot reach another thread or
+	// suggestion even by inventing ids.
+	scope?: { threadId?: string; suggestionId?: string };
+};
 
 export type ToolOutcome = {
 	// The text fed back to the model as the tool result.
 	result: string;
 	// True when the call staged a human-approved change.
 	staged: boolean;
+	// A staged action the surface should show alongside the reply (a proposal
+	// card with a confirm button); the gateway forwards it on the stream.
+	surface?: { type: 'proposal'; proposal: SplitProposal };
 };
 
 const MAX_SCENE_BODY = 12000;
@@ -49,6 +67,8 @@ export async function dispatchToolCall(
 	}
 	try {
 		switch (call.name) {
+			case 'list_scenes':
+				return { result: await listScenes(ctx), staged: false };
 			case 'get_scene':
 				return { result: await getScene(ctx, asString(args.sceneId)), staged: false };
 			case 'get_entity':
@@ -69,6 +89,18 @@ export async function dispatchToolCall(
 					comment: asString(args.comment),
 					quote: typeof args.quote === 'string' ? args.quote : undefined
 				});
+			case 'propose_scene_split':
+				return proposeSceneSplit(ctx, {
+					sceneId: asString(args.sceneId),
+					// The old parameter name rides as a fallback for any provider
+					// still answering against a cached tool schema.
+					before: asString(args.newSceneStart) || asString(args.before),
+					rationale: asString(args.rationale)
+				});
+			case 'reply_in_thread':
+				return replyInThread(ctx, asString(args.comment));
+			case 'update_suggestion':
+				return updateSuggestion(ctx, asString(args.replacement));
 			default:
 				return { result: `Unhandled tool: ${call.name}.`, staged: false };
 		}
@@ -105,6 +137,27 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 			)
 		);
 	return row ?? null;
+}
+
+// The chapter and scene skeleton, so the model can find a scene's id and read
+// it with get_scene. ctx.storyId is owner-verified by the gateway before any
+// tool runs, so the skeleton query needs no further scoping.
+async function listScenes(ctx: ToolContext): Promise<string> {
+	const skeleton = await storySkeleton(ctx.db, ctx.storyId);
+	const scene = (s: SceneSummary) => ({
+		id: s.id,
+		title: s.title,
+		status: s.status,
+		summary: s.summaryMd
+	});
+	return JSON.stringify({
+		chapters: skeleton.chapters.map((c) => ({
+			title: c.title,
+			summary: c.summaryMd,
+			scenes: c.scenes.map(scene)
+		})),
+		unfiledScenes: skeleton.orphans.map(scene)
+	});
 }
 
 async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {
@@ -192,6 +245,70 @@ async function suggestEdit(
 	if (!result.ok) return { result: result.reason, staged: false };
 	return {
 		result: `Staged a suggested edit (id ${result.suggestionId}). The author will accept or reject it; nothing has changed yet.`,
+		staged: true
+	};
+}
+
+// Stages nothing in the database: the proposal lives in the transcript as a
+// card with a confirm button, and the confirm re-locates the text against the
+// scene as it stands then. A bad split point goes back to the model as a
+// retryable tool result.
+async function proposeSceneSplit(
+	ctx: ToolContext,
+	input: { sceneId: string; before: string; rationale: string }
+): Promise<ToolOutcome> {
+	const scene = await loadScene(ctx, input.sceneId);
+	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
+	const location = locateSplitBefore(scene.bodyMd, input.before);
+	if (!location.ok) return { result: location.reason, staged: false };
+	return {
+		result:
+			'The split proposal is shown to the writer with a confirm button. Nothing has changed yet; do not call this again for the same point.',
+		staged: true,
+		surface: {
+			type: 'proposal',
+			proposal: {
+				sceneId: scene.id,
+				sceneTitle: scene.title,
+				before: input.before,
+				rationale: input.rationale.trim()
+			}
+		}
+	};
+}
+
+// The scoped reply: posts into the thread fixed by the calling surface, as
+// the Assistant. No thread id crosses the model boundary.
+async function replyInThread(ctx: ToolContext, comment: string): Promise<ToolOutcome> {
+	const threadId = ctx.scope?.threadId;
+	if (!threadId) return { result: 'There is no thread under discussion.', staged: false };
+	if (!comment.trim()) return { result: 'Provide the reply text.', staged: false };
+	const result = await addComment(ctx.db, {
+		storyId: ctx.storyId,
+		threadId,
+		author: { assistant: true },
+		body: comment
+	});
+	if (!result.ok) return { result: result.reason, staged: false };
+	return { result: 'Your reply was posted to the thread.', staged: true };
+}
+
+// The scoped revision: amends the Assistant's own pending suggestion fixed by
+// the calling surface. updateAssistantSuggestion enforces authorship and the
+// pending status.
+async function updateSuggestion(ctx: ToolContext, replacement: string): Promise<ToolOutcome> {
+	const suggestionId = ctx.scope?.suggestionId;
+	if (!suggestionId) {
+		return { result: 'There is no suggestion under discussion.', staged: false };
+	}
+	const result = await updateAssistantSuggestion(ctx.db, {
+		storyId: ctx.storyId,
+		suggestionId,
+		replacement
+	});
+	if (!result.ok) return { result: result.reason, staged: false };
+	return {
+		result: 'Your suggestion now proposes the revised text; the author still decides on it.',
 		staged: true
 	};
 }

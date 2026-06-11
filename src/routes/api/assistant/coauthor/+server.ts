@@ -4,7 +4,7 @@ import { ownedStory } from '$lib/server/story-access';
 import { rateLimitAssistant } from '$lib/server/write-guard';
 import { assistantLayout } from '$lib/server/llm/config';
 import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import { buildCoauthorMessage } from '$lib/server/llm/prompts/coauthor';
+import { buildCoauthorMessage, readCoauthorReference } from '$lib/server/llm/prompts/coauthor';
 import { AssistantDisabledError, complete } from '$lib/server/llm/gateway';
 import type { ChatMessage } from '$lib/server/llm/providers/types';
 
@@ -23,11 +23,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		storyId?: unknown;
 		sceneId?: unknown;
 		instruction?: unknown;
+		reference?: unknown;
 	} | null;
 	const storyId = payload && typeof payload.storyId === 'string' ? payload.storyId : '';
 	const sceneId = payload && typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const instruction =
 		payload && typeof payload.instruction === 'string' ? payload.instruction.trim() : '';
+	// Where the writer is in the prose; an unusable reference is just dropped.
+	const reference = payload ? readCoauthorReference(payload.reference) : null;
 	if (!storyId) error(400, 'storyId is required.');
 	if (!instruction) error(400, 'Tell the Assistant what to write.');
 	if (instruction.length > 2000) error(400, 'That brief is too long.');
@@ -39,7 +42,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
 
 	const context = await assembleContext(db, { userId, storyId: story.id, sceneId });
-	const task: ChatMessage = { role: 'user', content: buildCoauthorMessage(instruction) };
+	const task: ChatMessage = { role: 'user', content: buildCoauthorMessage(instruction, reference) };
 	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];
 
 	let text: string;

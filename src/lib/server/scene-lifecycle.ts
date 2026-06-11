@@ -105,7 +105,8 @@ export async function destroyScene(
 	const scene = await ownedScene(db, userId, sceneId, true);
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
-		await tx.delete(reviewSuggestions).where(eq(reviewSuggestions.sceneId, scene.id));
+		// Threads before suggestions: a suggestion's discussion thread
+		// references it.
 		const threadRows = await tx
 			.select({ id: reviewThreads.id })
 			.from(reviewThreads)
@@ -119,6 +120,7 @@ export async function destroyScene(
 			);
 		}
 		await tx.delete(reviewThreads).where(eq(reviewThreads.sceneId, scene.id));
+		await tx.delete(reviewSuggestions).where(eq(reviewSuggestions.sceneId, scene.id));
 		await tx.delete(sceneMarkers).where(eq(sceneMarkers.sceneId, scene.id));
 		await tx
 			.delete(entityMentions)

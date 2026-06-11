@@ -32,6 +32,7 @@
 			threads={data.threads}
 			suggestions={data.suggestions}
 			role="guest"
+			book={{ title: data.storyTitle, subtitle: null }}
 			canSuggest={data.canSuggest}
 			entities={data.mentionEntities}
 			mentionMembers={data.mentionMembers}

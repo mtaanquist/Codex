@@ -306,6 +306,43 @@ export async function createThread(
 	return { ok: true, threadId };
 }
 
+// A suggestion's discussion thread, created lazily on the first reply. The
+// thread carries no anchor or opening comment of its own: the suggestion's
+// card is the anchor, and the first reply is the first comment. Idempotent -
+// the unique suggestion_id makes a concurrent first reply settle on one row.
+export async function ensureSuggestionThread(
+	db: Database,
+	input: { storyId: string; suggestionId: string }
+): Promise<{ ok: true; threadId: string } | { ok: false; reason: string }> {
+	const [suggestion] = await db
+		.select({ id: reviewSuggestions.id, sceneId: reviewSuggestions.sceneId })
+		.from(reviewSuggestions)
+		.where(
+			and(
+				eq(reviewSuggestions.id, input.suggestionId),
+				eq(reviewSuggestions.storyId, input.storyId)
+			)
+		);
+	if (!suggestion) return { ok: false, reason: 'That suggestion does not exist.' };
+	const [created] = await db
+		.insert(reviewThreads)
+		.values({
+			storyId: input.storyId,
+			sceneId: suggestion.sceneId,
+			suggestionId: suggestion.id
+		})
+		.onConflictDoNothing({ target: reviewThreads.suggestionId })
+		.returning({ id: reviewThreads.id });
+	if (created) return { ok: true, threadId: created.id };
+	const [existing] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(eq(reviewThreads.suggestionId, suggestion.id));
+	return existing
+		? { ok: true, threadId: existing.id }
+		: { ok: false, reason: 'That thread could not be created.' };
+}
+
 // Replies to an existing thread. The caller has already established the
 // author's right to this story; the thread only needs to belong to it.
 export async function addComment(
@@ -360,6 +397,9 @@ export async function setThreadResolved(
 export type ThreadView = {
 	id: string;
 	sceneId: string;
+	// Set when this thread is a suggestion's discussion; it renders on that
+	// suggestion's card, not in the standalone comment list.
+	suggestionId: string | null;
 	// The anchor mapped onto the current text; null for whole-scene comments
 	// and for anchors that no longer fit (anchorLost says which).
 	anchor: { start: number; end: number } | null;
@@ -453,6 +493,7 @@ export async function listThreads(
 		return {
 			id: row.thread.id,
 			sceneId: row.thread.sceneId,
+			suggestionId: row.thread.suggestionId,
 			anchor,
 			anchorLost,
 			resolvedAt: row.thread.resolvedAt,
@@ -577,6 +618,30 @@ function mapSuggestionRange(
 	return reanchorRange(baseText, currentText, start, end);
 }
 
+// Where a decided suggestion now sits, so the Done view can point at it: the
+// accepted replacement (the new text it left behind) or the rejected original
+// (still in place). Null when there is nothing to mark or it cannot be found.
+function decidedAnchor(
+	status: 'accepted' | 'rejected',
+	baseText: string,
+	currentText: string,
+	start: number,
+	end: number,
+	replacement: string
+): { start: number; end: number } | null {
+	if (status === 'rejected') {
+		// Rejection left the text untouched, so the original passage maps as-is.
+		if (start === end) return null; // a rejected insertion left no text
+		return reanchorRange(baseText, currentText, start, end);
+	}
+	// Accepted: the replacement now occupies the spot the original held.
+	if (replacement.length === 0) return null; // a deletion leaves nothing to mark
+	const point = reanchorPoint(baseText, currentText, start);
+	if (point === null) return null;
+	const at = { start: point, end: point + replacement.length };
+	return at.end <= currentText.length ? at : null;
+}
+
 export async function listSuggestions(
 	db: Database,
 	storyId: string,
@@ -602,11 +667,19 @@ export async function listSuggestions(
 		: 'Assistant';
 	return rows.map((row) => {
 		const { rangeStart, rangeEnd } = row.suggestion;
-		// Decided suggestions keep their record but no longer point anywhere.
+		// A pending suggestion anchors to where it would apply; a decided one
+		// anchors to where it now sits, so the Done view can point at it.
 		const anchor =
 			row.suggestion.status === 'pending'
 				? mapSuggestionRange(row.baseBody, row.currentBody, rangeStart, rangeEnd)
-				: null;
+				: decidedAnchor(
+						row.suggestion.status,
+						row.baseBody,
+						row.currentBody,
+						rangeStart,
+						rangeEnd,
+						row.suggestion.replacement
+					);
 		const isOwner = row.suggestion.authorUserId !== null;
 		const isAssistant = row.suggestion.assistant;
 		const mine = viewer
@@ -634,6 +707,38 @@ export async function listSuggestions(
 			decidedAt: row.suggestion.decidedAt
 		};
 	});
+}
+
+// Revises the replacement text of the Assistant's own pending suggestion -
+// the discussion path where the author asks for a change and the Assistant
+// amends what it proposed. Never touches another author's suggestion or a
+// decided one, and only the replacement: the anchored range stays put.
+export async function updateAssistantSuggestion(
+	db: Database,
+	input: { storyId: string; suggestionId: string; replacement: string }
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
+		return { ok: false, reason: 'That suggestion is too long.' };
+	}
+	const updated = await db
+		.update(reviewSuggestions)
+		.set({ replacement: input.replacement })
+		.where(
+			and(
+				eq(reviewSuggestions.id, input.suggestionId),
+				eq(reviewSuggestions.storyId, input.storyId),
+				eq(reviewSuggestions.assistant, true),
+				eq(reviewSuggestions.status, 'pending')
+			)
+		)
+		.returning({ id: reviewSuggestions.id });
+	if (updated.length === 0) {
+		return {
+			ok: false,
+			reason: 'Only the Assistant can revise its own suggestion, and only while it is pending.'
+		};
+	}
+	return { ok: true };
 }
 
 // The author's decision. Rejection only records it; acceptance re-anchors
@@ -734,7 +839,7 @@ export async function acceptAllInScene(
 	userId: string,
 	storyId: string,
 	sceneId: string
-): Promise<{ accepted: number; failed: number }> {
+): Promise<{ accepted: number; failed: number; acceptedIds: string[] }> {
 	const rows = await db
 		.select({ id: reviewSuggestions.id })
 		.from(reviewSuggestions)
@@ -746,14 +851,16 @@ export async function acceptAllInScene(
 			)
 		)
 		.orderBy(asc(reviewSuggestions.createdAt));
-	let accepted = 0;
+	// The ids that applied, in application order, so the client can fold the
+	// same changes into its live editor without waiting for the data reload.
+	const acceptedIds: string[] = [];
 	let failed = 0;
 	for (const row of rows) {
 		const result = await decideSuggestion(db, userId, row.id, true);
-		if (result.ok) accepted++;
+		if (result.ok) acceptedIds.push(row.id);
 		else failed++;
 	}
-	return { accepted, failed };
+	return { accepted: acceptedIds.length, failed, acceptedIds };
 }
 
 // Retracts a comment the viewer authored. A reply is removed on its own; the
@@ -809,8 +916,30 @@ export async function deleteSuggestion(
 	if (row.status !== 'pending') {
 		return { ok: false, reason: 'That suggestion was already decided.' };
 	}
-	await db
-		.delete(reviewSuggestions)
-		.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+	// The discussion thread goes with the retracted suggestion - but never
+	// someone else's words: once others have replied on it, the suggestion
+	// stays and gets decided instead.
+	const [thread] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(eq(reviewThreads.suggestionId, suggestionId));
+	if (thread) {
+		const discussion = await db
+			.select()
+			.from(reviewComments)
+			.where(eq(reviewComments.threadId, thread.id));
+		if (!discussion.every((comment) => ownsComment(comment, actor))) {
+			return { ok: false, reason: 'Others have replied on it; it can only be decided now.' };
+		}
+	}
+	await db.transaction(async (tx) => {
+		if (thread) {
+			await tx.delete(reviewComments).where(eq(reviewComments.threadId, thread.id));
+			await tx.delete(reviewThreads).where(eq(reviewThreads.id, thread.id));
+		}
+		await tx
+			.delete(reviewSuggestions)
+			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
+	});
 	return { ok: true };
 }

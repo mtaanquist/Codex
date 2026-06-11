@@ -87,6 +87,13 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await guest.getByLabel('Suggested text').fill('reservations');
 	await guest.getByRole('button', { name: 'Save suggestion' }).click();
 	await expect(guest.locator('.rv-diff-ins')).toHaveText('reservations');
+
+	// The guest can open a discussion on their own pending suggestion; the
+	// reply renders on the card. No assistant is involved on the guest page.
+	const guestSugg = guest.locator('.rv-card.sugg');
+	await guestSugg.getByLabel('Reply', { exact: true }).fill('Softer than opinions, I think.');
+	await guestSugg.getByRole('button', { name: 'Send reply' }).click();
+	await expect(guestSugg.locator('.rv-reply-body')).toHaveText('Softer than opinions, I think.');
 	await guestContext.close();
 
 	// Author: the bell heard about both; the comment notification leads to the
@@ -105,26 +112,36 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await expect(page).toHaveURL(`/stories/${storyId}/review`);
 
 	// The thread is on the review workspace; reply, accept the edit, resolve.
+	// The suggestion card carries its own reply field now, so the comment
+	// thread's is reached through its card.
 	await expect(page.locator('.rv-body', { hasText: 'Strong opening, weak hinges.' })).toBeVisible();
-	await expect(page.locator('.rv-card').filter({ hasText: 'Margin Walker' }).first()).toBeVisible();
-	await page.getByLabel('Reply', { exact: true }).fill('Noted; oiling the hinges.');
-	await page.getByRole('button', { name: 'Send reply' }).click();
+	const commentCard = page.locator('.rv-card').filter({ hasText: 'Strong opening, weak hinges.' });
+	await expect(commentCard).toBeVisible();
+	await commentCard.getByLabel('Reply', { exact: true }).fill('Noted; oiling the hinges.');
+	await commentCard.getByRole('button', { name: 'Send reply' }).click();
 	await expect(
 		page.locator('.rv-reply-body', { hasText: 'Noted; oiling the hinges.' })
 	).toBeVisible();
 
-	// Accept the suggested change: the prose updates in place.
+	// Accept the suggested change from the card's header-corner control: the
+	// author's editable prose updates in place.
 	await expect(page.locator('.rv-diff-ins')).toHaveText('reservations');
-	await page.getByRole('button', { name: 'Accept', exact: true }).click();
-	await expect(page.locator('.review-prose')).toContainText(
+	await page.getByRole('button', { name: 'Accept suggestion' }).click();
+	await expect(page.locator('.review-edit .cm-content')).toContainText(
 		'The reviewer will have reservations about this gate.'
 	);
 
-	// Resolve the thread, then the Resolved filter shows both outcomes.
-	await page.getByRole('button', { name: 'Resolve', exact: true }).click();
-	await page.locator('.rv-filter', { hasText: 'Resolved' }).click();
+	// Resolve the thread, then the Done filter shows both outcomes.
+	await page.getByRole('button', { name: 'Resolve comment' }).click();
+	await page.locator('.rv-filter', { hasText: 'Done' }).click();
 	await expect(page.locator('.rv-status.resolved')).toBeVisible();
 	await expect(page.locator('.rv-status.accepted')).toBeVisible();
+
+	// Clicking the accepted edit points at where it landed: a faint outline over
+	// the replacement text in the manuscript (decided suggestions get a display
+	// anchor, not just the open ones).
+	await page.locator('.rv-card').filter({ hasText: 'reservations' }).first().click();
+	await expect(page.locator('.review-edit .cm-content .rv-resolved')).toBeVisible();
 
 	// A revoked link stops working for new visits.
 	await page.goto(`/stories/${storyId}/settings/review`);

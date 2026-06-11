@@ -10,14 +10,14 @@ Each link is its own invitation. If you want feedback from three people, make th
 
 ## What the reviewer sees
 
-The link opens the story in a review workspace: a list of notes on the left, the scene to read in the middle, and the comment threads on the right. The reviewer gives a name (or, if they have an account here and are signed in, their own name is used), then reads and comments:
+The link opens the story in a review workspace: the chapter and scene outline on the left, the scene to read in the middle, and the comment threads on the right. The reviewer gives a name (or, if they have an account here and are signed in, their own name is used), then reads and comments:
 
 - Selecting a passage brings up a small toolbar to comment on exactly those words.
 - The "Whole scene" button at the top of the right panel comments on the scene as a whole.
 - They see earlier comments on the story and can reply to them from each card.
 - A trash icon on their own comment or suggested edit removes it if they change their mind. The opening comment of a thread can only be removed before anyone has replied to it.
 
-They move through the story scene by scene. The list on the left groups every note by scene; clicking one jumps to that scene and highlights the passage. Markers down the right edge of the page show where the notes sit. The tabs at the top of each side filter between all notes, comments, edits, and resolved ones. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
+They move through the story scene by scene. The list on the left is the chapter and scene outline, with a count beside each scene that has notes and a running total at the top; clicking a scene opens it. Markers down the right edge of the page show where the notes sit. The tabs above the notes panel filter between open notes, comments, edits, and the ones marked Done. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
 
 If a name in the manuscript is underlined, it is a character, place, or piece of lore the author has written about. Clicking it opens a short card about them; reviewers see this summary but not the author's full notes.
 
@@ -27,13 +27,19 @@ Reviewers only ever see this one story. They never change your text directly - a
 
 ## Reviewing your own story
 
-You do not have to invite anyone to use review mode. Open Review from the story's left-hand tabs (Write, Plan, Notes, Review), or from "Review mode" in the Review section of settings, to read your manuscript and leave your own comments and suggested edits, the same way a reviewer would - a useful pass for marking things to fix without changing the prose yet. Your notes are marked as yours, and any reviewers you have invited see them too, so you can offer a second opinion of your own.
+You do not have to invite anyone to use review mode. Open Review from the story's left-hand tabs (Write, Plan, Notes, Review), or from "Review mode" in the Review section of settings, to read your manuscript and leave your own comments and suggested edits, the same way a reviewer would. Your notes are marked as yours, and any reviewers you have invited see them too, so you can offer a second opinion of your own.
+
+Unlike a reviewer, you can also edit the manuscript right here. The middle of the review workspace is the live editor, with the same formatting bar as the writing editor, so you can fix a line on the spot instead of switching back to Write. This is what makes accepting a suggestion useful: take the change, then keep shaping it. Selecting a passage still brings up the toolbar to comment or suggest an edit on those words.
 
 ## Working through the feedback
 
 The right panel shows every note on the open scene, yours and your reviewers', each as its own card. The left list gathers them across the whole manuscript so you can see where the work is. If you asked the Assistant to review (from a scene, chapter, or the whole story), its comments and suggested edits appear here too, marked as the Assistant's, and you work through them the same way. Reply on a card to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
 
-A suggested change shows the original text struck through and the proposed text beside it, both on its card and in the scene. Accept one to apply it to the scene (a history entry records it), or reject it - this works the same for your own suggestions and a reviewer's. You decide one at a time, in any order, or use "Accept all" above the cards to apply every pending edit in the open scene at once. A comment or suggested edit you left yourself carries a trash icon to remove it; to clear a reviewer's note, resolve the comment or reject the edit rather than deleting it.
+A suggested change shows the original text struck through and the proposed text beside it, both on its card and in the scene. Accept one to apply it to the scene (a history entry records it), or reject it - this works the same for your own suggestions and a reviewer's. The accept and reject controls sit in the top corner of each card. You decide one at a time, in any order, or use "Accept all" above the cards to apply every pending edit in the open scene at once. Once a change is in, you can carry on editing it in the manuscript. A comment or suggested edit you left yourself carries a trash icon to remove it; to clear a reviewer's note, resolve the comment or reject the edit rather than deleting it.
+
+A pending suggestion's card also takes replies, so you can talk a proposed edit over before deciding on it. Reviewers see and join these conversations like any thread.
+
+When the Assistant is set up and a note came from it, replying on that note makes the Assistant answer you right there. Ask it why it suggested something, or ask for a different wording: it can revise its own pending suggestion, and the card updates with the new proposal. It never decides anything - accepting or rejecting stays yours - and it only ever responds to you, never to your reviewers.
 
 Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text, and a suggestion can no longer be accepted, only rejected.
 
