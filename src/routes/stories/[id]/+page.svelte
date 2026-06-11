@@ -10,6 +10,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import StoryPreview from '$lib/components/StoryPreview.svelte';
 	import { editorStyleVars } from '$lib/page-setup';
+	import type { ViewItem } from '$lib/components/ViewMenu.svelte';
 	import StoryOutline from '$lib/components/StoryOutline.svelte';
 	import StoryRowMenu, {
 		type RowMenuState,
@@ -428,6 +429,22 @@
 	const previewHref = $derived(`${storyPath}?view=preview${returnScenePart}`);
 	const editStoryHref = $derived(`${storyPath}?view=story${returnScenePart}`);
 
+	// The default scene-editor URL, the Edit target from the scene toolbar.
+	const sceneEditHref = $derived(
+		data.returnSceneId ? `${storyPath}?scene=${data.returnSceneId}` : storyPath
+	);
+	// The View dropdown shared by every toolbar: Edit, Preview, Focus, Print.
+	// The Edit and Preview targets differ by scope (whole story vs the open
+	// scene), so they are passed in.
+	function viewItems(editTarget: string, previewTarget: string): ViewItem[] {
+		return [
+			{ id: 'edit', label: 'Edit', icon: 'pencil', href: editTarget, current: !viewPreview },
+			{ id: 'preview', label: 'Preview', icon: 'book', href: previewTarget, current: viewPreview },
+			{ id: 'focus', label: 'Focus', icon: 'expand', onSelect: () => (focusMode.on = true) },
+			{ id: 'print', label: 'Print', icon: 'print', href: `${storyPath}/print` }
+		];
+	}
+
 	// The continuous view's one formatting bar acts on whichever stitched
 	// editor last held the caret; default to the first so the bar is live
 	// before the writer clicks in.
@@ -608,13 +625,12 @@
 				<div class="md-editor">
 					<EditorToolbar
 						view={toolbarView}
-						{previewHref}
+						viewMenu={viewItems(editStoryHref, previewHref)}
 						storyView={{ active: inWholeStory, toggleHref }}
 						nonPrintingActive={nonPrintingMarks === 'shown'}
 						onToggleNonPrinting={toggleNonPrinting}
 						commandMarkersActive={commandMarkers === 'shown'}
 						onToggleCommandMarkers={toggleCommandMarkers}
-						onEnterFocus={() => (focusMode.on = true)}
 					/>
 					<div class="editor-scroll">
 						<div class="editor story-doc">
@@ -672,12 +688,14 @@
 						{editorStyle}
 						onSplitScene={splitCurrentScene}
 						storyView={{ active: inWholeStory, toggleHref }}
-						previewHref={`${storyPath}?view=preview&scene=${data.selectedScene.id}`}
+						viewMenu={viewItems(
+							sceneEditHref,
+							`${storyPath}?view=preview&scene=${data.selectedScene.id}`
+						)}
 						{nonPrintingMarks}
 						{commandMarkers}
 						onToggleNonPrinting={toggleNonPrinting}
 						onToggleCommandMarkers={toggleCommandMarkers}
-						onEnterFocus={() => (focusMode.on = true)}
 						sceneId={data.selectedScene.id}
 						storyId={data.story.id}
 						assistantContinuation={data.assistant.surfacesEnabled}
