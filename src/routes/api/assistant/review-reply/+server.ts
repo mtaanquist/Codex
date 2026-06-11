@@ -4,13 +4,17 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { reviewComments, reviewThreads, scenes } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
+import {
+	readAssistantPayload,
+	requireAssistantGate,
+	throwAssistantError
+} from '$lib/server/llm/assistant-route';
 import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
 import { buildReviewReplyMessage, excerptAround } from '$lib/server/llm/prompts/review-reply';
-import { AssistantDisabledError, complete } from '$lib/server/llm/gateway';
+import { complete } from '$lib/server/llm/gateway';
 import { addComment, listSuggestions, listThreads } from '$lib/server/review';
 import { reanchorRange } from '$lib/review-anchor';
+import { isUuid } from '$lib/slug';
 import type { ChatMessage } from '$lib/server/llm/providers/types';
 
 // The Assistant answering in a review thread it opened: triggered after the
@@ -19,8 +23,6 @@ import type { ChatMessage } from '$lib/server/llm/providers/types';
 // targets are fixed here, never taken from the model. Only the story owner
 // can trigger it, and only on assistant-rooted threads, so a guest reviewer
 // can never spend the owner's endpoint.
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function assistantCommentCount(threadId: string): Promise<number> {
 	const [row] = await db
@@ -31,12 +33,9 @@ async function assistantCommentCount(threadId: string): Promise<number> {
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as { threadId?: unknown } | null;
-	const threadId = payload && typeof payload.threadId === 'string' ? payload.threadId : '';
-	if (!UUID_RE.test(threadId)) error(400, 'threadId is required.');
+	const { userId, payload } = await readAssistantPayload<{ threadId?: unknown }>(request, locals);
+	const threadId = typeof payload.threadId === 'string' ? payload.threadId : '';
+	if (!isUuid(threadId)) error(400, 'threadId is required.');
 
 	const [threadRow] = await db
 		.select({ storyId: reviewThreads.storyId })
@@ -47,8 +46,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// 404s unless the user owns the story the thread belongs to.
 	const { story } = await ownedStory(threadRow.storyId, userId);
 
-	const layout = await assistantLayout(db, userId, story.id);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	const layout = await requireAssistantGate(userId, story.id);
 
 	// The full thread view carries the re-anchored range and display names.
 	const threads = await listThreads(db, story.id, reanchorRange, { userId });
@@ -114,8 +112,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			signal: request.signal
 		});
 	} catch (err) {
-		if (err instanceof AssistantDisabledError) error(403, err.message);
-		error(502, 'The Assistant could not reply.');
+		throwAssistantError(err, 'The Assistant could not reply.');
 	}
 
 	// The author asked a question and must hear back in the thread: if the turn

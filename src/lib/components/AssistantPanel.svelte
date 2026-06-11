@@ -107,9 +107,18 @@
 	let scroll = $state<HTMLDivElement>();
 	let pending: AbortController | null = null;
 
+	// The panel is conditionally rendered (tab switches, scenes without an
+	// Assistant tab); navigating away mid-stream must abort the reader loop
+	// instead of leaving it consuming into orphaned state.
 	$effect(() => {
-		// Re-read on every transcript change so the newest turn stays in view.
+		return () => pending?.abort();
+	});
+
+	$effect(() => {
+		// Re-read on every transcript change, including the streaming reply's
+		// growing text, so the newest words stay in view while tokens arrive.
 		void messages.length;
+		void messages[messages.length - 1]?.content;
 		void busy;
 		if (scroll) scroll.scrollTop = scroll.scrollHeight;
 	});

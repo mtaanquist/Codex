@@ -1,51 +1,8 @@
-import { error, json } from '@sveltejs/kit';
-import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { saveLoreEntry } from '$lib/server/lore';
-import { queueUniverseMentions } from '$lib/server/jobs';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { checkProseLength, readJson } from '$lib/server/validation';
-import { cleanDetails } from '$lib/entity-snapshot';
+import { handleEntityPut } from '$lib/server/entity-put';
 
-// Debounced autosave target for the lore editor.
+// Debounced autosave target for the lore entry editor; the shared
+// handler parses, saves, and queues the mention reindex.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
-	rateLimitWrites(locals.user!.id);
-	const payload = await readJson<{
-		name?: unknown;
-		keywords?: unknown;
-		summaryMd?: unknown;
-		bodyMd?: unknown;
-		details?: unknown;
-		categoryId?: unknown;
-		storyId?: unknown;
-		storyNotesMd?: unknown;
-	}>(request);
-	if (typeof payload.name !== 'string' || typeof payload.bodyMd !== 'string') {
-		error(400, 'name and bodyMd must be strings');
-	}
-	checkProseLength(payload.bodyMd);
-	const keywords = Array.isArray(payload.keywords)
-		? payload.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
-		: [];
-
-	const result = await saveLoreEntry(db, params.id, locals.user!.id, {
-		name: payload.name,
-		keywords,
-		summaryMd: typeof payload.summaryMd === 'string' ? payload.summaryMd : null,
-		bodyMd: payload.bodyMd,
-		details: payload.details !== undefined ? cleanDetails(payload.details) : undefined,
-		// Unlike characters and places, lore_entries.category_id is NOT NULL
-		// in the schema, so null is not accepted here to clear it.
-		categoryId: typeof payload.categoryId === 'string' ? payload.categoryId : undefined,
-		storyId: typeof payload.storyId === 'string' ? payload.storyId : undefined,
-		storyNotesMd: typeof payload.storyNotesMd === 'string' ? payload.storyNotesMd : undefined
-	});
-	if (!result.ok) {
-		throwActionError(result);
-	}
-	if (result.mentionsAffected) {
-		await queueUniverseMentions(result.universeId);
-	}
-	return json({ savedAt: new Date().toISOString() });
+	return await handleEntityPut('lore', params.id, request, locals.user!.id);
 };

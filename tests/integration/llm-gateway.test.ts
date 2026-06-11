@@ -54,9 +54,6 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 			const turn = turns.shift() ?? { content: '' };
 			return { content: turn.content, toolCalls: turn.toolCalls ?? [] };
 		},
-		async probe() {
-			return { ok: true, supportsStreaming: false, supportsTools: true };
-		},
 		async listModels() {
 			return [];
 		}
@@ -76,9 +73,6 @@ const stubProvider: Provider = {
 	async respond(req) {
 		captured = { model: req.model, messages: req.messages };
 		return { content: `done:${req.model}`, toolCalls: [] };
-	},
-	async probe() {
-		return { ok: true, supportsStreaming: true, supportsTools: false };
 	},
 	async listModels() {
 		return [];
@@ -306,7 +300,7 @@ describe('gateway tool loop', () => {
 			{
 				userId,
 				storyId,
-				role: 'editor',
+				role: 'reviewer',
 				enableTools: true,
 				messages: [{ role: 'user', content: 'edit it' }]
 			},
@@ -464,9 +458,6 @@ describe('gateway tool loop', () => {
 							]
 						}
 					: { content: 'forced answer', toolCalls: [] };
-			},
-			async probe() {
-				return { ok: true, supportsStreaming: false, supportsTools: true };
 			},
 			async listModels() {
 				return [];

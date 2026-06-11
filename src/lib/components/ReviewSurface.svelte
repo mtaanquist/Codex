@@ -1,10 +1,13 @@
 <script lang="ts">
-	import Icon from './Icon.svelte';
+	import ReviewSceneHead from './ReviewSceneHead.svelte';
+	import ReviewMarginRail from './ReviewMarginRail.svelte';
+	import ReviewSelectionToolbar from './ReviewSelectionToolbar.svelte';
 	import EntityQuickCard from './EntityQuickCard.svelte';
 	import { detectMentions, type MentionTarget } from '$lib/mention-detect';
 	import type { MentionEntity } from '$lib/editor-mentions';
 	import { dismiss } from '$lib/dismiss';
 	import {
+		nudgeMarkers,
 		reviewProse,
 		threadAuthor,
 		suggestionAuthor,
@@ -144,14 +147,7 @@
 				top: node.offsetTop
 			});
 		}
-		raw.sort((a, b) => a.top - b.top);
-		// Nudge markers apart so stacked notes stay clickable.
-		let last = -999;
-		for (const m of raw) {
-			if (m.top < last + 32) m.top = last + 32;
-			last = m.top;
-		}
-		markers = raw;
+		markers = nudgeMarkers(raw);
 	}
 
 	$effect(() => {
@@ -275,30 +271,12 @@
 <div class="editor-scroll review-scroll" bind:this={scrollEl} onscroll={() => (card = null)}>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="review-doc" bind:this={docEl} onmouseup={onMouseUp}>
-		<div class="review-head">
-			<div class="review-kicker">{chapterTitle} - review</div>
-			<h1 class="review-title">{scene.title ?? 'Untitled scene'}</h1>
-			<div class="review-subline">
-				{#if openComments + openSugg === 0}
-					No open review activity in this scene.
-				{:else}
-					{#if openComments > 0}
-						<span class="rv-sub-chip">
-							<Icon name="comment" size={13} />
-							{openComments}
-							{openComments === 1 ? 'comment' : 'comments'}
-						</span>
-					{/if}
-					{#if openSugg > 0}
-						<span class="rv-sub-chip">
-							<Icon name="suggest" size={13} />
-							{openSugg}
-							{openSugg === 1 ? 'suggestion' : 'suggestions'}
-						</span>
-					{/if}
-				{/if}
-			</div>
-		</div>
+		<ReviewSceneHead
+			{chapterTitle}
+			sceneTitle={scene.title}
+			{openComments}
+			openSuggestions={openSugg}
+		/>
 
 		{#if scene.bodyMd.trim() === ''}
 			<div class="rv-empty-scene">
@@ -372,38 +350,16 @@
 			</div>
 		{/if}
 
-		<div class="review-rail" aria-hidden="true">
-			{#each markers as marker (marker.id)}
-				<button
-					class="rv-marker"
-					class:is-focused={focusedId === marker.id}
-					style="top: {marker.top}px; --auth: {marker.color};"
-					type="button"
-					onclick={() => setFocused(marker.id)}
-					title="Jump to this note"
-				>
-					<Icon name={marker.kind === 'comment' ? 'comment' : 'suggest'} size={13} />
-				</button>
-			{/each}
-		</div>
+		<ReviewMarginRail {markers} {focusedId} {setFocused} />
 
 		{#if sel}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				class="rv-seltool"
-				style="left: {sel.left}px; top: {sel.top}px;"
-				onmousedown={(e) => e.preventDefault()}
-			>
-				<button type="button" onclick={startComment}>
-					<Icon name="comment-plus" size={15} /> Comment
-				</button>
-				{#if canSuggest}
-					<span class="rv-seltool-sep"></span>
-					<button type="button" onclick={startSuggest}>
-						<Icon name="suggest" size={15} /> Suggest edit
-					</button>
-				{/if}
-			</div>
+			<ReviewSelectionToolbar
+				left={sel.left}
+				top={sel.top}
+				{canSuggest}
+				onComment={startComment}
+				onSuggest={startSuggest}
+			/>
 		{/if}
 	</div>
 </div>

@@ -156,6 +156,11 @@
 	let coauthorError = $state('');
 	let coauthorInput = $state<HTMLTextAreaElement>();
 	let coauthorPending: AbortController | null = null;
+	// Abort a draft still streaming when the editor unmounts (scene switch),
+	// not only on the explicit close.
+	$effect(() => {
+		return () => coauthorPending?.abort();
+	});
 
 	// Where the writer is in the prose when the panel opens: the selection if
 	// there is one, otherwise the text leading up to the cursor. Shown as a

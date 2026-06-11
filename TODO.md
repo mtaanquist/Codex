@@ -42,6 +42,16 @@ and the cleanup pass - createCategory colour validation, dead
 listPendingUsers, shared entity-save guards, a shared action-error
 helper, and a single UUID_BODY fragment (#223). Shipped as v2.32.0.
 
+A third full-codebase review (2026-06-11) filed 25 issues (#399-#423:
+six bugs, the rest hardening and consolidation), all fixed the same
+day across six PRs (#424, #427-#429, #431, #432) and shipped as
+v3.4.3 (the bug fixes) and v3.4.4 (the hardening): the export-purge
+leak, the merge-seam marker pin, readJson/isUuid/rate-limit sweeps,
+three review.ts races (migration 0061), LLM tool gating and prompt
+fencing, the shared autosave queue and dismiss action, the entity-save
+and assistant-route consolidation, the dead-probe removal, the review
+screen dedup, and the story page split (1840 to ~1020 lines).
+
 Operator feedback batch (2026-06-07), three PRs: the admin shell
 polish - a shared PageTopBar for the static pages (app icon and
 palette everywhere, fixing the library page's missing Admin panel

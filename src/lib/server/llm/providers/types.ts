@@ -43,8 +43,6 @@ export type CompletionRequest = {
 	// Upper bound on generated tokens; the gateway always sets one so a runaway
 	// generation cannot hold a connection open indefinitely.
 	maxTokens: number;
-	// Sampling temperature, left to the provider default when unset.
-	temperature?: number;
 	// Tools the model may call this turn; omitted for a plain completion.
 	tools?: ToolSpec[];
 };
@@ -99,10 +97,6 @@ export type HttpRequestInit = {
 
 export type HttpRequest = (url: string, init: HttpRequestInit) => Promise<HttpResponse>;
 
-export type ProbeResult =
-	| { ok: true; supportsStreaming: boolean; supportsTools: boolean }
-	| { ok: false; reason: string };
-
 export interface Provider {
 	// Stream a completion as token deltas. Transport errors and non-2xx
 	// responses surface as a single { type: 'error' } event rather than throwing,
@@ -121,14 +115,6 @@ export interface Provider {
 		http: HttpRequest,
 		signal?: AbortSignal
 	): Promise<ProviderResponse>;
-	// The "test connection" probe: a trivial completion that reports reachability
-	// and the endpoint's detected capabilities.
-	probe(
-		conn: Connection,
-		model: string,
-		http: HttpRequest,
-		signal?: AbortSignal
-	): Promise<ProbeResult>;
 	// The endpoint's available model ids (GET /v1/models), so the writer picks
 	// from a list instead of typing a name. Throws on a transport or non-2xx
 	// error.

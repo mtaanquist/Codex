@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
-	import type { NoteListItem } from '$lib/server/notes';
+	import type { NoteListItem } from '$lib/wire-types';
 	import ModeSwitcher from './ModeSwitcher.svelte';
 
 	// The left pane of a Notes view, shared by the story and universe scopes.

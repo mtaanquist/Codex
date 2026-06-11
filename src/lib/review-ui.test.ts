@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	nudgeMarkers,
 	authorColor,
 	authorInitials,
 	authorKey,
@@ -216,5 +217,16 @@ describe('suggestionSnippet', () => {
 		expect(suggestionSnippet({ original: 'brown fox', replacement: 'red hen' })).toBe(
 			'"brown fox" to "red hen"'
 		);
+	});
+});
+
+describe('nudgeMarkers', () => {
+	it('spreads stacked markers and keeps separated ones in place', () => {
+		const nudged = nudgeMarkers([{ top: 100 }, { top: 10 }, { top: 12 }, { top: 30 }]);
+		expect(nudged.map((m) => m.top)).toEqual([10, 42, 74, 106]);
+	});
+
+	it('leaves well-separated markers untouched', () => {
+		expect(nudgeMarkers([{ top: 0 }, { top: 50 }]).map((m) => m.top)).toEqual([0, 50]);
 	});
 });

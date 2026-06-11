@@ -791,26 +791,10 @@
 	color: var(--text);
 	font-variant-numeric: tabular-nums;
 }
-/* The outline rows are buttons here (they pick a scene, they do not drag), so
-   strip the button chrome and the grab cursor the Write outline carries. */
-.review-outline .chapter-row,
+/* The review rows pick a scene rather than drag, so the grab cursor the
+   Write outline carries stays off here. */
 .review-outline .scene-row {
-	border: 0;
-	background: none;
-	width: 100%;
-	font: inherit;
-	color: var(--text);
-	text-align: left;
 	cursor: pointer;
-}
-/* Restore the outline hover/active feedback (the background reset above would
-   otherwise win over the shared .scene-row:hover rule by source order). */
-.review-outline .chapter-row:not(.as-label):hover,
-.review-outline .scene-row:hover {
-	background: var(--bg-hover);
-}
-.review-outline .scene-row.active {
-	background: var(--bg-active);
 }
 .review-outline .chapter-row.as-label,
 .review-outline .scene-row.as-label {
@@ -834,13 +818,6 @@
 	font-weight: 600;
 	color: var(--accent);
 }
-.review-outline .search-empty {
-	font-size: 12.5px;
-	color: var(--text-faint);
-	padding: 12px 10px;
-	line-height: 1.5;
-}
-
 /* Entity mentions in the review prose open a quick card on click, or with
    Enter/Space when focused by keyboard. */
 .review-prose .ref-word {
@@ -1133,4 +1110,21 @@
 .review-edit .cm-scroller {
 	font-size: 19px;
 	line-height: 1.72;
+}
+
+/* The fixed error toast both review pages float over the workspace. */
+.review-error {
+	position: fixed;
+	top: 60px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 50;
+	margin: 0;
+	padding: 8px 16px;
+	background: var(--danger-soft);
+	color: var(--danger);
+	border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
+	border-radius: var(--radius-md);
+	font-size: 13px;
+	box-shadow: var(--shadow);
 }

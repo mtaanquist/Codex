@@ -54,9 +54,6 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 			const turn = turns.shift() ?? { content: '' };
 			return { content: turn.content, toolCalls: turn.toolCalls ?? [] };
 		},
-		async probe() {
-			return { ok: true, supportsStreaming: false, supportsTools: true };
-		},
 		async listModels() {
 			return [];
 		}
@@ -378,9 +375,6 @@ describe('scoped review-reply tools through the gateway', () => {
 			async respond(req) {
 				offered = (req.tools ?? []).map((tool) => tool.name);
 				return { content: 'ok', toolCalls: [] };
-			},
-			async probe() {
-				return { ok: true, supportsStreaming: false, supportsTools: true };
 			},
 			async listModels() {
 				return [];

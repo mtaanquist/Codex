@@ -1,11 +1,13 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
+import {
+	readAssistantPayload,
+	requireAssistantStory,
+	throwAssistantError
+} from '$lib/server/llm/assistant-route';
 import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
 import { buildCoauthorMessage, readCoauthorReference } from '$lib/server/llm/prompts/coauthor';
-import { AssistantDisabledError, complete } from '$lib/server/llm/gateway';
+import { complete } from '$lib/server/llm/gateway';
 import type { ChatMessage } from '$lib/server/llm/providers/types';
 
 // Co-author: the writer gives a brief and the Assistant drafts a passage,
@@ -16,30 +18,19 @@ import type { ChatMessage } from '$lib/server/llm/providers/types';
 const MAX_COAUTHOR_TOKENS = 900;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as {
+	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
 		sceneId?: unknown;
 		instruction?: unknown;
 		reference?: unknown;
-	} | null;
-	const storyId = payload && typeof payload.storyId === 'string' ? payload.storyId : '';
-	const sceneId = payload && typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
-	const instruction =
-		payload && typeof payload.instruction === 'string' ? payload.instruction.trim() : '';
+	}>(request, locals);
+	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
+	const instruction = typeof payload.instruction === 'string' ? payload.instruction.trim() : '';
 	// Where the writer is in the prose; an unusable reference is just dropped.
-	const reference = payload ? readCoauthorReference(payload.reference) : null;
-	if (!storyId) error(400, 'storyId is required.');
+	const reference = readCoauthorReference(payload.reference);
 	if (!instruction) error(400, 'Tell the Assistant what to write.');
 	if (instruction.length > 2000) error(400, 'That brief is too long.');
-
-	// 404s unless the user owns the story.
-	const { story } = await ownedStory(storyId, userId);
-
-	const layout = await assistantLayout(db, userId, story.id);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	const story = await requireAssistantStory(userId, payload.storyId);
 
 	const context = await assembleContext(db, { userId, storyId: story.id, sceneId });
 	const task: ChatMessage = { role: 'user', content: buildCoauthorMessage(instruction, reference) };
@@ -57,8 +48,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			signal: request.signal
 		});
 	} catch (err) {
-		if (err instanceof AssistantDisabledError) error(403, err.message);
-		error(502, 'The Assistant could not draft that passage.');
+		throwAssistantError(err, 'The Assistant could not draft that passage.');
 	}
 
 	return new Response(JSON.stringify({ text: text.trim() }), {

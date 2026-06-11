@@ -1,17 +1,19 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
+import {
+	assistantSseResponse,
+	readAssistantPayload,
+	requireAssistantStory
+} from '$lib/server/llm/assistant-route';
 import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import { AssistantDisabledError, stream } from '$lib/server/llm/gateway';
 import { appendChat, clearChat } from '$lib/server/llm/chat-history';
 import {
 	foldReference,
 	readReference,
 	type ChatReference
 } from '$lib/server/llm/prompts/reference';
-import type { ChatMessage, SplitProposal, StreamEvent } from '$lib/server/llm/providers/types';
+import type { ChatMessage } from '$lib/server/llm/providers/types';
 
 // The chat surface: the browser POSTs its transcript and the open scene, the
 // server assembles the in-scope world, runs the gateway, and streams tokens
@@ -26,6 +28,10 @@ import type { ChatMessage, SplitProposal, StreamEvent } from '$lib/server/llm/pr
 
 type Turn = { role: 'user' | 'assistant'; content: string; reference: ChatReference | null };
 
+// A single turn's text; far beyond any real message, in line with the other
+// surfaces' input caps.
+const MAX_TURN_CHARS = 20_000;
+
 // Only the writer's own user/assistant turns are accepted; system and tool
 // messages are the server's to add, never the client's. A user turn may carry
 // a reference to a passage of the open story, kept as data for the transcript
@@ -38,6 +44,7 @@ function readTurns(raw: unknown): Turn[] {
 		const role = (item as { role?: unknown }).role;
 		const content = (item as { content?: unknown }).content;
 		if ((role === 'user' || role === 'assistant') && typeof content === 'string') {
+			if (content.length > MAX_TURN_CHARS) error(400, 'That message is too long.');
 			const reference =
 				role === 'user' ? readReference((item as { reference?: unknown }).reference) : null;
 			turns.push({ role, content, reference });
@@ -49,28 +56,14 @@ function readTurns(raw: unknown): Turn[] {
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as {
+	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
 		sceneId?: unknown;
 		messages?: unknown;
-	} | null;
-	if (!payload) error(400, 'Expected a JSON body.');
-
-	const storyId = typeof payload.storyId === 'string' ? payload.storyId : '';
-	if (!storyId) error(400, 'storyId is required.');
+	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const turns = readTurns(payload.messages);
-
-	// 404s unless the user owns the story; the chat is owner-scoped.
-	const { story } = await ownedStory(storyId, userId);
-
-	// Re-check the gate server-side: the tab shows on a muted story to un-mute,
-	// but generation must not run there.
-	const layout = await assistantLayout(db, userId, story.id);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	const story = await requireAssistantStory(userId, payload.storyId);
 
 	// The newest user turn joins the stored transcript; the earlier turns are
 	// already there from their own requests.
@@ -94,78 +87,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		? [buildSystemMessage(context, { tools: true }), ...modelTurns]
 		: modelTurns;
 
-	const encoder = new TextEncoder();
-	const frame = (event: StreamEvent) => encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-
-	const body = new ReadableStream<Uint8Array>({
-		async start(controller) {
-			// The reply accumulates here and persists only when the stream ends
-			// cleanly; an aborted or failed turn stores nothing.
-			let reply = '';
-			const proposals: SplitProposal[] = [];
-			try {
-				for await (const event of stream(db, {
-					userId,
-					storyId: story.id,
-					role: 'chat',
-					enableTools: true,
-					messages,
-					signal: request.signal
-				})) {
-					controller.enqueue(frame(event));
-					if (event.type === 'token') reply += event.text;
-					else if (event.type === 'proposal') proposals.push(event.proposal);
-					if (event.type === 'done') {
-						if (reply.trim() || proposals.length > 0) {
-							await appendChat(db, userId, story.id, {
-								role: 'assistant',
-								content: reply,
-								meta: proposals.length > 0 ? { proposals } : null
-							});
-						}
-						break;
-					}
-					if (event.type === 'error') break;
-				}
-			} catch (err) {
-				// A client disconnect aborts the upstream fetch; nothing more to send.
-				if (!request.signal.aborted) {
-					const message =
-						err instanceof AssistantDisabledError
-							? err.message
-							: 'The Assistant could not complete that request.';
-					try {
-						controller.enqueue(frame({ type: 'error', message }));
-					} catch {
-						// controller already closed
-					}
-				}
-			} finally {
-				try {
-					controller.close();
-				} catch {
-					// already closed by a client disconnect
-				}
-			}
-		}
-	});
-
-	return new Response(body, {
-		headers: {
-			'content-type': 'text/event-stream',
-			'cache-control': 'no-cache, no-transform',
-			connection: 'keep-alive'
-		}
+	return assistantSseResponse({
+		request,
+		userId,
+		storyId: story.id,
+		role: 'chat',
+		enableTools: true,
+		messages,
+		errorMessage: 'The Assistant could not complete that request.'
 	});
 };
 
 // Clear conversation: drops the stored transcript for this story. Deletes
 // only, so it needs ownership but no Assistant gate.
 export const DELETE: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-	const payload = (await request.json().catch(() => null)) as { storyId?: unknown } | null;
-	const storyId = payload && typeof payload.storyId === 'string' ? payload.storyId : '';
+	const { userId, payload } = await readAssistantPayload<{ storyId?: unknown }>(request, locals);
+	const storyId = typeof payload.storyId === 'string' ? payload.storyId : '';
 	if (!storyId) error(400, 'storyId is required.');
 	const { story } = await ownedStory(storyId, userId);
 	await clearChat(db, userId, story.id);
