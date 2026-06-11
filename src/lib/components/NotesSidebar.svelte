@@ -2,6 +2,7 @@
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import type { NoteListItem } from '$lib/server/notes';
+	import ModeSwitcher from './ModeSwitcher.svelte';
 
 	// The left pane of a Notes view, shared by the story and universe scopes.
 	// Note links keep the current page and swap the ?note= query; the new-note
@@ -45,19 +46,7 @@
 
 <aside class="pane left">
 	<div class="left-head">
-		<div class="seg full">
-			{#if writeHref}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-				<a class="seg-btn" href={writeHref}>Write</a>
-			{/if}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-			<a class="seg-btn" href={planHref}>Plan</a>
-			<button class="seg-btn active" type="button">Notes</button>
-			{#if reviewHref}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-				<a class="seg-btn" href={reviewHref}>Review</a>
-			{/if}
-		</div>
+		<ModeSwitcher active="notes" hrefs={{ write: writeHref, plan: planHref, review: reviewHref }} />
 		<SidebarSearch bind:query placeholder="Filter notes..." />
 	</div>
 	<div class="left-scroll">

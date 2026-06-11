@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateTime } from '$lib/format';
 	type ExportItem = {
 		id: string;
 		format: 'zip' | 'epub';
@@ -21,15 +22,6 @@
 		exports: ExportItem[];
 		assetsConfigured: boolean;
 	} = $props();
-
-	function when(date: string | Date): string {
-		return new Date(date).toLocaleString(undefined, {
-			day: 'numeric',
-			month: 'short',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
-	}
 </script>
 
 {#if !assetsConfigured}
@@ -57,7 +49,7 @@
 			{#each exports as item (item.id)}
 				<li class="export-row">
 					<span class="export-name">{item.filename ?? `${item.format.toUpperCase()} export`}</span>
-					<span class="export-meta">{when(item.createdAt)}</span>
+					<span class="export-meta">{formatDateTime(item.createdAt)}</span>
 					{#if item.status === 'ready'}
 						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (file download) -->
 						<a class="btn btn-ghost btn-sm" href="/exports/{item.id}" download>Download</a>

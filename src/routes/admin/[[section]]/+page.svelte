@@ -4,6 +4,8 @@
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { Section } from './sections';
 	import type { ActionData, PageData } from './$types';
+	import { formatDate } from '$lib/format';
+	import { authorInitials } from '$lib/review-ui';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -41,21 +43,6 @@
 			desc: 'Anyone can create an account and sign in once their email is confirmed.'
 		}
 	] as const;
-
-	function when(date: Date | string): string {
-		return new Date(date).toLocaleDateString(undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
-	}
-
-	function initials(name: string): string {
-		const parts = name.trim().split(/\s+/).filter(Boolean);
-		const first = parts[0]?.[0] ?? '';
-		const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
-		return (first + last).toUpperCase() || '?';
-	}
 
 	function userStatus(u: PageData['users'][number]): string {
 		if (u.deletionScheduledAt) return 'Deletion scheduled';
@@ -598,11 +585,11 @@
 								<div class="attn-list">
 									{#each pending as account (account.id)}
 										<div class="user-row">
-											<div class="user-row-avatar">{initials(account.displayName)}</div>
+											<div class="user-row-avatar">{authorInitials(account.displayName)}</div>
 											<div class="user-row-identity">
 												<p class="user-row-name">{account.displayName}</p>
 												<p class="user-row-email">
-													{account.email} - requested {when(
+													{account.email} - requested {formatDate(
 														account.createdAt
 													)}{account.emailVerifiedAt ? '' : ' - email unconfirmed'}
 												</p>
@@ -646,7 +633,7 @@
 										<tr>
 											<td>
 												<div class="cell-user">
-													<div class="cell-avatar">{initials(account.displayName)}</div>
+													<div class="cell-avatar">{authorInitials(account.displayName)}</div>
 													<div>
 														<div class="cell-name">
 															{account.displayName}
@@ -669,7 +656,7 @@
 											<td class="cell-muted">
 												{userStatus(account)}{account.publicArchiveEnabled ? ', can publish' : ''}
 											</td>
-											<td class="cell-muted">{when(account.createdAt)}</td>
+											<td class="cell-muted">{formatDate(account.createdAt)}</td>
 											<td class="row-actions">
 												<div class="row-actions-inner">
 													{#if account.publicArchiveEnabled}
@@ -856,7 +843,7 @@
 												<td class="cell-muted">{code.usedCount}/{code.maxUses}</td>
 												<td class="cell-muted">
 													{inviteStatus(code)}{code.expiresAt && inviteStatus(code) === 'Active'
-														? `, expires ${when(code.expiresAt)}`
+														? `, expires ${formatDate(code.expiresAt)}`
 														: ''}
 												</td>
 												<td class="row-actions">
@@ -1018,7 +1005,7 @@
 
 					{#if data.assetMigration}
 						<p class="admin-block-sub">
-							Last copy finished {when(data.assetMigration.finishedAt)}: {data.assetMigration
+							Last copy finished {formatDate(data.assetMigration.finishedAt)}: {data.assetMigration
 								.copied} copied, {data.assetMigration.failed} failed{data.assetMigration.failed > 0
 								? '. Failures are listed in the worker log; run the copy again to retry.'
 								: '.'}
@@ -1106,7 +1093,7 @@
 													<span class="pill">{edition.isCurrent ? 'current' : 'superseded'}</span>
 													{#if edition.isAdult}<span class="pill">adult</span>{/if}
 												</div>
-												<div class="list-sub">published {when(edition.publishedAt)}</div>
+												<div class="list-sub">published {formatDate(edition.publishedAt)}</div>
 											</div>
 											<div class="list-actions">
 												<form method="POST" action="?/takedown">
@@ -1171,7 +1158,7 @@
 								<span>
 									<span class="v">Backups are on</span>
 									{#if lastBackup}<span class="x"
-											>- last run {lastBackup.status} on {when(lastBackup.startedAt)}</span
+											>- last run {lastBackup.status} on {formatDate(lastBackup.startedAt)}</span
 										>{/if}
 								</span>
 								<span class="when">
@@ -1262,7 +1249,7 @@
 														: 'no size'}{run.error ? ` - ${run.error}` : ''}
 												</div>
 											</div>
-											<div class="list-sub">{when(run.startedAt)}</div>
+											<div class="list-sub">{formatDate(run.startedAt)}</div>
 										</div>
 									{/each}
 								</div>

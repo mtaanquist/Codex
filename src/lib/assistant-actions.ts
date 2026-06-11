@@ -2,6 +2,7 @@
 // palette, so the fetch-and-feedback logic lives once. Server-side gating is
 // re-checked by every endpoint; these just drive the requests.
 import { goto } from '$app/navigation';
+import { apiErrorMessage } from '$lib/format';
 
 // Asks the Assistant to review one scene inline. Stages comments and
 // suggested edits, then opens the review page when anything was staged.
@@ -12,8 +13,7 @@ export async function reviewSceneWithAssistant(sceneId: string, reviewHref: stri
 		body: JSON.stringify({ sceneId })
 	});
 	if (!response.ok) {
-		const body = (await response.json().catch(() => null)) as { message?: string } | null;
-		alert(body?.message ?? 'The Assistant could not review the scene.');
+		alert(await apiErrorMessage(response, 'The Assistant could not review the scene.'));
 		return;
 	}
 	const { staged } = (await response.json()) as { staged: number };
@@ -33,8 +33,7 @@ export async function startSummariesJob(storyId: string): Promise<void> {
 		body: JSON.stringify({ storyId })
 	});
 	if (!response.ok) {
-		const body = (await response.json().catch(() => null)) as { message?: string } | null;
-		alert(body?.message ?? 'Could not start the summary pass.');
+		alert(await apiErrorMessage(response, 'Could not start the summary pass.'));
 		return;
 	}
 	alert(

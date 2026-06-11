@@ -15,6 +15,7 @@
 	} from '$lib/page-setup';
 	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
+	import { apiErrorMessage } from '$lib/format';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -111,8 +112,7 @@
 				body: JSON.stringify({ storyId: data.story.id })
 			});
 			if (!response.ok) {
-				const body = (await response.json().catch(() => null)) as { message?: string } | null;
-				alert(body?.message ?? 'Could not start the review.');
+				alert(await apiErrorMessage(response, 'Could not start the review.'));
 				return;
 			}
 			alert(

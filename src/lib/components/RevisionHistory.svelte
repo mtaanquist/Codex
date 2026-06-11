@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { relativeShort } from '$lib/format';
 
 	type Row = { id: string; reason: string | null; label: string | null; createdAt: Date };
 
@@ -50,14 +51,6 @@
 		return row.label || TITLE[row.reason ?? 'autosave'] || 'Autosave';
 	}
 
-	function when(date: Date) {
-		const delta = Date.now() - date.getTime();
-		if (delta < 60_000) return 'just now';
-		if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
-		if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
-		return date.toLocaleDateString();
-	}
-
 	async function checkpoint(event: SubmitEvent) {
 		event.preventDefault();
 		saving = true;
@@ -95,7 +88,7 @@
 				<div class="hist-main">
 					<div class="hist-label">{rowTitle(row)}</div>
 					<div class="hist-meta">
-						<span>{when(row.createdAt)}</span>
+						<span>{relativeShort(row.createdAt)}</span>
 						{#if row.label && row.reason !== 'checkpoint'}
 							<span class="hist-note">{row.label}</span>
 						{/if}

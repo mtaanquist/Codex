@@ -3,6 +3,7 @@
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import { authorColor, threadAuthor, type ReviewThread } from '$lib/review-ui';
+	import { formatDateTime } from '$lib/format';
 
 	let {
 		thread,
@@ -58,10 +59,6 @@
 		}
 	}
 
-	function when(date: Date | string): string {
-		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-	}
-
 	function confirmRetract(e: SubmitEvent) {
 		if (!confirm('Delete your comment? This cannot be undone.')) e.preventDefault();
 	}
@@ -91,7 +88,7 @@
 		<ReviewAvatar {author} />
 		<div class="rv-who">
 			<div class="rv-who-name">{root.authorName} <span class="rv-role">{roleLabel}</span></div>
-			<div class="rv-when">{when(root.createdAt)}</div>
+			<div class="rv-when">{formatDateTime(root.createdAt)}</div>
 		</div>
 		{#if open && role === 'author'}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -140,7 +137,7 @@
 					<div class="rv-reply-main">
 						<div class="rv-reply-head">
 							<span class="rv-reply-name">{reply.authorName}</span>
-							<span class="rv-reply-when">{when(reply.createdAt)}</span>
+							<span class="rv-reply-when">{formatDateTime(reply.createdAt)}</span>
 							{#if reply.mine}
 								<form
 									method="POST"

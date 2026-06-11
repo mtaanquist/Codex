@@ -3,6 +3,7 @@
 	import SidebarSearch from './SidebarSearch.svelte';
 	import EntityBadge from './EntityBadge.svelte';
 	import { CATEGORY_COLORS } from '$lib/entity-color';
+	import ModeSwitcher from './ModeSwitcher.svelte';
 
 	// A character or place row: its category colour plus any per-entity badge
 	// override (colour or uploaded image).
@@ -98,19 +99,10 @@
 
 <aside class="pane left">
 	<div class="left-head">
-		<div class="seg full">
-			{#if writeHref}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-				<a class="seg-btn" href={writeHref}>Write</a>
-			{/if}
-			<button class="seg-btn active" type="button">Plan</button>
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-			<a class="seg-btn" href={notesHref}>Notes</a>
-			{#if reviewHref}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-				<a class="seg-btn" href={reviewHref}>Review</a>
-			{/if}
-		</div>
+		<ModeSwitcher
+			active="plan"
+			hrefs={{ write: writeHref, notes: notesHref, review: reviewHref }}
+		/>
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>
 	<div class="left-scroll">
