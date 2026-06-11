@@ -9,7 +9,7 @@
 	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import StoryPreview from '$lib/components/StoryPreview.svelte';
-	import { fontFamilyFor, lineHeightFor } from '$lib/page-setup';
+	import { editorStyleVars } from '$lib/page-setup';
 	import StoryOutline from '$lib/components/StoryOutline.svelte';
 	import StoryRowMenu, {
 		type RowMenuState,
@@ -46,20 +46,10 @@
 
 	// The writing surface's typography as CSS variables: the font and line
 	// spacing come from the writer's editor-appearance preferences; the default
-	// alignment rides with page setup, since it travels into the export. The
-	// font var is left unset for the 'default' choice so the editor keeps its
-	// own content font.
-	const editorStyle = $derived.by(() => {
-		const p = data.preferences;
-		const parts = [
-			`--editor-line-height: ${lineHeightFor(p.editorLineSpacing, p.editorLineSpacingCm)}`,
-			`--editor-align: ${data.pageSetup.textAlign}`
-		];
-		if (p.editorFont !== 'default') {
-			parts.push(`--editor-font: ${fontFamilyFor(p.editorFont, p.editorFontCustom)}`);
-		}
-		return `${parts.join('; ')};`;
-	});
+	// alignment rides with page setup, since it travels into the export.
+	const editorStyle = $derived(
+		editorStyleVars({ ...data.preferences, textAlign: data.pageSetup.textAlign })
+	);
 
 	// The prose-view toggles (show non-printing marks, hide command markers)
 	// are shared by every editor in the story and remembered per user. The
