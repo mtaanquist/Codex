@@ -28,9 +28,6 @@ const stubProvider: Provider = {
 		calls += 1;
 		return { content: `SUMMARY-${calls}`, toolCalls: [] };
 	},
-	async probe() {
-		return { ok: true, supportsStreaming: true, supportsTools: false };
-	},
 	async listModels() {
 		return [];
 	}

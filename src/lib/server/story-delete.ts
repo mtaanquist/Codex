@@ -104,9 +104,6 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		await tx.delete(revisions).where(inArray(revisions.entityId, revisableIds));
 	}
 
-	// Outline nodes self-reference via parent_id; drop the links before
-	// deleting so the rows can go in any order.
-
 	// Scenes reference chapters, so scenes first.
 	await tx.delete(scenes).where(eq(scenes.storyId, storyId));
 	await tx.delete(chapters).where(eq(chapters.storyId, storyId));

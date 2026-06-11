@@ -1,8 +1,5 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
+import { readAssistantPayload, requireAssistantStory } from '$lib/server/llm/assistant-route';
 import { queueAssistantReview } from '$lib/server/jobs';
 
 // Queues a whole-story or single-chapter Assistant review as a background job
@@ -11,23 +8,12 @@ import { queueAssistantReview } from '$lib/server/jobs';
 // editor's "Review this chapter" menu item post here.
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as {
+	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
 		chapterId?: unknown;
-	} | null;
-	const storyRef = payload && typeof payload.storyId === 'string' ? payload.storyId : '';
-	if (!storyRef) error(400, 'storyId is required.');
-	const chapterId =
-		payload && typeof payload.chapterId === 'string' ? payload.chapterId : undefined;
-
-	// 404s unless the user owns the story.
-	const { story } = await ownedStory(storyRef, userId);
-
-	const layout = await assistantLayout(db, userId, story.id);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	}>(request, locals);
+	const chapterId = typeof payload.chapterId === 'string' ? payload.chapterId : undefined;
+	const story = await requireAssistantStory(userId, payload.storyId);
 
 	const queued = await queueAssistantReview({ userId, storyId: story.id, chapterId });
 	if (!queued) error(503, 'Could not start the review. Try again in a moment.');

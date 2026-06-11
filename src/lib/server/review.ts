@@ -20,10 +20,10 @@ import { wordCount } from '../word-count';
 import { normaliseAssistantName } from './llm/prompts/persona';
 import { EMAIL_RE } from './signup.ts';
 
-// Guest review, stage one: invitations, guest identity, and threaded
-// comments. An author invites someone to one story by magic link; the guest
-// reads the manuscript and leaves comments anchored to text ranges, and the
-// author replies and resolves. Suggestions come in a later step. Only the
+// Guest review: invitations, guest identity, threaded comments, and
+// suggested edits. An author invites someone to one story by magic link; the
+// guest reads the manuscript, leaves comments anchored to text ranges, and
+// proposes edits, and the author replies, resolves, and decides. Only the
 // link token's hash is stored, and revoking an invitation cuts access while
 // keeping the threads.
 

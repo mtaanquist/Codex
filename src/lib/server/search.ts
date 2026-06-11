@@ -1,3 +1,4 @@
+import type { SearchResult } from '$lib/wire-types';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { characters, loreEntries, places, scenes, stories, universes } from './db/schema';
@@ -5,12 +6,7 @@ import { characters, loreEntries, places, scenes, stories, universes } from './d
 // The command palette's search: everything the user owns that has a name,
 // matched by substring, each result carrying the link that opens it.
 
-export type SearchResult = {
-	type: 'universe' | 'story' | 'scene' | 'character' | 'place' | 'lore' | 'passage';
-	label: string;
-	sublabel: string | null;
-	href: string;
-};
+export type { SearchResult } from '$lib/wire-types';
 
 const PER_TYPE = 5;
 

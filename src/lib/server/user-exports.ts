@@ -65,6 +65,9 @@ export async function requestExport(
 		if (!row) return { ok: false, reason: 'That universe does not exist.' };
 	} else {
 		if (!input.targetId) return { ok: false, reason: 'No story given.' };
+		// Unlike the universe branch, no trashed-universe filter: an export is
+		// the safety net, so a story stays exportable while its universe sits
+		// in the trash.
 		const [row] = await db
 			.select({ id: stories.id })
 			.from(stories)

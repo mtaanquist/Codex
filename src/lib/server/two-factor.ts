@@ -185,8 +185,6 @@ export async function regenerateRecoveryCodes(
 	return recoveryCodes;
 }
 
-// Turns two-factor off entirely. Used by the account owner and by an admin
-// resetting a locked-out user.
 // Abandons an UNCONFIRMED enrolment only: the scope on confirmed_at is the
 // server-side guard, so this can never strip live two-factor (that path is
 // disableTotp, behind a password re-check). Returns whether a pending row

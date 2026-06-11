@@ -10,7 +10,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
 	import EntityCard from '$lib/components/EntityCard.svelte';
-	import type { EntityCardData } from '$lib/server/plan-data';
+	import type { EntityCardData } from '$lib/wire-types';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';

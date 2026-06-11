@@ -14,7 +14,7 @@ import { normaliseAssistantName, normalisePersona, type Persona } from './prompt
 // different model. A per-story override never lights the Assistant up when the
 // account master is off; account-off is dark everywhere.
 
-export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'editor', 'reviewer', 'chat'] as const;
+export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'reviewer', 'chat'] as const;
 export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
@@ -36,7 +36,7 @@ export type StoredAccountConfig = {
 	// surface; the value is carried now so the config shape is stable).
 	toolCallBudget: number;
 	// Capabilities detected by the "test connection" probe and stored with the
-	// config; absent until a probe has run.
+	// config; set by hand for an endpoint that cannot stream or call tools.
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 };

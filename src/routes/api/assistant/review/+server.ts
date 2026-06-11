@@ -2,9 +2,11 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { scenes, stories } from '$lib/server/db/schema';
-import { rateLimitAssistant } from '$lib/server/write-guard';
-import { assistantLayout } from '$lib/server/llm/config';
-import { AssistantDisabledError } from '$lib/server/llm/gateway';
+import {
+	readAssistantPayload,
+	requireAssistantGate,
+	throwAssistantError
+} from '$lib/server/llm/assistant-route';
 import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-review';
 
 // A single-scene Assistant review, run inline (one scene is bounded). The model
@@ -14,11 +16,8 @@ import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-revie
 // and chapter passes are the assistant-review background job.
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
-
-	const payload = (await request.json().catch(() => null)) as { sceneId?: unknown } | null;
-	const sceneId = payload && typeof payload.sceneId === 'string' ? payload.sceneId : '';
+	const { userId, payload } = await readAssistantPayload<{ sceneId?: unknown }>(request, locals);
+	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : '';
 	if (!sceneId) error(400, 'sceneId is required.');
 
 	// Owner-scoped: resolve the scene and its story, 404ing unless the user owns it.
@@ -29,8 +28,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
 	if (!scene) error(404, 'Scene not found');
 
-	const layout = await assistantLayout(db, userId, scene.storyId);
-	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this story.');
+	await requireAssistantGate(userId, scene.storyId);
 
 	const before = await countAssistantNotes(db, sceneId);
 	try {
@@ -41,12 +39,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			signal: request.signal
 		});
 	} catch (err) {
-		if (err instanceof AssistantDisabledError) error(403, err.message);
-		error(502, 'The Assistant could not complete the review. Check the endpoint in your settings.');
+		throwAssistantError(
+			err,
+			'The Assistant could not complete the review. Check the endpoint in your settings.'
+		);
 	}
 	const after = await countAssistantNotes(db, sceneId);
 
-	return new Response(JSON.stringify({ ok: true, staged: after - before }), {
+	// The count is cosmetic and the two snapshots are not transactional, so a
+	// concurrent decision could make the difference negative; clamp it.
+	return new Response(JSON.stringify({ ok: true, staged: Math.max(0, after - before) }), {
 		headers: { 'content-type': 'application/json' }
 	});
 };

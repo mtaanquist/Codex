@@ -148,7 +148,7 @@ export async function universeAssetKeys(db: Database, universeId: string): Promi
  */
 export async function purgeUniverseWithin(tx: Tx, universeId: string): Promise<void> {
 	// Stories first: each clears its scenes, chapters, markers, revisions,
-	// outline, memberships, notes, publications, reviews, and mentions.
+	// memberships, notes, publications, reviews, and mentions.
 	const storyRows = await tx
 		.select({ id: stories.id })
 		.from(stories)

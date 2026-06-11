@@ -103,7 +103,8 @@ export async function dispatchToolCall(
 				return proposeSceneSplit(ctx, {
 					sceneId: asString(args.sceneId),
 					// The old parameter name rides as a fallback for any provider
-					// still answering against a cached tool schema.
+					// still answering against a cached tool schema. Remove once
+					// cached schemas have aged out; nothing else uses "before".
 					before: asString(args.newSceneStart) || asString(args.before),
 					rationale: asString(args.rationale)
 				});

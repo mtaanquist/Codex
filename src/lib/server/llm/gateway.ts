@@ -49,7 +49,6 @@ export type GatewayRequest = {
 	// model's arguments.
 	toolScope?: { threadId?: string; suggestionId?: string };
 	maxTokens?: number;
-	temperature?: number;
 	signal?: AbortSignal;
 };
 
@@ -60,7 +59,7 @@ export type GatewayDeps = {
 	http?: HttpRequest;
 };
 
-function pickModel(config: ResolvedConfig, role: AssistantRole): string {
+export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
 	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
 }
 
@@ -101,7 +100,9 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 	};
 
 	// Tools are offered only with a story context the user owns and an endpoint
-	// that can call them; otherwise the turn is a plain completion.
+	// that can call them; otherwise the turn is a plain completion. The
+	// supportsTools flag comes from stored config only (a manual opt-out for
+	// an endpoint that cannot call tools); nothing probes it automatically.
 	let tools: ToolSpec[] | undefined;
 	let toolContext: ToolContext | undefined;
 	if (
@@ -154,7 +155,6 @@ async function runAgent(p: Prepared, req: GatewayRequest): Promise<AgentResult> 
 				model: p.model,
 				messages,
 				maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				temperature: req.temperature,
 				tools: offerTools
 			},
 			p.conn,
@@ -210,8 +210,7 @@ export async function* stream(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-			temperature: req.temperature
+			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS
 		},
 		prepared.conn,
 		prepared.http,
@@ -238,8 +237,7 @@ export async function complete(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-			temperature: req.temperature
+			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS
 		},
 		prepared.conn,
 		prepared.http,
