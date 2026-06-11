@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import { EditorView } from '@codemirror/view';
 	import { Compartment, EditorState } from '@codemirror/state';
-	import Icon from './Icon.svelte';
+	import ReviewSceneHead from './ReviewSceneHead.svelte';
+	import ReviewMarginRail from './ReviewMarginRail.svelte';
+	import ReviewSelectionToolbar from './ReviewSelectionToolbar.svelte';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import {
 		commandMarkerExtensions,
@@ -20,6 +22,11 @@
 	} from '$lib/editor-review-marks';
 	import { createAutosave, type SaveStatus } from '$lib/autosave';
 	import {
+		toggleCommandMarkers as toggleCommandMarkersView,
+		toggleNonPrintingMarks
+	} from '$lib/editor-view';
+	import {
+		nudgeMarkers,
 		authorColor,
 		suggestionAuthor,
 		threadAuthor,
@@ -116,20 +123,11 @@
 	const nonPrintingCompartment = new Compartment();
 	const alignmentCompartment = new Compartment();
 
-	function persistEditorView(patch: { nonPrintingMarks?: string; commandMarkers?: string }) {
-		void fetch('/api/editor-view', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(patch)
-		}).catch(() => {});
-	}
 	function toggleNonPrinting() {
-		nonPrinting = nonPrinting === 'shown' ? 'hidden' : 'shown';
-		persistEditorView({ nonPrintingMarks: nonPrinting });
+		nonPrinting = toggleNonPrintingMarks(nonPrinting);
 	}
 	function toggleCommandMarkers() {
-		commands = commands === 'shown' ? 'hidden' : 'shown';
-		persistEditorView({ commandMarkers: commands });
+		commands = toggleCommandMarkersView(commands);
 	}
 
 	// Folds suggestions the server just accepted into the live document, at
@@ -202,14 +200,7 @@
 				top: c.top - docRect.top
 			});
 		}
-		raw.sort((x, y) => x.top - y.top);
-		// Nudge stacked markers apart so each stays clickable.
-		let last = -999;
-		for (const m of raw) {
-			if (m.top < last + 32) m.top = last + 32;
-			last = m.top;
-		}
-		markers = raw;
+		markers = nudgeMarkers(raw);
 
 		const range = view.state.selection.main;
 		if (range.empty) {
@@ -368,65 +359,25 @@
 
 	<div class="editor-scroll review-scroll">
 		<div class="review-doc" bind:this={docEl}>
-			<div class="review-head">
-				<div class="review-kicker">{chapterTitle} - review</div>
-				<h1 class="review-title">{scene.title ?? 'Untitled scene'}</h1>
-				<div class="review-subline">
-					{#if openComments + openSugg === 0}
-						No open review activity in this scene.
-					{:else}
-						{#if openComments > 0}
-							<span class="rv-sub-chip">
-								<Icon name="comment" size={13} />
-								{openComments}
-								{openComments === 1 ? 'comment' : 'comments'}
-							</span>
-						{/if}
-						{#if openSugg > 0}
-							<span class="rv-sub-chip">
-								<Icon name="suggest" size={13} />
-								{openSugg}
-								{openSugg === 1 ? 'suggestion' : 'suggestions'}
-							</span>
-						{/if}
-					{/if}
-				</div>
-			</div>
+			<ReviewSceneHead
+				{chapterTitle}
+				sceneTitle={scene.title}
+				{openComments}
+				openSuggestions={openSugg}
+			/>
 
 			<div class="review-edit editor-cm" bind:this={editorEl}></div>
 
-			<div class="review-rail" aria-hidden="true">
-				{#each markers as marker (marker.id)}
-					<button
-						class="rv-marker"
-						class:is-focused={focusedId === marker.id}
-						style="top: {marker.top}px; --auth: {marker.color};"
-						type="button"
-						onclick={() => setFocused(marker.id)}
-						title="Jump to this note"
-					>
-						<Icon name={marker.kind === 'comment' ? 'comment' : 'suggest'} size={13} />
-					</button>
-				{/each}
-			</div>
+			<ReviewMarginRail {markers} {focusedId} {setFocused} />
 
 			{#if sel}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="rv-seltool"
-					style="left: {sel.left}px; top: {sel.top}px;"
-					onmousedown={(e) => e.preventDefault()}
-				>
-					<button type="button" onclick={startComment}>
-						<Icon name="comment-plus" size={15} /> Comment
-					</button>
-					{#if canSuggest}
-						<span class="rv-seltool-sep"></span>
-						<button type="button" onclick={startSuggest}>
-							<Icon name="suggest" size={15} /> Suggest edit
-						</button>
-					{/if}
-				</div>
+				<ReviewSelectionToolbar
+					left={sel.left}
+					top={sel.top}
+					{canSuggest}
+					onComment={startComment}
+					onSuggest={startSuggest}
+				/>
 			{/if}
 		</div>
 	</div>

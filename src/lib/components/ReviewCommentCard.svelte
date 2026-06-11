@@ -2,7 +2,8 @@
 	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
-	import { authorColor, threadAuthor, type ReviewThread } from '$lib/review-ui';
+	import ReviewReplyRow from './ReviewReplyRow.svelte';
+	import { authorColor, roleLabel, threadAuthor, type ReviewThread } from '$lib/review-ui';
 	import { formatDateTime } from '$lib/format';
 
 	let {
@@ -33,9 +34,7 @@
 	const root = $derived(thread.comments[0]);
 	const replies = $derived(thread.comments.slice(1));
 	const open = $derived(thread.resolvedAt === null);
-	const roleLabel = $derived(
-		author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer'
-	);
+	const byline = $derived(roleLabel(author));
 	// The viewer can retract the whole thread only when every comment in it is
 	// their own, so a retraction never takes someone else's reply with it.
 	const canDeleteThread = $derived(
@@ -87,7 +86,7 @@
 	<div class="rv-card-top">
 		<ReviewAvatar {author} />
 		<div class="rv-who">
-			<div class="rv-who-name">{root.authorName} <span class="rv-role">{roleLabel}</span></div>
+			<div class="rv-who-name">{root.authorName} <span class="rv-role">{byline}</span></div>
 			<div class="rv-when">{formatDateTime(root.createdAt)}</div>
 		</div>
 		{#if open && role === 'author'}
@@ -125,37 +124,7 @@
 	{#if replies.length > 0}
 		<div class="rv-replies">
 			{#each replies as reply (reply.id)}
-				<div class="rv-reply-row">
-					<ReviewAvatar
-						author={{
-							isOwner: reply.isOwner,
-							isAssistant: reply.isAssistant,
-							name: reply.authorName
-						}}
-						size={20}
-					/>
-					<div class="rv-reply-main">
-						<div class="rv-reply-head">
-							<span class="rv-reply-name">{reply.authorName}</span>
-							<span class="rv-reply-when">{formatDateTime(reply.createdAt)}</span>
-							{#if reply.mine}
-								<form
-									method="POST"
-									action="?/deleteComment"
-									class="rv-reply-del"
-									use:enhance
-									onsubmit={confirmRetract}
-								>
-									<input type="hidden" name="commentId" value={reply.id} />
-									<button type="submit" title="Delete your reply" aria-label="Delete your reply">
-										<Icon name="trash" size={12} />
-									</button>
-								</form>
-							{/if}
-						</div>
-						<div class="rv-reply-body">{reply.body}</div>
-					</div>
-				</div>
+				<ReviewReplyRow {reply} retractAction="?/deleteComment" onConfirmRetract={confirmRetract} />
 			{/each}
 		</div>
 	{/if}

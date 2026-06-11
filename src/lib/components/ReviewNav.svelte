@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import Icon from './Icon.svelte';
+	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
 	import {
 		suggestionInFilter,
 		threadInFilter,
@@ -54,9 +55,6 @@
 	let collapsed = new SvelteSet<string>();
 
 	const q = $derived(query.trim().toLowerCase());
-	function nameMatches(title: string | null, fallback: string) {
-		return (title ?? fallback).toLowerCase().includes(q);
-	}
 
 	function scenesIn(chapterId: string | null) {
 		return scenes.filter((s) => s.chapterId === chapterId);
@@ -75,20 +73,18 @@
 		chapters.forEach((chapter, i) => {
 			const fallback = `Chapter ${i + 1}`;
 			const all = scenesIn(chapter.id);
-			const chapterMatch = q === '' || nameMatches(chapter.title, fallback);
-			const list = chapterMatch ? all : all.filter((s) => nameMatches(s.title, 'Untitled scene'));
-			if (!chapterMatch && list.length === 0) return;
+			const filtered = filterChapter(q, chapter.title, fallback, all);
+			if (!filtered.visible) return;
 			out.push({
 				id: chapter.id,
 				label: chapter.title ?? fallback,
-				scenes: list,
-				count: list.reduce((n, s) => n + (countByScene.get(s.id) ?? 0), 0),
+				scenes: filtered.scenes,
+				count: filtered.scenes.reduce((n, s) => n + (countByScene.get(s.id) ?? 0), 0),
 				total: all.length
 			});
 		});
 		const orphans = scenesIn(null);
-		const orphanList =
-			q === '' ? orphans : orphans.filter((s) => nameMatches(s.title, 'Untitled scene'));
+		const orphanList = filterOrphanScenes(q, orphans);
 		if (orphanList.length > 0) {
 			out.push({
 				id: null,
@@ -161,8 +157,8 @@
 								onclick={() => onSelect(scene.id)}
 							>
 								<span
-									class="scene-status st-{scene.status ?? 'todo'}"
-									title={scene.status ?? 'todo'}
+									class="scene-status st-{scene.status ?? 'draft'}"
+									title={scene.status ?? 'draft'}
 								></span>
 								<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
 								{#if n > 0}<span class="scene-count">{n}</span>{/if}
