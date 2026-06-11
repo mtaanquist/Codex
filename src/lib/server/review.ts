@@ -839,7 +839,7 @@ export async function acceptAllInScene(
 	userId: string,
 	storyId: string,
 	sceneId: string
-): Promise<{ accepted: number; failed: number }> {
+): Promise<{ accepted: number; failed: number; acceptedIds: string[] }> {
 	const rows = await db
 		.select({ id: reviewSuggestions.id })
 		.from(reviewSuggestions)
@@ -851,14 +851,16 @@ export async function acceptAllInScene(
 			)
 		)
 		.orderBy(asc(reviewSuggestions.createdAt));
-	let accepted = 0;
+	// The ids that applied, in application order, so the client can fold the
+	// same changes into its live editor without waiting for the data reload.
+	const acceptedIds: string[] = [];
 	let failed = 0;
 	for (const row of rows) {
 		const result = await decideSuggestion(db, userId, row.id, true);
-		if (result.ok) accepted++;
+		if (result.ok) acceptedIds.push(row.id);
 		else failed++;
 	}
-	return { accepted, failed };
+	return { accepted: acceptedIds.length, failed, acceptedIds };
 }
 
 // Retracts a comment the viewer authored. A reply is removed on its own; the

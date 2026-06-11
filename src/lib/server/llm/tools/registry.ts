@@ -72,16 +72,16 @@ export const TOOLS: ToolDef[] = [
 		kind: 'write',
 		name: 'propose_scene_split',
 		description:
-			'Propose splitting a scene in two at a point you choose. The writer sees the proposal with your reasoning and confirms or ignores it; nothing changes until they confirm. The split point is where the new scene begins.',
+			'Propose splitting a scene in two at a point you choose. The writer sees the proposal with your reasoning and confirms or ignores it; nothing changes until they confirm. Quote the words the NEW scene will open with: if the break falls between "...and slept." and "Dawn came swiftly.", pass "Dawn came swiftly.", never "...and slept."',
 		parameters: obj(
 			{
 				sceneId: str('The scene id.'),
-				before: str(
-					'The exact text the new scene should start at (must occur exactly once in the scene).'
+				newSceneStart: str(
+					'The exact opening words of the new scene: the first text after the break, never the text the current scene ends with. Must occur exactly once in the scene.'
 				),
 				rationale: str('One or two sentences on why this is a natural break.')
 			},
-			['sceneId', 'before', 'rationale']
+			['sceneId', 'newSceneStart', 'rationale']
 		)
 	},
 	{

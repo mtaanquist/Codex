@@ -358,7 +358,7 @@ describe('gateway tool loop', () => {
 						name: 'propose_scene_split',
 						arguments: JSON.stringify({
 							sceneId,
-							before: 'The second half',
+							newSceneStart: 'The second half',
 							rationale: 'A clean change of focus.'
 						})
 					}
@@ -410,6 +410,7 @@ describe('gateway tool loop', () => {
 					{
 						id: 'c1',
 						name: 'propose_scene_split',
+						// The legacy parameter name still lands (cached tool schemas).
 						arguments: JSON.stringify({ sceneId, before: 'half', rationale: 'x' })
 					}
 				]

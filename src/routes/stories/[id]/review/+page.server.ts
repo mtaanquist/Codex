@@ -200,7 +200,9 @@ export const actions: Actions = {
 		const result = await acceptAllInScene(db, locals.user!.id, story.id, sceneId);
 		// The body changed; keep the mention index in step.
 		if (result.accepted > 0) await queueSceneMentions(sceneId);
-		return { done: true };
+		// The applied ids ride back so the editor can fold the accepted text
+		// into the live document at once.
+		return { done: true, acceptedIds: result.acceptedIds };
 	},
 	// The author retracting a comment of their own.
 	deleteComment: async ({ params, request, locals }) => {

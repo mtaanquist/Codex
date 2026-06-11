@@ -1181,10 +1181,18 @@ export const assistantChatMessages = pgTable(
 	]
 );
 
-// What rides beside a chat turn's text; mirrors the panel's card data.
+// What rides beside a chat turn's text; mirrors the panel's card data. A
+// confirmed split proposal records what it created, so the card stays
+// decided across reloads and the revert knows which scenes to merge back.
 export type AssistantChatMeta = {
 	reference?: { sceneId: string; text: string };
-	proposals?: { sceneId: string; sceneTitle: string | null; before: string; rationale: string }[];
+	proposals?: {
+		sceneId: string;
+		sceneTitle: string | null;
+		before: string;
+		rationale: string;
+		confirmed?: { splitSceneId: string; newSceneId: string };
+	}[];
 };
 
 // In-app notifications behind the topbar bell. payload carries the display
