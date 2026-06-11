@@ -47,18 +47,25 @@ Your words are sent only to the endpoint you set here.
 This section sets how the app looks and how the editor behaves, as your personal
 defaults.
 
-- **Appearance**: choose a light or dark theme, or follow your system, and pick
-  an accent colour from the swatches or a custom one. The change applies across
-  the app right away.
+- **Appearance**: choose a light, warm, or dark theme, or follow your system, and
+  pick an accent colour from the swatches or a custom one. The warm theme is a
+  softer, sunlit version of the light one. When you follow your system, two extra
+  choices let you set which theme is used while your system is light and which is
+  used while it is dark. The change applies across the app right away.
 - **Editor behaviour**: turn entity autocomplete on or off, show or hide the
   scene marks in the continuous view, show or hide the writing streak, and set
   spell-check and your writing language. There is also a choice between the
   markdown editor and the softer rich editing surface.
 - **Daily word goal**: a daily word target. The Session tab and the Insights
   page show how close you are to it. Leave it blank for no goal.
-- **Page setup defaults**: the page size, margins, font, paragraph style, and
-  scene-break text used when you export to PDF or print. Each story can override
-  these in its own settings.
+- **Page setup defaults**: the page size, margins, font, paragraph style, line
+  spacing, default text alignment, and scene-break text. These shape your PDF and
+  print output, and the font, line spacing, and alignment also show while you
+  write. For the font, choose Custom and type the name of a font installed on the
+  reading device; if it is not found, the default font is used. For line spacing,
+  choose Custom to set the line height in centimetres. The default text alignment
+  applies to paragraphs that do not carry their own alignment marker. Each story
+  can override these in its own settings.
 
 Editor and page-setup choices here are your defaults. Any single story can set
 its own and fall back to these with a "use my account setting" option.

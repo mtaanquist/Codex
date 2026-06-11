@@ -5,9 +5,13 @@ import { stories, users } from './db/schema';
 import type { AutocompleteMode } from '$lib/editor-autocomplete';
 import {
 	DEFAULT_ACCENT,
+	DEFAULT_SYSTEM_DARK,
+	DEFAULT_SYSTEM_LIGHT,
 	DEFAULT_THEME,
+	isConcreteTheme,
 	isTheme,
 	normaliseAccent,
+	type ConcreteTheme,
 	type Theme
 } from '$lib/appearance';
 import { NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
@@ -44,6 +48,10 @@ export type UserPreferences = {
 	notifications: NotificationMatrix;
 	// The colour theme and accent applied across the app.
 	theme: Theme;
+	// Which concrete palette "Follow system" resolves to on each side of the
+	// OS light/dark preference.
+	systemLightTheme: ConcreteTheme;
+	systemDarkTheme: ConcreteTheme;
 	accent: string;
 };
 
@@ -89,6 +97,12 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 		dailyWordGoal: normaliseWordGoal(raw.dailyWordGoal),
 		notifications: normaliseNotifications(raw.notifications),
 		theme: isTheme(raw.theme) ? raw.theme : DEFAULT_THEME,
+		systemLightTheme: isConcreteTheme(raw.systemLightTheme)
+			? raw.systemLightTheme
+			: DEFAULT_SYSTEM_LIGHT,
+		systemDarkTheme: isConcreteTheme(raw.systemDarkTheme)
+			? raw.systemDarkTheme
+			: DEFAULT_SYSTEM_DARK,
 		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
 	};
 }

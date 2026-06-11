@@ -1,7 +1,7 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
-import { cssEscape, DEFAULT_PAGE_SETUP, lineHeight, type PageSetup } from '../page-setup.ts';
+import { cssEscape, DEFAULT_PAGE_SETUP, lineHeightCss, type PageSetup } from '../page-setup.ts';
 import type { AssetLoader, ExportAsset, ExportStory, StoryContent } from './export.ts';
 import { extensionFor } from './media-types.ts';
 
@@ -22,16 +22,19 @@ function escapeXml(text: string): string {
 // usually fonts. Only the bookish parts of the page setup carry over -
 // paragraph style, the scene-break text, and explicit page breaks.
 function epubStyle(setup: PageSetup): string {
+	// The default alignment carries over; the reading device still owns the
+	// font, so a custom writing font does not reach EPUB.
+	const align = `text-align: ${setup.textAlign};`;
 	const paragraph =
 		setup.paragraphStyle === 'indent'
-			? `p { margin: 0 0 1em; text-indent: 1.25em; }
+			? `p { margin: 0 0 1em; text-indent: 1.25em; ${align} }
 p:first-of-type { text-indent: 0; }`
-			: `p { margin: 0 0 1em; text-indent: 0; }`;
+			: `p { margin: 0 0 1em; text-indent: 0; ${align} }`;
 	const sceneBreak = setup.sceneBreak
 		? `hr.scene-break { border: 0; text-align: center; margin: 2em 0; }
 hr.scene-break::after { content: '${cssEscape(setup.sceneBreak)}'; }`
 		: `hr.scene-break { border: 0; margin: 2em 0; }`;
-	return `body { font-family: serif; line-height: ${lineHeight(setup)}; }
+	return `body { font-family: serif; line-height: ${lineHeightCss(setup)}; }
 h1 { text-align: center; margin: 2em 0 1.5em; }
 img { max-width: 100%; }
 ${paragraph}

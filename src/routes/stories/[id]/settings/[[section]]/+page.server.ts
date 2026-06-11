@@ -33,10 +33,13 @@ import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib
 import {
 	FONT_SIZES,
 	GUTTERS,
+	LINE_SPACING_CM_MAX,
+	LINE_SPACING_CM_MIN,
 	LINE_SPACINGS,
 	PAGE_FONTS,
 	PAGE_MARGINS,
-	PAGE_SIZES
+	PAGE_SIZES,
+	TEXT_ALIGNS
 } from '$lib/page-setup';
 import { ownedStory } from '$lib/server/story-access';
 import { uniqueSlug } from '$lib/server/slugs';
@@ -251,13 +254,29 @@ export const actions: Actions = {
 		const fontSize = FONT_SIZES.includes(Number(fontSizeRaw) as (typeof FONT_SIZES)[number])
 			? Number(fontSizeRaw)
 			: null;
+		const font = enumValue('font', PAGE_FONTS);
+		const lineSpacing = enumValue('lineSpacing', LINE_SPACINGS);
+		// The companion inputs only carry an override when their select selects
+		// the custom option; otherwise they clear so the account value applies.
+		const fontCustom = font === 'custom' ? String(data.get('fontCustom') ?? '').slice(0, 50) : null;
+		const lineSpacingCmRaw = Number(data.get('lineSpacingCm'));
+		const lineSpacingCm =
+			lineSpacing === 'custom' &&
+			Number.isFinite(lineSpacingCmRaw) &&
+			lineSpacingCmRaw >= LINE_SPACING_CM_MIN &&
+			lineSpacingCmRaw <= LINE_SPACING_CM_MAX
+				? lineSpacingCmRaw
+				: null;
 		await saveStoryPageSetup(db, story.id, {
 			pageSize: enumValue('pageSize', PAGE_SIZES),
 			margins: enumValue('margins', PAGE_MARGINS),
-			font: enumValue('font', PAGE_FONTS),
+			font,
+			fontCustom,
 			fontSize,
 			paragraphStyle: enumValue('paragraphStyle', { indent: true, spaced: true }),
-			lineSpacing: enumValue('lineSpacing', LINE_SPACINGS),
+			lineSpacing,
+			lineSpacingCm,
+			textAlign: enumValue('textAlign', TEXT_ALIGNS),
 			gutter: enumValue('gutter', GUTTERS),
 			sceneBreak:
 				String(data.get('sceneBreakMode') ?? '') === 'custom'

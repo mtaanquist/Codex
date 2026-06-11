@@ -6,14 +6,17 @@
 	outline: none;
 }
 .editor-cm .cm-scroller {
-	font-family: var(--font-content);
+	/* The writing font, line spacing, and default alignment follow the story's
+	   page setup; the fallbacks keep the editor's own look when unset. */
+	font-family: var(--editor-font, var(--font-content));
 	font-size: 17.5px;
-	line-height: 1.7;
+	line-height: var(--editor-line-height, 1.7);
 	color: var(--text);
 }
 .editor-cm .cm-content {
 	padding: 0;
 	caret-color: var(--text);
+	text-align: var(--editor-align, left);
 }
 .editor-cm .cm-line {
 	padding: 0;

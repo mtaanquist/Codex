@@ -91,4 +91,28 @@ describe('page setup layering', () => {
 		await saveUserPageSetup(db, userId, { pageSize: 'a0' as never });
 		expect((await userPageSetup(db, userId)).pageSize).toBe('a4');
 	});
+
+	it('round-trips a custom font, custom line spacing, and default alignment', async () => {
+		await saveUserPageSetup(db, userId, {
+			font: 'custom',
+			fontCustom: 'EB Garamond',
+			lineSpacing: 'custom',
+			lineSpacingCm: 0.85,
+			textAlign: 'justify'
+		});
+		const setup = await userPageSetup(db, userId);
+		expect(setup.font).toBe('custom');
+		expect(setup.fontCustom).toBe('EB Garamond');
+		expect(setup.lineSpacing).toBe('custom');
+		expect(setup.lineSpacingCm).toBe(0.85);
+		expect(setup.textAlign).toBe('justify');
+	});
+
+	it('a story can override the alignment and clear back to the account value', async () => {
+		await saveUserPageSetup(db, userId, { textAlign: 'justify' });
+		await saveStoryPageSetup(db, storyId, { textAlign: 'center' });
+		expect((await storyPageSetup(db, storyId)).textAlign).toBe('center');
+		await saveStoryPageSetup(db, storyId, { textAlign: null });
+		expect((await storyPageSetup(db, storyId)).textAlign).toBe('justify');
+	});
 });

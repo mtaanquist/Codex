@@ -42,7 +42,7 @@ import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
 import { normalisePageSetup } from '$lib/page-setup';
 import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
-import { isAccentColor, isTheme, normaliseAccent } from '$lib/appearance';
+import { isAccentColor, isConcreteTheme, isTheme, normaliseAccent } from '$lib/appearance';
 import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
 import { secretsAvailable } from '$lib/server/crypto';
 import {
@@ -363,9 +363,12 @@ export const actions: Actions = {
 			pageSize: String(data.get('pageSize') ?? ''),
 			margins: String(data.get('margins') ?? ''),
 			font: String(data.get('font') ?? ''),
+			fontCustom: String(data.get('fontCustom') ?? ''),
 			fontSize: Number(data.get('fontSize')),
 			paragraphStyle: String(data.get('paragraphStyle') ?? ''),
 			lineSpacing: String(data.get('lineSpacing') ?? ''),
+			lineSpacingCm: Number(data.get('lineSpacingCm')),
+			textAlign: String(data.get('textAlign') ?? ''),
 			gutter: String(data.get('gutter') ?? ''),
 			sceneBreak: String(data.get('sceneBreak') ?? ''),
 			pageNumbers: data.get('pageNumbers') === 'on',
@@ -378,11 +381,20 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const theme = String(data.get('theme') ?? '');
 		const accent = String(data.get('accent') ?? '');
+		const systemLightTheme = String(data.get('systemLightTheme') ?? '');
+		const systemDarkTheme = String(data.get('systemDarkTheme') ?? '');
 		if (!isTheme(theme)) return fail(400, { scope: 'appearance', message: 'Pick a theme.' });
 		if (!isAccentColor(accent)) {
 			return fail(400, { scope: 'appearance', message: 'Pick a valid accent colour.' });
 		}
-		await savePreferences(db, locals.user!.id, { theme, accent: normaliseAccent(accent) });
+		await savePreferences(db, locals.user!.id, {
+			theme,
+			// The mapping fields only show for 'system'; ignore anything invalid so
+			// the stored value falls back to the default in the normaliser.
+			...(isConcreteTheme(systemLightTheme) ? { systemLightTheme } : {}),
+			...(isConcreteTheme(systemDarkTheme) ? { systemDarkTheme } : {}),
+			accent: normaliseAccent(accent)
+		});
 		return { scope: 'appearance', saved: true };
 	},
 	startTotp: async ({ locals }) => {
