@@ -40,14 +40,25 @@
 
 	async function restore() {
 		restoring = true;
-		const response = await fetch(`/api/revisions/${revision.id}/restore`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ entityType, entityId })
-		});
-		restoring = false;
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
-		if (response.ok) await goto(exitHref, { invalidateAll: true });
+		// A network-level rejection must not leave the button stuck disabled.
+		try {
+			const response = await fetch(`/api/revisions/${revision.id}/restore`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ entityType, entityId })
+			});
+			if (response.ok) {
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
+				await goto(exitHref, { invalidateAll: true });
+			} else {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				alert(body?.message ?? 'Could not restore this revision.');
+			}
+		} catch {
+			alert('Could not restore this revision.');
+		} finally {
+			restoring = false;
+		}
 	}
 </script>
 

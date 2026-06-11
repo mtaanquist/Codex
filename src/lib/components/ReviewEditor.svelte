@@ -18,6 +18,7 @@
 		setReviewMarks,
 		type ReviewMarksHandle
 	} from '$lib/editor-review-marks';
+	import type { SaveStatus } from './SceneEditor.svelte';
 	import {
 		authorColor,
 		suggestionAuthor,
@@ -43,7 +44,8 @@
 		nonPrintingMarks = 'hidden',
 		commandMarkers = 'shown',
 		onStartComment,
-		onStartSuggest
+		onStartSuggest,
+		onStatus = () => {}
 	}: {
 		scene: { id: string; title: string | null; bodyMd: string };
 		chapterTitle: string;
@@ -64,6 +66,8 @@
 		entityHref: ((entity: MentionEntity) => string) | null;
 		onStartComment: (sel: { start: number; end: number; text: string }) => void;
 		onStartSuggest: (sel: { start: number; end: number; text: string }) => void;
+		// Save feedback for the TopBar, same contract as SceneEditor's.
+		onStatus?: (status: SaveStatus) => void;
 	} = $props();
 
 	// Autosave fires on a pause, not every keystroke; revisions coalesce a burst.
@@ -113,6 +117,7 @@
 	async function save() {
 		if (!view) return;
 		dirty = false;
+		onStatus('saving');
 		try {
 			const body = view.state.doc.toString();
 			const response = await fetch(`/api/scenes/${scene.id}`, {
@@ -127,8 +132,12 @@
 			// What we just persisted is now the server's truth, so the external
 			// sync below does not mistake it for someone else's change.
 			appliedBody = body;
+			// A keystroke during the await re-dirtied the doc; another save is
+			// already scheduled, so keep showing "saving".
+			onStatus(dirty ? 'saving' : 'saved');
 		} catch {
 			dirty = true;
+			onStatus('error');
 		}
 	}
 

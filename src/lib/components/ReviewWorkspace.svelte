@@ -10,6 +10,7 @@
 	import type { MentionEntity } from '$lib/editor-mentions';
 	import type { MarkVisibility } from '$lib/editor';
 	import type { ReviewFilter, ReviewSuggestion, ReviewThread } from '$lib/review-ui';
+	import type { SaveStatus } from './SceneEditor.svelte';
 
 	let {
 		chapters,
@@ -27,7 +28,8 @@
 		entityHref = null,
 		nonPrintingMarks = 'hidden',
 		commandMarkers = 'shown',
-		assistant = null
+		assistant = null,
+		onSaveStatus = () => {}
 	}: {
 		chapters: { id: string; title: string | null }[];
 		scenes: {
@@ -59,6 +61,8 @@
 		// reply in a thread the Assistant opened triggers its answer. Never set
 		// on the guest page.
 		assistant?: { name: string } | null;
+		// The author editor's autosave feedback, surfaced in the page's TopBar.
+		onSaveStatus?: (status: SaveStatus) => void;
 	} = $props();
 
 	// Scenes in reading order, each tagged with its chapter label, so the nav
@@ -306,6 +310,7 @@
 							{commandMarkers}
 							onStartComment={startComment}
 							onStartSuggest={startSuggest}
+							onStatus={onSaveStatus}
 						/>
 					{:else}
 						<ReviewSurface

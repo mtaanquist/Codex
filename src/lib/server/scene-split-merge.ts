@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
@@ -303,6 +303,12 @@ export async function mergeScenes(
 					anchorStart: sql`least(greatest(${sceneMarkers.anchorStart} - ${lead}, 0) + ${base}, ${base + part.length})`,
 					anchorEnd: sql`least(greatest(${sceneMarkers.anchorEnd} - ${lead}, 0) + ${base}, ${base + part.length})`
 				})
+				.where(and(eq(sceneMarkers.sceneId, scene.id), isNotNull(sceneMarkers.anchorStart)));
+			// An unanchored marker has nothing to move with; it changes scene
+			// but keeps its null anchors.
+			await tx
+				.update(sceneMarkers)
+				.set({ sceneId: target.id })
 				.where(eq(sceneMarkers.sceneId, scene.id));
 		}
 

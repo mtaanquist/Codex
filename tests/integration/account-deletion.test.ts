@@ -24,6 +24,7 @@ import {
 	sessions,
 	stories,
 	universes,
+	userExports,
 	users
 } from '../../src/lib/server/db/schema';
 import type { AssetObjectStore } from '../../src/lib/server/assets';
@@ -151,6 +152,20 @@ async function seedFullAccount(ownerId: string) {
 		tokenHash: crypto.randomUUID(),
 		expiresAt: new Date(Date.now() + 60_000)
 	});
+	// A finished user export plus a pending one with no stored file yet; the
+	// purge must sweep the stored object and skip the keyless row.
+	await db.insert(userExports).values({
+		ownerId,
+		scope: 'story',
+		targetId: story.id,
+		format: 'zip',
+		status: 'ready',
+		storageKey: `exports/${ownerId}/done.zip`,
+		filename: 'done.zip'
+	});
+	await db
+		.insert(userExports)
+		.values({ ownerId, scope: 'account', format: 'zip', status: 'pending' });
 }
 
 beforeAll(async () => {
@@ -201,7 +216,7 @@ describe('purgeAccount', () => {
 			const rows = await db.select().from(table).where(eq(table.ownerId, victim));
 			expect(rows).toHaveLength(0);
 		}
-		expect(removedKeys).toEqual([`key-${victim}`]);
+		expect(removedKeys).toEqual([`key-${victim}`, `exports/${victim}/done.zip`]);
 
 		// The bystander is untouched, and only their story-scoped rows remain.
 		expect(await db.select().from(users).where(eq(users.id, bystander))).toHaveLength(1);
