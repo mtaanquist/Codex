@@ -1,9 +1,11 @@
 <script lang="ts" module>
-	export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+	// Re-exported from the shared autosave queue so existing imports stand.
+	export type { SaveStatus } from '$lib/autosave';
 </script>
 
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { createAutosave, type SaveStatus } from '$lib/autosave';
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -239,20 +241,15 @@
 	// scene id, so a different scene means a fresh instance.
 	// svelte-ignore state_referenced_locally
 	let titleValue = $state(title ?? '');
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let dirty = false;
-	// Saves are chained so an earlier slow request can never land after, and
-	// overwrite, a newer one.
-	let saveChain: Promise<void> = Promise.resolve();
-
-	async function save() {
-		if (!view) return;
-		dirty = false;
-		onStatus('saving');
-		try {
+	const autosave = createAutosave({
+		debounceMs: SAVE_DEBOUNCE_MS,
+		onStatus: (status) => onStatus(status),
+		save: async ({ keepalive }) => {
+			if (!view) return;
 			const response = await fetch(`/api/scenes/${sceneId}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
+				keepalive,
 				body: JSON.stringify({
 					title: titleValue,
 					bodyMd: view.state.doc.toString(),
@@ -261,23 +258,14 @@
 				})
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			onStatus(dirty ? 'saving' : 'saved');
-		} catch {
-			dirty = true;
-			onStatus('error');
 		}
-	}
-
-	function enqueueSave() {
-		saveChain = saveChain.then(save);
-	}
+	});
+	const scheduleSave = autosave.schedule;
 
 	// A new marker's anchors must land against saved text, so the prose is
 	// flushed first; the page data refresh then re-renders the highlights.
 	async function markSelection(from: number, to: number) {
-		clearTimeout(saveTimer);
-		enqueueSave();
-		await saveChain;
+		await autosave.flush();
 		const response = await fetch(`/api/scenes/${sceneId}/markers`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
@@ -331,16 +319,14 @@
 	}
 
 	export async function flushSave(): Promise<void> {
-		clearTimeout(saveTimer);
-		if (dirty) enqueueSave();
-		await saveChain;
+		await autosave.flush();
 	}
 
 	// Whether an edit is waiting in the debounce window. The page uses this to
 	// flush before navigating away, so a quick scene round-trip never reloads
 	// stale prose over a save still in flight.
 	export function isDirty(): boolean {
-		return dirty;
+		return autosave.isDirty();
 	}
 
 	// The continuous view's shared formatting toolbar runs its commands on
@@ -546,42 +532,9 @@
 		}
 	}
 
-	function scheduleSave() {
-		dirty = true;
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
-	}
-
 	// Leaving the title field commits the rename at once instead of waiting
 	// out the debounce, so a rename right before a reload is already saved.
-	function flushTitle() {
-		if (!dirty) return;
-		clearTimeout(saveTimer);
-		enqueueSave();
-	}
-
-	// A reload or tab close inside the debounce window would silently drop
-	// the last edit: component teardown does not run on browser unload, so
-	// the pending save is flushed here with a request that outlives the
-	// page. Bodies past the keepalive cap reject, which the debounced saves
-	// already covered up to the last pause.
-	function flushOnPageHide() {
-		if (!dirty || !view) return;
-		clearTimeout(saveTimer);
-		dirty = false;
-		void fetch(`/api/scenes/${sceneId}`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			keepalive: true,
-			body: JSON.stringify({
-				title: titleValue,
-				bodyMd: view.state.doc.toString(),
-				markers: markerHandle.anchors(view)
-			})
-		}).catch(() => {
-			dirty = true;
-		});
-	}
+	const flushTitle = autosave.flushSoon;
 
 	onMount(() => {
 		view = new EditorView({
@@ -620,10 +573,8 @@
 		applyFind();
 		applyFindAt();
 		return () => {
-			clearTimeout(saveTimer);
 			// Last-chance flush so navigating away does not lose the tail edit.
-			if (dirty) enqueueSave();
-			void saveChain.then(() => {
+			void autosave.teardown().then(() => {
 				view?.destroy();
 				view = undefined;
 			});
@@ -752,7 +703,7 @@
 <svelte:window
 	onmousedown={onWindowPointerDown}
 	onkeydown={onWindowKeydown}
-	onpagehide={flushOnPageHide}
+	onpagehide={autosave.flushOnPageHide}
 />
 
 {#if selectionMenu}

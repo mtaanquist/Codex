@@ -18,7 +18,7 @@
 		setReviewMarks,
 		type ReviewMarksHandle
 	} from '$lib/editor-review-marks';
-	import type { SaveStatus } from './SceneEditor.svelte';
+	import { createAutosave, type SaveStatus } from '$lib/autosave';
 	import {
 		authorColor,
 		suggestionAuthor,
@@ -79,15 +79,34 @@
 	let view: EditorView | undefined;
 	let handle: ReviewMarksHandle | undefined;
 
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let dirty = false;
-	// Chained so a slow earlier save can never land after a newer one.
-	let saveChain: Promise<void> = Promise.resolve();
 	// The last body the editor took from the server, so an external change (an
 	// accepted suggestion rewrites the prose) is told apart from the author's
 	// own typing. Seeded from the initial prop on purpose.
 	// svelte-ignore state_referenced_locally
 	let appliedBody = scene.bodyMd;
+
+	const autosave = createAutosave({
+		debounceMs: SAVE_DEBOUNCE_MS,
+		onStatus: (status) => onStatus(status),
+		save: async ({ keepalive }) => {
+			if (!view) return;
+			const body = view.state.doc.toString();
+			const response = await fetch(`/api/scenes/${scene.id}`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				keepalive,
+				// No markers field: the review centre does not load scene markers,
+				// and the endpoint leaves the stored anchors untouched when it is
+				// absent.
+				body: JSON.stringify({ title: scene.title, bodyMd: body })
+			});
+			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			// What we just persisted is now the server's truth, so the external
+			// sync below does not mistake it for someone else's change.
+			appliedBody = body;
+		}
+	});
+	const scheduleSave = autosave.schedule;
 
 	// View toggles, mirrored locally and persisted for the user the same way the
 	// Write editor does, so the choice carries between the two.
@@ -114,65 +133,6 @@
 		persistEditorView({ commandMarkers: commands });
 	}
 
-	async function save() {
-		if (!view) return;
-		dirty = false;
-		onStatus('saving');
-		try {
-			const body = view.state.doc.toString();
-			const response = await fetch(`/api/scenes/${scene.id}`, {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				// No markers field: the review centre does not load scene markers,
-				// and the endpoint leaves the stored anchors untouched when it is
-				// absent.
-				body: JSON.stringify({ title: scene.title, bodyMd: body })
-			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			// What we just persisted is now the server's truth, so the external
-			// sync below does not mistake it for someone else's change.
-			appliedBody = body;
-			// A keystroke during the await re-dirtied the doc; another save is
-			// already scheduled, so keep showing "saving".
-			onStatus(dirty ? 'saving' : 'saved');
-		} catch {
-			dirty = true;
-			onStatus('error');
-		}
-	}
-
-	function enqueueSave() {
-		saveChain = saveChain.then(save);
-	}
-
-	function scheduleSave() {
-		dirty = true;
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
-	}
-
-	async function flushSave(): Promise<void> {
-		clearTimeout(saveTimer);
-		if (dirty) enqueueSave();
-		await saveChain;
-	}
-
-	// A reload or tab close inside the debounce window would drop the tail edit:
-	// teardown does not run on unload, so flush with a request that outlives the
-	// page.
-	function flushOnPageHide() {
-		if (!dirty || !view) return;
-		clearTimeout(saveTimer);
-		dirty = false;
-		void fetch(`/api/scenes/${scene.id}`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			keepalive: true,
-			body: JSON.stringify({ title: scene.title, bodyMd: view.state.doc.toString() })
-		}).catch(() => {
-			dirty = true;
-		});
-	}
 
 	// Folds suggestions the server just accepted into the live document, at
 	// their anchors as mapped through any typing the author has done meanwhile.
@@ -279,7 +239,7 @@
 		const captured = sel;
 		sel = null;
 		window.getSelection()?.removeAllRanges();
-		await flushSave();
+		await autosave.flush();
 		onStartComment({ start: captured.start, end: captured.end, text: captured.text });
 	}
 	async function startSuggest() {
@@ -287,7 +247,7 @@
 		const captured = sel;
 		sel = null;
 		window.getSelection()?.removeAllRanges();
-		await flushSave();
+		await autosave.flush();
 		onStartSuggest({ start: captured.start, end: captured.end, text: captured.text });
 	}
 
@@ -304,7 +264,7 @@
 		void focusedId;
 		if (!view) return;
 		if (incoming !== appliedBody) {
-			if (!dirty && view.state.doc.toString() !== incoming) {
+			if (!autosave.isDirty() && view.state.doc.toString() !== incoming) {
 				view.dispatch({
 					changes: { from: 0, to: view.state.doc.length, insert: incoming }
 				});
@@ -386,9 +346,8 @@
 		rebuildMarks();
 		recomputeGeometry();
 		return () => {
-			clearTimeout(saveTimer);
-			if (dirty) enqueueSave();
-			void saveChain.then(() => {
+			// Last-chance flush so navigating away does not lose the tail edit.
+			void autosave.teardown().then(() => {
 				view?.destroy();
 				view = undefined;
 			});
@@ -475,4 +434,4 @@
 	</div>
 </div>
 
-<svelte:window onpagehide={flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} />

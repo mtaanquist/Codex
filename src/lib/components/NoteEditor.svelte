@@ -3,7 +3,7 @@
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
-	import type { SaveStatus } from './SceneEditor.svelte';
+	import { createAutosave, type SaveStatus } from '$lib/autosave';
 
 	let {
 		note,
@@ -21,56 +21,21 @@
 	// note id, so a different note means a fresh instance.
 	// svelte-ignore state_referenced_locally
 	let title = $state(note.title ?? '');
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let dirty = false;
-	// Saves are chained so an earlier slow request can never overwrite a newer one.
-	let saveChain: Promise<void> = Promise.resolve();
-
-	async function save() {
-		if (!view) return;
-		dirty = false;
-		onStatus('saving');
-		try {
+	const autosave = createAutosave({
+		debounceMs: SAVE_DEBOUNCE_MS,
+		onStatus: (status) => onStatus(status),
+		save: async ({ keepalive }) => {
+			if (!view) return;
 			const response = await fetch(`/api/notes/${note.id}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
+				keepalive,
 				body: JSON.stringify({ title, bodyMd: view.state.doc.toString() })
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			onStatus(dirty ? 'saving' : 'saved');
-		} catch {
-			dirty = true;
-			onStatus('error');
 		}
-	}
-
-	function enqueueSave() {
-		saveChain = saveChain.then(save);
-	}
-
-	function scheduleSave() {
-		dirty = true;
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
-	}
-
-	// A reload or tab close inside the debounce window would drop the last
-	// edit, since component teardown does not run on browser unload. Flush the
-	// pending save with a request that outlives the page, the way SceneEditor
-	// does for scene prose.
-	function flushOnPageHide() {
-		if (!dirty || !view) return;
-		clearTimeout(saveTimer);
-		dirty = false;
-		void fetch(`/api/notes/${note.id}`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			keepalive: true,
-			body: JSON.stringify({ title, bodyMd: view.state.doc.toString() })
-		}).catch(() => {
-			dirty = true;
-		});
-	}
+	});
+	const scheduleSave = autosave.schedule;
 
 	onMount(() => {
 		view = new EditorView({
@@ -84,9 +49,8 @@
 			})
 		});
 		return () => {
-			clearTimeout(saveTimer);
-			if (dirty) enqueueSave();
-			void saveChain.then(() => {
+			// Last-chance flush so navigating away does not lose the tail edit.
+			void autosave.teardown().then(() => {
 				view?.destroy();
 				view = undefined;
 			});
@@ -94,7 +58,7 @@
 	});
 </script>
 
-<svelte:window onpagehide={flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} />
 
 <div class="detail">
 	<div class="detail-head">

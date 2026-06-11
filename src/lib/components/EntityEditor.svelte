@@ -11,7 +11,8 @@
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import EntityBadge from './EntityBadge.svelte';
 	import TagInput from './TagInput.svelte';
-	import type { SaveStatus } from './SceneEditor.svelte';
+	import { createAutosave } from '$lib/autosave';
+	import type { SaveStatus } from '$lib/autosave';
 
 	type RelationTypeOption = {
 		id: string;
@@ -247,11 +248,23 @@
 		}
 	}
 
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let dirty = false;
-	// Saves are chained so an earlier slow request can never land after, and
-	// overwrite, a newer one.
-	let saveChain: Promise<void> = Promise.resolve();
+	const autosave = createAutosave({
+		debounceMs: SAVE_DEBOUNCE_MS,
+		onStatus: (status) => onStatus(status),
+		save: async ({ keepalive }) => {
+			if (!view) return;
+			const response = await fetch(`/api/${ENDPOINT}/${entity.id}`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				keepalive,
+				body: JSON.stringify(savePayload(view.state.doc.toString()))
+			});
+			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+		},
+		// Only a settled rename makes the offer; mid-typing saves skip it.
+		onSettled: () => void checkRename()
+	});
+	const scheduleSave = autosave.schedule;
 
 	// Relationships are rows added and removed one at a time, not part of
 	// the debounced field autosave.
@@ -457,53 +470,6 @@
 		return payload;
 	}
 
-	async function save() {
-		if (!view) return;
-		dirty = false;
-		onStatus('saving');
-		try {
-			const response = await fetch(`/api/${ENDPOINT}/${entity.id}`, {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(savePayload(view.state.doc.toString()))
-			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			onStatus(dirty ? 'saving' : 'saved');
-			// Only a settled rename makes the offer; mid-typing saves skip it.
-			if (!dirty) void checkRename();
-		} catch {
-			dirty = true;
-			onStatus('error');
-		}
-	}
-
-	// A reload or tab close inside the debounce window would drop the last
-	// edit, since component teardown does not run on browser unload. Flush the
-	// pending save with a request that outlives the page, the way SceneEditor
-	// does for scene prose.
-	function flushOnPageHide() {
-		if (!dirty || !view) return;
-		clearTimeout(saveTimer);
-		dirty = false;
-		void fetch(`/api/${ENDPOINT}/${entity.id}`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			keepalive: true,
-			body: JSON.stringify(savePayload(view.state.doc.toString()))
-		}).catch(() => {
-			dirty = true;
-		});
-	}
-
-	function enqueueSave() {
-		saveChain = saveChain.then(save);
-	}
-
-	function scheduleSave() {
-		dirty = true;
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(enqueueSave, SAVE_DEBOUNCE_MS);
-	}
 
 	onMount(() => {
 		view = new EditorView({
@@ -520,9 +486,8 @@
 			})
 		});
 		return () => {
-			clearTimeout(saveTimer);
-			if (dirty) enqueueSave();
-			void saveChain.then(() => {
+			// Last-chance flush so navigating away does not lose the tail edit.
+			void autosave.teardown().then(() => {
 				view?.destroy();
 				view = undefined;
 			});
@@ -530,7 +495,7 @@
 	});
 </script>
 
-<svelte:window onpagehide={flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} />
 
 <div class="detail">
 	<div class="detail-head">
