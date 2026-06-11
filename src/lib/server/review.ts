@@ -18,7 +18,7 @@ import { recordRevision } from './revisions';
 import { reanchorPoint, reanchorRange } from '../review-anchor';
 import { wordCount } from '../word-count';
 import { normaliseAssistantName } from './llm/prompts/persona';
-import { EMAIL_RE } from './signup';
+import { EMAIL_RE } from './signup.ts';
 
 // Guest review, stage one: invitations, guest identity, and threaded
 // comments. An author invites someone to one story by magic link; the guest

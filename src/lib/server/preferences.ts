@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import { jsonbMergePatch } from './jsonb-patch';
+import { jsonbMergePatch } from './jsonb-patch.ts';
 import type { Database } from './auth';
 import { stories, users } from './db/schema';
 import type { AutocompleteMode } from '$lib/editor-autocomplete';

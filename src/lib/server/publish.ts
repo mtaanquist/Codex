@@ -3,7 +3,7 @@ import type { Database } from './auth';
 import { publicationAssets, publications, stories, users } from './db/schema';
 import { gatherStory } from './export';
 import { findAssetReferences } from '$lib/markdown';
-import { isUniqueViolation } from './db-errors';
+import { isUniqueViolation } from './db-errors.ts';
 
 // Publishing freezes the story's current prose into an edition; the
 // public reading pages serve only these snapshots, never live drafts.

@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { inviteCodes } from './db/schema.ts';
-import { isUniqueViolation } from './db-errors';
+import { isUniqueViolation } from './db-errors.ts';
 
 // Invite codes skip the admin approval queue at sign-up. The admin mints a
 // code (optionally limited by uses and expiry), shares it, and a sign-up that

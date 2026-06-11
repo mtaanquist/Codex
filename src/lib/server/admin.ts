@@ -2,7 +2,7 @@ import { and, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { authTokens, sessions, stories, universes, users, userTotp } from './db/schema.ts';
 import { hashPassword } from './password.ts';
-import { isUniqueViolation } from './db-errors';
+import { isUniqueViolation } from './db-errors.ts';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
 

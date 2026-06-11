@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sceneMarkers, scenes } from './db/schema';
-import { ownedScene } from './scene-access';
+import { ownedScene } from './scene-access.ts';
 import { findTodoLines } from '$lib/todo-markers';
 
 // A selection turned into a checkable marker. Anchors are clamped to the

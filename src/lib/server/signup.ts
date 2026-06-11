@@ -5,7 +5,7 @@ import { hashPassword } from './password';
 import { consumeToken } from './tokens';
 import { redeemInviteCode } from './invites';
 import type { SignupMode } from './settings';
-import { isUniqueViolation } from './db-errors';
+import { isUniqueViolation } from './db-errors.ts';
 
 export type RegisterResult =
 	// invited: a valid invite code was spent. approved: the account skipped

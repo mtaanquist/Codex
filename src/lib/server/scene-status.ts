@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
-import { ownedScene } from './scene-access';
+import { ownedScene } from './scene-access.ts';
 import type { SceneStatus } from '../scene-status';
 
 /** Owner-guarded status change. False when the scene is not the user's. */

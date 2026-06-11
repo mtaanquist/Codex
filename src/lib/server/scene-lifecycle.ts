@@ -11,7 +11,7 @@ import {
 	scenes,
 	stories
 } from './db/schema';
-import { ownedScene } from './scene-access';
+import { ownedScene } from './scene-access.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
 // revisions, markers, and review threads) so restore is instant; only its

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { Database } from './auth';
-import { isUniqueViolation } from './db-errors';
+import { isUniqueViolation } from './db-errors.ts';
 import { entityCategories, stories, universes } from './db/schema';
 import { uniqueSlug } from './slugs';
 

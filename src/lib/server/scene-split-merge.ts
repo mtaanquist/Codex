@@ -2,7 +2,7 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-o
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
-import { ownedScene } from './scene-access';
+import { ownedScene } from './scene-access.ts';
 import { wordCount } from '$lib/word-count';
 import { locateSplitBefore } from '$lib/scene-split-locate';
 

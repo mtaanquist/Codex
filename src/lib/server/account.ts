@@ -3,8 +3,8 @@ import type { Database } from './auth';
 import { sessions, users } from './db/schema';
 import { hashPassword, verifyPassword } from './password';
 import { consumeToken, issueToken, revokeTokens } from './tokens';
-import { isUniqueViolation } from './db-errors';
-import { EMAIL_RE } from './signup';
+import { isUniqueViolation } from './db-errors.ts';
+import { EMAIL_RE } from './signup.ts';
 
 const MIN_PASSWORD = 8;
 const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
