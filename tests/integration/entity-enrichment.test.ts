@@ -27,9 +27,6 @@ const stubProvider: Provider = {
 	async respond() {
 		return { content: enrichJson, toolCalls: [] };
 	},
-	async probe() {
-		return { ok: true, supportsStreaming: true, supportsTools: false };
-	},
 	async listModels() {
 		return [];
 	}

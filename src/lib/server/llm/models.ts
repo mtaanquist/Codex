@@ -2,7 +2,7 @@ import type { Database } from '../auth';
 import { resolveLlmConfig } from './config';
 import { egressHttpRequest, egressPolicy } from './egress';
 import { openaiProvider } from './providers/openai';
-import type { Connection, HttpRequest, ProbeResult, Provider } from './providers/types';
+import type { Connection, HttpRequest, Provider } from './providers/types';
 import { pickModel } from './gateway';
 
 // Endpoint setup helpers, all through the same egress guard as completions, for
@@ -106,33 +106,4 @@ export async function testAccountConnection(
 		chosen,
 		deps
 	);
-}
-
-// Detect the endpoint's capabilities (streaming, tool-calling) for the chosen
-// model, so the setup screen can show what the model can drive. The result's
-// supportsStreaming / supportsTools are meant to be saved onto the config (the
-// gateway withholds tools when supportsTools is false).
-export async function probeEndpoint(
-	db: Database,
-	conn: Connection,
-	model: string,
-	deps: DiscoveryDeps = {}
-): Promise<ProbeResult> {
-	if (!conn.endpoint.trim()) return { ok: false, reason: 'Configure an endpoint first.' };
-	if (!model.trim()) return { ok: false, reason: 'Choose a model to test.' };
-	const policy = await egressPolicy(db);
-	const http = deps.http ?? egressHttpRequest(policy);
-	const provider = deps.provider ?? openaiProvider;
-	return provider.probe(conn, model, http);
-}
-
-export async function probeAccountEndpoint(
-	db: Database,
-	userId: string,
-	model?: string,
-	deps: DiscoveryDeps = {}
-): Promise<ProbeResult> {
-	const { config } = await resolveLlmConfig(db, userId);
-	const chosen = model?.trim() || pickModel(config, 'chat');
-	return probeEndpoint(db, { endpoint: config.endpoint, apiKey: config.apiKey }, chosen, deps);
 }

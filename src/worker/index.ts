@@ -383,7 +383,7 @@ if (backups) {
 	await boss.unschedule(BACKUP_QUEUE);
 }
 
-console.log('Worker started; processing mention rebuilds.');
+console.log('Worker started.');
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {

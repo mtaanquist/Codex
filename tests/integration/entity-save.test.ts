@@ -23,7 +23,6 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 let pool: pg.Pool;
 let db: Database;
 let ownerId: string;
-let storyId: string;
 let categoryId: string;
 const ids: Record<EntitySaveKind, string> = { character: '', place: '', lore: '' };
 
@@ -43,11 +42,7 @@ beforeAll(async () => {
 		.returning();
 	ownerId = owner.id;
 	const [universe] = await db.insert(universes).values({ ownerId, name: 'U' }).returning();
-	const [story] = await db
-		.insert(stories)
-		.values({ universeId: universe.id, ownerId, title: 'S' })
-		.returning();
-	storyId = story.id;
+	await db.insert(stories).values({ universeId: universe.id, ownerId, title: 'S' });
 	const [category] = await db
 		.insert(entityCategories)
 		.values({ universeId: universe.id, ownerId, name: 'Cat', sortOrder: 0 })

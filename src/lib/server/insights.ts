@@ -1,7 +1,7 @@
 // Queries behind the universe Insights view. Everything here is derived from
 // data the app already records (scene word counts, the mention index, scene
 // revisions, relationships); nothing is stored.
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { entityRelationships, relationTypes } from './db/schema';
 import { dailyNetWords, dayAxis, streaks, type DailyWords } from '../insights';
@@ -243,7 +243,11 @@ export async function relationshipLinks(db: Database, universeId: string): Promi
 		})
 		.from(entityRelationships)
 		.innerJoin(relationTypes, eq(entityRelationships.relationTypeId, relationTypes.id))
-		.where(eq(entityRelationships.universeId, universeId));
+		// Universe-wide truth only, like every sibling query here; story-scoped
+		// relationships stay out of the web.
+		.where(
+			and(eq(entityRelationships.universeId, universeId), isNull(entityRelationships.storyId))
+		);
 	return rows;
 }
 

@@ -75,7 +75,6 @@
 
 	let editorEl = $state<HTMLDivElement>();
 	let docEl = $state<HTMLElement>();
-	let scrollEl = $state<HTMLElement>();
 	let view: EditorView | undefined;
 	let handle: ReviewMarksHandle | undefined;
 
@@ -367,7 +366,7 @@
 		onToggleCommandMarkers={toggleCommandMarkers}
 	/>
 
-	<div class="editor-scroll review-scroll" bind:this={scrollEl}>
+	<div class="editor-scroll review-scroll">
 		<div class="review-doc" bind:this={docEl}>
 			<div class="review-head">
 				<div class="review-kicker">{chapterTitle} - review</div>

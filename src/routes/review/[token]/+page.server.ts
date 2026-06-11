@@ -256,7 +256,7 @@ export const actions: Actions = {
 		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
 		const result = await deleteComment(db, { reviewerId: access.reviewer.id }, commentId);
 		if (!result.ok) return fail(400, { message: result.reason });
-		return { commented: true };
+		return { deleted: true };
 	},
 	// A reviewer retracting a suggestion of their own while it is still pending.
 	deleteSuggestion: async ({ params, request, cookies }) => {
@@ -269,6 +269,6 @@ export const actions: Actions = {
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const result = await deleteSuggestion(db, { reviewerId: access.reviewer.id }, suggestionId);
 		if (!result.ok) return fail(400, { message: result.reason });
-		return { commented: true };
+		return { deleted: true };
 	}
 };

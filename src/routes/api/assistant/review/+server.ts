@@ -46,7 +46,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 	const after = await countAssistantNotes(db, sceneId);
 
-	return new Response(JSON.stringify({ ok: true, staged: after - before }), {
+	// The count is cosmetic and the two snapshots are not transactional, so a
+	// concurrent decision could make the difference negative; clamp it.
+	return new Response(JSON.stringify({ ok: true, staged: Math.max(0, after - before) }), {
 		headers: { 'content-type': 'application/json' }
 	});
 };

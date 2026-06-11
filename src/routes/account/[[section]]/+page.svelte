@@ -88,11 +88,6 @@
 			hint: 'Inline ghost-text suggestions. Fast and light is what matters.'
 		},
 		{
-			id: 'editor',
-			name: 'Editor',
-			hint: 'Margin notes on existing prose. Analytical over generative.'
-		},
-		{
 			id: 'reviewer',
 			name: 'Reviewer',
 			hint: 'Reads a draft and leaves suggested edits in your name.'
