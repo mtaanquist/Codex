@@ -287,8 +287,9 @@
 			// A sequence guard: a slow response for an earlier query must not land
 			// after a faster one for a later query and replace newer results.
 			const seq = ++searchSeq;
-			const response = await fetch(`/api/search?q=${encodeURIComponent(value)}`);
-			if (seq !== searchSeq || !response.ok) return;
+			// A network failure just leaves the previous results standing.
+			const response = await fetch(`/api/search?q=${encodeURIComponent(value)}`).catch(() => null);
+			if (!response || seq !== searchSeq || !response.ok) return;
 			const data = await response.json();
 			if (seq !== searchSeq) return;
 			results = data.results;
