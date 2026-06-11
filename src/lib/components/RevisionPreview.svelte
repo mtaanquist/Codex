@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import type { EntitySnapshot } from '$lib/entity-snapshot';
+	import { apiErrorMessage } from '$lib/format';
 
 	// The centre column while a past revision is open: banner, the
 	// revision's text (read-only), and a toggle that diffs it against what
@@ -51,8 +52,7 @@
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 				await goto(exitHref, { invalidateAll: true });
 			} else {
-				const body = (await response.json().catch(() => null)) as { message?: string } | null;
-				alert(body?.message ?? 'Could not restore this revision.');
+				alert(await apiErrorMessage(response, 'Could not restore this revision.'));
 			}
 		} catch {
 			alert('Could not restore this revision.');

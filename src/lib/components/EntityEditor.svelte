@@ -14,6 +14,7 @@
 	import { createAutosave } from '$lib/autosave';
 	import { dismiss } from '$lib/dismiss';
 	import type { SaveStatus } from '$lib/autosave';
+	import { apiErrorMessage } from '$lib/format';
 
 	type RelationTypeOption = {
 		id: string;
@@ -142,8 +143,7 @@
 				body: JSON.stringify({ storyId, entityId: entity.id })
 			});
 			if (!response.ok) {
-				const body = (await response.json().catch(() => null)) as { message?: string } | null;
-				enrichNote = body?.message ?? 'The Assistant could not suggest anything.';
+				enrichNote = await apiErrorMessage(response, 'The Assistant could not suggest anything.');
 				return;
 			}
 			const body = (await response.json()) as { suggestions: AssistantSuggestion[] };
@@ -461,7 +461,6 @@
 		return payload;
 	}
 
-
 	onMount(() => {
 		view = new EditorView({
 			parent: editorEl,
@@ -490,7 +489,10 @@
 
 <div class="detail">
 	<div class="detail-head">
-		<div class="badge-pick" use:dismiss={{ enabled: badgeMenuOpen, close: () => (badgeMenuOpen = false) }}>
+		<div
+			class="badge-pick"
+			use:dismiss={{ enabled: badgeMenuOpen, close: () => (badgeMenuOpen = false) }}
+		>
 			<button
 				class="badge-pick-btn"
 				type="button"

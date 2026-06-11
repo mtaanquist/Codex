@@ -128,6 +128,9 @@
 		check: ['M20 6 9 17l-5-5'],
 		'check-circle': ['M22 11.1V12a10 10 0 1 1-5.9-9.1', 'M22 4 12 14.1l-3-3'],
 		close: ['M18 6 6 18', 'M6 6l12 12'],
+		// Admin shield and sign-out, for the avatar menu.
+		shield: ['M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z'],
+		logout: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'M16 17l5-5-5-5', 'M21 12H9'],
 		reply: ['M9 17l-5-5 5-5', 'M4 12h11a5 5 0 0 1 5 5v2']
 	} as const;
 

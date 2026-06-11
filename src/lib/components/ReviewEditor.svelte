@@ -133,7 +133,6 @@
 		persistEditorView({ commandMarkers: commands });
 	}
 
-
 	// Folds suggestions the server just accepted into the live document, at
 	// their anchors as mapped through any typing the author has done meanwhile.
 	// Without this the editor only learns of an accept when the page data

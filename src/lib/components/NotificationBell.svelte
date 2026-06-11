@@ -3,6 +3,7 @@
 	import Icon from './Icon.svelte';
 	import type { NotificationItem } from '$lib/notifications';
 	import { dismiss } from '$lib/dismiss';
+	import { relativeShort } from '$lib/format';
 
 	// The topbar bell: unread badge, a dropdown of recent notifications,
 	// click marks read and follows the link when there is one.
@@ -64,16 +65,6 @@
 		unread = 0;
 		void markRead({ all: true });
 	}
-
-	function age(iso: string): string {
-		const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-		if (minutes < 1) return 'now';
-		if (minutes < 60) return `${minutes}m`;
-		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return `${hours}h`;
-		return `${Math.floor(hours / 24)}d`;
-	}
-
 </script>
 
 <div class="bell" use:dismiss={{ enabled: open, close: () => (open = false) }}>
@@ -113,7 +104,7 @@
 										<span class="bell-item-detail">{item.detail}</span>
 									{/if}
 								</span>
-								<span class="bell-age">{age(item.createdAt)}</span>
+								<span class="bell-age">{relativeShort(item.createdAt)}</span>
 							</button>
 						</li>
 					{/each}

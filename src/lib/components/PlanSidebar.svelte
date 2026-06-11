@@ -99,7 +99,10 @@
 
 <aside class="pane left">
 	<div class="left-head">
-		<ModeSwitcher active="plan" hrefs={{ write: writeHref, notes: notesHref, review: reviewHref }} />
+		<ModeSwitcher
+			active="plan"
+			hrefs={{ write: writeHref, notes: notesHref, review: reviewHref }}
+		/>
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>
 	<div class="left-scroll">

@@ -1,11 +1,12 @@
 <script lang="ts" module>
 	// Re-exported from the shared autosave queue so existing imports stand.
-	export type { SaveStatus } from '$lib/autosave';
+	import type { SaveStatus as AutosaveStatus } from '$lib/autosave';
+	export type SaveStatus = AutosaveStatus;
 </script>
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createAutosave, type SaveStatus } from '$lib/autosave';
+	import { createAutosave } from '$lib/autosave';
 	import { dismiss } from '$lib/dismiss';
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
@@ -519,7 +520,6 @@
 		}
 	}
 
-
 	// Leaving the title field commits the rename at once instead of waiting
 	// out the debounce, so a rename right before a reload is already saved.
 	const flushTitle = autosave.flushSoon;
@@ -694,7 +694,9 @@
 	<div
 		class="sel-menu"
 		role="menu"
-		use:dismiss={{ close: closeSelectionMenu, refocus: () => view?.focus() }} style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;">
+		use:dismiss={{ close: closeSelectionMenu, refocus: () => view?.focus() }}
+		style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;"
+	>
 		<div class="sel-menu-formats">
 			<button
 				class="sel-format"
