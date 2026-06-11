@@ -18,6 +18,7 @@
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
+	import { formatDateTime } from '$lib/format';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -63,10 +64,6 @@
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent);
 	});
-
-	function seen(date: Date): string {
-		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-	}
 
 	// The Assistant's kill switch reads inverted: engaged (checked) means off.
 	// Submitting on change flips the master switch with a single round trip.
@@ -347,7 +344,7 @@
 				class="admin-health"
 				style="background:transparent;box-shadow:none;border:0;padding:12px 4px 2px;"
 			>
-				<form method="POST" action="?/signout">
+				<form method="POST" action={resolve('/logout')}>
 					<button class="btn btn-secondary" type="submit" style="width:100%;justify-content:center;"
 						>Sign out</button
 					>
@@ -1044,7 +1041,7 @@
 													<p class="user-row-name">{passkey.name ?? 'Passkey'}</p>
 													<p class="user-row-email">
 														Added {onDate(passkey.createdAt)}{passkey.lastUsedAt
-															? ` - last used ${seen(passkey.lastUsedAt)}`
+															? ` - last used ${formatDateTime(passkey.lastUsedAt)}`
 															: ''}
 													</p>
 												</div>
@@ -1143,7 +1140,7 @@
 										</div>
 										<div class="user-row-identity">
 											<p class="user-row-name">{session.userAgent ?? 'Unknown device'}</p>
-											<p class="user-row-email">Last active {seen(session.lastSeenAt)}</p>
+											<p class="user-row-email">Last active {formatDateTime(session.lastSeenAt)}</p>
 										</div>
 										<div class="user-row-actions">
 											{#if session.current}

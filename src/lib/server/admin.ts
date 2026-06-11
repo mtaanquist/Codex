@@ -2,6 +2,7 @@ import { and, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { authTokens, sessions, stories, universes, users, userTotp } from './db/schema.ts';
 import { hashPassword } from './password.ts';
+import { isUniqueViolation } from './db-errors.ts';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
 
@@ -46,9 +47,8 @@ export async function createFirstAdmin(
 			.returning({ id: users.id });
 		return { ok: true, id: row.id };
 	} catch (err) {
-		// 23505: another account already uses this email. Drizzle wraps the
-		// driver error, so the code sits on the cause.
-		if ((err as { cause?: { code?: string } }).cause?.code === '23505') {
+		// Another account already uses this email.
+		if (isUniqueViolation(err)) {
 			return { ok: false, reason: 'An account with that email already exists.' };
 		}
 		throw err;

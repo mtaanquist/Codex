@@ -23,6 +23,9 @@
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { PageData, Snapshot } from './$types';
+	import { dismiss } from '$lib/dismiss';
+	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
+	import { apiErrorMessage } from '$lib/format';
 
 	let { data }: { data: PageData } = $props();
 
@@ -171,8 +174,7 @@
 			body: JSON.stringify({ type, name, ...(categoryId ? { categoryId } : {}) })
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			return body?.message ?? 'Could not create it.';
+			return await apiErrorMessage(response, 'Could not create it.');
 		}
 		await invalidateAll();
 		return null;
@@ -241,8 +243,7 @@
 			body: JSON.stringify({ sceneIds: [...mergeSelection] })
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			alert(body?.message ?? 'Could not merge the scenes.');
+			alert(await apiErrorMessage(response, 'Could not merge the scenes.'));
 			return;
 		}
 		const { targetSceneId } = (await response.json()) as { targetSceneId: string };
@@ -261,8 +262,7 @@
 			body: JSON.stringify({ sceneId })
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			alert(body?.message ?? 'Could not duplicate the scene.');
+			alert(await apiErrorMessage(response, 'Could not duplicate the scene.'));
 			return;
 		}
 		const { newSceneId } = (await response.json()) as { newSceneId: string };
@@ -295,8 +295,7 @@
 			body: JSON.stringify({ storyId: data.story.id, chapterId })
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			alert(body?.message ?? 'Could not start the chapter review.');
+			alert(await apiErrorMessage(response, 'Could not start the chapter review.'));
 			return;
 		}
 		alert(
@@ -322,8 +321,7 @@
 			body: JSON.stringify({ offset: cursor.offset })
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			alert(body?.message ?? 'Could not split the scene.');
+			alert(await apiErrorMessage(response, 'Could not split the scene.'));
 			return;
 		}
 		const { newSceneId } = (await response.json()) as { newSceneId: string };
@@ -363,8 +361,7 @@
 			body: JSON.stringify({ before: proposal.before })
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			return { error: body?.message ?? 'Could not split the scene.' };
+			return { error: await apiErrorMessage(response, 'Could not split the scene.') };
 		}
 		const { newSceneId, splitSceneId } = (await response.json()) as {
 			newSceneId: string;
@@ -395,8 +392,7 @@
 			})
 		});
 		if (!response.ok) {
-			const body = (await response.json().catch(() => null)) as { message?: string } | null;
-			return body?.message ?? 'Could not merge the scenes back.';
+			return await apiErrorMessage(response, 'Could not merge the scenes back.');
 		}
 		const { targetSceneId } = (await response.json()) as { targetSceneId: string };
 		persistProposalState(proposal, null);
@@ -484,12 +480,6 @@
 
 	// The book switcher's menu, toggled from the sidebar header.
 	let storyMenuOpen = $state(false);
-
-	function onWindowPointerDown(event: MouseEvent) {
-		const target = event.target as HTMLElement | null;
-		if (storyMenuOpen && !target?.closest('.outline-head')) storyMenuOpen = false;
-		if (rowMenu && !target?.closest('.row-menu')) rowMenu = null;
-	}
 
 	const orphanScenes = $derived(data.scenes.filter((scene) => scene.chapterId === null));
 
@@ -706,18 +696,9 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key !== 'Escape') return;
-		if (storyMenuOpen) {
-			storyMenuOpen = false;
-			return;
-		}
-		if (rowMenu) {
-			rowMenu = null;
-			return;
-		}
-		focusMode.on = false;
+		// Open menus consume Escape in the dismiss action before this fires.
+		if (e.key === 'Escape') focusMode.on = false;
 	}}
-	onpointerdown={onWindowPointerDown}
 />
 
 <svelte:head>
@@ -804,20 +785,22 @@
 	<div class="body">
 		<aside class="pane left">
 			<div class="left-head">
-				<div class="seg full">
-					<button class="seg-btn active" type="button">Write</button>
-					<a class="seg-btn" href={resolve('/stories/[id]/plan', { id: data.story.slug })}>Plan</a>
-					<a class="seg-btn" href={resolve('/stories/[id]/notes', { id: data.story.slug })}>Notes</a
-					>
-					<a class="seg-btn" href={resolve('/stories/[id]/review', { id: data.story.slug })}
-						>Review</a
-					>
-				</div>
+				<ModeSwitcher
+					active="write"
+					hrefs={{
+						plan: resolve('/stories/[id]/plan', { id: data.story.slug }),
+						notes: resolve('/stories/[id]/notes', { id: data.story.slug }),
+						review: resolve('/stories/[id]/review', { id: data.story.slug })
+					}}
+				/>
 				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>
 			<div class="left-scroll">
 				<div class="outline">
-					<div class="outline-head">
+					<div
+						class="outline-head"
+						use:dismiss={{ enabled: storyMenuOpen, close: () => (storyMenuOpen = false) }}
+					>
 						<!-- The book switcher: with more than one story in the
 						     universe, the header opens a menu to jump between them. -->
 						<button
@@ -1380,6 +1363,7 @@
 		role="menu"
 		tabindex="-1"
 		bind:this={rowMenuEl}
+		use:dismiss={{ close: () => (rowMenu = null) }}
 		onkeydown={onRowMenuKey}
 		style="left: {rowMenu.x}px; top: {rowMenu.y}px;"
 	>

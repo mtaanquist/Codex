@@ -8,6 +8,7 @@
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { startSummariesJob } from '$lib/assistant-actions';
 	import Icon from './Icon.svelte';
+	import { dismiss } from '$lib/dismiss';
 
 	let {
 		storyId,
@@ -325,19 +326,6 @@
 		action();
 	}
 
-	function onWindowPointerDown(event: MouseEvent) {
-		if (!actionsOpen) return;
-		const target = event.target as HTMLElement | null;
-		if (!target?.closest('.composer-menu-wrap')) actionsOpen = false;
-	}
-
-	function onWindowKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && actionsOpen) {
-			event.preventDefault();
-			actionsOpen = false;
-		}
-	}
-
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
@@ -368,8 +356,6 @@
 		return text.split(/\n{2,}/);
 	}
 </script>
-
-<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />
 
 {#if muted}
 	<div class="assistant-muted">
@@ -510,7 +496,10 @@
 				oninput={grow}
 				onkeydown={onKeydown}
 			></textarea>
-			<div class="composer-menu-wrap">
+			<div
+				class="composer-menu-wrap"
+				use:dismiss={{ enabled: actionsOpen, close: () => (actionsOpen = false) }}
+			>
 				<button
 					class="menu-btn"
 					type="button"

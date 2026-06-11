@@ -11,6 +11,7 @@
 	import type { MarkVisibility } from '$lib/editor';
 	import type { ReviewFilter, ReviewSuggestion, ReviewThread } from '$lib/review-ui';
 	import type { SaveStatus } from './SceneEditor.svelte';
+	import ModeSwitcher from './ModeSwitcher.svelte';
 
 	let {
 		chapters,
@@ -244,21 +245,13 @@
 	<div class="body" data-mtab={mobileTab}>
 		<aside class="pane left">
 			<div class="left-head">
-				<div class="seg full">
-					{#if seg}
-						<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the paths) -->
-						<a class="seg-btn" href={seg.writeHref}>Write</a>
-						<a class="seg-btn" href={seg.planHref}>Plan</a>
-						<a class="seg-btn" href={seg.notesHref}>Notes</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					{:else}
-						<!-- A reviewer stays in review mode; the other views are out of reach. -->
-						<button class="seg-btn" type="button" disabled>Write</button>
-						<button class="seg-btn" type="button" disabled>Plan</button>
-						<button class="seg-btn" type="button" disabled>Notes</button>
-					{/if}
-					<button class="seg-btn active" type="button">Review</button>
-				</div>
+				<!-- A reviewer stays in review mode; the other views are out of reach. -->
+				<ModeSwitcher
+					active="review"
+					hrefs={seg
+						? { write: seg.writeHref, plan: seg.planHref, notes: seg.notesHref }
+						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
+				/>
 				<SidebarSearch bind:query placeholder="Search chapters and scenes..." />
 			</div>
 			<div class="left-scroll">

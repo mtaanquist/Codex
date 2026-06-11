@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
@@ -133,6 +133,22 @@ describe('reviewers', () => {
 		const first = await ensureReviewer(db, id, { userId: strangerId, displayName: 'Sam' });
 		const second = await ensureReviewer(db, id, { userId: strangerId, displayName: 'Sam' });
 		expect(first!.id).toBe(second!.id);
+	});
+
+	it('concurrent first requests settle on one reviewer row per user', async () => {
+		const { id } = await invite();
+		// Without the unique index and upsert, both of these could insert,
+		// splitting attribution and the mine/retract checks.
+		const rows = await Promise.all([
+			ensureReviewer(db, id, { userId: strangerId, displayName: 'Sam' }),
+			ensureReviewer(db, id, { userId: strangerId, displayName: 'Sam' })
+		]);
+		expect(rows[0]!.id).toBe(rows[1]!.id);
+		const stored = await db
+			.select()
+			.from(reviewersTable)
+			.where(and(eq(reviewersTable.invitationId, id), eq(reviewersTable.userId, strangerId)));
+		expect(stored).toHaveLength(1);
 	});
 
 	it('round-trips the reviewer cookie and refuses tampering', async () => {

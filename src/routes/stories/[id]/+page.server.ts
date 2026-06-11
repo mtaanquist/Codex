@@ -299,6 +299,10 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const chapterId = String(data.get('chapterId') ?? '') || null;
+		// Guard the uuid cast: a tampered id would throw in Postgres and 500.
+		if (chapterId && !isUuid(chapterId)) {
+			return fail(400, { message: 'That chapter does not exist.' });
+		}
 		if (chapterId) {
 			const [chapter] = await db
 				.select({ id: chapters.id })
@@ -325,6 +329,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const chapterId = String(data.get('chapterId') ?? '');
+		if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
 		const ok = await renameChapter(db, locals.user!.id, chapterId, String(data.get('title') ?? ''));
 		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
 		// Keep the open scene open across the reload.
@@ -334,6 +339,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const chapterId = String(data.get('chapterId') ?? '');
+		if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
 		const direction = data.get('direction') === 'up' ? ('up' as const) : ('down' as const);
 		const ok = await moveChapter(db, locals.user!.id, chapterId, direction);
 		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
@@ -343,6 +349,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const chapterId = String(data.get('chapterId') ?? '');
+		if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
 		const ok = await deleteChapter(db, locals.user!.id, chapterId);
 		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
 		redirect(303, sceneReturnPath(story.slug, data));
@@ -351,6 +358,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const sceneId = String(data.get('sceneId') ?? '');
+		if (!isUuid(sceneId)) return fail(404, { message: 'That scene does not exist.' });
 		const ok = await trashScene(db, locals.user!.id, sceneId);
 		if (!ok) return fail(404, { message: 'That scene does not exist.' });
 		// Deleting the open scene closes it; deleting another keeps it open.
@@ -364,6 +372,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const sceneId = String(data.get('sceneId') ?? '');
+		if (!isUuid(sceneId)) return fail(404, { message: 'That scene is not in the trash.' });
 		const ok = await restoreScene(db, locals.user!.id, sceneId);
 		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
 		await queueSceneMentions(sceneId);
@@ -373,6 +382,7 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const sceneId = String(data.get('sceneId') ?? '');
+		if (!isUuid(sceneId)) return fail(404, { message: 'That scene is not in the trash.' });
 		const ok = await destroyScene(db, locals.user!.id, sceneId);
 		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
 		redirect(303, sceneReturnPath(story.slug, data));

@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { locateSplitInStory, splitScene } from '$lib/server/scene-split-merge';
 import { queueSceneMentions } from '$lib/server/jobs';
+import { readJson } from '$lib/server/validation';
 
 // Splits the scene either at a character offset (the editor flushes its
 // pending save first so the offset is against the stored text) or at the
@@ -14,7 +15,7 @@ import { queueSceneMentions } from '$lib/server/jobs';
 // locate follows it, so the split lands on whichever scene holds it now.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
-	const payload = (await request.json()) as { offset?: unknown; before?: unknown };
+	const payload = await readJson<{ offset?: unknown; before?: unknown }>(request);
 
 	let targetSceneId = params.id;
 	let offset: number;

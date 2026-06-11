@@ -2,6 +2,8 @@
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import type { NotificationItem } from '$lib/notifications';
+	import { dismiss } from '$lib/dismiss';
+	import { relativeShort } from '$lib/format';
 
 	// The topbar bell: unread badge, a dropdown of recent notifications,
 	// click marks read and follows the link when there is one.
@@ -10,7 +12,6 @@
 	let items = $state<NotificationItem[]>([]);
 	let open = $state(false);
 	let loaded = $state(false);
-	let root = $state<HTMLElement>();
 
 	async function load() {
 		try {
@@ -64,27 +65,9 @@
 		unread = 0;
 		void markRead({ all: true });
 	}
-
-	function age(iso: string): string {
-		const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-		if (minutes < 1) return 'now';
-		if (minutes < 60) return `${minutes}m`;
-		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return `${hours}h`;
-		return `${Math.floor(hours / 24)}d`;
-	}
-
-	function onWindowClick(event: MouseEvent) {
-		if (open && root && !root.contains(event.target as Node)) open = false;
-	}
-	function onWindowKey(event: KeyboardEvent) {
-		if (event.key === 'Escape') open = false;
-	}
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onWindowKey} />
-
-<div class="bell" bind:this={root}>
+<div class="bell" use:dismiss={{ enabled: open, close: () => (open = false) }}>
 	<button
 		class="icon-btn bell-btn"
 		type="button"
@@ -121,7 +104,7 @@
 										<span class="bell-item-detail">{item.detail}</span>
 									{/if}
 								</span>
-								<span class="bell-age">{age(item.createdAt)}</span>
+								<span class="bell-age">{relativeShort(item.createdAt)}</span>
 							</button>
 						</li>
 					{/each}

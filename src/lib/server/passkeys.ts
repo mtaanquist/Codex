@@ -11,6 +11,7 @@ import {
 import type { CredentialResult, Database } from './auth';
 import { users, webauthnCredentials } from './db/schema';
 import { signToken, verifyToken } from './crypto';
+import { isUniqueViolation } from './db-errors.ts';
 
 // Passkeys (WebAuthn). Registration runs from the account page; sign-in is
 // usernameless: the browser presents a discoverable credential and the
@@ -117,7 +118,7 @@ export async function finishPasskeyRegistration(
 			name: name.trim() || null
 		});
 	} catch (err) {
-		if ((err as { cause?: { code?: string } }).cause?.code === '23505') {
+		if (isUniqueViolation(err)) {
 			return { ok: false, reason: 'That passkey is already registered.' };
 		}
 		throw err;

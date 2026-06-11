@@ -23,6 +23,7 @@ export {
 	ASSISTANT_SUMMARIES_QUEUE
 } from './queues.ts';
 import {
+	DIGEST_DELAY_SECONDS,
 	MENTIONS_SCENE_QUEUE,
 	MENTIONS_UNIVERSE_QUEUE,
 	BACKUP_QUEUE,
@@ -36,10 +37,6 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE
 } from './queues.ts';
-
-// How long a digest waits before sending, so a busy thread lands as one
-// email instead of one per comment.
-export const DIGEST_DELAY_SECONDS = 600;
 
 let starting: Promise<PgBoss> | null = null;
 

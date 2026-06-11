@@ -2,29 +2,13 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-o
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
+import { ownedScene } from './scene-access.ts';
 import { wordCount } from '$lib/word-count';
 import { locateSplitBefore } from '$lib/scene-split-locate';
 
 // Splitting and merging scenes. Both run in one transaction and record a
 // revision for every body they change; the caller queues the mention
 // rebuilds (the queue handle reads $env, which this module must not).
-
-async function ownedLiveScene(db: Database, userId: string, sceneId: string) {
-	const [row] = await db
-		.select({
-			id: scenes.id,
-			storyId: scenes.storyId,
-			chapterId: scenes.chapterId,
-			positionInChapter: scenes.positionInChapter,
-			globalPosition: scenes.globalPosition,
-			bodyMd: scenes.bodyMd,
-			status: scenes.status
-		})
-		.from(scenes)
-		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
-	return row ?? null;
-}
 
 /**
  * Splits a scene at a character offset, like a page break: everything from
@@ -38,7 +22,7 @@ export async function splitScene(
 	sceneId: string,
 	offset: number
 ): Promise<{ ok: true; newSceneId: string } | { ok: false; reason: string }> {
-	const scene = await ownedLiveScene(db, userId, sceneId);
+	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return { ok: false, reason: 'scene not found' };
 	if (!Number.isInteger(offset) || offset <= 0 || offset >= scene.bodyMd.length) {
 		return { ok: false, reason: 'put the cursor inside the text, not at an edge' };
@@ -141,7 +125,7 @@ export async function locateSplitInStory(
 	sceneId: string,
 	before: string
 ): Promise<{ ok: true; sceneId: string; offset: number } | { ok: false; reason: string }> {
-	const scene = await ownedLiveScene(db, userId, sceneId);
+	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return { ok: false, reason: 'scene not found' };
 	const here = locateSplitBefore(scene.bodyMd, before);
 	if (here.ok) return { ok: true, sceneId, offset: here.offset };

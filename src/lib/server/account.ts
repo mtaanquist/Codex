@@ -3,9 +3,11 @@ import type { Database } from './auth';
 import { sessions, users } from './db/schema';
 import { hashPassword, verifyPassword } from './password';
 import { consumeToken, issueToken, revokeTokens } from './tokens';
+import { isUniqueViolation } from './db-errors.ts';
+import { EMAIL_RE } from './signup.ts';
+import { MAX_DISPLAY_NAME } from './validation.ts';
 
 const MIN_PASSWORD = 8;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
 
 export type AccountResult = { ok: true } | { ok: false; reason: string };
@@ -26,7 +28,6 @@ export async function verifyAccountPassword(
 }
 
 const MAX_PEN_NAME = 120;
-const MAX_DISPLAY_NAME = 120;
 
 // Saves the always-editable identity fields: the required display name and the
 // optional pen name (the name stories are published under when it differs).
@@ -140,7 +141,7 @@ export async function claimHandle(
 			return { ok: false, reason: 'You already have a handle; it cannot be changed.' };
 		}
 	} catch (error) {
-		if ((error as { cause?: { code?: string } }).cause?.code === '23505') {
+		if (isUniqueViolation(error)) {
 			return { ok: false, reason: 'That handle is taken.' };
 		}
 		throw error;
@@ -267,7 +268,7 @@ export async function confirmEmailChange(db: Database, token: string): Promise<A
 			.where(eq(users.id, userId));
 		return { ok: true };
 	} catch (err) {
-		if ((err as { cause?: { code?: string } }).cause?.code === '23505') {
+		if (isUniqueViolation(err)) {
 			await db.update(users).set({ pendingEmail: null }).where(eq(users.id, userId));
 			return { ok: false, reason: 'That email address is no longer available.' };
 		}

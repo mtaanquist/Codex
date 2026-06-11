@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
+	import { formatDateTime } from '$lib/format';
 	import {
 		authorColor,
 		suggestionAuthor,
@@ -47,10 +48,6 @@
 	const pending = $derived(suggestion.status === 'pending');
 	// The author works an open suggestion straight from the card corner.
 	const canDecide = $derived(role === 'author' && pending);
-
-	function when(date: Date | string): string {
-		return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-	}
 
 	function confirmRetract(e: SubmitEvent) {
 		if (!confirm('Delete your suggested edit? This cannot be undone.')) e.preventDefault();
@@ -103,7 +100,7 @@
 			<div class="rv-who-name">
 				{suggestion.reviewerName} <span class="rv-role">{roleLabel}</span>
 			</div>
-			<div class="rv-when">{when(suggestion.createdAt)}</div>
+			<div class="rv-when">{formatDateTime(suggestion.createdAt)}</div>
 		</div>
 		{#if canDecide}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -172,7 +169,7 @@
 					<div class="rv-reply-main">
 						<div class="rv-reply-head">
 							<span class="rv-reply-name">{reply.authorName}</span>
-							<span class="rv-reply-when">{when(reply.createdAt)}</span>
+							<span class="rv-reply-when">{formatDateTime(reply.createdAt)}</span>
 						</div>
 						<div class="rv-reply-body">{reply.body}</div>
 					</div>

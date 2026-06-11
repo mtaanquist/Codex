@@ -111,7 +111,13 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		(await ownsStory(db, req.userId, req.storyId))
 	) {
 		tools = toolSpecs(req.toolNames);
-		toolContext = { db, userId: req.userId, storyId: req.storyId, scope: req.toolScope };
+		toolContext = {
+			db,
+			userId: req.userId,
+			storyId: req.storyId,
+			scope: req.toolScope,
+			allowedTools: tools.map((tool) => tool.name)
+		};
 	}
 
 	return {

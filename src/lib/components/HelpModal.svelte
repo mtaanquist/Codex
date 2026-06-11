@@ -3,6 +3,7 @@
 	import { renderMarkdown } from '$lib/markdown';
 	import { docArticle } from '$lib/docs';
 	import { help, closeHelp } from '$lib/help.svelte';
+	import Icon from './Icon.svelte';
 
 	const article = $derived(help.topic ? docArticle(help.topic) : null);
 
@@ -40,14 +41,7 @@
 					aria-label="Close help"
 					onclick={closeHelp}
 				>
-					<svg
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.8"
-						stroke-linecap="round"
-						stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18" /></svg
-					>
+					<Icon name="close" size={16} />
 				</button>
 			</header>
 			<!-- Trusted, committed markdown; renderMarkdown also escapes raw HTML. -->
@@ -109,10 +103,6 @@
 	.help-close:hover {
 		background: var(--bg-hover);
 		color: var(--text);
-	}
-	.help-close svg {
-		width: 17px;
-		height: 17px;
 	}
 	.prose {
 		overflow: auto;
