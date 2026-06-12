@@ -38,6 +38,12 @@ import {
 	type SaveResult
 } from '$lib/server/llm/config';
 import { discoverModels, testAccountConnection } from '$lib/server/llm/models';
+import {
+	normaliseProviderId,
+	PROVIDER_PRESETS,
+	type ProviderId
+} from '$lib/server/llm/providers/presets';
+import { recentAssistantUsage } from '$lib/server/llm/usage';
 import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
 import {
@@ -123,8 +129,21 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		preferences: await userPreferences(db, user.id),
 		pageSetup: await userPageSetup(db, user.id),
 		assistant: await accountLlmView(db, user.id),
-		// The tone presets, sent through so the client need not import the
-		// server-only persona module.
+		// The usage log pages through ?usage=N (zero-based, newest first).
+		assistantUsage: await recentAssistantUsage(
+			db,
+			user.id,
+			Number(url.searchParams.get('usage')) || 0
+		),
+		// The provider presets and tone presets, sent through so the client need
+		// not import the server-only modules.
+		providers: PROVIDER_PRESETS.map((p) => ({
+			id: p.id,
+			label: p.label,
+			baseUrl: p.baseUrl,
+			keyHint: p.keyHint,
+			docsUrl: p.docsUrl
+		})),
 		personas: PERSONAS.map((p) => ({ id: p.id, label: p.label, description: p.description })),
 		sessions: await listSessions(db, user.id, sessionId),
 		graceDays: DELETION_GRACE_DAYS,
@@ -151,6 +170,7 @@ async function patchAssistant(
 		enabled: boolean;
 		assistantName: string;
 		persona: string;
+		provider: ProviderId;
 		endpoint: string;
 		apiKey: string;
 		models: ModelMap;
@@ -161,6 +181,7 @@ async function patchAssistant(
 		enabled: patch.enabled ?? current.enabled,
 		assistantName: patch.assistantName ?? current.assistantName,
 		persona: normalisePersona(patch.persona ?? current.persona),
+		provider: patch.provider ?? current.provider,
 		endpoint: patch.endpoint ?? current.endpoint,
 		apiKey: patch.apiKey ?? '',
 		models: patch.models ?? current.models,
@@ -333,6 +354,7 @@ export const actions: Actions = {
 	saveAssistantEndpoint: async ({ request, locals }) => {
 		const data = await request.formData();
 		const result = await patchAssistant(locals.user!.id, {
+			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
 			apiKey: String(data.get('apiKey') ?? '')
 		});

@@ -6,6 +6,7 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		enabled: false,
 		assistantName: '',
 		persona: 'balanced',
+		provider: 'custom',
 		endpoint: '',
 		apiKeyEnc: null,
 		models: {},

@@ -435,6 +435,13 @@
 			"when": 1781177802845,
 			"tag": "0061_reviewers_unique_user",
 			"breakpoints": true
+		},
+		{
+			"idx": 62,
+			"version": "7",
+			"when": 1781258612937,
+			"tag": "0062_assistant_usage",
+			"breakpoints": true
 		}
 	]
 }

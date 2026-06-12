@@ -105,7 +105,21 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await page.reload();
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Margin');
 
-	// Endpoint saves a base URL; the saved key hint only appears once a key is set.
+	// A provider preset prefills and locks the base URL and persists on save.
+	await page.getByLabel('Provider', { exact: true }).selectOption('anthropic');
+	const presetUrl = page.getByLabel('Base URL', { exact: true });
+	await expect(presetUrl).toHaveValue('https://api.anthropic.com');
+	await expect(presetUrl).toHaveAttribute('readonly', '');
+	await page.getByRole('button', { name: 'Save endpoint' }).click();
+	await expect(page.getByRole('status')).toContainText('Saved');
+	await page.reload();
+	await expect(page.getByLabel('Provider', { exact: true })).toHaveValue('anthropic');
+	await expect(page.getByLabel('Base URL', { exact: true })).toHaveValue(
+		'https://api.anthropic.com'
+	);
+
+	// Back to a custom endpoint: the URL field frees up and saves what is typed.
+	await page.getByLabel('Provider', { exact: true }).selectOption('custom');
 	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
 	await page.getByRole('button', { name: 'Save endpoint' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');

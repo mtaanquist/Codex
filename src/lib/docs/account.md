@@ -31,14 +31,39 @@ contacts a model on its own.
   below are dimmed while the Assistant is off.
 - **Identity**: give the Assistant a name and pick a style for how it writes back.
   The name shows wherever the Assistant appears.
-- **Endpoint**: enter the base URL of any OpenAI-compatible endpoint, such as a
-  local Ollama server or a hosted service, and an API key if it needs one. Leave
-  the key blank to keep the one already saved. Select Test connection to send a
-  short message and see the model reply.
+- **Endpoint**: pick a provider from the list and paste an API key from that
+  provider's website; the link under the picker takes you to the right page to
+  create one. The base URL fills in by itself for these. Leave the key blank to
+  keep the one already saved. Select Test connection to send a short message and
+  see the model reply.
+  - **Claude (Anthropic)**: create a key in the Anthropic console. A Claude.ai
+    subscription (Pro or Max) is not an API key; API use is billed separately
+    through the console, where you add credit first.
+  - **ChatGPT (OpenAI)**: create a key on the OpenAI platform under API keys.
+    Add billing details or credit there before the key will answer.
+  - **Gemini (Google)**: create a key in Google AI Studio with a Google
+    account. A free tier is available, with stricter rate limits.
+  - **DeepSeek**: create a key on the DeepSeek platform under API keys and top
+    up credit there.
+  - **OpenRouter**: one key gives access to models from many makers, including
+    all of the above. Create a key on openrouter.ai and add credit; this is the
+    easiest way to try different models without holding several accounts.
+  - **Custom endpoint**: enter the base URL of any OpenAI-compatible endpoint
+    yourself, such as a local Ollama server (for example
+    `http://localhost:11434/v1`). Local endpoints usually need no key, and your
+    text never leaves your machine.
 - **Models per role**: pick which model handles each kind of help. Select Discover
   models to fill the lists from your endpoint, choose one per role, then save. Roles
   with no model chosen fall back to the endpoint's default. A single story can
-  override these too.
+  override these too. When the list is long, type part of a name in the filter box
+  to narrow it; models you already picked always stay listed. If your endpoint
+  publishes prices (OpenRouter does), each model shows what it costs per million
+  tokens sent and received.
+- **Usage**: every request the Assistant sends to your endpoint is listed here
+  with the token counts the endpoint reported, plus a 30-day total. When prices
+  are known, an estimated cost shows too. The list shows 50 requests at a time;
+  use Older and Newer to page through the rest. Only counts are kept; the text
+  itself is never stored in this log.
 
 Your words are sent only to the endpoint you set here.
 

@@ -3,6 +3,7 @@ import type { Database } from '../auth';
 import { stories, users } from '../db/schema';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona';
+import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are
@@ -29,6 +30,10 @@ export type StoredAccountConfig = {
 	// cosmetic-to-the-task: the name is shown in the UI, the persona nudges tone.
 	assistantName: string;
 	persona: Persona;
+	// Which provider the endpoint is: a preset (Anthropic, OpenAI, ...) or
+	// 'custom' for a bring-your-own OpenAI-compatible endpoint. Configs saved
+	// before this field existed normalise to 'custom' and behave as before.
+	provider: ProviderId;
 	endpoint: string;
 	apiKeyEnc: string | null;
 	models: ModelMap;
@@ -39,7 +44,41 @@ export type StoredAccountConfig = {
 	// config; set by hand for an endpoint that cannot stream or call tools.
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
+	// Per-token USD prices snapshotted at the last model discovery, for the
+	// endpoints that report them (OpenRouter). Used to estimate costs on the
+	// usage log; absent for endpoints that report no prices.
+	modelPricing?: ModelPricing;
 };
+
+export type ModelPricing = Record<string, { prompt: number; completion: number }>;
+
+function normalisePricing(raw: unknown): ModelPricing | undefined {
+	if (!raw || typeof raw !== 'object') return undefined;
+	const out: ModelPricing = {};
+	for (const [model, value] of Object.entries(raw as Record<string, unknown>)) {
+		const prompt = Number((value as { prompt?: unknown })?.prompt);
+		const completion = Number((value as { completion?: unknown })?.completion);
+		if (Number.isFinite(prompt) && Number.isFinite(completion)) {
+			out[model] = { prompt, completion };
+		}
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// Snapshot the prices a model discovery reported, replacing the previous
+// snapshot (so switching endpoints does not leave stale prices behind).
+export async function saveModelPricing(
+	db: Database,
+	userId: string,
+	pricing: ModelPricing
+): Promise<void> {
+	await db
+		.update(users)
+		.set({
+			llmConfig: sql`${users.llmConfig} || ${JSON.stringify({ modelPricing: pricing })}::jsonb`
+		})
+		.where(eq(users.id, userId));
+}
 
 // Stored in stories.llm_config: a mute and/or a model selection, nothing else.
 export type StoredStoryOverride = {
@@ -75,12 +114,14 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		enabled: raw.enabled === true,
 		assistantName: normaliseAssistantName(raw.assistantName),
 		persona: normalisePersona(raw.persona),
+		provider: normaliseProviderId(raw.provider),
 		endpoint: typeof raw.endpoint === 'string' ? raw.endpoint.trim() : '',
 		apiKeyEnc: typeof raw.apiKeyEnc === 'string' && raw.apiKeyEnc ? raw.apiKeyEnc : null,
 		models: normaliseModels(raw.models),
 		toolCallBudget: normaliseBudget(raw.toolCallBudget),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
-		supportsTools: normaliseCapability(raw.supportsTools)
+		supportsTools: normaliseCapability(raw.supportsTools),
+		modelPricing: normalisePricing(raw.modelPricing)
 	};
 }
 
@@ -176,6 +217,7 @@ async function storyOverride(db: Database, storyId: string): Promise<StoredStory
 export type ResolvedConfig = {
 	assistantName: string;
 	persona: Persona;
+	provider: ProviderId;
 	endpoint: string;
 	apiKey: string;
 	models: ModelMap;
@@ -202,6 +244,7 @@ export async function resolveLlmConfig(
 		config: {
 			assistantName: account.assistantName,
 			persona: account.persona,
+			provider: account.provider,
 			endpoint: account.endpoint,
 			apiKey: account.apiKeyEnc ? decryptSecret(account.apiKeyEnc) : '',
 			models: { ...account.models, ...(override?.models ?? {}) },
@@ -219,12 +262,14 @@ export type AccountLlmView = {
 	enabled: boolean;
 	assistantName: string;
 	persona: Persona;
+	provider: ProviderId;
 	endpoint: string;
 	hasKey: boolean;
 	models: ModelMap;
 	toolCallBudget: number;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
+	modelPricing?: ModelPricing;
 };
 
 export async function accountLlmView(db: Database, userId: string): Promise<AccountLlmView> {
@@ -234,12 +279,14 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		enabled: c.enabled,
 		assistantName: c.assistantName,
 		persona: c.persona,
+		provider: c.provider,
 		endpoint: c.endpoint,
 		hasKey: c.apiKeyEnc !== null,
 		models: c.models,
 		toolCallBudget: c.toolCallBudget,
 		supportsStreaming: c.supportsStreaming,
-		supportsTools: c.supportsTools
+		supportsTools: c.supportsTools,
+		modelPricing: c.modelPricing
 	};
 }
 
@@ -247,6 +294,8 @@ export type SaveAccountInput = {
 	enabled: boolean;
 	assistantName: string;
 	persona: Persona;
+	// Defaults to 'custom' (a bring-your-own endpoint) when absent.
+	provider?: ProviderId;
 	endpoint: string;
 	// Blank keeps the stored key, so the writer can edit other fields without
 	// re-entering it (the SMTP/S3 pattern).
@@ -264,7 +313,11 @@ export async function saveAccountLlmConfig(
 	userId: string,
 	input: SaveAccountInput
 ): Promise<SaveResult> {
-	const endpoint = input.endpoint.trim();
+	const provider = normaliseProviderId(input.provider);
+	// A preset owns its endpoint: the stored URL comes from the preset table, not
+	// the form, so a stale or tampered field cannot point a preset elsewhere.
+	const preset = providerPreset(provider);
+	const endpoint = preset ? preset.baseUrl : input.endpoint.trim();
 	if (endpoint) {
 		let url: URL;
 		try {
@@ -286,18 +339,21 @@ export async function saveAccountLlmConfig(
 		apiKeyEnc = encryptSecret(input.apiKey);
 	}
 
+	// The Anthropic API always streams and calls tools, so a preset config never
+	// carries a manual opt-out that would disable surfaces.
+	const supportsStreaming = preset?.adapter === 'anthropic' ? true : input.supportsStreaming;
+	const supportsTools = preset?.adapter === 'anthropic' ? true : input.supportsTools;
 	const value: StoredAccountConfig = {
 		enabled: input.enabled,
 		assistantName: normaliseAssistantName(input.assistantName),
 		persona: normalisePersona(input.persona),
+		provider,
 		endpoint,
 		apiKeyEnc,
 		models: normaliseModels(input.models),
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
-		...(input.supportsStreaming !== undefined
-			? { supportsStreaming: input.supportsStreaming }
-			: {}),
-		...(input.supportsTools !== undefined ? { supportsTools: input.supportsTools } : {})
+		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
+		...(supportsTools !== undefined ? { supportsTools } : {})
 	};
 	// A jsonb merge, so any unknown keys (a future config field) survive.
 	await db

@@ -1,7 +1,7 @@
-// Provider-neutral request and response shapes for the Assistant gateway. The
-// OpenAI-compatible adapter is the only implementation in the first cut; a
-// native Claude adapter slots behind the same interface later, chosen from the
-// resolved config without reworking the surfaces.
+// Provider-neutral request and response shapes for the Assistant gateway. Two
+// adapters implement this interface: the OpenAI-compatible one (custom
+// endpoints and most hosted providers) and the native Anthropic one, chosen
+// from the provider discriminator on the resolved config (see ./index.ts).
 
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -35,6 +35,13 @@ export type ProviderToolCall = {
 export type ProviderResponse = {
 	content: string;
 	toolCalls: ProviderToolCall[];
+	// Token counts the endpoint reported for this request, when it did.
+	usage?: TokenUsage;
+};
+
+export type TokenUsage = {
+	promptTokens: number;
+	completionTokens: number;
 };
 
 export type CompletionRequest = {
@@ -63,6 +70,10 @@ export type SplitProposal = {
 export type StreamEvent =
 	| { type: 'token'; text: string }
 	| { type: 'proposal'; proposal: SplitProposal }
+	// Token counts for the request, when the endpoint reports them mid-stream.
+	// The gateway consumes this frame for the usage log; it never reaches a
+	// client.
+	| { type: 'usage'; usage: TokenUsage }
 	| { type: 'done' }
 	| { type: 'error'; message: string };
 
@@ -115,8 +126,15 @@ export interface Provider {
 		http: HttpRequest,
 		signal?: AbortSignal
 	): Promise<ProviderResponse>;
-	// The endpoint's available model ids (GET /v1/models), so the writer picks
+	// The endpoint's available models (GET /v1/models), so the writer picks
 	// from a list instead of typing a name. Throws on a transport or non-2xx
 	// error.
-	listModels(conn: Connection, http: HttpRequest, signal?: AbortSignal): Promise<string[]>;
+	listModels(conn: Connection, http: HttpRequest, signal?: AbortSignal): Promise<ModelInfo[]>;
 }
+
+// A discovered model: the id, plus per-token USD pricing where the endpoint
+// reports it (OpenRouter does; plain OpenAI-style lists do not).
+export type ModelInfo = {
+	id: string;
+	pricing?: { prompt: number; completion: number };
+};
