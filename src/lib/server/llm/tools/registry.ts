@@ -1,4 +1,4 @@
-import type { ToolSpec } from '../providers/types';
+import type { ToolSpec } from '../providers/types.ts';
 
 // The tools the Assistant may call. Read tools fetch authoritative data and run
 // immediately (they write nothing); write tools stage a human-approved change

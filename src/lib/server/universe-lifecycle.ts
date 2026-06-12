@@ -4,7 +4,7 @@
 // shared with the account purge. Runs in the worker, so relative value
 // imports carry explicit .ts extensions.
 import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	assets,
 	characters,

@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	notifications,
 	reviewComments,

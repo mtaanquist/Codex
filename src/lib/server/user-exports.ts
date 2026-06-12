@@ -1,17 +1,17 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import type { Database } from './auth';
-import { stories, universes, userExports } from './db/schema';
-import type { AssetObjectStore } from './assets';
+import type { Database } from './auth.ts';
+import { stories, universes, userExports } from './db/schema.ts';
+import type { AssetObjectStore } from './assets.ts';
 import {
 	bucketAssetLoader,
 	buildAccountExport,
 	buildStoryZip,
 	buildUniverseExport,
 	gatherStory
-} from './export';
-import { buildEpub } from './epub';
-import { reviewLoader } from './export-reviews';
-import { storyPageSetup } from './page-setup';
+} from './export.ts';
+import { buildEpub } from './epub.ts';
+import { reviewLoader } from './export-reviews.ts';
+import { storyPageSetup } from './page-setup.ts';
 
 // User-requested exports (account, story, or universe archive, or a story
 // EPUB). The heavy in-memory build and zip run in the worker, never on the web

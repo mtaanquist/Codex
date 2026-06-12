@@ -1,10 +1,10 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import { users } from './db/schema';
-import { hashPassword } from './password';
-import { consumeToken } from './tokens';
-import { redeemInviteCode } from './invites';
-import type { SignupMode } from './settings';
+import type { Database } from './auth.ts';
+import { users } from './db/schema.ts';
+import { hashPassword } from './password.ts';
+import { consumeToken } from './tokens.ts';
+import { redeemInviteCode } from './invites.ts';
+import type { SignupMode } from './settings.ts';
 import { isUniqueViolation } from './db-errors.ts';
 
 export type RegisterResult =

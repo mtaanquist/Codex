@@ -1,5 +1,5 @@
 import { and, asc, eq, exists, or } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	characters,
 	characterStoryMemberships,
@@ -9,7 +9,7 @@ import {
 	placeStoryMemberships,
 	scenes,
 	stories
-} from './db/schema';
+} from './db/schema.ts';
 
 export type MemberKind = 'character' | 'place';
 

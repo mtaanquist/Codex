@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { assets, exportArtifacts, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
 import { sniffImageType } from './media-types.ts';

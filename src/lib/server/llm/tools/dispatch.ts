@@ -1,18 +1,18 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import type { Database } from '../../auth';
-import { scenes, stories } from '../../db/schema';
-import { entityAppearances, getEntityCard } from '../../plan-data';
-import { searchAll } from '../../search';
+import type { Database } from '../../auth.ts';
+import { scenes, stories } from '../../db/schema.ts';
+import { entityAppearances, getEntityCard } from '../../plan-data.ts';
+import { searchAll } from '../../search.ts';
 import {
 	addComment,
 	createSuggestion,
 	createThread,
 	updateAssistantSuggestion
-} from '../../review';
+} from '../../review.ts';
 import { locateSplitBefore } from '$lib/scene-split-locate';
-import { storySkeleton, type SceneSummary } from '../context/sources';
-import type { ProviderToolCall, SplitProposal } from '../providers/types';
-import { findTool } from './registry';
+import { storySkeleton, type SceneSummary } from '../context/sources.ts';
+import type { ProviderToolCall, SplitProposal } from '../providers/types.ts';
+import { findTool } from './registry.ts';
 
 // Executes one tool call within an owner-scoped story context. Read tools query
 // and return data; write tools stage a review suggestion or comment and report

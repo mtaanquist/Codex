@@ -7,7 +7,7 @@ import type {
 	Provider,
 	StreamEvent,
 	TokenUsage
-} from './types';
+} from './types.ts';
 
 // The OpenAI-compatible adapter. It speaks /v1/chat/completions, the de-facto
 // shape Ollama, vLLM, and most hosted APIs (OpenAI, DeepSeek, OpenRouter,

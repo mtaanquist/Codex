@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { inviteCodes } from './db/schema.ts';
 import { isUniqueViolation } from './db-errors.ts';
 
