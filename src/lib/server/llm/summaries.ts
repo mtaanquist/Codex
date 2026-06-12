@@ -1,9 +1,9 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
-import type { Database } from '../auth';
-import { chapters, scenes, stories } from '../db/schema';
-import { complete, type GatewayDeps } from './gateway';
-import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary';
-import type { ChatMessage } from './providers/types';
+import type { Database } from '../auth.ts';
+import { chapters, scenes, stories } from '../db/schema.ts';
+import { complete, type GatewayDeps } from './gateway.ts';
+import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
+import type { ChatMessage } from './providers/types.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared

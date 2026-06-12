@@ -1,7 +1,7 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
 import { and, asc, eq, isNull, ne } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	assets,
 	chapters,

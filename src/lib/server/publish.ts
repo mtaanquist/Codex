@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
-import type { Database } from './auth';
-import { publicationAssets, publications, stories, users } from './db/schema';
-import { gatherStory } from './export';
+import type { Database } from './auth.ts';
+import { publicationAssets, publications, stories, users } from './db/schema.ts';
+import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
 import { isUniqueViolation } from './db-errors.ts';
 

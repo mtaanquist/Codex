@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';
 

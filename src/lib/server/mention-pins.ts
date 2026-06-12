@@ -2,7 +2,7 @@
 // than one entity. Runs in the worker too (the index rebuild reads them),
 // so relative value imports carry explicit .ts extensions.
 import { and, eq } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { mentionPins, stories } from './db/schema.ts';
 import { entityInUniverse } from './entity-lookups.ts';
 import type { EntityType } from './entity-lookups.ts';

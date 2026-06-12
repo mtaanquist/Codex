@@ -1,9 +1,9 @@
 import { eq, sql, type SQL } from 'drizzle-orm';
-import type { Database } from '../auth';
-import { stories, users } from '../db/schema';
-import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto';
-import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona';
-import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets';
+import type { Database } from '../auth.ts';
+import { stories, users } from '../db/schema.ts';
+import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
+import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
+import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are

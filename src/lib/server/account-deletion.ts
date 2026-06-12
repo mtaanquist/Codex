@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import type { AssetObjectStore } from './assets';
+import type { Database } from './auth.ts';
+import type { AssetObjectStore } from './assets.ts';
 import {
 	assets,
 	assistantChatMessages,

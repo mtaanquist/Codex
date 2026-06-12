@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { authTokens } from './db/schema.ts';
 
 export type TokenKind = 'email_verify' | 'password_reset' | 'deletion_cancel' | 'email_change';

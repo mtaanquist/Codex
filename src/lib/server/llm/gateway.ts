@@ -1,12 +1,12 @@
-import type { Database } from '../auth';
-import { logEvent } from '../log';
-import { resolveLlmConfig, type AssistantRole, type ResolvedConfig } from './config';
-import { egressHttpRequest, egressPolicy } from './egress';
-import { providerFor } from './providers';
-import { buildPersonaPrompt } from './prompts/persona';
-import { recordAssistantUsage } from './usage';
-import { dispatchToolCall, ownsStory, type ToolContext } from './tools/dispatch';
-import { toolSpecs } from './tools/registry';
+import type { Database } from '../auth.ts';
+import { logEvent } from '../log.ts';
+import { resolveLlmConfig, type AssistantRole, type ResolvedConfig } from './config.ts';
+import { egressHttpRequest, egressPolicy } from './egress.ts';
+import { providerFor } from './providers/index.ts';
+import { buildPersonaPrompt } from './prompts/persona.ts';
+import { recordAssistantUsage } from './usage.ts';
+import { dispatchToolCall, ownsStory, type ToolContext } from './tools/dispatch.ts';
+import { toolSpecs } from './tools/registry.ts';
 import type {
 	ChatMessage,
 	Connection,
@@ -14,7 +14,7 @@ import type {
 	Provider,
 	StreamEvent,
 	ToolSpec
-} from './providers/types';
+} from './providers/types.ts';
 
 // The gateway is the one public entry the rest of the app calls. It resolves
 // config, enforces the egress policy, picks the model and provider, runs the

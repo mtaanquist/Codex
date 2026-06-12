@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { sessions, users } from './db/schema';
-import type * as schema from './db/schema';
-import { verifyPassword } from './password';
-import { hashToken } from './tokens';
+import { sessions, users } from './db/schema.ts';
+import type * as schema from './db/schema.ts';
+import { verifyPassword } from './password.ts';
+import { hashToken } from './tokens.ts';
 
 // The database is passed in rather than imported so the same functions run
 // against the app database and the integration tests' throwaway one.

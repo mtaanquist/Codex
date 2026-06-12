@@ -1,7 +1,7 @@
 import type { SearchResult } from '$lib/wire-types';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import { characters, loreEntries, places, scenes, stories, universes } from './db/schema';
+import type { Database } from './auth.ts';
+import { characters, loreEntries, places, scenes, stories, universes } from './db/schema.ts';
 
 // The command palette's search: everything the user owns that has a name,
 // matched by substring, each result carrying the link that opens it.

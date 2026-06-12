@@ -7,7 +7,7 @@ import type {
 	Provider,
 	StreamEvent,
 	TokenUsage
-} from './types';
+} from './types.ts';
 
 // The native Anthropic adapter: speaks the Messages API (/v1/messages), which
 // is not OpenAI-compatible. Raw fetch over the injected transport, like the
