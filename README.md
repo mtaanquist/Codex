@@ -35,8 +35,10 @@ services:
   app:
     image: ghcr.io/mtaanquist/codex:latest
     restart: unless-stopped
-    # Applies pending database migrations, then serves.
-    command: sh -c "node scripts/migrate.ts && node build"
+    # codex-app is baked into the image: applies pending database
+    # migrations, then serves. Always use it rather than spelling out node
+    # commands; the launch sequence can change between releases.
+    command: codex-app
     ports:
       - '${APP_PORT:-3000}:3000'
     environment:
@@ -54,7 +56,8 @@ services:
   worker:
     image: ghcr.io/mtaanquist/codex:latest
     restart: unless-stopped
-    command: node src/worker/index.ts
+    # codex-worker is baked into the image, like codex-app above.
+    command: codex-worker
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       APP_SECRET: ${APP_SECRET}
