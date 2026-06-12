@@ -295,6 +295,61 @@ describe('gateway tool loop', () => {
 		expect(toolMessage?.content).toContain('tolled over the harbour');
 	});
 
+	it('get_scene returns a long scene in full, truncating only pathological bodies', async () => {
+		await configure(true);
+		// ~8K words / ~48K characters: a long but realistic novel scene, which a
+		// review must see whole. Word 7999 sits near the end.
+		const longBody = Array.from({ length: 8000 }, (_, i) => `word${i}`).join(' ');
+		const { storyId, sceneId } = await seedStoryScene(longBody);
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'read it all' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'review this' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
+		expect(toolMessage?.content).toContain('word7999');
+		expect(toolMessage?.content).not.toContain('truncated');
+
+		// Past the cap, the result says exactly how much was cut.
+		const huge = 'x'.repeat(250_000);
+		const seeded = await seedStoryScene(huge);
+		const script2 = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId: seeded.sceneId }) }
+				]
+			},
+			{ content: 'ok' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId: seeded.storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'review this' }]
+			},
+			{ provider: script2.provider, http: noHttp }
+		);
+		const toolMessage2 = script2.seen[1].find((m) => m.role === 'tool');
+		expect(toolMessage2?.content).toContain('truncated: showing the first 200000 of 250000');
+	});
+
 	it('list_scenes returns the chapter and scene skeleton with ids', async () => {
 		await configure(true);
 		const { storyId, sceneId } = await seedStoryScene('A quiet opening.');
