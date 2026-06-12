@@ -6,16 +6,17 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// The header's New universe / New story buttons and each section's
-	// new-story card swap to an inline title form when clicked.
+	// The header's New universe button and each section's new-story card
+	// swap to an inline title form when clicked. The standalone section's
+	// card uses the 'standalone' sentinel, since that universe may not
+	// exist yet.
 	let creatingUniverse = $state(false);
-	let creatingStandalone = $state(false);
 	let newStoryFor = $state<string | null>(null);
 
 	// A failed submit reloads the page; reopen the form it came from.
 	$effect(() => {
 		if (form?.scope === 'universe' && form.message) creatingUniverse = true;
-		if (form?.scope === 'standalone' && form.message) creatingStandalone = true;
+		if (form?.scope === 'standalone' && form.message) newStoryFor = 'standalone';
 		if (form?.scope === 'story' && form.message) newStoryFor = form.universeId ?? null;
 	});
 
@@ -36,6 +37,15 @@
 	function universeStories(universeId: string) {
 		return data.stories.filter((story) => story.universeId === universeId);
 	}
+
+	// Stories that do not belong to a world file under one "Standalone
+	// stories" universe, created on first use. Until then the section is
+	// rendered from nothing so the create card always has a home, and once
+	// it exists it stays pinned after the real universes.
+	const hasStandalone = $derived(data.universes.some((u) => u.standalone));
+	const orderedUniverses = $derived(
+		[...data.universes].sort((a, b) => Number(a.standalone) - Number(b.standalone))
+	);
 </script>
 
 <svelte:head>
@@ -110,41 +120,7 @@
 									Cancel
 								</button>
 							</form>
-						{:else if creatingStandalone}
-							<!-- A story without a universe: files under "Standalone stories",
-							     created for you on first use. -->
-							<form class="new-inline" method="POST" action="?/createStandaloneStory">
-								<!-- svelte-ignore a11y_autofocus (the field only appears on the button click) -->
-								<input
-									class="input"
-									type="text"
-									name="title"
-									aria-label="New standalone story"
-									placeholder="Story title"
-									required
-									autofocus
-									onkeydown={(e) => {
-										if (e.key === 'Escape') creatingStandalone = false;
-									}}
-								/>
-								<button class="btn btn-primary" type="submit">Create story</button>
-								<button
-									class="btn btn-ghost"
-									type="button"
-									onclick={() => (creatingStandalone = false)}
-								>
-									Cancel
-								</button>
-							</form>
 						{:else}
-							<button
-								class="btn btn-secondary"
-								type="button"
-								title="A story on its own, outside any universe"
-								onclick={() => (creatingStandalone = true)}
-							>
-								New story
-							</button>
 							<button
 								class="btn btn-secondary"
 								type="button"
@@ -156,9 +132,6 @@
 					</div>
 				</div>
 				{#if form?.scope === 'universe' && form.message}
-					<p class="form-error" role="alert">{form.message}</p>
-				{/if}
-				{#if form?.scope === 'standalone' && form.message}
 					<p class="form-error" role="alert">{form.message}</p>
 				{/if}
 
@@ -182,7 +155,7 @@
 					</section>
 				{/if}
 
-				{#each data.universes as universe (universe.id)}
+				{#each orderedUniverses as universe (universe.id)}
 					<section class="universe-section">
 						<header class="universe-header">
 							<span class="universe-mark">Universe</span>
@@ -242,12 +215,70 @@
 								</form>
 							{:else}
 								<button class="card-add" type="button" onclick={() => (newStoryFor = universe.id)}>
-									<span class="plus">+</span><span>New story in this universe</span>
+									<span class="plus">+</span>
+									<span
+										>{universe.standalone
+											? 'New standalone story'
+											: 'New story in this universe'}</span
+									>
 								</button>
 							{/if}
 						</div>
 					</section>
 				{/each}
+
+				{#if !hasStandalone}
+					<!-- The standalone home does not exist yet; show the section
+					     anyway so a story without a world always has somewhere to
+					     start. Creating one makes the universe on first use. -->
+					<section class="universe-section">
+						<header class="universe-header">
+							<span class="universe-mark">Universe</span>
+							<div class="universe-identity">
+								<h2 class="universe-name">Standalone stories</h2>
+								<p class="universe-description">
+									Stories that stand on their own, outside any shared world.
+								</p>
+							</div>
+						</header>
+						<div class="story-grid">
+							{#if newStoryFor === 'standalone'}
+								<form class="card-add card-add-form" method="POST" action="?/createStandaloneStory">
+									{#if form?.scope === 'standalone' && form.message}
+										<p class="form-error" role="alert">{form.message}</p>
+									{/if}
+									<!-- svelte-ignore a11y_autofocus (the field only appears on the card click) -->
+									<input
+										class="input"
+										type="text"
+										name="title"
+										aria-label="New standalone story"
+										placeholder="Story title"
+										required
+										autofocus
+										onkeydown={(e) => {
+											if (e.key === 'Escape') newStoryFor = null;
+										}}
+									/>
+									<div class="card-add-actions">
+										<button class="btn btn-primary btn-sm" type="submit">Create story</button>
+										<button
+											class="btn btn-ghost btn-sm"
+											type="button"
+											onclick={() => (newStoryFor = null)}
+										>
+											Cancel
+										</button>
+									</div>
+								</form>
+							{:else}
+								<button class="card-add" type="button" onclick={() => (newStoryFor = 'standalone')}>
+									<span class="plus">+</span><span>New standalone story</span>
+								</button>
+							{/if}
+						</div>
+					</section>
+				{/if}
 
 				{#if data.trashedUniverses.length > 0}
 					<section class="universe-section">
