@@ -1070,8 +1070,8 @@ endpoint. Started 2026-06-09.
       recording, and the pricing snapshot. Lint, check, and the full vitest
       suite (973) pass locally; Playwright could not run in this sandbox
       (browser download blocked), left for CI.
-- [ ] Genre and style notes on stories (2026-06-12; branch
-      `feat/story-style-notes`). A free-text "Genre and style" field on story
+- [x] Genre and style notes on stories (2026-06-12; PR #450, shipped as
+      v3.9.0 with the worker import fix, PR #451). A free-text "Genre and style" field on story
       settings (`stories.style_notes`, migration 0063) stating the genre and
       craft intent; `loadStoryScope` carries it and the assembled context
       frames it as the standard to judge the prose against, so Assistant
@@ -1087,8 +1087,8 @@ endpoint. Started 2026-06-09.
       instance-wide public library) was deliberately split off and parked in
       the roadmap under Phase 10; do not build the taxonomy before the
       discovery surface exists.
-- [ ] Per-role thinking and effort for the Claude provider (2026-06-12; branch
-      `feat/assistant-role-tuning`). A `tuning` map on the account llm_config
+- [x] Per-role thinking and effort for the Claude provider (2026-06-12;
+      PR #453, merged to develop, unreleased). A `tuning` map on the account llm_config
       (jsonb only) keyed by assistant role: a thinking toggle (sent as
       `thinking: {type: "adaptive"}`, omitted when off - an explicit "disabled"
       is rejected by models where thinking is always on) and an effort level
