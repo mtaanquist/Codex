@@ -272,12 +272,15 @@
 	// edits the author then accepts or rejects on the review screen. Runs inline
 	// (one scene is bounded), so a non-blocking banner covers the wait.
 	let reviewingScene = $state(false);
-	async function reviewScene(sceneId: string) {
+	async function reviewScene(
+		sceneId: string,
+		focus: 'notes' | 'mechanics' | 'prose' | 'lore' | 'full' = 'notes'
+	) {
 		rowMenu = null;
 		if (reviewingScene) return;
 		reviewingScene = true;
 		try {
-			await reviewSceneWithAssistant(sceneId, `/stories/${data.story.slug}/review`);
+			await reviewSceneWithAssistant(sceneId, `/stories/${data.story.slug}/review`, focus);
 		} finally {
 			reviewingScene = false;
 		}

@@ -6,11 +6,17 @@ import { apiErrorMessage } from '$lib/format';
 
 // Asks the Assistant to review one scene inline. Stages comments and
 // suggested edits, then opens the review page when anything was staged.
-export async function reviewSceneWithAssistant(sceneId: string, reviewHref: string): Promise<void> {
+export type SceneReviewFocus = 'notes' | 'mechanics' | 'prose' | 'lore' | 'full';
+
+export async function reviewSceneWithAssistant(
+	sceneId: string,
+	reviewHref: string,
+	focus: SceneReviewFocus = 'notes'
+): Promise<void> {
 	const response = await fetch('/api/assistant/review', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ sceneId })
+		body: JSON.stringify({ sceneId, focus })
 	});
 	if (!response.ok) {
 		alert(await apiErrorMessage(response, 'The Assistant could not review the scene.'));

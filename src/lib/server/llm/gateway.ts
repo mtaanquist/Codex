@@ -34,6 +34,9 @@ export class AssistantDisabledError extends Error {
 // A ceiling so a single generation cannot hold a connection open indefinitely;
 // the tool-call budget bounds the agentic loop separately.
 const DEFAULT_MAX_TOKENS = 2048;
+// The absolute ceiling on tool calls in one run, whatever the request asks
+// for; a cross-scene pass over a long story is the case that needs the room.
+const REQUEST_TOOL_BUDGET_CEILING = 200;
 
 export type GatewayRequest = {
 	userId: string;
@@ -50,6 +53,10 @@ export type GatewayRequest = {
 	// model's arguments.
 	toolScope?: { threadId?: string; suggestionId?: string };
 	maxTokens?: number;
+	// Raise the tool-call ceiling for this run above the account's budget. A
+	// full review needs one call per note plus one read per scene, far beyond
+	// the conservative account default; server-set only, never client input.
+	toolBudget?: number;
 	signal?: AbortSignal;
 };
 
@@ -128,7 +135,10 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		provider: deps.provider ?? providerFor(resolved.config.provider),
 		tools,
 		toolContext,
-		toolBudget: resolved.config.toolCallBudget,
+		toolBudget: Math.min(
+			Math.max(req.toolBudget ?? 0, resolved.config.toolCallBudget),
+			REQUEST_TOOL_BUDGET_CEILING
+		),
 		tuning: resolved.config.tuning[req.role]
 	};
 }

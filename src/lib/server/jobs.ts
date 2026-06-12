@@ -196,6 +196,9 @@ export async function queueAssistantReview(input: {
 	userId: string;
 	storyId: string;
 	chapterId?: string;
+	// 'notes' (sparing) or 'full' (copyedit + cross-scene pass); the focused
+	// single-category passes run inline per scene, not as jobs.
+	focus?: 'notes' | 'full';
 }): Promise<boolean> {
 	try {
 		const boss = await getBoss();

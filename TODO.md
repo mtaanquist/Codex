@@ -1088,7 +1088,8 @@ endpoint. Started 2026-06-09.
       the roadmap under Phase 10; do not build the taxonomy before the
       discovery surface exists.
 - [x] Per-role thinking and effort for the Claude provider (2026-06-12;
-      PR #453, merged to develop, unreleased). A `tuning` map on the account llm_config
+      PR #453, shipped as v3.10.0 with the codex-app/codex-worker image
+      launchers, PR #454). A `tuning` map on the account llm_config
       (jsonb only) keyed by assistant role: a thinking toggle (sent as
       `thinking: {type: "adaptive"}`, omitted when off - an explicit "disabled"
       is rejected by models where thinking is always on) and an effort level
@@ -1108,6 +1109,20 @@ endpoint. Started 2026-06-09.
       are never marked (replayed thinking blocks must stay unchanged). Usage
       rows count cache reads and writes into the prompt total, so estimates
       err high rather than low.
+
+- [ ] Review focuses and the full story review (2026-06-12; branch
+      `feat/full-review`). The scene Assistant submenu offers five passes:
+      quick notes (the old sparing default), spelling/grammar, prose/style,
+      entities/lore, and a full copyedit; the focused passes enumerate their
+      categories and forbid filtering for importance, since a model told to
+      be sparing finds the small errors and then declines to report them.
+      The story-settings review now runs the full pass per scene and ends
+      with a cross-scene consistency run (one request that reads every scene
+      via get_scene and reports only issues that span scenes: name/timeline
+      drift, idiom conventions, recurring tics). Exhaustive passes carry a
+      server-set tool budget (64 per scene; 2n+24 for the consistency pass,
+      gateway ceiling 200) since each note is one tool call and the account
+      default of 8 starved them. Help (reviewing.md) updated.
 
 ## Capability review follow-ups (2026-06-06)
 

@@ -137,7 +137,9 @@
 			const response = await fetch('/api/assistant/review-job', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId: data.story.id })
+				// The story-level review is the full copyedit: every scene swept
+				// category by category, then one cross-scene consistency pass.
+				body: JSON.stringify({ storyId: data.story.id, focus: 'full' })
 			});
 			if (!response.ok) {
 				alert(await apiErrorMessage(response, 'Could not start the review.'));

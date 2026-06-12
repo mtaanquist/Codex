@@ -8,6 +8,7 @@ import {
 	throwAssistantError
 } from '$lib/server/llm/assistant-route';
 import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-review';
+import { REVIEW_FOCUSES, type ReviewFocus } from '$lib/server/llm/prompts/review';
 
 // A single-scene Assistant review, run inline (one scene is bounded). The model
 // reads the scene and the assembled world, then stages review comments and
@@ -16,9 +17,17 @@ import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-revie
 // and chapter passes are the assistant-review background job.
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const { userId, payload } = await readAssistantPayload<{ sceneId?: unknown }>(request, locals);
+	const { userId, payload } = await readAssistantPayload<{ sceneId?: unknown; focus?: unknown }>(
+		request,
+		locals
+	);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : '';
 	if (!sceneId) error(400, 'sceneId is required.');
+	const focus: ReviewFocus =
+		typeof payload.focus === 'string' &&
+		(REVIEW_FOCUSES as readonly string[]).includes(payload.focus)
+			? (payload.focus as ReviewFocus)
+			: 'notes';
 
 	// Owner-scoped: resolve the scene and its story, 404ing unless the user owns it.
 	const [scene] = await db
@@ -36,6 +45,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			userId,
 			storyId: scene.storyId,
 			scene,
+			focus,
 			signal: request.signal
 		});
 	} catch (err) {
