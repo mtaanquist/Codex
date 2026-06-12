@@ -81,7 +81,7 @@
 
 {#snippet library()}
 	<div class="page-shell">
-		<PageTopBar />
+		<PageTopBar help={{ topic: 'getting-started', label: 'the library' }} />
 
 		<div class="page-body">
 			<div class="page-container">

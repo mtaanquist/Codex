@@ -78,10 +78,10 @@
 				<Icon name="gear" />
 			</a>
 		{/if}
+		<NotificationBell />
 		{#if help}
 			<HelpLink topic={help.topic} label={help.label} />
 		{/if}
-		<NotificationBell />
 		<UserMenu />
 	</div>
 </header>

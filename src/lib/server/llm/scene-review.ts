@@ -1,8 +1,15 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth';
-import { reviewComments, reviewSuggestions, reviewThreads, scenes, stories } from '../db/schema';
+import {
+	reviewComments,
+	reviewSuggestions,
+	reviewThreads,
+	revisions,
+	scenes,
+	stories
+} from '../db/schema';
 import { assembleContext, buildSystemMessage } from './context/assemble';
-import { buildReviewMessage } from './prompts/review';
+import { buildReviewMessage, type PriorNote } from './prompts/review';
 import { complete } from './gateway';
 import type { ChatMessage } from './providers/types';
 
@@ -32,6 +39,52 @@ export async function countAssistantNotes(db: Database, sceneId: string): Promis
 	return (suggestions?.n ?? 0) + (comments?.n ?? 0);
 }
 
+// The Assistant's still-open notes on a scene, carried into the next review
+// run so it does not stage the same observations twice: its comments on
+// unresolved standalone threads, and its pending suggestions with the passage
+// each was anchored to.
+export async function openAssistantNotes(db: Database, sceneId: string): Promise<PriorNote[]> {
+	const comments = await db
+		.select({ body: reviewComments.bodyMd, createdAt: reviewComments.createdAt })
+		.from(reviewComments)
+		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
+		.where(
+			and(
+				eq(reviewThreads.sceneId, sceneId),
+				isNull(reviewThreads.resolvedAt),
+				isNull(reviewThreads.suggestionId),
+				eq(reviewComments.assistant, true)
+			)
+		)
+		.orderBy(asc(reviewComments.createdAt));
+	const suggestions = await db
+		.select({
+			rangeStart: reviewSuggestions.rangeStart,
+			rangeEnd: reviewSuggestions.rangeEnd,
+			replacement: reviewSuggestions.replacement,
+			baseBody: revisions.bodyMd,
+			createdAt: reviewSuggestions.createdAt
+		})
+		.from(reviewSuggestions)
+		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
+		.where(
+			and(
+				eq(reviewSuggestions.sceneId, sceneId),
+				eq(reviewSuggestions.assistant, true),
+				eq(reviewSuggestions.status, 'pending')
+			)
+		)
+		.orderBy(asc(reviewSuggestions.createdAt));
+	return [
+		...comments.map((c) => ({ kind: 'comment' as const, body: c.body })),
+		...suggestions.map((s) => ({
+			kind: 'suggestion' as const,
+			quote: s.baseBody.slice(s.rangeStart, s.rangeEnd),
+			body: s.replacement
+		}))
+	];
+}
+
 // One scene through the reviewer. Throws if the gateway fails (no endpoint,
 // unreachable, disabled), so the caller can report it.
 export async function reviewOneScene(
@@ -48,7 +101,8 @@ export async function reviewOneScene(
 		storyId: opts.storyId,
 		sceneId: opts.scene.id
 	});
-	const task: ChatMessage = { role: 'user', content: buildReviewMessage(opts.scene) };
+	const prior = await openAssistantNotes(db, opts.scene.id);
+	const task: ChatMessage = { role: 'user', content: buildReviewMessage(opts.scene, prior) };
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), task]
 		: [task];
