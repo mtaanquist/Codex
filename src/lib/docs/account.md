@@ -59,6 +59,16 @@ contacts a model on its own.
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
   tokens sent and received.
+- **Thinking and effort (Claude only)**: with the Claude provider, each role also
+  has a Thinking box and an effort list. Thinking lets the model reason before it
+  answers: noticeably better reviews and feedback, at the cost of more tokens and
+  a slower reply. Effort sets how hard the model works on each request, from low
+  (fast and cheap) to max (thorough and expensive); leave it unset to use the
+  model's default. A good starting point: thinking on with high effort for the
+  reviewer, everything unset for continuation so suggestions stay fast. Not every
+  model accepts every level ("xhigh" needs a recent Opus model, and small models
+  may reject effort entirely); if a request starts failing after a change here,
+  clear the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
   are known, an estimated cost shows too. The list shows 50 requests at a time;

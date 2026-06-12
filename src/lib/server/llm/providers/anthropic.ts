@@ -71,6 +71,13 @@ function serialiseMessages(messages: ChatMessage[]): {
 			}
 			continue;
 		}
+		// An assistant turn captured with its original content blocks (thinking
+		// enabled) echoes back verbatim: the API requires thinking blocks
+		// unchanged ahead of the tool_use blocks they precede.
+		if (message.role === 'assistant' && Array.isArray(message.raw)) {
+			out.push({ role: 'assistant', content: message.raw as unknown[] });
+			continue;
+		}
 		if (message.role === 'assistant' && message.toolCalls?.length) {
 			out.push({
 				role: 'assistant',
@@ -96,6 +103,10 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 	return JSON.stringify({
 		model: req.model,
 		max_tokens: req.maxTokens,
+		// Thinking on means adaptive; off means omitting the field entirely (an
+		// explicit "disabled" is rejected by models where thinking is always on).
+		...(req.tuning?.thinking ? { thinking: { type: 'adaptive' } } : {}),
+		...(req.tuning?.effort ? { output_config: { effort: req.tuning.effort } } : {}),
 		...(system ? { system } : {}),
 		messages,
 		...(req.tools?.length
@@ -120,10 +131,20 @@ type ContentBlock = {
 	input?: unknown;
 };
 
-function parseContent(raw: unknown): { content: string; toolCalls: ProviderToolCall[] } {
+function parseContent(raw: unknown): {
+	content: string;
+	toolCalls: ProviderToolCall[];
+	raw?: unknown;
+} {
 	const blocks = Array.isArray(raw) ? (raw as ContentBlock[]) : [];
 	const text: string[] = [];
 	const toolCalls: ProviderToolCall[] = [];
+	// With thinking enabled the response opens with thinking blocks that must
+	// be echoed unchanged if this turn re-enters a tool loop; keep the whole
+	// block array for that case only.
+	const hasThinking = blocks.some(
+		(block) => block.type === 'thinking' || block.type === 'redacted_thinking'
+	);
 	for (const block of blocks) {
 		if (block.type === 'text' && typeof block.text === 'string') text.push(block.text);
 		if (
@@ -138,7 +159,11 @@ function parseContent(raw: unknown): { content: string; toolCalls: ProviderToolC
 			});
 		}
 	}
-	return { content: text.join(''), toolCalls };
+	return {
+		content: text.join(''),
+		toolCalls,
+		...(hasThinking && toolCalls.length > 0 ? { raw: blocks } : {})
+	};
 }
 
 function truncate(text: string, max = 300): string {

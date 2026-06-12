@@ -72,6 +72,94 @@ describe('anthropicProvider.respond', () => {
 		expect(result.content).toBe('ok');
 	});
 
+	it('maps tuning to adaptive thinking and output_config, omitted when unset', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'ok' }] });
+		};
+		const base = {
+			model: 'claude-x',
+			maxTokens: 16,
+			messages: [{ role: 'user' as const, content: 'hi' }]
+		};
+		await anthropicProvider.respond(
+			{ ...base, tuning: { thinking: true, effort: 'xhigh' } },
+			conn,
+			http
+		);
+		expect(sentBody.thinking).toEqual({ type: 'adaptive' });
+		expect(sentBody.output_config).toEqual({ effort: 'xhigh' });
+
+		// Thinking off means no thinking field at all, never an explicit
+		// "disabled" (rejected by models where thinking is always on).
+		await anthropicProvider.respond({ ...base, tuning: { effort: 'low' } }, conn, http);
+		expect(sentBody.thinking).toBeUndefined();
+		expect(sentBody.output_config).toEqual({ effort: 'low' });
+
+		await anthropicProvider.respond(base, conn, http);
+		expect(sentBody.thinking).toBeUndefined();
+		expect(sentBody.output_config).toBeUndefined();
+	});
+
+	it('captures thinking blocks on tool turns and echoes them back verbatim', async () => {
+		const blocks = [
+			{ type: 'thinking', thinking: 'hmm', signature: 'sig' },
+			{ type: 'text', text: 'checking' },
+			{ type: 'tool_use', id: 'call-1', name: 'get_scene', input: { id: 's1' } }
+		];
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: blocks });
+		};
+		const response = await anthropicProvider.respond(
+			{
+				model: 'claude-x',
+				maxTokens: 16,
+				messages: [{ role: 'user', content: 'review' }],
+				tuning: { thinking: true }
+			},
+			conn,
+			http
+		);
+		expect(response.toolCalls).toHaveLength(1);
+		expect(response.raw).toEqual(blocks);
+
+		// The next turn of the loop replays the captured blocks unchanged.
+		await anthropicProvider.respond(
+			{
+				model: 'claude-x',
+				maxTokens: 16,
+				messages: [
+					{ role: 'user', content: 'review' },
+					{
+						role: 'assistant',
+						content: 'checking',
+						toolCalls: response.toolCalls,
+						raw: response.raw
+					},
+					{ role: 'tool', content: 'the scene text', toolCallId: 'call-1' }
+				]
+			},
+			conn,
+			http
+		);
+		const messages = sentBody.messages as { role: string; content: unknown }[];
+		expect(messages[1]).toEqual({ role: 'assistant', content: blocks });
+	});
+
+	it('does not capture raw blocks for a plain text response', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, { content: [{ type: 'text', text: 'just text' }] });
+		const response = await anthropicProvider.respond(
+			{ model: 'claude-x', maxTokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+			conn,
+			http
+		);
+		expect(response.raw).toBeUndefined();
+	});
+
 	it('maps tool specs and parses tool_use blocks from the response', async () => {
 		let sentBody: Record<string, unknown> = {};
 		const http: HttpRequest = async (_url, init) => {

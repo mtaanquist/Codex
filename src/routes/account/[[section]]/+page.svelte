@@ -144,6 +144,13 @@
 	// picks always stay in the list so a save never silently drops one.
 	type DiscoveredModel = { id: string; pricing?: { prompt: number; completion: number } };
 	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
+
+	// Per-role thinking/effort, shown for the Claude provider only (mirrors
+	// EFFORT_LEVELS in $lib/server/llm/config, which cannot be imported here).
+	const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+	const savedTuning = $derived(
+		data.assistant.tuning as Record<string, { thinking?: boolean; effort?: string } | undefined>
+	);
 	const discoveredModels = $derived(
 		form?.scope === 'assistant-discover' && 'models' in form
 			? (form.models as DiscoveredModel[])
@@ -1686,19 +1693,57 @@
 													<div class="role-row-name">{role.name}</div>
 													<div class="role-row-hint">{role.hint}</div>
 												</div>
-												<select class="select" name={role.id}>
-													<option value="" selected={!savedModels[role.id]}
-														>Use endpoint default</option
-													>
-													{#each modelOptions as model (model)}
-														<option value={model} selected={savedModels[role.id] === model}
-															>{modelLabel(model)}</option
+												<div class="role-row-controls">
+													<select class="select" name={role.id}>
+														<option value="" selected={!savedModels[role.id]}
+															>Use endpoint default</option
 														>
-													{/each}
-												</select>
+														{#each modelOptions as model (model)}
+															<option value={model} selected={savedModels[role.id] === model}
+																>{modelLabel(model)}</option
+															>
+														{/each}
+													</select>
+													{#if data.assistant.provider === 'anthropic'}
+														<div class="role-row-tuning">
+															<label class="check-row">
+																<input
+																	type="checkbox"
+																	name="{role.id}-thinking"
+																	checked={Boolean(savedTuning[role.id]?.thinking)}
+																/>
+																Thinking
+															</label>
+															<select
+																class="select"
+																name="{role.id}-effort"
+																aria-label="{role.name} effort"
+															>
+																<option value="" selected={!savedTuning[role.id]?.effort}
+																	>Default effort</option
+																>
+																{#each EFFORT_OPTIONS as level (level)}
+																	<option
+																		value={level}
+																		selected={savedTuning[role.id]?.effort === level}
+																		>Effort: {level}</option
+																	>
+																{/each}
+															</select>
+														</div>
+													{/if}
+												</div>
 											</div>
 										{/each}
 									</div>
+									{#if data.assistant.provider === 'anthropic'}
+										<p class="field-hint">
+											Thinking lets the model reason before answering: better feedback, slower and
+											more tokens. Effort sets how hard it works; leave both unset for the model's
+											defaults. Older or lighter models may not accept every level - if a request
+											fails, clear the effort here. "xhigh" needs a recent Opus model.
+										</p>
+									{/if}
 									{#if Object.keys(modelPricing).length > 0}
 										<p class="field-hint">
 											Prices are what the endpoint reports, in dollars per million tokens: what you

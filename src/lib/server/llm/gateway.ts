@@ -76,6 +76,9 @@ type Prepared = {
 	tools?: ToolSpec[];
 	toolContext?: ToolContext;
 	toolBudget: number;
+	// Thinking/effort for this role, from the account config; undefined when
+	// the role has none set.
+	tuning?: { thinking?: boolean; effort?: string };
 };
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
@@ -125,7 +128,8 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		provider: deps.provider ?? providerFor(resolved.config.provider),
 		tools,
 		toolContext,
-		toolBudget: resolved.config.toolCallBudget
+		toolBudget: resolved.config.toolCallBudget,
+		tuning: resolved.config.tuning[req.role]
 	};
 }
 
@@ -169,7 +173,8 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				model: p.model,
 				messages,
 				maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				tools: offerTools
+				tools: offerTools,
+				tuning: p.tuning
 			},
 			p.conn,
 			p.http,
@@ -180,7 +185,12 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			return { content: response.content, surfaces };
 		}
 
-		messages.push({ role: 'assistant', content: response.content, toolCalls: response.toolCalls });
+		messages.push({
+			role: 'assistant',
+			content: response.content,
+			toolCalls: response.toolCalls,
+			raw: response.raw
+		});
 		for (const call of response.toolCalls) {
 			calls += 1;
 			const outcome =
@@ -227,7 +237,8 @@ export async function* stream(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS
+			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			tuning: prepared.tuning
 		},
 		prepared.conn,
 		prepared.http,
@@ -261,7 +272,8 @@ export async function complete(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS
+			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			tuning: prepared.tuning
 		},
 		prepared.conn,
 		prepared.http,

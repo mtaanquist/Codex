@@ -33,6 +33,9 @@ import { savePreferences, userPreferences } from '$lib/server/preferences';
 import {
 	accountLlmView,
 	ASSISTANT_ROLES,
+	EFFORT_LEVELS,
+	type EffortLevel,
+	type TuningMap,
 	saveAccountLlmConfig,
 	type ModelMap,
 	type SaveResult
@@ -174,6 +177,7 @@ async function patchAssistant(
 		endpoint: string;
 		apiKey: string;
 		models: ModelMap;
+		tuning: TuningMap;
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
@@ -185,6 +189,7 @@ async function patchAssistant(
 		endpoint: patch.endpoint ?? current.endpoint,
 		apiKey: patch.apiKey ?? '',
 		models: patch.models ?? current.models,
+		tuning: patch.tuning ?? current.tuning,
 		toolCallBudget: current.toolCallBudget,
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
@@ -364,11 +369,19 @@ export const actions: Actions = {
 	saveAssistantModels: async ({ request, locals }) => {
 		const data = await request.formData();
 		const models: ModelMap = {};
+		const tuning: TuningMap = {};
 		for (const role of ASSISTANT_ROLES) {
 			const value = String(data.get(role) ?? '').trim();
 			if (value) models[role] = value;
+			const roleTuning: TuningMap[typeof role] = {};
+			if (data.get(`${role}-thinking`) === 'on') roleTuning.thinking = true;
+			const effort = String(data.get(`${role}-effort`) ?? '');
+			if ((EFFORT_LEVELS as readonly string[]).includes(effort)) {
+				roleTuning.effort = effort as EffortLevel;
+			}
+			if (Object.keys(roleTuning).length > 0) tuning[role] = roleTuning;
 		}
-		const result = await patchAssistant(locals.user!.id, { models });
+		const result = await patchAssistant(locals.user!.id, { models, tuning });
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
 		return { scope: 'assistant-models', saved: true };
 	},

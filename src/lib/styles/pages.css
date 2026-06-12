@@ -964,6 +964,24 @@
 	padding-bottom: 0;
 	font-size: 13px;
 }
+.role-row-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.role-row-tuning {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 12.5px;
+}
+.role-row-tuning .check-row {
+	font-size: 12.5px;
+	white-space: nowrap;
+}
+.role-row-tuning .select {
+	flex: 1;
+}
 
 /* revision timeline */
 .revision-filters {

@@ -10,6 +10,7 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		endpoint: '',
 		apiKeyEnc: null,
 		models: {},
+		tuning: {},
 		toolCallBudget: 8,
 		...partial
 	};
