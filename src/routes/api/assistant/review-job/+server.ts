@@ -11,11 +11,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
 		chapterId?: unknown;
+		focus?: unknown;
 	}>(request, locals);
 	const chapterId = typeof payload.chapterId === 'string' ? payload.chapterId : undefined;
+	// Background jobs run the sparing pass or the full copyedit; the focused
+	// single-category passes are inline per-scene runs.
+	const focus: 'notes' | 'full' = payload.focus === 'full' ? 'full' : 'notes';
 	const story = await requireAssistantStory(userId, payload.storyId);
 
-	const queued = await queueAssistantReview({ userId, storyId: story.id, chapterId });
+	const queued = await queueAssistantReview({ userId, storyId: story.id, chapterId, focus });
 	if (!queued) error(503, 'Could not start the review. Try again in a moment.');
 
 	return new Response(JSON.stringify({ ok: true }), {

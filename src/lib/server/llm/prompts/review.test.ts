@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildReviewMessage } from './review';
+import { buildConsistencyMessage, buildReviewMessage } from './review';
 
 describe('buildReviewMessage', () => {
 	it('names the scene and its id, and steers to the staging tools', () => {
@@ -47,5 +47,56 @@ describe('buildReviewMessage', () => {
 		expect(line).toBeDefined();
 		expect(line!.length).toBeLessThan(300);
 		expect(line).toContain('...');
+	});
+});
+
+describe('review focuses', () => {
+	const scene = { id: 's1', title: 'The Gate' };
+
+	it('the default pass stays sparing and never mentions a category sweep', () => {
+		const message = buildReviewMessage(scene);
+		expect(message).toContain('specific and sparing');
+		expect(message).not.toContain('do not filter for importance');
+	});
+
+	it('every focused pass forbids filtering and names its categories', () => {
+		const mechanics = buildReviewMessage(scene, [], 'mechanics');
+		expect(mechanics).toContain('spelling and grammar pass');
+		expect(mechanics).toContain('do not filter for importance');
+		expect(mechanics).toContain('comma splices');
+		expect(mechanics).not.toContain('filter verbs');
+
+		const prose = buildReviewMessage(scene, [], 'prose');
+		expect(prose).toContain('prose and style pass');
+		expect(prose).toContain('filter verbs');
+		expect(prose).not.toContain('comma splices');
+
+		const lore = buildReviewMessage(scene, [], 'lore');
+		expect(lore).toContain('lore pass');
+		expect(lore).toContain('Continuity');
+		expect(lore).not.toContain('comma splices');
+	});
+
+	it('the full pass sweeps all categories and drops the sparing instruction', () => {
+		const message = buildReviewMessage(scene, [], 'full');
+		expect(message).toContain('full copyedit pass');
+		expect(message).toContain('comma splices');
+		expect(message).toContain('filter verbs');
+		expect(message).toContain('Lore: contradictions');
+		expect(message).not.toContain('specific and sparing');
+	});
+});
+
+describe('buildConsistencyMessage', () => {
+	it('lists every scene with its id and confines the pass to cross-scene issues', () => {
+		const message = buildConsistencyMessage([
+			{ id: 's1', title: 'The Gate' },
+			{ id: 's2', title: null }
+		]);
+		expect(message).toContain('cross-scene consistency pass');
+		expect(message).toContain('do not repeat per-scene notes');
+		expect(message).toContain('The Gate (id: s1)');
+		expect(message).toContain('Scene 2 (id: s2)');
+		expect(message).toContain('only issues that span scenes');
 	});
 });

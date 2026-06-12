@@ -181,11 +181,11 @@ await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 // stage the Assistant's notes through the review tools, then tell the owner it
 // is ready (or that the endpoint could not be reached). Matches the inline
 // single-scene endpoint, just unattended and over many scenes.
-await boss.work<{ userId: string; storyId: string; chapterId?: string }>(
+await boss.work<{ userId: string; storyId: string; chapterId?: string; focus?: 'notes' | 'full' }>(
 	ASSISTANT_REVIEW_QUEUE,
 	async (jobs) => {
 		for (const job of jobs) {
-			const { userId, storyId, chapterId } = job.data;
+			const { userId, storyId, chapterId, focus } = job.data;
 			const [story] = await db
 				.select({
 					ownerId: schema.stories.ownerId,
@@ -199,7 +199,7 @@ await boss.work<{ userId: string; storyId: string; chapterId?: string }>(
 				console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
 				continue;
 			}
-			const result = await reviewStoryScenes(db, { userId, storyId, chapterId });
+			const result = await reviewStoryScenes(db, { userId, storyId, chapterId, focus });
 			const href = `/stories/${story.slug}/review`;
 			let title: string;
 			if (result.reviewed === 0 && result.failed > 0) {
