@@ -162,6 +162,7 @@ export const actions: Actions = {
 		const author = String(data.get('author') ?? '').trim() || null;
 		const brief = String(data.get('brief') ?? '').trim() || null;
 		const descriptionMd = String(data.get('description') ?? '').trim() || null;
+		const styleNotes = String(data.get('styleNotes') ?? '').trim() || null;
 		if (!title) {
 			return fail(400, { action: 'update', message: 'The story needs a title.' });
 		}
@@ -170,7 +171,7 @@ export const actions: Actions = {
 		const save = async (slug: string) => {
 			await db
 				.update(stories)
-				.set({ title, slug, author, brief, descriptionMd })
+				.set({ title, slug, author, brief, descriptionMd, styleNotes })
 				.where(eq(stories.id, story.id));
 			return slug;
 		};

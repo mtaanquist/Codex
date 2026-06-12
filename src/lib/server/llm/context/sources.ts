@@ -32,8 +32,13 @@ export type StoryScope = {
 	storyTitle: string;
 	storyBrief: string | null;
 	storyDescription: string | null;
+	// The author's genre and craft intent, so feedback calibrates to it.
+	storyStyleNotes: string | null;
 	universeName: string;
 	universeDescription: string | null;
+	// True for an established published setting; the Assistant may then draw
+	// on its own canon knowledge, with the author's material taking precedence.
+	universeEstablished: boolean;
 };
 
 // The story and its universe, but only if the user owns it. Null means no such
@@ -50,8 +55,10 @@ export async function loadStoryScope(
 			storyTitle: stories.title,
 			storyBrief: stories.brief,
 			storyDescription: stories.descriptionMd,
+			storyStyleNotes: stories.styleNotes,
 			universeName: universes.name,
-			universeDescription: universes.descriptionMd
+			universeDescription: universes.descriptionMd,
+			universeEstablished: universes.establishedSetting
 		})
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
