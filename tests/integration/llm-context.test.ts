@@ -72,7 +72,8 @@ beforeEach(async () => {
 			ownerId,
 			title: 'The Tide Below',
 			brief: 'A diver hunts a sunken bell.',
-			descriptionMd: 'Long synopsis of the descent.'
+			descriptionMd: 'Long synopsis of the descent.',
+			styleNotes: 'Nautical gothic, slow and ornate.'
 		})
 		.returning({ id: stories.id });
 	storyId = story.id;
@@ -184,6 +185,7 @@ describe('assembleContext', () => {
 		expect(context!.text).toContain('The Tide Below');
 		expect(context!.text).toContain('Aldermoor');
 		expect(context!.text).toContain('A drowned kingdom of canals.');
+		expect(context!.text).toContain('Nautical gothic, slow and ornate.');
 	});
 
 	it('includes the current scene body and a member entity with its details and story note', async () => {

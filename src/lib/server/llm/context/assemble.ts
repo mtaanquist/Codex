@@ -244,6 +244,11 @@ function renderFrame(scope: StoryScope): string {
 	const lines = [`# Story: ${scope.storyTitle}`];
 	if (scope.storyBrief) lines.push(scope.storyBrief);
 	if (scope.storyDescription) lines.push(scope.storyDescription);
+	if (scope.storyStyleNotes) {
+		lines.push(
+			`Genre and style the author is aiming for (judge the prose against this, not against general taste): ${scope.storyStyleNotes}`
+		);
+	}
 	lines.push('', `## World: ${scope.universeName}`);
 	if (scope.universeDescription) lines.push(scope.universeDescription);
 	return lines.join('\n');

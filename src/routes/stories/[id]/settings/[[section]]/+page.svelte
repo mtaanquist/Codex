@@ -246,6 +246,17 @@
 									>{data.story.descriptionMd ?? ''}</textarea
 								>
 							</div>
+							<div class="field">
+								<label for="st-style-notes">Genre and style</label>
+								<textarea id="st-style-notes" class="input" name="styleNotes" rows="2"
+									>{data.story.styleNotes ?? ''}</textarea
+								>
+								<p class="field-hint">
+									A sentence on the genre and the style you are writing in, for example "epic
+									fantasy serial, omniscient narrator, formal prose". The Assistant reads this and
+									judges the prose against it. Readers never see it.
+								</p>
+							</div>
 							<div class="settings-actions">
 								{#if form?.action === 'update' && form.saved}
 									<span class="field-hint" role="status" style="color:var(--status-final);"

@@ -1045,8 +1045,9 @@ endpoint. Started 2026-06-09.
       per field, reject, owner-scoping, and enrichEntity end-to-end - needs
       Postgres, left for CI. Lint, check, and unit pass locally. Whole-universe
       background `assistant-enrich` and character arc summaries remain for later.
-- [ ] Provider presets + native Claude adapter + usage log (2026-06-12; branch
-      `claude/dreamy-ride-h5glzt`). First-class providers for the Assistant:
+- [x] Provider presets + native Claude adapter + usage log (2026-06-12;
+      PR #448, shipped as v3.8.0 with usage-log paging and per-provider
+      help docs). First-class providers for the Assistant:
       `providers/presets.ts` (Claude, ChatGPT, Gemini, DeepSeek, OpenRouter -
       label, locked base URL, key hint, docs link) with a `provider`
       discriminator on the account config (jsonb-only, legacy configs normalise
@@ -1069,6 +1070,17 @@ endpoint. Started 2026-06-09.
       recording, and the pricing snapshot. Lint, check, and the full vitest
       suite (973) pass locally; Playwright could not run in this sandbox
       (browser download blocked), left for CI.
+- [ ] Genre and style notes on stories (2026-06-12; branch
+      `feat/story-style-notes`). A free-text "Genre and style" field on story
+      settings (`stories.style_notes`, migration 0063) stating the genre and
+      craft intent; `loadStoryScope` carries it and the assembled context
+      frames it as the standard to judge the prose against, so Assistant
+      reviews calibrate to the author's aim instead of a literary-fiction
+      default. Help (reviewing.md) updated. The discovery half of the idea
+      (genre tags and content tags on published editions, for a future
+      instance-wide public library) was deliberately split off and parked in
+      the roadmap under Phase 10; do not build the taxonomy before the
+      discovery surface exists.
 
 ## Capability review follow-ups (2026-06-06)
 

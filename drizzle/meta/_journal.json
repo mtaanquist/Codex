@@ -442,6 +442,13 @@
 			"when": 1781258612937,
 			"tag": "0062_assistant_usage",
 			"breakpoints": true
+		},
+		{
+			"idx": 63,
+			"version": "7",
+			"when": 1781264543124,
+			"tag": "0063_story-style-notes",
+			"breakpoints": true
 		}
 	]
 }

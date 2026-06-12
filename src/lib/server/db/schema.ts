@@ -160,6 +160,10 @@ export const stories = pgTable(
 		author: text('author'),
 		brief: text('brief'),
 		descriptionMd: text('description_md'),
+		// A short statement of genre and craft intent ("epic fantasy serial,
+		// omniscient narrator, formal prose"). Fed to the Assistant so its
+		// feedback calibrates to what the prose is aiming at; never public.
+		styleNotes: text('style_notes'),
 		// Null if standalone or unordered.
 		positionInSeries: integer('position_in_series'),
 		visibility: text('visibility', { enum: ['private', 'unlisted', 'public'] })
