@@ -24,6 +24,11 @@ COPY --from=build /app/scripts scripts
 # imports from src/lib (schema, mention pipeline), so both come along.
 COPY --from=build /app/src/worker src/worker
 COPY --from=build /app/src/lib src/lib
+# Stable launch commands, so a deployment's compose file can say `codex-app`
+# and `codex-worker` and survive launch-sequence changes between releases.
+RUN cp scripts/start-app.sh /usr/local/bin/codex-app && \
+    cp scripts/start-worker.sh /usr/local/bin/codex-worker && \
+    chmod +x /usr/local/bin/codex-app /usr/local/bin/codex-worker
 USER node
 EXPOSE 3000
-CMD ["node", "build"]
+CMD ["codex-app"]
