@@ -2,7 +2,7 @@
 // configured from the admin panel (stored in app_settings) or seeded from the
 // environment; see settings.ts. With neither set, messages are logged instead
 // of sent, which is what a self-host instance without mail or a dev box wants.
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { effectiveSmtp } from './settings.ts';
 
 export type EmailMessage = { to: string; subject: string; text: string };

@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { stories, users } from './db/schema.ts';
 import { mergePageSetup, type PageSetup } from '../page-setup.ts';
 import { jsonbMergePatch } from './jsonb-patch.ts';

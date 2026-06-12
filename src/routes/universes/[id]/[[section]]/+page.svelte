@@ -238,6 +238,22 @@
 								>
 								<span class="field-hint">Markdown is fine. Shown on the library card.</span>
 							</div>
+							<div class="field">
+								<label class="check-row">
+									<input
+										type="checkbox"
+										name="establishedSetting"
+										checked={data.universe.establishedSetting}
+									/>
+									Established setting
+								</label>
+								<span class="field-hint">
+									Tick this when the universe is an existing published setting, such as Forgotten
+									Realms or Azeroth, rather than your own invention. The Assistant will then also
+									use what it knows about that setting's canon, and your own material here wins
+									wherever the two differ.
+								</span>
+							</div>
 							<div class="settings-actions">
 								<button class="btn btn-primary" type="submit">Save changes</button>
 							</div>

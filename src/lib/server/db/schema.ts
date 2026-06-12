@@ -119,6 +119,12 @@ export const universes = pgTable(
 			.notNull()
 			.default(sql`substr(md5(random()::text), 1, 12)`),
 		descriptionMd: text('description_md'),
+		// True when the universe is an established published setting (Forgotten
+		// Realms, Azeroth) rather than the author's invention. Flips the
+		// Assistant's grounding: it may draw on its own knowledge of the
+		// setting's canon, with the author's material overriding where they
+		// differ.
+		establishedSetting: boolean('established_setting').notNull().default(false),
 		// The auto-created home for one-off stories outside any universe; at
 		// most one per owner, made lazily the first time it is needed.
 		standalone: boolean('standalone').notNull().default(false),
@@ -160,6 +166,10 @@ export const stories = pgTable(
 		author: text('author'),
 		brief: text('brief'),
 		descriptionMd: text('description_md'),
+		// A short statement of genre and craft intent ("epic fantasy serial,
+		// omniscient narrator, formal prose"). Fed to the Assistant so its
+		// feedback calibrates to what the prose is aiming at; never public.
+		styleNotes: text('style_notes'),
 		// Null if standalone or unordered.
 		positionInSeries: integer('position_in_series'),
 		visibility: text('visibility', { enum: ['private', 'unlisted', 'public'] })

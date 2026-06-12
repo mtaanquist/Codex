@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { jsonbMergePatch } from './jsonb-patch.ts';
-import type { Database } from './auth';
-import { stories, users } from './db/schema';
+import type { Database } from './auth.ts';
+import { stories, users } from './db/schema.ts';
 import type { AutocompleteMode } from '$lib/editor-autocomplete';
 import {
 	DEFAULT_ACCENT,

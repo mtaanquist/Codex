@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { exportArtifacts, publications, stories } from './db/schema.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import {

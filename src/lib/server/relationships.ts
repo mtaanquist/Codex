@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	characters,
 	entityCategories,
@@ -7,10 +7,10 @@ import {
 	loreEntries,
 	places,
 	relationTypes
-} from './db/schema';
+} from './db/schema.ts';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
-import { recordEntityRevision } from './revisions';
+import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import { recordEntityRevision } from './revisions.ts';
 import { isUniqueViolation } from './db-errors.ts';
 
 export type { EntityType };

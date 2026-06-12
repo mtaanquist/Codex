@@ -10,7 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { desc, eq, inArray, isNotNull, and } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { backupRuns } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
 import {

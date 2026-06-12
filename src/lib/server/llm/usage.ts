@@ -1,8 +1,8 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
-import type { Database } from '../auth';
-import { assistantUsage } from '../db/schema';
-import { logEvent } from '../log';
-import type { TokenUsage } from './providers/types';
+import type { Database } from '../auth.ts';
+import { assistantUsage } from '../db/schema.ts';
+import { logEvent } from '../log.ts';
+import type { TokenUsage } from './providers/types.ts';
 
 // The usage log: one row of metadata per request the gateway sends to the
 // writer's endpoint, so the account page can show what the Assistant has been

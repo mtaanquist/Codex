@@ -1,6 +1,6 @@
 import type { EntityCardData } from '$lib/wire-types';
 import { and, asc, count, eq } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	characters,
 	entityCategories,
@@ -9,9 +9,9 @@ import {
 	places,
 	scenes,
 	stories
-} from './db/schema';
+} from './db/schema.ts';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { listEntityRelationships } from './relationships';
+import { listEntityRelationships } from './relationships.ts';
 
 // Sidebar lists for a Plan view. Both scopes list the whole universe: the
 // story Plan does too until declared membership (step 20) narrows it.
