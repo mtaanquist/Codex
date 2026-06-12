@@ -63,15 +63,19 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 
 // A provider that records the request and emits canned events, so the gateway's
 // resolve -> pick model -> stream path is exercised without a network.
-let captured: { model: string; messages: ChatMessage[] } | null = null;
+let captured: {
+	model: string;
+	messages: ChatMessage[];
+	tuning?: { thinking?: boolean; effort?: string };
+} | null = null;
 const stubProvider: Provider = {
 	async *chatStream(req) {
-		captured = { model: req.model, messages: req.messages };
+		captured = { model: req.model, messages: req.messages, tuning: req.tuning };
 		yield { type: 'token', text: `[${req.model}]` };
 		yield { type: 'done' };
 	},
 	async respond(req) {
-		captured = { model: req.model, messages: req.messages };
+		captured = { model: req.model, messages: req.messages, tuning: req.tuning };
 		return { content: `done:${req.model}`, toolCalls: [] };
 	},
 	async listModels() {
@@ -151,6 +155,49 @@ describe('gateway gating', () => {
 		await configure(true);
 		const events = await drain(stream(db, { userId, role: 'chat', messages: [] }, stubDeps));
 		expect(events).toEqual([{ type: 'token', text: '[chat-model]' }, { type: 'done' }]);
+	});
+
+	it('passes the saved per-role tuning to the provider, and none when unset', async () => {
+		await configure(true);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model', reviewer: 'review-model' },
+			tuning: { reviewer: { thinking: true, effort: 'xhigh' } },
+			toolCallBudget: 8
+		});
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.tuning).toEqual({ thinking: true, effort: 'xhigh' });
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.tuning).toBeUndefined();
+	});
+
+	it('keeps the stored tuning when a save omits it, and clears it on {}', async () => {
+		await configure(true);
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: { chat: { effort: 'low' } }
+		});
+		// A save without the field (another form's partial save) keeps it.
+		await saveAccountLlmConfig(db, userId, base);
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.tuning).toEqual({ effort: 'low' });
+		// An explicit empty map clears it.
+		await saveAccountLlmConfig(db, userId, { ...base, tuning: {} });
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.tuning).toBeUndefined();
 	});
 
 	it('falls back to the chat model when a role has none set', async () => {
@@ -578,9 +625,18 @@ describe('provider selection', () => {
 		);
 		expect(text).toBe('hello');
 		expect(calledUrl).toBe('https://api.anthropic.com/v1/messages');
-		// The persona system message hoists into the top-level system parameter.
-		expect(typeof sentBody.system).toBe('string');
-		expect(sentBody.messages).toEqual([{ role: 'user', content: 'hi' }]);
+		// The persona system message hoists into the top-level system parameter,
+		// as a block array carrying the prompt-cache marker.
+		const system = sentBody.system as { type: string; text: string }[];
+		expect(system).toHaveLength(1);
+		expect(system[0].type).toBe('text');
+		expect(typeof system[0].text).toBe('string');
+		expect(sentBody.messages).toEqual([
+			{
+				role: 'user',
+				content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }]
+			}
+		]);
 	});
 
 	it('routes a custom config to the chat completions API', async () => {

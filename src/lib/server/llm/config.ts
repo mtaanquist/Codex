@@ -20,6 +20,32 @@ export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
 
+// Per-role request tuning, used by the Anthropic adapter: whether to ask for
+// adaptive thinking, and an effort level. Both optional; absent means the
+// provider's defaults. Other adapters ignore the whole map.
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+export type RoleTuning = { thinking?: boolean; effort?: EffortLevel };
+export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
+
+function normaliseTuning(raw: unknown): TuningMap {
+	const out: TuningMap = {};
+	if (raw && typeof raw === 'object') {
+		for (const role of ASSISTANT_ROLES) {
+			const value = (raw as Record<string, unknown>)[role];
+			if (!value || typeof value !== 'object') continue;
+			const tuning: RoleTuning = {};
+			const { thinking, effort } = value as { thinking?: unknown; effort?: unknown };
+			if (thinking === true) tuning.thinking = true;
+			if (typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort)) {
+				tuning.effort = effort as EffortLevel;
+			}
+			if (Object.keys(tuning).length > 0) out[role] = tuning;
+		}
+	}
+	return out;
+}
+
 // Stored in users.llm_config. The key is encrypted at rest (see crypto.ts), the
 // same way the SMTP password is.
 export type StoredAccountConfig = {
@@ -37,6 +63,8 @@ export type StoredAccountConfig = {
 	endpoint: string;
 	apiKeyEnc: string | null;
 	models: ModelMap;
+	// Per-role thinking and effort, consumed by the Anthropic adapter only.
+	tuning: TuningMap;
 	// The most tool calls the Assistant may make in one turn (tools are a later
 	// surface; the value is carried now so the config shape is stable).
 	toolCallBudget: number;
@@ -118,6 +146,7 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		endpoint: typeof raw.endpoint === 'string' ? raw.endpoint.trim() : '',
 		apiKeyEnc: typeof raw.apiKeyEnc === 'string' && raw.apiKeyEnc ? raw.apiKeyEnc : null,
 		models: normaliseModels(raw.models),
+		tuning: normaliseTuning(raw.tuning),
 		toolCallBudget: normaliseBudget(raw.toolCallBudget),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
 		supportsTools: normaliseCapability(raw.supportsTools),
@@ -221,6 +250,7 @@ export type ResolvedConfig = {
 	endpoint: string;
 	apiKey: string;
 	models: ModelMap;
+	tuning: TuningMap;
 	toolCallBudget: number;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
@@ -248,6 +278,7 @@ export async function resolveLlmConfig(
 			endpoint: account.endpoint,
 			apiKey: account.apiKeyEnc ? decryptSecret(account.apiKeyEnc) : '',
 			models: { ...account.models, ...(override?.models ?? {}) },
+			tuning: account.tuning,
 			toolCallBudget: account.toolCallBudget,
 			supportsStreaming: account.supportsStreaming,
 			supportsTools: account.supportsTools
@@ -266,6 +297,7 @@ export type AccountLlmView = {
 	endpoint: string;
 	hasKey: boolean;
 	models: ModelMap;
+	tuning: TuningMap;
 	toolCallBudget: number;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
@@ -283,6 +315,7 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		endpoint: c.endpoint,
 		hasKey: c.apiKeyEnc !== null,
 		models: c.models,
+		tuning: c.tuning,
 		toolCallBudget: c.toolCallBudget,
 		supportsStreaming: c.supportsStreaming,
 		supportsTools: c.supportsTools,
@@ -301,6 +334,7 @@ export type SaveAccountInput = {
 	// re-entering it (the SMTP/S3 pattern).
 	apiKey: string;
 	models: ModelMap;
+	tuning?: TuningMap;
 	toolCallBudget: number;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
@@ -351,6 +385,9 @@ export async function saveAccountLlmConfig(
 		endpoint,
 		apiKeyEnc,
 		models: normaliseModels(input.models),
+		// Absent means "not part of this form", keeping the stored map (the
+		// blank-api-key pattern); pass {} to clear it.
+		tuning: input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning),
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})

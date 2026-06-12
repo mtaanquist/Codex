@@ -1087,6 +1087,27 @@ endpoint. Started 2026-06-09.
       instance-wide public library) was deliberately split off and parked in
       the roadmap under Phase 10; do not build the taxonomy before the
       discovery surface exists.
+- [ ] Per-role thinking and effort for the Claude provider (2026-06-12; branch
+      `feat/assistant-role-tuning`). A `tuning` map on the account llm_config
+      (jsonb only) keyed by assistant role: a thinking toggle (sent as
+      `thinking: {type: "adaptive"}`, omitted when off - an explicit "disabled"
+      is rejected by models where thinking is always on) and an effort level
+      (low/medium/high/xhigh/max, sent in `output_config`). Only the Anthropic
+      adapter consumes it; the settings page shows the controls per role for
+      the Claude provider only. Tool loops with thinking on echo the response's
+      original content blocks verbatim (ChatMessage.raw, adapter-private),
+      since the API requires thinking blocks unchanged ahead of their tool_use
+      blocks. Partial saves keep the stored map; the models form save replaces
+      it. Help (account.md) updated. A 1M-context toggle was considered and
+      dropped: on current models the large window simply is the context window,
+      no request field exists. Same branch: prompt caching for the Claude
+      adapter - a cache_control marker on the system block (covers tools +
+      persona + world context) and on the last user block (each round of a
+      tool loop reuses everything sent so far); markers are unconditional
+      since a too-short prefix is silently not cached, and assistant turns
+      are never marked (replayed thinking blocks must stay unchanged). Usage
+      rows count cache reads and writes into the prompt total, so estimates
+      err high rather than low.
 
 ## Capability review follow-ups (2026-06-06)
 
