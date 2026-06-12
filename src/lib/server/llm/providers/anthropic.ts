@@ -98,8 +98,33 @@ function serialiseMessages(messages: ChatMessage[]): {
 	return { system: system.join('\n\n'), messages: out };
 }
 
+// Prompt caching. The API caches a prefix up to each cache_control marker:
+// one on the system block covers tools + system (persona and world context,
+// stable across the turns of a chat and the rounds of a tool loop), and one
+// on the last block of the last message lets the next round of a tool loop
+// reuse everything sent so far. Reads bill at ~0.1x, writes at ~1.25x, and a
+// prompt below the model's cacheable minimum is silently not cached, so the
+// markers are safe to send unconditionally.
+const CACHE = { type: 'ephemeral' } as const;
+
+function markLastBlock(messages: { role: string; content: unknown }[]): void {
+	const last = messages[messages.length - 1];
+	// Requests always end on a user turn; never touch an assistant turn, whose
+	// blocks may be a replayed thinking sequence the API requires unchanged.
+	if (!last || last.role !== 'user') return;
+	if (typeof last.content === 'string') {
+		last.content = [{ type: 'text', text: last.content, cache_control: CACHE }];
+	} else if (Array.isArray(last.content) && last.content.length > 0) {
+		const block = last.content[last.content.length - 1];
+		if (block && typeof block === 'object') {
+			last.content[last.content.length - 1] = { ...block, cache_control: CACHE };
+		}
+	}
+}
+
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	const { system, messages } = serialiseMessages(req.messages);
+	markLastBlock(messages as { role: string; content: unknown }[]);
 	return JSON.stringify({
 		model: req.model,
 		max_tokens: req.maxTokens,
@@ -107,7 +132,7 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		// explicit "disabled" is rejected by models where thinking is always on).
 		...(req.tuning?.thinking ? { thinking: { type: 'adaptive' } } : {}),
 		...(req.tuning?.effort ? { output_config: { effort: req.tuning.effort } } : {}),
-		...(system ? { system } : {}),
+		...(system ? { system: [{ type: 'text', text: system, cache_control: CACHE }] } : {}),
 		messages,
 		...(req.tools?.length
 			? {
@@ -171,10 +196,34 @@ function truncate(text: string, max = 300): string {
 	return clean.length > max ? `${clean.slice(0, max)}...` : clean;
 }
 
+// With caching on, input_tokens is only the uncached remainder; the prompt's
+// real size is the sum with the cache reads and writes. The usage log stores
+// that sum (cached tokens bill cheaper, so cost estimates err high, which is
+// the safe direction for an estimate).
+function promptTotal(usage: {
+	input_tokens?: unknown;
+	cache_creation_input_tokens?: unknown;
+	cache_read_input_tokens?: unknown;
+}): number {
+	const input = Number(usage.input_tokens);
+	if (!Number.isFinite(input)) return NaN;
+	const creation = Number(usage.cache_creation_input_tokens);
+	const read = Number(usage.cache_read_input_tokens);
+	return input + (Number.isFinite(creation) ? creation : 0) + (Number.isFinite(read) ? read : 0);
+}
+
 function parseUsage(raw: unknown): TokenUsage | undefined {
-	const usage = raw as { input_tokens?: unknown; output_tokens?: unknown } | undefined;
-	const prompt = Number(usage?.input_tokens);
-	const completion = Number(usage?.output_tokens);
+	const usage = raw as
+		| {
+				input_tokens?: unknown;
+				output_tokens?: unknown;
+				cache_creation_input_tokens?: unknown;
+				cache_read_input_tokens?: unknown;
+		  }
+		| undefined;
+	if (!usage) return undefined;
+	const prompt = promptTotal(usage);
+	const completion = Number(usage.output_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
 	return { promptTokens: prompt, completionTokens: completion };
 }
@@ -207,12 +256,18 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			const frame = json as {
 				type?: unknown;
 				delta?: { type?: unknown; text?: unknown };
-				message?: { usage?: { input_tokens?: unknown } };
+				message?: {
+					usage?: {
+						input_tokens?: unknown;
+						cache_creation_input_tokens?: unknown;
+						cache_read_input_tokens?: unknown;
+					};
+				};
 				usage?: { output_tokens?: unknown };
 				error?: { message?: unknown };
 			};
 			if (frame.type === 'message_start') {
-				const input = Number(frame.message?.usage?.input_tokens);
+				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
 				if (Number.isFinite(input)) promptTokens = input;
 				continue;
 			}

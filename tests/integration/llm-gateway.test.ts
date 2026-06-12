@@ -625,9 +625,18 @@ describe('provider selection', () => {
 		);
 		expect(text).toBe('hello');
 		expect(calledUrl).toBe('https://api.anthropic.com/v1/messages');
-		// The persona system message hoists into the top-level system parameter.
-		expect(typeof sentBody.system).toBe('string');
-		expect(sentBody.messages).toEqual([{ role: 'user', content: 'hi' }]);
+		// The persona system message hoists into the top-level system parameter,
+		// as a block array carrying the prompt-cache marker.
+		const system = sentBody.system as { type: string; text: string }[];
+		expect(system).toHaveLength(1);
+		expect(system[0].type).toBe('text');
+		expect(typeof system[0].text).toBe('string');
+		expect(sentBody.messages).toEqual([
+			{
+				role: 'user',
+				content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }]
+			}
+		]);
 	});
 
 	it('routes a custom config to the chat completions API', async () => {

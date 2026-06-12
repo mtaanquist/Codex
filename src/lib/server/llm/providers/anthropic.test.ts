@@ -66,9 +66,19 @@ describe('anthropicProvider.respond', () => {
 		expect(headers['x-api-key']).toBe('sk-ant-x');
 		expect(headers['anthropic-version']).toBe('2023-06-01');
 		expect(headers['authorization']).toBeUndefined();
-		expect(sentBody.system).toBe('persona\n\ncontext');
+		// The system prompt and the last user block carry cache markers, so the
+		// stable prefix (tools + system + earlier turns) is cached across the
+		// turns of a chat and the rounds of a tool loop.
+		expect(sentBody.system).toEqual([
+			{ type: 'text', text: 'persona\n\ncontext', cache_control: { type: 'ephemeral' } }
+		]);
 		expect(sentBody.max_tokens).toBe(16);
-		expect(sentBody.messages).toEqual([{ role: 'user', content: 'hi' }]);
+		expect(sentBody.messages).toEqual([
+			{
+				role: 'user',
+				content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }]
+			}
+		]);
 		expect(result.content).toBe('ok');
 	});
 
@@ -232,7 +242,12 @@ describe('anthropicProvider.respond', () => {
 				role: 'user',
 				content: [
 					{ type: 'tool_result', tool_use_id: 'c1', content: 'r1' },
-					{ type: 'tool_result', tool_use_id: 'c2', content: 'r2' }
+					{
+						type: 'tool_result',
+						tool_use_id: 'c2',
+						content: 'r2',
+						cache_control: { type: 'ephemeral' }
+					}
 				]
 			}
 		]);
@@ -250,6 +265,25 @@ describe('anthropicProvider.respond', () => {
 			http
 		);
 		expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 3 });
+	});
+
+	it('counts cached tokens into the prompt total', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [{ type: 'text', text: 'ok' }],
+				usage: {
+					input_tokens: 12,
+					cache_creation_input_tokens: 100,
+					cache_read_input_tokens: 888,
+					output_tokens: 3
+				}
+			});
+		const result = await anthropicProvider.respond(
+			{ model: 'claude-x', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 1000, completionTokens: 3 });
 	});
 
 	it('throws on a non-2xx status', async () => {

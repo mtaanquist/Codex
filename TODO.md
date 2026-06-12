@@ -1100,7 +1100,14 @@ endpoint. Started 2026-06-09.
       blocks. Partial saves keep the stored map; the models form save replaces
       it. Help (account.md) updated. A 1M-context toggle was considered and
       dropped: on current models the large window simply is the context window,
-      no request field exists.
+      no request field exists. Same branch: prompt caching for the Claude
+      adapter - a cache_control marker on the system block (covers tools +
+      persona + world context) and on the last user block (each round of a
+      tool loop reuses everything sent so far); markers are unconditional
+      since a too-short prefix is silently not cached, and assistant turns
+      are never marked (replayed thinking blocks must stay unchanged). Usage
+      rows count cache reads and writes into the prompt total, so estimates
+      err high rather than low.
 
 ## Capability review follow-ups (2026-06-06)
 

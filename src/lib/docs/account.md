@@ -71,7 +71,10 @@ contacts a model on its own.
   clear the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
-  are known, an estimated cost shows too. The list shows 50 requests at a time;
+  are known, an estimated cost shows too. With the Claude provider, repeated
+  context (your world details, earlier turns) is cached by the API and billed
+  far cheaper on reuse; the log counts cached tokens as sent, so the estimate
+  errs on the high side. The list shows 50 requests at a time;
   use Older and Newer to page through the rest. Only counts are kept; the text
   itself is never stored in this log.
 
