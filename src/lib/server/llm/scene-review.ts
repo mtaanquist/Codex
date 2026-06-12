@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from '../auth';
+import type { Database } from '../auth.ts';
 import {
 	reviewComments,
 	reviewSuggestions,
@@ -7,11 +7,11 @@ import {
 	revisions,
 	scenes,
 	stories
-} from '../db/schema';
-import { assembleContext, buildSystemMessage } from './context/assemble';
-import { buildReviewMessage, type PriorNote } from './prompts/review';
-import { complete } from './gateway';
-import type { ChatMessage } from './providers/types';
+} from '../db/schema.ts';
+import { assembleContext, buildSystemMessage } from './context/assemble.ts';
+import { buildReviewMessage, type PriorNote } from './prompts/review.ts';
+import { complete } from './gateway.ts';
+import type { ChatMessage } from './providers/types.ts';
 
 // The Assistant-as-reviewer run, shared by the inline single-scene endpoint and
 // the whole-story / chapter background job. It assembles the scene's context,

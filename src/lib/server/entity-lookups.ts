@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import { characters, entityCategories, loreEntries, places, stories } from './db/schema.ts';
 
 // Lookups shared by the relationship, revision, and mention-pin modules,

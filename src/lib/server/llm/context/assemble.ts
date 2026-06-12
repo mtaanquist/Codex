@@ -1,5 +1,5 @@
-import type { Database } from '../../auth';
-import type { ChatMessage } from '../providers/types';
+import type { Database } from '../../auth.ts';
+import type { ChatMessage } from '../providers/types.ts';
 import {
 	activeLore,
 	inScopeEntities,
@@ -17,7 +17,7 @@ import {
 	type ScopeNote,
 	type SceneSummary,
 	type StoryScope
-} from './sources';
+} from './sources.ts';
 
 // Assemble the world context for a request, in tiers, against a token budget.
 // The gathering (sources.ts) is settled design; the budget and the order tiers

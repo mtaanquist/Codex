@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	reviewComments,
 	reviewInvitations,
@@ -11,13 +11,13 @@ import {
 	scenes,
 	stories,
 	users
-} from './db/schema';
-import { hashToken } from './tokens';
-import { signToken, verifyToken } from './crypto';
-import { recordRevision } from './revisions';
-import { reanchorPoint, reanchorRange } from '../review-anchor';
-import { wordCount } from '../word-count';
-import { normaliseAssistantName } from './llm/prompts/persona';
+} from './db/schema.ts';
+import { hashToken } from './tokens.ts';
+import { signToken, verifyToken } from './crypto.ts';
+import { recordRevision } from './revisions.ts';
+import { reanchorPoint, reanchorRange } from '../review-anchor.ts';
+import { wordCount } from '../word-count.ts';
+import { normaliseAssistantName } from './llm/prompts/persona.ts';
 import { EMAIL_RE } from './signup.ts';
 
 // Guest review: invitations, guest identity, threaded comments, and

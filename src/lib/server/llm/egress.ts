@@ -2,10 +2,10 @@ import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from 'nod
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
-import type { Database } from '../auth';
-import { appSettings } from '../db/schema';
-import { readSetting } from '../settings';
-import type { HttpRequest, HttpRequestInit, HttpResponse } from './providers/types';
+import type { Database } from '../auth.ts';
+import { appSettings } from '../db/schema.ts';
+import { readSetting } from '../settings.ts';
+import type { HttpRequest, HttpRequestInit, HttpResponse } from './providers/types.ts';
 
 // The SSRF guard. Because the writer's key is held server-side, the app server
 // (not the browser) makes the outbound completion call to whatever endpoint the

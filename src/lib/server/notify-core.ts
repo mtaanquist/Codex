@@ -1,7 +1,7 @@
 import { inArray } from 'drizzle-orm';
-import type { Database } from './auth';
-import { notifications, users } from './db/schema';
-import { normaliseNotifications } from './preferences';
+import type { Database } from './auth.ts';
+import { notifications, users } from './db/schema.ts';
+import { normaliseNotifications } from './preferences.ts';
 import type { NotificationKind, NotificationPayload } from '$lib/notifications';
 
 // The jobs-free core of the notification fan-out: insert one row per user,

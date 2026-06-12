@@ -1,9 +1,9 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import type { Database } from './auth';
-import { scenes } from './db/schema';
-import { listThreads } from './review';
-import { reanchorRange } from '../review-anchor';
-import type { ExportReviewThread, ReviewLoader } from './export';
+import type { Database } from './auth.ts';
+import { scenes } from './db/schema.ts';
+import { listThreads } from './review.ts';
+import { reanchorRange } from '../review-anchor.ts';
+import type { ExportReviewThread, ReviewLoader } from './export.ts';
 
 // Long selections are trimmed: the excerpt locates the thread, the scene
 // file holds the text.

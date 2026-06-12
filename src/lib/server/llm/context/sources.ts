@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
-import type { Database } from '../../auth';
+import type { Database } from '../../auth.ts';
 import {
 	chapters,
 	characters,
@@ -12,9 +12,9 @@ import {
 	scenes,
 	stories,
 	universes
-} from '../../db/schema';
-import { storyEntityLists } from '../../membership';
-import { listEntityRelationships } from '../../relationships';
+} from '../../db/schema.ts';
+import { storyEntityLists } from '../../membership.ts';
+import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '$lib/entity-snapshot';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each

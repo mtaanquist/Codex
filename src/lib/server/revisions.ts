@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	characters,
 	entityCategories,
@@ -13,14 +13,14 @@ import {
 	revisions,
 	scenes,
 	stories
-} from './db/schema';
+} from './db/schema.ts';
 import { wordCount } from '$lib/word-count';
 import {
 	snapshotsEqual,
 	type EntitySnapshot,
 	type SnapshotRelationship
 } from '$lib/entity-snapshot';
-import { entityInUniverse, namesByType, type EntityType } from './entity-lookups';
+import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
 
 export type RevisionEntityType =
 	| 'scene'
