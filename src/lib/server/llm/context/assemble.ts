@@ -73,6 +73,9 @@ export type AssembledContext = {
 	budgetTokens: number;
 	includedTiers: string[];
 	droppedTiers: string[];
+	// True when the universe is an established published setting; the system
+	// preamble then permits canon knowledge instead of forbidding invention.
+	establishedSetting: boolean;
 	// What was drawn on, for a future grounding step that cites sources.
 	sources: {
 		entities: { id: string; kind: ScopeEntity['kind']; name: string }[];
@@ -135,6 +138,7 @@ export async function assembleContext(
 		budgetTokens,
 		includedTiers: budgeted.includedTiers,
 		droppedTiers: budgeted.droppedTiers,
+		establishedSetting: scope.universeEstablished,
 		sources: {
 			entities: entities.map((e) => ({ id: e.id, kind: e.kind, name: e.name })),
 			scenes: [
@@ -154,6 +158,18 @@ const PREAMBLE =
 	'and lore. Ground your answers in this material and say when something is not ' +
 	'covered here rather than inventing it.';
 
+// For a story set in an established published setting (Forgotten Realms,
+// Azeroth): the model may draw on the setting's canon, but the writer's own
+// material wins where they differ.
+const PREAMBLE_ESTABLISHED =
+	'You are assisting the writer with their own story, set in an established ' +
+	'published setting. The following is the context for it - the story, its world, ' +
+	'the scene in focus, characters, places, and lore. Ground your answers in this ' +
+	'material first; you may also draw on your knowledge of the published canon of ' +
+	"the setting named below, but the writer's own material here overrides that " +
+	'canon wherever they differ. Say when something rests on neither rather than ' +
+	'inventing it.';
+
 // Appended only when the turn offers tools; a tool-less surface must not be
 // told about tools it cannot call.
 const TOOL_HINT =
@@ -166,7 +182,8 @@ export function buildSystemMessage(
 	context: AssembledContext,
 	options?: { tools?: boolean }
 ): ChatMessage {
-	const head = options?.tools ? `${PREAMBLE} ${TOOL_HINT}` : PREAMBLE;
+	const preamble = context.establishedSetting ? PREAMBLE_ESTABLISHED : PREAMBLE;
+	const head = options?.tools ? `${preamble} ${TOOL_HINT}` : preamble;
 	return { role: 'system', content: `${head}\n\n${context.text}` };
 }
 
@@ -244,6 +261,11 @@ function renderFrame(scope: StoryScope): string {
 	const lines = [`# Story: ${scope.storyTitle}`];
 	if (scope.storyBrief) lines.push(scope.storyBrief);
 	if (scope.storyDescription) lines.push(scope.storyDescription);
+	if (scope.storyStyleNotes) {
+		lines.push(
+			`Genre and style the author is aiming for (judge the prose against this, not against general taste): ${scope.storyStyleNotes}`
+		);
+	}
 	lines.push('', `## World: ${scope.universeName}`);
 	if (scope.universeDescription) lines.push(scope.universeDescription);
 	return lines.join('\n');
