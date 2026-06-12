@@ -105,8 +105,23 @@
 	width: 240px;
 	padding: 5px;
 	animation: popIn 0.1s ease;
+	/* CodeMirror re-appends the list on update, which would put it after
+	   the key-hint footer; flex order keeps the footer last. */
+	display: flex;
+	flex-direction: column;
 }
-.ac-popup ul li {
+.cm-tooltip.cm-tooltip-autocomplete.ac-popup > ul {
+	/* Override CodeMirror's default 250px min-width, which overflows the
+	   240px popup. */
+	min-width: 0;
+	width: 100%;
+}
+.ac-popup .ac-foot {
+	order: 1;
+}
+/* Selector strength matters here: CodeMirror ships its own
+   .cm-tooltip.cm-tooltip-autocomplete > ul > li rules. */
+.cm-tooltip.cm-tooltip-autocomplete.ac-popup > ul > li {
 	display: flex;
 	align-items: center;
 	gap: 9px;
@@ -114,7 +129,7 @@
 	border-radius: 7px;
 	color: var(--text);
 }
-.ac-popup ul li[aria-selected] {
+.cm-tooltip.cm-tooltip-autocomplete.ac-popup > ul > li[aria-selected] {
 	background: var(--accent-soft);
 	color: var(--text);
 }
@@ -133,7 +148,7 @@
 	font-style: normal;
 	margin: 0;
 }
-.ac-popup ul li[aria-selected] .cm-completionDetail {
+.ac-popup li[aria-selected] .cm-completionDetail {
 	color: var(--text-muted);
 }
 .ac-popup .cm-completionMatchedText {
