@@ -163,6 +163,10 @@
 			href: resolve('/universes/[id]/plan', { id: data.universe.slug }),
 			label: data.universe.name
 		}}
+		help={{
+			topic: active === 'export' ? 'getting-started' : 'planning',
+			label: 'universe settings'
+		}}
 	/>
 
 	<div class="admin-shell">
