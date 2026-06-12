@@ -1088,7 +1088,8 @@ endpoint. Started 2026-06-09.
       the roadmap under Phase 10; do not build the taxonomy before the
       discovery surface exists.
 - [x] Per-role thinking and effort for the Claude provider (2026-06-12;
-      PR #453, merged to develop, unreleased). A `tuning` map on the account llm_config
+      PR #453, shipped as v3.10.0 with the codex-app/codex-worker image
+      launchers, PR #454). A `tuning` map on the account llm_config
       (jsonb only) keyed by assistant role: a thinking toggle (sent as
       `thinking: {type: "adaptive"}`, omitted when off - an explicit "disabled"
       is rejected by models where thinking is always on) and an effort level
