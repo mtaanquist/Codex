@@ -48,9 +48,6 @@
 		}
 		return m;
 	});
-	const total = $derived([...countByScene.values()].reduce((a, b) => a + b, 0));
-	const statWord = $derived(filter === 'resolved' ? 'resolved' : 'open');
-
 	// Collapsed chapters; a search forces every match open.
 	let collapsed = new SvelteSet<string>();
 
@@ -67,7 +64,6 @@
 			id: string | null;
 			label: string;
 			scenes: typeof scenes;
-			count: number;
 			total: number;
 		}[] = [];
 		chapters.forEach((chapter, i) => {
@@ -79,7 +75,6 @@
 				id: chapter.id,
 				label: chapter.title ?? fallback,
 				scenes: filtered.scenes,
-				count: filtered.scenes.reduce((n, s) => n + (countByScene.get(s.id) ?? 0), 0),
 				total: all.length
 			});
 		});
@@ -90,7 +85,6 @@
 				id: null,
 				label: 'Unfiled scenes',
 				scenes: orphanList,
-				count: orphanList.reduce((n, s) => n + (countByScene.get(s.id) ?? 0), 0),
 				total: orphans.length
 			});
 		}
@@ -105,12 +99,6 @@
 </script>
 
 <div class="review-outline">
-	<div class="rv-out-stat">
-		<span class="rv-out-n">{total}</span>
-		{statWord}
-		{total === 1 ? 'item' : 'items'} across the manuscript
-	</div>
-
 	<div class="outline">
 		{#if groups.length === 0}
 			<div class="search-empty">
@@ -128,21 +116,13 @@
 				{#if group.id === null}
 					<span class="chapter-row as-label">
 						<span class="chapter-name">{group.label}</span>
-						<span class="chapter-meta">
-							{group.total}{#if group.count > 0}<!--
-							--> &middot;
-								<span class="chapter-count">{group.count}</span>{/if}
-						</span>
+						<span class="chapter-meta">{group.total}</span>
 					</span>
 				{:else}
 					<button class="chapter-row" type="button" onclick={() => toggle(group.id)}>
 						<span class="tw" class:open><Icon name="chevron" size={12} /></span>
 						<span class="chapter-name">{group.label}</span>
-						<span class="chapter-meta">
-							{group.total}{#if group.count > 0}<!--
-							--> &middot;
-								<span class="chapter-count">{group.count}</span>{/if}
-						</span>
+						<span class="chapter-meta">{group.total}</span>
 					</button>
 				{/if}
 

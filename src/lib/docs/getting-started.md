@@ -12,7 +12,7 @@ Codex organises your writing into three layers.
 2. Back on the library, use the "New story in this universe" card under the universe to create a story.
 3. Open the story and add a scene. The scene editor is where your prose goes.
 
-For a story that does not belong to any world, press "New story" in the library header instead. It files under a universe called "Standalone stories", created for you the first time, and works like any other story.
+For a story that does not belong to any world, use the "New standalone story" card in the library's "Standalone stories" section instead. That universe is created for you the first time you add a story there, and the story works like any other.
 
 That is enough to start writing. When you are ready, the planning tools help you keep track of who and what is in your world, and publishing turns a finished story into a public reading page.
 

@@ -14,7 +14,7 @@ test('dashboard: universe sections, story cards, and the new-story card', async 
 	// The new universe has its own section with a new-story card.
 	await page.goto('/');
 	const section = page.locator('.universe-section', { hasText: `Shelffall ${stamp}` });
-	await expect(section.locator('.universe-mark')).toHaveText('Universe');
+	await expect(section.locator('.universe-mark')).toHaveAttribute('title', 'Universe');
 	await section.getByRole('button', { name: 'New story in this universe' }).click();
 	await page.getByLabel('New story').fill(`Shelved ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
