@@ -1,0 +1,1 @@
+ALTER TABLE "universes" ADD COLUMN "established_setting" boolean DEFAULT false NOT NULL;

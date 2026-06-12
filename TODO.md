@@ -1076,7 +1076,13 @@ endpoint. Started 2026-06-09.
       craft intent; `loadStoryScope` carries it and the assembled context
       frames it as the standard to judge the prose against, so Assistant
       reviews calibrate to the author's aim instead of a literary-fiction
-      default. Help (reviewing.md) updated. The discovery half of the idea
+      default. Alongside it, an "Established setting" toggle on universe
+      settings (`universes.established_setting`, migration 0064) for stories
+      set in published canons (Forgotten Realms, Azeroth): it switches the
+      context preamble from "never invent beyond this material" to "you may
+      draw on the setting's published canon, the writer's material overrides
+      it", since the default grounding instruction actively forbids the canon
+      knowledge that fan-fiction review needs. Help (reviewing.md) updated. The discovery half of the idea
       (genre tags and content tags on published editions, for a future
       instance-wide public library) was deliberately split off and parked in
       the roadmap under Phase 10; do not build the taxonomy before the

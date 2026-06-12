@@ -85,6 +85,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const name = String(data.get('name') ?? '').trim();
 		const descriptionMd = String(data.get('description') ?? '').trim() || null;
+		const establishedSetting = data.get('establishedSetting') === 'on';
 		if (!name) {
 			return fail(400, { action: 'update', message: 'The universe needs a name.' });
 		}
@@ -93,7 +94,7 @@ export const actions: Actions = {
 		const save = async (slug: string) => {
 			await db
 				.update(universes)
-				.set({ name, slug, descriptionMd })
+				.set({ name, slug, descriptionMd, establishedSetting })
 				.where(eq(universes.id, universe.id));
 			return slug;
 		};

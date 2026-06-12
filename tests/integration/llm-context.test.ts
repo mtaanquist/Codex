@@ -186,6 +186,23 @@ describe('assembleContext', () => {
 		expect(context!.text).toContain('Aldermoor');
 		expect(context!.text).toContain('A drowned kingdom of canals.');
 		expect(context!.text).toContain('Nautical gothic, slow and ornate.');
+		expect(context!.establishedSetting).toBe(false);
+	});
+
+	it('carries the established-setting flag from the universe', async () => {
+		await db
+			.update(universes)
+			.set({ establishedSetting: true })
+			.where(eq(universes.id, universeId));
+		try {
+			const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+			expect(context!.establishedSetting).toBe(true);
+		} finally {
+			await db
+				.update(universes)
+				.set({ establishedSetting: false })
+				.where(eq(universes.id, universeId));
+		}
 	});
 
 	it('includes the current scene body and a member entity with its details and story note', async () => {

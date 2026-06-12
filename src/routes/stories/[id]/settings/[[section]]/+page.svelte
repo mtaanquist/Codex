@@ -253,8 +253,10 @@
 								>
 								<p class="field-hint">
 									A sentence on the genre and the style you are writing in, for example "epic
-									fantasy serial, omniscient narrator, formal prose". The Assistant reads this and
-									judges the prose against it. Readers never see it.
+									fantasy serial, omniscient narrator, formal prose". The intended audience, the
+									spelling you write in (British or American), and a comparison title or two also
+									help. The Assistant reads this and judges the prose against it. Readers never see
+									it.
 								</p>
 							</div>
 							<div class="settings-actions">

@@ -50,6 +50,7 @@ describe('selectWithinBudget', () => {
 			budgetTokens: 100,
 			includedTiers: ['frame'],
 			droppedTiers: [],
+			establishedSetting: false,
 			sources: { entities: [], scenes: [], lore: [] }
 		};
 		expect(buildSystemMessage(context).content).not.toContain('get_scene');
@@ -57,6 +58,26 @@ describe('selectWithinBudget', () => {
 		expect(withTools).toContain('get_scene');
 		expect(withTools).toContain('list_scenes');
 		expect(withTools).toContain('world context');
+	});
+
+	it('permits canon knowledge only for an established setting', () => {
+		const context: AssembledContext = {
+			text: 'world context',
+			estimatedTokens: 2,
+			budgetTokens: 100,
+			includedTiers: ['frame'],
+			droppedTiers: [],
+			establishedSetting: false,
+			sources: { entities: [], scenes: [], lore: [] }
+		};
+		expect(buildSystemMessage(context).content).not.toContain('published canon');
+		const established = buildSystemMessage({ ...context, establishedSetting: true }).content;
+		expect(established).toContain('published canon');
+		expect(established).toContain('overrides');
+		// The tool hint still rides along on tool-capable turns.
+		expect(
+			buildSystemMessage({ ...context, establishedSetting: true }, { tools: true }).content
+		).toContain('get_scene');
 	});
 
 	it('joins included tiers with a blank line', () => {
