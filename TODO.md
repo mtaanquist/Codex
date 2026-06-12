@@ -1110,8 +1110,8 @@ endpoint. Started 2026-06-09.
       rows count cache reads and writes into the prompt total, so estimates
       err high rather than low.
 
-- [ ] Review focuses and the full story review (2026-06-12; branch
-      `feat/full-review`). The scene Assistant submenu offers five passes:
+- [x] Review focuses and the full story review (2026-06-12; PR #457,
+      shipped as v3.11.0 with the get_scene cap fix, PR #456). The scene Assistant submenu offers five passes:
       quick notes (the old sparing default), spelling/grammar, prose/style,
       entities/lore, and a full copyedit; the focused passes enumerate their
       categories and forbid filtering for importance, since a model told to
