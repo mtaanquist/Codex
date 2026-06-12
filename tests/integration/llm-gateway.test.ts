@@ -534,3 +534,63 @@ describe('gateway tool loop', () => {
 		expect(script.seen[0].some((m) => m.role === 'tool')).toBe(false);
 	});
 });
+
+// The provider discriminator on the saved config picks the adapter; no
+// provider is injected here, so the real selection runs and the stub
+// transport sees the wire format the adapter speaks.
+describe('provider selection', () => {
+	function jsonHttp(body: unknown, capture: (url: string, sent: string) => void): HttpRequest {
+		return async (url, init) => {
+			capture(url, init.body ?? '');
+			const text = JSON.stringify(body);
+			return {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+				body: (async function* () {
+					yield new TextEncoder().encode(text);
+				})(),
+				text: async () => text
+			};
+		};
+	}
+
+	it('routes an anthropic config to the Messages API', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'anthropic',
+			endpoint: '',
+			apiKey: 'sk-ant-x',
+			models: { chat: 'claude-x' },
+			toolCallBudget: 8
+		});
+		let calledUrl = '';
+		let sentBody: Record<string, unknown> = {};
+		const http = jsonHttp({ content: [{ type: 'text', text: 'hello' }] }, (url, sent) => {
+			calledUrl = url;
+			sentBody = JSON.parse(sent);
+		});
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [{ role: 'user', content: 'hi' }] },
+			{ http }
+		);
+		expect(text).toBe('hello');
+		expect(calledUrl).toBe('https://api.anthropic.com/v1/messages');
+		// The persona system message hoists into the top-level system parameter.
+		expect(typeof sentBody.system).toBe('string');
+		expect(sentBody.messages).toEqual([{ role: 'user', content: 'hi' }]);
+	});
+
+	it('routes a custom config to the chat completions API', async () => {
+		await configure(true);
+		let calledUrl = '';
+		const http = jsonHttp({ choices: [{ message: { content: 'hello' } }] }, (url) => {
+			calledUrl = url;
+		});
+		const text = await complete(db, { userId, role: 'chat', messages: [] }, { http });
+		expect(text).toBe('hello');
+		expect(calledUrl).toBe('https://api.example.com/v1/chat/completions');
+	});
+});

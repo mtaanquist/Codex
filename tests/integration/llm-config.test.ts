@@ -102,6 +102,67 @@ describe('account config round-trip', () => {
 		expect(view.persona).toBe('balanced');
 	});
 
+	it('defaults a config saved without a provider to custom', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: {},
+			toolCallBudget: 8
+		});
+		expect((await accountLlmView(db, userId)).provider).toBe('custom');
+		expect((await resolveLlmConfig(db, userId)).config.provider).toBe('custom');
+	});
+
+	it('a preset owns its endpoint: the submitted URL is ignored', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'anthropic',
+			endpoint: 'https://evil.example.com/v1',
+			apiKey: 'sk-ant-x',
+			models: {},
+			toolCallBudget: 8,
+			// A preset never carries a manual capability opt-out.
+			supportsTools: false
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.provider).toBe('anthropic');
+		expect(view.endpoint).toBe('https://api.anthropic.com');
+		expect(view.supportsTools).toBe(true);
+		expect(view.supportsStreaming).toBe(true);
+	});
+
+	it('switching back to custom frees the endpoint field again', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'openrouter',
+			endpoint: '',
+			apiKey: 'sk-or-x',
+			models: {},
+			toolCallBudget: 8
+		});
+		expect((await accountLlmView(db, userId)).endpoint).toBe('https://openrouter.ai/api/v1');
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'custom',
+			endpoint: 'http://ollama.local:11434/v1',
+			apiKey: '',
+			models: {},
+			toolCallBudget: 8
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.provider).toBe('custom');
+		expect(view.endpoint).toBe('http://ollama.local:11434/v1');
+	});
+
 	it('a blank key on save keeps the stored one', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,

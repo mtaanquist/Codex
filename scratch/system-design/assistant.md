@@ -113,14 +113,16 @@ place they would look to change it.
 
 ## Configuration: bring your own key
 
-Codex ships no bundled model. The writer configures their own
-OpenAI-compatible endpoint: Ollama on a local machine, a hosted API, a
-self-hosted vLLM, or Anthropic's OpenAI-compatibility endpoint. The first
-release supports OpenAI-compatible endpoints only. A native Claude adapter
-(speaking Anthropic's own API, to reach adaptive thinking, prompt caching,
-and the large context window) is a planned later seam, not a first cut; the
-gateway is built so it can drop in without reworking the config schema or
-the surfaces. See "The gateway" below.
+Codex ships no bundled model. The writer either picks a provider preset
+(Claude, ChatGPT, Gemini, DeepSeek, OpenRouter; the preset prefills and owns
+the endpoint URL) or configures a custom OpenAI-compatible endpoint: Ollama
+on a local machine, a hosted API, a self-hosted vLLM. Two adapters sit behind
+the gateway's Provider interface: the OpenAI-compatible one (custom endpoints
+and every preset except Claude; Gemini and DeepSeek ride their compatibility
+layers) and a native Anthropic adapter speaking the Messages API. The config
+carries a provider discriminator (default 'custom' for configs that predate
+it) and the gateway picks the adapter from it. Anthropic-only features
+(adaptive thinking, prompt caching) are still later work inside that adapter.
 
 A note we should not gloss over: a Claude Pro or Max subscription is a
 Claude.ai consumer plan, not an API credential. There is no supported path
@@ -532,9 +534,11 @@ $lib/server/llm/
   egress.ts         - the SSRF guard: resolve host, validate against the admin
                       policy, connect to the validated address.
   providers/
-    types.ts        - the adapter interface (chatStream, supportsTools, ...).
-    openai.ts       - the OpenAI-compatible adapter (the only one at first).
-    (claude.ts)     - later, the native Anthropic adapter, same interface.
+    types.ts        - the adapter interface (chatStream, respond, listModels).
+    openai.ts       - the OpenAI-compatible adapter (custom + most presets).
+    anthropic.ts    - the native Anthropic adapter, same interface.
+    presets.ts      - the provider presets (id, label, base URL, key hint).
+    index.ts        - providerFor(id): the one id -> adapter switch.
   context/
     assemble.ts     - tiered context builder + token budgeter.
     sources.ts      - pulls scenes, summaries, entities, relationships, and
@@ -748,8 +752,8 @@ Not a contract, but the natural order, foundations first:
    enrichment), each as a human-approved change.
 7. Background enrichment: summary maintenance, character arc summaries,
    recap.
-8. Deferred refinements: chat persistence and browsing; the native Claude
-   adapter.
+8. Deferred refinements: chat persistence and browsing. (The native Claude
+   adapter and provider presets have since shipped; see "Configuration".)
 
 ## Frontend wiring map (backend on develop; account settings surface on PR #325)
 

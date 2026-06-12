@@ -140,13 +140,62 @@
 
 	// The model dropdowns offer whatever the last discovery returned, unioned with
 	// any model already chosen, so a saved pick always shows even before a refresh.
+	// A filter box narrows large catalogues (OpenRouter lists hundreds); saved
+	// picks always stay in the list so a save never silently drops one.
+	type DiscoveredModel = { id: string; pricing?: { prompt: number; completion: number } };
 	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
 	const discoveredModels = $derived(
-		form?.scope === 'assistant-discover' && 'models' in form ? (form.models as string[]) : []
+		form?.scope === 'assistant-discover' && 'models' in form
+			? (form.models as DiscoveredModel[])
+			: []
 	);
-	const modelOptions = $derived([
-		...new Set([...discoveredModels, ...Object.values(savedModels).filter((m): m is string => !!m)])
-	]);
+	let modelFilter = $state('');
+	const modelOptions = $derived.by(() => {
+		const filter = modelFilter.trim().toLowerCase();
+		const ids = discoveredModels
+			.map((m) => m.id)
+			.filter((id) => !filter || id.toLowerCase().includes(filter));
+		return [...new Set([...ids, ...Object.values(savedModels).filter((m): m is string => !!m)])];
+	});
+	// Per-token prices, from the last saved discovery snapshot overlaid with the
+	// one just run; absent for endpoints that report none.
+	const modelPricing = $derived({
+		...(data.assistant.modelPricing ?? {}),
+		...Object.fromEntries(discoveredModels.filter((m) => m.pricing).map((m) => [m.id, m.pricing!]))
+	});
+	function perMillion(perToken: number): string {
+		const value = perToken * 1_000_000;
+		return `$${value >= 100 ? value.toFixed(0) : value.toFixed(2)}`;
+	}
+	function modelLabel(id: string): string {
+		const price = modelPricing[id];
+		if (!price) return id;
+		return `${id} (${perMillion(price.prompt)} in / ${perMillion(price.completion)} out per 1M tokens)`;
+	}
+	function usageCost(model: string, promptTokens: number | null, completionTokens: number | null) {
+		const price = modelPricing[model];
+		if (!price || (promptTokens === null && completionTokens === null)) return null;
+		return (promptTokens ?? 0) * price.prompt + (completionTokens ?? 0) * price.completion;
+	}
+	const usageTotalCost = $derived.by(() => {
+		let total = 0;
+		let known = false;
+		for (const row of data.assistantUsage.byModel) {
+			const cost = usageCost(row.model, row.promptTokens, row.completionTokens);
+			if (cost !== null) {
+				total += cost;
+				known = true;
+			}
+		}
+		return known ? total : null;
+	});
+
+	// The provider picker: a preset prefills and locks the endpoint URL (the
+	// server stores the preset's URL regardless); custom keeps the free field.
+	// The initial value is intentionally a snapshot; the select owns it after.
+	// svelte-ignore state_referenced_locally
+	let selectedProvider = $state(data.assistant.provider);
+	const activePreset = $derived(data.providers.find((p) => p.id === selectedProvider));
 
 	// Adding a passkey is a browser ceremony, not a form post: fetch the
 	// creation options, hand them to the authenticator, post the result back.
@@ -1500,24 +1549,61 @@
 							<div class="settings-group">
 								<header class="settings-group-header">
 									<h2 class="settings-group-title">Endpoint</h2>
-									<p class="settings-group-subtitle">Any OpenAI-compatible endpoint.</p>
+									<p class="settings-group-subtitle">
+										Pick a provider, or point at any OpenAI-compatible endpoint.
+									</p>
 								</header>
 								<form method="POST" action="?/saveAssistantEndpoint">
 									<div class="field">
+										<label for="assistant_provider">Provider</label>
+										<select
+											id="assistant_provider"
+											name="provider"
+											class="select"
+											bind:value={selectedProvider}
+										>
+											{#each data.providers as preset (preset.id)}
+												<option value={preset.id}>{preset.label}</option>
+											{/each}
+											<option value="custom">Custom endpoint</option>
+										</select>
+										{#if activePreset}
+											<p class="field-hint">
+												<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external provider docs -->
+												<a href={activePreset.docsUrl} target="_blank" rel="noopener noreferrer"
+													>Get an API key</a
+												>
+												from {activePreset.label}.
+											</p>
+										{/if}
+									</div>
+									<div class="field">
 										<label for="endpoint">Base URL</label>
-										<input
-											id="endpoint"
-											name="endpoint"
-											type="url"
-											class="input"
-											value={data.assistant.endpoint}
-											placeholder="http://ollama.local:11434/v1"
-										/>
-										<p class="field-hint">
-											Example: <code style="font-family: var(--font-mono); font-size: 12px;"
-												>http://ollama.local:11434/v1</code
-											> for Ollama, or the OpenAI, Anthropic, or OpenRouter equivalent.
-										</p>
+										{#if activePreset}
+											<input
+												id="endpoint"
+												name="endpoint"
+												type="url"
+												class="input"
+												value={activePreset.baseUrl}
+												readonly
+											/>
+											<p class="field-hint">Set by the provider you picked.</p>
+										{:else}
+											<input
+												id="endpoint"
+												name="endpoint"
+												type="url"
+												class="input"
+												value={data.assistant.provider === 'custom' ? data.assistant.endpoint : ''}
+												placeholder="http://ollama.local:11434/v1"
+											/>
+											<p class="field-hint">
+												Example: <code style="font-family: var(--font-mono); font-size: 12px;"
+													>http://ollama.local:11434/v1</code
+												> for Ollama, or any other OpenAI-compatible endpoint.
+											</p>
+										{/if}
 									</div>
 									<div class="field">
 										<label for="api_key">API key</label>
@@ -1527,7 +1613,9 @@
 											type="password"
 											class="input"
 											autocomplete="off"
-											placeholder={data.assistant.hasKey ? 'Saved. Leave blank to keep it.' : ''}
+											placeholder={data.assistant.hasKey
+												? 'Saved. Leave blank to keep it.'
+												: (activePreset?.keyHint ?? '')}
 										/>
 										<p class="field-hint">
 											Leave blank to keep your saved key. Not every endpoint needs one.
@@ -1570,6 +1658,21 @@
 									</p>
 								</header>
 								<form method="POST" action="?/saveAssistantModels">
+									{#if discoveredModels.length > 20}
+										<div class="field">
+											<label for="model_filter">Filter models</label>
+											<input
+												id="model_filter"
+												type="search"
+												class="input"
+												bind:value={modelFilter}
+												placeholder="Type part of a model name"
+											/>
+											<p class="field-hint">
+												Narrows the lists below. Models you already picked always stay listed.
+											</p>
+										</div>
+									{/if}
 									<div class="role-table">
 										{#each ROLE_META as role (role.id)}
 											<div class="role-row">
@@ -1583,13 +1686,19 @@
 													>
 													{#each modelOptions as model (model)}
 														<option value={model} selected={savedModels[role.id] === model}
-															>{model}</option
+															>{modelLabel(model)}</option
 														>
 													{/each}
 												</select>
 											</div>
 										{/each}
 									</div>
+									{#if Object.keys(modelPricing).length > 0}
+										<p class="field-hint">
+											Prices are what the endpoint reports, in dollars per million tokens: what you
+											send (in) and what the model writes back (out).
+										</p>
+									{/if}
 									<div class="settings-actions">
 										{#if form?.scope === 'assistant-discover' && form.message}
 											<span class="field-hint" role="alert" style="color:var(--danger);"
@@ -1618,6 +1727,57 @@
 										<button type="submit" class="btn btn-primary">Save models</button>
 									</div>
 								</form>
+							</div>
+						</div>
+
+						<div class="admin-block">
+							<div class="settings-group">
+								<header class="settings-group-header">
+									<h2 class="settings-group-title">Usage</h2>
+									<p class="settings-group-subtitle">
+										Every request the assistant sends to your endpoint, with the token counts it
+										reported. Costs are estimates, shown when your endpoint publishes prices.
+									</p>
+								</header>
+								{#if data.assistantUsage.totals.requests === 0}
+									<p class="field-hint">No requests yet.</p>
+								{:else}
+									<p class="field-hint">
+										Last 30 days: {data.assistantUsage.totals.requests} request{data.assistantUsage
+											.totals.requests === 1
+											? ''
+											: 's'}, {data.assistantUsage.totals.promptTokens.toLocaleString()} tokens sent,
+										{data.assistantUsage.totals.completionTokens.toLocaleString()} received{#if usageTotalCost !== null},
+											about ${usageTotalCost.toFixed(2)}{/if}.
+									</p>
+									<div>
+										{#each data.assistantUsage.recent as entry (entry.id)}
+											{@const cost = usageCost(
+												entry.model,
+												entry.promptTokens,
+												entry.completionTokens
+											)}
+											<div class="list-row">
+												<div class="list-main">
+													<div class="list-title">{entry.model}</div>
+													<div class="list-sub">
+														{new Date(entry.createdAt).toLocaleString()} - {entry.role}
+														{#if entry.promptTokens !== null || entry.completionTokens !== null}
+															- {(entry.promptTokens ?? 0).toLocaleString()} in / {(
+																entry.completionTokens ?? 0
+															).toLocaleString()} out
+														{:else}
+															- token counts not reported
+														{/if}
+														{#if cost !== null}
+															- about ${cost.toFixed(4)}
+														{/if}
+													</div>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
