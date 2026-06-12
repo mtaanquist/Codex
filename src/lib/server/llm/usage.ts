@@ -47,8 +47,11 @@ export type UsageRow = {
 };
 
 export type UsageSummary = {
-	// The most recent requests, newest first.
+	// One page of requests, newest first.
 	recent: UsageRow[];
+	// The zero-based page recent holds, and whether older pages exist.
+	page: number;
+	hasMore: boolean;
 	// Thirty-day totals across all requests, not just the listed ones.
 	totals: { requests: number; promptTokens: number; completionTokens: number };
 	// Thirty-day token sums per model, so a caller holding per-model prices can
@@ -56,11 +59,17 @@ export type UsageSummary = {
 	byModel: { model: string; promptTokens: number; completionTokens: number }[];
 };
 
-const RECENT_LIMIT = 50;
+export const USAGE_PAGE_SIZE = 50;
 const TOTALS_DAYS = 30;
 
-export async function recentAssistantUsage(db: Database, userId: string): Promise<UsageSummary> {
-	const recent = await db
+export async function recentAssistantUsage(
+	db: Database,
+	userId: string,
+	page = 0
+): Promise<UsageSummary> {
+	const safePage = Math.max(0, Math.floor(page));
+	// Fetch one row past the page to learn whether an older page exists.
+	const rows = await db
 		.select({
 			id: assistantUsage.id,
 			role: assistantUsage.role,
@@ -72,7 +81,9 @@ export async function recentAssistantUsage(db: Database, userId: string): Promis
 		.from(assistantUsage)
 		.where(eq(assistantUsage.userId, userId))
 		.orderBy(desc(assistantUsage.createdAt))
-		.limit(RECENT_LIMIT);
+		.limit(USAGE_PAGE_SIZE + 1)
+		.offset(safePage * USAGE_PAGE_SIZE);
+	const recent = rows.slice(0, USAGE_PAGE_SIZE);
 
 	const since = new Date(Date.now() - TOTALS_DAYS * 24 * 60 * 60 * 1000);
 	const [totals] = await db
@@ -96,6 +107,8 @@ export async function recentAssistantUsage(db: Database, userId: string): Promis
 
 	return {
 		recent,
+		page: safePage,
+		hasMore: rows.length > USAGE_PAGE_SIZE,
 		totals: totals ?? { requests: 0, promptTokens: 0, completionTokens: 0 },
 		byModel
 	};

@@ -129,7 +129,12 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		preferences: await userPreferences(db, user.id),
 		pageSetup: await userPageSetup(db, user.id),
 		assistant: await accountLlmView(db, user.id),
-		assistantUsage: await recentAssistantUsage(db, user.id),
+		// The usage log pages through ?usage=N (zero-based, newest first).
+		assistantUsage: await recentAssistantUsage(
+			db,
+			user.id,
+			Number(url.searchParams.get('usage')) || 0
+		),
 		// The provider presets and tone presets, sent through so the client need
 		// not import the server-only modules.
 		providers: PROVIDER_PRESETS.map((p) => ({

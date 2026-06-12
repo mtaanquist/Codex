@@ -162,6 +162,31 @@ describe('recentAssistantUsage', () => {
 		]);
 	});
 
+	it('pages fifty at a time, newest first', async () => {
+		for (let i = 0; i < 55; i++) {
+			await recordAssistantUsage(db, {
+				userId,
+				role: 'chat',
+				model: `m${i}`,
+				usage: { promptTokens: i, completionTokens: 0 }
+			});
+		}
+		const first = await recentAssistantUsage(db, userId, 0);
+		expect(first.recent).toHaveLength(50);
+		expect(first.page).toBe(0);
+		expect(first.hasMore).toBe(true);
+		const second = await recentAssistantUsage(db, userId, 1);
+		expect(second.recent).toHaveLength(5);
+		expect(second.hasMore).toBe(false);
+		// No overlap between pages; totals are page-independent.
+		const ids = new Set([...first.recent, ...second.recent].map((r) => r.id));
+		expect(ids.size).toBe(55);
+		expect(second.totals.requests).toBe(55);
+		// A page past the end is empty, and a negative page clamps to the first.
+		expect((await recentAssistantUsage(db, userId, 9)).recent).toHaveLength(0);
+		expect((await recentAssistantUsage(db, userId, -3)).page).toBe(0);
+	});
+
 	it('only counts the requesting user', async () => {
 		const [other] = await db
 			.insert(users)
