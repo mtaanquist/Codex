@@ -332,6 +332,11 @@
 	flex-direction: column;
 	gap: 10px;
 }
+/* Cards must keep their size and let the list scroll; as flex children
+   they would otherwise shrink to fit and clip their text. */
+.rv-panel-scroll > * {
+	flex: none;
+}
 .rv-panel-empty {
 	display: flex;
 	flex-direction: column;

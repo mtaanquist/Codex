@@ -29,6 +29,18 @@
 	// a plain /settings is the details. Forms post to the section they sit on.
 	const active = $derived(page.params.section ?? 'details');
 
+	// The help article that covers the open section; the rest fall back to
+	// the general one.
+	const HELP_BY_SECTION: Record<string, string> = {
+		publish: 'publishing',
+		cover: 'publishing',
+		pagesetup: 'publishing',
+		review: 'reviewing',
+		editor: 'editor',
+		goals: 'planning'
+	};
+	const helpTopic = $derived(HELP_BY_SECTION[active] ?? 'getting-started');
+
 	function sectionHref(section: string): string {
 		return resolve('/stories/[id]/settings/[[section]]', {
 			id: data.story.slug,
@@ -149,6 +161,7 @@
 <div class="page-shell">
 	<PageTopBar
 		back={{ href: resolve('/stories/[id]', { id: data.story.slug }), label: data.story.title }}
+		help={{ topic: helpTopic, label: 'story settings' }}
 	/>
 
 	<div class="admin-shell">
