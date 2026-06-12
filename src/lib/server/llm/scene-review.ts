@@ -9,9 +9,24 @@ import {
 	stories
 } from '../db/schema.ts';
 import { assembleContext, buildSystemMessage } from './context/assemble.ts';
-import { buildReviewMessage, type PriorNote } from './prompts/review.ts';
-import { complete } from './gateway.ts';
+import {
+	buildConsistencyMessage,
+	buildReviewMessage,
+	type PriorNote,
+	type ReviewFocus
+} from './prompts/review.ts';
+import { complete, type GatewayDeps } from './gateway.ts';
 import type { ChatMessage } from './providers/types.ts';
+
+// Tool budgets for the exhaustive passes. A focused or full pass stages one
+// tool call per note plus the scene read, so the account's conservative
+// default would cut it off mid-review; the consistency pass must read every
+// scene before it can compare anything. The gateway clamps both to its own
+// ceiling.
+const FOCUSED_PASS_BUDGET = 64;
+function consistencyBudget(sceneCount: number): number {
+	return sceneCount * 2 + 24;
+}
 
 // The Assistant-as-reviewer run, shared by the inline single-scene endpoint and
 // the whole-story / chapter background job. It assembles the scene's context,
@@ -93,8 +108,10 @@ export async function reviewOneScene(
 		userId: string;
 		storyId: string;
 		scene: { id: string; title: string | null };
+		focus?: ReviewFocus;
 		signal?: AbortSignal;
-	}
+	},
+	deps: GatewayDeps = {}
 ): Promise<void> {
 	const context = await assembleContext(db, {
 		userId: opts.userId,
@@ -102,18 +119,60 @@ export async function reviewOneScene(
 		sceneId: opts.scene.id
 	});
 	const prior = await openAssistantNotes(db, opts.scene.id);
-	const task: ChatMessage = { role: 'user', content: buildReviewMessage(opts.scene, prior) };
+	const focus = opts.focus ?? 'notes';
+	const task: ChatMessage = {
+		role: 'user',
+		content: buildReviewMessage(opts.scene, prior, focus)
+	};
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), task]
 		: [task];
-	await complete(db, {
-		userId: opts.userId,
-		storyId: opts.storyId,
-		role: 'reviewer',
-		enableTools: true,
-		messages,
-		signal: opts.signal
-	});
+	await complete(
+		db,
+		{
+			userId: opts.userId,
+			storyId: opts.storyId,
+			role: 'reviewer',
+			enableTools: true,
+			messages,
+			...(focus === 'notes' ? {} : { toolBudget: FOCUSED_PASS_BUDGET }),
+			signal: opts.signal
+		},
+		deps
+	);
+}
+
+// The cross-scene pass of a full story review: one run over every scene,
+// looking only for issues that span scenes. Anchors its notes like any other
+// review note. Throws on gateway failure, like reviewOneScene.
+export async function reviewStoryConsistency(
+	db: Database,
+	opts: {
+		userId: string;
+		storyId: string;
+		scenes: { id: string; title: string | null }[];
+		signal?: AbortSignal;
+	},
+	deps: GatewayDeps = {}
+): Promise<void> {
+	const context = await assembleContext(db, { userId: opts.userId, storyId: opts.storyId });
+	const task: ChatMessage = { role: 'user', content: buildConsistencyMessage(opts.scenes) };
+	const messages: ChatMessage[] = context
+		? [buildSystemMessage(context, { tools: true }), task]
+		: [task];
+	await complete(
+		db,
+		{
+			userId: opts.userId,
+			storyId: opts.storyId,
+			role: 'reviewer',
+			enableTools: true,
+			messages,
+			toolBudget: consistencyBudget(opts.scenes.length),
+			signal: opts.signal
+		},
+		deps
+	);
 }
 
 export type StoryReviewResult = { reviewed: number; failed: number; notes: number };
@@ -124,7 +183,14 @@ export type StoryReviewResult = { reviewed: number; failed: number; notes: numbe
 // scenes were reviewed, how many failed, and how many notes were staged.
 export async function reviewStoryScenes(
 	db: Database,
-	opts: { userId: string; storyId: string; chapterId?: string; signal?: AbortSignal }
+	opts: {
+		userId: string;
+		storyId: string;
+		chapterId?: string;
+		focus?: ReviewFocus;
+		signal?: AbortSignal;
+	},
+	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
 	const where = [
 		eq(scenes.storyId, opts.storyId),
@@ -145,14 +211,36 @@ export async function reviewStoryScenes(
 	for (const scene of targets) {
 		const before = await countAssistantNotes(db, scene.id);
 		try {
-			await reviewOneScene(db, {
-				userId: opts.userId,
-				storyId: opts.storyId,
-				scene,
-				signal: opts.signal
-			});
+			await reviewOneScene(
+				db,
+				{
+					userId: opts.userId,
+					storyId: opts.storyId,
+					scene,
+					focus: opts.focus,
+					signal: opts.signal
+				},
+				deps
+			);
 			reviewed += 1;
 			notes += (await countAssistantNotes(db, scene.id)) - before;
+		} catch {
+			failed += 1;
+		}
+	}
+	// A full review ends with one cross-scene pass: the only run that can see
+	// drift between scenes (names, timelines, idiom conventions). Pointless
+	// for a single scene, and skipped when every per-scene pass failed.
+	if (opts.focus === 'full' && targets.length > 1 && reviewed > 0) {
+		const counts = await Promise.all(targets.map((scene) => countAssistantNotes(db, scene.id)));
+		try {
+			await reviewStoryConsistency(
+				db,
+				{ userId: opts.userId, storyId: opts.storyId, scenes: targets, signal: opts.signal },
+				deps
+			);
+			const after = await Promise.all(targets.map((scene) => countAssistantNotes(db, scene.id)));
+			notes += after.reduce((sum, n, i) => sum + Math.max(0, n - counts[i]), 0);
 		} catch {
 			failed += 1;
 		}

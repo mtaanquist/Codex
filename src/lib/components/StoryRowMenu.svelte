@@ -35,7 +35,10 @@
 		onClose: (refocus?: boolean) => void;
 		onRenameChapter: (chapterId: string) => void;
 		onReviewChapter: (chapterId: string) => void;
-		onReviewScene: (sceneId: string) => void;
+		onReviewScene: (
+			sceneId: string,
+			focus: 'notes' | 'mechanics' | 'prose' | 'lore' | 'full'
+		) => void;
 		onSuggestSplit: (sceneId: string) => void;
 		onDuplicateScene: (sceneId: string) => void;
 		onMergeSelected: () => void;
@@ -212,9 +215,41 @@
 							class="row-menu-item"
 							type="button"
 							role="menuitem"
-							onclick={() => onReviewScene(target.id)}
+							onclick={() => onReviewScene(target.id, 'notes')}
 						>
 							Review this scene
+						</button>
+						<button
+							class="row-menu-item"
+							type="button"
+							role="menuitem"
+							onclick={() => onReviewScene(target.id, 'mechanics')}
+						>
+							Review spelling and grammar
+						</button>
+						<button
+							class="row-menu-item"
+							type="button"
+							role="menuitem"
+							onclick={() => onReviewScene(target.id, 'prose')}
+						>
+							Review prose and style
+						</button>
+						<button
+							class="row-menu-item"
+							type="button"
+							role="menuitem"
+							onclick={() => onReviewScene(target.id, 'lore')}
+						>
+							Review entities and lore
+						</button>
+						<button
+							class="row-menu-item"
+							type="button"
+							role="menuitem"
+							onclick={() => onReviewScene(target.id, 'full')}
+						>
+							Full review of this scene
 						</button>
 						<button
 							class="row-menu-item"

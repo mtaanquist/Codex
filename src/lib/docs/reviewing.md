@@ -31,6 +31,18 @@ You do not have to invite anyone to use review mode. Open Review from the story'
 
 Unlike a reviewer, you can also edit the manuscript right here. The middle of the review workspace is the live editor, with the same formatting bar as the writing editor, so you can fix a line on the spot instead of switching back to Write. This is what makes accepting a suggestion useful: take the change, then keep shaping it. Selecting a passage still brings up the toolbar to comment or suggest an edit on those words.
 
+## Asking the Assistant to review
+
+Right-click a scene in the sidebar and open the Assistant submenu to choose what kind of review you want:
+
+- **Review this scene** leaves a few high-value notes, right for a draft still in motion.
+- **Review spelling and grammar** is an exhaustive pass for typos, punctuation, wrong homophones, and spelling-convention consistency.
+- **Review prose and style** looks for filter verbs, point-of-view epithets, dangling modifiers, repetition tics, and pacing.
+- **Review entities and lore** checks names, facts, characterisation, and lore against your worldbuilding.
+- **Full review of this scene** does all of the above in one pass.
+
+For the whole story, use "Review this story" in the Review section of the story's settings. That runs the full review on every scene and finishes with a cross-scene pass that reads the entire story in order, looking for things no single-scene pass can see: names or facts that drift between chapters, timeline arithmetic that does not add up, an idiom or spelling convention rendered differently in different places. It runs in the background and notifies you when its notes are ready. The exhaustive passes leave many small notes by design - you accept or reject each one, and discarding a nitpick costs one click.
+
 ## Working through the feedback
 
 The right panel shows every note on the open scene, yours and your reviewers', each as its own card. The left list gathers them across the whole manuscript so you can see where the work is. If you asked the Assistant to review (from a scene, chapter, or the whole story), its comments and suggested edits appear here too, marked as the Assistant's, and you work through them the same way. To get Assistant feedback that fits what you are writing, fill in "Genre and style" in the story's settings with a sentence on the genre, narration, and prose style you are aiming for; the Assistant then judges the manuscript against that instead of a general standard. The intended audience, the spelling you write in (British or American), and a comparison title or two all help, so mention them there too. Reviewers and readers never see it. If the story takes place in an existing published setting such as Forgotten Realms or Azeroth, tick "Established setting" in the universe's settings as well; the Assistant will then also check your manuscript against what it knows of that setting's canon, with your own material winning wherever the two differ. Reply on a card to keep a conversation going, and resolve a thread when you have dealt with it. Resolved threads stay visible for the record, and you can reopen them.
