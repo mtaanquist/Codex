@@ -2,8 +2,9 @@ import type { Database } from '../auth';
 import { logEvent } from '../log';
 import { resolveLlmConfig, type AssistantRole, type ResolvedConfig } from './config';
 import { egressHttpRequest, egressPolicy } from './egress';
-import { openaiProvider } from './providers/openai';
+import { providerFor } from './providers';
 import { buildPersonaPrompt } from './prompts/persona';
+import { recordAssistantUsage } from './usage';
 import { dispatchToolCall, ownsStory, type ToolContext } from './tools/dispatch';
 import { toolSpecs } from './tools/registry';
 import type {
@@ -53,7 +54,8 @@ export type GatewayRequest = {
 };
 
 // Test seam: callers may inject a provider and/or transport. Production passes
-// neither and gets the OpenAI adapter over the egress-guarded transport.
+// neither and gets the configured provider's adapter over the egress-guarded
+// transport.
 export type GatewayDeps = {
 	provider?: Provider;
 	http?: HttpRequest;
@@ -61,12 +63,6 @@ export type GatewayDeps = {
 
 export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
 	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
-}
-
-function selectProvider(): Provider {
-	// One provider today. The seam for a native Claude adapter, chosen from a
-	// provider discriminator on the resolved config, lands later.
-	return openaiProvider;
 }
 
 type Prepared = {
@@ -126,11 +122,29 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		model,
 		messages: [persona, ...req.messages],
 		http: deps.http ?? egressHttpRequest(policy),
-		provider: deps.provider ?? selectProvider(),
+		provider: deps.provider ?? providerFor(resolved.config.provider),
 		tools,
 		toolContext,
 		toolBudget: resolved.config.toolCallBudget
 	};
+}
+
+// Every provider request logs a usage row (see ./usage), so the account page
+// can show what the Assistant has been costing. The endpoint's token report
+// rides along when it sent one; the row still lands without it.
+function recordUsage(
+	db: Database,
+	p: Prepared,
+	req: GatewayRequest,
+	usage?: { promptTokens: number; completionTokens: number }
+): Promise<void> {
+	return recordAssistantUsage(db, {
+		userId: req.userId,
+		storyId: req.storyId,
+		role: req.role,
+		model: p.model,
+		usage
+	});
 }
 
 // What a tool-using turn produced: the final text, plus any staged actions a
@@ -144,7 +158,7 @@ type AgentResult = {
 // fetch, write tools stage), feed the results back, and repeat until it answers
 // or the tool-call budget is spent. Once the budget is reached, tools are
 // withdrawn so the next turn must answer, bounding the loop.
-async function runAgent(p: Prepared, req: GatewayRequest): Promise<AgentResult> {
+async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise<AgentResult> {
 	const messages = [...p.messages];
 	const surfaces: AgentResult['surfaces'] = [];
 	let calls = 0;
@@ -161,6 +175,7 @@ async function runAgent(p: Prepared, req: GatewayRequest): Promise<AgentResult> 
 			p.http,
 			req.signal
 		);
+		await recordUsage(db, p, req, response.usage);
 		if (!offerTools || response.toolCalls.length === 0) {
 			return { content: response.content, surfaces };
 		}
@@ -200,13 +215,15 @@ export async function* stream(
 	// A tool-using turn resolves its rounds buffered (tool results interleave
 	// with generation), then emits the final answer; a plain turn streams live.
 	if (prepared.tools) {
-		const { content, surfaces } = await runAgent(prepared, req);
+		const { content, surfaces } = await runAgent(db, prepared, req);
 		if (content) yield { type: 'token', text: content };
 		for (const surface of surfaces) yield surface;
 		yield { type: 'done' };
 		return;
 	}
-	yield* prepared.provider.chatStream(
+	// The usage frame is the gateway's to log, not the client's to render.
+	let usage: { promptTokens: number; completionTokens: number } | undefined;
+	for await (const event of prepared.provider.chatStream(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
@@ -215,7 +232,14 @@ export async function* stream(
 		prepared.conn,
 		prepared.http,
 		req.signal
-	);
+	)) {
+		if (event.type === 'usage') {
+			usage = event.usage;
+			continue;
+		}
+		yield event;
+	}
+	await recordUsage(db, prepared, req, usage);
 }
 
 export async function complete(
@@ -232,7 +256,7 @@ export async function complete(
 	});
 	// Buffered callers have no stream to carry staged surfaces; the proposals
 	// surface only on the streaming chat path.
-	if (prepared.tools) return (await runAgent(prepared, req)).content;
+	if (prepared.tools) return (await runAgent(db, prepared, req)).content;
 	const response = await prepared.provider.respond(
 		{
 			model: prepared.model,
@@ -243,5 +267,6 @@ export async function complete(
 		prepared.http,
 		req.signal
 	);
+	await recordUsage(db, prepared, req, response.usage);
 	return response.content;
 }

@@ -1189,6 +1189,27 @@ export const assistantChatMessages = pgTable(
 	]
 );
 
+// One row per request the gateway sent to the writer's LLM endpoint: which
+// surface asked, which model answered, and the token counts the endpoint
+// reported (null when it reported none). Metadata only; the prompt text itself
+// is never stored. Feeds the usage log on the account Assistant page.
+export const assistantUsage = pgTable(
+	'assistant_usage',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		storyId: uuid('story_id').references(() => stories.id, { onDelete: 'set null' }),
+		role: text('role').notNull(),
+		model: text('model').notNull(),
+		promptTokens: integer('prompt_tokens'),
+		completionTokens: integer('completion_tokens'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('assistant_usage_user_idx').on(table.userId, table.createdAt)]
+);
+
 // What rides beside a chat turn's text; mirrors the panel's card data. A
 // confirmed split proposal records what it created, so the card stays
 // decided across reloads and the revert knows which scenes to merge back.

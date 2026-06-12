@@ -1045,6 +1045,30 @@ endpoint. Started 2026-06-09.
       per field, reject, owner-scoping, and enrichEntity end-to-end - needs
       Postgres, left for CI. Lint, check, and unit pass locally. Whole-universe
       background `assistant-enrich` and character arc summaries remain for later.
+- [ ] Provider presets + native Claude adapter + usage log (2026-06-12; branch
+      `claude/dreamy-ride-h5glzt`). First-class providers for the Assistant:
+      `providers/presets.ts` (Claude, ChatGPT, Gemini, DeepSeek, OpenRouter -
+      label, locked base URL, key hint, docs link) with a `provider`
+      discriminator on the account config (jsonb-only, legacy configs normalise
+      to 'custom'); a preset owns its endpoint server-side, and the Anthropic
+      preset pins streaming/tools capable. `providers/anthropic.ts` is the
+      native Messages API adapter behind the same Provider interface (system
+      hoisting, tool_use/tool_result mapping with adjacent-tool-turn merge,
+      typed SSE events), picked by `providerFor` in `gateway.ts` and
+      `models.ts`. Model discovery returns `ModelInfo` (id + per-token pricing
+      where reported - OpenRouter); the settings page gains a provider picker,
+      a filter box over large model lists, prices per 1M tokens on the options,
+      and a pricing snapshot saved at discovery. Usage log: `assistant_usage`
+      (migration 0062, metadata only - role, model, token counts; never prompt
+      text), recorded by the gateway around every provider request (the
+      streamed usage frame is consumed server-side), shown on the account page
+      with 30-day totals and estimated costs where prices are known. Help
+      (account.md) and assistant.md updated. Unit tests cover both adapters,
+      presets, and the Gemini base-URL quirk; integration covers preset save
+      enforcement, real provider selection through the gateway, usage
+      recording, and the pricing snapshot. Lint, check, and the full vitest
+      suite (973) pass locally; Playwright could not run in this sandbox
+      (browser download blocked), left for CI.
 
 ## Capability review follow-ups (2026-06-06)
 

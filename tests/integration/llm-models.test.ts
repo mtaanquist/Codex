@@ -29,7 +29,7 @@ const stub: Provider = {
 		return { content: 'Hello, I can read you.', toolCalls: [] };
 	},
 	async listModels() {
-		return ['gemma2', 'llama3.1:8b'];
+		return [{ id: 'gemma2' }, { id: 'llama3.1:8b' }];
 	}
 };
 const noHttp = async () => {
@@ -72,7 +72,25 @@ describe('discoverModels', () => {
 	it('lists the endpoint models, even before the master toggle is on', async () => {
 		await configure('https://api.example.com/v1', {});
 		const result = await discoverModels(db, userId, { provider: stub, http: noHttp });
-		expect(result).toEqual({ ok: true, models: ['gemma2', 'llama3.1:8b'] });
+		expect(result).toEqual({ ok: true, models: [{ id: 'gemma2' }, { id: 'llama3.1:8b' }] });
+	});
+
+	it('snapshots reported prices and clears them when a discovery has none', async () => {
+		const priced: Provider = {
+			...stub,
+			async listModels() {
+				return [{ id: 'paid', pricing: { prompt: 0.000003, completion: 0.000015 } }];
+			}
+		};
+		await configure('https://openrouter.ai/api/v1', {});
+		await discoverModels(db, userId, { provider: priced, http: noHttp });
+		const { accountLlmView } = await import('../../src/lib/server/llm/config');
+		expect((await accountLlmView(db, userId)).modelPricing).toEqual({
+			paid: { prompt: 0.000003, completion: 0.000015 }
+		});
+		// A later discovery from an endpoint without prices clears the snapshot.
+		await discoverModels(db, userId, { provider: stub, http: noHttp });
+		expect((await accountLlmView(db, userId)).modelPricing).toBeUndefined();
 	});
 
 	it('asks for an endpoint when none is configured', async () => {

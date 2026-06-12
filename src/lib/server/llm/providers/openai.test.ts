@@ -79,6 +79,28 @@ describe('openaiProvider.chatStream', () => {
 		expect(events[0].type).toBe('error');
 	});
 
+	it('asks for streamed usage and surfaces it as a usage event', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"content":"Hi"}}]}\n',
+			'data: {"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":2}}\n',
+			'data: [DONE]\n'
+		];
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return sseResponse(frames);
+		};
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(sentBody.stream_options).toEqual({ include_usage: true });
+		expect(events).toEqual([
+			{ type: 'token', text: 'Hi' },
+			{ type: 'usage', usage: { promptTokens: 9, completionTokens: 2 } },
+			{ type: 'done' }
+		]);
+	});
+
 	it('emits an error event when the transport throws', async () => {
 		const http: HttpRequest = async () => {
 			throw new Error('connection refused');
@@ -164,6 +186,20 @@ describe('openaiProvider.respond', () => {
 		).rejects.toThrow();
 	});
 
+	it('carries the reported token usage through', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [{ message: { content: 'ok' } }],
+				usage: { prompt_tokens: 12, completion_tokens: 3 }
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 3 });
+	});
+
 	it('normalises every endpoint variant to the completions path', async () => {
 		const urls: string[] = [];
 		const http: HttpRequest = async (url) => {
@@ -189,6 +225,25 @@ describe('openaiProvider.respond', () => {
 			'http://h/v1/chat/completions'
 		]);
 	});
+
+	it("leaves Gemini's /openai compatibility base alone", async () => {
+		const urls: string[] = [];
+		const http: HttpRequest = async (url) => {
+			urls.push(url);
+			return jsonResponse(200, { choices: [{ message: { content: '' } }] });
+		};
+		for (const endpoint of ['http://h/v1beta/openai', 'http://h/v1beta/openai/']) {
+			await openaiProvider.respond(
+				{ model: 'm', messages: [], maxTokens: 1 },
+				{ endpoint, apiKey: '' },
+				http
+			);
+		}
+		expect(urls).toEqual([
+			'http://h/v1beta/openai/chat/completions',
+			'http://h/v1beta/openai/chat/completions'
+		]);
+	});
 });
 
 describe('openaiProvider.listModels', () => {
@@ -202,7 +257,24 @@ describe('openaiProvider.listModels', () => {
 		};
 		const models = await openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: '' }, http);
 		expect(calledUrl).toBe('http://h/v1/models');
-		expect(models).toEqual(['gemma2', 'llama3.1:8b']);
+		expect(models).toEqual([{ id: 'gemma2' }, { id: 'llama3.1:8b' }]);
+	});
+
+	it('carries OpenRouter-style per-token pricing through when reported', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				data: [
+					{ id: 'paid', pricing: { prompt: '0.000003', completion: '0.000015' } },
+					{ id: 'unpriced' },
+					{ id: 'free', pricing: { prompt: '0', completion: '0' } }
+				]
+			});
+		const models = await openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: '' }, http);
+		expect(models).toEqual([
+			{ id: 'free' },
+			{ id: 'paid', pricing: { prompt: 0.000003, completion: 0.000015 } },
+			{ id: 'unpriced' }
+		]);
 	});
 
 	it('derives the models path from a full completions endpoint', async () => {
