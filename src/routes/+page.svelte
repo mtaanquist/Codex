@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import Icon from '$lib/components/Icon.svelte';
 	import Landing from '$lib/components/Landing.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -158,25 +159,29 @@
 				{#each orderedUniverses as universe (universe.id)}
 					<section class="universe-section">
 						<header class="universe-header">
-							<span class="universe-mark">Universe</span>
+							<span class="universe-mark universe-mark-icon" title="Universe"
+								><Icon name="universe" size={18} /></span
+							>
 							<div class="universe-identity">
-								<a
-									class="universe-name-link"
-									href={resolve('/universes/[id]/plan', { id: universe.slug })}
-								>
-									<h2 class="universe-name">{universe.name}</h2>
-								</a>
+								<div class="universe-name-row">
+									<a
+										class="universe-name-link"
+										href={resolve('/universes/[id]/plan', { id: universe.slug })}
+									>
+										<h2 class="universe-name">{universe.name}</h2>
+									</a>
+									<a
+										class="universe-edit"
+										href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
+										title="Universe settings"
+										aria-label="Universe settings"
+									>
+										<Icon name="gear" size={15} />
+									</a>
+								</div>
 								{#if universe.descriptionMd}
 									<p class="universe-description">{universe.descriptionMd}</p>
 								{/if}
-							</div>
-							<div class="universe-actions">
-								<a
-									class="btn btn-ghost btn-sm"
-									href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
-								>
-									Edit universe
-								</a>
 							</div>
 						</header>
 						<div class="story-grid">
@@ -233,7 +238,9 @@
 					     start. Creating one makes the universe on first use. -->
 					<section class="universe-section">
 						<header class="universe-header">
-							<span class="universe-mark">Universe</span>
+							<span class="universe-mark universe-mark-icon" title="Universe"
+								><Icon name="universe" size={18} /></span
+							>
 							<div class="universe-identity">
 								<h2 class="universe-name">Standalone stories</h2>
 								<p class="universe-description">

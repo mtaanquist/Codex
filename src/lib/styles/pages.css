@@ -481,9 +481,34 @@
 	flex: none;
 	min-width: 92px;
 }
+/* The icon form of the mark sits right before the name instead of
+   holding open the old label gutter. */
+.universe-mark-icon {
+	min-width: 0;
+	display: grid;
+	place-items: center;
+	padding-top: 6px;
+}
 .universe-identity {
 	flex: 1;
 	min-width: 0;
+}
+.universe-name-row {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-width: 0;
+}
+.universe-edit {
+	display: grid;
+	place-items: center;
+	padding: 4px;
+	border-radius: 7px;
+	color: var(--text-faint);
+}
+.universe-edit:hover {
+	color: var(--text);
+	background: var(--bg-hover);
 }
 .universe-name-link {
 	text-decoration: none;
