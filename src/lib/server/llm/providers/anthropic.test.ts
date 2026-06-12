@@ -66,10 +66,108 @@ describe('anthropicProvider.respond', () => {
 		expect(headers['x-api-key']).toBe('sk-ant-x');
 		expect(headers['anthropic-version']).toBe('2023-06-01');
 		expect(headers['authorization']).toBeUndefined();
-		expect(sentBody.system).toBe('persona\n\ncontext');
+		// The system prompt and the last user block carry cache markers, so the
+		// stable prefix (tools + system + earlier turns) is cached across the
+		// turns of a chat and the rounds of a tool loop.
+		expect(sentBody.system).toEqual([
+			{ type: 'text', text: 'persona\n\ncontext', cache_control: { type: 'ephemeral' } }
+		]);
 		expect(sentBody.max_tokens).toBe(16);
-		expect(sentBody.messages).toEqual([{ role: 'user', content: 'hi' }]);
+		expect(sentBody.messages).toEqual([
+			{
+				role: 'user',
+				content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }]
+			}
+		]);
 		expect(result.content).toBe('ok');
+	});
+
+	it('maps tuning to adaptive thinking and output_config, omitted when unset', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'ok' }] });
+		};
+		const base = {
+			model: 'claude-x',
+			maxTokens: 16,
+			messages: [{ role: 'user' as const, content: 'hi' }]
+		};
+		await anthropicProvider.respond(
+			{ ...base, tuning: { thinking: true, effort: 'xhigh' } },
+			conn,
+			http
+		);
+		expect(sentBody.thinking).toEqual({ type: 'adaptive' });
+		expect(sentBody.output_config).toEqual({ effort: 'xhigh' });
+
+		// Thinking off means no thinking field at all, never an explicit
+		// "disabled" (rejected by models where thinking is always on).
+		await anthropicProvider.respond({ ...base, tuning: { effort: 'low' } }, conn, http);
+		expect(sentBody.thinking).toBeUndefined();
+		expect(sentBody.output_config).toEqual({ effort: 'low' });
+
+		await anthropicProvider.respond(base, conn, http);
+		expect(sentBody.thinking).toBeUndefined();
+		expect(sentBody.output_config).toBeUndefined();
+	});
+
+	it('captures thinking blocks on tool turns and echoes them back verbatim', async () => {
+		const blocks = [
+			{ type: 'thinking', thinking: 'hmm', signature: 'sig' },
+			{ type: 'text', text: 'checking' },
+			{ type: 'tool_use', id: 'call-1', name: 'get_scene', input: { id: 's1' } }
+		];
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: blocks });
+		};
+		const response = await anthropicProvider.respond(
+			{
+				model: 'claude-x',
+				maxTokens: 16,
+				messages: [{ role: 'user', content: 'review' }],
+				tuning: { thinking: true }
+			},
+			conn,
+			http
+		);
+		expect(response.toolCalls).toHaveLength(1);
+		expect(response.raw).toEqual(blocks);
+
+		// The next turn of the loop replays the captured blocks unchanged.
+		await anthropicProvider.respond(
+			{
+				model: 'claude-x',
+				maxTokens: 16,
+				messages: [
+					{ role: 'user', content: 'review' },
+					{
+						role: 'assistant',
+						content: 'checking',
+						toolCalls: response.toolCalls,
+						raw: response.raw
+					},
+					{ role: 'tool', content: 'the scene text', toolCallId: 'call-1' }
+				]
+			},
+			conn,
+			http
+		);
+		const messages = sentBody.messages as { role: string; content: unknown }[];
+		expect(messages[1]).toEqual({ role: 'assistant', content: blocks });
+	});
+
+	it('does not capture raw blocks for a plain text response', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, { content: [{ type: 'text', text: 'just text' }] });
+		const response = await anthropicProvider.respond(
+			{ model: 'claude-x', maxTokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+			conn,
+			http
+		);
+		expect(response.raw).toBeUndefined();
 	});
 
 	it('maps tool specs and parses tool_use blocks from the response', async () => {
@@ -144,7 +242,12 @@ describe('anthropicProvider.respond', () => {
 				role: 'user',
 				content: [
 					{ type: 'tool_result', tool_use_id: 'c1', content: 'r1' },
-					{ type: 'tool_result', tool_use_id: 'c2', content: 'r2' }
+					{
+						type: 'tool_result',
+						tool_use_id: 'c2',
+						content: 'r2',
+						cache_control: { type: 'ephemeral' }
+					}
 				]
 			}
 		]);
@@ -162,6 +265,25 @@ describe('anthropicProvider.respond', () => {
 			http
 		);
 		expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 3 });
+	});
+
+	it('counts cached tokens into the prompt total', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [{ type: 'text', text: 'ok' }],
+				usage: {
+					input_tokens: 12,
+					cache_creation_input_tokens: 100,
+					cache_read_input_tokens: 888,
+					output_tokens: 3
+				}
+			});
+		const result = await anthropicProvider.respond(
+			{ model: 'claude-x', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 1000, completionTokens: 3 });
 	});
 
 	it('throws on a non-2xx status', async () => {

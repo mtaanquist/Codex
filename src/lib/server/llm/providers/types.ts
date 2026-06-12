@@ -12,6 +12,11 @@ export type ChatMessage = {
 	toolCalls?: ProviderToolCall[];
 	// A tool-result turn replies to this call id.
 	toolCallId?: string;
+	// Adapter-private: the provider's own content blocks for an assistant turn,
+	// echoed back verbatim on the next request of a tool loop. The Anthropic
+	// adapter uses this to preserve thinking blocks, which the API requires
+	// unchanged; other adapters ignore it.
+	raw?: unknown;
 };
 
 // A tool the model may call (function-calling). parameters is a JSON Schema for
@@ -37,6 +42,10 @@ export type ProviderResponse = {
 	toolCalls: ProviderToolCall[];
 	// Token counts the endpoint reported for this request, when it did.
 	usage?: TokenUsage;
+	// Adapter-private content blocks to echo back on the next turn; see
+	// ChatMessage.raw. Set only when the response carries blocks (thinking)
+	// that a reconstructed turn would lose.
+	raw?: unknown;
 };
 
 export type TokenUsage = {
@@ -52,6 +61,11 @@ export type CompletionRequest = {
 	maxTokens: number;
 	// Tools the model may call this turn; omitted for a plain completion.
 	tools?: ToolSpec[];
+	// Per-role request tuning from the account config. The Anthropic adapter
+	// maps thinking to `thinking: {type: "adaptive"}` (omitted when off; an
+	// explicit "disabled" is rejected by some models) and effort to
+	// `output_config.effort`. Other adapters ignore it.
+	tuning?: { thinking?: boolean; effort?: string };
 };
 
 // A scene-split the Assistant proposed through its tool: where the new scene

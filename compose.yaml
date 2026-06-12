@@ -13,7 +13,7 @@ services:
     build: .
     image: codex-app
     restart: unless-stopped
-    command: sh -c "node scripts/migrate.ts && node build"
+    command: codex-app
     ports:
       - '${APP_PORT:-3000}:3000'
     environment:
@@ -57,7 +57,7 @@ services:
     image: codex-app
     build: .
     restart: unless-stopped
-    command: node --import ./src/worker/register.js src/worker/index.ts
+    command: codex-worker
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
       # Off-site backups; off until the bucket and keys are set.
