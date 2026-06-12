@@ -44,7 +44,11 @@ export type ToolOutcome = {
 	surface?: { type: 'proposal'; proposal: SplitProposal };
 };
 
-const MAX_SCENE_BODY = 12000;
+// Bounds a get_scene result. Generous on purpose: a long novel scene runs
+// 8-15K words (50-90K characters), and a review of a clipped scene is a
+// review of the wrong text. The cap only guards against pathological bodies
+// (a pasted data dump); prompt caching keeps the cost of big results down.
+const MAX_SCENE_BODY = 200_000;
 const MAX_APPEARANCES = 20;
 
 // Whether the story belongs to the user; the gateway gates tool use on this so
@@ -176,7 +180,7 @@ async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {
 	if (!scene) return 'No scene with that id in this story.';
 	const body =
 		scene.bodyMd.length > MAX_SCENE_BODY
-			? `${scene.bodyMd.slice(0, MAX_SCENE_BODY)}\n...(truncated)`
+			? `${scene.bodyMd.slice(0, MAX_SCENE_BODY)}\n...(truncated: showing the first ${MAX_SCENE_BODY} of ${scene.bodyMd.length} characters)`
 			: scene.bodyMd;
 	return JSON.stringify({
 		id: scene.id,
