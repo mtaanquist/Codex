@@ -1091,6 +1091,9 @@
 .fields .field {
 	background: var(--bg);
 	padding: 12px 15px;
+	/* pages.css gives form .field a bottom margin; inside this grid that
+	   margin would show as thick bands of the gap colour. */
+	margin: 0;
 }
 .fields .field .k {
 	font-size: 11px;

@@ -229,14 +229,16 @@
 											if (e.key === 'Escape') newStoryFor = null;
 										}}
 									/>
-									<button class="btn btn-primary btn-sm" type="submit">Create story</button>
-									<button
-										class="btn btn-ghost btn-sm"
-										type="button"
-										onclick={() => (newStoryFor = null)}
-									>
-										Cancel
-									</button>
+									<div class="card-add-actions">
+										<button class="btn btn-primary btn-sm" type="submit">Create story</button>
+										<button
+											class="btn btn-ghost btn-sm"
+											type="button"
+											onclick={() => (newStoryFor = null)}
+										>
+											Cancel
+										</button>
+									</div>
 								</form>
 							{:else}
 								<button class="card-add" type="button" onclick={() => (newStoryFor = universe.id)}>
@@ -318,12 +320,15 @@
 	.card-add-form {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 10px;
 		justify-content: center;
+		padding: 18px;
 		cursor: default;
 	}
-	.card-add-form .btn {
-		align-self: flex-start;
+	.card-add-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 	.trash-list {
 		display: flex;
