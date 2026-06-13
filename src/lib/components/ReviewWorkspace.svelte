@@ -15,6 +15,7 @@
 	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
 	import { focusMode } from '$lib/focus-mode.svelte';
+	import { openReviewModal } from '$lib/review-modal.svelte';
 
 	let {
 		chapters,
@@ -288,6 +289,18 @@
 						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
 				/>
 				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />
+				{#if assistant}
+					<button
+						class="rv-review-btn"
+						type="button"
+						onclick={() =>
+							openReviewModal(
+								selectedSceneId ? { level: 'scene', sceneId: selectedSceneId } : { level: 'story' }
+							)}
+					>
+						<Icon name="sparkles" size={13} /> Review with the Assistant
+					</button>
+				{/if}
 			</div>
 			<div class="left-scroll">
 				{#if book}
@@ -390,3 +403,25 @@
 		</aside>
 	</div>
 </div>
+
+<style>
+	.rv-review-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		width: 100%;
+		justify-content: center;
+		margin-top: 8px;
+		padding: 7px 10px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius, 9px);
+		background: var(--bg-elevated);
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.rv-review-btn:hover {
+		background: var(--accent-soft);
+	}
+</style>

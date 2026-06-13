@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
+	import ReviewModal from '$lib/components/ReviewModal.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import { editorStyleVars } from '$lib/page-setup';
 	import { focusMode } from '$lib/focus-mode.svelte';
@@ -62,4 +63,12 @@
 		assistant={data.assistant.surfacesEnabled ? { name: data.assistant.name } : null}
 		onSaveStatus={(status) => (saveStatus = status)}
 	/>
+	{#if data.assistant.surfacesEnabled}
+		<ReviewModal
+			storyId={data.story.id}
+			storySlug={data.story.slug}
+			chapters={data.chapters}
+			scenes={data.scenes}
+		/>
+	{/if}
 </div>

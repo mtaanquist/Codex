@@ -4,6 +4,13 @@
 // and leave its feedback through the staging tools (suggest_edit, leave_comment)
 // rather than rewriting the prose. Shipped-fixed in v1 (see assistant.md).
 
+import {
+	CATEGORY_LABELS,
+	isFullReview,
+	REVIEW_CATEGORIES,
+	type ReviewCategory
+} from '../../../review-shape.ts';
+
 // An open note the Assistant left on an earlier pass, carried into the next
 // run so it does not repeat itself.
 export type PriorNote = {
@@ -29,15 +36,13 @@ function priorLine(note: PriorNote): string {
 	return `- [comment] ${clamp(note.body)}`;
 }
 
-// What a review run looks for. 'notes' is the default: a few high-value
-// observations, right for a draft in motion. The focused passes are
-// exhaustive within one category, and 'full' sweeps every category. All of
-// them are told not to filter, because a model told to be sparing still
-// finds the small mechanical errors and then declines to report them.
-export const REVIEW_FOCUSES = ['notes', 'mechanics', 'prose', 'lore', 'full'] as const;
-export type ReviewFocus = (typeof REVIEW_FOCUSES)[number];
-
-const CATEGORY_LINES: Record<Exclude<ReviewFocus, 'notes' | 'full'>, string[]> = {
+// What a review run looks for. An empty category set is the default: a few
+// high-value observations, right for a draft in motion. A non-empty set is an
+// exhaustive pass over exactly those categories, and all three together is the
+// full copyedit. The exhaustive passes are told not to filter, because a model
+// told to be sparing still finds the small mechanical errors and then declines
+// to report them.
+const CATEGORY_LINES: Record<ReviewCategory, string[]> = {
 	mechanics: [
 		'- Spelling and typos, including doubled or missing words.',
 		'- Grammar and punctuation: comma splices, missing question marks on questions, possessives, missing commas around direct address and appositives.',
@@ -55,21 +60,27 @@ const CATEGORY_LINES: Record<Exclude<ReviewFocus, 'notes' | 'full'>, string[]> =
 	]
 };
 
-const FOCUS_INTRO: Record<Exclude<ReviewFocus, 'notes'>, string> = {
-	mechanics: 'This is a spelling and grammar pass.',
-	prose: 'This is a prose and style pass.',
-	lore: 'This is an entities, continuity, and lore pass.',
-	full: 'This is a full copyedit pass.'
-};
+// The intro sentence for an exhaustive pass: a fixed line for the full copyedit,
+// otherwise the selected category labels joined into one phrase.
+function passIntro(categories: ReviewCategory[]): string {
+	if (isFullReview(categories)) return 'This is a full copyedit pass.';
+	const labels = REVIEW_CATEGORIES.filter((c) => categories.includes(c)).map(
+		(c) => CATEGORY_LABELS[c]
+	);
+	const phrase =
+		labels.length <= 1
+			? labels[0]
+			: `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+	return `This is a ${phrase} pass.`;
+}
 
-function focusInstruction(focus: Exclude<ReviewFocus, 'notes'>): string {
-	const categories =
-		focus === 'full'
-			? [...CATEGORY_LINES.mechanics, ...CATEGORY_LINES.prose, ...CATEGORY_LINES.lore]
-			: CATEGORY_LINES[focus];
+function focusInstruction(categories: ReviewCategory[]): string {
+	const lines = REVIEW_CATEGORIES.filter((c) => categories.includes(c)).flatMap(
+		(c) => CATEGORY_LINES[c]
+	);
 	return [
-		`${FOCUS_INTRO[focus]} Work through the scene and report every issue you find in the categories below, including small mechanical ones and ones you are uncertain about; do not filter for importance - the writer accepts or rejects each note and would rather discard a nitpick than miss an error. Stay inside these categories:`,
-		...categories,
+		`${passIntro(categories)} Work through the scene and report every issue you find in the categories below, including small mechanical ones and ones you are uncertain about; do not filter for importance - the writer accepts or rejects each note and would rather discard a nitpick than miss an error. Stay inside these categories:`,
+		...lines,
 		'Prefer suggest_edit with the corrected text for mechanical fixes, and leave_comment for patterns and observations. Do not rewrite the scene wholesale or change the meaning of the prose.'
 	].join('\n');
 }
@@ -77,17 +88,18 @@ function focusInstruction(focus: Exclude<ReviewFocus, 'notes'>): string {
 export function buildReviewMessage(
 	scene: { id: string; title: string | null },
 	prior: PriorNote[] = [],
-	focus: ReviewFocus = 'notes'
+	categories: ReviewCategory[] = []
 ): string {
 	const title = (scene.title ?? '').trim() || 'this scene';
+	const sparing = categories.length === 0;
 	const lines = [
 		`Review the scene "${title}" (id: ${scene.id}).`,
 		'Read it in full with get_scene if you do not already have the text, then leave your feedback through your tools, anchored to the scene:',
 		'- leave_comment for an observation about continuity, characterisation, pacing, or clarity; quote the passage you mean.',
 		"- suggest_edit for a concrete line edit: replace an exact passage with an improved version, keeping the change minimal and faithful to the author's voice.",
-		focus === 'notes'
+		sparing
 			? 'Be specific and sparing; a few high-value notes beat many shallow ones. Check the scene against the established world and entity details in your context. Do not rewrite the scene wholesale or change the meaning of the prose.'
-			: focusInstruction(focus)
+			: focusInstruction(categories)
 	];
 	if (prior.length === 0) {
 		lines.push(

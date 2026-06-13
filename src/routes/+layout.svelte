@@ -16,6 +16,7 @@
 	import { applyAppearance } from '$lib/appearance-apply';
 	import HelpModal from '$lib/components/HelpModal.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -42,4 +43,5 @@
 <HelpModal />
 {#if data.user}
 	<CommandPalette />
+	<ActivityCenter />
 {/if}

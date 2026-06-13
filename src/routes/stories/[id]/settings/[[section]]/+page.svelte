@@ -21,7 +21,8 @@
 	} from '$lib/page-setup';
 	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
-	import { apiErrorMessage } from '$lib/format';
+	import { startBackgroundReview } from '$lib/assistant-actions';
+	import { REVIEW_CATEGORIES } from '$lib/review-shape';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -127,27 +128,21 @@
 		});
 	}
 
-	// Queues a whole-story Assistant review (a background job); the owner is
-	// notified when its notes land on the review page.
+	// Queues a whole-story Assistant review (a background job) and tracks it in
+	// the activity center; the owner is also notified when its notes land on the
+	// review page. The story-level button runs the full copyedit: every scene
+	// swept category by category, then one cross-scene consistency pass.
 	let requestingReview = $state(false);
 	async function reviewWholeStory() {
 		if (requestingReview) return;
 		requestingReview = true;
 		try {
-			const response = await fetch('/api/assistant/review-job', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				// The story-level review is the full copyedit: every scene swept
-				// category by category, then one cross-scene consistency pass.
-				body: JSON.stringify({ storyId: data.story.id, focus: 'full' })
+			await startBackgroundReview({
+				storyId: data.story.id,
+				categories: [...REVIEW_CATEGORIES],
+				label: 'your story',
+				reviewHref: `/stories/${data.story.slug}/review`
 			});
-			if (!response.ok) {
-				alert(await apiErrorMessage(response, 'Could not start the review.'));
-				return;
-			}
-			alert(
-				'The Assistant is reviewing your story in the background. You will be notified when its notes are ready on the review page.'
-			);
 		} finally {
 			requestingReview = false;
 		}

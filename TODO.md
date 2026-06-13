@@ -519,6 +519,25 @@ two scenes back (merge-scenes), the decided state persisted on the
 stored chat turn (confirmed on the meta proposal entry, no migration)
 so it survives reloads.
 
+Assistant presentation polish (author feedback, 2026-06-13), in
+progress on `claude/trusting-thompson-vphxd3`: (1) the five "Review
+scene for X" row-menu items collapse into one review modal that picks a
+level (scene, chapter, story) and a set of categories, reachable from
+the sidebar row menu, the command palette, the Review pane, and the
+chat's `/review`. The review pipeline now carries a category set
+(empty = sparing notes, all three = full) end to end - shared
+`review-shape.ts` type, the prompt builder, both endpoints, the
+`assistant-review` job, and the worker; review.ts focus enum retired.
+(2) Queued reviews and the summary pass surface in a new client-side
+activity center (Azure-portal style): a running card with a spinner
+that polls `/api/assistant/job-status` to completion (queue functions
+return the job id; `getAssistantJobState` reads pg-boss). Replaces the
+browser alerts on review/summaries. (3) The clear-conversation confirm
+is gone. (4) Chat slash commands: `/review`, `/clear`, `/catchup`,
+`/summaries`, `/help`, with a `/` hint menu. Help docs (reviewing,
+editor) updated. Unit + the review-focus integration test cover the
+category wire; DB-backed run verified locally.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
@@ -1110,8 +1129,8 @@ endpoint. Started 2026-06-09.
       rows count cache reads and writes into the prompt total, so estimates
       err high rather than low.
 
-- [ ] Review focuses and the full story review (2026-06-12; branch
-      `feat/full-review`). The scene Assistant submenu offers five passes:
+- [x] Review focuses and the full story review (2026-06-12; PR #457,
+      shipped as v3.11.0 with the get_scene cap fix, PR #456). The scene Assistant submenu offers five passes:
       quick notes (the old sparing default), spelling/grammar, prose/style,
       entities/lore, and a full copyedit; the focused passes enumerate their
       categories and forbid filtering for importance, since a model told to

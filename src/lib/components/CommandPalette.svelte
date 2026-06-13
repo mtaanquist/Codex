@@ -5,7 +5,8 @@
 	import { closePalette, openPalette, palette } from '$lib/palette.svelte';
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { assistantIntent } from '$lib/assistant.svelte';
-	import { reviewSceneWithAssistant, startSummariesJob } from '$lib/assistant-actions';
+	import { openReviewModal } from '$lib/review-modal.svelte';
+	import { startSummariesJob } from '$lib/assistant-actions';
 	import type { SearchResult } from '$lib/wire-types';
 
 	// The command palette: Ctrl+K (or the topbar button) opens it; type to
@@ -121,17 +122,17 @@
 						}
 					}
 				);
-				if (sceneId) {
-					list.push({
-						label: 'Review this scene',
-						sublabel: 'The Assistant leaves comments and suggested edits',
-						kind: 'Command',
-						run: async () => {
-							closePalette();
-							await reviewSceneWithAssistant(sceneId, `/stories/${storySlug}/review`);
-						}
-					});
-				}
+				list.push({
+					label: 'Review with the Assistant',
+					sublabel: sceneId
+						? 'Comments and suggested edits, by scene, chapter, or story'
+						: 'Comments and suggested edits, by chapter or story',
+					kind: 'Command',
+					run: () => {
+						closePalette();
+						openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
+					}
+				});
 			}
 		}
 		if (storyMatch) {

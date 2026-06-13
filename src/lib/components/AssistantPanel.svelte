@@ -7,6 +7,8 @@
 	import { enhance } from '$app/forms';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { startSummariesJob } from '$lib/assistant-actions';
+	import { openReviewModal } from '$lib/review-modal.svelte';
+	import { flashActivity } from '$lib/activity.svelte';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 
@@ -237,7 +239,13 @@
 
 	async function send(text?: string) {
 		const question = (text ?? input).trim();
-		if (!question || busy) return;
+		if (!question) return;
+		// A line that starts with "/" is a command, not a message to the model.
+		if (question.startsWith('/')) {
+			runSlashCommand(question);
+			return;
+		}
+		if (busy) return;
 		input = '';
 		if (composer) composer.style.height = 'auto';
 		const turn: Message = { role: 'user', content: question };
@@ -258,6 +266,72 @@
 				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 		});
 	}
+
+	// The chat's slash commands: shortcuts to the same actions the menu offers,
+	// typed in the composer. The hint menu below lists them as you type "/".
+	const SLASH_COMMANDS = [
+		{ name: 'review', detail: 'Review a scene, chapter, or the whole story' },
+		{ name: 'catchup', detail: 'Recap the story so far' },
+		{ name: 'summaries', detail: 'Refresh scene and chapter summaries' },
+		{ name: 'clear', detail: 'Clear this conversation' },
+		{ name: 'help', detail: 'List these commands' }
+	];
+
+	function runSlashCommand(raw: string) {
+		input = '';
+		if (composer) composer.style.height = 'auto';
+		slashSelected = 0;
+		const name = raw.slice(1).split(/\s+/)[0].toLowerCase();
+		switch (name) {
+			case 'clear':
+				void clearConversation();
+				break;
+			case 'review':
+				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
+				break;
+			case 'catchup':
+			case 'catch-up':
+				void catchUp();
+				break;
+			case 'summaries':
+				void updateSummaries();
+				break;
+			case 'help':
+				messages = [
+					...messages,
+					{
+						role: 'assistant',
+						content:
+							'Commands you can type here:\n\n' +
+							SLASH_COMMANDS.map((c) => `/${c.name} - ${c.detail}`).join('\n')
+					}
+				];
+				break;
+			default:
+				messages = [
+					...messages,
+					{
+						role: 'assistant',
+						content: `I do not know the command "/${name}". Type /help to see the commands.`
+					}
+				];
+		}
+	}
+
+	// The hint menu: the matching commands while the composer holds a bare "/word".
+	let slashSelected = $state(0);
+	const slashQuery = $derived(
+		input.startsWith('/') && !input.includes('\n')
+			? input.slice(1).split(/\s+/)[0].toLowerCase()
+			: null
+	);
+	const slashMatches = $derived(
+		slashQuery === null ? [] : SLASH_COMMANDS.filter((c) => c.name.startsWith(slashQuery))
+	);
+	const slashOpen = $derived(slashMatches.length > 0 && !busy);
+	$effect(() => {
+		if (slashSelected >= slashMatches.length) slashSelected = 0;
+	});
 
 	// Intents raised by the editor menus or the command palette: the page has
 	// already switched the right pane here; the panel acts on the intent.
@@ -307,7 +381,6 @@
 	let clearing = $state(false);
 	async function clearConversation() {
 		if (clearing || busy) return;
-		if (!confirm('Clear this conversation? It cannot be brought back.')) return;
 		clearing = true;
 		try {
 			const response = await fetch('/api/assistant/chat', {
@@ -316,7 +389,7 @@
 				body: JSON.stringify({ storyId })
 			});
 			if (!response.ok) {
-				alert('Could not clear the conversation.');
+				flashActivity('failed', 'Could not clear the conversation', 'Try again in a moment.');
 				return;
 			}
 			messages = [{ role: 'assistant', content: opening }];
@@ -336,6 +409,23 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
+		if (slashOpen) {
+			if (event.key === 'ArrowDown') {
+				event.preventDefault();
+				slashSelected = Math.min(slashSelected + 1, slashMatches.length - 1);
+				return;
+			}
+			if (event.key === 'ArrowUp') {
+				event.preventDefault();
+				slashSelected = Math.max(slashSelected - 1, 0);
+				return;
+			}
+			if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+				event.preventDefault();
+				runSlashCommand(`/${slashMatches[slashSelected].name}`);
+				return;
+			}
+		}
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			void send();
@@ -496,11 +586,29 @@
 				</button>
 			</div>
 		{/if}
+		{#if slashOpen}
+			<div class="slash-menu" role="listbox" aria-label="Commands">
+				{#each slashMatches as command, index (command.name)}
+					<button
+						class="slash-item"
+						class:active={index === slashSelected}
+						role="option"
+						aria-selected={index === slashSelected}
+						type="button"
+						onmouseenter={() => (slashSelected = index)}
+						onclick={() => runSlashCommand(`/${command.name}`)}
+					>
+						<span class="slash-name">/{command.name}</span>
+						<span class="slash-detail">{command.detail}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
 		<div class="composer">
 			<textarea
 				bind:this={composer}
 				rows="1"
-				placeholder="Ask about your story..."
+				placeholder="Ask about your story, or type / for commands..."
 				value={input}
 				oninput={grow}
 				onkeydown={onKeydown}
@@ -714,6 +822,46 @@
 		color: var(--text);
 		border-color: var(--border-strong);
 		background: var(--bg-hover);
+	}
+	.slash-menu {
+		margin: 0 12px 6px;
+		border: 1px solid var(--border);
+		border-radius: 9px;
+		background: var(--bg-elevated);
+		box-shadow: var(--shadow);
+		padding: 5px;
+		display: flex;
+		flex-direction: column;
+	}
+	.slash-item {
+		display: flex;
+		align-items: baseline;
+		gap: 9px;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		background: none;
+		color: var(--text);
+		font-family: var(--font-ui);
+		padding: 6px 8px;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+	.slash-item.active {
+		background: var(--bg-hover);
+	}
+	.slash-name {
+		flex: 0 0 auto;
+		font-family: var(--font-mono);
+		font-size: 12.5px;
+		font-weight: 550;
+	}
+	.slash-detail {
+		font-size: 12px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.composer {
 		border-top: 1px solid var(--border);

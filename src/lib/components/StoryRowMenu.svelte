@@ -19,8 +19,7 @@
 		mergeSelection,
 		onClose,
 		onRenameChapter,
-		onReviewChapter,
-		onReviewScene,
+		onOpenReview,
 		onSuggestSplit,
 		onDuplicateScene,
 		onMergeSelected
@@ -34,11 +33,8 @@
 		mergeSelection: SvelteSet<string>;
 		onClose: (refocus?: boolean) => void;
 		onRenameChapter: (chapterId: string) => void;
-		onReviewChapter: (chapterId: string) => void;
-		onReviewScene: (
-			sceneId: string,
-			focus: 'notes' | 'mechanics' | 'prose' | 'lore' | 'full'
-		) => void;
+		// Opens the review modal for the picked scene or chapter.
+		onOpenReview: (request: { sceneId?: string; chapterId?: string }) => void;
 		onSuggestSplit: (sceneId: string) => void;
 		onDuplicateScene: (sceneId: string) => void;
 		onMergeSelected: () => void;
@@ -125,9 +121,9 @@
 							class="row-menu-item"
 							type="button"
 							role="menuitem"
-							onclick={() => onReviewChapter(target.id)}
+							onclick={() => onOpenReview({ chapterId: target.id })}
 						>
-							Review this chapter
+							Review with the Assistant...
 						</button>
 					</div>
 				{/if}
@@ -215,41 +211,9 @@
 							class="row-menu-item"
 							type="button"
 							role="menuitem"
-							onclick={() => onReviewScene(target.id, 'notes')}
+							onclick={() => onOpenReview({ sceneId: target.id })}
 						>
-							Review this scene
-						</button>
-						<button
-							class="row-menu-item"
-							type="button"
-							role="menuitem"
-							onclick={() => onReviewScene(target.id, 'mechanics')}
-						>
-							Review spelling and grammar
-						</button>
-						<button
-							class="row-menu-item"
-							type="button"
-							role="menuitem"
-							onclick={() => onReviewScene(target.id, 'prose')}
-						>
-							Review prose and style
-						</button>
-						<button
-							class="row-menu-item"
-							type="button"
-							role="menuitem"
-							onclick={() => onReviewScene(target.id, 'lore')}
-						>
-							Review entities and lore
-						</button>
-						<button
-							class="row-menu-item"
-							type="button"
-							role="menuitem"
-							onclick={() => onReviewScene(target.id, 'full')}
-						>
-							Full review of this scene
+							Review with the Assistant...
 						</button>
 						<button
 							class="row-menu-item"

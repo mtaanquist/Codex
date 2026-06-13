@@ -33,15 +33,23 @@ Unlike a reviewer, you can also edit the manuscript right here. The middle of th
 
 ## Asking the Assistant to review
 
-Right-click a scene in the sidebar and open the Assistant submenu to choose what kind of review you want:
+Open the review window and pick what to review and what to check. You can open it several ways:
 
-- **Review this scene** leaves a few high-value notes, right for a draft still in motion.
-- **Review spelling and grammar** is an exhaustive pass for typos, punctuation, wrong homophones, and spelling-convention consistency.
-- **Review prose and style** looks for filter verbs, point-of-view epithets, dangling modifiers, repetition tics, and pacing.
-- **Review entities and lore** checks names, facts, characterisation, and lore against your worldbuilding.
-- **Full review of this scene** does all of the above in one pass.
+- Right-click a scene or chapter in the sidebar, open the Assistant submenu, and choose **Review with the Assistant**.
+- In Review mode, use the **Review with the Assistant** button above the outline.
+- From the command bar (Ctrl+K, or Cmd+K on a Mac), choose **Review with the Assistant**.
+- In the Assistant chat, type `/review`.
 
-For the whole story, use "Review this story" in the Review section of the story's settings. That runs the full review on every scene and finishes with a cross-scene pass that reads the entire story in order, looking for things no single-scene pass can see: names or facts that drift between chapters, timeline arithmetic that does not add up, an idiom or spelling convention rendered differently in different places. It runs in the background and notifies you when its notes are ready. The exhaustive passes leave many small notes by design - you accept or reject each one, and discarding a nitpick costs one click.
+The window has two choices. First, **what to review**: this scene, this chapter, or the whole story. Second, **what to check**:
+
+- **General notes** leaves a few high-value notes, right for a draft still in motion. This is the default.
+- **Spelling and grammar** is an exhaustive pass for typos, punctuation, wrong homophones, and spelling-convention consistency.
+- **Prose and style** looks for filter verbs, point-of-view epithets, dangling modifiers, repetition tics, and pacing.
+- **Entities and lore** checks names, facts, characterisation, and lore against your worldbuilding.
+
+Tick more than one to check several at once, or tick all three for a full copyedit. The detailed passes leave many small notes by design - you accept or reject each one, and discarding a nitpick costs one click.
+
+A single scene is reviewed right away. A chapter or the whole story runs in the background, and a card in the bottom corner shows it working and tells you when it is ready; you are notified as well. A whole-story review also finishes with a cross-scene pass that reads the entire story in order, looking for things no single-scene pass can see: names or facts that drift between chapters, timeline arithmetic that does not add up, an idiom or spelling convention rendered differently in different places.
 
 ## Working through the feedback
 
