@@ -9,12 +9,8 @@ import {
 	stories
 } from '../db/schema.ts';
 import { assembleContext, buildSystemMessage } from './context/assemble.ts';
-import {
-	buildConsistencyMessage,
-	buildReviewMessage,
-	type PriorNote,
-	type ReviewFocus
-} from './prompts/review.ts';
+import { buildConsistencyMessage, buildReviewMessage, type PriorNote } from './prompts/review.ts';
+import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { complete, type GatewayDeps } from './gateway.ts';
 import type { ChatMessage } from './providers/types.ts';
 
@@ -108,7 +104,7 @@ export async function reviewOneScene(
 		userId: string;
 		storyId: string;
 		scene: { id: string; title: string | null };
-		focus?: ReviewFocus;
+		categories?: ReviewCategory[];
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
@@ -119,10 +115,10 @@ export async function reviewOneScene(
 		sceneId: opts.scene.id
 	});
 	const prior = await openAssistantNotes(db, opts.scene.id);
-	const focus = opts.focus ?? 'notes';
+	const categories = opts.categories ?? [];
 	const task: ChatMessage = {
 		role: 'user',
-		content: buildReviewMessage(opts.scene, prior, focus)
+		content: buildReviewMessage(opts.scene, prior, categories)
 	};
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), task]
@@ -135,7 +131,7 @@ export async function reviewOneScene(
 			role: 'reviewer',
 			enableTools: true,
 			messages,
-			...(focus === 'notes' ? {} : { toolBudget: FOCUSED_PASS_BUDGET }),
+			...(categories.length === 0 ? {} : { toolBudget: FOCUSED_PASS_BUDGET }),
 			signal: opts.signal
 		},
 		deps
@@ -187,7 +183,7 @@ export async function reviewStoryScenes(
 		userId: string;
 		storyId: string;
 		chapterId?: string;
-		focus?: ReviewFocus;
+		categories?: ReviewCategory[];
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
@@ -217,7 +213,7 @@ export async function reviewStoryScenes(
 					userId: opts.userId,
 					storyId: opts.storyId,
 					scene,
-					focus: opts.focus,
+					categories: opts.categories,
 					signal: opts.signal
 				},
 				deps
@@ -231,7 +227,7 @@ export async function reviewStoryScenes(
 	// A full review ends with one cross-scene pass: the only run that can see
 	// drift between scenes (names, timelines, idiom conventions). Pointless
 	// for a single scene, and skipped when every per-scene pass failed.
-	if (opts.focus === 'full' && targets.length > 1 && reviewed > 0) {
+	if (isFullReview(opts.categories ?? []) && targets.length > 1 && reviewed > 0) {
 		const counts = await Promise.all(targets.map((scene) => countAssistantNotes(db, scene.id)));
 		try {
 			await reviewStoryConsistency(

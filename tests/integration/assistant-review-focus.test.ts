@@ -96,8 +96,8 @@ const userText = (messages: ChatMessage[]) =>
 		.map((m) => m.content)
 		.join('\n');
 
-describe('reviewStoryScenes focus', () => {
-	it('the default pass reviews each scene sparingly with no consistency run', async () => {
+describe('reviewStoryScenes categories', () => {
+	it('an empty category set reviews each scene sparingly with no consistency run', async () => {
 		const storyId = await seedStory(2);
 		const { provider, seen } = recordingProvider();
 		const result = await reviewStoryScenes(db, { userId, storyId }, { provider });
@@ -108,10 +108,14 @@ describe('reviewStoryScenes focus', () => {
 		}
 	});
 
-	it('a full review sweeps every scene by category, then runs the cross-scene pass', async () => {
+	it('all three categories sweep every scene, then run the cross-scene pass', async () => {
 		const storyId = await seedStory(3);
 		const { provider, seen } = recordingProvider();
-		const result = await reviewStoryScenes(db, { userId, storyId, focus: 'full' }, { provider });
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: ['mechanics', 'prose', 'lore'] },
+			{ provider }
+		);
 		expect(result.reviewed).toBe(3);
 		expect(seen).toHaveLength(4);
 		for (const messages of seen.slice(0, 3)) {
@@ -123,10 +127,24 @@ describe('reviewStoryScenes focus', () => {
 		expect(consistency).toContain('Scene 3');
 	});
 
+	it('a single category sweeps each scene without the cross-scene pass', async () => {
+		const storyId = await seedStory(3);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(db, { userId, storyId, categories: ['mechanics'] }, { provider });
+		expect(seen).toHaveLength(3);
+		for (const messages of seen) {
+			expect(userText(messages)).toContain('spelling and grammar pass');
+		}
+	});
+
 	it('skips the consistency pass for a single-scene story', async () => {
 		const storyId = await seedStory(1);
 		const { provider, seen } = recordingProvider();
-		await reviewStoryScenes(db, { userId, storyId, focus: 'full' }, { provider });
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: ['mechanics', 'prose', 'lore'] },
+			{ provider }
+		);
 		expect(seen).toHaveLength(1);
 	});
 });

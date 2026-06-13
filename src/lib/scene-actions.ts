@@ -45,15 +45,6 @@ export async function splitScene(sceneId: string, at: { offset: number } | { bef
 	);
 }
 
-// Queues a whole-chapter Assistant review as a background job.
-export async function startChapterReview(storyId: string, chapterId: string) {
-	return await post(
-		'/api/assistant/review-job',
-		{ storyId, chapterId },
-		'Could not start the chapter review.'
-	);
-}
-
 // Records a proposal card's outcome on its stored chat turn, so the card
 // stays decided (or reopens after a revert) across reloads. Best effort:
 // the split or merge itself already landed.

@@ -51,6 +51,7 @@ import {
 	s3AssetStore
 } from '../lib/server/assets.ts';
 import { reviewStoryScenes } from '../lib/server/llm/scene-review.ts';
+import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { eq } from 'drizzle-orm';
@@ -181,45 +182,47 @@ await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 // stage the Assistant's notes through the review tools, then tell the owner it
 // is ready (or that the endpoint could not be reached). Matches the inline
 // single-scene endpoint, just unattended and over many scenes.
-await boss.work<{ userId: string; storyId: string; chapterId?: string; focus?: 'notes' | 'full' }>(
-	ASSISTANT_REVIEW_QUEUE,
-	async (jobs) => {
-		for (const job of jobs) {
-			const { userId, storyId, chapterId, focus } = job.data;
-			const [story] = await db
-				.select({
-					ownerId: schema.stories.ownerId,
-					title: schema.stories.title,
-					slug: schema.stories.slug
-				})
-				.from(schema.stories)
-				.where(eq(schema.stories.id, storyId));
-			// Re-check ownership at run time: the story may have been deleted since.
-			if (!story || story.ownerId !== userId) {
-				console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
-				continue;
-			}
-			const result = await reviewStoryScenes(db, { userId, storyId, chapterId, focus });
-			const href = `/stories/${story.slug}/review`;
-			let title: string;
-			if (result.reviewed === 0 && result.failed > 0) {
-				title = `The Assistant could not review "${story.title}". Check the endpoint in your settings.`;
-			} else if (result.notes === 0) {
-				title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
-			} else {
-				title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
-			}
-			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
-				title,
-				href
-			});
-			await queueDigests(digestUsers);
-			console.log(
-				`assistant review: story ${storyId} - ${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`
-			);
+await boss.work<{
+	userId: string;
+	storyId: string;
+	chapterId?: string;
+	categories?: ReviewCategory[];
+}>(ASSISTANT_REVIEW_QUEUE, async (jobs) => {
+	for (const job of jobs) {
+		const { userId, storyId, chapterId, categories } = job.data;
+		const [story] = await db
+			.select({
+				ownerId: schema.stories.ownerId,
+				title: schema.stories.title,
+				slug: schema.stories.slug
+			})
+			.from(schema.stories)
+			.where(eq(schema.stories.id, storyId));
+		// Re-check ownership at run time: the story may have been deleted since.
+		if (!story || story.ownerId !== userId) {
+			console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
+			continue;
 		}
+		const result = await reviewStoryScenes(db, { userId, storyId, chapterId, categories });
+		const href = `/stories/${story.slug}/review`;
+		let title: string;
+		if (result.reviewed === 0 && result.failed > 0) {
+			title = `The Assistant could not review "${story.title}". Check the endpoint in your settings.`;
+		} else if (result.notes === 0) {
+			title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
+		} else {
+			title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
+		}
+		const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
+			title,
+			href
+		});
+		await queueDigests(digestUsers);
+		console.log(
+			`assistant review: story ${storyId} - ${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`
+		);
 	}
-);
+});
 
 // Whole-story summary maintenance: draft and refresh scene and chapter
 // summaries (the metadata that feeds recap and context). Owner re-checked at run

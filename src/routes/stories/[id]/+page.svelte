@@ -5,7 +5,8 @@
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { assistantIntent } from '$lib/assistant.svelte';
-	import { reviewSceneWithAssistant } from '$lib/assistant-actions';
+	import { openReviewModal } from '$lib/review-modal.svelte';
+	import ReviewModal from '$lib/components/ReviewModal.svelte';
 	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import StoryPreview from '$lib/components/StoryPreview.svelte';
@@ -20,8 +21,7 @@
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction,
 		persistProposalState,
-		splitScene as splitSceneAction,
-		startChapterReview
+		splitScene as splitSceneAction
 	} from '$lib/scene-actions';
 	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
 	import EntityCard from '$lib/components/EntityCard.svelte';
@@ -268,36 +268,15 @@
 		await goto(`${storyPath}?scene=${result.newSceneId}`, { invalidateAll: true });
 	}
 
-	// Asks the Assistant to review one scene; it stages comments and suggested
-	// edits the author then accepts or rejects on the review screen. Runs inline
-	// (one scene is bounded), so a non-blocking banner covers the wait.
-	let reviewingScene = $state(false);
-	async function reviewScene(
-		sceneId: string,
-		focus: 'notes' | 'mechanics' | 'prose' | 'lore' | 'full' = 'notes'
-	) {
+	// Opens the review modal for a scene or chapter from the sidebar row menu;
+	// the modal drives the run and reports progress in the activity center.
+	function openReviewFor(request: { sceneId?: string; chapterId?: string }) {
 		rowMenu = null;
-		if (reviewingScene) return;
-		reviewingScene = true;
-		try {
-			await reviewSceneWithAssistant(sceneId, `/stories/${data.story.slug}/review`, focus);
-		} finally {
-			reviewingScene = false;
-		}
-	}
-
-	// Reviews a whole chapter. Too long to run inline, so it queues a background
-	// job and the owner is notified when it is ready.
-	async function reviewChapter(chapterId: string) {
-		rowMenu = null;
-		const result = await startChapterReview(data.story.id, chapterId);
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		alert(
-			'The Assistant is reviewing this chapter in the background. You will be notified when its notes are ready on the review page.'
-		);
+		openReviewModal({
+			level: request.sceneId ? 'scene' : 'chapter',
+			sceneId: request.sceneId,
+			chapterId: request.chapterId
+		});
 	}
 
 	// Splits the open scene at the cursor, like a page break: the rest of
@@ -914,59 +893,24 @@
 			renamingChapterId = id;
 			rowMenu = null;
 		}}
-		onReviewChapter={reviewChapter}
-		onReviewScene={reviewScene}
+		onOpenReview={openReviewFor}
 		onSuggestSplit={suggestSplit}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}
 	/>
 {/if}
 
-{#if reviewingScene}
-	<div class="assistant-review-busy" role="status" aria-live="polite">
-		<span class="arb-dot"></span> The Assistant is reviewing this scene...
-	</div>
+{#if data.assistant.surfacesEnabled}
+	<ReviewModal
+		storyId={data.story.id}
+		storySlug={data.story.slug}
+		chapters={data.chapters}
+		scenes={data.scenes}
+		defaultSceneId={selectedSceneId ?? null}
+	/>
 {/if}
 
 <style>
-	.assistant-review-busy {
-		position: fixed;
-		bottom: 18px;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 60;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		padding: 8px 16px;
-		font-size: 13px;
-		color: var(--text);
-		box-shadow: var(--shadow);
-	}
-	.arb-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 99px;
-		background: var(--accent);
-		animation: arb-pulse 1.1s infinite;
-	}
-	@keyframes arb-pulse {
-		0%,
-		100% {
-			opacity: 0.3;
-		}
-		50% {
-			opacity: 1;
-		}
-	}
-	/* A scene picked for merging keeps a quiet accent ring until the merge
-	   or the selection is cleared. */
-
-	/* The sidebar rows' right-click menu; same look as the editor's
-	   selection menu. */
 	main.pane.center {
 		scroll-behavior: smooth;
 	}

@@ -1,6 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import { env } from '$env/dynamic/private';
 import type { EmailMessage } from './email';
+import type { ReviewCategory } from '../review-shape';
 
 // Send-only pg-boss handle for the app; the worker process owns the handlers.
 // Queueing is best-effort: a failed enqueue logs and never breaks a save. A
@@ -191,26 +192,27 @@ export async function queueUserExport(exportId: string): Promise<boolean> {
 
 // Queues a whole-story or single-chapter Assistant review. The singleton key
 // (story + chapter scope) coalesces repeat requests so a writer cannot pile up
-// duplicate passes over the same scenes while one is already running.
+// duplicate passes over the same scenes while one is already running. Returns
+// the job id so the caller can poll it to completion, or null if the enqueue
+// failed (or coalesced into a pending job).
 export async function queueAssistantReview(input: {
 	userId: string;
 	storyId: string;
 	chapterId?: string;
-	// 'notes' (sparing) or 'full' (copyedit + cross-scene pass); the focused
-	// single-category passes run inline per scene, not as jobs.
-	focus?: 'notes' | 'full';
-}): Promise<boolean> {
+	// The categories to check: empty is the sparing pass, all three the full
+	// copyedit plus the cross-scene consistency pass.
+	categories: ReviewCategory[];
+}): Promise<string | null> {
 	try {
 		const boss = await getBoss();
 		const scope = input.chapterId ? `${input.storyId}:${input.chapterId}` : input.storyId;
-		const id = await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
+		return await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
 			singletonKey: scope,
 			singletonSeconds: 30
 		});
-		return id !== null;
 	} catch (error) {
 		console.error('queueing assistant review failed:', error);
-		return false;
+		return null;
 	}
 }
 
@@ -220,17 +222,39 @@ export async function queueAssistantReview(input: {
 export async function queueAssistantSummaries(input: {
 	userId: string;
 	storyId: string;
-}): Promise<boolean> {
+}): Promise<string | null> {
 	try {
 		const boss = await getBoss();
-		const id = await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
+		return await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
 			singletonKey: input.storyId,
 			singletonSeconds: 30
 		});
-		return id !== null;
 	} catch (error) {
 		console.error('queueing assistant summaries failed:', error);
-		return false;
+		return null;
+	}
+}
+
+// Where the activity center's polling reads a queued Assistant job's progress.
+// pg-boss archives a job once it settles, so a job it can no longer find by id
+// is treated as done rather than lost.
+export type AssistantJobState = 'running' | 'done' | 'failed';
+
+export async function getAssistantJobState(
+	kind: 'review' | 'summaries',
+	id: string
+): Promise<AssistantJobState> {
+	const queue = kind === 'review' ? ASSISTANT_REVIEW_QUEUE : ASSISTANT_SUMMARIES_QUEUE;
+	try {
+		const boss = await getBoss();
+		const job = await boss.getJobById(queue, id);
+		if (!job) return 'done';
+		if (job.state === 'failed' || job.state === 'cancelled') return 'failed';
+		if (job.state === 'completed') return 'done';
+		return 'running';
+	} catch (error) {
+		console.error('reading assistant job state failed:', error);
+		return 'done';
 	}
 }
 

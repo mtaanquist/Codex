@@ -12,10 +12,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { userId, payload } = await readAssistantPayload<{ storyId?: unknown }>(request, locals);
 	const story = await requireAssistantStory(userId, payload.storyId);
 
-	const queued = await queueAssistantSummaries({ userId, storyId: story.id });
-	if (!queued) error(503, 'Could not start the summary pass. Try again in a moment.');
+	const jobId = await queueAssistantSummaries({ userId, storyId: story.id });
+	if (!jobId) error(503, 'Could not start the summary pass. Try again in a moment.');
 
-	return new Response(JSON.stringify({ ok: true }), {
+	return new Response(JSON.stringify({ ok: true, jobId }), {
 		headers: { 'content-type': 'application/json' }
 	});
 };

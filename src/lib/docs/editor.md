@@ -104,6 +104,14 @@ The Assistant can also suggest where to split a long scene: ask it in the chat, 
 
 The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
 
+You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it:
+
+- `/review` opens the review window.
+- `/catchup` writes a recap of the story so far.
+- `/summaries` refreshes scene and chapter summaries.
+- `/clear` clears the conversation.
+- `/help` lists these commands.
+
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
 Select "Update summaries" from the menu next to the send button to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
@@ -112,13 +120,9 @@ While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to con
 
 To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. The panel shows where you are in the prose - the text you had selected, or the passage leading up to your cursor - so a brief like "continue from here" picks up in the right place; select the x on that quote if you do not want it sent. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
 
-You can also ask the Assistant to review your writing and leave comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. There are three ways in:
+You can also ask the Assistant to review your writing and leave comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. Right-click a scene or chapter in the left sidebar, choose Assistant, then "Review with the Assistant"; or type `/review` in the chat. A window opens where you pick what to review (this scene, this chapter, or the whole story) and what to check. The Review section of "Reviewing" covers the choices in full.
 
-- A single scene: right-click the scene in the left sidebar and choose Assistant, then "Review this scene".
-- A chapter: right-click the chapter and choose Assistant, then "Review this chapter".
-- The whole story: open the story's settings, go to Review, and select "Review this story with the Assistant".
-
-A chapter or whole-story review runs in the background, since it reads every scene; you get a notification when its notes are ready. Nothing in your writing changes until you accept a suggestion.
+A chapter or whole-story review runs in the background, since it reads every scene; a card in the bottom corner shows it working and you get a notification when its notes are ready. Nothing in your writing changes until you accept a suggestion.
 
 To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted. This does not change your other stories or your account setting.
 
