@@ -175,7 +175,9 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(tab).toBeVisible();
 	await expect(async () => {
 		await tab.click();
-		await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible({ timeout: 2000 });
+		await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible({
+			timeout: 2000
+		});
 	}).toPass();
 
 	// The recap and summary actions live in the menu next to the send button;
@@ -246,7 +248,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.assistant-muted')).toBeVisible();
 	await expect(tab).toBeVisible();
 	await page.getByRole('button', { name: 'Turn on for this story' }).click();
-	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
+	await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible();
 
 	// Turning the account switch off removes the tab entirely (gated, not greyed).
 	await page.goto('/account/assistant');
