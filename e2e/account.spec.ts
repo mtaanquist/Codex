@@ -175,7 +175,9 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(tab).toBeVisible();
 	await expect(async () => {
 		await tab.click();
-		await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible({ timeout: 2000 });
+		await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible({
+			timeout: 2000
+		});
 	}).toPass();
 
 	// The recap and summary actions live in the menu next to the send button;
@@ -214,7 +216,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.row-menu')).toBeVisible();
 	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
 	await expect(
-		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review this scene' })
+		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review with the Assistant...' })
 	).toBeVisible();
 	await expect(
 		page.locator('.row-submenu').getByRole('menuitem', { name: 'Suggest where to split' })
@@ -236,7 +238,9 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await page.keyboard.press('ControlOrMeta+k');
 	await expect(page.locator('.palette')).toBeVisible();
 	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Review this scene' })).toBeVisible();
+	await expect(
+		page.locator('.palette-item', { hasText: 'Review with the Assistant' })
+	).toBeVisible();
 	await page.keyboard.press('Escape');
 
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
@@ -244,7 +248,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.assistant-muted')).toBeVisible();
 	await expect(tab).toBeVisible();
 	await page.getByRole('button', { name: 'Turn on for this story' }).click();
-	await expect(page.getByPlaceholder('Ask about your story...')).toBeVisible();
+	await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible();
 
 	// Turning the account switch off removes the tab entirely (gated, not greyed).
 	await page.goto('/account/assistant');

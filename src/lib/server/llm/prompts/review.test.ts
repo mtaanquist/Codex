@@ -50,35 +50,44 @@ describe('buildReviewMessage', () => {
 	});
 });
 
-describe('review focuses', () => {
+describe('review categories', () => {
 	const scene = { id: 's1', title: 'The Gate' };
 
-	it('the default pass stays sparing and never mentions a category sweep', () => {
+	it('an empty category set stays sparing and never mentions a category sweep', () => {
 		const message = buildReviewMessage(scene);
 		expect(message).toContain('specific and sparing');
 		expect(message).not.toContain('do not filter for importance');
 	});
 
-	it('every focused pass forbids filtering and names its categories', () => {
-		const mechanics = buildReviewMessage(scene, [], 'mechanics');
+	it('every single-category pass forbids filtering and names its categories', () => {
+		const mechanics = buildReviewMessage(scene, [], ['mechanics']);
 		expect(mechanics).toContain('spelling and grammar pass');
 		expect(mechanics).toContain('do not filter for importance');
 		expect(mechanics).toContain('comma splices');
 		expect(mechanics).not.toContain('filter verbs');
 
-		const prose = buildReviewMessage(scene, [], 'prose');
+		const prose = buildReviewMessage(scene, [], ['prose']);
 		expect(prose).toContain('prose and style pass');
 		expect(prose).toContain('filter verbs');
 		expect(prose).not.toContain('comma splices');
 
-		const lore = buildReviewMessage(scene, [], 'lore');
+		const lore = buildReviewMessage(scene, [], ['lore']);
 		expect(lore).toContain('lore pass');
 		expect(lore).toContain('Continuity');
 		expect(lore).not.toContain('comma splices');
 	});
 
-	it('the full pass sweeps all categories and drops the sparing instruction', () => {
-		const message = buildReviewMessage(scene, [], 'full');
+	it('a subset names every chosen category and only those', () => {
+		const message = buildReviewMessage(scene, [], ['mechanics', 'prose']);
+		expect(message).toContain('spelling and grammar and prose and style pass');
+		expect(message).toContain('comma splices');
+		expect(message).toContain('filter verbs');
+		expect(message).not.toContain('Lore: contradictions');
+		expect(message).not.toContain('full copyedit');
+	});
+
+	it('all three categories is the full pass and drops the sparing instruction', () => {
+		const message = buildReviewMessage(scene, [], ['mechanics', 'prose', 'lore']);
 		expect(message).toContain('full copyedit pass');
 		expect(message).toContain('comma splices');
 		expect(message).toContain('filter verbs');
