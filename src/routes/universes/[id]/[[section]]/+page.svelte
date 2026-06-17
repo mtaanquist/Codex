@@ -7,6 +7,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import { formatNumber } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
@@ -158,490 +159,476 @@
 	<title>{data.universe.name} - Codex</title>
 </svelte:head>
 
-<div class="page-shell">
-	<PageTopBar
-		back={{
-			href: resolve('/universes/[id]/plan', { id: data.universe.slug }),
-			label: data.universe.name
-		}}
-		help={{
-			topic: active === 'export' ? 'getting-started' : 'planning',
-			label: 'universe settings'
-		}}
-	/>
-
-	<div class="admin-shell">
-		<aside class="admin-sidebar">
-			<div class="admin-sidebar-title">
-				<span class="ic badge sm" style="background: {universeColor}; color: #fff;">
-					{data.universe.name.slice(0, 1).toUpperCase()}
-				</span>
-				<div>
-					<div class="tt">{data.universe.name}</div>
-					<div class="st">Universe</div>
-				</div>
+<SettingsShell>
+	{#snippet topbar()}
+		<PageTopBar
+			back={{
+				href: resolve('/universes/[id]/plan', { id: data.universe.slug }),
+				label: data.universe.name
+			}}
+			help={{
+				topic: active === 'export' ? 'getting-started' : 'planning',
+				label: 'universe settings'
+			}}
+		/>
+	{/snippet}
+	{#snippet sidebar()}
+		<div class="admin-sidebar-title">
+			<span class="ic badge sm" style="background: {universeColor}; color: #fff;">
+				{data.universe.name.slice(0, 1).toUpperCase()}
+			</span>
+			<div>
+				<div class="tt">{data.universe.name}</div>
+				<div class="st">Universe</div>
 			</div>
-			<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-			<nav class="admin-nav">
-				<div class="admin-nav-label">Universe settings</div>
-				{#each NAV as item (item.id)}
-					<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
-						{item.label}
-					</a>
-				{/each}
-			</nav>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
-		</aside>
+		</div>
+		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
+		<nav class="admin-nav">
+			<div class="admin-nav-label">Universe settings</div>
+			{#each NAV as item (item.id)}
+				<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
+					{item.label}
+				</a>
+			{/each}
+		</nav>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/snippet}
 
-		<main class="admin-main page-body">
-			<div class="admin-main-inner">
-				<div class="admin-head">
-					<p class="admin-eyebrow">Universe</p>
-					<h1 class="admin-title">{data.universe.name} - settings</h1>
-					<p class="admin-lede">The world your stories share, and everything about it.</p>
-				</div>
-
-				<section class="admin-section" class:active={active === 'details'}>
-					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">About this universe</h2>
-							<p class="admin-block-sub">
-								The universe is the container that holds your shared worldbuilding. Every story you
-								write belongs to one.
-							</p>
-						</div>
-						<form method="POST" action="?/update">
-							{#if form?.action === 'update' && form.message}
-								<p class="form-error" role="alert">{form.message}</p>
-							{/if}
-							{#if form?.action === 'update' && form.saved}
-								<p class="form-saved" role="status">Saved.</p>
-							{/if}
-							<div class="field">
-								<label for="u-name">Name</label>
-								<input
-									id="u-name"
-									class="input"
-									type="text"
-									name="name"
-									value={data.universe.name}
-									required
-								/>
-								<span class="field-hint">
-									The web address follows the name: /universes/{data.universe.slug}. Renaming moves
-									the address; the old one stops working.
-								</span>
-							</div>
-							<div class="field">
-								<label for="u-description">Description</label>
-								<textarea id="u-description" class="input" name="description" rows="6"
-									>{data.universe.descriptionMd ?? ''}</textarea
-								>
-								<span class="field-hint">Markdown is fine. Shown on the library card.</span>
-							</div>
-							<div class="field">
-								<label class="check-row">
-									<input
-										type="checkbox"
-										name="establishedSetting"
-										checked={data.universe.establishedSetting}
-									/>
-									Established setting
-								</label>
-								<span class="field-hint">
-									Tick this when the universe is an existing published setting, such as Forgotten
-									Realms or Azeroth, rather than your own invention. The Assistant will then also
-									use what it knows about that setting's canon, and your own material here wins
-									wherever the two differ.
-								</span>
-							</div>
-							<div class="settings-actions">
-								<button class="btn btn-primary" type="submit">Save changes</button>
-							</div>
-						</form>
-					</div>
-
-					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Contents</h2>
-							<p class="admin-block-sub">What this universe currently contains.</p>
-						</div>
-						<div class="stat-grid">
-							<div class="stat-tile">
-								<div class="n">{formatNumber(data.contents.stories)}</div>
-								<div class="l">{data.contents.stories === 1 ? 'story' : 'stories'}</div>
-							</div>
-							<div class="stat-tile">
-								<div class="n">{formatNumber(data.contents.characters)}</div>
-								<div class="l">{data.contents.characters === 1 ? 'character' : 'characters'}</div>
-							</div>
-							<div class="stat-tile">
-								<div class="n">{formatNumber(data.contents.places)}</div>
-								<div class="l">{data.contents.places === 1 ? 'place' : 'places'}</div>
-							</div>
-							<div class="stat-tile">
-								<div class="n">{formatNumber(data.contents.lore)}</div>
-								<div class="l">{data.contents.lore === 1 ? 'lore entry' : 'lore entries'}</div>
-							</div>
-							<div class="stat-tile">
-								<div class="n">{formatNumber(data.contents.words)}</div>
-								<div class="l">total words</div>
-							</div>
-						</div>
-					</div>
-				</section>
-
-				<section class="admin-section" class:active={active === 'categories'}>
-					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Entity categories</h2>
-							<p class="admin-block-sub">
-								Categories group your lore entries and colour their sidebar dots, mention
-								underlines, and badges. A category can only be deleted once nothing uses it.
-							</p>
-						</div>
-						<form method="POST" action="?/saveCategories">
-							{#if form?.action === 'categories' && form.message}
-								<p class="form-error" role="alert">{form.message}</p>
-							{/if}
-							{#if form?.action === 'categories' && form.saved}
-								<p class="form-saved" role="status">Saved.</p>
-							{/if}
-							<div class="category-list">
-								{#each drafts as draft, index (draft.key)}
-									<div class="category-row">
-										<span class="category-tools">
-											<button
-												class="tool-btn turn-up"
-												type="button"
-												title="Move category up"
-												disabled={index === 0}
-												onclick={() => moveDraft(index, -1)}
-											>
-												<Icon name="chevron" size={12} />
-											</button>
-											<button
-												class="tool-btn turn-down"
-												type="button"
-												title="Move category down"
-												disabled={index === drafts.length - 1}
-												onclick={() => moveDraft(index, 1)}
-											>
-												<Icon name="chevron" size={12} />
-											</button>
-										</span>
-										<!-- No inline background when colourless: the shorthand would
-										     blank out the no-colour slash. -->
-										<span
-											class="category-color-dot"
-											class:no-colour={!draft.color}
-											style={draft.color ? `background: ${draft.color}` : ''}
-										></span>
-										<select
-											class="category-color-select"
-											aria-label="Category colour"
-											bind:value={draft.color}
-										>
-											<option value={null}>No colour</option>
-											{#each CATEGORY_COLORS as choice (choice.token)}
-												<option value={choice.token}>{choice.label}</option>
-											{/each}
-										</select>
-										<input
-											class="category-name-input"
-											type="text"
-											aria-label="Category name"
-											bind:value={draft.name}
-											required
-										/>
-										<span class="category-count">
-											{formatNumber(draft.entries)}
-											{draft.entries === 1 ? 'entry' : 'entries'}
-										</span>
-										<button
-											class="category-delete"
-											type="button"
-											title={draft.entries > 0
-												? 'Move or delete its entries first'
-												: 'Delete category'}
-											disabled={draft.entries > 0}
-											onclick={() => (drafts = drafts.filter((row) => row !== draft))}
-										>
-											<Icon name="plus" size={13} />
-										</button>
-									</div>
-								{/each}
-							</div>
-							<button
-								class="card-add category-add"
-								type="button"
-								onclick={() =>
-									(drafts = [
-										...drafts,
-										{
-											key: nextKey++,
-											id: null,
-											name: '',
-											color: null,
-											entries: 0
-										}
-									])}
-							>
-								<span class="plus">+</span><span>Add category</span>
-							</button>
-							<input type="hidden" name="categories" value={categoriesPayload} />
-							<div class="settings-actions">
-								<button class="btn btn-primary" type="submit">Save categories</button>
-							</div>
-						</form>
-					</div>
-				</section>
-
-				<section class="admin-section" class:active={active === 'history'}>
-					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">History</h2>
-							<p class="admin-block-sub">
-								Every change across every story, character, place, and lore entry in this universe.
-								For a single item's history, open it and use its History tab.
-							</p>
-						</div>
-						<div class="revision-filters">
-							<span class="revision-filter-label">Filter</span>
-							{#each FILTERS as filter (filter.id)}
-								<button
-									class="revision-filter-chip"
-									class:active={historyFilter === filter.id}
-									type="button"
-									onclick={() => (historyFilter = filter.id)}
-								>
-									{filter.label}
-								</button>
-							{/each}
-						</div>
-						{#if filteredTimeline.length === 0}
-							<p class="block-empty">Nothing recorded yet. Changes appear here as you work.</p>
-						{:else}
-							<div class="revision-panel">
-								{#each timelineGroups as group (group.label)}
-									<div class="revision-group-label">{group.label}</div>
-									{#each group.rows as row (row.id)}
-										<div class="revision-entry">
-											<span
-												class="revision-dot"
-												class:revision-dot-checkpoint={row.reason === 'checkpoint'}
-												class:revision-dot-autosave={row.reason !== 'checkpoint'}
-											></span>
-											<div class="revision-main">
-												<div class="revision-source">
-													<span class="revision-source-kind">
-														{KIND_LABELS[row.entityType] ?? row.entityType}
-													</span>
-													{row.entityName ?? 'Untitled'}
-												</div>
-												<div class="revision-meta">
-													<span class="revision-time">{entryTime(row)}</span>
-													<span class="revision-kind">{row.storyTitle ?? 'Universe'}</span>
-													{#if row.label}
-														<span class="revision-note revision-note-checkpoint">
-															"{row.label}"
-														</span>
-													{:else if row.reason && row.reason !== 'autosave'}
-														<span class="revision-note">{row.reason}</span>
-													{/if}
-												</div>
-												{#if row.reason === 'checkpoint'}
-													<div class="revision-actions">
-														<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
-														<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
-														<!-- eslint-enable svelte/no-navigation-without-resolve -->
-														<button
-															class="btn btn-secondary btn-sm"
-															type="button"
-															disabled={restoring === row.id}
-															onclick={() => restoreRow(row)}
-														>
-															{restoring === row.id ? 'Restoring...' : 'Restore'}
-														</button>
-													</div>
-												{/if}
-											</div>
-										</div>
-									{/each}
-								{/each}
-								<div class="revision-footer">
-									{formatNumber(data.revisionCount)} revisions across this universe
-								</div>
-							</div>
-						{/if}
-					</div>
-				</section>
-
-				<section class="admin-section" class:active={active === 'export'}>
-					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Export universe</h2>
-							<p class="admin-block-sub">
-								Everything in this universe, bundled into a single archive.
-							</p>
-						</div>
-						<p class="danger-row-body">
-							A zip of markdown files organised into folders: characters, places, lore, and one
-							folder per story, each with YAML front matter and bundled images.
-						</p>
-						<ExportPanel
-							scope="universe"
-							targetId={data.universe.id}
-							formats={[{ format: 'zip', label: 'markdown archive (.zip)' }]}
-							exports={data.exports}
-							assetsConfigured={data.assetsConfigured}
-						/>
-					</div>
-
-					<div class="admin-block">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Import a story</h2>
-							<p class="admin-block-sub">
-								Bring a story export zip back in as a new story in this universe. Upload the file,
-								check the preview, then import.
-							</p>
-						</div>
-						<form
-							method="POST"
-							action="?/previewImport"
-							enctype="multipart/form-data"
-							use:enhance={() => {
-								importBusy = true;
-								return async ({ update }) => {
-									importBusy = false;
-									await update({ reset: false });
-								};
-							}}
-						>
-							<div class="import-pick">
-								<input type="file" name="archive" accept=".zip,application/zip" required />
-								<button class="btn btn-secondary" type="submit" disabled={importBusy}>
-									Preview
-								</button>
-							</div>
-							{#if form?.action === 'import' && form.message}
-								<p class="field-hint import-error" role="status">{form.message}</p>
-							{/if}
-							{#if importResult}
-								<div class="import-report" role="status">
-									<p>
-										Imported {importResult.sceneCount}
-										{importResult.sceneCount === 1
-											? 'scene'
-											: 'scenes'}{importResult.notesAttached > 0
-											? ` and ${importResult.notesAttached} ${importResult.notesAttached === 1 ? 'story note' : 'story notes'}`
-											: ''}{importResult.entitiesCreated > 0
-											? `, creating ${importResult.entitiesCreated} ${importResult.entitiesCreated === 1 ? 'new entry' : 'new entries'}`
-											: ''}.
-									</p>
-									{#each importResult.problems as problem (problem)}
-										<p class="import-flag">{problem}</p>
-									{/each}
-									<!-- eslint-disable svelte/no-navigation-without-resolve (slug known at runtime) -->
-									<a class="btn btn-secondary" href="/stories/{importResult.slug}">Open the story</a
-									>
-									<!-- eslint-enable svelte/no-navigation-without-resolve -->
-								</div>
-							{:else if importPreview}
-								<div class="import-report">
-									<p>
-										"{importPreview.storyTitle}": {importPreview.chapterCount}
-										{importPreview.chapterCount === 1 ? 'chapter' : 'chapters'},
-										{importPreview.sceneCount}
-										{importPreview.sceneCount === 1 ? 'scene' : 'scenes'},
-										{formatNumber(importPreview.words)} words{importPreview.assetCount > 0
-											? `, ${importPreview.assetCount} ${importPreview.assetCount === 1 ? 'image' : 'images'}`
-											: ''}.
-									</p>
-									{#if importPreview.titleTaken}
-										<p class="import-flag">
-											A story named "{importPreview.storyTitle}" already exists here; this import
-											creates a second one.
-										</p>
-									{/if}
-									{#if importPreview.assetCount > 0 && !importPreview.assetsConfigured}
-										<p class="import-flag">
-											Image storage is not configured, so the bundled images will not be imported.
-										</p>
-									{/if}
-									{#if importPreview.notes.length > 0}
-										<ul class="import-notes">
-											{#each importPreview.notes as note (note.kind + note.name)}
-												<li>
-													<strong>{note.name}</strong>
-													({note.kind === 'lore' ? 'lore entry' : note.kind})
-													{NOTE_OUTCOMES[note.outcome]}
-												</li>
-											{/each}
-										</ul>
-									{/if}
-									{#each importPreview.problems as problem (problem)}
-										<p class="import-flag">{problem}</p>
-									{/each}
-									<button
-										class="btn btn-primary"
-										type="submit"
-										formaction="?/runImport"
-										disabled={importBusy}
-									>
-										Import story
-									</button>
-								</div>
-							{/if}
-						</form>
-					</div>
-
-					<div class="admin-block danger">
-						<div class="admin-block-head">
-							<h2 class="admin-block-title">Danger zone</h2>
-							<p class="admin-block-sub">
-								Deleting a universe removes every story, character, place, and lore entry inside it.
-							</p>
-						</div>
-						<div class="danger-row">
-							<div class="danger-row-text">
-								<h3 class="danger-row-title">Delete this universe</h3>
-								<p class="danger-row-body">
-									All {formatNumber(data.contents.stories)}
-									{data.contents.stories === 1 ? 'story' : 'stories'},
-									{formatNumber(data.contents.characters)}
-									{data.contents.characters === 1 ? 'character' : 'characters'},
-									{formatNumber(data.contents.places)}
-									{data.contents.places === 1 ? 'place' : 'places'}, and
-									{formatNumber(data.contents.lore)}
-									{data.contents.lore === 1 ? 'lore entry' : 'lore entries'} go with it. The universe
-									sits in your library's deleted list for {data.trashDays} days, where you can restore
-									it; after that everything is deleted for good. Export an archive first if in doubt.
-								</p>
-							</div>
-							<div class="danger-row-actions">
-								<form
-									method="POST"
-									action="?/delete"
-									onsubmit={(e) => {
-										if (
-											!confirm(
-												`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
-											)
-										)
-											e.preventDefault();
-									}}
-								>
-									<button class="btn btn-danger" type="submit">Delete universe</button>
-								</form>
-							</div>
-						</div>
-					</div>
-				</section>
-			</div>
-		</main>
+	<div class="admin-head">
+		<p class="admin-eyebrow">Universe</p>
+		<h1 class="admin-title">{data.universe.name} - settings</h1>
+		<p class="admin-lede">The world your stories share, and everything about it.</p>
 	</div>
-</div>
+
+	<section class="admin-section" class:active={active === 'details'}>
+		<div class="admin-block">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">About this universe</h2>
+				<p class="admin-block-sub">
+					The universe is the container that holds your shared worldbuilding. Every story you write
+					belongs to one.
+				</p>
+			</div>
+			<form method="POST" action="?/update">
+				{#if form?.action === 'update' && form.message}
+					<p class="form-error" role="alert">{form.message}</p>
+				{/if}
+				{#if form?.action === 'update' && form.saved}
+					<p class="form-saved" role="status">Saved.</p>
+				{/if}
+				<div class="field">
+					<label for="u-name">Name</label>
+					<input
+						id="u-name"
+						class="input"
+						type="text"
+						name="name"
+						value={data.universe.name}
+						required
+					/>
+					<span class="field-hint">
+						The web address follows the name: /universes/{data.universe.slug}. Renaming moves the
+						address; the old one stops working.
+					</span>
+				</div>
+				<div class="field">
+					<label for="u-description">Description</label>
+					<textarea id="u-description" class="input" name="description" rows="6"
+						>{data.universe.descriptionMd ?? ''}</textarea
+					>
+					<span class="field-hint">Markdown is fine. Shown on the library card.</span>
+				</div>
+				<div class="field">
+					<label class="check-row">
+						<input
+							type="checkbox"
+							name="establishedSetting"
+							checked={data.universe.establishedSetting}
+						/>
+						Established setting
+					</label>
+					<span class="field-hint">
+						Tick this when the universe is an existing published setting, such as Forgotten Realms
+						or Azeroth, rather than your own invention. The Assistant will then also use what it
+						knows about that setting's canon, and your own material here wins wherever the two
+						differ.
+					</span>
+				</div>
+				<div class="settings-actions">
+					<button class="btn btn-primary" type="submit">Save changes</button>
+				</div>
+			</form>
+		</div>
+
+		<div class="admin-block">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">Contents</h2>
+				<p class="admin-block-sub">What this universe currently contains.</p>
+			</div>
+			<div class="stat-grid">
+				<div class="stat-tile">
+					<div class="n">{formatNumber(data.contents.stories)}</div>
+					<div class="l">{data.contents.stories === 1 ? 'story' : 'stories'}</div>
+				</div>
+				<div class="stat-tile">
+					<div class="n">{formatNumber(data.contents.characters)}</div>
+					<div class="l">{data.contents.characters === 1 ? 'character' : 'characters'}</div>
+				</div>
+				<div class="stat-tile">
+					<div class="n">{formatNumber(data.contents.places)}</div>
+					<div class="l">{data.contents.places === 1 ? 'place' : 'places'}</div>
+				</div>
+				<div class="stat-tile">
+					<div class="n">{formatNumber(data.contents.lore)}</div>
+					<div class="l">{data.contents.lore === 1 ? 'lore entry' : 'lore entries'}</div>
+				</div>
+				<div class="stat-tile">
+					<div class="n">{formatNumber(data.contents.words)}</div>
+					<div class="l">total words</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="admin-section" class:active={active === 'categories'}>
+		<div class="admin-block">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">Entity categories</h2>
+				<p class="admin-block-sub">
+					Categories group your lore entries and colour their sidebar dots, mention underlines, and
+					badges. A category can only be deleted once nothing uses it.
+				</p>
+			</div>
+			<form method="POST" action="?/saveCategories">
+				{#if form?.action === 'categories' && form.message}
+					<p class="form-error" role="alert">{form.message}</p>
+				{/if}
+				{#if form?.action === 'categories' && form.saved}
+					<p class="form-saved" role="status">Saved.</p>
+				{/if}
+				<div class="category-list">
+					{#each drafts as draft, index (draft.key)}
+						<div class="category-row">
+							<span class="category-tools">
+								<button
+									class="tool-btn turn-up"
+									type="button"
+									title="Move category up"
+									disabled={index === 0}
+									onclick={() => moveDraft(index, -1)}
+								>
+									<Icon name="chevron" size={12} />
+								</button>
+								<button
+									class="tool-btn turn-down"
+									type="button"
+									title="Move category down"
+									disabled={index === drafts.length - 1}
+									onclick={() => moveDraft(index, 1)}
+								>
+									<Icon name="chevron" size={12} />
+								</button>
+							</span>
+							<!-- No inline background when colourless: the shorthand would
+										     blank out the no-colour slash. -->
+							<span
+								class="category-color-dot"
+								class:no-colour={!draft.color}
+								style={draft.color ? `background: ${draft.color}` : ''}
+							></span>
+							<select
+								class="category-color-select"
+								aria-label="Category colour"
+								bind:value={draft.color}
+							>
+								<option value={null}>No colour</option>
+								{#each CATEGORY_COLORS as choice (choice.token)}
+									<option value={choice.token}>{choice.label}</option>
+								{/each}
+							</select>
+							<input
+								class="category-name-input"
+								type="text"
+								aria-label="Category name"
+								bind:value={draft.name}
+								required
+							/>
+							<span class="category-count">
+								{formatNumber(draft.entries)}
+								{draft.entries === 1 ? 'entry' : 'entries'}
+							</span>
+							<button
+								class="category-delete"
+								type="button"
+								title={draft.entries > 0 ? 'Move or delete its entries first' : 'Delete category'}
+								disabled={draft.entries > 0}
+								onclick={() => (drafts = drafts.filter((row) => row !== draft))}
+							>
+								<Icon name="plus" size={13} />
+							</button>
+						</div>
+					{/each}
+				</div>
+				<button
+					class="card-add category-add"
+					type="button"
+					onclick={() =>
+						(drafts = [
+							...drafts,
+							{
+								key: nextKey++,
+								id: null,
+								name: '',
+								color: null,
+								entries: 0
+							}
+						])}
+				>
+					<span class="plus">+</span><span>Add category</span>
+				</button>
+				<input type="hidden" name="categories" value={categoriesPayload} />
+				<div class="settings-actions">
+					<button class="btn btn-primary" type="submit">Save categories</button>
+				</div>
+			</form>
+		</div>
+	</section>
+
+	<section class="admin-section" class:active={active === 'history'}>
+		<div class="admin-block">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">History</h2>
+				<p class="admin-block-sub">
+					Every change across every story, character, place, and lore entry in this universe. For a
+					single item's history, open it and use its History tab.
+				</p>
+			</div>
+			<div class="revision-filters">
+				<span class="revision-filter-label">Filter</span>
+				{#each FILTERS as filter (filter.id)}
+					<button
+						class="revision-filter-chip"
+						class:active={historyFilter === filter.id}
+						type="button"
+						onclick={() => (historyFilter = filter.id)}
+					>
+						{filter.label}
+					</button>
+				{/each}
+			</div>
+			{#if filteredTimeline.length === 0}
+				<p class="block-empty">Nothing recorded yet. Changes appear here as you work.</p>
+			{:else}
+				<div class="revision-panel">
+					{#each timelineGroups as group (group.label)}
+						<div class="revision-group-label">{group.label}</div>
+						{#each group.rows as row (row.id)}
+							<div class="revision-entry">
+								<span
+									class="revision-dot"
+									class:revision-dot-checkpoint={row.reason === 'checkpoint'}
+									class:revision-dot-autosave={row.reason !== 'checkpoint'}
+								></span>
+								<div class="revision-main">
+									<div class="revision-source">
+										<span class="revision-source-kind">
+											{KIND_LABELS[row.entityType] ?? row.entityType}
+										</span>
+										{row.entityName ?? 'Untitled'}
+									</div>
+									<div class="revision-meta">
+										<span class="revision-time">{entryTime(row)}</span>
+										<span class="revision-kind">{row.storyTitle ?? 'Universe'}</span>
+										{#if row.label}
+											<span class="revision-note revision-note-checkpoint">
+												"{row.label}"
+											</span>
+										{:else if row.reason && row.reason !== 'autosave'}
+											<span class="revision-note">{row.reason}</span>
+										{/if}
+									</div>
+									{#if row.reason === 'checkpoint'}
+										<div class="revision-actions">
+											<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
+											<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+											<button
+												class="btn btn-secondary btn-sm"
+												type="button"
+												disabled={restoring === row.id}
+												onclick={() => restoreRow(row)}
+											>
+												{restoring === row.id ? 'Restoring...' : 'Restore'}
+											</button>
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					{/each}
+					<div class="revision-footer">
+						{formatNumber(data.revisionCount)} revisions across this universe
+					</div>
+				</div>
+			{/if}
+		</div>
+	</section>
+
+	<section class="admin-section" class:active={active === 'export'}>
+		<div class="admin-block">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">Export universe</h2>
+				<p class="admin-block-sub">Everything in this universe, bundled into a single archive.</p>
+			</div>
+			<p class="danger-row-body">
+				A zip of markdown files organised into folders: characters, places, lore, and one folder per
+				story, each with YAML front matter and bundled images.
+			</p>
+			<ExportPanel
+				scope="universe"
+				targetId={data.universe.id}
+				formats={[{ format: 'zip', label: 'markdown archive (.zip)' }]}
+				exports={data.exports}
+				assetsConfigured={data.assetsConfigured}
+			/>
+		</div>
+
+		<div class="admin-block">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">Import a story</h2>
+				<p class="admin-block-sub">
+					Bring a story export zip back in as a new story in this universe. Upload the file, check
+					the preview, then import.
+				</p>
+			</div>
+			<form
+				method="POST"
+				action="?/previewImport"
+				enctype="multipart/form-data"
+				use:enhance={() => {
+					importBusy = true;
+					return async ({ update }) => {
+						importBusy = false;
+						await update({ reset: false });
+					};
+				}}
+			>
+				<div class="import-pick">
+					<input type="file" name="archive" accept=".zip,application/zip" required />
+					<button class="btn btn-secondary" type="submit" disabled={importBusy}> Preview </button>
+				</div>
+				{#if form?.action === 'import' && form.message}
+					<p class="field-hint import-error" role="status">{form.message}</p>
+				{/if}
+				{#if importResult}
+					<div class="import-report" role="status">
+						<p>
+							Imported {importResult.sceneCount}
+							{importResult.sceneCount === 1 ? 'scene' : 'scenes'}{importResult.notesAttached > 0
+								? ` and ${importResult.notesAttached} ${importResult.notesAttached === 1 ? 'story note' : 'story notes'}`
+								: ''}{importResult.entitiesCreated > 0
+								? `, creating ${importResult.entitiesCreated} ${importResult.entitiesCreated === 1 ? 'new entry' : 'new entries'}`
+								: ''}.
+						</p>
+						{#each importResult.problems as problem (problem)}
+							<p class="import-flag">{problem}</p>
+						{/each}
+						<!-- eslint-disable svelte/no-navigation-without-resolve (slug known at runtime) -->
+						<a class="btn btn-secondary" href="/stories/{importResult.slug}">Open the story</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					</div>
+				{:else if importPreview}
+					<div class="import-report">
+						<p>
+							"{importPreview.storyTitle}": {importPreview.chapterCount}
+							{importPreview.chapterCount === 1 ? 'chapter' : 'chapters'},
+							{importPreview.sceneCount}
+							{importPreview.sceneCount === 1 ? 'scene' : 'scenes'},
+							{formatNumber(importPreview.words)} words{importPreview.assetCount > 0
+								? `, ${importPreview.assetCount} ${importPreview.assetCount === 1 ? 'image' : 'images'}`
+								: ''}.
+						</p>
+						{#if importPreview.titleTaken}
+							<p class="import-flag">
+								A story named "{importPreview.storyTitle}" already exists here; this import creates
+								a second one.
+							</p>
+						{/if}
+						{#if importPreview.assetCount > 0 && !importPreview.assetsConfigured}
+							<p class="import-flag">
+								Image storage is not configured, so the bundled images will not be imported.
+							</p>
+						{/if}
+						{#if importPreview.notes.length > 0}
+							<ul class="import-notes">
+								{#each importPreview.notes as note (note.kind + note.name)}
+									<li>
+										<strong>{note.name}</strong>
+										({note.kind === 'lore' ? 'lore entry' : note.kind})
+										{NOTE_OUTCOMES[note.outcome]}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						{#each importPreview.problems as problem (problem)}
+							<p class="import-flag">{problem}</p>
+						{/each}
+						<button
+							class="btn btn-primary"
+							type="submit"
+							formaction="?/runImport"
+							disabled={importBusy}
+						>
+							Import story
+						</button>
+					</div>
+				{/if}
+			</form>
+		</div>
+
+		<div class="admin-block danger">
+			<div class="admin-block-head">
+				<h2 class="admin-block-title">Danger zone</h2>
+				<p class="admin-block-sub">
+					Deleting a universe removes every story, character, place, and lore entry inside it.
+				</p>
+			</div>
+			<div class="danger-row">
+				<div class="danger-row-text">
+					<h3 class="danger-row-title">Delete this universe</h3>
+					<p class="danger-row-body">
+						All {formatNumber(data.contents.stories)}
+						{data.contents.stories === 1 ? 'story' : 'stories'},
+						{formatNumber(data.contents.characters)}
+						{data.contents.characters === 1 ? 'character' : 'characters'},
+						{formatNumber(data.contents.places)}
+						{data.contents.places === 1 ? 'place' : 'places'}, and
+						{formatNumber(data.contents.lore)}
+						{data.contents.lore === 1 ? 'lore entry' : 'lore entries'} go with it. The universe sits in
+						your library's deleted list for {data.trashDays} days, where you can restore it; after that
+						everything is deleted for good. Export an archive first if in doubt.
+					</p>
+				</div>
+				<div class="danger-row-actions">
+					<form
+						method="POST"
+						action="?/delete"
+						onsubmit={(e) => {
+							if (
+								!confirm(
+									`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
+								)
+							)
+								e.preventDefault();
+						}}
+					>
+						<button class="btn btn-danger" type="submit">Delete universe</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</section>
+</SettingsShell>
 
 <style>
 	.import-pick {

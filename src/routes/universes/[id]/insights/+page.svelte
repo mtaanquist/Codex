@@ -7,6 +7,7 @@
 	import { formatNumber } from '$lib/format';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
+	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -91,279 +92,265 @@
 	<title>{data.universe.name} - Insights - Codex</title>
 </svelte:head>
 
-<div class="page-shell">
-	<PageTopBar
-		back={{ href: planPath, label: data.universe.name }}
-		help={{ topic: 'planning', label: 'the planning view' }}
-	/>
+<SettingsShell>
+	{#snippet topbar()}
+		<PageTopBar
+			back={{ href: planPath, label: data.universe.name }}
+			help={{ topic: 'planning', label: 'the planning view' }}
+		/>
+	{/snippet}
+	{#snippet sidebar()}
+		<div class="admin-sidebar-title">
+			<span class="ic badge sm" style="background: {universeColor}; color: #fff;">
+				{data.universe.name.slice(0, 1).toUpperCase()}
+			</span>
+			<div>
+				<div class="tt">{data.universe.name}</div>
+				<div class="st">Universe</div>
+			</div>
+		</div>
+		<nav class="admin-nav">
+			<div class="admin-nav-label">Insights</div>
+			{#each NAV as item (item.id)}
+				<a class="nav-item" href="#{item.id}">{item.label}</a>
+			{/each}
+		</nav>
+	{/snippet}
 
-	<div class="admin-shell">
-		<aside class="admin-sidebar">
-			<div class="admin-sidebar-title">
-				<span class="ic badge sm" style="background: {universeColor}; color: #fff;">
-					{data.universe.name.slice(0, 1).toUpperCase()}
-				</span>
-				<div>
-					<div class="tt">{data.universe.name}</div>
-					<div class="st">Universe</div>
+	<div class="admin-head">
+		<p class="admin-eyebrow">{data.universe.name}</p>
+		<h1 class="admin-title">Insights</h1>
+		<p class="admin-lede">How the writing and the world are coming along.</p>
+	</div>
+
+	<div class="admin-block" id="progress">
+		<div class="admin-block-head">
+			<h2 class="admin-block-title">Progress</h2>
+			<p class="admin-block-sub">Word counts and writing rhythm across this universe.</p>
+		</div>
+		<div class="admin-stat-grid">
+			<div class="admin-stat">
+				<div class="admin-stat-top"><span class="admin-stat-label">Total words</span></div>
+				<div class="admin-stat-n">{formatNumber(totalWords)}</div>
+				<div class="admin-stat-foot">
+					across {data.stories.length}
+					{data.stories.length === 1 ? 'story' : 'stories'}
 				</div>
 			</div>
-			<nav class="admin-nav">
-				<div class="admin-nav-label">Insights</div>
-				{#each NAV as item (item.id)}
-					<a class="nav-item" href="#{item.id}">{item.label}</a>
-				{/each}
-			</nav>
-		</aside>
-
-		<main class="admin-main page-body">
-			<div class="admin-main-inner">
-				<div class="admin-head">
-					<p class="admin-eyebrow">{data.universe.name}</p>
-					<h1 class="admin-title">Insights</h1>
-					<p class="admin-lede">How the writing and the world are coming along.</p>
+			<div class="admin-stat">
+				<div class="admin-stat-top"><span class="admin-stat-label">This week</span></div>
+				<div class="admin-stat-n">{formatNumber(weekWords)}</div>
+				<div class="admin-stat-foot">
+					net words; <span class="delta flat">{formatNumber(monthWords)}</span> in 30 days
 				</div>
-
-				<div class="admin-block" id="progress">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Progress</h2>
-						<p class="admin-block-sub">Word counts and writing rhythm across this universe.</p>
+			</div>
+			<div class="admin-stat">
+				<div class="admin-stat-top"><span class="admin-stat-label">Streak</span></div>
+				<div class="admin-stat-n">
+					{data.activity.streak.current}
+					{data.activity.streak.current === 1 ? 'day' : 'days'}
+				</div>
+				<div class="admin-stat-foot">
+					longest this year: {data.activity.streak.longest}
+				</div>
+			</div>
+			<div class="admin-stat">
+				<div class="admin-stat-top"><span class="admin-stat-label">Scenes</span></div>
+				<div class="admin-stat-n">{formatNumber(totalScenes)}</div>
+				<div class="admin-stat-foot">
+					<span class="delta flat">{finalScenes}</span> final
+				</div>
+			</div>
+			{#if data.dailyGoal > 0}
+				<div class="admin-stat">
+					<div class="admin-stat-top"><span class="admin-stat-label">Daily goal</span></div>
+					<div class="admin-stat-n">
+						{formatNumber(todayWords)} / {formatNumber(data.dailyGoal)}
 					</div>
-					<div class="admin-stat-grid">
-						<div class="admin-stat">
-							<div class="admin-stat-top"><span class="admin-stat-label">Total words</span></div>
-							<div class="admin-stat-n">{formatNumber(totalWords)}</div>
-							<div class="admin-stat-foot">
-								across {data.stories.length}
-								{data.stories.length === 1 ? 'story' : 'stories'}
-							</div>
+					<div class="admin-stat-foot">
+						{todayWords >= data.dailyGoal ? 'met today; ' : ''}{goalMetDays} of the last 30 days
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class="chart-card">
+			<h3 class="chart-title">Words per day, last 30 days</h3>
+			<svg
+				class="chart"
+				viewBox="0 0 {CHART_W} {CHART_H}"
+				role="img"
+				aria-label="Net words written per day over the last 30 days"
+			>
+				<line class="chart-axis" x1="0" y1={BASELINE} x2={CHART_W} y2={BASELINE} />
+				{#each data.activity.daily as point, i (point.day)}
+					{#if point.words !== 0}
+						<rect
+							class="chart-bar"
+							class:negative={point.words < 0}
+							x={i * barW + 1.5}
+							y={point.words >= 0 ? BASELINE - barHeight(point.words) : BASELINE}
+							width={Math.max(1, barW - 3)}
+							height={barHeight(point.words)}
+						>
+							<title>{formatDay(point.day)}: {formatNumber(point.words)} words</title>
+						</rect>
+					{/if}
+				{/each}
+			</svg>
+			<div class="chart-range">
+				<span>{formatDay(data.activity.daily[0].day)}</span>
+				<span>{formatDay(data.activity.daily[data.activity.daily.length - 1].day)}</span>
+			</div>
+		</div>
+	</div>
+
+	<div class="admin-block" id="stories">
+		<div class="admin-block-head">
+			<h2 class="admin-block-title">Stories</h2>
+			<p class="admin-block-sub">Where each story stands, scene by scene.</p>
+		</div>
+		{#if data.stories.length === 0}
+			<p class="insights-empty">No stories in this universe yet.</p>
+		{:else}
+			<div class="story-rows">
+				{#each data.stories as story (story.id)}
+					<div class="story-row">
+						<div class="story-row-head">
+							<a class="story-row-title" href={resolve('/stories/[id]', { id: story.slug })}>
+								{story.title}
+							</a>
+							<span class="story-row-meta">
+								{formatNumber(story.words)} words · {story.sceneCount}
+								{story.sceneCount === 1 ? 'scene' : 'scenes'}
+							</span>
 						</div>
-						<div class="admin-stat">
-							<div class="admin-stat-top"><span class="admin-stat-label">This week</span></div>
-							<div class="admin-stat-n">{formatNumber(weekWords)}</div>
-							<div class="admin-stat-foot">
-								net words; <span class="delta flat">{formatNumber(monthWords)}</span> in 30 days
-							</div>
-						</div>
-						<div class="admin-stat">
-							<div class="admin-stat-top"><span class="admin-stat-label">Streak</span></div>
-							<div class="admin-stat-n">
-								{data.activity.streak.current}
-								{data.activity.streak.current === 1 ? 'day' : 'days'}
-							</div>
-							<div class="admin-stat-foot">
-								longest this year: {data.activity.streak.longest}
-							</div>
-						</div>
-						<div class="admin-stat">
-							<div class="admin-stat-top"><span class="admin-stat-label">Scenes</span></div>
-							<div class="admin-stat-n">{formatNumber(totalScenes)}</div>
-							<div class="admin-stat-foot">
-								<span class="delta flat">{finalScenes}</span> final
-							</div>
-						</div>
-						{#if data.dailyGoal > 0}
-							<div class="admin-stat">
-								<div class="admin-stat-top"><span class="admin-stat-label">Daily goal</span></div>
-								<div class="admin-stat-n">
-									{formatNumber(todayWords)} / {formatNumber(data.dailyGoal)}
-								</div>
-								<div class="admin-stat-foot">
-									{todayWords >= data.dailyGoal ? 'met today; ' : ''}{goalMetDays} of the last 30 days
-								</div>
+						{#if story.targetWords || story.deadline}
+							{@const left = daysUntil(story.deadline, data.activity.today)}
+							<div class="goal-line">
+								{#if story.targetWords}
+									{@const pct = Math.min(100, Math.round((story.words / story.targetWords) * 100))}
+									<div class="goal-track">
+										<div class="goal-fill" style="width: {pct}%"></div>
+									</div>
+									<span class="goal-text">
+										{pct}% of {formatNumber(story.targetWords)} words
+									</span>
+								{/if}
+								{#if left !== null}
+									<span class="goal-text deadline">
+										{left > 0
+											? `due in ${left} ${left === 1 ? 'day' : 'days'}`
+											: left === 0
+												? 'due today'
+												: `${-left} ${left === -1 ? 'day' : 'days'} overdue`}
+									</span>
+								{/if}
 							</div>
 						{/if}
-					</div>
-
-					<div class="chart-card">
-						<h3 class="chart-title">Words per day, last 30 days</h3>
-						<svg
-							class="chart"
-							viewBox="0 0 {CHART_W} {CHART_H}"
-							role="img"
-							aria-label="Net words written per day over the last 30 days"
-						>
-							<line class="chart-axis" x1="0" y1={BASELINE} x2={CHART_W} y2={BASELINE} />
-							{#each data.activity.daily as point, i (point.day)}
-								{#if point.words !== 0}
-									<rect
-										class="chart-bar"
-										class:negative={point.words < 0}
-										x={i * barW + 1.5}
-										y={point.words >= 0 ? BASELINE - barHeight(point.words) : BASELINE}
-										width={Math.max(1, barW - 3)}
-										height={barHeight(point.words)}
-									>
-										<title>{formatDay(point.day)}: {formatNumber(point.words)} words</title>
-									</rect>
-								{/if}
-							{/each}
-						</svg>
-						<div class="chart-range">
-							<span>{formatDay(data.activity.daily[0].day)}</span>
-							<span>{formatDay(data.activity.daily[data.activity.daily.length - 1].day)}</span>
-						</div>
-					</div>
-				</div>
-
-				<div class="admin-block" id="stories">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Stories</h2>
-						<p class="admin-block-sub">Where each story stands, scene by scene.</p>
-					</div>
-					{#if data.stories.length === 0}
-						<p class="insights-empty">No stories in this universe yet.</p>
-					{:else}
-						<div class="story-rows">
-							{#each data.stories as story (story.id)}
-								<div class="story-row">
-									<div class="story-row-head">
-										<a class="story-row-title" href={resolve('/stories/[id]', { id: story.slug })}>
-											{story.title}
-										</a>
-										<span class="story-row-meta">
-											{formatNumber(story.words)} words · {story.sceneCount}
-											{story.sceneCount === 1 ? 'scene' : 'scenes'}
+						{#if story.sceneCount > 0}
+							<div class="status-bar">
+								{#each STATUS_ORDER as status (status)}
+									{#if story.status[status] > 0}
+										<span
+											class="status-seg"
+											style="flex-grow: {story.status[status]}; background: var(--status-{status});"
+											title="{story.status[status]} {STATUS_LABELS[status].toLowerCase()}"
+										></span>
+									{/if}
+								{/each}
+							</div>
+							<div class="status-legend">
+								{#each STATUS_ORDER as status (status)}
+									{#if story.status[status] > 0}
+										<span class="status-key">
+											<span class="status-dot" style="background: var(--status-{status});"></span>
+											{story.status[status]}
+											{STATUS_LABELS[status].toLowerCase()}
 										</span>
-									</div>
-									{#if story.targetWords || story.deadline}
-										{@const left = daysUntil(story.deadline, data.activity.today)}
-										<div class="goal-line">
-											{#if story.targetWords}
-												{@const pct = Math.min(
-													100,
-													Math.round((story.words / story.targetWords) * 100)
-												)}
-												<div class="goal-track">
-													<div class="goal-fill" style="width: {pct}%"></div>
-												</div>
-												<span class="goal-text">
-													{pct}% of {formatNumber(story.targetWords)} words
-												</span>
-											{/if}
-											{#if left !== null}
-												<span class="goal-text deadline">
-													{left > 0
-														? `due in ${left} ${left === 1 ? 'day' : 'days'}`
-														: left === 0
-															? 'due today'
-															: `${-left} ${left === -1 ? 'day' : 'days'} overdue`}
-												</span>
-											{/if}
-										</div>
 									{/if}
-									{#if story.sceneCount > 0}
-										<div class="status-bar">
-											{#each STATUS_ORDER as status (status)}
-												{#if story.status[status] > 0}
-													<span
-														class="status-seg"
-														style="flex-grow: {story.status[
-															status
-														]}; background: var(--status-{status});"
-														title="{story.status[status]} {STATUS_LABELS[status].toLowerCase()}"
-													></span>
-												{/if}
-											{/each}
-										</div>
-										<div class="status-legend">
-											{#each STATUS_ORDER as status (status)}
-												{#if story.status[status] > 0}
-													<span class="status-key">
-														<span class="status-dot" style="background: var(--status-{status});"
-														></span>
-														{story.status[status]}
-														{STATUS_LABELS[status].toLowerCase()}
-													</span>
-												{/if}
-											{/each}
-										</div>
-									{:else}
-										<p class="insights-empty">No scenes yet.</p>
-									{/if}
-								</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="insights-empty">No scenes yet.</p>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<div class="admin-block" id="heatmap">
+		<div class="admin-block-head">
+			<h2 class="admin-block-title">World heatmap</h2>
+			<p class="admin-block-sub">
+				Which parts of the world the prose actually visits. Brighter means mentioned more; pale
+				tiles are going unused.
+			</p>
+		</div>
+		{#if data.heat.length === 0}
+			<p class="insights-empty">No characters, places, or lore yet. Add them in the Plan view.</p>
+		{:else}
+			{#each ['character', 'place', 'lore_entry'] as type (type)}
+				{@const group = data.heat.filter((entity) => entity.type === type)}
+				{#if group.length > 0}
+					<div class="heat-group">
+						<h3 class="heat-group-title">
+							{TYPE_LABELS[type]} <span class="heat-group-count">{group.length}</span>
+						</h3>
+						<div class="heat-grid">
+							{#each group as entity (entity.id)}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+								<a
+									class="heat-tile"
+									class:cold={entity.mentionCount === 0}
+									style="--heat: {heatStrength(entity.mentionCount)}%;"
+									href={`${planPath}?entity=${entity.id}`}
+									title={heatTitle(entity)}
+								>
+									<span class="heat-tile-head">
+										<span
+											class="badge dot"
+											style="background: {entity.color ?? entityColor(entity.name)}"
+										></span>
+										<span class="heat-tile-name">{entity.name}</span>
+									</span>
+									<span class="heat-tile-meta">
+										{#if entity.mentionCount > 0}
+											{entity.mentionCount}
+											{entity.mentionCount === 1 ? 'mention' : 'mentions'} · {entity.sceneCount}
+											{entity.sceneCount === 1 ? 'scene' : 'scenes'}
+										{:else}
+											Not mentioned yet
+										{/if}
+										{#if !entity.hasBody}
+											· no entry
+										{/if}
+									</span>
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							{/each}
 						</div>
-					{/if}
-				</div>
-
-				<div class="admin-block" id="heatmap">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">World heatmap</h2>
-						<p class="admin-block-sub">
-							Which parts of the world the prose actually visits. Brighter means mentioned more;
-							pale tiles are going unused.
-						</p>
 					</div>
-					{#if data.heat.length === 0}
-						<p class="insights-empty">
-							No characters, places, or lore yet. Add them in the Plan view.
-						</p>
-					{:else}
-						{#each ['character', 'place', 'lore_entry'] as type (type)}
-							{@const group = data.heat.filter((entity) => entity.type === type)}
-							{#if group.length > 0}
-								<div class="heat-group">
-									<h3 class="heat-group-title">
-										{TYPE_LABELS[type]} <span class="heat-group-count">{group.length}</span>
-									</h3>
-									<div class="heat-grid">
-										{#each group as entity (entity.id)}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-											<a
-												class="heat-tile"
-												class:cold={entity.mentionCount === 0}
-												style="--heat: {heatStrength(entity.mentionCount)}%;"
-												href={`${planPath}?entity=${entity.id}`}
-												title={heatTitle(entity)}
-											>
-												<span class="heat-tile-head">
-													<span
-														class="badge dot"
-														style="background: {entity.color ?? entityColor(entity.name)}"
-													></span>
-													<span class="heat-tile-name">{entity.name}</span>
-												</span>
-												<span class="heat-tile-meta">
-													{#if entity.mentionCount > 0}
-														{entity.mentionCount}
-														{entity.mentionCount === 1 ? 'mention' : 'mentions'} · {entity.sceneCount}
-														{entity.sceneCount === 1 ? 'scene' : 'scenes'}
-													{:else}
-														Not mentioned yet
-													{/if}
-													{#if !entity.hasBody}
-														· no entry
-													{/if}
-												</span>
-											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
-										{/each}
-									</div>
-								</div>
-							{/if}
-						{/each}
-					{/if}
-				</div>
-
-				<div class="admin-block" id="web">
-					<div class="admin-block-head">
-						<h2 class="admin-block-title">Relationship web</h2>
-						<p class="admin-block-sub">
-							Who connects to whom. Hover a node to read its relationships; click it to open the
-							entry.
-						</p>
-					</div>
-					<RelationshipWeb
-						entities={data.heat}
-						links={data.web}
-						entityHref={(id) => `${planPath}?entity=${id}`}
-					/>
-				</div>
-			</div>
-		</main>
+				{/if}
+			{/each}
+		{/if}
 	</div>
-</div>
+
+	<div class="admin-block" id="web">
+		<div class="admin-block-head">
+			<h2 class="admin-block-title">Relationship web</h2>
+			<p class="admin-block-sub">
+				Who connects to whom. Hover a node to read its relationships; click it to open the entry.
+			</p>
+		</div>
+		<RelationshipWeb
+			entities={data.heat}
+			links={data.web}
+			entityHref={(id) => `${planPath}?entity=${id}`}
+		/>
+	</div>
+</SettingsShell>
 
 <style>
 	.chart-card {

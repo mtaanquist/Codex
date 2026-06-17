@@ -5,6 +5,7 @@
 	import { flushFocusedField } from '$lib/autosave-form';
 	import { entityColor } from '$lib/entity-color';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import SettingsDetails from './SettingsDetails.svelte';
 	import SettingsEditor from './SettingsEditor.svelte';
 	import SettingsPageSetup from './SettingsPageSetup.svelte';
@@ -75,94 +76,90 @@
 	<title>{data.story.title} - Settings - Codex</title>
 </svelte:head>
 
-<div class="page-shell">
-	<PageTopBar
-		back={{ href: resolve('/stories/[id]', { id: data.story.slug }), label: data.story.title }}
-		help={{ topic: helpTopic, label: 'story settings' }}
-	/>
-
-	<div class="admin-shell">
-		<aside class="admin-sidebar">
-			<div class="admin-sidebar-title">
-				<span class="ic badge sm" style="background: {coverColor}; color: #fff;">
-					{data.story.title.slice(0, 1).toUpperCase()}
-				</span>
-				<div>
-					<div class="tt">{data.story.title}</div>
-					<div class="st">{data.universe.name}</div>
-				</div>
+<SettingsShell>
+	{#snippet topbar()}
+		<PageTopBar
+			back={{ href: resolve('/stories/[id]', { id: data.story.slug }), label: data.story.title }}
+			help={{ topic: helpTopic, label: 'story settings' }}
+		/>
+	{/snippet}
+	{#snippet sidebar()}
+		<div class="admin-sidebar-title">
+			<span class="ic badge sm" style="background: {coverColor}; color: #fff;">
+				{data.story.title.slice(0, 1).toUpperCase()}
+			</span>
+			<div>
+				<div class="tt">{data.story.title}</div>
+				<div class="st">{data.universe.name}</div>
 			</div>
-			<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-			<nav class="admin-nav">
-				<div class="admin-nav-label">Story settings</div>
-				{#each NAV as item (item.id)}
-					<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
-						{item.label}
-					</a>
-				{/each}
-			</nav>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
-		</aside>
+		</div>
+		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
+		<nav class="admin-nav">
+			<div class="admin-nav-label">Story settings</div>
+			{#each NAV as item (item.id)}
+				<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
+					{item.label}
+				</a>
+			{/each}
+		</nav>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/snippet}
 
-		<main class="admin-main page-body">
-			<div class="admin-main-inner">
-				<div class="admin-head">
-					<p class="admin-eyebrow">{data.universe.name}</p>
-					<h1 class="admin-title">Story settings</h1>
-					<p class="admin-lede">Everything about "{data.story.title}" that is not its prose.</p>
-				</div>
-
-				<div class="admin-block" class:active={active === 'details'} id="details">
-					<SettingsDetails {data} {form} />
-				</div>
-
-				<div class="admin-block" class:active={active === 'editor'} id="editor">
-					<SettingsEditor {data} {form} />
-				</div>
-
-				<div class="admin-block" class:active={active === 'pagesetup'} id="pagesetup">
-					<SettingsPageSetup {data} {form} />
-				</div>
-
-				<div class="admin-block" class:active={active === 'goals'} id="goals">
-					<SettingsGoals {data} {form} />
-				</div>
-
-				{#if data.assetsConfigured}
-					<div class="admin-block" class:active={active === 'cover'} id="cover">
-						<SettingsCover {data} {form} />
-					</div>
-				{/if}
-
-				{#if data.archive.enabled && data.archive.handle}
-					<div class="admin-block" class:active={active === 'publish'} id="publish">
-						<SettingsPublish {data} {form} />
-					</div>
-				{/if}
-
-				<div class="admin-block" class:active={active === 'review'} id="review">
-					<SettingsReview {data} {form} />
-				</div>
-
-				<div class="admin-block" class:active={active === 'export'} id="export">
-					<SettingsExport {data} />
-				</div>
-
-				<div class="admin-block" class:active={active === 'history'} id="history">
-					<SettingsHistory {data} />
-				</div>
-
-				<div class="admin-block danger-block" class:active={active === 'danger'} id="danger">
-					<SettingsDanger />
-				</div>
-			</div>
-		</main>
+	<div class="admin-head">
+		<p class="admin-eyebrow">{data.universe.name}</p>
+		<h1 class="admin-title">Story settings</h1>
+		<p class="admin-lede">Everything about "{data.story.title}" that is not its prose.</p>
 	</div>
-</div>
+
+	<div class="admin-block" class:active={active === 'details'} id="details">
+		<SettingsDetails {data} {form} />
+	</div>
+
+	<div class="admin-block" class:active={active === 'editor'} id="editor">
+		<SettingsEditor {data} {form} />
+	</div>
+
+	<div class="admin-block" class:active={active === 'pagesetup'} id="pagesetup">
+		<SettingsPageSetup {data} {form} />
+	</div>
+
+	<div class="admin-block" class:active={active === 'goals'} id="goals">
+		<SettingsGoals {data} {form} />
+	</div>
+
+	{#if data.assetsConfigured}
+		<div class="admin-block" class:active={active === 'cover'} id="cover">
+			<SettingsCover {data} {form} />
+		</div>
+	{/if}
+
+	{#if data.archive.enabled && data.archive.handle}
+		<div class="admin-block" class:active={active === 'publish'} id="publish">
+			<SettingsPublish {data} {form} />
+		</div>
+	{/if}
+
+	<div class="admin-block" class:active={active === 'review'} id="review">
+		<SettingsReview {data} {form} />
+	</div>
+
+	<div class="admin-block" class:active={active === 'export'} id="export">
+		<SettingsExport {data} />
+	</div>
+
+	<div class="admin-block" class:active={active === 'history'} id="history">
+		<SettingsHistory {data} />
+	</div>
+
+	<div class="admin-block danger-block" class:active={active === 'danger'} id="danger">
+		<SettingsDanger />
+	</div>
+</SettingsShell>
 
 <style>
-	/* One section at a time; the URL picks which. */
-	.admin-main .admin-block:not(.active) {
+	/* One section at a time; the URL picks which. The .admin-main wrapper is
+	   rendered by SettingsShell, so it is global from this page's view. */
+	:global(.admin-main) .admin-block:not(.active) {
 		display: none;
 	}
 
