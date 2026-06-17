@@ -79,6 +79,13 @@
 
 	// The deleted-scenes list starts closed; its count shows in the header.
 	let trashOpen = $state(false);
+	// The management forms refresh in place rather than reloading the page, so
+	// this component is not remounted to reset its open state. Collapse the trash
+	// when it empties; otherwise restoring the last scene then deleting another
+	// would reopen the list already expanded.
+	$effect(() => {
+		if (trashedScenes.length === 0) trashOpen = false;
+	});
 
 	// The book switcher's menu, toggled from the sidebar header.
 	let storyMenuOpen = $state(false);

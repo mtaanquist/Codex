@@ -31,7 +31,18 @@ its relative form actions plus matching actions on the Review route
 management actions via a shared factory; (3) one outline component with
 a capability surface (`onSelectScene`, `trailingMeta`, `header`,
 `canManage`), guest read-only; (4) `use:enhance` so neither route does
-a full reload.
+a full reload. All five steps shipped on branch
+`claude/blissful-lamport-oqul5f`. A local visual/e2e verification pass
+(2026-06-17) ran the new `review-sidebar` e2e plus the Write backstop
+and found two regressions from the full-reload to in-place-refresh
+shift, both now fixed: the Review scene selection was a writable
+`$derived` of `?scene` that `invalidateAll()` recomputed away, so saving
+a comment or accepting an edit snapped the view off the in-page-selected
+scene (now plain state forked from the URL, re-synced only on a real
+`?scene` change); and `StoryOutline`'s `trashOpen` no longer reset
+without a remount, so a reopened trash lingered (now collapses when the
+list empties). Full e2e green except export/goals specs, which fail the
+same way on the pre-change baseline here (environment, not this work).
 
 A full-codebase review (2026-06-06, 7 finder passes, every candidate
 adversarially verified) found 14 confirmed issues, filed as #182-#195

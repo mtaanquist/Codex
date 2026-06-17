@@ -173,12 +173,22 @@
 				suggestions.some((su) => su.sceneId === s.id && su.status === 'pending')
 		)?.id
 	);
-	// The selection follows the URL's ?scene, which a sidebar management action's
-	// redirect carries the open scene in. It is a writable derived: an in-page
-	// scene click (or a duplicate/merge) overrides it, and it re-derives the next
-	// time the URL changes. A plain data refresh leaves the URL alone, so the
-	// override holds.
-	let chosenSceneId = $derived(page.url.searchParams.get('scene'));
+	// The selected scene starts from the URL's ?scene, which a sidebar management
+	// action's redirect carries the open scene in. After that it is local state:
+	// an in-page scene click (or a duplicate/merge) sets it directly. Because it
+	// is plain state, a data refresh (invalidateAll leaves the URL alone) keeps
+	// that choice - a writable $derived would recompute on the refresh and lose
+	// it. The effect re-syncs only when the URL's ?scene actually changes (a real
+	// navigation or a management redirect), not on every refresh.
+	let chosenSceneId = $state(page.url.searchParams.get('scene'));
+	let lastUrlScene = page.url.searchParams.get('scene');
+	$effect(() => {
+		const urlScene = page.url.searchParams.get('scene');
+		if (urlScene !== lastUrlScene) {
+			lastUrlScene = urlScene;
+			chosenSceneId = urlScene;
+		}
+	});
 	const selectedSceneId = $derived(
 		(chosenSceneId && orderedScenes.some((s) => s.id === chosenSceneId) ? chosenSceneId : null) ??
 			firstActive ??
