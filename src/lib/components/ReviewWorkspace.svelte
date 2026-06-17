@@ -173,9 +173,12 @@
 				suggestions.some((su) => su.sceneId === s.id && su.status === 'pending')
 		)?.id
 	);
-	// Seed from the URL so a sidebar management action, which reloads the page,
-	// lands back on the scene that was open rather than jumping to the first.
-	let chosenSceneId = $state<string | null>(page.url.searchParams.get('scene'));
+	// The selection follows the URL's ?scene, which a sidebar management action's
+	// redirect carries the open scene in. It is a writable derived: an in-page
+	// scene click (or a duplicate/merge) overrides it, and it re-derives the next
+	// time the URL changes. A plain data refresh leaves the URL alone, so the
+	// override holds.
+	let chosenSceneId = $derived(page.url.searchParams.get('scene'));
 	const selectedSceneId = $derived(
 		(chosenSceneId && orderedScenes.some((s) => s.id === chosenSceneId) ? chosenSceneId : null) ??
 			firstActive ??

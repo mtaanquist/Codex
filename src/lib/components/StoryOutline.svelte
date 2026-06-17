@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
@@ -309,7 +310,16 @@
 			{#if filtered.visible}
 				<div class="chapter">
 					{#if renamingChapterId === chapter.id}
-						<form class="chapter-rename" method="POST" action="?/renameChapter">
+						<form
+							class="chapter-rename"
+							method="POST"
+							action="?/renameChapter"
+							use:enhance={() =>
+								async ({ update }) => {
+									await update();
+									renamingChapterId = null;
+								}}
+						>
 							<input type="hidden" name="chapterId" value={chapter.id} />
 							{@render openSceneField()}
 							<!-- svelte-ignore a11y_autofocus (the field only appears on the rename click) -->
@@ -359,7 +369,7 @@
 								<div class="drop-line scene"></div>
 							{/if}
 							{#if canManage && query === ''}
-								<form method="POST" action="?/createScene">
+								<form method="POST" action="?/createScene" use:enhance>
 									<input type="hidden" name="chapterId" value={chapter.id} />
 									<button class="outline-add scene" type="submit">
 										<Icon name="plus" size={12} /> New scene
@@ -394,7 +404,7 @@
 			<div class="search-empty">No chapters or scenes match.</div>
 		{/if}
 		{#if canManage && query === ''}
-			<form method="POST" action="?/createChapter">
+			<form method="POST" action="?/createChapter" use:enhance>
 				<button class="outline-add" type="submit">
 					<Icon name="plus" size={13} /> New chapter
 				</button>
@@ -415,7 +425,7 @@
 								{#if scene.wordCount > 0}
 									<span class="scene-words">{words(scene.wordCount)}</span>
 								{/if}
-								<form method="POST" action="?/restoreScene">
+								<form method="POST" action="?/restoreScene" use:enhance>
 									<input type="hidden" name="sceneId" value={scene.id} />
 									<button class="tool-btn" type="submit" title="Restore scene">
 										<Icon name="restore" size={12} />
