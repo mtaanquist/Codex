@@ -565,25 +565,42 @@ editor) updated. Unit + the review-focus integration test cover the
 category wire; DB-backed run verified locally.
 
 Front-end refactor pass (2026-06-17, four-cluster review on develop:
-route pages, editor, review feature, shared components/lib). Sequenced
-in tiers. Tier 1 (low-risk reuse, branch `chore/frontend-tier1-cleanup`):
-shared `format.ts` helpers (pluralSuffix/formatNumber/compactCount, with
-tests) replacing the inline ternaries and toLocaleString calls; a shared
-`$lib/api.ts` post()/Result helper lifted out of scene-actions, with the
-two near-identical assistant-actions job launchers collapsed into one
-launchJob; deleted the dead `review-segments.ts`; ReviewAvatar uses
-roleLabel and EntityCard uses EntityBadge instead of reimplementing them.
-Deferred into Tier 2: the FormStatus/StatusBanner extraction and the
-inline-SVG to Icon conversion in account/admin/settings are folded into
-those pages' decomposition (same lines, done once). Tier 2 (component
-decomposition, one per PR): account `[[section]]` page into per-section
-components behind a shared SettingsShell; AssistantPanel (SSE stream +
-slash-command modules); EntityEditor (badge picker, relationships) and
-SceneEditor (co-author panel, selection menu); the review reply/assistant
-machinery into a shared ReviewReplyForm. Tier 3 (opportunistic): shared
-editor decoration-plugin/paragraph-walker factories, the review geometry
-pipeline, a createProseEditor lifecycle helper, menu/popover CSS into the
-design system.
+route pages, editor, review feature, shared components/lib), releasing as
+v3.13.1 alongside the review-load-parallel bugfix.
+
+Shipped (PRs #464-#472):
+
+- Tier 1 (#464): `format.ts` helpers (pluralSuffix/formatNumber/
+  compactCount, tested) replacing inline ternaries and toLocaleString;
+  `$lib/api.ts` post()/Result lifted out of scene-actions; the two
+  assistant-actions job launchers collapsed into launchJob; dead
+  `review-segments.ts` deleted; ReviewAvatar uses roleLabel, EntityCard
+  uses EntityBadge.
+- Tier 2 component decompositions: EntityEditor -> EntityBadgePicker +
+  EntityRelationships (#465); AssistantPanel -> assistant-stream
+  (parseSseFrames) + assistant-slash + AssistantProposal (#467);
+  SceneEditor -> CoauthorPanel + SelectionMenu (#468); the review reply
+  machinery -> ReviewReplyForm (#469).
+- Tier 3: paragraphMarkerPlugin shared by alignment/indent (#470);
+  RailMarker + isWholeSceneNote in review-ui (#471); shared `.popover`/
+  `.menu-item` design-system classes for the action dropdowns (#472,
+  ViewMenu normalized - watch its look).
+- Bugfix (#466): the author review page loads in one parallel wave.
+
+In progress (route-page decomposition, before the v3.13.1 release):
+
+- Decomposing the account/admin/settings `[[section]]` route pages
+  (account is 2538 lines) into per-section components behind a shared
+  SettingsShell, folding in the FormStatus/StatusBanner extraction (~50
+  duplicated save-message blocks) and the inline-SVG to Icon conversion.
+  Sequenced as its own PRs; the highest-risk decomposition (auth/TOTP/
+  passkeys forms, server actions), leaning on the e2e journeys per PR.
+
+Parked (judged poor value/risk):
+
+- createProseEditor lifecycle helper: only ~8 shared lines per editor;
+  routing every `view` access through an accessor is invasive churn in
+  the sensitive SceneEditor/ReviewEditor.
 
 ## Phase 1 - Foundations
 
