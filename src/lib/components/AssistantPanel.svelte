@@ -9,7 +9,10 @@
 	import { startSummariesJob } from '$lib/assistant-actions';
 	import { openReviewModal } from '$lib/review-modal.svelte';
 	import { flashActivity } from '$lib/activity.svelte';
+	import { parseSseFrames } from '$lib/assistant-stream';
+	import { SLASH_COMMANDS, matchSlash, slashName } from '$lib/assistant-slash';
 	import Icon from './Icon.svelte';
+	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
 	import { dismiss } from '$lib/dismiss';
 
 	let {
@@ -62,20 +65,6 @@
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
-	// A scene split the Assistant proposed; rendered as a card with a confirm
-	// button, plus client-side confirm state.
-	type SplitProposal = {
-		sceneId: string;
-		sceneTitle: string | null;
-		before: string;
-		rationale: string;
-		// Set once the split landed; the card shows it as done and offers the
-		// revert. Persisted with the turn, so it survives a reload.
-		confirmed?: { splitSceneId: string; newSceneId: string };
-		confirming?: boolean;
-		reverting?: boolean;
-		error?: string;
-	};
 	type Message = {
 		role: 'user' | 'assistant';
 		content: string;
@@ -206,14 +195,9 @@
 				const { done, value } = await reader.read();
 				if (done) break;
 				buffer += decoder.decode(value, { stream: true });
-				const frames = buffer.split('\n\n');
-				buffer = frames.pop() ?? '';
-				for (const frame of frames) {
-					const line = frame.trim();
-					if (!line.startsWith('data:')) continue;
-					const json = line.slice(5).trim();
-					if (!json) continue;
-					const event = JSON.parse(json) as StreamEvent;
+				const { events, rest } = parseSseFrames<StreamEvent>(buffer);
+				buffer = rest;
+				for (const event of events) {
 					if (event.type === 'token') appendToReply(event.text);
 					else if (event.type === 'proposal') attachProposal(event.proposal);
 					else if (event.type === 'error') streamError = event.message;
@@ -267,21 +251,11 @@
 		});
 	}
 
-	// The chat's slash commands: shortcuts to the same actions the menu offers,
-	// typed in the composer. The hint menu below lists them as you type "/".
-	const SLASH_COMMANDS = [
-		{ name: 'review', detail: 'Review a scene, chapter, or the whole story' },
-		{ name: 'catchup', detail: 'Recap the story so far' },
-		{ name: 'summaries', detail: 'Refresh scene and chapter summaries' },
-		{ name: 'clear', detail: 'Clear this conversation' },
-		{ name: 'help', detail: 'List these commands' }
-	];
-
 	function runSlashCommand(raw: string) {
 		input = '';
 		if (composer) composer.style.height = 'auto';
 		slashSelected = 0;
-		const name = raw.slice(1).split(/\s+/)[0].toLowerCase();
+		const name = slashName(raw);
 		switch (name) {
 			case 'clear':
 				void clearConversation();
@@ -320,14 +294,7 @@
 
 	// The hint menu: the matching commands while the composer holds a bare "/word".
 	let slashSelected = $state(0);
-	const slashQuery = $derived(
-		input.startsWith('/') && !input.includes('\n')
-			? input.slice(1).split(/\s+/)[0].toLowerCase()
-			: null
-	);
-	const slashMatches = $derived(
-		slashQuery === null ? [] : SLASH_COMMANDS.filter((c) => c.name.startsWith(slashQuery))
-	);
+	const slashMatches = $derived(matchSlash(input));
 	const slashOpen = $derived(slashMatches.length > 0 && !busy);
 	$effect(() => {
 		if (slashSelected >= slashMatches.length) slashSelected = 0;
@@ -513,49 +480,11 @@
 							</button>
 						{/if}
 						{#each message.proposals ?? [] as proposal, pi (pi)}
-							<div class="proposal">
-								<div class="proposal-head">
-									<Icon name="split" size={13} />
-									Split {proposal.sceneTitle ? `"${proposal.sceneTitle}"` : 'this scene'}
-								</div>
-								{#if proposal.rationale}
-									<p class="proposal-why">{proposal.rationale}</p>
-								{/if}
-								<div class="proposal-quote">{proposal.before}</div>
-								<div class="proposal-actions">
-									{#if proposal.confirmed}
-										<button class="btn btn-primary" type="button" disabled>
-											<Icon name="check" size={12} /> Split
-										</button>
-										{#if onRevertSplit}
-											<button
-												class="btn"
-												type="button"
-												disabled={proposal.reverting}
-												onclick={() => revertSplit(proposal)}
-											>
-												{proposal.reverting ? 'Merging back...' : 'Revert'}
-											</button>
-										{/if}
-										<span class="proposal-hint">Revert merges the two scenes back into one.</span>
-									{:else}
-										{#if onConfirmSplit}
-											<button
-												class="btn btn-primary"
-												type="button"
-												disabled={proposal.confirming}
-												onclick={() => confirmSplit(proposal)}
-											>
-												{proposal.confirming ? 'Splitting...' : 'Split here'}
-											</button>
-										{/if}
-										<span class="proposal-hint">The new scene starts at the quoted text.</span>
-									{/if}
-								</div>
-								{#if proposal.error}
-									<p class="proposal-error" role="alert">{proposal.error}</p>
-								{/if}
-							</div>
+							<AssistantProposal
+								{proposal}
+								onConfirm={onConfirmSplit ? () => confirmSplit(proposal) : undefined}
+								onRevert={onRevertSplit ? () => revertSplit(proposal) : undefined}
+							/>
 						{/each}
 					</div>
 				{/if}
@@ -902,52 +831,6 @@
 	.msg-insert:hover {
 		color: var(--accent);
 		text-decoration: underline;
-	}
-	.proposal {
-		margin-top: 8px;
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		background: var(--bg-card);
-		padding: 10px 12px;
-		font-size: 13px;
-	}
-	.proposal-head {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		font-weight: 600;
-		color: var(--text);
-	}
-	.proposal-why {
-		margin: 6px 0 0;
-		color: var(--text-muted);
-	}
-	.proposal-quote {
-		margin-top: 8px;
-		border-left: 3px solid var(--accent);
-		padding-left: 8px;
-		color: var(--text-muted);
-		font-size: 12.5px;
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-	.proposal-actions {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		margin-top: 10px;
-	}
-	.proposal-hint {
-		font-size: 12px;
-		color: var(--text-faint);
-	}
-	.proposal-error {
-		margin: 8px 0 0;
-		font-size: 12.5px;
-		color: var(--danger, #c0392b);
 	}
 	.msg-ref {
 		border-left: 2px solid var(--accent-contrast);
