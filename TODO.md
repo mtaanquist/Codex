@@ -602,16 +602,20 @@ bookkeeping):
   page keeps only the visibility/nav rules); svelte-check confirms no
   orphaned selectors.
 
-Deferred (their own later effort, tracked here):
+SettingsShell (#479): the page-shell / admin-shell / sidebar / main
+scaffold that account/admin/settings/universe/insights each reimplemented
+now lives in one `SettingsShell` component (topbar + sidebar snippets plus
+the main content as children). With this the front-end review is fully
+worked through.
 
-- A shared SettingsShell (the sidebar + main scaffold that account/admin/
-  settings/universe/insights each still reimplement in their now-thin
-  parent shells), and an admin `.status-banner` error variant (the
-  duplicated inline danger-banner style). Cross-cutting cleanups across
-  the five page shells; left for a deliberate pass.
-- createProseEditor lifecycle helper: judged poor value/risk - only ~8
-  shared lines per editor; routing every `view` access through an
-  accessor is invasive churn in the sensitive SceneEditor/ReviewEditor.
+Deferred (judged poor value/risk):
+
+- An admin `.status-banner` error variant (the duplicated inline
+  danger-banner style) - small, cosmetic, left for whenever admin styling
+  is next touched.
+- createProseEditor lifecycle helper: only ~8 shared lines per editor;
+  routing every `view` access through an accessor is invasive churn in
+  the sensitive SceneEditor/ReviewEditor.
 
 ## Phase 1 - Foundations
 
