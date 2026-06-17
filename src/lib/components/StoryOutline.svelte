@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, invalidateAll } from '$app/navigation';
 	import Icon from './Icon.svelte';
@@ -6,49 +7,68 @@
 	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
 	import type { RowMenuTarget } from './StoryRowMenu.svelte';
 
-	// The Write sidebar's outline: the book switcher, the chapter and scene
-	// tree with drag-to-reorder and right-click menus, and the trash. The page
-	// owns the row menu and the search query; selection rides the URL.
+	// The chapter and scene tree shared by the Write and Review sidebars: the book
+	// header, the tree with drag-to-reorder and right-click menus, and the trash.
+	// Write renders it with link rows that navigate; Review passes onSelectScene
+	// so rows select in place, a custom sceneMeta badge, and canManage=false for
+	// guests. The page owns the row menu and the search query; selection rides the
+	// URL on Write and the caller's state on Review.
 	type OutlineScene = {
 		id: string;
 		chapterId: string | null;
 		title: string | null;
-		status: string;
-		wordCount: number;
+		status: string | null;
+		wordCount?: number;
 	};
 
 	let {
 		story,
 		universeName,
-		storySiblings,
+		storySiblings = [],
 		chapters,
 		scenes,
-		trashedScenes,
+		trashedScenes = [],
 		selectedSceneId,
-		viewStory,
-		storyPath,
+		viewStory = false,
+		storyPath = '',
 		query,
-		mergeSelection,
+		mergeSelection = new SvelteSet<string>(),
 		renamingChapterId = $bindable(null),
-		onOpenRowMenu
+		onOpenRowMenu = () => {},
+		canManage = true,
+		onSelectScene = null,
+		sceneMeta = null
 	}: {
 		story: { id: string; title: string };
 		universeName: string;
-		storySiblings: { id: string; slug: string; title: string; chapters: number; words: number }[];
+		storySiblings?: {
+			id: string;
+			slug: string;
+			title: string;
+			chapters: number;
+			words: number;
+		}[];
 		chapters: { id: string; title: string | null }[];
 		scenes: OutlineScene[];
-		trashedScenes: { id: string; title: string | null; wordCount: number }[];
+		trashedScenes?: { id: string; title: string | null; wordCount: number }[];
 		// Sidebar actions reload the page; carrying the open scene keeps it open.
 		selectedSceneId: string | null;
 		// In the continuous story view the rows jump by anchor, not navigation.
-		viewStory: boolean;
-		storyPath: string;
+		viewStory?: boolean;
+		storyPath?: string;
 		query: string;
 		// Scenes picked for merging, shared with the row menu.
-		mergeSelection: SvelteSet<string>;
+		mergeSelection?: SvelteSet<string>;
 		// Which chapter shows its inline rename field; the row menu sets it.
 		renamingChapterId?: string | null;
-		onOpenRowMenu: (event: MouseEvent, target: RowMenuTarget) => void;
+		onOpenRowMenu?: (event: MouseEvent, target: RowMenuTarget) => void;
+		// Review reuses this sidebar read-or-manage. canManage=false (the guest
+		// reviewer) hides the menu, drag, create, and trash. onSelectScene makes a
+		// row select in place instead of navigating. sceneMeta replaces the word
+		// count with a review-activity badge. None of these change the Write side.
+		canManage?: boolean;
+		onSelectScene?: ((sceneId: string) => void) | null;
+		sceneMeta?: Snippet<[OutlineScene]> | null;
 	} = $props();
 
 	const orphanScenes = $derived(scenes.filter((scene) => scene.chapterId === null));
@@ -147,55 +167,125 @@
 	{/if}
 {/snippet}
 
-<div class="outline">
-	<div
-		class="outline-head"
-		use:dismiss={{ enabled: storyMenuOpen, close: () => (storyMenuOpen = false) }}
-	>
-		<!-- The book switcher: with more than one story in the
-			     universe, the header opens a menu to jump between them. -->
+{#snippet sceneMetaBadge(scene: OutlineScene)}
+	{#if sceneMeta}
+		{@render sceneMeta(scene)}
+	{:else if (scene.wordCount ?? 0) > 0}
+		<span class="scene-words">{words(scene.wordCount ?? 0)}</span>
+	{/if}
+{/snippet}
+
+{#snippet sceneRow(
+	scene: OutlineScene,
+	chapterId: string | null,
+	index: number,
+	draggable: boolean
+)}
+	{#if onSelectScene}
 		<button
-			class="story-switch"
+			class="scene-row"
+			class:active={scene.id === selectedSceneId}
+			class:merge-selected={mergeSelection.has(scene.id)}
 			type="button"
-			disabled={storySiblings.length < 2}
-			onclick={() => (storyMenuOpen = !storyMenuOpen)}
+			oncontextmenu={canManage
+				? (e) => onOpenRowMenu(e, { kind: 'scene', id: scene.id })
+				: undefined}
+			onclick={() => onSelectScene?.(scene.id)}
 		>
-			<span class="story-book"><Icon name="book" size={15} /></span>
-			<span class="story-id">
-				<span class="story-title">{story.title}</span>
-				<span class="story-universe">{universeName}</span>
-			</span>
-			{#if storySiblings.length > 1}
-				<span class="story-caret" class:open={storyMenuOpen}>
-					<Icon name="chevron" size={13} />
-				</span>
-			{/if}
+			<span class="scene-status st-{scene.status ?? 'draft'}" title={scene.status ?? 'draft'}
+			></span>
+			<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+			{@render sceneMetaBadge(scene)}
 		</button>
-		{#if storyMenuOpen}
-			<div class="story-menu">
-				{#each storySiblings as sibling (sibling.id)}
-					<button
-						type="button"
-						class:active={sibling.id === story.id}
-						onclick={async () => {
-							storyMenuOpen = false;
-							if (sibling.id !== story.id) {
-								// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from an owned slug
-								await goto(`/stories/${sibling.slug}`);
-							}
-						}}
-					>
-						<span class="sm-title">{sibling.title}</span>
-						<span class="sm-sub">
-							{sibling.chapters} chapter{sibling.chapters === 1 ? '' : 's'} · {words(
-								sibling.words
-							) || '0'} words
-						</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
-	</div>
+	{:else}
+		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+		<a
+			class="scene-row"
+			class:active={scene.id === selectedSceneId}
+			class:merge-selected={mergeSelection.has(scene.id)}
+			href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+			{draggable}
+			oncontextmenu={(e) => onOpenRowMenu(e, { kind: 'scene', id: scene.id })}
+			ondragstart={(e) => {
+				draggingSceneId = scene.id;
+				e.dataTransfer?.setData('text/plain', scene.id);
+			}}
+			ondragover={(e) => overScene(e, chapterId, index)}
+			ondrop={commitDrop}
+			ondragend={endDrag}
+		>
+			<span class="scene-status st-{scene.status ?? 'draft'}" title={scene.status ?? 'draft'}
+			></span>
+			<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
+			{@render sceneMetaBadge(scene)}
+		</a>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/if}
+{/snippet}
+
+<div class="outline">
+	{#if onSelectScene}
+		<!-- Review shows a static book label; the switcher would jump to another
+		     story's editor, which makes no sense mid-review. -->
+		<div class="outline-head">
+			<span class="story-switch as-label">
+				<span class="story-book"><Icon name="book" size={15} /></span>
+				<span class="story-id">
+					<span class="story-title">{story.title}</span>
+					{#if universeName}<span class="story-universe">{universeName}</span>{/if}
+				</span>
+			</span>
+		</div>
+	{:else}
+		<div
+			class="outline-head"
+			use:dismiss={{ enabled: storyMenuOpen, close: () => (storyMenuOpen = false) }}
+		>
+			<!-- The book switcher: with more than one story in the
+				     universe, the header opens a menu to jump between them. -->
+			<button
+				class="story-switch"
+				type="button"
+				disabled={storySiblings.length < 2}
+				onclick={() => (storyMenuOpen = !storyMenuOpen)}
+			>
+				<span class="story-book"><Icon name="book" size={15} /></span>
+				<span class="story-id">
+					<span class="story-title">{story.title}</span>
+					<span class="story-universe">{universeName}</span>
+				</span>
+				{#if storySiblings.length > 1}
+					<span class="story-caret" class:open={storyMenuOpen}>
+						<Icon name="chevron" size={13} />
+					</span>
+				{/if}
+			</button>
+			{#if storyMenuOpen}
+				<div class="story-menu">
+					{#each storySiblings as sibling (sibling.id)}
+						<button
+							type="button"
+							class:active={sibling.id === story.id}
+							onclick={async () => {
+								storyMenuOpen = false;
+								if (sibling.id !== story.id) {
+									// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from an owned slug
+									await goto(`/stories/${sibling.slug}`);
+								}
+							}}
+						>
+							<span class="sm-title">{sibling.title}</span>
+							<span class="sm-sub">
+								{sibling.chapters} chapter{sibling.chapters === 1 ? '' : 's'} · {words(
+									sibling.words
+								) || '0'} words
+							</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 	<div class="chapters">
 		{#each chapters as chapter, index (chapter.id)}
 			{@const filtered = filterChapter(
@@ -236,7 +326,9 @@
 								collapsed.has(chapter.id)
 									? collapsed.delete(chapter.id)
 									: collapsed.add(chapter.id)}
-							oncontextmenu={(e) => onOpenRowMenu(e, { kind: 'chapter', id: chapter.id, index })}
+							oncontextmenu={canManage
+								? (e) => onOpenRowMenu(e, { kind: 'chapter', id: chapter.id, index })
+								: undefined}
 							ondragover={(e) => overChapterHeader(e, chapter.id)}
 							ondrop={commitDrop}
 						>
@@ -251,34 +343,12 @@
 								{#if dropTarget?.chapterId === chapter.id && dropTarget.index === si}
 									<div class="drop-line scene"></div>
 								{/if}
-								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-								<a
-									class="scene-row"
-									class:active={scene.id === selectedSceneId}
-									class:merge-selected={mergeSelection.has(scene.id)}
-									href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
-									draggable="true"
-									oncontextmenu={(e) => onOpenRowMenu(e, { kind: 'scene', id: scene.id })}
-									ondragstart={(e) => {
-										draggingSceneId = scene.id;
-										e.dataTransfer?.setData('text/plain', scene.id);
-									}}
-									ondragover={(e) => overScene(e, chapter.id, si)}
-									ondrop={commitDrop}
-									ondragend={endDrag}
-								>
-									<span class="scene-status st-{scene.status}" title={scene.status}></span>
-									<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
-									{#if scene.wordCount > 0}
-										<span class="scene-words">{words(scene.wordCount)}</span>
-									{/if}
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{@render sceneRow(scene, chapter.id, si, true)}
 							{/each}
 							{#if dropTarget?.chapterId === chapter.id && dropTarget.index === list.length && open}
 								<div class="drop-line scene"></div>
 							{/if}
-							{#if query === ''}
+							{#if canManage && query === ''}
 								<form method="POST" action="?/createScene">
 									<input type="hidden" name="chapterId" value={chapter.id} />
 									<button class="outline-add scene" type="submit">
@@ -302,29 +372,7 @@
 						{#if dropTarget?.chapterId === null && dropTarget.index === si}
 							<div class="drop-line scene"></div>
 						{/if}
-						<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-						<a
-							class="scene-row"
-							class:active={scene.id === selectedSceneId}
-							class:merge-selected={mergeSelection.has(scene.id)}
-							href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
-							draggable={query === ''}
-							oncontextmenu={(e) => onOpenRowMenu(e, { kind: 'scene', id: scene.id })}
-							ondragstart={(e) => {
-								draggingSceneId = scene.id;
-								e.dataTransfer?.setData('text/plain', scene.id);
-							}}
-							ondragover={(e) => overScene(e, null, si)}
-							ondrop={commitDrop}
-							ondragend={endDrag}
-						>
-							<span class="scene-status st-{scene.status}" title={scene.status}></span>
-							<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
-							{#if scene.wordCount > 0}
-								<span class="scene-words">{words(scene.wordCount)}</span>
-							{/if}
-						</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{@render sceneRow(scene, null, si, query === '')}
 					{/each}
 					{#if dropTarget?.chapterId === null && dropTarget.index === visibleOrphans.length}
 						<div class="drop-line scene"></div>
@@ -335,14 +383,14 @@
 		{#if query !== '' && visibleOrphans.length === 0 && !chapters.some((chapter, index) => filterChapter(query, chapter.title, `Chapter ${index + 1}`, chapterScenes(chapter.id)).visible)}
 			<div class="search-empty">No chapters or scenes match.</div>
 		{/if}
-		{#if query === ''}
+		{#if canManage && query === ''}
 			<form method="POST" action="?/createChapter">
 				<button class="outline-add" type="submit">
 					<Icon name="plus" size={13} /> New chapter
 				</button>
 			</form>
 		{/if}
-		{#if query === '' && trashedScenes.length > 0}
+		{#if canManage && query === '' && trashedScenes.length > 0}
 			<div class="chapter trash">
 				<button class="chapter-row" type="button" onclick={() => (trashOpen = !trashOpen)}>
 					<span class="tw" class:open={trashOpen}><Icon name="chevron" size={12} /></span>
