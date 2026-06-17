@@ -25,6 +25,8 @@ import { queueSceneMentions } from '$lib/server/jobs';
 import { assistantLayout } from '$lib/server/llm/config';
 import { notifySuggestionDiscussion, notifyThreadReviewers } from '$lib/server/notify';
 import { teaser } from '$lib/notifications';
+import { listTrashedScenes } from '$lib/server/scene-lifecycle';
+import { sceneManageActions } from '$lib/server/scene-manage-actions';
 
 // The author's side of a review: every thread guests have left on the
 // story, against the current text, with reply and resolve.
@@ -51,6 +53,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		universe: { slug: universe.slug, name: universe.name },
 		chapters: content.chapters,
 		scenes,
+		// The author's sidebar manages structure here too, trash included.
+		trashedScenes: await listTrashedScenes(db, story.id),
 		threads: await listThreads(db, story.id, reanchorRange, { userId: locals.user!.id }),
 		suggestions: await listSuggestions(db, story.id, { userId: locals.user!.id }),
 		mentionEntities: mentions.entities,
@@ -66,6 +70,10 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 };
 
 export const actions: Actions = {
+	// The sidebar's chapter and scene management, shared with the Write route;
+	// the outline posts to these relative actions. They land back on the review
+	// page rather than the editor.
+	...sceneManageActions((slug) => `/stories/${slug}/review`),
 	// The author leaving their own note, like a guest reviewer would. A null
 	// anchor is a whole-scene comment; a range is a selection.
 	comment: async ({ params, request, locals }) => {

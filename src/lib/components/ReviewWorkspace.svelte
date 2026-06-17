@@ -1,25 +1,39 @@
 <script lang="ts">
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
-	import ReviewNav from './ReviewNav.svelte';
+	import StoryOutline from './StoryOutline.svelte';
+	import StoryRowMenu, { type RowMenuState, type RowMenuTarget } from './StoryRowMenu.svelte';
 	import ReviewSurface from './ReviewSurface.svelte';
 	import ReviewEditor from './ReviewEditor.svelte';
 	import ReviewPanel from './ReviewPanel.svelte';
 	import type { Composer } from './ReviewPanel.svelte';
 	import type { MentionEntity } from '$lib/editor-mentions';
 	import type { MarkVisibility } from '$lib/editor';
-	import type { ReviewFilter, ReviewSuggestion, ReviewThread } from '$lib/review-ui';
+	import {
+		suggestionInFilter,
+		threadInFilter,
+		type ReviewFilter,
+		type ReviewSuggestion,
+		type ReviewThread
+	} from '$lib/review-ui';
 	import type { SaveStatus } from './SceneEditor.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
+	import {
+		duplicateScene as duplicateSceneAction,
+		mergeScenes as mergeScenesAction
+	} from '$lib/scene-actions';
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { openReviewModal } from '$lib/review-modal.svelte';
 
 	let {
 		chapters,
 		scenes,
+		trashedScenes = [],
 		threads,
 		suggestions,
 		role,
@@ -46,6 +60,8 @@
 			status?: string | null;
 			bodyMd: string;
 		}[];
+		// The author's sidebar manages structure here too; the trash needs the list.
+		trashedScenes?: { id: string; title: string | null; wordCount: number }[];
 		threads: ReviewThread[];
 		suggestions: ReviewSuggestion[];
 		role: 'author' | 'guest';
@@ -108,6 +124,19 @@
 		new Map(threads.filter((t) => t.suggestionId).map((t) => [t.suggestionId!, t]))
 	);
 
+	// Open items per scene for the outline badge, honoring the active filter and
+	// counted the same way the right panel lists them, so the two always agree.
+	const countByScene = $derived.by(() => {
+		const m = new SvelteMap<string, number>();
+		for (const t of standaloneThreads) {
+			if (threadInFilter(t, filter)) m.set(t.sceneId, (m.get(t.sceneId) ?? 0) + 1);
+		}
+		for (const s of suggestions) {
+			if (suggestionInFilter(s, filter)) m.set(s.sceneId, (m.get(s.sceneId) ?? 0) + 1);
+		}
+		return m;
+	});
+
 	// The Assistant answering in its own threads: POST the trigger, then pull
 	// the fresh thread in. Failures stay quiet - the author's reply already
 	// landed; the Assistant just has not answered.
@@ -144,8 +173,28 @@
 				suggestions.some((su) => su.sceneId === s.id && su.status === 'pending')
 		)?.id
 	);
-	let chosenSceneId = $state<string | null>(null);
-	const selectedSceneId = $derived(chosenSceneId ?? firstActive ?? orderedScenes[0]?.id ?? '');
+	// The selected scene starts from the URL's ?scene, which a sidebar management
+	// action's redirect carries the open scene in. After that it is local state:
+	// an in-page scene click (or a duplicate/merge) sets it directly. Because it
+	// is plain state, a data refresh (invalidateAll leaves the URL alone) keeps
+	// that choice - a writable $derived would recompute on the refresh and lose
+	// it. The effect re-syncs only when the URL's ?scene actually changes (a real
+	// navigation or a management redirect), not on every refresh.
+	let chosenSceneId = $state(page.url.searchParams.get('scene'));
+	let lastUrlScene = page.url.searchParams.get('scene');
+	$effect(() => {
+		const urlScene = page.url.searchParams.get('scene');
+		if (urlScene !== lastUrlScene) {
+			lastUrlScene = urlScene;
+			chosenSceneId = urlScene;
+		}
+	});
+	const selectedSceneId = $derived(
+		(chosenSceneId && orderedScenes.some((s) => s.id === chosenSceneId) ? chosenSceneId : null) ??
+			firstActive ??
+			orderedScenes[0]?.id ??
+			''
+	);
 	const selectedScene = $derived(orderedScenes.find((s) => s.id === selectedSceneId));
 
 	// Pin the scene the moment one is shown. Without this, "first scene with
@@ -198,6 +247,61 @@
 		selectScene(sceneId);
 		// Picking a scene from the outline shows the manuscript on mobile.
 		mobileTab = 'read';
+	}
+
+	// The author manages structure from the review sidebar, the same outline and
+	// row menu as Write. The guest reviewer never gets this.
+	const manage = $derived(role === 'author' && Boolean(storyId));
+	let rowMenu = $state<RowMenuState | null>(null);
+	let rowMenuTrigger: HTMLElement | null = null;
+	let renamingChapterId = $state<string | null>(null);
+	const mergeSelection = new SvelteSet<string>();
+
+	function openRowMenu(event: MouseEvent, target: RowMenuTarget) {
+		event.preventDefault();
+		rowMenuTrigger = event.currentTarget as HTMLElement;
+		// A keyboard-invoked context menu (Shift+F10) reports (0,0); anchor it to
+		// the row instead of dropping it in the corner.
+		if (event.clientX === 0 && event.clientY === 0) {
+			const rect = rowMenuTrigger.getBoundingClientRect();
+			rowMenu = { x: rect.left, y: rect.bottom, target };
+		} else {
+			rowMenu = { x: event.clientX, y: event.clientY, target };
+		}
+	}
+
+	function closeRowMenu(refocus = false) {
+		rowMenu = null;
+		if (refocus) rowMenuTrigger?.focus();
+		rowMenuTrigger = null;
+	}
+
+	// Copies a scene in full directly after itself; the new scene becomes the one
+	// under review.
+	async function duplicateScene(sceneId: string) {
+		rowMenu = null;
+		if (!storyId) return;
+		const result = await duplicateSceneAction(storyId, sceneId);
+		if (!result.ok) {
+			alert(result.message);
+			return;
+		}
+		chosenSceneId = result.newSceneId;
+		await invalidateAll();
+	}
+
+	// Joins the picked scenes in story order; the survivor becomes the open scene.
+	async function mergeSelectedScenes() {
+		rowMenu = null;
+		if (!storyId) return;
+		const result = await mergeScenesAction(storyId, [...mergeSelection]);
+		if (!result.ok) {
+			alert(result.message);
+			return;
+		}
+		mergeSelection.clear();
+		chosenSceneId = result.targetSceneId;
+		await invalidateAll();
 	}
 
 	// Clicking a card jumps to its passage; clicking a mark jumps to its note.
@@ -303,26 +407,24 @@
 				{/if}
 			</div>
 			<div class="left-scroll">
-				{#if book}
-					<div class="outline-head">
-						<span class="story-switch as-label">
-							<span class="story-book"><Icon name="book" size={15} /></span>
-							<span class="story-id">
-								<span class="story-title">{book.title}</span>
-								{#if book.subtitle}<span class="story-universe">{book.subtitle}</span>{/if}
-							</span>
-						</span>
-					</div>
-				{/if}
-				<ReviewNav
+				{#snippet reviewCount(scene: { id: string })}
+					{@const n = countByScene.get(scene.id) ?? 0}
+					{#if n > 0}<span class="scene-count">{n}</span>{/if}
+				{/snippet}
+				<StoryOutline
+					story={{ id: storyId ?? '', title: book?.title ?? '' }}
+					universeName={book?.subtitle ?? ''}
 					{chapters}
 					scenes={orderedScenes}
-					threads={standaloneThreads}
-					{suggestions}
-					{filter}
+					trashedScenes={manage ? trashedScenes : []}
 					{selectedSceneId}
-					onSelect={navSelectScene}
 					{query}
+					canManage={manage}
+					onSelectScene={navSelectScene}
+					sceneMeta={reviewCount}
+					onOpenRowMenu={openRowMenu}
+					{mergeSelection}
+					bind:renamingChapterId
 				/>
 			</div>
 		</aside>
@@ -403,6 +505,25 @@
 		</aside>
 	</div>
 </div>
+
+{#if manage && rowMenu}
+	<StoryRowMenu
+		menu={rowMenu}
+		chapterCount={chapters.length}
+		assistantEnabled={false}
+		{selectedSceneId}
+		{mergeSelection}
+		onClose={closeRowMenu}
+		onRenameChapter={(id) => {
+			renamingChapterId = id;
+			rowMenu = null;
+		}}
+		onOpenReview={() => {}}
+		onSuggestSplit={() => {}}
+		onDuplicateScene={duplicateScene}
+		onMergeSelected={mergeSelectedScenes}
+	/>
+{/if}
 
 <style>
 	.rv-review-btn {
