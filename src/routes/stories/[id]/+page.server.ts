@@ -21,6 +21,8 @@ import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
 import {
+	createChapter,
+	createScene,
 	deleteChapter,
 	destroyScene,
 	listTrashedScenes,
@@ -288,12 +290,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 export const actions: Actions = {
 	createChapter: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		// Position computed inside the insert so concurrent creates cannot read
-		// the same max.
-		await db.insert(chapters).values({
-			storyId: story.id,
-			position: sql`(select coalesce(max(${chapters.position}), 0) + 1 from ${chapters} where ${chapters.storyId} = ${story.id})`
-		});
+		await createChapter(db, locals.user!.id, story.id);
 		return { created: 'chapter' };
 	},
 	createScene: async ({ request, params, locals }) => {
@@ -304,27 +301,9 @@ export const actions: Actions = {
 		if (chapterId && !isUuid(chapterId)) {
 			return fail(400, { message: 'That chapter does not exist.' });
 		}
-		if (chapterId) {
-			const [chapter] = await db
-				.select({ id: chapters.id })
-				.from(chapters)
-				.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, story.id)));
-			if (!chapter) return fail(400, { message: 'That chapter does not exist.' });
-		}
-		// Positions computed inside the insert so concurrent creates cannot read
-		// the same max.
-		const [scene] = await db
-			.insert(scenes)
-			.values({
-				storyId: story.id,
-				chapterId,
-				positionInChapter: chapterId
-					? sql`(select coalesce(max(${scenes.positionInChapter}), 0) + 1 from ${scenes} where ${scenes.chapterId} = ${chapterId})`
-					: null,
-				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${story.id})`
-			})
-			.returning({ id: scenes.id });
-		redirect(303, `/stories/${story.slug}?scene=${scene.id}`);
+		const sceneId = await createScene(db, locals.user!.id, story.id, chapterId);
+		if (!sceneId) return fail(400, { message: 'That chapter does not exist.' });
+		redirect(303, `/stories/${story.slug}?scene=${sceneId}`);
 	},
 	renameChapter: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
