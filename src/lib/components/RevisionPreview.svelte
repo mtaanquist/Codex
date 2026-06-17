@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import type { EntitySnapshot } from '$lib/entity-snapshot';
-	import { apiErrorMessage } from '$lib/format';
+	import { post } from '$lib/api';
 
 	// The centre column while a past revision is open: banner, the
 	// revision's text (read-only), and a toggle that diffs it against what
@@ -43,16 +43,16 @@
 		restoring = true;
 		// A network-level rejection must not leave the button stuck disabled.
 		try {
-			const response = await fetch(`/api/revisions/${revision.id}/restore`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ entityType, entityId })
-			});
-			if (response.ok) {
+			const result = await post(
+				`/api/revisions/${revision.id}/restore`,
+				{ entityType, entityId },
+				'Could not restore this revision.'
+			);
+			if (result.ok) {
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 				await goto(exitHref, { invalidateAll: true });
 			} else {
-				alert(await apiErrorMessage(response, 'Could not restore this revision.'));
+				alert(result.message);
 			}
 		} catch {
 			alert('Could not restore this revision.');

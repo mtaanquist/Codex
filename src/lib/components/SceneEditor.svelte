@@ -7,7 +7,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { createAutosave } from '$lib/autosave';
-	import { dismiss } from '$lib/dismiss';
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -18,15 +17,15 @@
 		type EditingMode,
 		type MarkVisibility
 	} from '$lib/editor';
-	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
 	import { continuationExtensions } from '$lib/editor-continuation';
 	import { imageUploadExtension } from '$lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
+	import CoauthorPanel from './CoauthorPanel.svelte';
+	import SelectionMenu from './SelectionMenu.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
-	import Icon from './Icon.svelte';
 
 	let {
 		sceneId,
@@ -151,102 +150,11 @@
 	let view: EditorView | undefined;
 
 	// Co-author: a toolbar-opened panel that drafts a passage to a brief, which
-	// the writer inserts at the cursor, edits, or discards. Nothing is written
-	// until Insert. The drafted text is held in an editable field so "edit" is
-	// just typing in it before inserting.
+	// the writer inserts at the cursor, edits, or discards (see CoauthorPanel).
+	// The open state bridges the toolbar toggle and the panel.
 	let coauthorOpen = $state(false);
-	let coauthorInstruction = $state('');
-	let coauthorBusy = $state(false);
-	let coauthorResult = $state('');
-	let coauthorError = $state('');
-	let coauthorInput = $state<HTMLTextAreaElement>();
-	let coauthorPending: AbortController | null = null;
-	// Abort a draft still streaming when the editor unmounts (scene switch),
-	// not only on the explicit close.
-	$effect(() => {
-		return () => coauthorPending?.abort();
-	});
-
-	// Where the writer is in the prose when the panel opens: the selection if
-	// there is one, otherwise the text leading up to the cursor. Shown as a
-	// removable chip and sent with the brief, so "continue from here" works.
-	type CoauthorReference = { kind: 'selection' | 'cursor'; text: string };
-	const COAUTHOR_CURSOR_CHARS = 400;
-	let coauthorReference = $state<CoauthorReference | null>(null);
-
-	function captureCoauthorReference(): CoauthorReference | null {
-		if (!view) return null;
-		const range = view.state.selection.main;
-		if (!range.empty) {
-			const text = view.state.sliceDoc(range.from, range.to).trim();
-			return text ? { kind: 'selection', text } : null;
-		}
-		const from = Math.max(0, range.head - COAUTHOR_CURSOR_CHARS);
-		const text = view.state.sliceDoc(from, range.head);
-		// A truncated slice may open mid-word; drop the partial word.
-		const trimmed = (from > 0 ? text.replace(/^\S*\s/, '') : text).trim();
-		return trimmed ? { kind: 'cursor', text: trimmed } : null;
-	}
-
 	function toggleCoauthor() {
 		coauthorOpen = !coauthorOpen;
-		if (coauthorOpen) {
-			coauthorReference = captureCoauthorReference();
-			setTimeout(() => coauthorInput?.focus(), 0);
-		}
-	}
-
-	async function generateCoauthor() {
-		const instruction = coauthorInstruction.trim();
-		if (!instruction || coauthorBusy) return;
-		coauthorBusy = true;
-		coauthorError = '';
-		coauthorPending?.abort();
-		const controller = new AbortController();
-		coauthorPending = controller;
-		try {
-			const response = await fetch('/api/assistant/coauthor', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, sceneId, instruction, reference: coauthorReference }),
-				signal: controller.signal
-			});
-			if (!response.ok) {
-				coauthorError =
-					'The Assistant could not draft that. Check your endpoint in account settings.';
-				return;
-			}
-			const data = (await response.json()) as { text?: string };
-			coauthorResult = (data.text ?? '').trim();
-			if (!coauthorResult) coauthorError = 'The Assistant returned nothing to use.';
-		} catch {
-			if (!controller.signal.aborted)
-				coauthorError = 'Something went wrong reaching the Assistant.';
-		} finally {
-			coauthorBusy = false;
-			coauthorPending = null;
-		}
-	}
-
-	function insertCoauthor() {
-		if (!view || !coauthorResult.trim()) return;
-		const head = view.state.selection.main.head;
-		view.dispatch({
-			changes: { from: head, insert: coauthorResult },
-			selection: { anchor: head + coauthorResult.length }
-		});
-		scheduleSave();
-		discardCoauthor();
-		view.focus();
-	}
-
-	function discardCoauthor() {
-		coauthorPending?.abort();
-		coauthorOpen = false;
-		coauthorInstruction = '';
-		coauthorResult = '';
-		coauthorError = '';
-		coauthorReference = null;
 	}
 
 	// The editor owns the value after mount; the page keys this component by
@@ -461,17 +369,10 @@
 	// The handler sits on the pane wrapper rather than the prose column, so
 	// the margins around the centered text behave like the text itself.
 	let selectionMenu = $state<{ x: number; y: number; name: string; raw: string } | null>(null);
-	let menuBusy = $state(false);
-	let menuError = $state('');
 
 	function onPaneContextMenu(event: MouseEvent) {
 		if (view) openSelectionMenu(event, view);
 	}
-
-	// The flyout submenus (lore categories, Assistant); reset whenever the
-	// menu opens.
-	let loreSubOpen = $state(false);
-	let assistantSubOpen = $state(false);
 
 	function openSelectionMenu(event: MouseEvent, editor: EditorView): boolean {
 		const range = editor.state.selection.main;
@@ -480,10 +381,6 @@
 		const name = raw.replace(/\s+/g, ' ').trim();
 		if (!name) return false;
 		event.preventDefault();
-		menuError = '';
-		menuBusy = false;
-		loreSubOpen = false;
-		assistantSubOpen = false;
 		selectionMenu = {
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
@@ -493,41 +390,8 @@
 		return true;
 	}
 
-	function askAssistant() {
-		if (!onAskAssistant || !selectionMenu) return;
-		onAskAssistant(selectionMenu.raw);
-		closeSelectionMenu();
-	}
-
 	function closeSelectionMenu() {
 		selectionMenu = null;
-	}
-
-	function runFormat(command: (view: EditorView) => boolean) {
-		if (view) command(view);
-		closeSelectionMenu();
-		view?.focus();
-	}
-
-	async function createFromSelection(
-		type: 'character' | 'place' | 'lore_entry',
-		categoryId?: string
-	) {
-		if (!onCreateEntity || !selectionMenu || menuBusy) return;
-		menuBusy = true;
-		menuError = '';
-		try {
-			const failure = await onCreateEntity(type, selectionMenu.name, categoryId);
-			if (failure) {
-				menuError = failure;
-				menuBusy = false;
-			} else {
-				closeSelectionMenu();
-			}
-		} catch {
-			menuError = 'Could not create it. Try again.';
-			menuBusy = false;
-		}
 	}
 
 	// Leaving the title field commits the rename at once instead of waiting
@@ -606,79 +470,13 @@
 			coauthorActive={coauthorOpen}
 		/>
 		{#if coauthorOpen}
-			<div class="coauthor-panel">
-				<div class="coauthor-head">
-					<span class="coauthor-title"
-						><Icon name="sparkles" size={13} /> Write with the Assistant</span
-					>
-					<button class="coauthor-x" type="button" title="Close" onclick={discardCoauthor}>x</button
-					>
-				</div>
-				{#if coauthorReference}
-					<div class="coauthor-ref" role="note">
-						<span class="coauthor-ref-kind">
-							{coauthorReference.kind === 'selection' ? 'Pointing at:' : 'Continuing from:'}
-						</span>
-						<span class="coauthor-ref-text" title={coauthorReference.text}>
-							{coauthorReference.text}
-						</span>
-						<button
-							class="coauthor-ref-x"
-							type="button"
-							title="Remove the reference"
-							aria-label="Remove the reference"
-							onclick={() => (coauthorReference = null)}
-						>
-							x
-						</button>
-					</div>
-				{/if}
-				<textarea
-					bind:this={coauthorInput}
-					class="coauthor-brief"
-					rows="2"
-					placeholder="What should the Assistant write? e.g. a tense paragraph where Alice spots the toll-keeper lying."
-					bind:value={coauthorInstruction}
-					onkeydown={(e) => {
-						if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-							e.preventDefault();
-							void generateCoauthor();
-						}
-					}}
-				></textarea>
-				{#if coauthorError}
-					<p class="coauthor-error">{coauthorError}</p>
-				{/if}
-				{#if coauthorResult}
-					<textarea class="coauthor-result" rows="6" bind:value={coauthorResult}></textarea>
-					<div class="coauthor-actions">
-						<button class="btn btn-primary" type="button" onclick={insertCoauthor}>
-							Insert at cursor
-						</button>
-						<button
-							class="btn"
-							type="button"
-							onclick={generateCoauthor}
-							disabled={coauthorBusy || !coauthorInstruction.trim()}
-						>
-							{coauthorBusy ? 'Writing...' : 'Try again'}
-						</button>
-						<button class="btn" type="button" onclick={discardCoauthor}>Discard</button>
-					</div>
-				{:else}
-					<div class="coauthor-actions">
-						<button
-							class="btn btn-primary"
-							type="button"
-							onclick={generateCoauthor}
-							disabled={coauthorBusy || !coauthorInstruction.trim()}
-						>
-							{coauthorBusy ? 'Writing...' : 'Generate'}
-						</button>
-						<span class="coauthor-hint">It drafts a passage; you choose whether to insert it.</span>
-					</div>
-				{/if}
-			</div>
+			<CoauthorPanel
+				getView={() => view}
+				{storyId}
+				{sceneId}
+				onInserted={scheduleSave}
+				onClose={() => (coauthorOpen = false)}
+			/>
 		{/if}
 		<div
 			class="editor-scroll"
@@ -704,261 +502,17 @@
 <svelte:window onpagehide={autosave.flushOnPageHide} />
 
 {#if selectionMenu}
-	<div
-		class="sel-menu"
-		role="menu"
-		use:dismiss={{ close: closeSelectionMenu, refocus: () => view?.focus() }}
-		style="left: {selectionMenu.x}px; top: {selectionMenu.y}px;"
-	>
-		<div class="sel-menu-formats">
-			<button
-				class="sel-format"
-				type="button"
-				role="menuitem"
-				title="Bold (Ctrl+B)"
-				onclick={() => runFormat(toggleBold)}
-			>
-				<Icon name="bold" size={15} />
-			</button>
-			<button
-				class="sel-format"
-				type="button"
-				role="menuitem"
-				title="Italic (Ctrl+I)"
-				onclick={() => runFormat(toggleItalic)}
-			>
-				<Icon name="italic" size={15} />
-			</button>
-			<button
-				class="sel-format"
-				type="button"
-				role="menuitem"
-				title="Quote"
-				onclick={() => runFormat(toggleQuote)}
-			>
-				<Icon name="quote" size={15} />
-			</button>
-			<button
-				class="sel-format"
-				type="button"
-				role="menuitem"
-				title="Bullet list"
-				onclick={() => runFormat(toggleBulletList)}
-			>
-				<Icon name="list" size={15} />
-			</button>
-		</div>
-		{#if onCreateEntity || onAskAssistant}
-			<div class="sel-menu-label">
-				"{selectionMenu.name.length > 32
-					? `${selectionMenu.name.slice(0, 32)}...`
-					: selectionMenu.name}"
-			</div>
-		{/if}
-		{#if onAskAssistant}
-			<div
-				class="sel-sub"
-				role="presentation"
-				onmouseenter={() => (assistantSubOpen = true)}
-				onmouseleave={() => (assistantSubOpen = false)}
-			>
-				<button
-					class="sel-create sel-sub-trigger"
-					type="button"
-					role="menuitem"
-					aria-haspopup="menu"
-					aria-expanded={assistantSubOpen}
-					onclick={() => (assistantSubOpen = !assistantSubOpen)}
-				>
-					<span class="sel-sub-label"><Icon name="sparkles" size={13} /> Assistant</span>
-					<Icon name="chevron" size={12} />
-				</button>
-				{#if assistantSubOpen}
-					<div class="sel-submenu" role="menu">
-						<button class="sel-create" type="button" role="menuitem" onclick={askAssistant}>
-							Ask the Assistant about this
-						</button>
-					</div>
-				{/if}
-			</div>
-		{/if}
-		{#if onCreateEntity}
-			<button
-				class="sel-create"
-				type="button"
-				role="menuitem"
-				disabled={menuBusy}
-				onclick={() => createFromSelection('character')}
-			>
-				New character
-			</button>
-			<button
-				class="sel-create"
-				type="button"
-				role="menuitem"
-				disabled={menuBusy}
-				onclick={() => createFromSelection('place')}
-			>
-				New place
-			</button>
-			{#if loreCategories.length > 1}
-				<!-- More than one category: the lore item opens a flyout to pick
-				     which one the new entry files under. -->
-				<div
-					class="sel-sub"
-					role="presentation"
-					onmouseenter={() => (loreSubOpen = true)}
-					onmouseleave={() => (loreSubOpen = false)}
-				>
-					<button
-						class="sel-create sel-sub-trigger"
-						type="button"
-						role="menuitem"
-						aria-haspopup="menu"
-						aria-expanded={loreSubOpen}
-						disabled={menuBusy}
-						onclick={() => (loreSubOpen = !loreSubOpen)}
-					>
-						New lore entry
-						<Icon name="chevron" size={12} />
-					</button>
-					{#if loreSubOpen}
-						<div class="sel-submenu" role="menu">
-							{#each loreCategories as category (category.id)}
-								<button
-									class="sel-create"
-									type="button"
-									role="menuitem"
-									disabled={menuBusy}
-									onclick={() => createFromSelection('lore_entry', category.id)}
-								>
-									{category.name}
-								</button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-			{:else}
-				<button
-					class="sel-create"
-					type="button"
-					role="menuitem"
-					disabled={menuBusy}
-					onclick={() => createFromSelection('lore_entry')}
-				>
-					New lore entry
-				</button>
-			{/if}
-			{#if menuError}
-				<p class="sel-menu-error" role="alert">{menuError}</p>
-			{/if}
-		{/if}
-	</div>
+	<SelectionMenu
+		menu={selectionMenu}
+		getView={() => view}
+		{onCreateEntity}
+		{onAskAssistant}
+		{loreCategories}
+		onClose={closeSelectionMenu}
+	/>
 {/if}
 
 <style>
-	.coauthor-panel {
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-card);
-		padding: 12px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-	.coauthor-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-	.coauthor-title {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--text-muted);
-	}
-	.coauthor-x {
-		border: 0;
-		background: none;
-		color: var(--text-faint);
-		cursor: pointer;
-		font-size: 14px;
-		line-height: 1;
-		padding: 2px 6px;
-	}
-	.coauthor-x:hover {
-		color: var(--text);
-	}
-	.coauthor-ref {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-		padding: 7px 10px;
-		border: 1px solid var(--border);
-		border-left: 3px solid var(--accent);
-		border-radius: 8px;
-		background: var(--bg-inset);
-		font-size: 12.5px;
-		color: var(--text-muted);
-	}
-	.coauthor-ref-kind {
-		flex: none;
-		font-weight: 600;
-	}
-	.coauthor-ref-text {
-		flex: 1;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-	.coauthor-ref-x {
-		border: 0;
-		background: none;
-		color: var(--text-faint);
-		cursor: pointer;
-		font-size: 13px;
-		line-height: 1;
-		padding: 0 2px;
-	}
-	.coauthor-ref-x:hover {
-		color: var(--text);
-	}
-	.coauthor-brief,
-	.coauthor-result {
-		width: 100%;
-		resize: vertical;
-		background: var(--bg-inset);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 8px 10px;
-		color: var(--text);
-		font-family: var(--font-content);
-		font-size: 14px;
-		line-height: 1.5;
-		outline: none;
-	}
-	.coauthor-brief:focus,
-	.coauthor-result:focus {
-		border-color: var(--accent-line);
-	}
-	.coauthor-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-	.coauthor-hint {
-		font-size: 12px;
-		color: var(--text-faint);
-	}
-	.coauthor-error {
-		margin: 0;
-		font-size: 12.5px;
-		color: var(--danger, #c0392b);
-	}
 	.editor-title-input {
 		width: 100%;
 		border: 0;
@@ -976,104 +530,5 @@
 	}
 	.editor.compact :global(.editor-cm) {
 		min-height: 0;
-	}
-
-	/* The right-click selection menu. */
-	.sel-menu {
-		position: fixed;
-		z-index: 60;
-		min-width: 190px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		padding: 6px;
-	}
-	.sel-menu-formats {
-		display: flex;
-		gap: 2px;
-		padding-bottom: 4px;
-		border-bottom: 1px solid var(--border);
-		margin-bottom: 4px;
-	}
-	.sel-format {
-		border: 0;
-		background: none;
-		color: var(--text-muted);
-		border-radius: 5px;
-		padding: 5px 7px;
-		/* Native context menus keep the arrow cursor; match them. */
-		cursor: default;
-		display: inline-flex;
-	}
-	.sel-format:hover {
-		background: var(--accent-soft);
-		color: var(--text);
-	}
-	.sel-menu-label {
-		font-family: var(--font-ui);
-		font-size: 10.5px;
-		letter-spacing: 0.07em;
-		text-transform: uppercase;
-		color: var(--text-faint);
-		padding: 4px 7px 2px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		max-width: 220px;
-	}
-	.sel-create {
-		display: block;
-		width: 100%;
-		text-align: left;
-		border: 0;
-		background: none;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13px;
-		padding: 6px 7px;
-		border-radius: 5px;
-		cursor: default;
-	}
-	.sel-create:hover:not(:disabled) {
-		background: var(--accent-soft);
-	}
-	.sel-create:disabled {
-		color: var(--text-faint);
-	}
-	.sel-menu-error {
-		font-family: var(--font-ui);
-		font-size: 12px;
-		color: var(--danger, #c0564f);
-		margin: 2px 7px 4px;
-	}
-	/* The lore item's category flyout. */
-	.sel-sub {
-		position: relative;
-	}
-	.sel-sub-trigger {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.sel-sub-label {
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-	}
-	.sel-submenu {
-		position: absolute;
-		left: calc(100% - 2px);
-		top: -7px;
-		min-width: 150px;
-		max-height: 260px;
-		overflow-y: auto;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		padding: 6px;
-		z-index: 61;
 	}
 </style>

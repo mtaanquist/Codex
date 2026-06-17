@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { SCENE_STATUSES, SCENE_STATUS_LABELS, type SceneStatus } from '$lib/scene-status';
+	import { formatNumber, pluralSuffix } from '$lib/format';
 
 	// The story's scenes as cards in status lanes. Drag a card to a lane, or
 	// use the card's arrows, to move it along the ladder; story order within
@@ -101,10 +102,10 @@
 							<span class="card-chapter">{chapterTitles.get(scene.chapterId)}</span>
 						{/if}
 						<footer class="card-foot">
-							<span class="card-words">{scene.wordCount.toLocaleString('en')} words</span>
+							<span class="card-words">{formatNumber(scene.wordCount)} words</span>
 							{#if todos > 0}
-								<span class="card-todos" title="{todos} open TODO{todos === 1 ? '' : 's'}">
-									{todos} TODO{todos === 1 ? '' : 's'}
+								<span class="card-todos" title="{todos} open TODO{pluralSuffix(todos)}">
+									{todos} TODO{pluralSuffix(todos)}
 								</span>
 							{/if}
 							<span class="card-tools">

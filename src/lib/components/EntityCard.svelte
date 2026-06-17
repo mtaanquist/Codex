@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { renderMarkdown } from '$lib/markdown';
-	import { entityColor, entityLetter } from '$lib/entity-color';
 	import Icon from './Icon.svelte';
 	import EntityBadge from './EntityBadge.svelte';
 	import type { EntityCardData } from '$lib/wire-types';
@@ -73,9 +72,7 @@
 				{#each card.related as relation (relation.id + relation.label)}
 					<button class="insp-rel" type="button" onclick={() => onOpen(relation.id)}>
 						<span class="insp-rel-type">{relation.label}</span>
-						<span class="badge dot" style="background: {entityColor(relation.name)}">
-							{entityLetter(relation.name)}
-						</span>
+						<EntityBadge name={relation.name} size="dot" />
 						<span class="insp-rel-name">{relation.name}</span>
 					</button>
 				{/each}

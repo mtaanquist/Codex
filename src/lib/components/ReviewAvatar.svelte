@@ -1,11 +1,11 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { authorColor, authorInitials, type AuthorRef } from '$lib/review-ui';
+	import { authorColor, authorInitials, roleLabel, type AuthorRef } from '$lib/review-ui';
 
 	let { author, size = 26 }: { author: AuthorRef; size?: number } = $props();
 
 	const color = $derived(authorColor(author));
-	const role = $derived(author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer');
+	const role = $derived(roleLabel(author));
 </script>
 
 <span

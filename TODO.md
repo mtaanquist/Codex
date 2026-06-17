@@ -564,6 +564,46 @@ is gone. (4) Chat slash commands: `/review`, `/clear`, `/catchup`,
 editor) updated. Unit + the review-focus integration test cover the
 category wire; DB-backed run verified locally.
 
+Front-end refactor pass (2026-06-17, four-cluster review on develop:
+route pages, editor, review feature, shared components/lib), releasing as
+v3.13.1 alongside the review-load-parallel bugfix.
+
+Shipped (PRs #464-#472):
+
+- Tier 1 (#464): `format.ts` helpers (pluralSuffix/formatNumber/
+  compactCount, tested) replacing inline ternaries and toLocaleString;
+  `$lib/api.ts` post()/Result lifted out of scene-actions; the two
+  assistant-actions job launchers collapsed into launchJob; dead
+  `review-segments.ts` deleted; ReviewAvatar uses roleLabel, EntityCard
+  uses EntityBadge.
+- Tier 2 component decompositions: EntityEditor -> EntityBadgePicker +
+  EntityRelationships (#465); AssistantPanel -> assistant-stream
+  (parseSseFrames) + assistant-slash + AssistantProposal (#467);
+  SceneEditor -> CoauthorPanel + SelectionMenu (#468); the review reply
+  machinery -> ReviewReplyForm (#469).
+- Tier 3: paragraphMarkerPlugin shared by alignment/indent (#470);
+  RailMarker + isWholeSceneNote in review-ui (#471); shared `.popover`/
+  `.menu-item` design-system classes for the action dropdowns (#472,
+  ViewMenu normalized - watch its look).
+- Bugfix (#466): the author review page loads in one parallel wave.
+
+Account page decomposed (PRs #473-#475): the account `[[section]]`
+page went from 2538 lines to a 268-line shell (sidebar nav plus seven
+co-located section components - Profile, Security, Assistant, Display,
+Editor, Notifications, Page setup), with a shared FormStatus component
+for the save-feedback line. All CSS was already global, so none moved.
+
+Deferred (their own later effort, tracked here):
+
+- The admin (1423) and settings (1177) `[[section]]` pages still want
+  the same per-section decomposition. A shared SettingsShell (sidebar +
+  main scaffold, used by account/admin/settings/universe/insights) and
+  an admin `.status-banner` error variant are the natural shared pieces
+  to pull out when that work happens.
+- createProseEditor lifecycle helper: judged poor value/risk - only ~8
+  shared lines per editor; routing every `view` access through an
+  accessor is invasive churn in the sensitive SceneEditor/ReviewEditor.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

@@ -28,9 +28,11 @@
 	} from '$lib/editor-view';
 	import {
 		nudgeMarkers,
+		isWholeSceneNote,
 		authorColor,
 		suggestionAuthor,
 		threadAuthor,
+		type RailMarker,
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
@@ -171,8 +173,7 @@
 	}
 
 	// ---- margin rail + floating selection toolbar, positioned from CM ----
-	type Marker = { id: string; kind: 'comment' | 'suggest'; color: string; top: number };
-	let markers = $state<Marker[]>([]);
+	let markers = $state<RailMarker[]>([]);
 	let sel = $state<{ left: number; top: number; start: number; end: number; text: string } | null>(
 		null
 	);
@@ -180,7 +181,7 @@
 	function recomputeGeometry() {
 		if (!view || !docEl) return;
 		const docRect = docEl.getBoundingClientRect();
-		const raw: Marker[] = [];
+		const raw: RailMarker[] = [];
 
 		for (const thread of threads) {
 			if (thread.resolvedAt !== null) continue;
@@ -291,10 +292,7 @@
 	$effect(() => {
 		const id = focusedId;
 		if (!id || !view) return;
-		const whole =
-			threads.some((t) => t.id === id && !t.anchor) ||
-			suggestions.some((s) => s.id === id && !s.anchor);
-		if (whole) {
+		if (isWholeSceneNote(id, threads, suggestions)) {
 			view.dispatch({ effects: EditorView.scrollIntoView(0, { y: 'start' }) });
 			return;
 		}

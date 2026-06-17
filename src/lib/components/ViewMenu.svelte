@@ -39,11 +39,11 @@
 	</button>
 	{#if open}
 		<!-- eslint-disable svelte/no-navigation-without-resolve (the caller resolves each href) -->
-		<div class="md-view-menu" role="menu">
+		<div class="md-view-menu popover" role="menu">
 			{#each items as item (item.id)}
 				{#if item.href}
 					<a
-						class="md-view-item"
+						class="menu-item"
 						class:is-current={item.current}
 						role="menuitem"
 						href={item.href}
@@ -54,7 +54,7 @@
 					</a>
 				{:else}
 					<button
-						class="md-view-item"
+						class="menu-item"
 						class:is-current={item.current}
 						type="button"
 						role="menuitem"
@@ -88,38 +88,16 @@
 	.md-view-trigger.is-active {
 		color: var(--text);
 	}
+	/* Skin from the shared .popover / .menu-item (menus.css); only the
+	   positioning and the in-effect tick stay here. */
 	.md-view-menu {
 		position: absolute;
 		top: calc(100% + 6px);
 		right: 0;
 		z-index: 20;
 		min-width: 168px;
-		padding: 6px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 	}
-	.md-view-item {
-		display: flex;
-		align-items: center;
-		gap: 9px;
-		width: 100%;
-		text-align: left;
-		padding: 7px 9px;
-		border: 0;
-		border-radius: 7px;
-		background: none;
-		color: var(--text);
-		font: inherit;
-		font-size: 13px;
-		text-decoration: none;
-		cursor: pointer;
-	}
-	.md-view-item:hover {
-		background: var(--bg-hover);
-	}
-	.md-view-item.is-current {
+	.menu-item.is-current {
 		color: var(--accent);
 	}
 </style>

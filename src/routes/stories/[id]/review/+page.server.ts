@@ -33,7 +33,34 @@ import { sceneManageActions } from '$lib/server/scene-manage-actions';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
-	const content = await gatherStory(db, story);
+	// One parallel wave rather than a serial chain: the review page is as hot a
+	// navigation as the editor. The author's review takes the full cast
+	// (restrictToMentioned is false), so reviewMentionData needs no scene ids and
+	// nothing here waits on gatherStory.
+	const [
+		content,
+		mentions,
+		trashedScenes,
+		threads,
+		suggestions,
+		preferences,
+		pageSetup,
+		assistant
+	] = await Promise.all([
+		gatherStory(db, story),
+		reviewMentionData(db, {
+			universeId: story.universeId,
+			storyId: story.id,
+			sceneIds: [],
+			restrictToMentioned: false
+		}),
+		listTrashedScenes(db, story.id),
+		listThreads(db, story.id, reanchorRange, { userId: locals.user!.id }),
+		listSuggestions(db, story.id, { userId: locals.user!.id }),
+		storyPreferences(db, locals.user!.id, story.id),
+		storyPageSetup(db, story.id),
+		assistantLayout(db, locals.user!.id, story.id)
+	]);
 	const scenes = content.scenes.map((scene) => ({
 		id: scene.id!,
 		chapterId: scene.chapterId,
@@ -41,31 +68,24 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		status: scene.status,
 		bodyMd: scene.bodyMd
 	}));
-	// The author sees the full cast in their own review, like the editor.
-	const mentions = await reviewMentionData(db, {
-		universeId: story.universeId,
-		storyId: story.id,
-		sceneIds: scenes.map((scene) => scene.id),
-		restrictToMentioned: false
-	});
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },
 		chapters: content.chapters,
 		scenes,
 		// The author's sidebar manages structure here too, trash included.
-		trashedScenes: await listTrashedScenes(db, story.id),
-		threads: await listThreads(db, story.id, reanchorRange, { userId: locals.user!.id }),
-		suggestions: await listSuggestions(db, story.id, { userId: locals.user!.id }),
+		trashedScenes,
+		threads,
+		suggestions,
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins,
 		// The editor view toggles, shared with the Write editor.
-		preferences: await storyPreferences(db, locals.user!.id, story.id),
+		preferences,
 		// The default text alignment for the editable centre, like the Write editor.
-		pageSetup: await storyPageSetup(db, story.id),
+		pageSetup,
 		// Whether the Assistant answers in its threads here, and under what name.
-		assistant: await assistantLayout(db, locals.user!.id, story.id)
+		assistant
 	};
 };
 

@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import { daysMetGoal, daysUntil } from '$lib/insights';
+	import { formatNumber } from '$lib/format';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
 	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
 	import type { PageData } from './$types';
@@ -62,10 +63,6 @@
 	function barHeight(words: number): number {
 		const room = words >= 0 ? BASELINE - 8 : CHART_H - BASELINE - 8;
 		return Math.max(words === 0 ? 0 : 2, Math.round((Math.abs(words) / maxAbs) * room));
-	}
-
-	function formatNumber(n: number): string {
-		return n.toLocaleString('en');
 	}
 
 	function formatDay(day: string): string {

@@ -7,6 +7,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import { formatNumber } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -267,23 +268,23 @@
 						</div>
 						<div class="stat-grid">
 							<div class="stat-tile">
-								<div class="n">{data.contents.stories.toLocaleString('en-US')}</div>
+								<div class="n">{formatNumber(data.contents.stories)}</div>
 								<div class="l">{data.contents.stories === 1 ? 'story' : 'stories'}</div>
 							</div>
 							<div class="stat-tile">
-								<div class="n">{data.contents.characters.toLocaleString('en-US')}</div>
+								<div class="n">{formatNumber(data.contents.characters)}</div>
 								<div class="l">{data.contents.characters === 1 ? 'character' : 'characters'}</div>
 							</div>
 							<div class="stat-tile">
-								<div class="n">{data.contents.places.toLocaleString('en-US')}</div>
+								<div class="n">{formatNumber(data.contents.places)}</div>
 								<div class="l">{data.contents.places === 1 ? 'place' : 'places'}</div>
 							</div>
 							<div class="stat-tile">
-								<div class="n">{data.contents.lore.toLocaleString('en-US')}</div>
+								<div class="n">{formatNumber(data.contents.lore)}</div>
 								<div class="l">{data.contents.lore === 1 ? 'lore entry' : 'lore entries'}</div>
 							</div>
 							<div class="stat-tile">
-								<div class="n">{data.contents.words.toLocaleString('en-US')}</div>
+								<div class="n">{formatNumber(data.contents.words)}</div>
 								<div class="l">total words</div>
 							</div>
 						</div>
@@ -354,7 +355,7 @@
 											required
 										/>
 										<span class="category-count">
-											{draft.entries.toLocaleString('en-US')}
+											{formatNumber(draft.entries)}
 											{draft.entries === 1 ? 'entry' : 'entries'}
 										</span>
 										<button
@@ -469,7 +470,7 @@
 									{/each}
 								{/each}
 								<div class="revision-footer">
-									{data.revisionCount.toLocaleString('en-US')} revisions across this universe
+									{formatNumber(data.revisionCount)} revisions across this universe
 								</div>
 							</div>
 						{/if}
@@ -553,7 +554,7 @@
 										{importPreview.chapterCount === 1 ? 'chapter' : 'chapters'},
 										{importPreview.sceneCount}
 										{importPreview.sceneCount === 1 ? 'scene' : 'scenes'},
-										{importPreview.words.toLocaleString('en-US')} words{importPreview.assetCount > 0
+										{formatNumber(importPreview.words)} words{importPreview.assetCount > 0
 											? `, ${importPreview.assetCount} ${importPreview.assetCount === 1 ? 'image' : 'images'}`
 											: ''}.
 									</p>
@@ -606,13 +607,13 @@
 							<div class="danger-row-text">
 								<h3 class="danger-row-title">Delete this universe</h3>
 								<p class="danger-row-body">
-									All {data.contents.stories.toLocaleString('en-US')}
+									All {formatNumber(data.contents.stories)}
 									{data.contents.stories === 1 ? 'story' : 'stories'},
-									{data.contents.characters.toLocaleString('en-US')}
+									{formatNumber(data.contents.characters)}
 									{data.contents.characters === 1 ? 'character' : 'characters'},
-									{data.contents.places.toLocaleString('en-US')}
+									{formatNumber(data.contents.places)}
 									{data.contents.places === 1 ? 'place' : 'places'}, and
-									{data.contents.lore.toLocaleString('en-US')}
+									{formatNumber(data.contents.lore)}
 									{data.contents.lore === 1 ? 'lore entry' : 'lore entries'} go with it. The universe
 									sits in your library's deleted list for {data.trashDays} days, where you can restore
 									it; after that everything is deleted for good. Export an archive first if in doubt.

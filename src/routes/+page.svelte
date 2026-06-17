@@ -3,6 +3,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Landing from '$lib/components/Landing.svelte';
 	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import { formatNumber } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -32,7 +33,7 @@
 	const totalWords = $derived(data.stories.reduce((sum, story) => sum + story.words, 0));
 
 	function count(n: number, noun: string, plural = `${noun}s`) {
-		return `${n.toLocaleString('en-US')} ${n === 1 ? noun : plural}`;
+		return `${formatNumber(n)} ${n === 1 ? noun : plural}`;
 	}
 
 	function universeStories(universeId: string) {
@@ -93,7 +94,7 @@
 								data.stories.length,
 								'story',
 								'stories'
-							)} · {totalWords.toLocaleString('en-US')} words in total
+							)} · {formatNumber(totalWords)} words in total
 						</p>
 					</div>
 					<div class="page-actions">

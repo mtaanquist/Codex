@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import type { RailMarker } from '$lib/review-ui';
 
 	// The margin rail of jump markers beside the review prose, shared by the
 	// editor and the read-only surface. The caller computes and nudges the
@@ -9,7 +10,7 @@
 		focusedId,
 		setFocused
 	}: {
-		markers: { id: string; kind: string; color: string; top: number }[];
+		markers: RailMarker[];
 		focusedId: string | null;
 		setFocused: (id: string | null) => void;
 	} = $props();
