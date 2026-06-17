@@ -8,6 +8,7 @@
 
 <script lang="ts">
 	import type { SvelteSet } from 'svelte/reactivity';
+	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 
@@ -41,6 +42,14 @@
 	} = $props();
 
 	const target = $derived(menu.target);
+
+	// Management forms refresh in place rather than reloading the page; the menu
+	// closes once the action lands. The two confirm-guarded forms (delete chapter,
+	// delete forever) keep the plain submit, where a reload is fine.
+	const closeAfter = () => async (result: { update: () => Promise<void> }) => {
+		await result.update();
+		onClose();
+	};
 
 	let menuEl = $state<HTMLDivElement>();
 	// The Assistant flyout inside the menu.
@@ -129,7 +138,7 @@
 				{/if}
 			</div>
 		{/if}
-		<form method="POST" action="?/moveChapter">
+		<form method="POST" action="?/moveChapter" use:enhance={closeAfter}>
 			<input type="hidden" name="chapterId" value={target.id} />
 			<input type="hidden" name="direction" value="up" />
 			{@render openSceneField()}
@@ -142,7 +151,7 @@
 				<Icon name="chevron" size={13} /> Move up
 			</button>
 		</form>
-		<form method="POST" action="?/moveChapter">
+		<form method="POST" action="?/moveChapter" use:enhance={closeAfter}>
 			<input type="hidden" name="chapterId" value={target.id} />
 			<input type="hidden" name="direction" value="down" />
 			{@render openSceneField()}
@@ -245,7 +254,7 @@
 				Clear merge selection
 			</button>
 		{/if}
-		<form method="POST" action="?/deleteScene">
+		<form method="POST" action="?/deleteScene" use:enhance={closeAfter}>
 			<input type="hidden" name="sceneId" value={target.id} />
 			{@render openSceneField()}
 			<button class="row-menu-item danger" type="submit" role="menuitem">

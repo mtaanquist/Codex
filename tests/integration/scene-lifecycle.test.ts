@@ -16,6 +16,8 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import {
+	createChapter,
+	createScene,
 	deleteChapter,
 	destroyScene,
 	listTrashedScenes,
@@ -193,6 +195,68 @@ describe('destroyScene', () => {
 			0
 		);
 		expect(await db.select().from(revisions).where(eq(revisions.entityId, s1))).toHaveLength(0);
+	});
+});
+
+describe('create', () => {
+	// Its own story, so appending chapters and scenes does not disturb the
+	// shared fixture the ordering tests above rely on.
+	let createStory: string;
+	beforeAll(async () => {
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Blank' })
+			.returning();
+		createStory = story.id;
+	});
+
+	it('guards ownership of the story', async () => {
+		expect(await createChapter(db, strangerId, createStory)).toBe(null);
+		expect(await createScene(db, strangerId, createStory)).toBe(null);
+	});
+
+	it('appends a chapter at the end of the list', async () => {
+		const first = await createChapter(db, ownerId, createStory);
+		const second = await createChapter(db, ownerId, createStory);
+		expect(first).not.toBe(null);
+		const list = await db
+			.select({ id: chapters.id })
+			.from(chapters)
+			.where(eq(chapters.storyId, createStory))
+			.orderBy(asc(chapters.position));
+		expect(list.map((row) => row.id)).toEqual([first, second]);
+	});
+
+	it('adds a scene to a chapter and to the unfiled list', async () => {
+		const chapterId = await createChapter(db, ownerId, createStory);
+		const inChapter = await createScene(db, ownerId, createStory, chapterId);
+		expect(inChapter).not.toBe(null);
+		const [filed] = await db
+			.select({ chapterId: scenes.chapterId, positionInChapter: scenes.positionInChapter })
+			.from(scenes)
+			.where(eq(scenes.id, inChapter!));
+		expect(filed.chapterId).toBe(chapterId);
+		expect(filed.positionInChapter).not.toBe(null);
+
+		const unfiled = await createScene(db, ownerId, createStory);
+		const [orphan] = await db
+			.select({ chapterId: scenes.chapterId, positionInChapter: scenes.positionInChapter })
+			.from(scenes)
+			.where(eq(scenes.id, unfiled!));
+		expect(orphan.chapterId).toBe(null);
+		expect(orphan.positionInChapter).toBe(null);
+	});
+
+	it('rejects a chapter that belongs to another story', async () => {
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Other' })
+			.returning();
+		const [foreign] = await db
+			.insert(chapters)
+			.values({ storyId: other.id, position: 1 })
+			.returning();
+		expect(await createScene(db, ownerId, createStory, foreign.id)).toBe(null);
 	});
 });
 

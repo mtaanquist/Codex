@@ -27,6 +27,67 @@ async function ownedChapter(db: Database, userId: string, chapterId: string) {
 	return row ?? null;
 }
 
+/** Owner check by story id, for the create helpers that have no entity to
+ * guard through yet. */
+async function ownsStory(db: Database, userId: string, storyId: string): Promise<boolean> {
+	const [row] = await db
+		.select({ id: stories.id })
+		.from(stories)
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+	return Boolean(row);
+}
+
+/** Appends a chapter to the story, returning its id (null when the story is
+ * not the user's). The position is computed inside the insert so concurrent
+ * creates cannot read the same maximum. */
+export async function createChapter(
+	db: Database,
+	userId: string,
+	storyId: string
+): Promise<string | null> {
+	if (!(await ownsStory(db, userId, storyId))) return null;
+	const [chapter] = await db
+		.insert(chapters)
+		.values({
+			storyId,
+			position: sql`(select coalesce(max(${chapters.position}), 0) + 1 from ${chapters} where ${chapters.storyId} = ${storyId})`
+		})
+		.returning({ id: chapters.id });
+	return chapter.id;
+}
+
+/** Appends a scene, to a chapter when one is given (and belongs to the story)
+ * or to the unfiled list otherwise. Returns the new scene id, or null when the
+ * story is not the user's or the chapter is not part of it. Positions are
+ * computed inside the insert so concurrent creates cannot collide. */
+export async function createScene(
+	db: Database,
+	userId: string,
+	storyId: string,
+	chapterId: string | null = null
+): Promise<string | null> {
+	if (!(await ownsStory(db, userId, storyId))) return null;
+	if (chapterId) {
+		const [chapter] = await db
+			.select({ id: chapters.id })
+			.from(chapters)
+			.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, storyId)));
+		if (!chapter) return null;
+	}
+	const [scene] = await db
+		.insert(scenes)
+		.values({
+			storyId,
+			chapterId,
+			positionInChapter: chapterId
+				? sql`(select coalesce(max(${scenes.positionInChapter}), 0) + 1 from ${scenes} where ${scenes.chapterId} = ${chapterId})`
+				: null,
+			globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${storyId})`
+		})
+		.returning({ id: scenes.id });
+	return scene.id;
+}
+
 /** Moves a scene to the story's trash. Mention rows go at once so panels and
  * the heatmap stop counting it; everything else stays for restore. */
 export async function trashScene(db: Database, userId: string, sceneId: string): Promise<boolean> {
