@@ -557,9 +557,9 @@
 					<Icon name="more" size={16} />
 				</button>
 				{#if actionsOpen}
-					<div class="composer-menu" role="menu">
+					<div class="composer-menu popover" role="menu">
 						<button
-							class="composer-menu-item"
+							class="menu-item"
 							type="button"
 							role="menuitem"
 							disabled={busy}
@@ -569,7 +569,7 @@
 							Catch me up
 						</button>
 						<button
-							class="composer-menu-item"
+							class="menu-item"
 							type="button"
 							role="menuitem"
 							disabled={summarising}
@@ -579,7 +579,7 @@
 							{summarising ? 'Starting...' : 'Update summaries'}
 						</button>
 						<button
-							class="composer-menu-item"
+							class="menu-item"
 							type="button"
 							role="menuitem"
 							disabled={clearing || busy}
@@ -896,36 +896,14 @@
 		color: var(--text);
 		border-color: var(--border-strong);
 	}
+	/* Skin from the shared .popover / .menu-item (menus.css); only the
+	   positioning stays here. */
 	.composer-menu {
 		position: absolute;
 		bottom: 42px;
 		right: 0;
 		z-index: 60;
 		min-width: 190px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		padding: 6px;
-	}
-	.composer-menu-item {
-		display: block;
-		width: 100%;
-		text-align: left;
-		border: 0;
-		background: none;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13px;
-		padding: 6px 7px;
-		border-radius: 5px;
-		cursor: default;
-	}
-	.composer-menu-item:hover:not(:disabled) {
-		background: var(--accent-soft);
-	}
-	.composer-menu-item:disabled {
-		color: var(--text-faint);
 	}
 	.send-btn {
 		flex: none;

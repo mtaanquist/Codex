@@ -56,7 +56,7 @@
 	let subOpen = $state(false);
 
 	function onMenuKey(event: KeyboardEvent) {
-		const items = menuEl ? [...menuEl.querySelectorAll<HTMLButtonElement>('.row-menu-item')] : [];
+		const items = menuEl ? [...menuEl.querySelectorAll<HTMLButtonElement>('.menu-item')] : [];
 		const current = items.indexOf(document.activeElement as HTMLButtonElement);
 		if (event.key === 'Escape') {
 			event.preventDefault();
@@ -72,7 +72,7 @@
 
 	// Move focus into the menu when it opens, so keyboard users can act on it.
 	$effect(() => {
-		if (menuEl) menuEl.querySelector<HTMLButtonElement>('.row-menu-item')?.focus();
+		if (menuEl) menuEl.querySelector<HTMLButtonElement>('.menu-item')?.focus();
 	});
 
 	function toggleMergeSelection(sceneId: string) {
@@ -89,7 +89,7 @@
 {/snippet}
 
 <div
-	class="row-menu"
+	class="row-menu popover"
 	role="menu"
 	tabindex="-1"
 	bind:this={menuEl}
@@ -99,7 +99,7 @@
 >
 	{#if target.kind === 'chapter'}
 		<button
-			class="row-menu-item"
+			class="menu-item"
 			type="button"
 			role="menuitem"
 			onclick={() => onRenameChapter(target.id)}
@@ -114,7 +114,7 @@
 				onmouseleave={() => (subOpen = false)}
 			>
 				<button
-					class="row-menu-item row-sub-trigger"
+					class="menu-item row-sub-trigger"
 					type="button"
 					role="menuitem"
 					aria-haspopup="menu"
@@ -125,9 +125,9 @@
 					<Icon name="chevron" size={12} />
 				</button>
 				{#if subOpen}
-					<div class="row-submenu" role="menu">
+					<div class="row-submenu popover" role="menu">
 						<button
-							class="row-menu-item"
+							class="menu-item"
 							type="button"
 							role="menuitem"
 							onclick={() => onOpenReview({ chapterId: target.id })}
@@ -142,12 +142,7 @@
 			<input type="hidden" name="chapterId" value={target.id} />
 			<input type="hidden" name="direction" value="up" />
 			{@render openSceneField()}
-			<button
-				class="row-menu-item turn-up"
-				type="submit"
-				role="menuitem"
-				disabled={target.index === 0}
-			>
+			<button class="menu-item turn-up" type="submit" role="menuitem" disabled={target.index === 0}>
 				<Icon name="chevron" size={13} /> Move up
 			</button>
 		</form>
@@ -156,7 +151,7 @@
 			<input type="hidden" name="direction" value="down" />
 			{@render openSceneField()}
 			<button
-				class="row-menu-item turn-down"
+				class="menu-item turn-down"
 				type="submit"
 				role="menuitem"
 				disabled={target.index === chapterCount - 1}
@@ -173,14 +168,14 @@
 		>
 			<input type="hidden" name="chapterId" value={target.id} />
 			{@render openSceneField()}
-			<button class="row-menu-item danger" type="submit" role="menuitem">
+			<button class="menu-item danger" type="submit" role="menuitem">
 				<Icon name="trash" size={13} /> Delete chapter
 			</button>
 		</form>
 	{:else}
 		{@const pickedForMerge = mergeSelection.has(target.id)}
 		<button
-			class="row-menu-item"
+			class="menu-item"
 			type="button"
 			role="menuitem"
 			onclick={() => toggleMergeSelection(target.id)}
@@ -189,7 +184,7 @@
 			{pickedForMerge ? 'Unselect for merging' : 'Select for merging'}
 		</button>
 		<button
-			class="row-menu-item"
+			class="menu-item"
 			type="button"
 			role="menuitem"
 			onclick={() => onDuplicateScene(target.id)}
@@ -204,7 +199,7 @@
 				onmouseleave={() => (subOpen = false)}
 			>
 				<button
-					class="row-menu-item row-sub-trigger"
+					class="menu-item row-sub-trigger"
 					type="button"
 					role="menuitem"
 					aria-haspopup="menu"
@@ -215,9 +210,9 @@
 					<Icon name="chevron" size={12} />
 				</button>
 				{#if subOpen}
-					<div class="row-submenu" role="menu">
+					<div class="row-submenu popover" role="menu">
 						<button
-							class="row-menu-item"
+							class="menu-item"
 							type="button"
 							role="menuitem"
 							onclick={() => onOpenReview({ sceneId: target.id })}
@@ -225,7 +220,7 @@
 							Review with the Assistant...
 						</button>
 						<button
-							class="row-menu-item"
+							class="menu-item"
 							type="button"
 							role="menuitem"
 							onclick={() => onSuggestSplit(target.id)}
@@ -237,13 +232,13 @@
 			</div>
 		{/if}
 		{#if pickedForMerge && mergeSelection.size >= 2}
-			<button class="row-menu-item" type="button" role="menuitem" onclick={onMergeSelected}>
+			<button class="menu-item" type="button" role="menuitem" onclick={onMergeSelected}>
 				<Icon name="chapter" size={13} /> Merge {mergeSelection.size} scenes
 			</button>
 		{/if}
 		{#if mergeSelection.size > 0}
 			<button
-				class="row-menu-item"
+				class="menu-item"
 				type="button"
 				role="menuitem"
 				onclick={() => {
@@ -257,7 +252,7 @@
 		<form method="POST" action="?/deleteScene" use:enhance={closeAfter}>
 			<input type="hidden" name="sceneId" value={target.id} />
 			{@render openSceneField()}
-			<button class="row-menu-item danger" type="submit" role="menuitem">
+			<button class="menu-item danger" type="submit" role="menuitem">
 				<Icon name="trash" size={13} /> Delete scene
 			</button>
 		</form>
@@ -265,34 +260,12 @@
 </div>
 
 <style>
+	/* Skin from the shared .popover / .menu-item (menus.css); only the
+	   positioning and the flyout structure stay here. */
 	.row-menu {
 		position: fixed;
 		z-index: 60;
 		min-width: 170px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		padding: 6px;
-	}
-	.row-menu-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		width: 100%;
-		text-align: left;
-		border: 0;
-		background: none;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13px;
-		padding: 6px 7px;
-		border-radius: 5px;
-		/* Native context menus keep the arrow cursor; match them. */
-		cursor: default;
-	}
-	.row-menu-item:hover:not(:disabled) {
-		background: var(--accent-soft);
 	}
 	/* The Assistant flyout, the editor selection menu's submenu pattern. */
 	.row-sub {
@@ -311,23 +284,12 @@
 		left: calc(100% - 2px);
 		top: -7px;
 		min-width: 180px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		padding: 6px;
 		z-index: 61;
 	}
-	.row-menu-item:disabled {
-		color: var(--text-faint);
-	}
-	.row-menu-item.danger:hover:not(:disabled) {
-		color: var(--danger, #c0564f);
-	}
-	.row-menu-item.turn-up :global(svg) {
+	.turn-up :global(svg) {
 		transform: rotate(-90deg);
 	}
-	.row-menu-item.turn-down :global(svg) {
+	.turn-down :global(svg) {
 		transform: rotate(90deg);
 	}
 </style>
