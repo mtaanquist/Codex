@@ -1,4 +1,3 @@
-import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
@@ -20,18 +19,8 @@ import { ownedStory } from '$lib/server/story-access';
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
-import {
-	createChapter,
-	createScene,
-	deleteChapter,
-	destroyScene,
-	listTrashedScenes,
-	moveChapter,
-	renameChapter,
-	restoreScene,
-	trashScene
-} from '$lib/server/scene-lifecycle';
-import { queueSceneMentions } from '$lib/server/jobs';
+import { listTrashedScenes } from '$lib/server/scene-lifecycle';
+import { sceneManageActions } from '$lib/server/scene-manage-actions';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
@@ -288,85 +277,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 };
 
 export const actions: Actions = {
-	createChapter: async ({ params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		await createChapter(db, locals.user!.id, story.id);
-		return { created: 'chapter' };
-	},
-	createScene: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const chapterId = String(data.get('chapterId') ?? '') || null;
-		// Guard the uuid cast: a tampered id would throw in Postgres and 500.
-		if (chapterId && !isUuid(chapterId)) {
-			return fail(400, { message: 'That chapter does not exist.' });
-		}
-		const sceneId = await createScene(db, locals.user!.id, story.id, chapterId);
-		if (!sceneId) return fail(400, { message: 'That chapter does not exist.' });
-		redirect(303, `/stories/${story.slug}?scene=${sceneId}`);
-	},
-	renameChapter: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const chapterId = String(data.get('chapterId') ?? '');
-		if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
-		const ok = await renameChapter(db, locals.user!.id, chapterId, String(data.get('title') ?? ''));
-		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
-		// Keep the open scene open across the reload.
-		redirect(303, sceneReturnPath(story.slug, data));
-	},
-	moveChapter: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const chapterId = String(data.get('chapterId') ?? '');
-		if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
-		const direction = data.get('direction') === 'up' ? ('up' as const) : ('down' as const);
-		const ok = await moveChapter(db, locals.user!.id, chapterId, direction);
-		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
-		redirect(303, sceneReturnPath(story.slug, data));
-	},
-	deleteChapter: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const chapterId = String(data.get('chapterId') ?? '');
-		if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
-		const ok = await deleteChapter(db, locals.user!.id, chapterId);
-		if (!ok) return fail(404, { message: 'That chapter does not exist.' });
-		redirect(303, sceneReturnPath(story.slug, data));
-	},
-	deleteScene: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const sceneId = String(data.get('sceneId') ?? '');
-		if (!isUuid(sceneId)) return fail(404, { message: 'That scene does not exist.' });
-		const ok = await trashScene(db, locals.user!.id, sceneId);
-		if (!ok) return fail(404, { message: 'That scene does not exist.' });
-		// Deleting the open scene closes it; deleting another keeps it open.
-		const open = String(data.get('openSceneId') ?? '');
-		redirect(
-			303,
-			open && open !== sceneId ? `/stories/${story.slug}?scene=${open}` : `/stories/${story.slug}`
-		);
-	},
-	restoreScene: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const sceneId = String(data.get('sceneId') ?? '');
-		if (!isUuid(sceneId)) return fail(404, { message: 'That scene is not in the trash.' });
-		const ok = await restoreScene(db, locals.user!.id, sceneId);
-		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
-		await queueSceneMentions(sceneId);
-		redirect(303, `/stories/${story.slug}?scene=${sceneId}`);
-	},
-	destroyScene: async ({ request, params, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const sceneId = String(data.get('sceneId') ?? '');
-		if (!isUuid(sceneId)) return fail(404, { message: 'That scene is not in the trash.' });
-		const ok = await destroyScene(db, locals.user!.id, sceneId);
-		if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
-		redirect(303, sceneReturnPath(story.slug, data));
-	},
+	...sceneManageActions((slug) => `/stories/${slug}`),
 	// The per-story mute on the Assistant tab. A story can only subtract: muting
 	// writes enabled:false, un-muting clears the override so the story follows
 	// the account again. Neither can light the Assistant up when the account is
@@ -383,10 +294,3 @@ export const actions: Actions = {
 		return { scope: 'assistant-mute' };
 	}
 };
-
-// Where a sidebar action lands after the reload: back on the open scene when
-// the form carried one, the story page otherwise.
-function sceneReturnPath(slug: string, data: FormData): string {
-	const open = String(data.get('openSceneId') ?? '');
-	return open ? `/stories/${slug}?scene=${open}` : `/stories/${slug}`;
-}
