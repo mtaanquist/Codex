@@ -1,13 +1,8 @@
-import {
-	Decoration,
-	EditorView,
-	ViewPlugin,
-	type DecorationSet,
-	type ViewUpdate
-} from '@codemirror/view';
-import type { EditorState, Extension, Range } from '@codemirror/state';
+import { Decoration } from '@codemirror/view';
+import type { EditorState, Extension } from '@codemirror/state';
 import { alignmentOf } from './alignment';
 import { indentMargin, indentOf } from './indent';
+import { paragraphMarkerPlugin } from './editor-paragraph-markers';
 
 // Renders \indent paragraphs shifted right in the editor: every line of such a
 // paragraph gets an inline left margin. The marker itself dims, or - when the
@@ -56,47 +51,10 @@ export function indentPlan(
 	return { markers, lines };
 }
 
-function compute(view: EditorView, hideMarkers: boolean): DecorationSet {
-	const reveal = hideMarkers && view.hasFocus;
-	const activeLines = new Set<number>();
-	if (reveal) {
-		for (const range of view.state.selection.ranges) {
-			const first = view.state.doc.lineAt(range.from).number;
-			const last = view.state.doc.lineAt(range.to).number;
-			for (let line = first; line <= last; line++) activeLines.add(line);
-		}
-	}
-	const plan = indentPlan(view.state, hideMarkers, activeLines);
-	const decorations: Range<Decoration>[] = [];
-	for (const marker of plan.markers) {
-		decorations.push(
-			(marker.hidden
-				? Decoration.replace({})
-				: Decoration.mark({ class: 'cm-align-marker' })
-			).range(marker.from, marker.to)
-		);
-	}
-	for (const line of plan.lines) {
-		decorations.push(
-			Decoration.line({ attributes: { style: indentMargin(line.level) } }).range(line.from)
-		);
-	}
-	return Decoration.set(decorations, true);
-}
-
 export function indentExtension(hideMarkers = false): Extension {
-	return ViewPlugin.fromClass(
-		class {
-			decorations: DecorationSet;
-			constructor(view: EditorView) {
-				this.decorations = compute(view, hideMarkers);
-			}
-			update(update: ViewUpdate) {
-				if (update.docChanged || (hideMarkers && (update.selectionSet || update.focusChanged))) {
-					this.decorations = compute(update.view, hideMarkers);
-				}
-			}
-		},
-		{ decorations: (value) => value.decorations }
+	return paragraphMarkerPlugin(
+		indentPlan,
+		(line) => Decoration.line({ attributes: { style: indentMargin(line.level) } }),
+		hideMarkers
 	);
 }
