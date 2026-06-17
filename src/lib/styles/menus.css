@@ -1,0 +1,40 @@
+/* Shared dropdown-menu skin. A floating action menu is a `.popover` box of
+   `.menu-item` rows. Components keep their own positioning (position, offsets,
+   min-width, z-index) and add these classes for the look, so every action
+   dropdown reads the same. Wider panels (the notification list) and the avatar
+   menu keep their own styles. */
+
+.popover {
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+	border-radius: var(--radius, 9px);
+	box-shadow: var(--shadow);
+	padding: 6px;
+}
+
+.menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	text-align: left;
+	border: 0;
+	background: none;
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: 13px;
+	padding: 6px 7px;
+	border-radius: 5px;
+	text-decoration: none;
+	/* Native context menus keep the arrow cursor; match them. */
+	cursor: default;
+}
+.menu-item:hover:not(:disabled) {
+	background: var(--accent-soft);
+}
+.menu-item:disabled {
+	color: var(--text-faint);
+}
+.menu-item.danger:hover:not(:disabled) {
+	color: var(--danger, #c0564f);
+}
