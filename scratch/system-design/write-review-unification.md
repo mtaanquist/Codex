@@ -96,18 +96,24 @@ a scene), so it is a shared improvement, not Review-only special-casing.
    guest) now renders it with a review-count badge and the row menu, and
    `ReviewNav` plus its `review.css` overrides are deleted. The author gets the
    right-click menu, inline rename, create, duplicate, merge, and trash; the
-   guest gets a read-only outline (`canManage=false`). Selection is seeded from
-   `?scene` so a management action's reload lands back on the open scene.
-   Verified with typecheck, lint, and the unit suite; the sidebar e2e
-   (`rename-sweep`, `scene-trash`, `scene-board`, `selection-menu`) is the
-   regression backstop in CI, and a review-sidebar e2e is still to add.
+   guest gets a read-only outline (`canManage=false`). Verified with typecheck,
+   lint, and the unit suite; a new `review-sidebar` e2e covers the author menu
+   and the guest's read-only outline, alongside the Write sidebar e2e
+   (`rename-sweep`, `scene-trash`, `scene-board`, `selection-menu`) as the
+   regression backstop in CI.
 
-4. **Pending - scene drag-reorder.** The Review rows select in place, so they
-   are not draggable; scene reordering by drag is the one Write affordance not
-   yet mirrored. Chapters still move via the row menu. Adding drag to the
-   select-mode row is a small follow-up if wanted.
+4. **Done.** Scene drag-reorder in Review: the author's select-mode rows are
+   draggable (gated by `canManage`, so the guest cannot), posting the new order
+   the same way Write does. The author keeps the grab cursor, the guest a plain
+   pointer.
 
-5. **Pending - enhancement.** `use:enhance` on the management forms so neither
-   route does a full reload. Today a Review management action reloads the page
-   (selection is preserved via `?scene`); Write already reloaded the same way,
-   so this is a shared polish step, not a regression.
+5. **Done.** `use:enhance` on the create, rename, restore, move, and
+   delete-to-trash forms, so neither route does a full reload; the row menu
+   closes once the action lands. The two confirm-guarded forms (delete chapter,
+   delete forever) keep the plain submit. On Review the selection is a writable
+   derived of the URL's `?scene`, so a redirect lands back on the open scene
+   while an in-page click overrides it.
+
+Not visually verified in this environment (no browser; Playwright's matching
+build is blocked by the egress allowlist). The e2e and a local visual pass are
+the confirmation.
