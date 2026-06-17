@@ -587,20 +587,22 @@ Shipped (PRs #464-#472):
   ViewMenu normalized - watch its look).
 - Bugfix (#466): the author review page loads in one parallel wave.
 
-In progress (route-page decomposition, before the v3.13.1 release):
+Account page decomposed (PRs #473-#475): the account `[[section]]`
+page went from 2538 lines to a 268-line shell (sidebar nav plus seven
+co-located section components - Profile, Security, Assistant, Display,
+Editor, Notifications, Page setup), with a shared FormStatus component
+for the save-feedback line. All CSS was already global, so none moved.
 
-- Decomposing the account/admin/settings `[[section]]` route pages
-  (account is 2538 lines) into per-section components behind a shared
-  SettingsShell, folding in the FormStatus/StatusBanner extraction (~50
-  duplicated save-message blocks) and the inline-SVG to Icon conversion.
-  Sequenced as its own PRs; the highest-risk decomposition (auth/TOTP/
-  passkeys forms, server actions), leaning on the e2e journeys per PR.
+Deferred (their own later effort, tracked here):
 
-Parked (judged poor value/risk):
-
-- createProseEditor lifecycle helper: only ~8 shared lines per editor;
-  routing every `view` access through an accessor is invasive churn in
-  the sensitive SceneEditor/ReviewEditor.
+- The admin (1423) and settings (1177) `[[section]]` pages still want
+  the same per-section decomposition. A shared SettingsShell (sidebar +
+  main scaffold, used by account/admin/settings/universe/insights) and
+  an admin `.status-banner` error variant are the natural shared pieces
+  to pull out when that work happens.
+- createProseEditor lifecycle helper: judged poor value/risk - only ~8
+  shared lines per editor; routing every `view` access through an
+  accessor is invasive churn in the sensitive SceneEditor/ReviewEditor.
 
 ## Phase 1 - Foundations
 
