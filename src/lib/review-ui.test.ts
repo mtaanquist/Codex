@@ -10,8 +10,11 @@ import {
 	suggestionSnippet,
 	suggestionInFilter,
 	threadInFilter,
+	isWholeSceneNote,
 	type MarkSuggestion,
-	type MarkThread
+	type MarkThread,
+	type ReviewSuggestion,
+	type ReviewThread
 } from './review-ui';
 
 const OWNER = { isOwner: true, isAssistant: false, name: 'Mara' };
@@ -228,5 +231,25 @@ describe('nudgeMarkers', () => {
 
 	it('leaves well-separated markers untouched', () => {
 		expect(nudgeMarkers([{ top: 0 }, { top: 50 }]).map((m) => m.top)).toEqual([0, 50]);
+	});
+});
+
+describe('isWholeSceneNote', () => {
+	const thread = (id: string, anchor: { start: number; end: number } | null) =>
+		({ id, anchor }) as ReviewThread;
+	const suggestion = (id: string, anchor: { start: number; end: number } | null) =>
+		({ id, anchor }) as ReviewSuggestion;
+
+	it('is true for an anchorless thread or suggestion', () => {
+		expect(isWholeSceneNote('t1', [thread('t1', null)], [])).toBe(true);
+		expect(isWholeSceneNote('s1', [], [suggestion('s1', null)])).toBe(true);
+	});
+
+	it('is false when the matching note has an anchor', () => {
+		expect(isWholeSceneNote('t1', [thread('t1', { start: 0, end: 3 })], [])).toBe(false);
+	});
+
+	it('is false when no note matches the id', () => {
+		expect(isWholeSceneNote('x', [thread('t1', null)], [suggestion('s1', null)])).toBe(false);
 	});
 });

@@ -8,9 +8,11 @@
 	import { dismiss } from '$lib/dismiss';
 	import {
 		nudgeMarkers,
+		isWholeSceneNote,
 		reviewProse,
 		threadAuthor,
 		suggestionAuthor,
+		type RailMarker,
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
@@ -130,19 +132,18 @@
 	let scrollEl: HTMLElement | undefined = $state();
 
 	// ---- margin rail markers, measured from the rendered marks ----
-	type Marker = { id: string; kind: string; color: string; top: number };
-	let markers = $state<Marker[]>([]);
+	let markers = $state<RailMarker[]>([]);
 
 	function measure() {
 		if (!docEl) return;
 		const nodes = docEl.querySelectorAll<HTMLElement>('.rv-mark');
-		const raw: Marker[] = [];
+		const raw: RailMarker[] = [];
 		for (const node of nodes) {
 			const id = node.dataset.rid;
 			if (!id) continue;
 			raw.push({
 				id,
-				kind: node.dataset.kind ?? 'comment',
+				kind: node.dataset.kind === 'suggest' ? 'suggest' : 'comment',
 				color: node.style.getPropertyValue('--auth') || 'var(--accent)',
 				top: node.offsetTop
 			});
@@ -174,10 +175,7 @@
 		const el = docEl.querySelector<HTMLElement>(`[data-rid="${CSS.escape(id)}"]`);
 		if (!el) {
 			// A whole-scene comment has no inline mark; show the top of the scene.
-			const whole =
-				threads.some((t) => t.id === id && !t.anchor) ||
-				suggestions.some((s) => s.id === id && !s.anchor);
-			if (whole) scrollEl.scrollTop = 0;
+			if (isWholeSceneNote(id, threads, suggestions)) scrollEl.scrollTop = 0;
 			return;
 		}
 		const er = el.getBoundingClientRect();

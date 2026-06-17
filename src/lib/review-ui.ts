@@ -322,3 +322,21 @@ export function nudgeMarkers<M extends { top: number }>(markers: M[], spacing = 
 	}
 	return sorted;
 }
+
+// A jump marker in the margin rail: which note it points at, how to draw it,
+// and where it sits. The top is filled in by the caller from its own position
+// source (rendered marks on the surface, CM coordinates in the editor).
+export type RailMarker = { id: string; kind: 'comment' | 'suggest'; color: string; top: number };
+
+// Whether the focused note covers the whole scene rather than a passage, so a
+// jump takes the reader to the scene start instead of an inline mark.
+export function isWholeSceneNote(
+	id: string,
+	threads: ReviewThread[],
+	suggestions: ReviewSuggestion[]
+): boolean {
+	return (
+		threads.some((thread) => thread.id === id && !thread.anchor) ||
+		suggestions.some((suggestion) => suggestion.id === id && !suggestion.anchor)
+	);
+}
