@@ -17,7 +17,7 @@
 		id: string;
 		chapterId: string | null;
 		title: string | null;
-		status: string | null;
+		status?: string | null;
 		wordCount?: number;
 	};
 
@@ -223,7 +223,7 @@
 	{/if}
 {/snippet}
 
-<div class="outline">
+<div class="outline" class:selectable={onSelectScene}>
 	{#if onSelectScene}
 		<!-- Review shows a static book label; the switcher would jump to another
 		     story's editor, which makes no sense mid-review. -->
@@ -441,5 +441,10 @@
 	}
 	.chapter-row.as-label:hover {
 		background: none;
+	}
+	/* Review rows select in place; they are not draggable, so the default grab
+	   cursor would mislead. */
+	.outline.selectable .scene-row {
+		cursor: pointer;
 	}
 </style>

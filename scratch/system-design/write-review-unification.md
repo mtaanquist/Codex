@@ -86,28 +86,28 @@ a scene), so it is a shared improvement, not Review-only special-casing.
    scene/chapter management lives in one server module the Review route can also
    call. Covered by `scene-lifecycle` integration tests.
 
-2. **Review route management actions.** Add `createChapter`, `createScene`,
-   `renameChapter`, `moveChapter`, `deleteChapter`, `deleteScene`,
-   `restoreScene`, `destroyScene` to the Review route, delegating to
-   `scene-lifecycle`, with review-page redirect targets. Share the wrappers with
-   the Write route through a small factory so the two routes do not duplicate
-   them. Load `trashedScenes` for the trash section. Integration-tested.
+2. **Done.** Review route management actions: `sceneManageActions` (the shared
+   factory) spread into the Review route with a review-page redirect base, and
+   the trash list loaded for the sidebar. The Write route shares the same
+   factory; behaviour there is unchanged.
 
-3. **One outline component.** Add the capability surface above to `StoryOutline`,
-   switch `ReviewWorkspace` (author and guest) onto it, and delete `ReviewNav`
-   and its `review.css` overrides. Write's call site is unchanged in behaviour.
-   Guard against Write regressions with the existing sidebar e2e
-   (`rename-sweep`, `scene-trash`, `scene-board`, `selection-menu`) plus a new
-   review-sidebar e2e.
+3. **Done.** One outline component: `StoryOutline` gained the capability surface
+   (`onSelectScene`, `sceneMeta`, `canManage`), `ReviewWorkspace` (author and
+   guest) now renders it with a review-count badge and the row menu, and
+   `ReviewNav` plus its `review.css` overrides are deleted. The author gets the
+   right-click menu, inline rename, create, duplicate, merge, and trash; the
+   guest gets a read-only outline (`canManage=false`). Selection is seeded from
+   `?scene` so a management action's reload lands back on the open scene.
+   Verified with typecheck, lint, and the unit suite; the sidebar e2e
+   (`rename-sweep`, `scene-trash`, `scene-board`, `selection-menu`) is the
+   regression backstop in CI, and a review-sidebar e2e is still to add.
 
-4. **Enhancement.** `use:enhance` on the management forms so neither route does a
-   full reload.
+4. **Pending - scene drag-reorder.** The Review rows select in place, so they
+   are not draggable; scene reordering by drag is the one Write affordance not
+   yet mirrored. Chapters still move via the row menu. Adding drag to the
+   select-mode row is a small follow-up if wanted.
 
-## Open question
-
-- **Affordance set on the Review sidebar.** Default plan is full parity for the
-  author (right-click menu, inline rename, create, drag-reorder, trash), since
-  that is what "uniform" means and the author already edits prose on the Review
-  surface. If structural edits mid-review feel wrong, the conservative fallback
-  is menu + rename only, with create/drag/trash left to Write. Easy to dial back
-  by leaving `canManage` partial.
+5. **Pending - enhancement.** `use:enhance` on the management forms so neither
+   route does a full reload. Today a Review management action reloads the page
+   (selection is preserved via `?scene`); Write already reloaded the same way,
+   so this is a shared polish step, not a regression.
