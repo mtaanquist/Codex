@@ -3,6 +3,7 @@
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import ReviewReplyRow from './ReviewReplyRow.svelte';
+	import ReviewReplyForm from './ReviewReplyForm.svelte';
 	import { formatDateTime } from '$lib/format';
 	import {
 		roleLabel,
@@ -56,24 +57,12 @@
 	// The discussion on this suggestion: every comment of its lazily created
 	// thread (it has no opening comment of its own).
 	const replies = $derived(discussion?.comments ?? []);
-	let replyText = $state('');
 
 	// The Assistant answers replies on its own pending suggestions; the thread
 	// id comes back from the reply action that created or found the thread.
-	let assistantBusy = $state(false);
 	const assistantAnswers = $derived(
 		Boolean(assistant && onAssistantReply && suggestion.isAssistant && pending)
 	);
-
-	async function triggerAssistant(threadId: string) {
-		if (!onAssistantReply || assistantBusy) return;
-		assistantBusy = true;
-		try {
-			await onAssistantReply(threadId);
-		} finally {
-			assistantBusy = false;
-		}
-	}
 </script>
 
 <!-- The card jumps to its passage in the manuscript; the label keeps its
@@ -165,47 +154,18 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 		{#if pending}
-			{#if assistantBusy && assistant}
-				<div class="rv-assistant-wait">
-					<Icon name="sparkles" size={12} />
-					{assistant.name} is replying...
-				</div>
-			{/if}
-			<form
-				method="POST"
+			<ReviewReplyForm
 				action="?/replySuggestion"
-				class="rv-reply"
-				use:enhance={() =>
-					async ({ result, update }) => {
-						replyText = '';
-						await update({ reset: false });
-						// The author replied on the Assistant's suggestion; it answers
-						// in the thread the action just created or found.
-						const threadId =
-							result.type === 'success' && typeof result.data?.threadId === 'string'
-								? result.data.threadId
-								: null;
-						if (assistantAnswers && threadId) void triggerAssistant(threadId);
-					}}
-			>
-				<input type="hidden" name="suggestionId" value={suggestion.id} />
-				<input
-					type="text"
-					name="body"
-					placeholder="Reply..."
-					aria-label="Reply"
-					bind:value={replyText}
-					required
-				/>
-				<button
-					class="rv-reply-send"
-					type="submit"
-					disabled={!replyText.trim()}
-					aria-label="Send reply"
-				>
-					<Icon name="reply" size={15} />
-				</button>
-			</form>
+				fieldName="suggestionId"
+				fieldValue={suggestion.id}
+				{assistant}
+				{assistantAnswers}
+				threadIdFromResult={(result) =>
+					result.type === 'success' && typeof result.data?.threadId === 'string'
+						? result.data.threadId
+						: null}
+				{onAssistantReply}
+			/>
 			{#if suggestion.mine}
 				<div class="rv-actions">
 					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>

@@ -3,6 +3,7 @@
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import ReviewReplyRow from './ReviewReplyRow.svelte';
+	import ReviewReplyForm from './ReviewReplyForm.svelte';
 	import { authorColor, roleLabel, threadAuthor, type ReviewThread } from '$lib/review-ui';
 	import { formatDateTime } from '$lib/format';
 
@@ -41,22 +42,9 @@
 		thread.comments.length > 0 && thread.comments.every((c) => c.mine)
 	);
 
-	let replyText = $state('');
-
 	// The Assistant answers in threads it opened: a posted reply triggers its
 	// turn, with a waiting note until the fresh thread loads in.
-	let assistantBusy = $state(false);
 	const assistantAnswers = $derived(Boolean(assistant && onAssistantReply && root?.isAssistant));
-
-	async function triggerAssistant() {
-		if (!onAssistantReply || assistantBusy) return;
-		assistantBusy = true;
-		try {
-			await onAssistantReply(thread.id);
-		} finally {
-			assistantBusy = false;
-		}
-	}
 
 	function confirmRetract(e: SubmitEvent) {
 		if (!confirm('Delete your comment? This cannot be undone.')) e.preventDefault();
@@ -132,42 +120,15 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 		{#if open}
-			{#if assistantBusy && assistant}
-				<div class="rv-assistant-wait">
-					<Icon name="sparkles" size={12} />
-					{assistant.name} is replying...
-				</div>
-			{/if}
-			<form
-				method="POST"
+			<ReviewReplyForm
 				action="?/reply"
-				class="rv-reply"
-				use:enhance={() =>
-					async ({ result, update }) => {
-						replyText = '';
-						await update({ reset: false });
-						// The author replied in the Assistant's thread; it answers.
-						if (assistantAnswers && result.type === 'success') void triggerAssistant();
-					}}
-			>
-				<input type="hidden" name="threadId" value={thread.id} />
-				<input
-					type="text"
-					name="body"
-					placeholder="Reply..."
-					aria-label="Reply"
-					bind:value={replyText}
-					required
-				/>
-				<button
-					class="rv-reply-send"
-					type="submit"
-					disabled={!replyText.trim()}
-					aria-label="Send reply"
-				>
-					<Icon name="reply" size={15} />
-				</button>
-			</form>
+				fieldName="threadId"
+				fieldValue={thread.id}
+				{assistant}
+				{assistantAnswers}
+				threadIdFromResult={(result) => (result.type === 'success' ? thread.id : null)}
+				{onAssistantReply}
+			/>
 			{#if canDeleteThread}
 				<div class="rv-actions">
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
