@@ -8,28 +8,15 @@
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
-	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
-	import EntityBadge from './EntityBadge.svelte';
 	import TagInput from './TagInput.svelte';
+	import EntityBadgePicker from './EntityBadgePicker.svelte';
+	import EntityRelationships, {
+		type RelationTypeOption,
+		type RelationshipRow
+	} from './EntityRelationships.svelte';
 	import { createAutosave } from '$lib/autosave';
-	import { dismiss } from '$lib/dismiss';
 	import type { SaveStatus } from '$lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '$lib/format';
-
-	type RelationTypeOption = {
-		id: string;
-		forwardLabel: string;
-		fromType: string;
-		toType: string;
-		category: string | null;
-	};
-	type RelationshipRow = {
-		id: string;
-		label: string;
-		otherId: string;
-		otherName: string;
-		notesMd: string | null;
-	};
 
 	let {
 		kind,
@@ -191,53 +178,8 @@
 		return kind === 'lore' ? 'Keyword' : 'Alias';
 	}
 
-	// The badge override and its little menu. Colour and image post straight to
-	// the badge endpoint (not the debounced field save), then the page data
-	// refresh carries the change to the sidebar and the rest.
-	// svelte-ignore state_referenced_locally
-	let badgeColor = $state(entity.badgeColor ?? null);
-	// svelte-ignore state_referenced_locally
-	let badgeAssetId = $state(entity.badgeAssetId ?? null);
-	let badgeMenuOpen = $state(false);
+	// The category's colour tints the badge when no override is set.
 	const categoryColor = $derived(categories.find((c) => c.id === categoryValue)?.color ?? null);
-
-	async function pickBadgeColour(color: string | null) {
-		badgeColor = color;
-		badgeMenuOpen = false;
-		await fetch(`/api/entities/${entity.id}/badge`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ color })
-		}).catch(() => {});
-		await invalidateAll();
-	}
-
-	async function uploadBadgeImage(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = '';
-		if (!file) return;
-		badgeMenuOpen = false;
-		const data = new FormData();
-		data.set('file', file);
-		const response = await fetch(`/api/entities/${entity.id}/badge`, {
-			method: 'POST',
-			body: data
-		});
-		if (response.ok) {
-			badgeAssetId = (await response.json()).id;
-			await invalidateAll();
-		}
-	}
-
-	async function removeBadgeImage() {
-		badgeMenuOpen = false;
-		const response = await fetch(`/api/entities/${entity.id}/badge`, { method: 'DELETE' });
-		if (response.ok) {
-			badgeAssetId = null;
-			await invalidateAll();
-		}
-	}
 
 	const autosave = createAutosave({
 		debounceMs: SAVE_DEBOUNCE_MS,
@@ -256,67 +198,6 @@
 		onSettled: () => void checkRename()
 	});
 	const scheduleSave = autosave.schedule;
-
-	// Relationships are rows added and removed one at a time, not part of
-	// the debounced field autosave.
-	// svelte-ignore state_referenced_locally
-	const ENTITY_TYPE = kind === 'lore' ? 'lore_entry' : kind;
-	const applicableTypes = $derived(
-		relationTypes.filter((relationType) => relationType.fromType === ENTITY_TYPE)
-	);
-	const relCategories = $derived([
-		...new Set(applicableTypes.map((relationType) => relationType.category))
-	]);
-	let addingRel = $state(false);
-	let relTypeId = $state('');
-	let relTargetId = $state('');
-	let relNotes = $state('');
-	let relError = $state('');
-	function cancelRelationship() {
-		addingRel = false;
-		relTypeId = '';
-		relTargetId = '';
-		relNotes = '';
-		relError = '';
-	}
-	function onRelKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') cancelRelationship();
-	}
-	const relTargetOptions = $derived.by(() => {
-		const relationType = relationTypes.find((option) => option.id === relTypeId);
-		if (!relationType) return [];
-		return (targets[relationType.toType] ?? []).filter((target) => target.id !== entity.id);
-	});
-
-	async function addRelationship(event: SubmitEvent) {
-		event.preventDefault();
-		relError = '';
-		const response = await fetch('/api/relationships', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				fromKind: kind,
-				fromId: entity.id,
-				relationTypeId: relTypeId,
-				toId: relTargetId,
-				notesMd: relNotes
-			})
-		});
-		if (!response.ok) {
-			relError = (await response.json().catch(() => null))?.message ?? 'Could not add that.';
-			return;
-		}
-		relTypeId = '';
-		relTargetId = '';
-		relNotes = '';
-		addingRel = false;
-		await invalidateAll();
-	}
-
-	async function removeRelationship(relationshipId: string) {
-		const response = await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
-		if (response.ok) await invalidateAll();
-	}
 
 	async function setMembership(member: boolean) {
 		const response = await fetch(`/api/stories/${storyId}/members`, {
@@ -489,72 +370,14 @@
 
 <div class="detail">
 	<div class="detail-head">
-		<div
-			class="badge-pick"
-			use:dismiss={{ enabled: badgeMenuOpen, close: () => (badgeMenuOpen = false) }}
-		>
-			<button
-				class="badge-pick-btn"
-				type="button"
-				aria-haspopup="menu"
-				aria-expanded={badgeMenuOpen}
-				title="Change the badge colour or image"
-				onclick={() => (badgeMenuOpen = !badgeMenuOpen)}
-			>
-				<EntityBadge name={entity.name} {badgeColor} {badgeAssetId} {categoryColor} size="lg" />
-			</button>
-			{#if badgeMenuOpen}
-				<div class="badge-menu" role="menu">
-					{#if badgeAssetId}
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-						<a class="badge-menu-item" role="menuitem" href="/assets/{badgeAssetId}" download>
-							Download image
-						</a>
-						<button
-							class="badge-menu-item"
-							type="button"
-							role="menuitem"
-							onclick={removeBadgeImage}
-						>
-							Remove image
-						</button>
-					{:else}
-						<div class="badge-swatches">
-							<button
-								class="swatch swatch-default"
-								class:active={!badgeColor}
-								type="button"
-								title="Default colour"
-								aria-label="Default colour"
-								onclick={() => pickBadgeColour(null)}
-							></button>
-							{#each CATEGORY_COLORS as choice (choice.token)}
-								<button
-									class="swatch"
-									class:active={badgeColor === choice.token}
-									type="button"
-									style="background: {choice.token}"
-									title={choice.label}
-									aria-label={choice.label}
-									onclick={() => pickBadgeColour(choice.token)}
-								></button>
-							{/each}
-						</div>
-						{#if assetsConfigured}
-							<label class="badge-menu-item badge-upload">
-								Upload image
-								<input
-									type="file"
-									accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-									onchange={uploadBadgeImage}
-									hidden
-								/>
-							</label>
-						{/if}
-					{/if}
-				</div>
-			{/if}
-		</div>
+		<EntityBadgePicker
+			entityId={entity.id}
+			name={entity.name}
+			{assetsConfigured}
+			{categoryColor}
+			badgeColor={entity.badgeColor ?? null}
+			badgeAssetId={entity.badgeAssetId ?? null}
+		/>
 		<input
 			class="detail-title-input"
 			type="text"
@@ -691,96 +514,14 @@
 	<div class="section-label">Description</div>
 	<div class="editor-cm" bind:this={editorEl}></div>
 
-	{#if applicableTypes.length > 0 || relationships.length > 0}
-		<div class="section-label">Relationships</div>
-		{#if relationships.length > 0}
-			<div class="rel-list">
-				{#each relationships as relationship (relationship.id)}
-					<div class="rel-row">
-						<span class="rel-type">{relationship.label}</span>
-						{#if entityHref}
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller passes a resolved Plan path plus a query string) -->
-							<a class="rel-target" href={entityHref(relationship.otherId)}>
-								<span class="badge dot" style="background: {entityColor(relationship.otherName)}"
-								></span>
-								<span>{relationship.otherName}</span>
-							</a>
-						{:else}
-							<span class="rel-target">
-								<span class="badge dot" style="background: {entityColor(relationship.otherName)}"
-								></span>
-								<span>{relationship.otherName}</span>
-							</span>
-						{/if}
-						{#if relationship.notesMd}
-							<span class="rel-note">{relationship.notesMd}</span>
-						{/if}
-						<button
-							class="rel-remove"
-							type="button"
-							title="Remove relationship"
-							onclick={() => removeRelationship(relationship.id)}
-						>
-							&times;
-						</button>
-					</div>
-				{/each}
-			</div>
-		{/if}
-		{#if applicableTypes.length > 0}
-			{#if addingRel}
-				<form class="rel-add" onsubmit={addRelationship}>
-					<select
-						class="line-input"
-						bind:value={relTypeId}
-						onchange={() => (relTargetId = '')}
-						onkeydown={onRelKeydown}
-						aria-label="Relation"
-					>
-						<option value="">Pick a relationship...</option>
-						{#each relCategories as category (category)}
-							<optgroup label={category ?? 'Other'}>
-								{#each applicableTypes.filter((option) => option.category === category) as option (option.id)}
-									<option value={option.id}>{option.forwardLabel}</option>
-								{/each}
-							</optgroup>
-						{/each}
-					</select>
-					{#if relTypeId}
-						<select
-							class="line-input"
-							bind:value={relTargetId}
-							onkeydown={onRelKeydown}
-							aria-label="Related entity"
-						>
-							<option value="">Who or where...</option>
-							{#each relTargetOptions as target (target.id)}
-								<option value={target.id}>{target.name}</option>
-							{/each}
-						</select>
-						<input
-							class="line-input"
-							type="text"
-							placeholder="Notes (optional)"
-							bind:value={relNotes}
-							onkeydown={onRelKeydown}
-						/>
-					{/if}
-					<div class="rel-add-actions">
-						<button class="outline-add" type="submit" disabled={!relTargetId}>Add</button>
-						<button class="rel-cancel" type="button" onclick={cancelRelationship}> Cancel </button>
-					</div>
-					{#if relError}
-						<p class="rel-error" role="alert">{relError}</p>
-					{/if}
-				</form>
-			{:else}
-				<button type="button" class="chip dashed rel-add-chip" onclick={() => (addingRel = true)}>
-					+ Add relationship
-				</button>
-			{/if}
-		{/if}
-	{/if}
+	<EntityRelationships
+		{kind}
+		entityId={entity.id}
+		{relationTypes}
+		{relationships}
+		{targets}
+		{entityHref}
+	/>
 
 	<div class="section-label">Details</div>
 	<p class="field-hint">Short facts shown with this entry, like Status or Age.</p>
@@ -876,83 +617,6 @@
 </div>
 
 <style>
-	/* The badge picker: the large badge is a button that drops a small menu of
-	   palette swatches and the image actions. */
-	.badge-pick {
-		position: relative;
-		flex: none;
-	}
-	.badge-pick-btn {
-		display: block;
-		padding: 0;
-		border: 0;
-		background: none;
-		cursor: pointer;
-		border-radius: 18px;
-	}
-	.badge-pick-btn:hover {
-		opacity: 0.9;
-	}
-	.badge-menu {
-		position: absolute;
-		top: calc(100% + 6px);
-		left: 0;
-		z-index: 20;
-		min-width: 184px;
-		padding: 8px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-	}
-	.badge-swatches {
-		display: grid;
-		grid-template-columns: repeat(6, 1fr);
-		gap: 6px;
-		margin-bottom: 6px;
-	}
-	.swatch {
-		width: 22px;
-		height: 22px;
-		border-radius: 7px;
-		border: 2px solid transparent;
-		cursor: pointer;
-		padding: 0;
-	}
-	.swatch.active {
-		border-color: var(--text);
-	}
-	.swatch-default {
-		background: linear-gradient(
-			135deg,
-			transparent calc(50% - 1px),
-			var(--border-strong) calc(50% - 1px),
-			var(--border-strong) calc(50% + 1px),
-			transparent calc(50% + 1px)
-		);
-		box-shadow: inset 0 0 0 1px var(--border);
-	}
-	.badge-menu-item {
-		display: block;
-		width: 100%;
-		text-align: left;
-		padding: 7px 8px;
-		border: 0;
-		border-radius: 7px;
-		background: none;
-		color: var(--text);
-		font: inherit;
-		font-size: 13px;
-		cursor: pointer;
-		text-decoration: none;
-	}
-	.badge-menu-item:hover {
-		background: var(--bg-hover);
-	}
-	.badge-upload {
-		cursor: pointer;
-	}
-
 	.assist-enrich {
 		display: flex;
 		align-items: center;
@@ -1070,31 +734,6 @@
 		min-height: 180px;
 		padding: 4px 0 12px;
 	}
-	.rel-add {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		margin-top: 10px;
-	}
-	.rel-add-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-	.rel-cancel {
-		border: 0;
-		background: none;
-		color: var(--text-muted);
-		font-size: 12.5px;
-		padding: 5px 8px;
-		cursor: pointer;
-	}
-	.rel-cancel:hover {
-		color: var(--text);
-	}
-	.rel-add-chip {
-		margin-top: 10px;
-	}
 	/* Editable cells inside the design system's .fields grid: the inputs
 	   carry the .k / .v typography. */
 	.detail-k,
@@ -1180,11 +819,6 @@
 	}
 	.details-foot .sep {
 		color: var(--text-faint);
-	}
-	.rel-error {
-		color: var(--danger, #b00020);
-		font-size: 12.5px;
-		margin: 0;
 	}
 	.member-row {
 		display: flex;
