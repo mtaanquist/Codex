@@ -18,18 +18,20 @@ Continuous backup (WAL/PITR) stays parked by the roadmap's own
 criterion; the timeline view stays parked on the world-calendar
 design.
 
-Write/Review unification (planned 2026-06-17, design note
-`scratch/system-design/write-review-unification.md`): collapse the
-near-duplicate Write and Review screens into one authoring surface
-where Review is an in-place layer the author toggles, not a separate
-route. Drops the duplicate sidebar (`ReviewNav`) and gives review the
-manuscript-management toolkit (split, merge, reorder, right-click
-menu) it currently lacks; the guest reviewer keeps a read-only,
-write-access-less surface built from the same primitives. Sequenced in
-the note: (1) lift scene/chapter management into a shared server
-module, (2) one outline component, (3) one surface, (4) right-column
-declutter plus a margin-rail comment minimap, (5) guest surface on the
-shared primitives.
+Write/Review sidebar parity (planned 2026-06-17, design note
+`scratch/system-design/write-review-unification.md`): Write and Review
+stay separate views (merging them was considered and rejected); the
+goal is only to make the two left sidebars uniform. Today the Review
+sidebar (`ReviewNav`) is a reduced reimplementation of `StoryOutline`
+with no right-click menu, rename, create, drag, or trash. Plan: reuse
+`StoryOutline` on the Review route and delete `ReviewNav`, leaning on
+its relative form actions plus matching actions on the Review route
+(thin wrappers over `scene-lifecycle`). Sequenced in the note:
+(1, done) lift create into `scene-lifecycle`; (2) Review-route
+management actions via a shared factory; (3) one outline component with
+a capability surface (`onSelectScene`, `trailingMeta`, `header`,
+`canManage`), guest read-only; (4) `use:enhance` so neither route does
+a full reload.
 
 A full-codebase review (2026-06-06, 7 finder passes, every candidate
 adversarially verified) found 14 confirmed issues, filed as #182-#195
