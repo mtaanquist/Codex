@@ -587,19 +587,28 @@ Shipped (PRs #464-#472):
   ViewMenu normalized - watch its look).
 - Bugfix (#466): the author review page loads in one parallel wave.
 
-Account page decomposed (PRs #473-#475): the account `[[section]]`
-page went from 2538 lines to a 268-line shell (sidebar nav plus seven
-co-located section components - Profile, Security, Assistant, Display,
-Editor, Notifications, Page setup), with a shared FormStatus component
-for the save-feedback line. All CSS was already global, so none moved.
+Route pages decomposed into per-section components, each a thin shell
+plus co-located `<X {data} {form} />` section components (forms post to
+the page's actions, so the section the result lands in needs no
+bookkeeping):
+
+- Account (#473-#475): 2538 -> 268 lines, seven sections (Profile,
+  Security, Assistant, Display, Editor, Notifications, Page setup) plus
+  a shared FormStatus for the save-feedback line. CSS was already global.
+- Admin (#477): 1423 -> 262 lines, eight sections plus a shared
+  S3Fields component for the asset/backup connection form.
+- Story settings (#478): 1177 -> 178 lines, ten sections; this page had
+  scoped CSS, so each section's styles moved into its component (the
+  page keeps only the visibility/nav rules); svelte-check confirms no
+  orphaned selectors.
 
 Deferred (their own later effort, tracked here):
 
-- The admin (1423) and settings (1177) `[[section]]` pages still want
-  the same per-section decomposition. A shared SettingsShell (sidebar +
-  main scaffold, used by account/admin/settings/universe/insights) and
-  an admin `.status-banner` error variant are the natural shared pieces
-  to pull out when that work happens.
+- A shared SettingsShell (the sidebar + main scaffold that account/admin/
+  settings/universe/insights each still reimplement in their now-thin
+  parent shells), and an admin `.status-banner` error variant (the
+  duplicated inline danger-banner style). Cross-cutting cleanups across
+  the five page shells; left for a deliberate pass.
 - createProseEditor lifecycle helper: judged poor value/risk - only ~8
   shared lines per editor; routing every `view` access through an
   accessor is invasive churn in the sensitive SceneEditor/ReviewEditor.
