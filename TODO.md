@@ -18,6 +18,19 @@ Continuous backup (WAL/PITR) stays parked by the roadmap's own
 criterion; the timeline view stays parked on the world-calendar
 design.
 
+Write/Review unification (planned 2026-06-17, design note
+`scratch/system-design/write-review-unification.md`): collapse the
+near-duplicate Write and Review screens into one authoring surface
+where Review is an in-place layer the author toggles, not a separate
+route. Drops the duplicate sidebar (`ReviewNav`) and gives review the
+manuscript-management toolkit (split, merge, reorder, right-click
+menu) it currently lacks; the guest reviewer keeps a read-only,
+write-access-less surface built from the same primitives. Sequenced in
+the note: (1) lift scene/chapter management into a shared server
+module, (2) one outline component, (3) one surface, (4) right-column
+declutter plus a margin-rail comment minimap, (5) guest surface on the
+shared primitives.
+
 A full-codebase review (2026-06-06, 7 finder passes, every candidate
 adversarially verified) found 14 confirmed issues, filed as #182-#195
 with severity labels and all fixed the same day across five PRs
