@@ -564,6 +564,27 @@ is gone. (4) Chat slash commands: `/review`, `/clear`, `/catchup`,
 editor) updated. Unit + the review-focus integration test cover the
 category wire; DB-backed run verified locally.
 
+Front-end refactor pass (2026-06-17, four-cluster review on develop:
+route pages, editor, review feature, shared components/lib). Sequenced
+in tiers. Tier 1 (low-risk reuse, branch `chore/frontend-tier1-cleanup`):
+shared `format.ts` helpers (pluralSuffix/formatNumber/compactCount, with
+tests) replacing the inline ternaries and toLocaleString calls; a shared
+`$lib/api.ts` post()/Result helper lifted out of scene-actions, with the
+two near-identical assistant-actions job launchers collapsed into one
+launchJob; deleted the dead `review-segments.ts`; ReviewAvatar uses
+roleLabel and EntityCard uses EntityBadge instead of reimplementing them.
+Deferred into Tier 2: the FormStatus/StatusBanner extraction and the
+inline-SVG to Icon conversion in account/admin/settings are folded into
+those pages' decomposition (same lines, done once). Tier 2 (component
+decomposition, one per PR): account `[[section]]` page into per-section
+components behind a shared SettingsShell; AssistantPanel (SSE stream +
+slash-command modules); EntityEditor (badge picker, relationships) and
+SceneEditor (co-author panel, selection menu); the review reply/assistant
+machinery into a shared ReviewReplyForm. Tier 3 (opportunistic): shared
+editor decoration-plugin/paragraph-walker factories, the review geometry
+pipeline, a createProseEditor lifecycle helper, menu/popover CSS into the
+design system.
+
 ## Phase 1 - Foundations
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness

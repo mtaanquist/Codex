@@ -3,7 +3,7 @@
 // once. Server-side gating is re-checked by every endpoint; these just drive the
 // requests and report progress through the activity center.
 import { goto } from '$app/navigation';
-import { apiErrorMessage } from '$lib/format';
+import { apiErrorMessage, pluralSuffix } from '$lib/format';
 import { flashActivity, resolveActivity, startActivity, trackJob } from '$lib/activity.svelte';
 import type { ReviewCategory } from '$lib/review-shape';
 
@@ -45,7 +45,7 @@ export async function reviewSceneWithAssistant(
 	if (staged > 0) {
 		resolveActivity(activityId, {
 			state: 'done',
-			label: `Review ready: ${staged} note${staged === 1 ? '' : 's'}`,
+			label: `Review ready: ${staged} note${pluralSuffix(staged)}`,
 			detail: 'Open the review page to read them.',
 			href: reviewHref
 		});
@@ -60,6 +60,37 @@ export async function reviewSceneWithAssistant(
 	}
 }
 
+// Posts to a job endpoint and tracks the queued job to completion in the
+// activity center, flashing a failure card if the request never lands. The
+// caller supplies the endpoint, its payload, the activity labels, and the
+// fallback messages for a network blip and a server rejection.
+async function launchJob(opts: {
+	url: string;
+	payload: unknown;
+	kind: Parameters<typeof trackJob>[0]['kind'];
+	failLabel: string;
+	startFallback: string;
+	track: Omit<Parameters<typeof trackJob>[0], 'jobId' | 'kind'>;
+}): Promise<void> {
+	let response: Response;
+	try {
+		response = await fetch(opts.url, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(opts.payload)
+		});
+	} catch {
+		flashActivity('failed', opts.failLabel, 'Check your connection and try again.');
+		return;
+	}
+	if (!response.ok) {
+		flashActivity('failed', opts.failLabel, await apiErrorMessage(response, opts.startFallback));
+		return;
+	}
+	const { jobId } = (await response.json()) as { jobId: string | null };
+	await trackJob({ jobId, kind: opts.kind, ...opts.track });
+}
+
 // Queues a whole-chapter or whole-story review (a background job, too long to
 // run inline) and tracks it to completion in the activity center. The writer is
 // also notified when its notes land on the review page.
@@ -70,72 +101,34 @@ export async function startBackgroundReview(opts: {
 	label: string;
 	reviewHref: string;
 }): Promise<void> {
-	let response: Response;
-	try {
-		response = await fetch('/api/assistant/review-job', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				storyId: opts.storyId,
-				chapterId: opts.chapterId,
-				categories: opts.categories
-			})
-		});
-	} catch {
-		flashActivity(
-			'failed',
-			`Could not review ${opts.label}`,
-			'Check your connection and try again.'
-		);
-		return;
-	}
-	if (!response.ok) {
-		flashActivity(
-			'failed',
-			`Could not review ${opts.label}`,
-			await apiErrorMessage(response, 'Could not start the review.')
-		);
-		return;
-	}
-	const { jobId } = (await response.json()) as { jobId: string | null };
-	await trackJob({
-		jobId,
+	await launchJob({
+		url: '/api/assistant/review-job',
+		payload: { storyId: opts.storyId, chapterId: opts.chapterId, categories: opts.categories },
 		kind: 'review',
-		runningLabel: `Reviewing ${opts.label}...`,
-		doneLabel: `Review of ${opts.label} ready`,
-		failedLabel: `Could not review ${opts.label}`,
-		href: opts.reviewHref
+		failLabel: `Could not review ${opts.label}`,
+		startFallback: 'Could not start the review.',
+		track: {
+			runningLabel: `Reviewing ${opts.label}...`,
+			doneLabel: `Review of ${opts.label} ready`,
+			failedLabel: `Could not review ${opts.label}`,
+			href: opts.reviewHref
+		}
 	});
 }
 
 // Kicks off the background summary pass and tracks it to completion in the
 // activity center; the writer is also notified when it ends.
 export async function startSummariesJob(storyId: string): Promise<void> {
-	let response: Response;
-	try {
-		response = await fetch('/api/assistant/summaries-job', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ storyId })
-		});
-	} catch {
-		flashActivity('failed', 'Could not update summaries', 'Check your connection and try again.');
-		return;
-	}
-	if (!response.ok) {
-		flashActivity(
-			'failed',
-			'Could not update summaries',
-			await apiErrorMessage(response, 'Could not start the summary pass.')
-		);
-		return;
-	}
-	const { jobId } = (await response.json()) as { jobId: string | null };
-	await trackJob({
-		jobId,
+	await launchJob({
+		url: '/api/assistant/summaries-job',
+		payload: { storyId },
 		kind: 'summaries',
-		runningLabel: 'Updating summaries...',
-		doneLabel: 'Summaries updated',
-		failedLabel: 'Could not update summaries'
+		failLabel: 'Could not update summaries',
+		startFallback: 'Could not start the summary pass.',
+		track: {
+			runningLabel: 'Updating summaries...',
+			doneLabel: 'Summaries updated',
+			failedLabel: 'Could not update summaries'
+		}
 	});
 }

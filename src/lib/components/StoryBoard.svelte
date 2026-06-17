@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { StoryStatus } from '$lib/dashboard';
+	import { formatNumber, pluralSuffix } from '$lib/format';
 
 	// The universe's stories as cards in status lanes, mirroring the scene
 	// board's look. The status is derived from each story's scenes (the
@@ -42,8 +43,8 @@
 						<a class="card-title" href={story.href}>{story.title}</a>
 						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						<footer class="card-foot">
-							<span>{story.words.toLocaleString('en')} words</span>
-							<span>{story.sceneCount} scene{story.sceneCount === 1 ? '' : 's'}</span>
+							<span>{formatNumber(story.words)} words</span>
+							<span>{story.sceneCount} scene{pluralSuffix(story.sceneCount)}</span>
 						</footer>
 					</article>
 				{/each}

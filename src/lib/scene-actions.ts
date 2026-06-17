@@ -2,19 +2,7 @@
 // cards, in the spirit of assistant-actions.ts: the fetch contracts live
 // once, and the callers decide what to do with the result (navigate, alert,
 // reopen a card). Every endpoint re-checks ownership server-side.
-import { apiErrorMessage } from '$lib/format';
-
-type Result<T> = ({ ok: true } & T) | { ok: false; message: string };
-
-async function post<T>(url: string, body: unknown, fallback: string): Promise<Result<T>> {
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	if (!response.ok) return { ok: false, message: await apiErrorMessage(response, fallback) };
-	return { ok: true, ...((await response.json()) as T) };
-}
+import { post } from '$lib/api';
 
 // Merges the picked scenes into the earliest of them (story order).
 export async function mergeScenes(storyId: string, sceneIds: string[]) {

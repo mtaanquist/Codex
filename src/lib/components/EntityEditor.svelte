@@ -14,7 +14,7 @@
 	import { createAutosave } from '$lib/autosave';
 	import { dismiss } from '$lib/dismiss';
 	import type { SaveStatus } from '$lib/autosave';
-	import { apiErrorMessage } from '$lib/format';
+	import { apiErrorMessage, pluralSuffix } from '$lib/format';
 
 	type RelationTypeOption = {
 		id: string;
@@ -568,8 +568,8 @@
 		<div class="rename-offer" role="status">
 			<span class="rename-text">
 				Renamed from "{renameOffer.from}". Replace it in the text? {renameOffer.occurrences}
-				place{renameOffer.occurrences === 1 ? '' : 's'} in {renameOffer.scenes}
-				scene{renameOffer.scenes === 1 ? '' : 's'}.
+				place{pluralSuffix(renameOffer.occurrences)} in {renameOffer.scenes}
+				scene{pluralSuffix(renameOffer.scenes)}.
 			</span>
 			<span class="rename-actions">
 				<button class="btn btn-primary" type="button" disabled={renameBusy} onclick={applyRename}>

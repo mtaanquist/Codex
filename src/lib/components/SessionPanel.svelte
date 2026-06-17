@@ -3,6 +3,7 @@
 	// and the streak, with the full Insights view a click away. Data loads
 	// when the panel first shows, not with the page.
 	import Icon from './Icon.svelte';
+	import { formatNumber } from '$lib/format';
 
 	let {
 		universeSlug,
@@ -64,14 +65,14 @@
 			<h5>Today</h5>
 			<div class="sess-grid">
 				<div class="sess-stat">
-					<div class="sess-n">{todayWords.toLocaleString('en-US')}</div>
+					<div class="sess-n">{formatNumber(todayWords)}</div>
 					<div class="sess-l">
 						{storyId ? 'words in this story' : 'words in this universe'}
 					</div>
 				</div>
 				{#if storyId !== null}
 					<div class="sess-stat">
-						<div class="sess-n">{session.words.toLocaleString('en-US')}</div>
+						<div class="sess-n">{formatNumber(session.words)}</div>
 						<div class="sess-l">across the universe</div>
 					</div>
 				{/if}
@@ -83,7 +84,7 @@
 						<span>
 							{session.words >= session.dailyGoal
 								? 'Daily goal met'
-								: `${session.words.toLocaleString('en-US')} / ${session.dailyGoal.toLocaleString('en-US')} today`}
+								: `${formatNumber(session.words)} / ${formatNumber(session.dailyGoal)} today`}
 						</span>
 						<span>{goalPercent}%</span>
 					</div>
