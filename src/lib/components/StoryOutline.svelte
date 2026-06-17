@@ -187,10 +187,20 @@
 			class:active={scene.id === selectedSceneId}
 			class:merge-selected={mergeSelection.has(scene.id)}
 			type="button"
+			draggable={canManage && draggable}
 			oncontextmenu={canManage
 				? (e) => onOpenRowMenu(e, { kind: 'scene', id: scene.id })
 				: undefined}
 			onclick={() => onSelectScene?.(scene.id)}
+			ondragstart={canManage
+				? (e) => {
+						draggingSceneId = scene.id;
+						e.dataTransfer?.setData('text/plain', scene.id);
+					}
+				: undefined}
+			ondragover={canManage ? (e) => overScene(e, chapterId, index) : undefined}
+			ondrop={canManage ? commitDrop : undefined}
+			ondragend={canManage ? endDrag : undefined}
 		>
 			<span class="scene-status st-{scene.status ?? 'draft'}" title={scene.status ?? 'draft'}
 			></span>
@@ -223,7 +233,7 @@
 	{/if}
 {/snippet}
 
-<div class="outline" class:selectable={onSelectScene}>
+<div class="outline" class:selectable={onSelectScene} class:manageable={canManage}>
 	{#if onSelectScene}
 		<!-- Review shows a static book label; the switcher would jump to another
 		     story's editor, which makes no sense mid-review. -->
@@ -442,9 +452,10 @@
 	.chapter-row.as-label:hover {
 		background: none;
 	}
-	/* Review rows select in place; they are not draggable, so the default grab
-	   cursor would mislead. */
-	.outline.selectable .scene-row {
+	/* A read-only review sidebar (the guest) selects but cannot drag, so the
+	   default grab cursor would mislead; the author keeps grab, since the author
+	   can reorder. */
+	.outline.selectable:not(.manageable) .scene-row {
 		cursor: pointer;
 	}
 </style>
