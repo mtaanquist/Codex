@@ -11,6 +11,7 @@
 		type ReviewSuggestion,
 		type ReviewThread
 	} from '$lib/review-ui';
+	import { pluralSuffix } from '$lib/format';
 
 	// A pending comment or edit the reviewer is composing, anchored to a
 	// selection (or to the whole scene when anchored is false).
@@ -80,7 +81,7 @@
 	function confirmAcceptAll(e: SubmitEvent) {
 		if (
 			!confirm(
-				`Accept all ${nAcceptable} suggested edit${nAcceptable === 1 ? '' : 's'} in this scene? This updates the manuscript.`
+				`Accept all ${nAcceptable} suggested edit${pluralSuffix(nAcceptable)} in this scene? This updates the manuscript.`
 			)
 		) {
 			e.preventDefault();
@@ -266,9 +267,7 @@
 				>
 					<input type="hidden" name="sceneId" value={scene.id} />
 					<button class="rv-acceptall" type="submit">
-						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{nAcceptable === 1
-							? ''
-							: 's'}
+						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{pluralSuffix(nAcceptable)}
 					</button>
 				</form>
 			{/if}

@@ -3,7 +3,7 @@
 // once. Server-side gating is re-checked by every endpoint; these just drive the
 // requests and report progress through the activity center.
 import { goto } from '$app/navigation';
-import { apiErrorMessage } from '$lib/format';
+import { apiErrorMessage, pluralSuffix } from '$lib/format';
 import { flashActivity, resolveActivity, startActivity, trackJob } from '$lib/activity.svelte';
 import type { ReviewCategory } from '$lib/review-shape';
 
@@ -45,7 +45,7 @@ export async function reviewSceneWithAssistant(
 	if (staged > 0) {
 		resolveActivity(activityId, {
 			state: 'done',
-			label: `Review ready: ${staged} note${staged === 1 ? '' : 's'}`,
+			label: `Review ready: ${staged} note${pluralSuffix(staged)}`,
 			detail: 'Open the review page to read them.',
 			href: reviewHref
 		});

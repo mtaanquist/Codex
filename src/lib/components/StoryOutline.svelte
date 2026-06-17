@@ -6,6 +6,7 @@
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
+	import { compactCount, pluralSuffix } from '$lib/format';
 	import type { RowMenuTarget } from './StoryRowMenu.svelte';
 
 	// The chapter and scene tree shared by the Write and Review sidebars: the book
@@ -95,10 +96,6 @@
 	}
 
 	const visibleOrphans = $derived(filterOrphanScenes(query, orphanScenes));
-	function words(count: number) {
-		if (count <= 0) return '';
-		return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
-	}
 
 	// Drag-to-reorder. The drop target is a chapter (or the orphan list, null)
 	// plus an insertion index; on drop the full order is sent to the server,
@@ -179,7 +176,7 @@
 	{#if sceneMeta}
 		{@render sceneMeta(scene)}
 	{:else if (scene.wordCount ?? 0) > 0}
-		<span class="scene-words">{words(scene.wordCount ?? 0)}</span>
+		<span class="scene-words">{compactCount(scene.wordCount ?? 0)}</span>
 	{/if}
 {/snippet}
 
@@ -294,7 +291,7 @@
 						>
 							<span class="sm-title">{sibling.title}</span>
 							<span class="sm-sub">
-								{sibling.chapters} chapter{sibling.chapters === 1 ? '' : 's'} · {words(
+								{sibling.chapters} chapter{pluralSuffix(sibling.chapters)} · {compactCount(
 									sibling.words
 								) || '0'} words
 							</span>
@@ -430,7 +427,7 @@
 							<div class="trash-row">
 								<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
 								{#if scene.wordCount > 0}
-									<span class="scene-words">{words(scene.wordCount)}</span>
+									<span class="scene-words">{compactCount(scene.wordCount)}</span>
 								{/if}
 								<form method="POST" action="?/restoreScene" use:enhance>
 									<input type="hidden" name="sceneId" value={scene.id} />

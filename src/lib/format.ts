@@ -28,6 +28,22 @@ export function relativeShort(date: Date | string): string {
 	return then.toLocaleDateString();
 }
 
+/** "" for exactly one, "s" otherwise: `${n} scene${pluralSuffix(n)}`. */
+export function pluralSuffix(n: number): string {
+	return n === 1 ? '' : 's';
+}
+
+/** "1,234": grouped integers for counts shown in the UI. */
+export function formatNumber(n: number): string {
+	return n.toLocaleString('en-US');
+}
+
+/** "950", "1.2k": compact counts for tight rows. Empty for non-positive. */
+export function compactCount(n: number): string {
+	if (n <= 0) return '';
+	return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
+}
+
 /** The message from a failed API response, or the fallback. */
 export async function apiErrorMessage(response: Response, fallback: string): Promise<string> {
 	const body = (await response.json().catch(() => null)) as { message?: string } | null;
