@@ -617,7 +617,18 @@ Deferred (judged poor value/risk):
   routing every `view` access through an accessor is invasive churn in
   the sensitive SceneEditor/ReviewEditor.
 
-## Phase 1 - Foundations
+Review page Assistant tab (2026-06-18, author's call after the refactor):
+make the review page more coherent. (1) The notes panel filter row drops
+to just Open and Done (Comments/Edits removed; the type union keeps them,
+just no longer surfaced). (2) The right pane gains a Review | Assistant
+toggle (author only, when the Assistant tab is enabled), reusing the Write
+editor's `AssistantPanel` over the same `/api/assistant/chat` transcript;
+the review load now also fetches `listChat` and the route gains
+`muteAssistant`/`unmuteAssistant` actions. (3) The "Review with the
+Assistant" launcher moves off the left sidebar into the Assistant tab (a
+button above the chat, plus the existing `/review` command). Help doc
+(reviewing) updated. Reuses already-tested server functions; check, lint,
+unit, build green locally.
 
 - [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
 - [x] 2. Drizzle + node-postgres, users table, first migration
