@@ -60,7 +60,14 @@
 		nonPrintingMarks={data.preferences.nonPrintingMarks}
 		commandMarkers={data.preferences.commandMarkers}
 		{editorStyle}
-		assistant={data.assistant.surfacesEnabled ? { name: data.assistant.name } : null}
+		assistant={data.assistant.tabEnabled
+			? {
+					name: data.assistant.name,
+					surfacesEnabled: data.assistant.surfacesEnabled,
+					muted: data.assistant.muted
+				}
+			: null}
+		assistantChat={data.assistantChat}
 		onSaveStatus={(status) => (saveStatus = status)}
 	/>
 	{#if data.assistant.surfacesEnabled}
