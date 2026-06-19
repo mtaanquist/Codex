@@ -22,7 +22,8 @@ import { storyPageSetup } from '$lib/server/page-setup';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { reanchorRange } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
-import { assistantLayout } from '$lib/server/llm/config';
+import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
+import { listChat } from '$lib/server/llm/chat-history';
 import { notifySuggestionDiscussion, notifyThreadReviewers } from '$lib/server/notify';
 import { teaser } from '$lib/notifications';
 import { listTrashedScenes } from '$lib/server/scene-lifecycle';
@@ -68,6 +69,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		status: scene.status,
 		bodyMd: scene.bodyMd
 	}));
+	// The stored conversation seeds the review page's Assistant tab, the same
+	// transcript as the Write editor's; nothing to load when the tab is off.
+	const assistantChat = assistant.tabEnabled ? await listChat(db, locals.user!.id, story.id) : [];
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },
@@ -85,7 +89,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		// The default text alignment for the editable centre, like the Write editor.
 		pageSetup,
 		// Whether the Assistant answers in its threads here, and under what name.
-		assistant
+		assistant,
+		// The stored chat transcript for the Assistant tab.
+		assistantChat
 	};
 };
 
@@ -254,5 +260,17 @@ export const actions: Actions = {
 		const result = await deleteSuggestion(db, { userId: locals.user!.id }, suggestionId);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
+	},
+	// The Assistant tab's mute and un-mute, the same per-story override as the
+	// Write editor's; the gate re-renders on the returned scope.
+	muteAssistant: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { enabled: false });
+		return { scope: 'assistant-mute' };
+	},
+	unmuteAssistant: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { enabled: null });
+		return { scope: 'assistant-mute' };
 	}
 };

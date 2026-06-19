@@ -17,7 +17,7 @@ The link opens the story in a review workspace: the chapter and scene outline on
 - They see earlier comments on the story and can reply to them from each card.
 - A trash icon on their own comment or suggested edit removes it if they change their mind. The opening comment of a thread can only be removed before anyone has replied to it.
 
-They move through the story scene by scene. The list on the left is the chapter and scene outline, with a count beside each scene that has notes and a running total at the top; clicking a scene opens it. Markers down the right edge of the page show where the notes sit. The tabs above the notes panel filter between open notes, comments, edits, and the ones marked Done. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
+They move through the story scene by scene. The list on the left is the chapter and scene outline, with a count beside each scene that has notes and a running total at the top; clicking a scene opens it. Markers down the right edge of the page show where the notes sit. The tabs above the notes panel switch between the open notes and the ones marked Done. On a narrow screen such as a phone, the three areas become tabs at the top - Scenes, Manuscript, and Notes - so the reader can switch between reading and the comments.
 
 If a name in the manuscript is underlined, it is a character, place, or piece of lore the author has written about. Clicking it opens a short card about them; reviewers see this summary but not the author's full notes.
 
@@ -31,12 +31,14 @@ You do not have to invite anyone to use review mode. Open Review from the story'
 
 Unlike a reviewer, you can also edit the manuscript right here. The middle of the review workspace is the live editor, with the same formatting bar as the writing editor, so you can fix a line on the spot instead of switching back to Write. This is what makes accepting a suggestion useful: take the change, then keep shaping it. Selecting a passage still brings up the toolbar to comment or suggest an edit on those words.
 
+The right side of the workspace has two tabs: **Review**, the notes on the open scene, and **Assistant**. The Assistant tab is a chat about this story - ask it about a character, talk a reviewer's comment over, or have it look over what you are reading. The **Review with the Assistant** button at the top of the tab starts a full review pass. The Assistant tab appears once you have set the Assistant up on your account and have not muted it for this story.
+
 ## Asking the Assistant to review
 
 Open the review window and pick what to review and what to check. You can open it several ways:
 
 - Right-click a scene or chapter in the sidebar, open the Assistant submenu, and choose **Review with the Assistant**.
-- In Review mode, use the **Review with the Assistant** button above the outline.
+- In Review mode, open the **Assistant** tab on the right and use the **Review with the Assistant** button at the top.
 - From the command bar (Ctrl+K, or Cmd+K on a Mac), choose **Review with the Assistant**.
 - In the Assistant chat, type `/review`.
 

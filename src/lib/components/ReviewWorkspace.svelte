@@ -11,6 +11,8 @@
 	import ReviewEditor from './ReviewEditor.svelte';
 	import ReviewPanel from './ReviewPanel.svelte';
 	import type { Composer } from './ReviewPanel.svelte';
+	import AssistantPanel from './AssistantPanel.svelte';
+	import type { SplitProposal } from './AssistantProposal.svelte';
 	import type { MentionEntity } from '$lib/editor-mentions';
 	import type { MarkVisibility } from '$lib/editor';
 	import {
@@ -50,6 +52,7 @@
 		commandMarkers = 'shown',
 		editorStyle,
 		assistant = null,
+		assistantChat = [],
 		onSaveStatus = () => {}
 	}: {
 		chapters: { id: string; title: string | null }[];
@@ -85,10 +88,20 @@
 		// The author's editor-appearance CSS variables for the editable centre;
 		// unset on the guest page.
 		editorStyle?: string;
-		// Set on the author page when the Assistant is live for this story: a
-		// reply in a thread the Assistant opened triggers its answer. Never set
-		// on the guest page.
-		assistant?: { name: string } | null;
+		// Set on the author page when the Assistant tab is available for this
+		// story (account-level on). surfacesEnabled adds the live surfaces: the
+		// thread answers and the "Review with the Assistant" launcher, both off
+		// when the story is muted. Never set on the guest page.
+		assistant?: { name: string; surfacesEnabled: boolean; muted: boolean } | null;
+		// The stored Assistant conversation, seeding the Assistant tab's chat.
+		assistantChat?: {
+			role: 'user' | 'assistant';
+			content: string;
+			meta: {
+				reference?: { sceneId: string; text: string };
+				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
+			} | null;
+		}[];
 		// The author editor's autosave feedback, surfaced in the page's TopBar.
 		onSaveStatus?: (status: SaveStatus) => void;
 	} = $props();
@@ -164,6 +177,27 @@
 	// On a narrow screen the three panes stack behind a tab bar; on desktop the
 	// tab bar is hidden and all three show side by side.
 	let mobileTab = $state<'nav' | 'read' | 'notes'>('read');
+	// The right pane toggles between the notes (Review) and the chat (Assistant),
+	// shown only when the Assistant tab is available for this story.
+	let rightTab = $state<'review' | 'assistant'>('review');
+	// The Assistant tab is the author's own page, with the Assistant turned on at
+	// the account level. surfacesEnabled is the stricter gate (not muted) for the
+	// thread answers and the review launcher.
+	const assistantTab = $derived(role === 'author' && Boolean(storyId) && assistant !== null);
+	const assistantSurfaces = $derived(assistant?.surfacesEnabled ?? false);
+
+	// Grounded starter prompts for an empty Assistant conversation, named after
+	// the story's known characters; generic fallbacks when the cast is empty.
+	const assistantSuggestions = $derived.by(() => {
+		const characters = entities.filter((e) => e.type === 'character').map((e) => e.name);
+		const title = book?.title || 'this story';
+		const prompts: string[] = [];
+		if (characters[0]) prompts.push(`What's at stake for ${characters[0]} in ${title}?`);
+		prompts.push('What should I look at in this review?');
+		if (characters[1]) prompts.push(`Is ${characters[1]}'s arc consistent so far?`);
+		else prompts.push('Catch me up on the story so far.');
+		return prompts;
+	});
 
 	// Default to the first scene that has open activity, else the first scene.
 	const firstActive = $derived(
@@ -393,18 +427,6 @@
 						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
 				/>
 				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />
-				{#if assistant}
-					<button
-						class="rv-review-btn"
-						type="button"
-						onclick={() =>
-							openReviewModal(
-								selectedSceneId ? { level: 'scene', sceneId: selectedSceneId } : { level: 'story' }
-							)}
-					>
-						<Icon name="sparkles" size={13} /> Review with the Assistant
-					</button>
-				{/if}
 			</div>
 			<div class="left-scroll">
 				{#snippet reviewCount(scene: { id: string })}
@@ -482,26 +504,76 @@
 		</main>
 
 		<aside class="pane right">
-			{#if selectedScene}
-				<ReviewPanel
-					scene={selectedScene}
-					threads={sceneThreads}
-					suggestions={sceneSuggestions}
-					{discussions}
-					{filter}
-					setFilter={(f) => (filter = f)}
-					{focusedId}
-					setFocused={focusFromPanel}
-					{role}
-					{canSuggest}
-					{composer}
-					onCloseComposer={() => (composer = null)}
-					onStartSceneComment={startSceneComment}
-					onAccepted={role === 'author' ? (ids) => editorRef?.applyAccepted(ids) : null}
-					{assistant}
-					onAssistantReply={assistant ? assistantReply : null}
-				/>
+			{#if assistantTab}
+				<div class="rv-rhead">
+					<div class="rtabs">
+						<button
+							class="rtab"
+							class:active={rightTab === 'review'}
+							type="button"
+							onclick={() => (rightTab = 'review')}
+						>
+							Review
+						</button>
+						<button
+							class="rtab"
+							class:active={rightTab === 'assistant'}
+							type="button"
+							onclick={() => (rightTab = 'assistant')}
+						>
+							Assistant
+						</button>
+					</div>
+				</div>
 			{/if}
+			<div class="rv-right-body">
+				{#if assistantTab && rightTab === 'assistant'}
+					{#if assistantSurfaces}
+						<button
+							class="rv-review-btn"
+							type="button"
+							onclick={() =>
+								openReviewModal(
+									selectedSceneId
+										? { level: 'scene', sceneId: selectedSceneId }
+										: { level: 'story' }
+								)}
+						>
+							<Icon name="sparkles" size={13} /> Review with the Assistant
+						</button>
+					{/if}
+					<div class="rv-assistant-wrap">
+						<AssistantPanel
+							storyId={storyId ?? ''}
+							sceneId={selectedSceneId || null}
+							name={assistant?.name ?? 'Assistant'}
+							storyTitle={book?.title ?? ''}
+							muted={assistant?.muted ?? false}
+							suggestions={assistantSuggestions}
+							initialMessages={assistantChat}
+						/>
+					</div>
+				{:else if selectedScene}
+					<ReviewPanel
+						scene={selectedScene}
+						threads={sceneThreads}
+						suggestions={sceneSuggestions}
+						{discussions}
+						{filter}
+						setFilter={(f) => (filter = f)}
+						{focusedId}
+						setFocused={focusFromPanel}
+						{role}
+						{canSuggest}
+						{composer}
+						onCloseComposer={() => (composer = null)}
+						onStartSceneComment={startSceneComment}
+						onAccepted={role === 'author' ? (ids) => editorRef?.applyAccepted(ids) : null}
+						assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
+						onAssistantReply={assistantSurfaces ? assistantReply : null}
+					/>
+				{/if}
+			</div>
 		</aside>
 	</div>
 </div>
@@ -526,14 +598,31 @@
 {/if}
 
 <style>
+	/* The right pane stacks an optional tab strip over the active panel. */
+	.rv-rhead {
+		flex: none;
+		padding: 8px;
+		border-bottom: 1px solid var(--border);
+	}
+	.rv-right-body {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	/* Lets the chat fill the space under the launcher button. */
+	.rv-assistant-wrap {
+		flex: 1;
+		min-height: 0;
+	}
 	.rv-review-btn {
+		flex: none;
 		display: inline-flex;
 		align-items: center;
 		gap: 7px;
-		width: 100%;
 		justify-content: center;
-		margin-top: 8px;
-		padding: 7px 10px;
+		margin: 10px 10px 2px;
+		padding: 8px 10px;
 		border: 1px solid var(--border);
 		border-radius: var(--radius, 9px);
 		background: var(--bg-elevated);

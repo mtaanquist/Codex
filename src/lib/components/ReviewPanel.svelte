@@ -90,8 +90,6 @@
 
 	const FILTERS = $derived([
 		{ id: 'all' as const, label: 'Open', n: nComments + nSugg },
-		{ id: 'comments' as const, label: 'Comments', n: nComments },
-		{ id: 'suggestions' as const, label: 'Edits', n: nSugg },
 		{ id: 'resolved' as const, label: 'Done', n: nResolved }
 	]);
 
