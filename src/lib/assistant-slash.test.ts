@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { slashQuery, matchSlash, slashName, SLASH_COMMANDS } from './assistant-slash';
+import {
+	slashQuery,
+	matchSlash,
+	slashName,
+	slashArgs,
+	commandsForScope,
+	SLASH_COMMANDS
+} from './assistant-slash';
 
 describe('slashQuery', () => {
 	it('is null without a leading slash', () => {
@@ -11,20 +18,34 @@ describe('slashQuery', () => {
 		expect(slashQuery('/review\nmore')).toBeNull();
 	});
 
-	it('returns the lower-cased first word after the slash', () => {
+	it('is null once a space is typed (the command is chosen, now typing arguments)', () => {
+		expect(slashQuery('/clear now')).toBeNull();
+		expect(slashQuery('/write a tense standoff')).toBeNull();
+	});
+
+	it('returns the lower-cased word after the slash', () => {
 		expect(slashQuery('/Rev')).toBe('rev');
-		expect(slashQuery('/clear now')).toBe('clear');
+		expect(slashQuery('/')).toBe('');
 	});
 });
 
 describe('matchSlash', () => {
 	it('matches commands by name prefix', () => {
-		expect(matchSlash('/c').map((c) => c.name)).toEqual(['catchup', 'clear']);
 		expect(matchSlash('/rev').map((c) => c.name)).toEqual(['review']);
+		expect(matchSlash('/w').map((c) => c.name)).toEqual(['write', 'who']);
 	});
 
-	it('lists every command for a bare slash', () => {
+	it('lists every command for a bare slash on a story', () => {
 		expect(matchSlash('/')).toHaveLength(SLASH_COMMANDS.length);
+	});
+
+	it('hides story-only commands on the universe surface', () => {
+		const names = matchSlash('/', true).map((c) => c.name);
+		expect(names).not.toContain('write');
+		expect(names).not.toContain('review');
+		expect(names).toContain('find');
+		expect(names).toContain('who');
+		expect(names).toContain('help');
 	});
 
 	it('is empty for non-slash input and unknown prefixes', () => {
@@ -33,9 +54,28 @@ describe('matchSlash', () => {
 	});
 });
 
+describe('commandsForScope', () => {
+	it('returns only the cross-scope commands for the universe', () => {
+		expect(commandsForScope(true).every((c) => c.scope === 'both')).toBe(true);
+		expect(commandsForScope(false)).toEqual(SLASH_COMMANDS);
+	});
+});
+
 describe('slashName', () => {
 	it('takes the first word and lower-cases it', () => {
 		expect(slashName('/Help')).toBe('help');
 		expect(slashName('/review scene 2')).toBe('review');
+	});
+});
+
+describe('slashArgs', () => {
+	it('returns everything after the first token, trimmed', () => {
+		expect(slashArgs('/write a tense standoff at dawn')).toBe('a tense standoff at dawn');
+		expect(slashArgs('/who  Marra ')).toBe('Marra');
+	});
+
+	it('is empty when the command has no arguments', () => {
+		expect(slashArgs('/write')).toBe('');
+		expect(slashArgs('/clear')).toBe('');
 	});
 });

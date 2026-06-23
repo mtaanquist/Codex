@@ -6,11 +6,16 @@
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
 	import { enhance } from '$app/forms';
 	import { assistantIntent } from '$lib/assistant.svelte';
-	import { startSummariesJob } from '$lib/assistant-actions';
+	import {
+		startSummariesJob,
+		reviewSceneWithAssistant,
+		startBackgroundReview
+	} from '$lib/assistant-actions';
 	import { openReviewModal } from '$lib/review-modal.svelte';
+	import { REVIEW_CATEGORIES } from '$lib/review-shape';
 	import { flashActivity } from '$lib/activity.svelte';
 	import { parseSseFrames } from '$lib/assistant-stream';
-	import { SLASH_COMMANDS, matchSlash, slashName } from '$lib/assistant-slash';
+	import { commandsForScope, matchSlash, slashName, slashArgs } from '$lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
 	import { dismiss } from '$lib/dismiss';
@@ -24,7 +29,10 @@
 		initialMessages = [],
 		onConfirmSplit,
 		onRevertSplit,
-		onInsert
+		onInsert,
+		onReplaceSelection,
+		getSelection,
+		reviewHref
 	}: {
 		// The conversation this panel serves: a single story (Write, Review, story
 		// Plan) or the whole universe (universe Plan). The story scope carries the
@@ -66,6 +74,16 @@
 		// Inserts a reply's text into the open scene editor at the cursor; only
 		// passed when a single scene editor is open.
 		onInsert?: (text: string) => void;
+		// Replaces the editor's current selection with a reply's text; the /rewrite
+		// command's affordance. Passed alongside getSelection when a scene editor is
+		// open.
+		onReplaceSelection?: (text: string) => void;
+		// The editor's current selection text, or null when nothing is selected.
+		// /rewrite needs it; only passed when a scene editor is open.
+		getSelection?: () => string | null;
+		// The story's review page, for /copyedit to open when notes are staged.
+		// Story surfaces pass it; the universe surface does not.
+		reviewHref?: string;
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
@@ -74,6 +92,9 @@
 		content: string;
 		reference?: ChatReference;
 		proposals?: SplitProposal[];
+		// A /rewrite reply: its affordance replaces the selection rather than
+		// inserting at the cursor.
+		rewrite?: boolean;
 	};
 	type StreamEvent =
 		| { type: 'token'; text: string }
@@ -277,8 +298,23 @@
 			case 'clear':
 				void clearConversation();
 				break;
+			case 'write':
+				void coauthorDraft(slashArgs(raw));
+				break;
+			case 'rewrite':
+				void rewriteSelection(slashArgs(raw));
+				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
+				break;
+			case 'copyedit':
+				void copyedit();
+				break;
+			case 'who':
+				askWho(slashArgs(raw));
+				break;
+			case 'find':
+				askFind(slashArgs(raw));
 				break;
 			case 'catchup':
 			case 'catch-up':
@@ -294,7 +330,9 @@
 						role: 'assistant',
 						content:
 							'Commands you can type here:\n\n' +
-							SLASH_COMMANDS.map((c) => `/${c.name} - ${c.detail}`).join('\n')
+							commandsForScope(!isStory)
+								.map((c) => `/${c.name} - ${c.detail}`)
+								.join('\n')
 					}
 				];
 				break;
@@ -309,9 +347,171 @@
 		}
 	}
 
-	// The hint menu: the matching commands while the composer holds a bare "/word".
+	// Choosing a command from the hint menu. A command that takes arguments leaves
+	// "/name " in the composer to type the argument into; the rest run straightaway.
+	function chooseSlash(command: { name: string; args?: boolean }) {
+		if (command.args) {
+			input = `/${command.name} `;
+			slashSelected = 0;
+			composer?.focus();
+			return;
+		}
+		runSlashCommand(`/${command.name}`);
+	}
+
+	// A plain assistant message, for usage hints and command errors.
+	function assistantSay(content: string) {
+		messages = [...messages, { role: 'assistant', content }];
+	}
+
+	// POST a brief (and optional selection) to the buffered co-author endpoint and
+	// fill the empty assistant reply already pushed. Shared by /write and /rewrite;
+	// the endpoint returns the whole passage as JSON, not a token stream.
+	async function runCoauthor(
+		payload: {
+			storyId: string;
+			sceneId: string | null;
+			instruction: string;
+			reference?: { kind: 'selection'; text: string };
+		},
+		opts: { rewrite?: boolean } = {}
+	) {
+		busy = true;
+		const controller = new AbortController();
+		pending = controller;
+		try {
+			const response = await fetch('/api/assistant/coauthor', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(payload),
+				signal: controller.signal
+			});
+			const reply = messages[messages.length - 1];
+			if (!(reply && reply.role === 'assistant')) return;
+			if (!response.ok) {
+				reply.content = 'Sorry, the Assistant could not draft that passage. Try again.';
+				return;
+			}
+			const { text } = (await response.json()) as { text?: string };
+			reply.content = text?.trim() || 'The Assistant did not return a passage.';
+			if (opts.rewrite) reply.rewrite = true;
+		} catch {
+			if (!controller.signal.aborted) {
+				const reply = messages[messages.length - 1];
+				if (reply && reply.role === 'assistant') {
+					reply.content = 'Sorry, something went wrong reaching the Assistant.';
+				}
+			}
+		} finally {
+			busy = false;
+			pending = null;
+		}
+	}
+
+	// /write: draft a passage from a brief through the co-author endpoint (the same
+	// one the toolbar Write button uses), shown as a reply the writer can insert.
+	// Needs a story focus; the universe surface has no scene to draft into.
+	async function coauthorDraft(brief: string) {
+		if (!('storyId' in scope)) {
+			assistantSay('Drafting needs an open story or scene. Open a story to use /write.');
+			return;
+		}
+		if (!brief) {
+			assistantSay('Add a brief after the command, like "/write a tense standoff at the gate".');
+			return;
+		}
+		if (busy) return;
+		messages = [
+			...messages,
+			{ role: 'user', content: `/write ${brief}` },
+			{ role: 'assistant', content: '' }
+		];
+		await runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
+	}
+
+	// /rewrite: co-author a rewrite of the editor's current selection to an
+	// instruction. Needs an open scene editor and a live selection; the reply's
+	// affordance replaces the selection rather than inserting at the cursor.
+	async function rewriteSelection(how: string) {
+		if (!('storyId' in scope)) {
+			assistantSay('Rewriting needs an open scene. Open a scene to use /rewrite.');
+			return;
+		}
+		if (!getSelection) {
+			assistantSay('Open a scene in the editor to use /rewrite.');
+			return;
+		}
+		const selection = getSelection()?.trim();
+		if (!selection) {
+			assistantSay('Select the passage you want rewritten first, then type /rewrite.');
+			return;
+		}
+		if (!how) {
+			assistantSay('Say how to rewrite it, like "/rewrite tighten this and cut the adverbs".');
+			return;
+		}
+		if (busy) return;
+		const ask: Message = { role: 'user', content: `/rewrite ${how}` };
+		if (sceneId) ask.reference = { sceneId, text: selection };
+		messages = [...messages, ask, { role: 'assistant', content: '' }];
+		await runCoauthor(
+			{
+				storyId: scope.storyId,
+				sceneId,
+				instruction: how,
+				reference: { kind: 'selection', text: selection }
+			},
+			{ rewrite: true }
+		);
+	}
+
+	// /copyedit: kick a full mechanics + prose + lore review at the current scope,
+	// a fast path versus the review modal. Reuses the background review flow;
+	// story focus only.
+	async function copyedit() {
+		if (!('storyId' in scope) || !reviewHref) {
+			assistantSay('A copyedit runs on an open story. Open a story to use /copyedit.');
+			return;
+		}
+		const categories = [...REVIEW_CATEGORIES];
+		if (sceneId) {
+			await reviewSceneWithAssistant(sceneId, reviewHref, categories, 'this scene');
+		} else {
+			await startBackgroundReview({
+				storyId: scope.storyId,
+				categories,
+				label: 'your story',
+				reviewHref
+			});
+		}
+	}
+
+	// /who: show a character or place sheet inline, a templated chat send that
+	// leans on the tool-enabled chat (get_entity). Works in both scopes.
+	function askWho(who: string) {
+		if (!who) {
+			assistantSay('Name who to look up, like "/who Marra".');
+			return;
+		}
+		void send(`Show me a short sheet for ${who}: the key facts you have on them.`);
+	}
+
+	// /find: search the universe and list hits, a templated send backed by the
+	// universe-scoped search_text tool. Works in both scopes.
+	function askFind(query: string) {
+		if (!query) {
+			assistantSay('Say what to search for, like "/find the obsidian coins".');
+			return;
+		}
+		void send(
+			`Search this universe for "${query}" and list what you find, with where each turns up.`
+		);
+	}
+
+	// The hint menu: the matching commands while the composer holds a bare "/word",
+	// narrowed to this surface's scope.
 	let slashSelected = $state(0);
-	const slashMatches = $derived(matchSlash(input));
+	const slashMatches = $derived(matchSlash(input, !isStory));
 	const slashOpen = $derived(slashMatches.length > 0 && !busy);
 	$effect(() => {
 		if (slashSelected >= slashMatches.length) slashSelected = 0;
@@ -409,7 +609,7 @@
 			}
 			if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
 				event.preventDefault();
-				runSlashCommand(`/${slashMatches[slashSelected].name}`);
+				chooseSlash(slashMatches[slashSelected]);
 				return;
 			}
 		}
@@ -491,15 +691,26 @@
 								{/each}
 							{/if}
 						</div>
-						{#if onInsert && message.content && !(busy && index === messages.length - 1) && index > 0}
-							<button
-								class="msg-insert"
-								type="button"
-								title="Insert this reply into the scene at the cursor"
-								onclick={() => onInsert(message.content)}
-							>
-								<Icon name="plus" size={12} /> Insert at cursor
-							</button>
+						{#if message.content && !(busy && index === messages.length - 1) && index > 0}
+							{#if message.rewrite && onReplaceSelection}
+								<button
+									class="msg-insert"
+									type="button"
+									title="Replace the selected passage with this rewrite"
+									onclick={() => onReplaceSelection(message.content)}
+								>
+									<Icon name="plus" size={12} /> Replace selection
+								</button>
+							{:else if onInsert}
+								<button
+									class="msg-insert"
+									type="button"
+									title="Insert this reply into the scene at the cursor"
+									onclick={() => onInsert(message.content)}
+								>
+									<Icon name="plus" size={12} /> Insert at cursor
+								</button>
+							{/if}
 						{/if}
 						{#each message.proposals ?? [] as proposal, pi (pi)}
 							<AssistantProposal
@@ -547,7 +758,7 @@
 						aria-selected={index === slashSelected}
 						type="button"
 						onmouseenter={() => (slashSelected = index)}
-						onclick={() => runSlashCommand(`/${command.name}`)}
+						onclick={() => chooseSlash(command)}
 					>
 						<span class="slash-name">/{command.name}</span>
 						<span class="slash-detail">{command.detail}</span>

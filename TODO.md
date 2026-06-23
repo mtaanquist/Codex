@@ -660,8 +660,25 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   flag that renders a tail excerpt (capped at the recap excerpt length) in the
   scene-local tier; `/api/assistant/coauthor` sets the flag. Ordinary chat turns
   are unchanged. Help doc (editor) updated. lint, check, unit + integration green
-  locally; e2e not run here. Parts C-E (`/write`, `/continuity-review`, `/rewrite`
-  `/copyedit` `/who` `/find` + slash polish) still to come.
+  locally; e2e not run here. Parts C + E (done together, branch
+  `feat/assistant-slash-commands`): the chat slash commands grow from the original
+  five to the planned set, all reusing endpoints/tools that already exist.
+  `assistant-slash.ts` gains a `scope` ('story' | 'both') and `args` flag per
+  command, `slashArgs` (text after the command), `commandsForScope`, and two menu
+  fixes: `slashQuery` returns null once a space is typed (the menu gets out of the
+  way while typing arguments) and `matchSlash` filters by scope (the universe Plan
+  panel shows only the cross-scope commands). New commands in `AssistantPanel`:
+  `/write <brief>` and `/rewrite <how>` POST the buffered co-author endpoint (the
+  latter sends the editor selection as a `selection` reference and its reply
+  carries a "Replace selection" affordance, backed by new `getSelectionText`/
+  `replaceSelection` exports on `SceneEditor`); `/copyedit` kicks the existing
+  review flow (scene review when a scene is open, else a whole-story background
+  review); `/who <name>` and `/find <query>` are templated tool-enabled chat sends
+  that work in both scopes. Selecting an `args` command from the menu leaves
+  "/name " in the composer to type into. Help doc (editor) lists the new commands
+  and the universe-scope subset. lint, check, unit green locally; e2e not run here
+  (the command flows are LLM-backed). Part D (`/continuity-review`, the
+  story-level + universe-wide continuity pass) still to come.
 
 * [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
 * [x] 2. Drizzle + node-postgres, users table, first migration

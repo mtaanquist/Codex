@@ -781,8 +781,15 @@
 						initialMessages={data.assistantChat}
 						onConfirmSplit={confirmAssistantSplit}
 						onRevertSplit={revertAssistantSplit}
+						reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 							? (text) => sceneEditor?.insertAtCursor(text)
+							: undefined}
+						getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+							? () => sceneEditor?.getSelectionText() ?? null
+							: undefined}
+						onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+							? (text) => sceneEditor?.replaceSelection(text)
 							: undefined}
 					/>
 				{:else if rightTab === 'session'}
