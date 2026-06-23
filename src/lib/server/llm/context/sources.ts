@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import {
 	chapters,
@@ -40,6 +40,32 @@ export type StoryScope = {
 	// on its own canon knowledge, with the author's material taking precedence.
 	universeEstablished: boolean;
 };
+
+export type UniverseScope = {
+	universeId: string;
+	universeName: string;
+	universeDescription: string | null;
+	universeEstablished: boolean;
+};
+
+// The universe frame for the universe-Plan surface (no story focus), but only
+// if the user owns it. Null means no such universe for this user.
+export async function loadUniverseScope(
+	db: Database,
+	userId: string,
+	universeId: string
+): Promise<UniverseScope | null> {
+	const [row] = await db
+		.select({
+			universeId: universes.id,
+			universeName: universes.name,
+			universeDescription: universes.descriptionMd,
+			universeEstablished: universes.establishedSetting
+		})
+		.from(universes)
+		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
+	return row ?? null;
+}
 
 // The story and its universe, but only if the user owns it. Null means no such
 // story for this user, which the caller turns into "no context".
@@ -125,6 +151,38 @@ export async function sceneNeighbourhood(
 	return { current: current ?? null, neighbours };
 }
 
+export type PrecedingScene = { title: string | null; bodyMd: string };
+
+// The full prose of the scene immediately before the focus scene by global
+// position, skipping trashed scenes. The Write action uses this as a continuity
+// and voice anchor when the current scene is empty or short; ordinary chat does
+// not load it. Null when there is no scene before this one (or no focus scene).
+export async function precedingSceneBody(
+	db: Database,
+	storyId: string,
+	sceneId: string | undefined
+): Promise<PrecedingScene | null> {
+	if (!sceneId) return null;
+	const [focus] = await db
+		.select({ globalPosition: scenes.globalPosition })
+		.from(scenes)
+		.where(and(eq(scenes.id, sceneId), eq(scenes.storyId, storyId)));
+	if (!focus) return null;
+	const [prev] = await db
+		.select({ title: scenes.title, bodyMd: scenes.bodyMd })
+		.from(scenes)
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				isNull(scenes.deletedAt),
+				lt(scenes.globalPosition, focus.globalPosition)
+			)
+		)
+		.orderBy(desc(scenes.globalPosition))
+		.limit(1);
+	return prev ?? null;
+}
+
 export type SceneSummary = {
 	id: string;
 	title: string | null;
@@ -190,6 +248,47 @@ export async function storySkeleton(
 	};
 }
 
+export type StorySkeleton = {
+	storyId: string;
+	storyTitle: string;
+	storyBrief: string | null;
+	chapters: ChapterSkeleton[];
+	orphans: SceneSummary[];
+	sceneCount: number;
+};
+
+// Caps the universe backbone/outline so a sprawling series cannot fan out into
+// an unbounded skeleton; ordered by series position so the cut keeps the
+// earliest books (the most likely continuity references). Provisional, like the
+// other context caps.
+const MAX_UNIVERSE_STORIES = 25;
+
+// Every owned story in the universe as a chapter/scene skeleton, for the
+// universe-Plan outline and the universe-scoped list_scenes tool. Summaries
+// only, no bodies; the model pulls a body on demand with get_scene.
+export async function universeSkeleton(db: Database, universeId: string): Promise<StorySkeleton[]> {
+	const storyRows = await db
+		.select({ id: stories.id, title: stories.title, brief: stories.brief })
+		.from(stories)
+		.where(eq(stories.universeId, universeId))
+		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
+	const out: StorySkeleton[] = [];
+	for (const story of storyRows.slice(0, MAX_UNIVERSE_STORIES)) {
+		const skeleton = await storySkeleton(db, story.id);
+		const sceneCount =
+			skeleton.chapters.reduce((n, c) => n + c.scenes.length, 0) + skeleton.orphans.length;
+		out.push({
+			storyId: story.id,
+			storyTitle: story.title,
+			storyBrief: story.brief,
+			chapters: skeleton.chapters,
+			orphans: skeleton.orphans,
+			sceneCount
+		});
+	}
+	return out;
+}
+
 export type RecapScene = {
 	id: string;
 	title: string | null;
@@ -251,9 +350,41 @@ export async function inScopeEntities(
 	storyId: string
 ): Promise<ScopeEntity[]> {
 	const lists = await storyEntityLists(db, universeId, storyId);
-	const characterIds = lists.characters.map((c) => c.id);
-	const placeIds = lists.places.map((p) => p.id);
+	return buildScopeEntities(
+		db,
+		universeId,
+		lists.characters.map((c) => c.id),
+		lists.places.map((p) => p.id),
+		storyId
+	);
+}
 
+// Every character and place in the universe, for the universe-Plan surface
+// (no story focus, so no per-story overlay note). Shares the entity-building
+// body with the story path.
+export async function universeEntities(db: Database, universeId: string): Promise<ScopeEntity[]> {
+	const characterIds = (
+		await db
+			.select({ id: characters.id })
+			.from(characters)
+			.where(eq(characters.universeId, universeId))
+	).map((row) => row.id);
+	const placeIds = (
+		await db.select({ id: places.id }).from(places).where(eq(places.universeId, universeId))
+	).map((row) => row.id);
+	return buildScopeEntities(db, universeId, characterIds, placeIds);
+}
+
+// The shared entity body: given explicit id lists, fetch detail, the per-story
+// overlay note when a story is in scope, and relationships. Capped so a dense
+// universe cannot fan out into an unbounded number of relationship queries.
+async function buildScopeEntities(
+	db: Database,
+	universeId: string,
+	characterIds: string[],
+	placeIds: string[],
+	storyId?: string
+): Promise<ScopeEntity[]> {
 	const characterRows = characterIds.length
 		? await db
 				.select({
@@ -281,25 +412,32 @@ export async function inScopeEntities(
 				.orderBy(asc(places.name))
 		: [];
 
-	const characterNotes = characterIds.length
-		? await db
-				.select({ entityId: characterStoryNotes.characterId, notesMd: characterStoryNotes.notesMd })
-				.from(characterStoryNotes)
-				.where(
-					and(
-						eq(characterStoryNotes.storyId, storyId),
-						inArray(characterStoryNotes.characterId, characterIds)
+	// The per-story overlay note only exists with a story in focus; the
+	// universe surface has no such overlay, so it skips these queries.
+	const characterNotes =
+		storyId && characterIds.length
+			? await db
+					.select({
+						entityId: characterStoryNotes.characterId,
+						notesMd: characterStoryNotes.notesMd
+					})
+					.from(characterStoryNotes)
+					.where(
+						and(
+							eq(characterStoryNotes.storyId, storyId),
+							inArray(characterStoryNotes.characterId, characterIds)
+						)
 					)
-				)
-		: [];
-	const placeNotes = placeIds.length
-		? await db
-				.select({ entityId: placeStoryNotes.placeId, notesMd: placeStoryNotes.notesMd })
-				.from(placeStoryNotes)
-				.where(
-					and(eq(placeStoryNotes.storyId, storyId), inArray(placeStoryNotes.placeId, placeIds))
-				)
-		: [];
+			: [];
+	const placeNotes =
+		storyId && placeIds.length
+			? await db
+					.select({ entityId: placeStoryNotes.placeId, notesMd: placeStoryNotes.notesMd })
+					.from(placeStoryNotes)
+					.where(
+						and(eq(placeStoryNotes.storyId, storyId), inArray(placeStoryNotes.placeId, placeIds))
+					)
+			: [];
 	const noteFor = new Map<string, string | null>([
 		...characterNotes.map((n) => [n.entityId, n.notesMd] as const),
 		...placeNotes.map((n) => [n.entityId, n.notesMd] as const)
@@ -372,7 +510,7 @@ export type ScopeLore = {
 export async function activeLore(
 	db: Database,
 	universeId: string,
-	storyId: string,
+	storyId: string | undefined,
 	scopeText: string
 ): Promise<ScopeLore[]> {
 	const rows = await db
@@ -398,12 +536,14 @@ export async function activeLore(
 		(row) => row.activationMode === 'always' || loreMatches(row.keywords ?? [], scopeText)
 	);
 	const ids = selected.map((row) => row.id);
-	const noteRows = ids.length
-		? await db
-				.select({ loreEntryId: loreStoryNotes.loreEntryId, notesMd: loreStoryNotes.notesMd })
-				.from(loreStoryNotes)
-				.where(and(eq(loreStoryNotes.storyId, storyId), inArray(loreStoryNotes.loreEntryId, ids)))
-		: [];
+	// The per-story lore overlay only applies with a story in focus.
+	const noteRows =
+		storyId && ids.length
+			? await db
+					.select({ loreEntryId: loreStoryNotes.loreEntryId, notesMd: loreStoryNotes.notesMd })
+					.from(loreStoryNotes)
+					.where(and(eq(loreStoryNotes.storyId, storyId), inArray(loreStoryNotes.loreEntryId, ids)))
+			: [];
 	const noteFor = new Map(noteRows.map((n) => [n.loreEntryId, n.notesMd] as const));
 
 	return selected.map((row) => ({
@@ -430,13 +570,16 @@ export async function scopeNotes(
 	db: Database,
 	userId: string,
 	universeId: string,
-	storyId: string
+	storyId?: string
 ): Promise<ScopeNote[]> {
-	const storyRows = await db
-		.select({ title: notes.title, bodyMd: notes.bodyMd })
-		.from(notes)
-		.where(and(eq(notes.ownerId, userId), eq(notes.storyId, storyId)))
-		.orderBy(desc(notes.pinned), desc(notes.updatedAt));
+	// The universe surface has no story focus, so it shows only universe notes.
+	const storyRows = storyId
+		? await db
+				.select({ title: notes.title, bodyMd: notes.bodyMd })
+				.from(notes)
+				.where(and(eq(notes.ownerId, userId), eq(notes.storyId, storyId)))
+				.orderBy(desc(notes.pinned), desc(notes.updatedAt))
+		: [];
 	const universeRows = await db
 		.select({ title: notes.title, bodyMd: notes.bodyMd })
 		.from(notes)

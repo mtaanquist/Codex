@@ -5,7 +5,12 @@ import { egressHttpRequest, egressPolicy } from './egress.ts';
 import { providerFor } from './providers/index.ts';
 import { buildPersonaPrompt } from './prompts/persona.ts';
 import { recordAssistantUsage } from './usage.ts';
-import { dispatchToolCall, ownsStory, type ToolContext } from './tools/dispatch.ts';
+import {
+	dispatchToolCall,
+	ownedStoryUniverse,
+	ownsUniverse,
+	type ToolContext
+} from './tools/dispatch.ts';
 import { toolSpecs } from './tools/registry.ts';
 import type {
 	ChatMessage,
@@ -41,6 +46,9 @@ const REQUEST_TOOL_BUDGET_CEILING = 200;
 export type GatewayRequest = {
 	userId: string;
 	storyId?: string;
+	// The retrieval reach for tools. Given explicitly on the universe surface;
+	// derived from storyId's own universe on the story-focused surfaces.
+	universeId?: string;
 	role: AssistantRole;
 	messages: ChatMessage[];
 	// Offer the read/write tools this turn. Requires a story context and an
@@ -105,26 +113,33 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		content: buildPersonaPrompt(resolved.config.assistantName, resolved.config.persona)
 	};
 
-	// Tools are offered only with a story context the user owns and an endpoint
-	// that can call them; otherwise the turn is a plain completion. The
-	// supportsTools flag comes from stored config only (a manual opt-out for
-	// an endpoint that cannot call tools); nothing probes it automatically.
+	// Tools are offered only with a universe context the user owns and an
+	// endpoint that can call them; otherwise the turn is a plain completion. The
+	// reach is the universe (the cross-story retrieval payoff): given explicitly
+	// on the universe surface, or derived from the focus story's own universe on
+	// the story-focused surfaces. The supportsTools flag comes from stored config
+	// only (a manual opt-out for an endpoint that cannot call tools); nothing
+	// probes it automatically.
 	let tools: ToolSpec[] | undefined;
 	let toolContext: ToolContext | undefined;
-	if (
-		req.enableTools &&
-		req.storyId &&
-		resolved.config.supportsTools !== false &&
-		(await ownsStory(db, req.userId, req.storyId))
-	) {
-		tools = toolSpecs(req.toolNames);
-		toolContext = {
-			db,
-			userId: req.userId,
-			storyId: req.storyId,
-			scope: req.toolScope,
-			allowedTools: tools.map((tool) => tool.name)
-		};
+	if (req.enableTools && resolved.config.supportsTools !== false) {
+		let universeId: string | undefined;
+		if (req.universeId) {
+			if (await ownsUniverse(db, req.userId, req.universeId)) universeId = req.universeId;
+		} else if (req.storyId) {
+			universeId = (await ownedStoryUniverse(db, req.userId, req.storyId)) ?? undefined;
+		}
+		if (universeId) {
+			tools = toolSpecs(req.toolNames);
+			toolContext = {
+				db,
+				userId: req.userId,
+				universeId,
+				storyId: req.storyId,
+				scope: req.toolScope,
+				allowedTools: tools.map((tool) => tool.name)
+			};
+		}
 	}
 
 	return {

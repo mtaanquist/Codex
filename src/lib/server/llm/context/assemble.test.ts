@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	bodyTail,
 	buildSystemMessage,
 	estimateTokens,
 	selectWithinBudget,
@@ -12,6 +13,21 @@ describe('estimateTokens', () => {
 		expect(estimateTokens('')).toBe(0);
 		expect(estimateTokens('abcd')).toBe(1);
 		expect(estimateTokens('abcde')).toBe(2);
+	});
+});
+
+describe('bodyTail', () => {
+	it('returns the trimmed body whole when it is within the excerpt cap', () => {
+		expect(bodyTail('  A short scene.  ')).toBe('A short scene.');
+	});
+
+	it('keeps the tail and marks the cut when the body is too long', () => {
+		const body = 'HEAD' + 'x'.repeat(2000) + 'the very last words.';
+		const tail = bodyTail(body);
+		expect(tail.startsWith('[...] ')).toBe(true);
+		expect(tail).toContain('the very last words.');
+		// The opening is dropped: a continuation reads from where the prose left off.
+		expect(tail).not.toContain('HEAD');
 	});
 });
 
@@ -45,6 +61,7 @@ describe('selectWithinBudget', () => {
 
 	it('mentions the scene tools only on tool-capable turns', () => {
 		const context: AssembledContext = {
+			kind: 'story',
 			text: 'world context',
 			estimatedTokens: 2,
 			budgetTokens: 100,
@@ -62,6 +79,7 @@ describe('selectWithinBudget', () => {
 
 	it('permits canon knowledge only for an established setting', () => {
 		const context: AssembledContext = {
+			kind: 'story',
 			text: 'world context',
 			estimatedTokens: 2,
 			budgetTokens: 100,
@@ -78,6 +96,29 @@ describe('selectWithinBudget', () => {
 		expect(
 			buildSystemMessage({ ...context, establishedSetting: true }, { tools: true }).content
 		).toContain('get_scene');
+	});
+
+	it('frames a universe scope with the cross-story preamble', () => {
+		const context: AssembledContext = {
+			kind: 'universe',
+			text: 'universe context',
+			estimatedTokens: 2,
+			budgetTokens: 100,
+			includedTiers: ['universe-frame'],
+			droppedTiers: [],
+			establishedSetting: false,
+			sources: { entities: [], scenes: [], lore: [] }
+		};
+		const content = buildSystemMessage(context).content;
+		expect(content).toContain('whole universe');
+		expect(content).toContain('universe context');
+		// The tool hint advertises cross-story reach on tool-capable turns.
+		const withTools = buildSystemMessage(context, { tools: true }).content;
+		expect(withTools).toContain('every story in the universe');
+		// The established variant permits canon for a universe too.
+		expect(buildSystemMessage({ ...context, establishedSetting: true }).content).toContain(
+			'published canon'
+		);
 	});
 
 	it('joins included tiers with a blank line', () => {

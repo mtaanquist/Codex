@@ -630,12 +630,82 @@ button above the chat, plus the existing `/review` command). Help doc
 (reviewing) updated. Reuses already-tested server functions; check, lint,
 unit, build green locally.
 
-- [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
-- [x] 2. Drizzle + node-postgres, users table, first migration
-- [x] 3. Dockerfile, compose.yaml (app, worker stub, postgres, Caddy), compose.dev.yaml
-- [x] 4. Run the stack in Docker end to end
-- [x] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
-- [x] 6. Seed admin via SQL; verify sign-in and the approval gate
+Universe-aware Assistant (planned 2026-06-23, design note
+`scratch/system-design/universe-aware-assistant-plan.md`, branch
+`feat/universe-aware-assistant`). Five parts, A first as the foundation; B-E
+depend on it. Part A (done): every Assistant layer carries a scope - a story
+focus (`{ universeId, storyId, sceneId? }`) or the whole universe
+(`{ universeId }`). The retrieval reach is always the universe, so the
+per-story Assistant gains cross-story continuity, not just the new universe
+surface. Layers: (1) `assistant_chat_messages` gains a nullable `universeId`
+with a CHECK that exactly one of story/universe is set (migration 0065),
+`chat-history` rekeyed on a `ChatScope`, universe purge cascade; (2)
+context assembly branches on scope - a `universe-backbone` tier of the other
+stories on the focus path, and a `universe-frame`/`outline`/entities/lore/notes
+build on the universe path; (3) the read tools (`get_scene`, `list_scenes`,
+`find_appearances`, `search_text`) reach across the universe, write tools
+resolve the loaded scene's own story; (4) the gateway derives the universe
+reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse`
+
+- scope-based SSE; (6) `searchAll` gains an optional universe filter; (7) the
+  shared `AssistantPanel` takes a scope discriminator and both Plan pages get an
+  Assistant pill (story Plan shares the Write thread; universe Plan is its own).
+  Help doc (planning) updated. lint, check, unit + integration green locally;
+  Playwright e2e not run in this environment. Part B (done, branch
+  `feat/assistant-write-continuity`): the toolbar Write action now anchors on the
+  immediately preceding scene's actual prose, not just its summary, so a draft into
+  an empty or short scene continues the prior events and matches its voice. A
+  `precedingSceneBody` source returns the previous scene by global position
+  (skipping trashed scenes); `assembleContext` gains an opt-in `precedingProse`
+  flag that renders a tail excerpt (capped at the recap excerpt length) in the
+  scene-local tier; `/api/assistant/coauthor` sets the flag. Ordinary chat turns
+  are unchanged. Help doc (editor) updated. lint, check, unit + integration green
+  locally; e2e not run here. Parts C + E (done together, branch
+  `feat/assistant-slash-commands`): the chat slash commands grow from the original
+  five to the planned set, all reusing endpoints/tools that already exist.
+  `assistant-slash.ts` gains a `scope` ('story' | 'both') and `args` flag per
+  command, `slashArgs` (text after the command), `commandsForScope`, and two menu
+  fixes: `slashQuery` returns null once a space is typed (the menu gets out of the
+  way while typing arguments) and `matchSlash` filters by scope (the universe Plan
+  panel shows only the cross-scope commands). New commands in `AssistantPanel`:
+  `/write <brief>` and `/rewrite <how>` POST the buffered co-author endpoint (the
+  latter sends the editor selection as a `selection` reference and its reply
+  carries a "Replace selection" affordance, backed by new `getSelectionText`/
+  `replaceSelection` exports on `SceneEditor`); `/copyedit` kicks the existing
+  review flow (scene review when a scene is open, else a whole-story background
+  review); `/who <name>` and `/find <query>` are templated tool-enabled chat sends
+  that work in both scopes. Selecting an `args` command from the menu leaves
+  "/name " in the composer to type into. Help doc (editor) lists the new commands
+  and the universe-scope subset. lint, check, unit green locally; e2e not run here
+  (the command flows are LLM-backed). Part D (done, branch
+  `feat/assistant-continuity-review`): the cross-scene consistency pass runs on
+  its own as `/continuity-review`, in both scopes. `scene-review.ts` gains a
+  shared `runConsistencyPass` (story or universe scope drives the assembled
+  context and the gateway's retrieval reach) and two entry points,
+  `reviewStoryContinuity` (one consistency pass over a story's scenes, no
+  per-scene copyedit passes) and `reviewUniverseContinuity` (one pass across every
+  story in the universe, scenes grouped by story); both skip when fewer than two
+  scenes are in scope. A `buildUniverseConsistencyMessage` prompt frames the task
+  as cross-story. The background job path is reused: `queueAssistantReview` grows
+  an optional `universeId` and a `mode` ('full' | 'continuity'), the review-job
+  endpoint queues a continuity job for a story focus or the whole universe, and
+  the worker branches on mode/scope, notifying with a continuity-specific message
+  (universe notes point at the universe Plan page). Because the write tools
+  resolve a scene's own owning story (Part A), a universe-wide contradiction
+  stages its thread on the owning story's scene whichever surface launched it.
+  Slash command `/continuity-review` is scope 'both'; `AssistantPanel` kicks the
+  job through a new `startContinuityReview` action. Help doc (editor) updated.
+  lint, check, unit + integration green locally (incl. a new continuity
+  integration test covering the story-level single pass, the no-op under two
+  scenes, the cross-story framing, and the owning-story thread attribution); e2e
+  not run here.
+
+* [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
+* [x] 2. Drizzle + node-postgres, users table, first migration
+* [x] 3. Dockerfile, compose.yaml (app, worker stub, postgres, Caddy), compose.dev.yaml
+* [x] 4. Run the stack in Docker end to end
+* [x] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
+* [x] 6. Seed admin via SQL; verify sign-in and the approval gate
 
 > v0.1 shipped at the end of Phase 1.
 

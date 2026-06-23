@@ -7,6 +7,7 @@
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
+	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -22,8 +23,21 @@
 
 	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.slug }));
 
-	// Right column tabs; History holds the open item's timeline.
-	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
+	// Grounded starter prompts for the Assistant tab, drawn from the story's cast.
+	const assistantSuggestions = $derived.by(() => {
+		const characters = data.characters.map((c) => c.name);
+		const title = data.story.title || 'this story';
+		const prompts: string[] = [];
+		if (characters[0]) prompts.push(`What's at stake for ${characters[0]} in ${title}?`);
+		prompts.push('What should I plan for next in this story?');
+		if (characters[1]) prompts.push(`Is ${characters[1]}'s arc consistent so far?`);
+		else prompts.push('Catch me up on the story so far.');
+		return prompts;
+	});
+
+	// Right column tabs; History holds the open item's timeline. The Assistant
+	// tab appears only when the Assistant is on for this story.
+	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
 	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
 	const currentBody = $derived(data.selected?.bodyMd ?? '');
 </script>
@@ -147,9 +161,28 @@
 					>
 						Session
 					</button>
+					{#if data.assistant.tabEnabled}
+						<button
+							class="rtab"
+							class:active={rightTab === 'assistant'}
+							type="button"
+							onclick={() => (rightTab = 'assistant')}
+						>
+							{data.assistant.name}
+						</button>
+					{/if}
 				</div>
 			</div>
-			{#if rightTab === 'session'}
+			{#if rightTab === 'assistant' && data.assistant.tabEnabled}
+				<AssistantPanel
+					scope={{ storyId: data.story.id, storyTitle: data.story.title }}
+					name={data.assistant.name}
+					muted={data.assistant.muted}
+					suggestions={assistantSuggestions}
+					initialMessages={data.assistantChat}
+					reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
+				/>
+			{:else if rightTab === 'session'}
 				<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
 			{:else if rightTab === 'history'}
 				{#if data.revisionTarget}

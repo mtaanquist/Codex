@@ -10,22 +10,27 @@ import { universeTimeline, universeRevisionCount } from '$lib/server/revisions';
 import { listCategories, saveCategories, universeContents } from '$lib/server/categories';
 import { trashUniverse, UNIVERSE_TRASH_DAYS } from '$lib/server/universe-lifecycle';
 import { parseStoryZip, StoryZipError, type ImportPlan } from '$lib/import-markdown';
+import { parseDocument, DocumentImportError } from '$lib/server/import-document';
 import { previewImport, runImport } from '$lib/server/import-story';
 import { effectiveAssetConfig } from '$lib/server/assets';
 import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
 import { queueUserExport } from '$lib/server/jobs';
 import { exportLimit } from '$lib/server/rate-limit';
 
-// The uploaded story archive, parsed, or a fail() the action returns as-is.
+// The uploaded file, parsed into a plan: a Codex export zip, or a Word/EPUB
+// manuscript by its extension. Returns a fail() the action passes straight back.
 async function planFromUpload(data: FormData) {
 	const file = data.get('archive');
 	if (!(file instanceof File) || file.size === 0) {
-		return { fail: fail(400, { action: 'import' as const, message: 'Choose a zip file first.' }) };
+		return { fail: fail(400, { action: 'import' as const, message: 'Choose a file first.' }) };
 	}
+	const bytes = new Uint8Array(await file.arrayBuffer());
+	const isManuscript = /\.(docx|epub)$/i.test(file.name);
 	try {
-		return { plan: parseStoryZip(new Uint8Array(await file.arrayBuffer())) };
+		const plan = isManuscript ? await parseDocument(bytes, file.name) : parseStoryZip(bytes);
+		return { plan };
 	} catch (err) {
-		if (err instanceof StoryZipError) {
+		if (err instanceof StoryZipError || err instanceof DocumentImportError) {
 			return { fail: fail(400, { action: 'import' as const, message: err.message }) };
 		}
 		throw err;

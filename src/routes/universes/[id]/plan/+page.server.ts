@@ -26,6 +26,8 @@ import {
 	type RevisionEntityType,
 	type RevisionRow
 } from '$lib/server/revisions';
+import { assistantLayout } from '$lib/server/llm/config';
+import { listChat } from '$lib/server/llm/chat-history';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
 type StoryBoardRow = {
@@ -86,6 +88,15 @@ async function loadStoryBoard(universeId: string): Promise<StoryBoardRow[]> {
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
+
+	// The universe Plan page hosts an Assistant chat tab with cross-story reach
+	// (its own universe-level thread, separate from the per-story threads). The
+	// gate is account-level here - there is no per-universe mute.
+	const assistant = await assistantLayout(db, locals.user!.id);
+	const assistantChat = assistant.tabEnabled
+		? await listChat(db, locals.user!.id, { universeId: universe.id })
+		: [];
+
 	// The entity lists do not depend on the selection; resolve the selected
 	// entity (if the URL names one) alongside them.
 	const entityId = url.searchParams.get('entity');
@@ -151,7 +162,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		relationships,
 		revisionTarget,
 		revisionRows,
-		revisionPreview
+		revisionPreview,
+		assistant,
+		assistantChat
 	};
 };
 

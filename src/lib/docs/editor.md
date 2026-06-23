@@ -104,13 +104,21 @@ The Assistant can also suggest where to split a long scene: ask it in the chat, 
 
 The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
 
-You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it:
+You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it. Some commands take the rest of the line as input, so type what you want after the command:
 
+- `/write <brief>` drafts a passage from your brief, the same as the Write button, and shows it for you to insert.
+- `/rewrite <how>` rewrites the passage you have selected in the scene to your instruction; a "Replace selection" button swaps it in.
+- `/copyedit` runs a full review of the open scene, or the whole story when no scene is open.
+- `/continuity-review` checks for continuity contradictions and leaves them as review notes. In a story it checks that story; on the universe Plan page it checks every story against the others. It runs in the background and notifies you when it is done.
 - `/review` opens the review window.
+- `/who <name>` shows a short sheet for a character or place.
+- `/find <text>` searches this universe and lists what it finds.
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
 - `/clear` clears the conversation.
 - `/help` lists these commands.
+
+On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/who`, `/find`, `/clear`, and `/help`.
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
@@ -118,7 +126,7 @@ Select "Update summaries" from the menu next to the send button to have the Assi
 
 While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 
-To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. The panel shows where you are in the prose - the text you had selected, or the passage leading up to your cursor - so a brief like "continue from here" picks up in the right place; select the x on that quote if you do not want it sent. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
+To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. The panel shows where you are in the prose - the text you had selected, or the passage leading up to your cursor - so a brief like "continue from here" picks up in the right place; select the x on that quote if you do not want it sent. On a new or nearly empty scene that follows another, it reads the end of the previous scene, so a brief like "continue from the previous scene" picks up the events and voice where they left off. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
 
 You can also ask the Assistant to review your writing and leave comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. Right-click a scene or chapter in the left sidebar, choose Assistant, then "Review with the Assistant"; or type `/review` in the chat. A window opens where you pick what to review (this scene, this chapter, or the whole story) and what to check. The Review section of "Reviewing" covers the choices in full.
 

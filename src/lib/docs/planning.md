@@ -30,6 +30,16 @@ Details are short facts about an entry, each with a label and a value: Status, A
 
 When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
 
+## The Assistant tab
+
+When you have set up the Assistant on your account page, the right column of the plan gains a tab with its name, next to Reference, History, and Session. It is a chat grounded in your world, so you can ask questions and work through ideas while you plan.
+
+On a story's plan, the tab talks about that story, and it shares one conversation with the story's Write and Review views: send a message in one and it is there when you open another. On a universe's plan, the tab talks about the whole universe and keeps its own separate conversation.
+
+The Assistant can read across every story in the universe, not just the one in front of you. So while you plan a new book you can ask it to check a detail, an event, or a character against the earlier ones, and it will find the scene it comes from and tell you where. Ask it to check continuity across the stories and it will look for facts, timelines, and character details that disagree between the books.
+
+If you do not want the Assistant on a particular story, open its tab and select "Mute for this story"; the tab stays so you can turn it back on. To turn the Assistant off everywhere, use the master switch on your account page.
+
 ## Relationships
 
 You can record how entities relate: who is whose parent, which faction holds which city. Select "Add relationship", pick a type, choose the other entity, and add a note if you like; the reverse shows on the other entry's page automatically. Click a related entity to jump to it.

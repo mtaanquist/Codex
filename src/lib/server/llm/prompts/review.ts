@@ -117,19 +117,52 @@ export function buildReviewMessage(
 
 // The cross-scene pass of a full story review: one run that reads the whole
 // story and looks only for issues no single-scene pass can see. Runs after
-// the per-scene passes so it does not duplicate their notes.
+// the per-scene passes so it does not duplicate their notes. Also the body of
+// the standalone continuity review, where there are no prior per-scene passes;
+// the wording holds either way ("Each scene has already had its own pass" is
+// true of the full review and harmlessly conservative for the standalone one).
 export function buildConsistencyMessage(sceneList: { id: string; title: string | null }[]): string {
 	const listing = sceneList
 		.map((scene, i) => `- ${(scene.title ?? '').trim() || `Scene ${i + 1}`} (id: ${scene.id})`)
 		.join('\n');
 	return [
-		'This is the cross-scene consistency pass of a full review. Each scene has already had its own copyedit pass; do not repeat per-scene notes. Read every scene below with get_scene, in order, then report only issues that span scenes:',
+		'This is the cross-scene consistency pass. Read every scene below with get_scene, in order, then report only issues that span scenes; do not leave per-scene copyedit notes:',
 		'- Continuity: names, titles, or facts that drift between scenes; timeline arithmetic that does not add up across chapters.',
 		'- Lore: contradictions between scenes, or between a scene and the established world context.',
 		'- Convention drift: an idiom, spelling convention, or term rendered differently in different scenes.',
 		'- Recurring tics: a distinctive word or construction repeated across scenes often enough to register.',
 		'Anchor each note with leave_comment on the scene where the issue is clearest, quote the passage, and name the other scene(s) involved so the writer can find both sides. If everything holds together, leave a single brief comment on the first scene saying so.',
 		'The scenes, in story order:',
+		listing
+	].join('\n');
+}
+
+// The universe-wide continuity pass: one run across every story in the universe,
+// looking for facts that contradict each other between books. Scenes are listed
+// grouped by story (with ids) so the model knows which story each belongs to;
+// leave_comment resolves the owning story from the scene id, so a contradiction
+// found in one story anchors on that story's scene even when the pass was
+// launched from another.
+export function buildUniverseConsistencyMessage(
+	scenesByStory: { storyTitle: string; scenes: { id: string; title: string | null }[] }[]
+): string {
+	const listing = scenesByStory
+		.map((story) => {
+			const heading = `Story: ${story.storyTitle.trim() || 'Untitled story'}`;
+			const lines = story.scenes.map(
+				(scene, i) => `  - ${(scene.title ?? '').trim() || `Scene ${i + 1}`} (id: ${scene.id})`
+			);
+			return [heading, ...lines].join('\n');
+		})
+		.join('\n');
+	return [
+		'This is a universe-wide continuity pass across every story below. Flag facts, timeline, character, and place details that contradict each other across the stories in this universe. Read the relevant scenes with get_scene, and use find_appearances and search_text to follow a name or fact between stories. Report only cross-story contradictions, not per-scene copyedit notes:',
+		'- Facts and lore: a detail established one way in one story and differently in another.',
+		'- Timeline: dates, ages, or sequences that do not line up between stories.',
+		'- Character: a trait, name, title, or history that contradicts another story.',
+		'- Place: a location detail rendered inconsistently between stories.',
+		'Anchor each note with leave_comment on the scene where the contradiction is clearest, quote the passage, and name the other story and scene involved so the writer can find both sides. The note lands on the story that owns the scene you comment on, whichever story you launched this from. If everything holds together across the universe, leave a single brief comment on the first scene saying so.',
+		'The stories and their scenes, in order:',
 		listing
 	].join('\n');
 }

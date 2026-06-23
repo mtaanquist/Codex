@@ -6,35 +6,48 @@
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
 	import { enhance } from '$app/forms';
 	import { assistantIntent } from '$lib/assistant.svelte';
-	import { startSummariesJob } from '$lib/assistant-actions';
+	import {
+		startSummariesJob,
+		reviewSceneWithAssistant,
+		startBackgroundReview,
+		startContinuityReview
+	} from '$lib/assistant-actions';
 	import { openReviewModal } from '$lib/review-modal.svelte';
+	import { REVIEW_CATEGORIES } from '$lib/review-shape';
 	import { flashActivity } from '$lib/activity.svelte';
 	import { parseSseFrames } from '$lib/assistant-stream';
-	import { SLASH_COMMANDS, matchSlash, slashName } from '$lib/assistant-slash';
+	import { commandsForScope, matchSlash, slashName, slashArgs } from '$lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
 	import { dismiss } from '$lib/dismiss';
 
 	let {
-		storyId,
+		scope,
 		sceneId = null,
 		name,
-		storyTitle,
-		muted,
+		muted = false,
 		suggestions = [],
 		initialMessages = [],
 		onConfirmSplit,
 		onRevertSplit,
-		onInsert
+		onInsert,
+		onReplaceSelection,
+		getSelection,
+		reviewHref
 	}: {
-		storyId: string;
-		// The open scene, sent as the focus of context assembly; null off a scene.
+		// The conversation this panel serves: a single story (Write, Review, story
+		// Plan) or the whole universe (universe Plan). The story scope carries the
+		// editor affordances (recap, summaries, mute, insert, split); the universe
+		// scope is chat and cross-story grounding only.
+		scope: { storyId: string; storyTitle: string } | { universeId: string; universeName: string };
+		// The open scene, sent as the focus of context assembly; null off a scene
+		// and on the universe surface.
 		sceneId?: string | null;
 		// The Assistant's display name, shown over its replies.
 		name: string;
-		storyTitle: string;
-		// This story has muted the Assistant; the tab stays to un-mute.
-		muted: boolean;
+		// This story has muted the Assistant; the tab stays to un-mute. Story scope
+		// only - the universe surface has no per-universe mute.
+		muted?: boolean;
 		// Grounded starter prompts shown when the conversation is empty.
 		suggestions?: string[];
 		// The stored conversation, loaded with the page; the panel seeds from it
@@ -62,6 +75,16 @@
 		// Inserts a reply's text into the open scene editor at the cursor; only
 		// passed when a single scene editor is open.
 		onInsert?: (text: string) => void;
+		// Replaces the editor's current selection with a reply's text; the /rewrite
+		// command's affordance. Passed alongside getSelection when a scene editor is
+		// open.
+		onReplaceSelection?: (text: string) => void;
+		// The editor's current selection text, or null when nothing is selected.
+		// /rewrite needs it; only passed when a scene editor is open.
+		getSelection?: () => string | null;
+		// The story's review page, for /copyedit to open when notes are staged.
+		// Story surfaces pass it; the universe surface does not.
+		reviewHref?: string;
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
@@ -70,6 +93,9 @@
 		content: string;
 		reference?: ChatReference;
 		proposals?: SplitProposal[];
+		// A /rewrite reply: its affordance replaces the selection rather than
+		// inserting at the cursor.
+		rewrite?: boolean;
 	};
 	type StreamEvent =
 		| { type: 'token'; text: string }
@@ -77,11 +103,24 @@
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
+	// The scope discriminant and its pieces. Fixed for the panel's life (a
+	// surface does not change scope), so plain consts off the prop.
+	// svelte-ignore state_referenced_locally
+	const isStory = 'storyId' in scope;
+	// svelte-ignore state_referenced_locally
+	const scopeTitle = 'storyId' in scope ? scope.storyTitle : scope.universeName;
+
+	// The scope fields the request bodies carry: the story or the universe.
+	function scopeBody(): { storyId: string } | { universeId: string } {
+		return 'storyId' in scope ? { storyId: scope.storyId } : { universeId: scope.universeId };
+	}
+
 	// Seeded once at mount from the stored conversation, falling back to a
 	// synthesized opening line (which is never stored); the transcript is then
 	// client-held until the next mount picks up the persisted turns.
-	// svelte-ignore state_referenced_locally
-	const opening = `I've read your codex for ${storyTitle}. Ask me about your characters, check continuity, or work a scene.`;
+	const opening = isStory
+		? `I've read your codex for ${scopeTitle}. Ask me about your characters, check continuity, or work a scene.`
+		: `I've read your codex for ${scopeTitle}. Ask me anything across its stories - characters, places, lore, or continuity between the books.`;
 	// svelte-ignore state_referenced_locally
 	const seeded: Message[] = initialMessages.map((m) => ({
 		role: m.role,
@@ -243,8 +282,8 @@
 		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
 		await streamInto('/api/assistant/chat', {
-			storyId,
-			sceneId,
+			...scopeBody(),
+			...(isStory ? { sceneId } : {}),
 			messages: turns
 				.slice(-40)
 				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
@@ -260,8 +299,26 @@
 			case 'clear':
 				void clearConversation();
 				break;
+			case 'write':
+				void coauthorDraft(slashArgs(raw));
+				break;
+			case 'rewrite':
+				void rewriteSelection(slashArgs(raw));
+				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
+				break;
+			case 'copyedit':
+				void copyedit();
+				break;
+			case 'continuity-review':
+				void continuityReview();
+				break;
+			case 'who':
+				askWho(slashArgs(raw));
+				break;
+			case 'find':
+				askFind(slashArgs(raw));
 				break;
 			case 'catchup':
 			case 'catch-up':
@@ -277,7 +334,9 @@
 						role: 'assistant',
 						content:
 							'Commands you can type here:\n\n' +
-							SLASH_COMMANDS.map((c) => `/${c.name} - ${c.detail}`).join('\n')
+							commandsForScope(!isStory)
+								.map((c) => `/${c.name} - ${c.detail}`)
+								.join('\n')
 					}
 				];
 				break;
@@ -292,9 +351,183 @@
 		}
 	}
 
-	// The hint menu: the matching commands while the composer holds a bare "/word".
+	// Choosing a command from the hint menu. A command that takes arguments leaves
+	// "/name " in the composer to type the argument into; the rest run straightaway.
+	function chooseSlash(command: { name: string; args?: boolean }) {
+		if (command.args) {
+			input = `/${command.name} `;
+			slashSelected = 0;
+			composer?.focus();
+			return;
+		}
+		runSlashCommand(`/${command.name}`);
+	}
+
+	// A plain assistant message, for usage hints and command errors.
+	function assistantSay(content: string) {
+		messages = [...messages, { role: 'assistant', content }];
+	}
+
+	// POST a brief (and optional selection) to the buffered co-author endpoint and
+	// fill the empty assistant reply already pushed. Shared by /write and /rewrite;
+	// the endpoint returns the whole passage as JSON, not a token stream.
+	async function runCoauthor(
+		payload: {
+			storyId: string;
+			sceneId: string | null;
+			instruction: string;
+			reference?: { kind: 'selection'; text: string };
+		},
+		opts: { rewrite?: boolean } = {}
+	) {
+		busy = true;
+		const controller = new AbortController();
+		pending = controller;
+		try {
+			const response = await fetch('/api/assistant/coauthor', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(payload),
+				signal: controller.signal
+			});
+			const reply = messages[messages.length - 1];
+			if (!(reply && reply.role === 'assistant')) return;
+			if (!response.ok) {
+				reply.content = 'Sorry, the Assistant could not draft that passage. Try again.';
+				return;
+			}
+			const { text } = (await response.json()) as { text?: string };
+			reply.content = text?.trim() || 'The Assistant did not return a passage.';
+			if (opts.rewrite) reply.rewrite = true;
+		} catch {
+			if (!controller.signal.aborted) {
+				const reply = messages[messages.length - 1];
+				if (reply && reply.role === 'assistant') {
+					reply.content = 'Sorry, something went wrong reaching the Assistant.';
+				}
+			}
+		} finally {
+			busy = false;
+			pending = null;
+		}
+	}
+
+	// /write: draft a passage from a brief through the co-author endpoint (the same
+	// one the toolbar Write button uses), shown as a reply the writer can insert.
+	// Needs a story focus; the universe surface has no scene to draft into.
+	async function coauthorDraft(brief: string) {
+		if (!('storyId' in scope)) {
+			assistantSay('Drafting needs an open story or scene. Open a story to use /write.');
+			return;
+		}
+		if (!brief) {
+			assistantSay('Add a brief after the command, like "/write a tense standoff at the gate".');
+			return;
+		}
+		if (busy) return;
+		messages = [
+			...messages,
+			{ role: 'user', content: `/write ${brief}` },
+			{ role: 'assistant', content: '' }
+		];
+		await runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
+	}
+
+	// /rewrite: co-author a rewrite of the editor's current selection to an
+	// instruction. Needs an open scene editor and a live selection; the reply's
+	// affordance replaces the selection rather than inserting at the cursor.
+	async function rewriteSelection(how: string) {
+		if (!('storyId' in scope)) {
+			assistantSay('Rewriting needs an open scene. Open a scene to use /rewrite.');
+			return;
+		}
+		if (!getSelection) {
+			assistantSay('Open a scene in the editor to use /rewrite.');
+			return;
+		}
+		const selection = getSelection()?.trim();
+		if (!selection) {
+			assistantSay('Select the passage you want rewritten first, then type /rewrite.');
+			return;
+		}
+		if (!how) {
+			assistantSay('Say how to rewrite it, like "/rewrite tighten this and cut the adverbs".');
+			return;
+		}
+		if (busy) return;
+		const ask: Message = { role: 'user', content: `/rewrite ${how}` };
+		if (sceneId) ask.reference = { sceneId, text: selection };
+		messages = [...messages, ask, { role: 'assistant', content: '' }];
+		await runCoauthor(
+			{
+				storyId: scope.storyId,
+				sceneId,
+				instruction: how,
+				reference: { kind: 'selection', text: selection }
+			},
+			{ rewrite: true }
+		);
+	}
+
+	// /copyedit: kick a full mechanics + prose + lore review at the current scope,
+	// a fast path versus the review modal. Reuses the background review flow;
+	// story focus only.
+	async function copyedit() {
+		if (!('storyId' in scope) || !reviewHref) {
+			assistantSay('A copyedit runs on an open story. Open a story to use /copyedit.');
+			return;
+		}
+		const categories = [...REVIEW_CATEGORIES];
+		if (sceneId) {
+			await reviewSceneWithAssistant(sceneId, reviewHref, categories, 'this scene');
+		} else {
+			await startBackgroundReview({
+				storyId: scope.storyId,
+				categories,
+				label: 'your story',
+				reviewHref
+			});
+		}
+	}
+
+	// /continuity-review: kick a standalone continuity pass at the current scope.
+	// A story focus checks one story; the universe surface checks every story
+	// against the others. Runs in the background; findings land as review notes on
+	// the owning stories' scenes.
+	async function continuityReview() {
+		await startContinuityReview({
+			scope: scopeBody(),
+			label: isStory ? 'this story' : 'this universe',
+			reviewHref: isStory ? reviewHref : undefined
+		});
+	}
+
+	// /who: show a character or place sheet inline, a templated chat send that
+	// leans on the tool-enabled chat (get_entity). Works in both scopes.
+	function askWho(who: string) {
+		if (!who) {
+			assistantSay('Name who to look up, like "/who Marra".');
+			return;
+		}
+		void send(`Show me a short sheet for ${who}: the key facts you have on them.`);
+	}
+
+	// /find: search the universe and list hits, a templated send backed by the
+	// universe-scoped search_text tool. Works in both scopes.
+	function askFind(query: string) {
+		if (!query) {
+			assistantSay('Say what to search for, like "/find the obsidian coins".');
+			return;
+		}
+		void send(
+			`Search this universe for "${query}" and list what you find, with where each turns up.`
+		);
+	}
+
+	// The hint menu: the matching commands while the composer holds a bare "/word",
+	// narrowed to this surface's scope.
 	let slashSelected = $state(0);
-	const slashMatches = $derived(matchSlash(input));
+	const slashMatches = $derived(matchSlash(input, !isStory));
 	const slashOpen = $derived(slashMatches.length > 0 && !busy);
 	$effect(() => {
 		if (slashSelected >= slashMatches.length) slashSelected = 0;
@@ -321,9 +554,11 @@
 	// Catch me up: a recap of the story so far, streamed in as an assistant turn
 	// with no question of its own.
 	async function catchUp() {
-		if (busy) return;
+		// Recap is "the story so far"; there is no universe-wide recap, so the
+		// universe surface has no catch-up.
+		if (busy || !('storyId' in scope)) return;
 		messages = [...messages, { role: 'assistant', content: '' }];
-		await streamInto('/api/assistant/recap', { storyId, sceneId });
+		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId });
 	}
 
 	// Update summaries: a background pass that drafts and refreshes scene and
@@ -331,10 +566,11 @@
 	// confirms; the writer is notified when it finishes.
 	let summarising = $state(false);
 	async function updateSummaries() {
-		if (summarising) return;
+		// Summary maintenance is per story; the universe surface does not offer it.
+		if (summarising || !('storyId' in scope)) return;
 		summarising = true;
 		try {
-			await startSummariesJob(storyId);
+			await startSummariesJob(scope.storyId);
 		} finally {
 			summarising = false;
 		}
@@ -353,7 +589,7 @@
 			const response = await fetch('/api/assistant/chat', {
 				method: 'DELETE',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId })
+				body: JSON.stringify(scopeBody())
 			});
 			if (!response.ok) {
 				flashActivity('failed', 'Could not clear the conversation', 'Try again in a moment.');
@@ -389,7 +625,7 @@
 			}
 			if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
 				event.preventDefault();
-				runSlashCommand(`/${slashMatches[slashSelected].name}`);
+				chooseSlash(slashMatches[slashSelected]);
 				return;
 			}
 		}
@@ -438,11 +674,13 @@
 		<div class="assistant-head">
 			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
 			<div class="head-actions">
-				<form method="POST" action="?/muteAssistant" use:enhance>
-					<button class="mute-link" type="submit" title="Hide the Assistant for this story">
-						Mute for this story
-					</button>
-				</form>
+				{#if isStory}
+					<form method="POST" action="?/muteAssistant" use:enhance>
+						<button class="mute-link" type="submit" title="Hide the Assistant for this story">
+							Mute for this story
+						</button>
+					</form>
+				{/if}
 			</div>
 		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
@@ -469,15 +707,26 @@
 								{/each}
 							{/if}
 						</div>
-						{#if onInsert && message.content && !(busy && index === messages.length - 1) && index > 0}
-							<button
-								class="msg-insert"
-								type="button"
-								title="Insert this reply into the scene at the cursor"
-								onclick={() => onInsert(message.content)}
-							>
-								<Icon name="plus" size={12} /> Insert at cursor
-							</button>
+						{#if message.content && !(busy && index === messages.length - 1) && index > 0}
+							{#if message.rewrite && onReplaceSelection}
+								<button
+									class="msg-insert"
+									type="button"
+									title="Replace the selected passage with this rewrite"
+									onclick={() => onReplaceSelection(message.content)}
+								>
+									<Icon name="plus" size={12} /> Replace selection
+								</button>
+							{:else if onInsert}
+								<button
+									class="msg-insert"
+									type="button"
+									title="Insert this reply into the scene at the cursor"
+									onclick={() => onInsert(message.content)}
+								>
+									<Icon name="plus" size={12} /> Insert at cursor
+								</button>
+							{/if}
 						{/if}
 						{#each message.proposals ?? [] as proposal, pi (pi)}
 							<AssistantProposal
@@ -525,7 +774,7 @@
 						aria-selected={index === slashSelected}
 						type="button"
 						onmouseenter={() => (slashSelected = index)}
-						onclick={() => runSlashCommand(`/${command.name}`)}
+						onclick={() => chooseSlash(command)}
 					>
 						<span class="slash-name">/{command.name}</span>
 						<span class="slash-detail">{command.detail}</span>
@@ -558,26 +807,28 @@
 				</button>
 				{#if actionsOpen}
 					<div class="composer-menu popover" role="menu">
-						<button
-							class="menu-item"
-							type="button"
-							role="menuitem"
-							disabled={busy}
-							title="Recap the story up to where you are"
-							onclick={() => runAction(() => void catchUp())}
-						>
-							Catch me up
-						</button>
-						<button
-							class="menu-item"
-							type="button"
-							role="menuitem"
-							disabled={summarising}
-							title="Draft and refresh scene and chapter summaries in the background"
-							onclick={() => runAction(() => void updateSummaries())}
-						>
-							{summarising ? 'Starting...' : 'Update summaries'}
-						</button>
+						{#if isStory}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								disabled={busy}
+								title="Recap the story up to where you are"
+								onclick={() => runAction(() => void catchUp())}
+							>
+								Catch me up
+							</button>
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								disabled={summarising}
+								title="Draft and refresh scene and chapter summaries in the background"
+								onclick={() => runAction(() => void updateSummaries())}
+							>
+								{summarising ? 'Starting...' : 'Update summaries'}
+							</button>
+						{/if}
 						<button
 							class="menu-item"
 							type="button"

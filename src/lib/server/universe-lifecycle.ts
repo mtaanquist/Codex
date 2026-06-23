@@ -7,6 +7,7 @@ import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	assets,
+	assistantChatMessages,
 	characters,
 	entityCategories,
 	entityRelationships,
@@ -154,6 +155,10 @@ export async function purgeUniverseWithin(tx: Tx, universeId: string): Promise<v
 		.from(stories)
 		.where(eq(stories.universeId, universeId));
 	for (const story of storyRows) await deleteStoryWithin(tx, story.id);
+
+	// Universe-scoped Assistant transcripts (the universe-Plan threads); the
+	// story-scoped ones went with their stories above.
+	await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.universeId, universeId));
 
 	// Universe-scoped freeform notes (story notes went with their stories) and
 	// their polymorphic revisions.

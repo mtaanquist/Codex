@@ -38,7 +38,8 @@ import {
 	listRelationTypes,
 	type RelationshipView
 } from '$lib/server/relationships';
-import { assistantLayout } from '$lib/server/llm/config';
+import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
+import { listChat } from '$lib/server/llm/chat-history';
 import { listPendingForEntity, type EntitySuggestion } from '$lib/server/entity-suggestions';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
@@ -141,7 +142,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// The Assistant can enrich the open entity (suggest aliases, details, a
 	// summary) when it is on for this story; its pending suggestions ride along.
+	// The Plan page also hosts the Assistant chat tab (same per-story thread as
+	// the Write page), so the stored transcript loads when the tab is available.
 	const assistant = await assistantLayout(db, locals.user!.id, story.id);
+	const assistantChat = assistant.tabEnabled
+		? await listChat(db, locals.user!.id, { storyId: story.id })
+		: [];
 	let assistantSuggestions: EntitySuggestion[] = [];
 	if (selected) {
 		assistantSuggestions = await listPendingForEntity(
@@ -221,6 +227,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionRows,
 		revisionPreview,
 		assistantEnabled: assistant.surfacesEnabled,
+		assistant,
+		assistantChat,
 		assistantSuggestions
 	};
 };
@@ -248,5 +256,18 @@ export const actions: Actions = {
 			return fail(400, { kind: 'member', message: result.reason });
 		}
 		redirect(303, `/stories/${story.slug}/plan?entity=${entityId}`);
+	},
+	// The Assistant tab's per-story mute, the same control the Write page carries
+	// (the tab stays to un-mute). A story can only subtract; the account master
+	// stays the kill switch.
+	muteAssistant: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { enabled: false });
+		return { scope: 'assistant-mute' };
+	},
+	unmuteAssistant: async ({ params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { enabled: null });
+		return { scope: 'assistant-mute' };
 	}
 };

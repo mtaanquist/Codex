@@ -544,10 +544,9 @@
 					{/if}
 					<div class="rv-assistant-wrap">
 						<AssistantPanel
-							storyId={storyId ?? ''}
+							scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
 							sceneId={selectedSceneId || null}
 							name={assistant?.name ?? 'Assistant'}
-							storyTitle={book?.title ?? ''}
 							muted={assistant?.muted ?? false}
 							suggestions={assistantSuggestions}
 							initialMessages={assistantChat}

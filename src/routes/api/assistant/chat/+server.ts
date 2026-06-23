@@ -1,13 +1,19 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
+import { ownedUniverse } from '$lib/server/universe-access';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
-	requireAssistantStory
+	requireAssistantStory,
+	requireAssistantUniverse
 } from '$lib/server/llm/assistant-route';
-import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import { appendChat, clearChat } from '$lib/server/llm/chat-history';
+import {
+	assembleContext,
+	buildSystemMessage,
+	type AssembleOptions
+} from '$lib/server/llm/context/assemble';
+import { appendChat, clearChat, type ChatScope } from '$lib/server/llm/chat-history';
 import {
 	foldReference,
 	readReference,
@@ -15,11 +21,12 @@ import {
 } from '$lib/server/llm/prompts/reference';
 import type { ChatMessage } from '$lib/server/llm/providers/types';
 
-// The chat surface: the browser POSTs its transcript and the open scene, the
-// server assembles the in-scope world, runs the gateway, and streams tokens
-// back as Server-Sent Events. The key and endpoint never leave the server.
-// The conversation persists per story and user: the newest user turn is
-// stored when the request is accepted, the reply when its stream completes.
+// The chat surface: the browser POSTs its transcript and either the open story
+// (and scene) or the universe in view, the server assembles the in-scope world,
+// runs the gateway, and streams tokens back as Server-Sent Events. The key and
+// endpoint never leave the server. The conversation persists per scope and
+// user: the newest user turn is stored when the request is accepted, the reply
+// when its stream completes.
 //
 // Tools are offered (grounding reads, suggest_edit/leave_comment writes); the
 // gateway withholds them when the endpoint cannot call them. A muted story
@@ -58,18 +65,32 @@ function readTurns(raw: unknown): Turn[] {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
+		universeId?: unknown;
 		sceneId?: unknown;
 		messages?: unknown;
 	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const turns = readTurns(payload.messages);
-	const story = await requireAssistantStory(userId, payload.storyId);
+
+	// The scope: a story focus (Write/Review/story-Plan) or the whole universe
+	// (universe-Plan). A storyId names the focus path; otherwise universeId.
+	let scope: ChatScope;
+	let assembleOptions: AssembleOptions;
+	if (typeof payload.storyId === 'string' && payload.storyId) {
+		const story = await requireAssistantStory(userId, payload.storyId);
+		scope = { storyId: story.id };
+		assembleOptions = { userId, storyId: story.id, sceneId };
+	} else {
+		const universe = await requireAssistantUniverse(userId, payload.universeId);
+		scope = { universeId: universe.id };
+		assembleOptions = { userId, universeId: universe.id };
+	}
 
 	// The newest user turn joins the stored transcript; the earlier turns are
 	// already there from their own requests.
 	const newest = turns[turns.length - 1];
 	if (newest.role === 'user') {
-		await appendChat(db, userId, story.id, {
+		await appendChat(db, userId, scope, {
 			role: 'user',
 			content: newest.content,
 			meta: newest.reference ? { reference: newest.reference } : null
@@ -77,8 +98,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	// The assembled world rides as a system message after the gateway's persona
-	// message; null when the story is empty or not owned (already checked).
-	const context = await assembleContext(db, { userId, storyId: story.id, sceneId });
+	// message; null when the scope is empty or not owned (already checked).
+	const context = await assembleContext(db, assembleOptions);
 	const modelTurns: ChatMessage[] = turns.map((turn) => ({
 		role: turn.role,
 		content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
@@ -90,7 +111,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	return assistantSseResponse({
 		request,
 		userId,
-		storyId: story.id,
+		scope,
 		role: 'chat',
 		enableTools: true,
 		messages,
@@ -98,13 +119,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	});
 };
 
-// Clear conversation: drops the stored transcript for this story. Deletes
-// only, so it needs ownership but no Assistant gate.
+// Clear conversation: drops the stored transcript for this scope. Deletes only,
+// so it needs ownership but no Assistant gate.
 export const DELETE: RequestHandler = async ({ request, locals }) => {
-	const { userId, payload } = await readAssistantPayload<{ storyId?: unknown }>(request, locals);
-	const storyId = typeof payload.storyId === 'string' ? payload.storyId : '';
-	if (!storyId) error(400, 'storyId is required.');
-	const { story } = await ownedStory(storyId, userId);
-	await clearChat(db, userId, story.id);
+	const { userId, payload } = await readAssistantPayload<{
+		storyId?: unknown;
+		universeId?: unknown;
+	}>(request, locals);
+	if (typeof payload.storyId === 'string' && payload.storyId) {
+		const { story } = await ownedStory(payload.storyId, userId);
+		await clearChat(db, userId, { storyId: story.id });
+	} else if (typeof payload.universeId === 'string' && payload.universeId) {
+		const universe = await ownedUniverse(payload.universeId, userId);
+		await clearChat(db, userId, { universeId: universe.id });
+	} else {
+		error(400, 'storyId or universeId is required.');
+	}
 	return json({ ok: true });
 };

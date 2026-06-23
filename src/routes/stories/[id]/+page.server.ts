@@ -244,7 +244,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// The stored conversation seeds the Assistant tab; nothing to load while
 	// the tab is gated off.
-	const assistantChat = assistant.tabEnabled ? await listChat(db, locals.user!.id, story.id) : [];
+	const assistantChat = assistant.tabEnabled
+		? await listChat(db, locals.user!.id, { storyId: story.id })
+		: [];
 
 	return {
 		trashedScenes,

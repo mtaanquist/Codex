@@ -1,11 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { db } from '../db';
 import { ownedStory } from '../story-access';
+import { ownedUniverse } from '../universe-access';
 import { rateLimitAssistant } from '../write-guard';
 import { readJson } from '../validation';
 import { assistantLayout } from './config';
 import { AssistantDisabledError, stream } from './gateway';
-import { appendChat } from './chat-history';
+import { appendChat, type ChatScope } from './chat-history';
 import type { ChatMessage, SplitProposal, StreamEvent } from './providers/types';
 
 // The shared front door and transport of the assistant endpoints, so the
@@ -43,6 +44,18 @@ export async function requireAssistantStory(userId: string, storyId: unknown) {
 	return story;
 }
 
+// The universe-surface counterpart: universeId in the payload, 404 unless the
+// user owns the universe, then the account-level gate (there is no per-universe
+// mute, so the gate is the account master). Returns the universe.
+export async function requireAssistantUniverse(userId: string, universeId: unknown) {
+	const ref = typeof universeId === 'string' ? universeId : '';
+	if (!ref) error(400, 'universeId is required.');
+	const universe = await ownedUniverse(ref, userId);
+	const layout = await assistantLayout(db, userId);
+	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this account.');
+	return universe;
+}
+
 // The 403/502 split every synchronous assistant endpoint makes.
 export function throwAssistantError(err: unknown, fallback: string): never {
 	if (err instanceof AssistantDisabledError) error(403, err.message);
@@ -56,13 +69,18 @@ export function throwAssistantError(err: unknown, fallback: string): never {
 export function assistantSseResponse(options: {
 	request: Request;
 	userId: string;
-	storyId: string;
+	// The conversation this turn belongs to: a story (Write/Review/story-Plan)
+	// or a universe (universe-Plan). Drives both the gateway's tool reach and
+	// where the reply is persisted.
+	scope: ChatScope;
 	role: 'chat';
 	enableTools: boolean;
 	messages: ChatMessage[];
 	errorMessage: string;
 }): Response {
-	const { request, userId, storyId } = options;
+	const { request, userId, scope } = options;
+	const storyId = 'storyId' in scope ? scope.storyId : undefined;
+	const universeId = 'universeId' in scope ? scope.universeId : undefined;
 	const encoder = new TextEncoder();
 	const frame = (event: StreamEvent) => encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 
@@ -74,6 +92,7 @@ export function assistantSseResponse(options: {
 				for await (const event of stream(db, {
 					userId,
 					storyId,
+					universeId,
 					role: options.role,
 					enableTools: options.enableTools,
 					messages: options.messages,
@@ -84,7 +103,7 @@ export function assistantSseResponse(options: {
 					else if (event.type === 'proposal') proposals.push(event.proposal);
 					if (event.type === 'done') {
 						if (reply.trim() || proposals.length > 0) {
-							await appendChat(db, userId, storyId, {
+							await appendChat(db, userId, scope, {
 								role: 'assistant',
 								content: reply,
 								meta: proposals.length > 0 ? { proposals } : null

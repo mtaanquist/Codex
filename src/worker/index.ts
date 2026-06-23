@@ -50,7 +50,11 @@ import {
 	recordAssetMigrationResult,
 	s3AssetStore
 } from '../lib/server/assets.ts';
-import { reviewStoryScenes } from '../lib/server/llm/scene-review.ts';
+import {
+	reviewStoryScenes,
+	reviewStoryContinuity,
+	reviewUniverseContinuity
+} from '../lib/server/llm/scene-review.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -184,12 +188,60 @@ await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 // single-scene endpoint, just unattended and over many scenes.
 await boss.work<{
 	userId: string;
-	storyId: string;
+	storyId?: string;
+	universeId?: string;
 	chapterId?: string;
 	categories?: ReviewCategory[];
+	mode?: 'full' | 'continuity';
 }>(ASSISTANT_REVIEW_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		const { userId, storyId, chapterId, categories } = job.data;
+		const { userId, storyId, universeId, chapterId, categories, mode } = job.data;
+
+		// A universe-wide continuity pass: no single story owns it. The notes land
+		// on each owning story's scene; the writer is pointed at the universe Plan
+		// page to follow them.
+		if (mode === 'continuity' && universeId) {
+			const [universe] = await db
+				.select({
+					ownerId: schema.universes.ownerId,
+					name: schema.universes.name,
+					slug: schema.universes.slug
+				})
+				.from(schema.universes)
+				.where(eq(schema.universes.id, universeId));
+			if (!universe || universe.ownerId !== userId) {
+				console.warn(
+					`assistant continuity: universe ${universeId} not owned by ${userId}, skipping`
+				);
+				continue;
+			}
+			const href = `/universes/${universe.slug}/plan`;
+			let title: string;
+			try {
+				const result = await reviewUniverseContinuity(db, { userId, universeId });
+				if (!result.ran) {
+					title = `There was nothing to compare for continuity in "${universe.name}".`;
+				} else if (result.notes === 0) {
+					title = `The Assistant found no continuity issues across "${universe.name}".`;
+				} else {
+					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} across "${universe.name}".`;
+				}
+			} catch {
+				title = `The Assistant could not run the continuity pass on "${universe.name}". Check the endpoint in your settings.`;
+			}
+			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
+				title,
+				href
+			});
+			await queueDigests(digestUsers);
+			console.log(`assistant continuity: universe ${universeId} done`);
+			continue;
+		}
+
+		if (!storyId) {
+			console.warn('assistant review: no story or universe in scope, skipping');
+			continue;
+		}
 		const [story] = await db
 			.select({
 				ownerId: schema.stories.ownerId,
@@ -203,8 +255,34 @@ await boss.work<{
 			console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
 			continue;
 		}
-		const result = await reviewStoryScenes(db, { userId, storyId, chapterId, categories });
 		const href = `/stories/${story.slug}/review`;
+
+		// A standalone story continuity pass: the consistency run alone, with no
+		// per-scene copyedit passes before it.
+		if (mode === 'continuity') {
+			let title: string;
+			try {
+				const result = await reviewStoryContinuity(db, { userId, storyId });
+				if (!result.ran) {
+					title = `"${story.title}" needs at least two scenes for a continuity pass.`;
+				} else if (result.notes === 0) {
+					title = `The Assistant found no continuity issues in "${story.title}".`;
+				} else {
+					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
+				}
+			} catch {
+				title = `The Assistant could not run the continuity pass on "${story.title}". Check the endpoint in your settings.`;
+			}
+			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
+				title,
+				href
+			});
+			await queueDigests(digestUsers);
+			console.log(`assistant continuity: story ${storyId} done`);
+			continue;
+		}
+
+		const result = await reviewStoryScenes(db, { userId, storyId, chapterId, categories });
 		let title: string;
 		if (result.reviewed === 0 && result.failed > 0) {
 			title = `The Assistant could not review "${story.title}". Check the endpoint in your settings.`;

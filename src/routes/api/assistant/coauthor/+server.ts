@@ -32,7 +32,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (instruction.length > 2000) error(400, 'That brief is too long.');
 	const story = await requireAssistantStory(userId, payload.storyId);
 
-	const context = await assembleContext(db, { userId, storyId: story.id, sceneId });
+	// precedingProse anchors voice and continuity on the previous scene's prose,
+	// the missing piece when the writer drafts into an empty or short scene.
+	const context = await assembleContext(db, {
+		userId,
+		storyId: story.id,
+		sceneId,
+		precedingProse: true
+	});
 	const task: ChatMessage = { role: 'user', content: buildCoauthorMessage(instruction, reference) };
 	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];
 

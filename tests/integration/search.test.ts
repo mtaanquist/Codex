@@ -20,6 +20,7 @@ let pool: pg.Pool;
 let db: Database;
 let ownerId: string;
 let strangerId: string;
+let universeId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -43,6 +44,7 @@ beforeAll(async () => {
 		.insert(universes)
 		.values({ ownerId, name: 'The Ashlands', slug: 'the-ashlands' })
 		.returning();
+	universeId = universe.id;
 	const [story] = await db
 		.insert(stories)
 		.values({ universeId: universe.id, ownerId, title: 'Book of Ash', slug: 'book-of-ash' })
@@ -118,5 +120,28 @@ describe('searchAll', () => {
 		expect(passages[0].label).toContain('obsidian coins');
 		expect(passages[0].sublabel).toBe('Embers - Book of Ash');
 		expect(passages[0].href).toMatch(/^\/stories\/book-of-ash\?scene=[0-9a-f-]{36}$/);
+	});
+
+	it('restricts to one universe when given (the Assistant search_text tool)', async () => {
+		// A second universe whose name and story also match "ash", so the filter,
+		// not the absence of matches, is what narrows the results.
+		const [other] = await db
+			.insert(universes)
+			.values({ ownerId, name: 'Ash Mirror', slug: 'ash-mirror' })
+			.returning();
+		await db
+			.insert(stories)
+			.values({ universeId: other.id, ownerId, title: 'Ash Reflected', slug: 'ash-reflected' });
+
+		const unfiltered = await searchAll(db, ownerId, 'ash');
+		expect(unfiltered.some((r) => r.label === 'Ash Mirror')).toBe(true);
+		expect(unfiltered.some((r) => r.label === 'The Ashlands')).toBe(true);
+
+		const filtered = await searchAll(db, ownerId, 'ash', { universeId });
+		// Only the first universe's hits survive; the other universe is excluded.
+		expect(filtered.some((r) => r.label === 'Ash Mirror')).toBe(false);
+		expect(filtered.some((r) => r.label === 'Ash Reflected')).toBe(false);
+		expect(filtered.some((r) => r.label === 'The Ashlands')).toBe(true);
+		expect(filtered.some((r) => r.label === 'Book of Ash')).toBe(true);
 	});
 });

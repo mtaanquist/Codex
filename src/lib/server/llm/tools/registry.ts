@@ -24,13 +24,14 @@ export const TOOLS: ToolDef[] = [
 		kind: 'read',
 		name: 'list_scenes',
 		description:
-			"List the story's chapters and scenes in order, with each scene's id, title, status, and summary. Use the ids with get_scene to read a scene in full.",
+			"List the chapters and scenes of every story in this universe, grouped by story, with each scene's id, title, status, and summary. Use the ids with get_scene to read a scene in full.",
 		parameters: obj({}, [])
 	},
 	{
 		kind: 'read',
 		name: 'get_scene',
-		description: "Fetch a scene's title, status, summary, and full prose body by its id.",
+		description:
+			"Fetch a scene's title, status, summary, and full prose body by its id. The scene can belong to any story in this universe, so you can read across stories to check continuity.",
 		parameters: obj({ sceneId: str('The scene id.') }, ['sceneId'])
 	},
 	{
@@ -44,14 +45,14 @@ export const TOOLS: ToolDef[] = [
 		kind: 'read',
 		name: 'find_appearances',
 		description:
-			'List where an entity is mentioned in the current story, with a text snippet and the character offset of each mention, for grounding and citation.',
+			'List where an entity is mentioned across the stories in this universe, with a text snippet, the owning story, and the character offset of each mention, for grounding and citation.',
 		parameters: obj({ entityId: str('The entity id.') }, ['entityId'])
 	},
 	{
 		kind: 'read',
 		name: 'search_text',
 		description:
-			"Search the author's own universes, stories, scenes, entities, and prose by substring. Returns labelled results with links.",
+			'Search the stories, scenes, entities, and prose in this universe by substring. Returns labelled results with links.',
 		parameters: obj({ query: str('The text to search for.') }, ['query'])
 	},
 	{

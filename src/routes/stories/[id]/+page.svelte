@@ -773,17 +773,23 @@
 				</div>
 				{#if rightTab === 'assistant' && data.assistant.tabEnabled}
 					<AssistantPanel
-						storyId={data.story.id}
+						scope={{ storyId: data.story.id, storyTitle: data.story.title }}
 						sceneId={data.selectedScene?.id ?? null}
 						name={data.assistant.name}
-						storyTitle={data.story.title}
 						muted={data.assistant.muted}
 						suggestions={assistantSuggestions}
 						initialMessages={data.assistantChat}
 						onConfirmSplit={confirmAssistantSplit}
 						onRevertSplit={revertAssistantSplit}
+						reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 							? (text) => sceneEditor?.insertAtCursor(text)
+							: undefined}
+						getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+							? () => sceneEditor?.getSelectionText() ?? null
+							: undefined}
+						onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+							? (text) => sceneEditor?.replaceSelection(text)
 							: undefined}
 					/>
 				{:else if rightTab === 'session'}
