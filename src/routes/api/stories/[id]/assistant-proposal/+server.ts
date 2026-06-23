@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const matched = await setProposalConfirmed(
 		db,
 		locals.user!.id,
-		story.id,
+		{ storyId: story.id },
 		{ sceneId: payload.sceneId, before: payload.before },
 		confirmed
 	);

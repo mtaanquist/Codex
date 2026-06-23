@@ -16,25 +16,29 @@
 	import { dismiss } from '$lib/dismiss';
 
 	let {
-		storyId,
+		scope,
 		sceneId = null,
 		name,
-		storyTitle,
-		muted,
+		muted = false,
 		suggestions = [],
 		initialMessages = [],
 		onConfirmSplit,
 		onRevertSplit,
 		onInsert
 	}: {
-		storyId: string;
-		// The open scene, sent as the focus of context assembly; null off a scene.
+		// The conversation this panel serves: a single story (Write, Review, story
+		// Plan) or the whole universe (universe Plan). The story scope carries the
+		// editor affordances (recap, summaries, mute, insert, split); the universe
+		// scope is chat and cross-story grounding only.
+		scope: { storyId: string; storyTitle: string } | { universeId: string; universeName: string };
+		// The open scene, sent as the focus of context assembly; null off a scene
+		// and on the universe surface.
 		sceneId?: string | null;
 		// The Assistant's display name, shown over its replies.
 		name: string;
-		storyTitle: string;
-		// This story has muted the Assistant; the tab stays to un-mute.
-		muted: boolean;
+		// This story has muted the Assistant; the tab stays to un-mute. Story scope
+		// only - the universe surface has no per-universe mute.
+		muted?: boolean;
 		// Grounded starter prompts shown when the conversation is empty.
 		suggestions?: string[];
 		// The stored conversation, loaded with the page; the panel seeds from it
@@ -77,11 +81,24 @@
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
+	// The scope discriminant and its pieces. Fixed for the panel's life (a
+	// surface does not change scope), so plain consts off the prop.
+	// svelte-ignore state_referenced_locally
+	const isStory = 'storyId' in scope;
+	// svelte-ignore state_referenced_locally
+	const scopeTitle = 'storyId' in scope ? scope.storyTitle : scope.universeName;
+
+	// The scope fields the request bodies carry: the story or the universe.
+	function scopeBody(): { storyId: string } | { universeId: string } {
+		return 'storyId' in scope ? { storyId: scope.storyId } : { universeId: scope.universeId };
+	}
+
 	// Seeded once at mount from the stored conversation, falling back to a
 	// synthesized opening line (which is never stored); the transcript is then
 	// client-held until the next mount picks up the persisted turns.
-	// svelte-ignore state_referenced_locally
-	const opening = `I've read your codex for ${storyTitle}. Ask me about your characters, check continuity, or work a scene.`;
+	const opening = isStory
+		? `I've read your codex for ${scopeTitle}. Ask me about your characters, check continuity, or work a scene.`
+		: `I've read your codex for ${scopeTitle}. Ask me anything across its stories - characters, places, lore, or continuity between the books.`;
 	// svelte-ignore state_referenced_locally
 	const seeded: Message[] = initialMessages.map((m) => ({
 		role: m.role,
@@ -243,8 +260,8 @@
 		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
 		await streamInto('/api/assistant/chat', {
-			storyId,
-			sceneId,
+			...scopeBody(),
+			...(isStory ? { sceneId } : {}),
 			messages: turns
 				.slice(-40)
 				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
@@ -321,9 +338,11 @@
 	// Catch me up: a recap of the story so far, streamed in as an assistant turn
 	// with no question of its own.
 	async function catchUp() {
-		if (busy) return;
+		// Recap is "the story so far"; there is no universe-wide recap, so the
+		// universe surface has no catch-up.
+		if (busy || !('storyId' in scope)) return;
 		messages = [...messages, { role: 'assistant', content: '' }];
-		await streamInto('/api/assistant/recap', { storyId, sceneId });
+		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId });
 	}
 
 	// Update summaries: a background pass that drafts and refreshes scene and
@@ -331,10 +350,11 @@
 	// confirms; the writer is notified when it finishes.
 	let summarising = $state(false);
 	async function updateSummaries() {
-		if (summarising) return;
+		// Summary maintenance is per story; the universe surface does not offer it.
+		if (summarising || !('storyId' in scope)) return;
 		summarising = true;
 		try {
-			await startSummariesJob(storyId);
+			await startSummariesJob(scope.storyId);
 		} finally {
 			summarising = false;
 		}
@@ -353,7 +373,7 @@
 			const response = await fetch('/api/assistant/chat', {
 				method: 'DELETE',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId })
+				body: JSON.stringify(scopeBody())
 			});
 			if (!response.ok) {
 				flashActivity('failed', 'Could not clear the conversation', 'Try again in a moment.');
@@ -438,11 +458,13 @@
 		<div class="assistant-head">
 			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
 			<div class="head-actions">
-				<form method="POST" action="?/muteAssistant" use:enhance>
-					<button class="mute-link" type="submit" title="Hide the Assistant for this story">
-						Mute for this story
-					</button>
-				</form>
+				{#if isStory}
+					<form method="POST" action="?/muteAssistant" use:enhance>
+						<button class="mute-link" type="submit" title="Hide the Assistant for this story">
+							Mute for this story
+						</button>
+					</form>
+				{/if}
 			</div>
 		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
@@ -558,26 +580,28 @@
 				</button>
 				{#if actionsOpen}
 					<div class="composer-menu popover" role="menu">
-						<button
-							class="menu-item"
-							type="button"
-							role="menuitem"
-							disabled={busy}
-							title="Recap the story up to where you are"
-							onclick={() => runAction(() => void catchUp())}
-						>
-							Catch me up
-						</button>
-						<button
-							class="menu-item"
-							type="button"
-							role="menuitem"
-							disabled={summarising}
-							title="Draft and refresh scene and chapter summaries in the background"
-							onclick={() => runAction(() => void updateSummaries())}
-						>
-							{summarising ? 'Starting...' : 'Update summaries'}
-						</button>
+						{#if isStory}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								disabled={busy}
+								title="Recap the story up to where you are"
+								onclick={() => runAction(() => void catchUp())}
+							>
+								Catch me up
+							</button>
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								disabled={summarising}
+								title="Draft and refresh scene and chapter summaries in the background"
+								onclick={() => runAction(() => void updateSummaries())}
+							>
+								{summarising ? 'Starting...' : 'Update summaries'}
+							</button>
+						{/if}
 						<button
 							class="menu-item"
 							type="button"

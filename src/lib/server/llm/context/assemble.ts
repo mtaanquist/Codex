@@ -4,10 +4,13 @@ import {
 	activeLore,
 	inScopeEntities,
 	loadStoryScope,
+	loadUniverseScope,
 	sceneNeighbourhood,
 	scenesUpTo,
 	scopeNotes,
 	storySkeleton,
+	universeEntities,
+	universeSkeleton,
 	type ChapterSkeleton,
 	type CurrentScene,
 	type NeighbourScene,
@@ -16,7 +19,9 @@ import {
 	type ScopeLore,
 	type ScopeNote,
 	type SceneSummary,
-	type StoryScope
+	type StorySkeleton,
+	type StoryScope,
+	type UniverseScope
 } from './sources.ts';
 
 // Assemble the world context for a request, in tiers, against a token budget.
@@ -68,6 +73,9 @@ export function selectWithinBudget(tiers: ContextTier[], budgetTokens: number): 
 }
 
 export type AssembledContext = {
+	// Which surface this was assembled for: a story focus or the whole universe.
+	// Drives the system preamble (see buildSystemMessage).
+	kind: 'story' | 'universe';
 	text: string;
 	estimatedTokens: number;
 	budgetTokens: number;
@@ -86,22 +94,38 @@ export type AssembledContext = {
 
 export type AssembleOptions = {
 	userId: string;
-	storyId: string;
+	// The focus path: a story (and optionally a scene) the writer has open. When
+	// absent, universeId drives the universe-Plan path.
+	storyId?: string;
+	// The universe path: no story focus, the whole universe in view.
+	universeId?: string;
 	// The scene in focus, if any; drives the scene-local tier and lore keyword
-	// activation.
+	// activation. Only meaningful on the focus path.
 	sceneId?: string;
 	// The writer's question or selection, folded into lore keyword activation.
 	focusText?: string;
 	budgetTokens?: number;
 };
 
-// The one entry: gather every tier, render, and fit to budget. Returns null when
-// the story is not the user's (owner-scoped through loadStoryScope).
+// The one entry: gather every tier, render, and fit to budget. Branches on the
+// scope - a story focus (the Write/Review/story-Plan path) or the whole
+// universe (the universe-Plan path). Returns null when the scope is not the
+// user's (owner-scoped through the loaders).
 export async function assembleContext(
 	db: Database,
 	options: AssembleOptions
 ): Promise<AssembledContext | null> {
-	const scope = await loadStoryScope(db, options.userId, options.storyId);
+	if (options.storyId) return assembleStoryContext(db, options, options.storyId);
+	if (options.universeId) return assembleUniverseContext(db, options, options.universeId);
+	return null;
+}
+
+async function assembleStoryContext(
+	db: Database,
+	options: AssembleOptions,
+	storyId: string
+): Promise<AssembledContext | null> {
+	const scope = await loadStoryScope(db, options.userId, storyId);
 	if (!scope) return null;
 	const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
 
@@ -109,6 +133,11 @@ export async function assembleContext(
 	const skeleton = await storySkeleton(db, scope.storyId);
 	const entities = await inScopeEntities(db, scope.universeId, scope.storyId);
 	const notes = await scopeNotes(db, options.userId, scope.universeId, scope.storyId);
+	// The other stories in the universe, so a focused turn can reach across for
+	// continuity; bodies stay out (the model pulls them with get_scene).
+	const backbone = (await universeSkeleton(db, scope.universeId)).filter(
+		(s) => s.storyId !== scope.storyId
+	);
 
 	// What a 'keyword' lore entry matches against: the writer's focus, the
 	// current scene, neighbour summaries, and the in-scope entity names.
@@ -121,18 +150,21 @@ export async function assembleContext(
 	const lore = await activeLore(db, scope.universeId, scope.storyId, scopeText);
 
 	// Tier order is the spec's: frame, scene-local, summaries, entities, lore,
-	// notes. Under budget pressure the later tiers drop first. Provisional.
+	// notes, then the low-priority universe backbone last so it drops first
+	// under budget pressure. Provisional.
 	const tiers: ContextTier[] = [
 		{ name: 'frame', text: renderFrame(scope) },
 		{ name: 'scene-local', text: renderSceneLocal(neighbourhood) },
 		{ name: 'summaries', text: renderSkeleton(skeleton) },
 		{ name: 'entities', text: renderEntities(entities) },
 		{ name: 'lore', text: renderLore(lore) },
-		{ name: 'notes', text: renderNotes(notes) }
+		{ name: 'notes', text: renderNotes(notes) },
+		{ name: 'universe-backbone', text: renderUniverseBackbone(backbone) }
 	];
 	const budgeted = selectWithinBudget(tiers, budgetTokens);
 
 	return {
+		kind: 'story',
 		text: budgeted.text,
 		estimatedTokens: budgeted.estimatedTokens,
 		budgetTokens,
@@ -147,6 +179,52 @@ export async function assembleContext(
 					: []),
 				...neighbourhood.neighbours.map((n) => ({ id: n.id, title: n.title }))
 			],
+			lore: lore.map((l) => ({ id: l.id, title: l.title }))
+		}
+	};
+}
+
+async function assembleUniverseContext(
+	db: Database,
+	options: AssembleOptions,
+	universeId: string
+): Promise<AssembledContext | null> {
+	const scope = await loadUniverseScope(db, options.userId, universeId);
+	if (!scope) return null;
+	const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
+
+	const stories = await universeSkeleton(db, universeId);
+	const entities = await universeEntities(db, universeId);
+	const notes = await scopeNotes(db, options.userId, universeId);
+
+	const scopeText = [options.focusText ?? '', ...entities.map((e) => e.name)].join('\n');
+	const lore = await activeLore(db, universeId, undefined, scopeText);
+
+	// No scene-local tier (no story focus): frame, the per-story outline,
+	// entities, lore, notes. Later tiers drop first under budget pressure.
+	const tiers: ContextTier[] = [
+		{ name: 'universe-frame', text: renderUniverseFrame(scope) },
+		{ name: 'universe-outline', text: renderUniverseOutline(stories) },
+		{ name: 'entities', text: renderEntities(entities) },
+		{ name: 'lore', text: renderLore(lore) },
+		{ name: 'notes', text: renderNotes(notes) }
+	];
+	const budgeted = selectWithinBudget(tiers, budgetTokens);
+
+	return {
+		kind: 'universe',
+		text: budgeted.text,
+		estimatedTokens: budgeted.estimatedTokens,
+		budgetTokens,
+		includedTiers: budgeted.includedTiers,
+		droppedTiers: budgeted.droppedTiers,
+		establishedSetting: scope.universeEstablished,
+		sources: {
+			entities: entities.map((e) => ({ id: e.id, kind: e.kind, name: e.name })),
+			scenes: stories.flatMap((s) => [
+				...s.chapters.flatMap((c) => c.scenes.map((sc) => ({ id: sc.id, title: sc.title }))),
+				...s.orphans.map((sc) => ({ id: sc.id, title: sc.title }))
+			]),
 			lore: lore.map((l) => ({ id: l.id, title: l.title }))
 		}
 	};
@@ -170,11 +248,40 @@ const PREAMBLE_ESTABLISHED =
 	'canon wherever they differ. Say when something rests on neither rather than ' +
 	'inventing it.';
 
+// The universe-Plan surface: no single story is in focus, the whole universe
+// is the working set. The retrieval tools reach across every story in it, so
+// the model can check continuity between books.
+const PREAMBLE_UNIVERSE =
+	'You are assisting the writer across their whole universe - every story in ' +
+	'it, its characters, places, and lore. The following is the context: the ' +
+	'world, its stories in outline, characters, places, and lore. Ground your ' +
+	'answers in this material and the stories you can read through the tools, ' +
+	'and say when something is not covered rather than inventing it.';
+
+const PREAMBLE_UNIVERSE_ESTABLISHED =
+	'You are assisting the writer across their whole universe, set in an ' +
+	'established published setting. The following is the context: the world, its ' +
+	'stories in outline, characters, places, and lore. Ground your answers in ' +
+	'this material first; you may also draw on the published canon, but the ' +
+	"writer's own material here overrides that canon wherever they differ. Say " +
+	'when something rests on neither rather than inventing it.';
+
 // Appended only when the turn offers tools; a tool-less surface must not be
-// told about tools it cannot call.
+// told about tools it cannot call. The reads reach across every story in the
+// universe, not just the story in focus.
 const TOOL_HINT =
-	'Any scene can be read in full with the get_scene tool using the scene ids ' +
-	'shown in the outline; list_scenes returns the full chapter and scene list.';
+	'Any scene in this universe can be read in full with the get_scene tool ' +
+	'using the scene ids shown in the outline; list_scenes returns the chapter ' +
+	'and scene list for every story in the universe, and search_text and ' +
+	'find_appearances reach across all of them, so you can check one story ' +
+	'against another.';
+
+function pickPreamble(kind: 'story' | 'universe', established: boolean): string {
+	if (kind === 'universe') {
+		return established ? PREAMBLE_UNIVERSE_ESTABLISHED : PREAMBLE_UNIVERSE;
+	}
+	return established ? PREAMBLE_ESTABLISHED : PREAMBLE;
+}
 
 // Wrap assembled context as a system message for the gateway. The surfaces call
 // this, then hand the messages to the gateway; the gateway stays generic.
@@ -182,7 +289,7 @@ export function buildSystemMessage(
 	context: AssembledContext,
 	options?: { tools?: boolean }
 ): ChatMessage {
-	const preamble = context.establishedSetting ? PREAMBLE_ESTABLISHED : PREAMBLE;
+	const preamble = pickPreamble(context.kind, context.establishedSetting);
 	const head = options?.tools ? `${preamble} ${TOOL_HINT}` : preamble;
 	return { role: 'system', content: `${head}\n\n${context.text}` };
 }
@@ -268,6 +375,52 @@ function renderFrame(scope: StoryScope): string {
 	}
 	lines.push('', `## World: ${scope.universeName}`);
 	if (scope.universeDescription) lines.push(scope.universeDescription);
+	return lines.join('\n');
+}
+
+function renderUniverseFrame(scope: UniverseScope): string {
+	const lines = [`# World: ${scope.universeName}`];
+	if (scope.universeDescription) lines.push(scope.universeDescription);
+	return lines.join('\n');
+}
+
+// Every story in the universe as a titled outline block: brief, scene count,
+// and its chapter/scene summary lines (with scene ids, so a tool turn can read
+// any of them). The universe-Plan surface's backbone.
+function renderUniverseOutline(stories: StorySkeleton[]): string {
+	const blocks = stories.map(renderStoryOutlineBlock).filter(Boolean);
+	if (!blocks.length) return '';
+	return ['## Stories in this universe', ...blocks].join('\n\n');
+}
+
+// A compact index of the other stories for a focused turn: title, brief, and
+// scene count, but no scene-by-scene lines (the focus story already carries the
+// detailed outline). Lets the model know what else exists and pull specifics
+// with the tools.
+function renderUniverseBackbone(stories: StorySkeleton[]): string {
+	if (!stories.length) return '';
+	const lines = ['## Other stories in this universe'];
+	for (const story of stories) {
+		const parts = [`### ${story.storyTitle}`];
+		if (story.storyBrief) parts.push(story.storyBrief);
+		parts.push(`${story.sceneCount} scene${story.sceneCount === 1 ? '' : 's'}.`);
+		lines.push(parts.join('\n'));
+	}
+	return lines.join('\n');
+}
+
+function renderStoryOutlineBlock(story: StorySkeleton): string {
+	const lines = [`### Story: ${story.storyTitle}`];
+	if (story.storyBrief) lines.push(story.storyBrief);
+	for (const chapter of story.chapters) {
+		lines.push(`#### Chapter${title(chapter.title)}`);
+		if (chapter.summaryMd) lines.push(chapter.summaryMd);
+		for (const scene of chapter.scenes) lines.push(renderSceneSummaryLine(scene));
+	}
+	if (story.orphans.length) {
+		lines.push('#### Unfiled scenes');
+		for (const scene of story.orphans) lines.push(renderSceneSummaryLine(scene));
+	}
 	return lines.join('\n');
 }
 

@@ -47,7 +47,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	return assistantSseResponse({
 		request,
 		userId,
-		storyId: story.id,
+		scope: { storyId: story.id },
 		role: 'chat',
 		enableTools: false,
 		messages,

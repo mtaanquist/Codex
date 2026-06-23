@@ -71,7 +71,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	}));
 	// The stored conversation seeds the review page's Assistant tab, the same
 	// transcript as the Write editor's; nothing to load when the tab is off.
-	const assistantChat = assistant.tabEnabled ? await listChat(db, locals.user!.id, story.id) : [];
+	const assistantChat = assistant.tabEnabled
+		? await listChat(db, locals.user!.id, { storyId: story.id })
+		: [];
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },

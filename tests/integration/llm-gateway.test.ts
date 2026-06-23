@@ -374,11 +374,16 @@ describe('gateway tool loop', () => {
 		expect(text).toBe('One scene so far.');
 		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
 		const listed = JSON.parse(toolMessage!.content) as {
-			chapters: unknown[];
-			unfiledScenes: { id: string; title: string | null }[];
+			stories: {
+				storyId: string;
+				chapters: unknown[];
+				unfiledScenes: { id: string; title: string | null }[];
+			}[];
 		};
-		// The seeded scene has no chapter, so it lists as unfiled, id included.
-		expect(listed.unfiledScenes.map((s) => s.id)).toContain(sceneId);
+		// The skeleton is grouped by story across the universe; the seeded scene
+		// has no chapter, so it lists as unfiled under its story, id included.
+		const allUnfiled = listed.stories.flatMap((s) => s.unfiledScenes.map((sc) => sc.id));
+		expect(allUnfiled).toContain(sceneId);
 	});
 
 	it('a write tool stages a suggestion authored by the Assistant and changes nothing', async () => {
@@ -623,7 +628,7 @@ describe('gateway tool loop', () => {
 		expect(staged).toHaveLength(0);
 	});
 
-	it('does not offer tools without a story context', async () => {
+	it('does not offer tools without a story or universe context', async () => {
 		await configure(true);
 		const script = scriptedProvider([{ content: 'plain answer' }]);
 		const text = await complete(
@@ -632,8 +637,96 @@ describe('gateway tool loop', () => {
 			{ provider: script.provider, http: noHttp }
 		);
 		expect(text).toBe('plain answer');
-		// No story -> tools never offered.
+		// No story and no universe -> tools never offered.
 		expect(script.seen[0].some((m) => m.role === 'tool')).toBe(false);
+	});
+});
+
+// The read tools reach every story in the universe, which is the cross-story
+// continuity payoff. A scene in another story of the same universe is readable
+// from a story focus or from the universe surface; one in another universe or
+// another user's work is not.
+describe('gateway universe-scoped tools', () => {
+	const noHttp: HttpRequest = async () => {
+		throw new Error('the injected provider should not call the transport');
+	};
+
+	async function seedSceneIn(universe: string, body: string): Promise<string> {
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe, ownerId: userId, title: 'S' })
+			.returning({ id: stories.id });
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1, title: 'Scene', bodyMd: body })
+			.returning({ id: scenes.id });
+		return scene.id;
+	}
+
+	async function readSceneVia(
+		req: { storyId?: string; universeId?: string },
+		sceneId: string
+	): Promise<string> {
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'read' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				...req,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		return script.seen[1].find((m) => m.role === 'tool')!.content;
+	}
+
+	it('reads another story in the same universe from a story focus and from the universe surface', async () => {
+		await configure(true);
+		const { storyId: storyA } = await seedStoryScene('Story A opening.');
+		const sceneB = await seedSceneIn(universeId, 'Story B holds the secret.');
+
+		// From story A's focus: the other story in the universe is reachable.
+		expect(await readSceneVia({ storyId: storyA }, sceneB)).toContain('Story B holds the secret.');
+		// From the universe surface (no story focus): also reachable.
+		expect(await readSceneVia({ universeId }, sceneB)).toContain('Story B holds the secret.');
+	});
+
+	it('refuses a scene in another universe or another user, even with a valid id', async () => {
+		await configure(true);
+		const [otherUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Other' })
+			.returning({ id: universes.id });
+		const sceneElsewhere = await seedSceneIn(otherUniverse.id, 'A different world.');
+		// The universe surface is scoped to universeId; a scene in another universe
+		// is not found.
+		expect(await readSceneVia({ universeId }, sceneElsewhere)).toContain('No scene with that id');
+
+		const [stranger] = await db
+			.insert(users)
+			.values({ email: 's@example.com', displayName: 'Sam', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		const [strangerUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: stranger.id, name: 'Strangers' })
+			.returning({ id: universes.id });
+		const [strangerStory] = await db
+			.insert(stories)
+			.values({ universeId: strangerUniverse.id, ownerId: stranger.id, title: 'X' })
+			.returning({ id: stories.id });
+		const [strangerScene] = await db
+			.insert(scenes)
+			.values({ storyId: strangerStory.id, globalPosition: 1, bodyMd: 'Secret.' })
+			.returning({ id: scenes.id });
+		expect(await readSceneVia({ universeId }, strangerScene.id)).toContain('No scene with that id');
 	});
 });
 

@@ -19,11 +19,17 @@ function pattern(query: string): string {
 export async function searchAll(
 	db: Database,
 	userId: string,
-	query: string
+	query: string,
+	// Restricts the search to one universe (the Assistant's universe-scoped
+	// search_text tool); the command palette omits it and searches everything.
+	opts?: { universeId?: string }
 ): Promise<SearchResult[]> {
 	const trimmed = query.trim();
 	if (trimmed === '') return [];
 	const like = pattern(trimmed);
+	// Folded into every subquery's filter; undefined conditions are ignored by
+	// drizzle's and(), so an absent universe means no restriction.
+	const inUniverse = opts?.universeId ? eq(universes.id, opts.universeId) : undefined;
 
 	// All seven queries are independent and run on a pooled connection, so the
 	// palette pays one round trip's latency per keystroke instead of seven.
@@ -36,7 +42,8 @@ export async function searchAll(
 					and(
 						eq(universes.ownerId, userId),
 						ilike(universes.name, like),
-						isNull(universes.deletedAt)
+						isNull(universes.deletedAt),
+						inUniverse
 					)
 				)
 				.orderBy(asc(universes.name))
@@ -51,7 +58,12 @@ export async function searchAll(
 				.from(stories)
 				.innerJoin(universes, eq(stories.universeId, universes.id))
 				.where(
-					and(eq(stories.ownerId, userId), ilike(stories.title, like), isNull(universes.deletedAt))
+					and(
+						eq(stories.ownerId, userId),
+						ilike(stories.title, like),
+						isNull(universes.deletedAt),
+						inUniverse
+					)
 				)
 				.orderBy(asc(stories.title))
 				.limit(PER_TYPE),
@@ -70,7 +82,8 @@ export async function searchAll(
 						eq(stories.ownerId, userId),
 						ilike(scenes.title, like),
 						isNull(scenes.deletedAt),
-						isNull(universes.deletedAt)
+						isNull(universes.deletedAt),
+						inUniverse
 					)
 				)
 				.orderBy(asc(scenes.title))
@@ -94,7 +107,8 @@ export async function searchAll(
 						eq(stories.ownerId, userId),
 						ilike(scenes.bodyMd, like),
 						isNull(scenes.deletedAt),
-						isNull(universes.deletedAt)
+						isNull(universes.deletedAt),
+						inUniverse
 					)
 				)
 				.orderBy(asc(stories.title), asc(scenes.globalPosition))
@@ -112,6 +126,7 @@ export async function searchAll(
 					and(
 						eq(characters.ownerId, userId),
 						isNull(universes.deletedAt),
+						inUniverse,
 						or(
 							ilike(characters.name, like),
 							sql`array_to_string(${characters.aliases}, ' ') ilike ${like}`
@@ -136,7 +151,8 @@ export async function searchAll(
 							ilike(places.name, like),
 							sql`array_to_string(${places.aliases}, ' ') ilike ${like}`
 						),
-						isNull(universes.deletedAt)
+						isNull(universes.deletedAt),
+						inUniverse
 					)
 				)
 				.orderBy(asc(places.name))
@@ -154,6 +170,7 @@ export async function searchAll(
 					and(
 						eq(loreEntries.ownerId, userId),
 						isNull(universes.deletedAt),
+						inUniverse,
 						or(
 							ilike(loreEntries.title, like),
 							sql`array_to_string(${loreEntries.keywords}, ' ') ilike ${like}`
