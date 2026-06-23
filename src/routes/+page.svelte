@@ -220,14 +220,28 @@
 									</div>
 								</form>
 							{:else}
-								<button class="card-add" type="button" onclick={() => (newStoryFor = universe.id)}>
-									<span class="plus">+</span>
-									<span
-										>{universe.standalone
-											? 'New standalone story'
-											: 'New story in this universe'}</span
+								<div class="card-add-stack">
+									<button
+										class="card-add"
+										type="button"
+										onclick={() => (newStoryFor = universe.id)}
 									>
-								</button>
+										<span class="plus">+</span>
+										<span
+											>{universe.standalone
+												? 'New standalone story'
+												: 'New story in this universe'}</span
+										>
+									</button>
+									<!-- eslint-disable svelte/no-navigation-without-resolve (resolve() plus a static hash) -->
+									<a
+										class="card-add-import"
+										href={`${resolve('/universes/[id]/[[section]]', { id: universe.slug, section: 'export' })}#import-story`}
+									>
+										Import a story from a file
+									</a>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								</div>
 							{/if}
 						</div>
 					</section>
@@ -368,6 +382,23 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+	}
+	.card-add-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.card-add-stack :global(.card-add) {
+		width: 100%;
+	}
+	.card-add-import {
+		text-align: center;
+		font-size: 12.5px;
+		color: var(--text-muted);
+		text-decoration: none;
+	}
+	.card-add-import:hover {
+		text-decoration: underline;
 	}
 	.trash-list {
 		display: flex;
