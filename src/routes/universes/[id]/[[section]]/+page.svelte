@@ -493,11 +493,13 @@
 			/>
 		</div>
 
-		<div class="admin-block">
+		<div class="admin-block" id="import-story">
 			<div class="admin-block-head">
 				<h2 class="admin-block-title">Import a story</h2>
 				<p class="admin-block-sub">
-					Bring a story export zip back in as a new story in this universe. Upload the file, check
+					Bring a manuscript in as a new story in this universe: a Codex export zip, a Word document
+					(.docx), or an EPUB (.epub). Chapters and scenes are detected from the document where it
+					marks them; otherwise the whole text comes in as a single scene. Upload the file, check
 					the preview, then import.
 				</p>
 			</div>
@@ -514,7 +516,7 @@
 				}}
 			>
 				<div class="import-pick">
-					<input type="file" name="archive" accept=".zip,application/zip" required />
+					<input type="file" name="archive" accept=".zip,application/zip,.docx,.epub" required />
 					<button class="btn btn-secondary" type="submit" disabled={importBusy}> Preview </button>
 				</div>
 				{#if form?.action === 'import' && form.message}

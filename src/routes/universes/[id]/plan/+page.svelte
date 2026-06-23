@@ -82,9 +82,19 @@
 			<p class="form-error" role="alert">{form.message}</p>
 		{/if}
 	{:else}
-		<button class="btn btn-secondary" type="button" onclick={() => (creatingStory = true)}>
-			New story
-		</button>
+		<div class="new-story-actions">
+			<button class="btn btn-secondary" type="button" onclick={() => (creatingStory = true)}>
+				New story
+			</button>
+			<!-- eslint-disable svelte/no-navigation-without-resolve (resolve() plus a static hash) -->
+			<a
+				class="btn btn-ghost"
+				href={`${resolve('/universes/[id]/[[section]]', { id: data.universe.slug, section: 'export' })}#import-story`}
+			>
+				Import story
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		</div>
 	{/if}
 {/snippet}
 
@@ -300,6 +310,11 @@
 	}
 	.new-story-form {
 		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.new-story-actions {
+		display: inline-flex;
 		gap: 8px;
 		align-items: center;
 	}
