@@ -190,22 +190,33 @@ export async function queueUserExport(exportId: string): Promise<boolean> {
 	}
 }
 
-// Queues a whole-story or single-chapter Assistant review. The singleton key
-// (story + chapter scope) coalesces repeat requests so a writer cannot pile up
-// duplicate passes over the same scenes while one is already running. Returns
-// the job id so the caller can poll it to completion, or null if the enqueue
-// failed (or coalesced into a pending job).
+// Queues a background Assistant review. Three shapes share the queue: a
+// whole-story or single-chapter copyedit (storyId, the default 'full' mode), a
+// standalone story continuity pass (storyId, mode 'continuity'), and a
+// universe-wide continuity pass (universeId, mode 'continuity'). The singleton
+// key coalesces repeat requests over the same scope so a writer cannot pile up
+// duplicate passes while one is already running. Returns the job id so the
+// caller can poll it to completion, or null if the enqueue failed (or coalesced
+// into a pending job).
 export async function queueAssistantReview(input: {
 	userId: string;
-	storyId: string;
+	storyId?: string;
+	universeId?: string;
 	chapterId?: string;
 	// The categories to check: empty is the sparing pass, all three the full
-	// copyedit plus the cross-scene consistency pass.
+	// copyedit plus the cross-scene consistency pass. Ignored by the continuity
+	// mode, which runs the consistency pass alone.
 	categories: ReviewCategory[];
+	mode?: 'full' | 'continuity';
 }): Promise<string | null> {
 	try {
 		const boss = await getBoss();
-		const scope = input.chapterId ? `${input.storyId}:${input.chapterId}` : input.storyId;
+		const target = input.universeId
+			? `universe:${input.universeId}`
+			: input.chapterId
+				? `${input.storyId}:${input.chapterId}`
+				: `${input.storyId}`;
+		const scope = `${input.mode ?? 'full'}:${target}`;
 		return await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
 			singletonKey: scope,
 			singletonSeconds: 30

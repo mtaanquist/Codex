@@ -30,6 +30,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	},
 	{ name: 'review', detail: 'Review a scene, chapter, or the whole story', scope: 'story' },
 	{ name: 'copyedit', detail: 'Run a full review at the current scope', scope: 'story' },
+	{
+		name: 'continuity-review',
+		detail: 'Check for continuity contradictions across the story or universe',
+		scope: 'both'
+	},
 	{ name: 'who', detail: 'Show a character or place sheet', scope: 'both', args: true },
 	{ name: 'find', detail: 'Search this universe', scope: 'both', args: true },
 	{ name: 'catchup', detail: 'Recap the story so far', scope: 'story' },

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildConsistencyMessage, buildReviewMessage } from './review';
+import {
+	buildConsistencyMessage,
+	buildReviewMessage,
+	buildUniverseConsistencyMessage
+} from './review';
 
 describe('buildReviewMessage', () => {
 	it('names the scene and its id, and steers to the staging tools', () => {
@@ -103,9 +107,24 @@ describe('buildConsistencyMessage', () => {
 			{ id: 's2', title: null }
 		]);
 		expect(message).toContain('cross-scene consistency pass');
-		expect(message).toContain('do not repeat per-scene notes');
+		expect(message).toContain('do not leave per-scene copyedit notes');
 		expect(message).toContain('The Gate (id: s1)');
 		expect(message).toContain('Scene 2 (id: s2)');
 		expect(message).toContain('only issues that span scenes');
+	});
+});
+
+describe('buildUniverseConsistencyMessage', () => {
+	it('groups scenes under their story and frames the task as cross-story', () => {
+		const message = buildUniverseConsistencyMessage([
+			{ storyTitle: 'First Light', scenes: [{ id: 's1', title: 'The Gate' }] },
+			{ storyTitle: 'Second Dawn', scenes: [{ id: 's2', title: null }] }
+		]);
+		expect(message).toContain('universe-wide continuity pass');
+		expect(message).toContain('contradict each other across the stories in this universe');
+		expect(message).toContain('Story: First Light');
+		expect(message).toContain('The Gate (id: s1)');
+		expect(message).toContain('Story: Second Dawn');
+		expect(message).toContain('Scene 1 (id: s2)');
 	});
 });
