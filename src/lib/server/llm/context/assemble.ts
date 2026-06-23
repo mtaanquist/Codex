@@ -5,6 +5,7 @@ import {
 	inScopeEntities,
 	loadStoryScope,
 	loadUniverseScope,
+	precedingSceneBody,
 	sceneNeighbourhood,
 	scenesUpTo,
 	scopeNotes,
@@ -14,6 +15,7 @@ import {
 	type ChapterSkeleton,
 	type CurrentScene,
 	type NeighbourScene,
+	type PrecedingScene,
 	type RecapScene,
 	type ScopeEntity,
 	type ScopeLore,
@@ -104,6 +106,10 @@ export type AssembleOptions = {
 	sceneId?: string;
 	// The writer's question or selection, folded into lore keyword activation.
 	focusText?: string;
+	// Opt-in for the Write action: include the immediately preceding scene's
+	// prose tail in the scene-local tier as a continuity and voice anchor. Off by
+	// default so ordinary chat turns are not inflated.
+	precedingProse?: boolean;
 	budgetTokens?: number;
 };
 
@@ -130,6 +136,12 @@ async function assembleStoryContext(
 	const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
 
 	const neighbourhood = await sceneNeighbourhood(db, scope.storyId, options.sceneId);
+	// The Write action anchors voice and continuity on the preceding scene's
+	// actual prose; ordinary turns skip it (the opt-in flag).
+	const preceding =
+		options.precedingProse && options.sceneId
+			? await precedingSceneBody(db, scope.storyId, options.sceneId)
+			: null;
 	const skeleton = await storySkeleton(db, scope.storyId);
 	const entities = await inScopeEntities(db, scope.universeId, scope.storyId);
 	const notes = await scopeNotes(db, options.userId, scope.universeId, scope.storyId);
@@ -154,7 +166,7 @@ async function assembleStoryContext(
 	// under budget pressure. Provisional.
 	const tiers: ContextTier[] = [
 		{ name: 'frame', text: renderFrame(scope) },
-		{ name: 'scene-local', text: renderSceneLocal(neighbourhood) },
+		{ name: 'scene-local', text: renderSceneLocal(neighbourhood, preceding) },
 		{ name: 'summaries', text: renderSkeleton(skeleton) },
 		{ name: 'entities', text: renderEntities(entities) },
 		{ name: 'lore', text: renderLore(lore) },
@@ -424,14 +436,36 @@ function renderStoryOutlineBlock(story: StorySkeleton): string {
 	return lines.join('\n');
 }
 
-function renderSceneLocal(neighbourhood: {
-	current: CurrentScene | null;
-	neighbours: NeighbourScene[];
-}): string {
+// The tail of a body, so a continuation reads from where the prose actually left
+// off. Marks the cut when the body is longer than the excerpt. Exported for the
+// unit test; pure.
+export function bodyTail(body: string): string {
+	const trimmed = body.trim();
+	if (trimmed.length <= RECAP_BODY_EXCERPT_CHARS) return trimmed;
+	return '[...] ' + trimmed.slice(trimmed.length - RECAP_BODY_EXCERPT_CHARS).trimStart();
+}
+
+function renderSceneLocal(
+	neighbourhood: {
+		current: CurrentScene | null;
+		neighbours: NeighbourScene[];
+	},
+	preceding: PrecedingScene | null = null
+): string {
 	if (!neighbourhood.current) return '';
 	const { current, neighbours } = neighbourhood;
 	const lines = [`## Current scene${current.title ? `: ${current.title}` : ''}`];
 	if (current.summaryMd) lines.push(`Summary: ${current.summaryMd}`);
+	// The preceding scene's prose tail, for the Write action: the voice to match
+	// and the moment the current scene continues from.
+	const tail = preceding ? bodyTail(preceding.bodyMd) : '';
+	if (tail) {
+		lines.push(
+			'',
+			`### Previous scene (the prose continues into this one)${title(preceding!.title)}`,
+			tail
+		);
+	}
 	lines.push('', current.bodyMd.trim() || '(empty)');
 	const before = neighbours.filter((n) => n.side === 'before');
 	const after = neighbours.filter((n) => n.side === 'after');

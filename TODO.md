@@ -651,9 +651,17 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   shared `AssistantPanel` takes a scope discriminator and both Plan pages get an
   Assistant pill (story Plan shares the Write thread; universe Plan is its own).
   Help doc (planning) updated. lint, check, unit + integration green locally;
-  Playwright e2e not run in this environment. Parts B-E (Write continuity prose,
-  `/write`, `/continuity-review`, `/rewrite` `/copyedit` `/who` `/find` + slash
-  polish) still to come.
+  Playwright e2e not run in this environment. Part B (done, branch
+  `feat/assistant-write-continuity`): the toolbar Write action now anchors on the
+  immediately preceding scene's actual prose, not just its summary, so a draft into
+  an empty or short scene continues the prior events and matches its voice. A
+  `precedingSceneBody` source returns the previous scene by global position
+  (skipping trashed scenes); `assembleContext` gains an opt-in `precedingProse`
+  flag that renders a tail excerpt (capped at the recap excerpt length) in the
+  scene-local tier; `/api/assistant/coauthor` sets the flag. Ordinary chat turns
+  are unchanged. Help doc (editor) updated. lint, check, unit + integration green
+  locally; e2e not run here. Parts C-E (`/write`, `/continuity-review`, `/rewrite`
+  `/copyedit` `/who` `/find` + slash polish) still to come.
 
 * [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
 * [x] 2. Drizzle + node-postgres, users table, first migration
