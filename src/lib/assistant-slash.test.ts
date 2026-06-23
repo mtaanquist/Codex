@@ -43,9 +43,15 @@ describe('matchSlash', () => {
 		const names = matchSlash('/', true).map((c) => c.name);
 		expect(names).not.toContain('write');
 		expect(names).not.toContain('review');
+		expect(names).not.toContain('copyedit');
 		expect(names).toContain('find');
 		expect(names).toContain('who');
 		expect(names).toContain('help');
+	});
+
+	it('offers continuity-review on both the story and the universe surface', () => {
+		expect(matchSlash('/continuity').map((c) => c.name)).toEqual(['continuity-review']);
+		expect(matchSlash('/continuity', true).map((c) => c.name)).toEqual(['continuity-review']);
 	});
 
 	it('is empty for non-slash input and unknown prefixes', () => {

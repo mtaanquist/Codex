@@ -677,8 +677,28 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   that work in both scopes. Selecting an `args` command from the menu leaves
   "/name " in the composer to type into. Help doc (editor) lists the new commands
   and the universe-scope subset. lint, check, unit green locally; e2e not run here
-  (the command flows are LLM-backed). Part D (`/continuity-review`, the
-  story-level + universe-wide continuity pass) still to come.
+  (the command flows are LLM-backed). Part D (done, branch
+  `feat/assistant-continuity-review`): the cross-scene consistency pass runs on
+  its own as `/continuity-review`, in both scopes. `scene-review.ts` gains a
+  shared `runConsistencyPass` (story or universe scope drives the assembled
+  context and the gateway's retrieval reach) and two entry points,
+  `reviewStoryContinuity` (one consistency pass over a story's scenes, no
+  per-scene copyedit passes) and `reviewUniverseContinuity` (one pass across every
+  story in the universe, scenes grouped by story); both skip when fewer than two
+  scenes are in scope. A `buildUniverseConsistencyMessage` prompt frames the task
+  as cross-story. The background job path is reused: `queueAssistantReview` grows
+  an optional `universeId` and a `mode` ('full' | 'continuity'), the review-job
+  endpoint queues a continuity job for a story focus or the whole universe, and
+  the worker branches on mode/scope, notifying with a continuity-specific message
+  (universe notes point at the universe Plan page). Because the write tools
+  resolve a scene's own owning story (Part A), a universe-wide contradiction
+  stages its thread on the owning story's scene whichever surface launched it.
+  Slash command `/continuity-review` is scope 'both'; `AssistantPanel` kicks the
+  job through a new `startContinuityReview` action. Help doc (editor) updated.
+  lint, check, unit + integration green locally (incl. a new continuity
+  integration test covering the story-level single pass, the no-op under two
+  scenes, the cross-story framing, and the owning-story thread attribution); e2e
+  not run here.
 
 * [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
 * [x] 2. Drizzle + node-postgres, users table, first migration

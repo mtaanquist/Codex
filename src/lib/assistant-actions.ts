@@ -116,6 +116,30 @@ export async function startBackgroundReview(opts: {
 	});
 }
 
+// Queues a standalone continuity pass and tracks it to completion. A story
+// focus checks one story; the universe surface checks every story against the
+// others. Findings stage as review notes on the owning story's scenes, and the
+// writer is notified when they land.
+export async function startContinuityReview(opts: {
+	scope: { storyId: string } | { universeId: string };
+	label: string;
+	reviewHref?: string;
+}): Promise<void> {
+	await launchJob({
+		url: '/api/assistant/review-job',
+		payload: { ...opts.scope, mode: 'continuity' },
+		kind: 'review',
+		failLabel: `Could not check continuity in ${opts.label}`,
+		startFallback: 'Could not start the continuity pass.',
+		track: {
+			runningLabel: `Checking continuity in ${opts.label}...`,
+			doneLabel: `Continuity check of ${opts.label} ready`,
+			failedLabel: `Could not check continuity in ${opts.label}`,
+			href: opts.reviewHref
+		}
+	});
+}
+
 // Kicks off the background summary pass and tracks it to completion in the
 // activity center; the writer is also notified when it ends.
 export async function startSummariesJob(storyId: string): Promise<void> {

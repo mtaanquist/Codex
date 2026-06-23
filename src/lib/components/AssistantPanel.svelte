@@ -9,7 +9,8 @@
 	import {
 		startSummariesJob,
 		reviewSceneWithAssistant,
-		startBackgroundReview
+		startBackgroundReview,
+		startContinuityReview
 	} from '$lib/assistant-actions';
 	import { openReviewModal } from '$lib/review-modal.svelte';
 	import { REVIEW_CATEGORIES } from '$lib/review-shape';
@@ -310,6 +311,9 @@
 			case 'copyedit':
 				void copyedit();
 				break;
+			case 'continuity-review':
+				void continuityReview();
+				break;
 			case 'who':
 				askWho(slashArgs(raw));
 				break;
@@ -484,6 +488,18 @@
 				reviewHref
 			});
 		}
+	}
+
+	// /continuity-review: kick a standalone continuity pass at the current scope.
+	// A story focus checks one story; the universe surface checks every story
+	// against the others. Runs in the background; findings land as review notes on
+	// the owning stories' scenes.
+	async function continuityReview() {
+		await startContinuityReview({
+			scope: scopeBody(),
+			label: isStory ? 'this story' : 'this universe',
+			reviewHref: isStory ? reviewHref : undefined
+		});
 	}
 
 	// /who: show a character or place sheet inline, a templated chat send that
