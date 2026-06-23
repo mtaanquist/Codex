@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
-import { scenes, stories } from '../../db/schema.ts';
+import { scenes, stories, universes } from '../../db/schema.ts';
 import { entityAppearances, getEntityCard } from '../../plan-data.ts';
 import { searchAll } from '../../search.ts';
 import {
@@ -10,20 +10,28 @@ import {
 	updateAssistantSuggestion
 } from '../../review.ts';
 import { locateSplitBefore } from '$lib/scene-split-locate';
-import { storySkeleton, type SceneSummary } from '../context/sources.ts';
+import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
 import type { ProviderToolCall, SplitProposal } from '../providers/types.ts';
 import { findTool } from './registry.ts';
 
-// Executes one tool call within an owner-scoped story context. Read tools query
-// and return data; write tools stage a review suggestion or comment and report
-// "staged" without touching authored content. Every handler is scoped to the
-// context's story and user, so a tool cannot reach another author's work even
-// if the model invents an id.
+// Executes one tool call within an owner-scoped universe context. Read tools
+// query and return data across every story in the universe; write tools stage a
+// review suggestion or comment on a specific scene and report "staged" without
+// touching authored content. Every handler is scoped to the context's universe
+// and user, so a tool cannot reach another author's work even if the model
+// invents an id. The reads reach the whole universe (the cross-story continuity
+// payoff); the writes resolve the loaded scene's own owning story, never a
+// fixed ctx.storyId, which is undefined on the universe surface.
 
 export type ToolContext = {
 	db: Database;
 	userId: string;
-	storyId: string;
+	// The retrieval reach: every story the user owns in this universe.
+	universeId: string;
+	// The focus story, when a single one is open (Write/Review/story-Plan). The
+	// universe surface has none; write tools use the loaded scene's story, not
+	// this.
+	storyId?: string;
 	// Targets for the scoped tools (reply_in_thread, update_suggestion), fixed
 	// by the calling surface so the model cannot reach another thread or
 	// suggestion even by inventing ids.
@@ -51,13 +59,33 @@ export type ToolOutcome = {
 const MAX_SCENE_BODY = 200_000;
 const MAX_APPEARANCES = 20;
 
-// Whether the story belongs to the user; the gateway gates tool use on this so
-// the context is trusted.
-export async function ownsStory(db: Database, userId: string, storyId: string): Promise<boolean> {
+// The universe a story belongs to, but only if the user owns the story. The
+// gateway derives the tool reach from the focus story when no universe is
+// passed explicitly (the Write/Review/story-Plan surfaces); null means the
+// story is not the user's.
+export async function ownedStoryUniverse(
+	db: Database,
+	userId: string,
+	storyId: string
+): Promise<string | null> {
 	const [row] = await db
-		.select({ id: stories.id })
+		.select({ universeId: stories.universeId })
 		.from(stories)
 		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+	return row?.universeId ?? null;
+}
+
+// Whether the universe belongs to the user; the gateway gates universe-scoped
+// tool use on this so the retrieval reach is trusted.
+export async function ownsUniverse(
+	db: Database,
+	userId: string,
+	universeId: string
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: universes.id })
+		.from(universes)
+		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
 	return Boolean(row);
 }
 
@@ -131,11 +159,15 @@ function asString(value: unknown): string {
 	return typeof value === 'string' ? value : '';
 }
 
-// An owner-scoped, in-story scene fetch shared by the read and write handlers.
+// An owner-scoped scene fetch shared by the read and write handlers. Scoped to
+// the universe (any owned scene in it, not just the focus story), and it
+// selects the scene's own owning storyId so the write tools attribute a staged
+// change to the right story even when the pass was launched from another.
 async function loadScene(ctx: ToolContext, sceneId: string) {
 	const [row] = await ctx.db
 		.select({
 			id: scenes.id,
+			storyId: scenes.storyId,
 			title: scenes.title,
 			status: scenes.status,
 			summaryMd: scenes.summaryMd,
@@ -146,7 +178,7 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 		.where(
 			and(
 				eq(scenes.id, sceneId),
-				eq(scenes.storyId, ctx.storyId),
+				eq(stories.universeId, ctx.universeId),
 				eq(stories.ownerId, ctx.userId),
 				isNull(scenes.deletedAt)
 			)
@@ -154,11 +186,12 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 	return row ?? null;
 }
 
-// The chapter and scene skeleton, so the model can find a scene's id and read
-// it with get_scene. ctx.storyId is owner-verified by the gateway before any
-// tool runs, so the skeleton query needs no further scoping.
+// The chapter and scene skeleton for every story in the universe, so the model
+// can find any scene's id and read it with get_scene. ctx.universeId is
+// owner-verified by the gateway before any tool runs, so the skeleton query
+// needs no further scoping.
 async function listScenes(ctx: ToolContext): Promise<string> {
-	const skeleton = await storySkeleton(ctx.db, ctx.storyId);
+	const stories = await universeSkeleton(ctx.db, ctx.universeId);
 	const scene = (s: SceneSummary) => ({
 		id: s.id,
 		title: s.title,
@@ -166,12 +199,16 @@ async function listScenes(ctx: ToolContext): Promise<string> {
 		summary: s.summaryMd
 	});
 	return JSON.stringify({
-		chapters: skeleton.chapters.map((c) => ({
-			title: c.title,
-			summary: c.summaryMd,
-			scenes: c.scenes.map(scene)
-		})),
-		unfiledScenes: skeleton.orphans.map(scene)
+		stories: stories.map((story) => ({
+			storyId: story.storyId,
+			storyTitle: story.storyTitle,
+			chapters: story.chapters.map((c) => ({
+				title: c.title,
+				summary: c.summaryMd,
+				scenes: c.scenes.map(scene)
+			})),
+			unfiledScenes: story.orphans.map(scene)
+		}))
 	});
 }
 
@@ -212,10 +249,12 @@ async function findAppearances(ctx: ToolContext, entityId: string): Promise<stri
 	const appearances = await entityAppearances(
 		ctx.db,
 		{ kind: card.kind, id: entityId },
-		{ storyId: ctx.storyId }
+		{ universeId: ctx.universeId }
 	);
 	return JSON.stringify(
 		appearances.slice(0, MAX_APPEARANCES).map((a) => ({
+			storyId: a.storyId,
+			storyTitle: a.storyTitle,
 			sceneId: a.sceneId,
 			sceneTitle: a.sceneTitle,
 			position: a.position,
@@ -226,7 +265,7 @@ async function findAppearances(ctx: ToolContext, entityId: string): Promise<stri
 
 async function searchText(ctx: ToolContext, query: string): Promise<string> {
 	if (!query.trim()) return 'Provide a search query.';
-	const results = await searchAll(ctx.db, ctx.userId, query);
+	const results = await searchAll(ctx.db, ctx.userId, query, { universeId: ctx.universeId });
 	return JSON.stringify(
 		results.map((r) => ({ type: r.type, label: r.label, detail: r.sublabel, href: r.href }))
 	);
@@ -251,7 +290,9 @@ async function suggestEdit(
 		};
 	}
 	const result = await createSuggestion(ctx.db, {
-		storyId: ctx.storyId,
+		// The loaded scene's own story, so a cross-story pass attributes the
+		// suggestion to the right book, not the surface it was launched from.
+		storyId: scene.storyId,
 		sceneId: input.sceneId,
 		author: { assistant: true },
 		range: { start: first, end: first + input.original.length },
@@ -297,6 +338,9 @@ async function proposeSceneSplit(
 async function replyInThread(ctx: ToolContext, comment: string): Promise<ToolOutcome> {
 	const threadId = ctx.scope?.threadId;
 	if (!threadId) return { result: 'There is no thread under discussion.', staged: false };
+	// The scoped review tools are only offered with a story in focus; the
+	// universe surface never reaches here.
+	if (!ctx.storyId) return { result: 'There is no thread under discussion.', staged: false };
 	if (!comment.trim()) return { result: 'Provide the reply text.', staged: false };
 	const result = await addComment(ctx.db, {
 		storyId: ctx.storyId,
@@ -313,7 +357,7 @@ async function replyInThread(ctx: ToolContext, comment: string): Promise<ToolOut
 // pending status.
 async function updateSuggestion(ctx: ToolContext, replacement: string): Promise<ToolOutcome> {
 	const suggestionId = ctx.scope?.suggestionId;
-	if (!suggestionId) {
+	if (!suggestionId || !ctx.storyId) {
 		return { result: 'There is no suggestion under discussion.', staged: false };
 	}
 	const result = await updateAssistantSuggestion(ctx.db, {
@@ -341,7 +385,8 @@ async function leaveComment(
 		if (at !== -1) anchor = { start: at, end: at + input.quote.length };
 	}
 	const result = await createThread(ctx.db, {
-		storyId: ctx.storyId,
+		// The loaded scene's own story (see suggestEdit), not ctx.storyId.
+		storyId: scene.storyId,
 		sceneId: input.sceneId,
 		anchor,
 		author: { assistant: true },

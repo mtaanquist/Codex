@@ -1,6 +1,7 @@
 import {
 	bigint,
 	boolean,
+	check,
 	customType,
 	date,
 	index,
@@ -1174,18 +1175,19 @@ export const entitySuggestions = pgTable(
 	]
 );
 
-// The Assistant chat transcript, one conversation per story per user. meta
-// carries what a turn pointed at (a passage reference on user turns, staged
-// split proposals on assistant turns) so the panel can rebuild its cards.
-// Capped per conversation on append; cleared by the writer, the story's
-// delete cascade, and account purge.
+// The Assistant chat transcript, one conversation per scope per user. A turn
+// is keyed to exactly one scope: a story (the Write/Review/story-Plan thread)
+// or a universe (the universe-Plan thread); the CHECK enforces the exclusive
+// or. meta carries what a turn pointed at (a passage reference on user turns,
+// staged split proposals on assistant turns) so the panel can rebuild its
+// cards. Capped per conversation on append; cleared by the writer, the story
+// or universe delete cascade, and account purge.
 export const assistantChatMessages = pgTable(
 	'assistant_chat_messages',
 	{
 		id: uuid('id').primaryKey().defaultRandom(),
-		storyId: uuid('story_id')
-			.references(() => stories.id)
-			.notNull(),
+		storyId: uuid('story_id').references(() => stories.id),
+		universeId: uuid('universe_id').references(() => universes.id),
 		userId: uuid('user_id')
 			.references(() => users.id)
 			.notNull(),
@@ -1195,7 +1197,16 @@ export const assistantChatMessages = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [
-		index('assistant_chat_messages_conv_idx').on(table.storyId, table.userId, table.createdAt)
+		index('assistant_chat_messages_conv_idx').on(table.storyId, table.userId, table.createdAt),
+		index('assistant_chat_messages_universe_idx').on(
+			table.universeId,
+			table.userId,
+			table.createdAt
+		),
+		check(
+			'assistant_chat_messages_scope_ck',
+			sql`(${table.storyId} is null) <> (${table.universeId} is null)`
+		)
 	]
 );
 

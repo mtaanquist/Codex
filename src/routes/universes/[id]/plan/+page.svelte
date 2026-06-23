@@ -6,6 +6,7 @@
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import StoryBoard from '$lib/components/StoryBoard.svelte';
+	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -27,8 +28,24 @@
 
 	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.slug }));
 
-	// Right column tabs; History holds the open entity's timeline.
-	let rightTab = $state<'reference' | 'history' | 'session'>('reference');
+	// Grounded starter prompts for the Assistant tab, leaning on its cross-story
+	// reach across the universe.
+	const assistantSuggestions = $derived.by(() => {
+		const characters = data.characters.map((c) => c.name);
+		const prompts: string[] = [];
+		if (characters[0]) prompts.push(`What happens to ${characters[0]} across the stories?`);
+		prompts.push('Check continuity across the stories in this universe.');
+		if (characters[0] && characters[1]) {
+			prompts.push(`How are ${characters[0]} and ${characters[1]} connected?`);
+		} else {
+			prompts.push('Give me a tour of this universe.');
+		}
+		return prompts;
+	});
+
+	// Right column tabs; History holds the open entity's timeline. The Assistant
+	// tab appears only when the Assistant is on for the account.
+	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
 	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
 
 	// Appearances arrive flat and ordered; the panel shows them story by
@@ -174,9 +191,26 @@
 					>
 						Session
 					</button>
+					{#if data.assistant.tabEnabled}
+						<button
+							class="rtab"
+							class:active={rightTab === 'assistant'}
+							type="button"
+							onclick={() => (rightTab = 'assistant')}
+						>
+							{data.assistant.name}
+						</button>
+					{/if}
 				</div>
 			</div>
-			{#if rightTab === 'session'}
+			{#if rightTab === 'assistant' && data.assistant.tabEnabled}
+				<AssistantPanel
+					scope={{ universeId: data.universe.id, universeName: data.universe.name }}
+					name={data.assistant.name}
+					suggestions={assistantSuggestions}
+					initialMessages={data.assistantChat}
+				/>
+			{:else if rightTab === 'session'}
 				<SessionPanel universeSlug={data.universe.slug} />
 			{:else if rightTab === 'history'}
 				{#if data.revisionTarget}

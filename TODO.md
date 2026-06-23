@@ -630,12 +630,37 @@ button above the chat, plus the existing `/review` command). Help doc
 (reviewing) updated. Reuses already-tested server functions; check, lint,
 unit, build green locally.
 
-- [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
-- [x] 2. Drizzle + node-postgres, users table, first migration
-- [x] 3. Dockerfile, compose.yaml (app, worker stub, postgres, Caddy), compose.dev.yaml
-- [x] 4. Run the stack in Docker end to end
-- [x] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
-- [x] 6. Seed admin via SQL; verify sign-in and the approval gate
+Universe-aware Assistant (planned 2026-06-23, design note
+`scratch/system-design/universe-aware-assistant-plan.md`, branch
+`feat/universe-aware-assistant`). Five parts, A first as the foundation; B-E
+depend on it. Part A (done): every Assistant layer carries a scope - a story
+focus (`{ universeId, storyId, sceneId? }`) or the whole universe
+(`{ universeId }`). The retrieval reach is always the universe, so the
+per-story Assistant gains cross-story continuity, not just the new universe
+surface. Layers: (1) `assistant_chat_messages` gains a nullable `universeId`
+with a CHECK that exactly one of story/universe is set (migration 0065),
+`chat-history` rekeyed on a `ChatScope`, universe purge cascade; (2)
+context assembly branches on scope - a `universe-backbone` tier of the other
+stories on the focus path, and a `universe-frame`/`outline`/entities/lore/notes
+build on the universe path; (3) the read tools (`get_scene`, `list_scenes`,
+`find_appearances`, `search_text`) reach across the universe, write tools
+resolve the loaded scene's own story; (4) the gateway derives the universe
+reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse`
+
+- scope-based SSE; (6) `searchAll` gains an optional universe filter; (7) the
+  shared `AssistantPanel` takes a scope discriminator and both Plan pages get an
+  Assistant pill (story Plan shares the Write thread; universe Plan is its own).
+  Help doc (planning) updated. lint, check, unit + integration green locally;
+  Playwright e2e not run in this environment. Parts B-E (Write continuity prose,
+  `/write`, `/continuity-review`, `/rewrite` `/copyedit` `/who` `/find` + slash
+  polish) still to come.
+
+* [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
+* [x] 2. Drizzle + node-postgres, users table, first migration
+* [x] 3. Dockerfile, compose.yaml (app, worker stub, postgres, Caddy), compose.dev.yaml
+* [x] 4. Run the stack in Docker end to end
+* [x] 5. Sign-in: sessions, auth_tokens, password check, server hook guard
+* [x] 6. Seed admin via SQL; verify sign-in and the approval gate
 
 > v0.1 shipped at the end of Phase 1.
 

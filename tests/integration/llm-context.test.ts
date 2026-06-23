@@ -262,6 +262,72 @@ describe('assembleContext', () => {
 	});
 });
 
+describe('universe-scoped assembleContext', () => {
+	// A second story in the same universe, so the universe path has more than one
+	// book to outline and the focus path has a backbone to reach across.
+	async function addSecondStory() {
+		const [second] = await db
+			.insert(stories)
+			.values({
+				universeId,
+				ownerId,
+				title: 'The Salt Crown',
+				brief: 'A regent drowns the coast.',
+				positionInSeries: 2
+			})
+			.returning({ id: stories.id });
+		await db.insert(scenes).values({
+			storyId: second.id,
+			globalPosition: 1,
+			title: 'Coronation',
+			summaryMd: 'The regent takes the crown.',
+			bodyMd: 'Salt water filled the throne room.',
+			status: 'draft'
+		});
+		return second.id;
+	}
+
+	it('returns null for a universe the user does not own', async () => {
+		expect(await assembleContext(db, { userId: strangerId, universeId })).toBeNull();
+	});
+
+	it('frames the universe and outlines every story, with entities and lore but no scene-local tier', async () => {
+		await addSecondStory();
+		const context = await assembleContext(db, { userId: ownerId, universeId });
+		expect(context).not.toBeNull();
+		expect(context!.kind).toBe('universe');
+		expect(context!.text).toContain('Aldermoor');
+		expect(context!.text).toContain('Stories in this universe');
+		expect(context!.text).toContain('The Tide Below');
+		expect(context!.text).toContain('The Salt Crown');
+		// Universe-wide entities and always-on lore ride along.
+		expect(context!.text).toContain('Alice');
+		expect(context!.text).toContain('Creation Myth');
+		// No story focus, so no per-story overlay note and no current-scene body.
+		expect(context!.text).not.toContain('Wounded in the first chapter.');
+		expect(context!.text).not.toContain('Alice met Bram by the Aether gate at dawn.');
+		// Universe notes are shown; story notes are not.
+		expect(context!.text).toContain('Iron does not rust here.');
+		expect(context!.text).not.toContain('The bell tolls a betrayal.');
+		expect(context!.includedTiers).toContain('universe-outline');
+		// Scene ids across the stories ride along for grounding.
+		expect(context!.sources.scenes.map((s) => s.title)).toContain('Coronation');
+	});
+
+	it('gives a focused story turn a backbone of the other stories', async () => {
+		await addSecondStory();
+		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.kind).toBe('story');
+		expect(context!.text).toContain('Other stories in this universe');
+		expect(context!.text).toContain('The Salt Crown');
+		// The backbone is an index, not the other story's prose.
+		expect(context!.text).not.toContain('Salt water filled the throne room.');
+		// The focus story is excluded from its own backbone heading list.
+		const backbone = context!.text.slice(context!.text.indexOf('Other stories in this universe'));
+		expect(backbone).not.toContain('### The Tide Below');
+	});
+});
+
 describe('assembleRecapContext', () => {
 	it('returns null for a story the user does not own', async () => {
 		expect(await assembleRecapContext(db, { userId: strangerId, storyId })).toBeNull();

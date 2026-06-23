@@ -20,11 +20,13 @@ const { appendChat, clearChat, listChat, setProposalConfirmed } =
 	await import('../../src/lib/server/llm/chat-history');
 const { deleteStory } = await import('../../src/lib/server/story-delete');
 const { purgeAccount } = await import('../../src/lib/server/account-deletion');
+const { purgeUniverseWithin } = await import('../../src/lib/server/universe-lifecycle');
 
 let pool: pg.Pool;
 let db: Database;
 let userId: string;
 let storyId: string;
+let universeId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -46,6 +48,7 @@ beforeEach(async () => {
 		.insert(universes)
 		.values({ ownerId: userId, name: 'U' })
 		.returning({ id: universes.id });
+	universeId = universe.id;
 	const [story] = await db
 		.insert(stories)
 		.values({ universeId: universe.id, ownerId: userId, title: 'S' })
@@ -60,53 +63,63 @@ afterAll(async () => {
 
 describe('chat history', () => {
 	it('round-trips turns with their meta in order', async () => {
-		await appendChat(db, userId, storyId, {
-			role: 'user',
-			content: 'Why is this tense?',
-			meta: { reference: { sceneId: storyId, text: 'The rain fell.' } }
-		});
-		await appendChat(db, userId, storyId, {
-			role: 'assistant',
-			content: 'Because of the storm.',
-			meta: {
-				proposals: [{ sceneId: storyId, sceneTitle: null, before: 'The', rationale: 'why' }]
+		await appendChat(
+			db,
+			userId,
+			{ storyId },
+			{
+				role: 'user',
+				content: 'Why is this tense?',
+				meta: { reference: { sceneId: storyId, text: 'The rain fell.' } }
 			}
-		});
-		const stored = await listChat(db, userId, storyId);
+		);
+		await appendChat(
+			db,
+			userId,
+			{ storyId },
+			{
+				role: 'assistant',
+				content: 'Because of the storm.',
+				meta: {
+					proposals: [{ sceneId: storyId, sceneTitle: null, before: 'The', rationale: 'why' }]
+				}
+			}
+		);
+		const stored = await listChat(db, userId, { storyId });
 		expect(stored.map((m) => m.role)).toEqual(['user', 'assistant']);
 		expect(stored[0].meta?.reference?.text).toBe('The rain fell.');
 		expect(stored[1].meta?.proposals?.[0].before).toBe('The');
 	});
 
 	it('skips empty turns and is scoped per user and story', async () => {
-		await appendChat(db, userId, storyId, { role: 'assistant', content: '   ', meta: null });
-		expect(await listChat(db, userId, storyId)).toHaveLength(0);
+		await appendChat(db, userId, { storyId }, { role: 'assistant', content: '   ', meta: null });
+		expect(await listChat(db, userId, { storyId })).toHaveLength(0);
 		const [other] = await db
 			.insert(users)
 			.values({ email: 'o@example.com', displayName: 'Other', passwordHash: 'x', role: 'user' })
 			.returning({ id: users.id });
-		await appendChat(db, userId, storyId, { role: 'user', content: 'mine', meta: null });
-		expect(await listChat(db, other.id, storyId)).toHaveLength(0);
+		await appendChat(db, userId, { storyId }, { role: 'user', content: 'mine', meta: null });
+		expect(await listChat(db, other.id, { storyId })).toHaveLength(0);
 	});
 
 	it('trims the oldest turns past the cap', async () => {
 		for (let i = 0; i < 205; i++) {
-			await appendChat(db, userId, storyId, { role: 'user', content: `turn ${i}`, meta: null });
+			await appendChat(db, userId, { storyId }, { role: 'user', content: `turn ${i}`, meta: null });
 		}
-		const stored = await listChat(db, userId, storyId);
+		const stored = await listChat(db, userId, { storyId });
 		expect(stored.length).toBeLessThanOrEqual(200);
 		expect(stored[stored.length - 1].content).toBe('turn 204');
 		expect(stored[0].content).not.toBe('turn 0');
 	});
 
 	it('clears on request', async () => {
-		await appendChat(db, userId, storyId, { role: 'user', content: 'hello', meta: null });
-		await clearChat(db, userId, storyId);
-		expect(await listChat(db, userId, storyId)).toHaveLength(0);
+		await appendChat(db, userId, { storyId }, { role: 'user', content: 'hello', meta: null });
+		await clearChat(db, userId, { storyId });
+		expect(await listChat(db, userId, { storyId })).toHaveLength(0);
 	});
 
 	it('goes with the story and with the account', async () => {
-		await appendChat(db, userId, storyId, { role: 'user', content: 'hello', meta: null });
+		await appendChat(db, userId, { storyId }, { role: 'user', content: 'hello', meta: null });
 		await deleteStory(db, storyId, userId);
 		const afterStory = await db
 			.select()
@@ -120,10 +133,68 @@ describe('chat history', () => {
 			.insert(stories)
 			.values({ universeId: universe.id, ownerId: userId, title: 'S2' })
 			.returning({ id: stories.id });
-		await appendChat(db, userId, again.id, { role: 'user', content: 'still here', meta: null });
+		await appendChat(
+			db,
+			userId,
+			{ storyId: again.id },
+			{ role: 'user', content: 'still here', meta: null }
+		);
 		await purgeAccount(db, userId, null);
 		const afterPurge = await db.select().from(assistantChatMessages);
 		expect(afterPurge).toHaveLength(0);
+	});
+});
+
+// The universe-Plan thread is its own conversation, keyed on universeId rather
+// than a story. It is isolated from the story threads in the same universe and
+// goes with the universe on purge.
+describe('universe-scoped chat history', () => {
+	it('keeps the universe thread separate from a story thread in the same universe', async () => {
+		await appendChat(
+			db,
+			userId,
+			{ storyId },
+			{ role: 'user', content: 'about this story', meta: null }
+		);
+		await appendChat(
+			db,
+			userId,
+			{ universeId },
+			{ role: 'user', content: 'across the universe', meta: null }
+		);
+
+		const storyThread = await listChat(db, userId, { storyId });
+		const universeThread = await listChat(db, userId, { universeId });
+		expect(storyThread.map((m) => m.content)).toEqual(['about this story']);
+		expect(universeThread.map((m) => m.content)).toEqual(['across the universe']);
+
+		await clearChat(db, userId, { universeId });
+		expect(await listChat(db, userId, { universeId })).toHaveLength(0);
+		// Clearing the universe thread leaves the story thread intact.
+		expect(await listChat(db, userId, { storyId })).toHaveLength(1);
+	});
+
+	it('rejects a row with both scopes or neither (the CHECK)', async () => {
+		await expect(
+			db
+				.insert(assistantChatMessages)
+				.values({ storyId, universeId, userId, role: 'user', content: 'both' })
+		).rejects.toThrow();
+		await expect(
+			db.insert(assistantChatMessages).values({ userId, role: 'user', content: 'neither' })
+		).rejects.toThrow();
+	});
+
+	it('goes with the universe on purge', async () => {
+		await appendChat(
+			db,
+			userId,
+			{ universeId },
+			{ role: 'user', content: 'universe note', meta: null }
+		);
+		await db.transaction((tx) => purgeUniverseWithin(tx, universeId));
+		const remaining = await db.select().from(assistantChatMessages);
+		expect(remaining).toHaveLength(0);
 	});
 });
 
@@ -138,11 +209,16 @@ describe('setProposalConfirmed', () => {
 	};
 
 	it('marks the matching proposal confirmed and clears it again', async () => {
-		await appendChat(db, userId, storyId, {
-			role: 'assistant',
-			content: 'I propose a split.',
-			meta: { proposals: [proposal, { ...proposal, before: 'Another point.' }] }
-		});
+		await appendChat(
+			db,
+			userId,
+			{ storyId },
+			{
+				role: 'assistant',
+				content: 'I propose a split.',
+				meta: { proposals: [proposal, { ...proposal, before: 'Another point.' }] }
+			}
+		);
 
 		const confirmed = {
 			splitSceneId: proposal.sceneId,
@@ -152,12 +228,12 @@ describe('setProposalConfirmed', () => {
 			await setProposalConfirmed(
 				db,
 				userId,
-				storyId,
+				{ storyId },
 				{ sceneId: proposal.sceneId, before: proposal.before },
 				confirmed
 			)
 		).toBe(true);
-		let [turn] = await listChat(db, userId, storyId);
+		let [turn] = await listChat(db, userId, { storyId });
 		expect(turn.meta?.proposals?.[0].confirmed).toEqual(confirmed);
 		// The other proposal on the same turn is untouched.
 		expect(turn.meta?.proposals?.[1].confirmed).toBeUndefined();
@@ -167,26 +243,31 @@ describe('setProposalConfirmed', () => {
 			await setProposalConfirmed(
 				db,
 				userId,
-				storyId,
+				{ storyId },
 				{ sceneId: proposal.sceneId, before: proposal.before },
 				null
 			)
 		).toBe(true);
-		[turn] = await listChat(db, userId, storyId);
+		[turn] = await listChat(db, userId, { storyId });
 		expect(turn.meta?.proposals?.[0].confirmed).toBeUndefined();
 	});
 
 	it('reports no match for an unknown proposal and leaves other users alone', async () => {
-		await appendChat(db, userId, storyId, {
-			role: 'assistant',
-			content: 'I propose a split.',
-			meta: { proposals: [proposal] }
-		});
+		await appendChat(
+			db,
+			userId,
+			{ storyId },
+			{
+				role: 'assistant',
+				content: 'I propose a split.',
+				meta: { proposals: [proposal] }
+			}
+		);
 		expect(
 			await setProposalConfirmed(
 				db,
 				userId,
-				storyId,
+				{ storyId },
 				{ sceneId: proposal.sceneId, before: 'Different words.' },
 				{ splitSceneId: 'x', newSceneId: 'y' }
 			)
@@ -199,7 +280,7 @@ describe('setProposalConfirmed', () => {
 			await setProposalConfirmed(
 				db,
 				other.id,
-				storyId,
+				{ storyId },
 				{ sceneId: proposal.sceneId, before: proposal.before },
 				{ splitSceneId: 'x', newSceneId: 'y' }
 			)
