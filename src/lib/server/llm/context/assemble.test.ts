@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	bodyTail,
 	buildSystemMessage,
 	estimateTokens,
 	selectWithinBudget,
@@ -12,6 +13,21 @@ describe('estimateTokens', () => {
 		expect(estimateTokens('')).toBe(0);
 		expect(estimateTokens('abcd')).toBe(1);
 		expect(estimateTokens('abcde')).toBe(2);
+	});
+});
+
+describe('bodyTail', () => {
+	it('returns the trimmed body whole when it is within the excerpt cap', () => {
+		expect(bodyTail('  A short scene.  ')).toBe('A short scene.');
+	});
+
+	it('keeps the tail and marks the cut when the body is too long', () => {
+		const body = 'HEAD' + 'x'.repeat(2000) + 'the very last words.';
+		const tail = bodyTail(body);
+		expect(tail.startsWith('[...] ')).toBe(true);
+		expect(tail).toContain('the very last words.');
+		// The opening is dropped: a continuation reads from where the prose left off.
+		expect(tail).not.toContain('HEAD');
 	});
 });
 

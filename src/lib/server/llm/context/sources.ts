@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import {
 	chapters,
@@ -149,6 +149,38 @@ export async function sceneNeighbourhood(
 		neighbours.push({ ...ordered[i], side: 'after' });
 	}
 	return { current: current ?? null, neighbours };
+}
+
+export type PrecedingScene = { title: string | null; bodyMd: string };
+
+// The full prose of the scene immediately before the focus scene by global
+// position, skipping trashed scenes. The Write action uses this as a continuity
+// and voice anchor when the current scene is empty or short; ordinary chat does
+// not load it. Null when there is no scene before this one (or no focus scene).
+export async function precedingSceneBody(
+	db: Database,
+	storyId: string,
+	sceneId: string | undefined
+): Promise<PrecedingScene | null> {
+	if (!sceneId) return null;
+	const [focus] = await db
+		.select({ globalPosition: scenes.globalPosition })
+		.from(scenes)
+		.where(and(eq(scenes.id, sceneId), eq(scenes.storyId, storyId)));
+	if (!focus) return null;
+	const [prev] = await db
+		.select({ title: scenes.title, bodyMd: scenes.bodyMd })
+		.from(scenes)
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				isNull(scenes.deletedAt),
+				lt(scenes.globalPosition, focus.globalPosition)
+			)
+		)
+		.orderBy(desc(scenes.globalPosition))
+		.limit(1);
+	return prev ?? null;
 }
 
 export type SceneSummary = {

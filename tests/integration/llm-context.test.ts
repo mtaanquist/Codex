@@ -262,6 +262,43 @@ describe('assembleContext', () => {
 	});
 });
 
+describe('assembleContext precedingProse (the Write action anchor)', () => {
+	it('carries the preceding scene prose when the flag is on and a scene precedes', async () => {
+		// scene2 ("The Quiet Road") is empty and follows scene1 ("The Gate").
+		const context = await assembleContext(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene2Id,
+			precedingProse: true
+		});
+		expect(context!.text).toContain(
+			'Previous scene (the prose continues into this one) "The Gate"'
+		);
+		expect(context!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+	});
+
+	it('omits the preceding prose when the flag is off', async () => {
+		const context = await assembleContext(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene2Id
+		});
+		expect(context!.text).not.toContain('Previous scene (the prose continues into this one)');
+		// The current (empty) scene still renders; only the preceding body is absent.
+		expect(context!.text).not.toContain('Alice met Bram by the Aether gate at dawn.');
+	});
+
+	it('adds no preceding block for the first scene, even with the flag on', async () => {
+		const context = await assembleContext(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			precedingProse: true
+		});
+		expect(context!.text).not.toContain('Previous scene (the prose continues into this one)');
+	});
+});
+
 describe('universe-scoped assembleContext', () => {
 	// A second story in the same universe, so the universe path has more than one
 	// book to outline and the focus path has a backbone to reach across.
