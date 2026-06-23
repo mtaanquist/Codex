@@ -180,6 +180,7 @@
 					muted={data.assistant.muted}
 					suggestions={assistantSuggestions}
 					initialMessages={data.assistantChat}
+					reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 				/>
 			{:else if rightTab === 'session'}
 				<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />

@@ -104,13 +104,20 @@ The Assistant can also suggest where to split a long scene: ask it in the chat, 
 
 The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
 
-You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it:
+You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it. Some commands take the rest of the line as input, so type what you want after the command:
 
+- `/write <brief>` drafts a passage from your brief, the same as the Write button, and shows it for you to insert.
+- `/rewrite <how>` rewrites the passage you have selected in the scene to your instruction; a "Replace selection" button swaps it in.
+- `/copyedit` runs a full review of the open scene, or the whole story when no scene is open.
 - `/review` opens the review window.
+- `/who <name>` shows a short sheet for a character or place.
+- `/find <text>` searches this universe and lists what it finds.
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
 - `/clear` clears the conversation.
 - `/help` lists these commands.
+
+On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/who`, `/find`, `/clear`, and `/help`.
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 

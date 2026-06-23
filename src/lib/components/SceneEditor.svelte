@@ -269,6 +269,30 @@
 		view.focus();
 	}
 
+	// The current selection's text, or null when nothing is selected. The
+	// Assistant tab's /rewrite command reads it to rewrite the chosen passage.
+	export function getSelectionText(): string | null {
+		if (!view) return null;
+		const { from, to } = view.state.selection.main;
+		if (from === to) return null;
+		return view.state.sliceDoc(from, to);
+	}
+
+	// Replaces the current selection with text, or inserts at the caret when
+	// nothing is selected. The /rewrite affordance drops its rewrite in over the
+	// passage it rewrote.
+	export function replaceSelection(text: string) {
+		if (!view || !text) return;
+		const { from, to } = view.state.selection.main;
+		view.dispatch({
+			changes: { from, to, insert: text },
+			selection: { anchor: from + text.length },
+			scrollIntoView: true
+		});
+		scheduleSave();
+		view.focus();
+	}
+
 	// Lets the page place the caret when focus crosses a scene boundary.
 	export function focusEdge(edge: 'start' | 'end') {
 		if (!view) return;
