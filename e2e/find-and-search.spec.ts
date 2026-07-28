@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // Item 2 of the capability review: find/replace inside the editor, and
 // body-text search from the command palette.
 test('find in the editor and search the prose from the palette', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Findfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Findfall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })

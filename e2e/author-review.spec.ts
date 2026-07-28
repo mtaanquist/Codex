@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // #301: the author opens their own story in review mode and leaves their own
 // comment and a suggested edit, then accepts the suggestion - the same surface
@@ -6,12 +7,12 @@ import { expect, test } from '@playwright/test';
 test('the author can comment and suggest in their own review mode', async ({ page }) => {
 	// Retracting a comment and Accept all both ask for confirmation.
 	page.on('dialog', (dialog) => dialog.accept());
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Selfreview ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Selfreview ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -115,12 +116,12 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 // scene: the author should stay on the change to keep editing it.
 test('accepting the last suggestion in a scene keeps the view on that scene', async ({ page }) => {
 	page.on('dialog', (dialog) => dialog.accept());
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Stay ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Stay ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -130,14 +131,21 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 	await page.getByRole('button', { name: 'New chapter' }).click();
 
 	// Two scenes, each with a unique tail token the edit never touches.
-	await page.getByRole('button', { name: 'New scene' }).click();
-	await page.locator('.cm-content').click();
-	await page.keyboard.type('Sceneword ONETAIL closing.');
-	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
-	await page.getByRole('button', { name: 'New scene' }).click();
-	await page.locator('.cm-content').click();
-	await page.keyboard.type('Sceneword TWOTAIL closing.');
-	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	// Known flake, not yet fixed: this occasionally reaches Review with scene
+	// two empty, failing the TWOTAIL check below. The saved indicator is shared
+	// by the workspace, so after the first scene it can already read "Saved just
+	// now" and wave the second one through unsaved. Waiting on the scene's own
+	// PUT was tried and did not hold: neither the scene in the URL nor the
+	// request body reliably identifies the write while it is still in flight.
+	async function typeScene(text: string) {
+		await page.getByRole('button', { name: 'New scene' }).click();
+		await page.locator('.cm-content').click();
+		await page.keyboard.type(text);
+		await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	}
+
+	await typeScene('Sceneword ONETAIL closing.');
+	await typeScene('Sceneword TWOTAIL closing.');
 
 	await page.getByRole('link', { name: 'Review', exact: true }).click();
 	const prose = page.locator('.review-edit .cm-content');
@@ -181,12 +189,12 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 // autosave of the in-flight typing can never revert the accept.
 test('typing immediately after an accept keeps the accepted text', async ({ page }) => {
 	page.on('dialog', (dialog) => dialog.accept());
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Race ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Race ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })

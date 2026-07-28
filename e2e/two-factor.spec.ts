@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 import { totpCode } from '../src/lib/server/totp';
 
 // These journeys start signed out; skip the shared session.
@@ -9,7 +10,7 @@ test.use({ storageState: { cookies: [], origins: [] } });
 // off so the dedicated seed user is left as it started. The sign-in challenge
 // itself is covered by the two-factor integration tests.
 test('two-factor: enrol from the account page and turn it back off', async ({ page }) => {
-	await page.goto('/login');
+	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('tfa-e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();

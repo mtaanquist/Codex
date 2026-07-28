@@ -1,18 +1,19 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 import { clickTool } from './toolbar';
 
 // The whole-story view is the editor (it carries the formatting toolbar);
 // Preview beside it is the read-only, export-faithful render: alignment is
 // applied and the \center marker is gone, the way an export looks.
 test('whole-story view has the toolbar; preview hides the markers', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Preview Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -48,7 +49,7 @@ test('whole-story view has the toolbar; preview hides the markers', async ({ pag
 	await page.getByRole('menuitem', { name: 'Preview' }).click();
 	await expect(page).toHaveURL(/view=preview/);
 	await expect(page.locator('.story-preview')).toContainText('Centered line.');
-	await page.goto(sceneUrl);
+	await gotoReady(page, sceneUrl);
 	await expect(page.locator('.cm-content')).toContainText('Centered line.');
 
 	// Read the whole story: still the editor, so the formatting toolbar is

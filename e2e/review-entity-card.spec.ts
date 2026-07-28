@@ -1,14 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // In the author's review mode an entity mention is a hover card in the live
 // editor: the same summary a reviewer sees, plus the full-details link.
 test('review: hovering an entity mention opens its quick card', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Review cards ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Review cards ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })

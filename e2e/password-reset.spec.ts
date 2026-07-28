@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // These journeys start signed out; skip the shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -8,14 +9,14 @@ test.use({ storageState: { cookies: [], origins: [] } });
 // integration tests. These cover the two user-visible paths that need no token.
 
 test('forgot-password always reports the same thing', async ({ page }) => {
-	await page.goto('/forgot-password');
+	await gotoReady(page, '/forgot-password');
 	await page.getByLabel('Email').fill('whoever@example.com');
 	await page.getByRole('button', { name: 'Send reset link' }).click();
 	await expect(page.getByRole('status')).toContainText('If an account uses that email');
 });
 
 test('an invalid reset link is refused', async ({ page }) => {
-	await page.goto('/reset-password?token=not-a-real-token');
+	await gotoReady(page, '/reset-password?token=not-a-real-token');
 	await page.getByLabel('New password').fill('a-good-password');
 	await page.getByRole('button', { name: 'Update password' }).click();
 	await expect(page.getByRole('alert')).toContainText('not valid');

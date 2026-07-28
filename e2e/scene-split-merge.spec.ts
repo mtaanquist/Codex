@@ -1,16 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { openRowMenu } from './context-menu';
 import { clickTool } from './toolbar';
 
 // Splitting a scene at the cursor and merging scenes back together from
 // the sidebar's right-click menu.
 test('split a scene at the cursor, then merge the halves back', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Cutfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Cutfall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -40,12 +42,15 @@ test('split a scene at the cursor, then merge the halves back', async ({ page })
 	await expect(page.locator('.cm-content')).not.toContainText('First part stays here.');
 
 	// Merge them back: select both rows for merging, then merge.
-	await page.locator('.scene-row').nth(0).click({ button: 'right' });
-	await page.getByRole('menuitem', { name: 'Select for merging' }).click();
-	await page.locator('.scene-row').nth(1).click({ button: 'right' });
-	await page.getByRole('menuitem', { name: 'Select for merging' }).click();
-	await page.locator('.scene-row').nth(0).click({ button: 'right' });
-	await page.getByRole('menuitem', { name: 'Merge 2 scenes' }).click();
+	await (await openRowMenu(page, page.locator('.scene-row').nth(0)))
+		.getByRole('menuitem', { name: 'Select for merging' })
+		.click();
+	await (await openRowMenu(page, page.locator('.scene-row').nth(1)))
+		.getByRole('menuitem', { name: 'Select for merging' })
+		.click();
+	await (await openRowMenu(page, page.locator('.scene-row').nth(0)))
+		.getByRole('menuitem', { name: 'Merge 2 scenes' })
+		.click();
 
 	// One live scene again, with both halves and a blank line between.
 	await expect(page.locator('.scene-row')).toHaveCount(1);
@@ -60,13 +65,13 @@ test('split a scene at the cursor, then merge the halves back', async ({ page })
 // Duplicating a scene from the sidebar's right-click menu, the building
 // block for keeping a scene as a reusable template.
 test('duplicate a scene from the row menu', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Dupes ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Dupes ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -83,8 +88,9 @@ test('duplicate a scene from the row menu', async ({ page }) => {
 	await page.keyboard.type('Reusable template body.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	await page.locator('.scene-row').nth(0).click({ button: 'right' });
-	await page.getByRole('menuitem', { name: 'Duplicate scene' }).click();
+	await (await openRowMenu(page, page.locator('.scene-row').nth(0)))
+		.getByRole('menuitem', { name: 'Duplicate scene' })
+		.click();
 
 	// Two scenes now, and the editor is on the copy with the same prose.
 	await expect(page.locator('.scene-row')).toHaveCount(2);

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // These journeys start signed out; skip the shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -9,7 +10,7 @@ test.use({ storageState: { cookies: [], origins: [] } });
 const EMAIL = 'signup-e2e@example.com';
 
 test('sign up, then get held at the email-verification gate', async ({ page }) => {
-	await page.goto('/signup');
+	await gotoReady(page, '/signup');
 	await page.getByLabel('Display name').fill('Signup Tester');
 	await page.getByLabel('Email').fill(EMAIL);
 	await page.getByLabel('Password').fill('a-good-password');
@@ -21,7 +22,7 @@ test('sign up, then get held at the email-verification gate', async ({ page }) =
 
 	// The account exists but is unverified, so sign-in is blocked with the
 	// verification message rather than a wrong-password error.
-	await page.goto('/login');
+	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill(EMAIL);
 	await page.getByLabel('Password').fill('a-good-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();
@@ -32,7 +33,7 @@ test('sign up, then get held at the email-verification gate', async ({ page }) =
 // account; later runs hit the duplicate-email path, which shows the same
 // invited message, so the assertions hold either way.
 test('an invite link prefills the code and skips the approval wording', async ({ page }) => {
-	await page.goto('/signup?code=E2EI-NVIT-CODE');
+	await gotoReady(page, '/signup?code=E2EI-NVIT-CODE');
 	await expect(page.getByLabel('Invite code (optional)')).toHaveValue('E2EI-NVIT-CODE');
 
 	await page.getByLabel('Display name').fill('Invited Tester');
@@ -46,7 +47,7 @@ test('an invite link prefills the code and skips the approval wording', async ({
 });
 
 test('a wrong invite code blocks the sign-up with a clear error', async ({ page }) => {
-	await page.goto('/signup');
+	await gotoReady(page, '/signup');
 	await page.getByLabel('Display name').fill('Mistyped Tester');
 	await page.getByLabel('Email').fill('mistyped-e2e@example.com');
 	await page.getByLabel('Password').fill('a-good-password');

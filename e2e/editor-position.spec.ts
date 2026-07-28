@@ -1,16 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // Leaving the editor (say, to look up an entity on the Plan view) and
 // pressing the browser back button returns to the same scroll position,
 // not the top of the scene.
 test('back button returns to the editor spot it left', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Spotfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Spotfall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })

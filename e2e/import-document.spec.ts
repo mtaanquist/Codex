@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 import { strToU8, zipSync, type Zippable } from 'fflate';
 
 // Builds a minimal but valid .docx in the test so the import covers a real
@@ -33,7 +34,7 @@ function buildDocx(paragraphs: string[], title: string): Buffer {
 }
 
 test('story import: preview and import a Word manuscript', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	const universeName = `Docland ${stamp}`;
@@ -55,7 +56,7 @@ test('story import: preview and import a Word manuscript', async ({ page }) => {
 		title
 	);
 
-	await page.goto(`/universes/docland-${stamp}`);
+	await gotoReady(page, `/universes/docland-${stamp}`);
 	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.locator('input[name="archive"]').setInputFiles({
 		name: 'manuscript.docx',

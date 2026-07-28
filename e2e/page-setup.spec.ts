@@ -1,16 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // Line spacing and the binding gutter are page-setup knobs. The in-app preview
 // must reflect line spacing (and the page's text-column width); the alternating
 // gutter itself only shows in the paginated Print view, so here we check that
 // the preview honours the spacing and width the export will use.
 test('page setup line spacing reflects in the story preview', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Setup ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Setup ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -30,14 +31,14 @@ test('page setup line spacing reflects in the story preview', async ({ page }) =
 	const storyPath = storyUrl.pathname;
 
 	// Set this story to double line spacing and a wide gutter.
-	await page.goto(`${storyPath}/settings/pagesetup`);
+	await gotoReady(page, `${storyPath}/settings/pagesetup`);
 	await page.locator('select[name="lineSpacing"]').selectOption('double');
 	// Page setup auto-saves on change; wait for the confirmation before leaving.
 	await page.locator('select[name="gutter"]').selectOption('wide');
 	await expect(page.getByText('Saved.')).toBeVisible();
 
 	// The preview shows the prose at double spacing and a constrained column.
-	await page.goto(`${storyPath}?view=preview`);
+	await gotoReady(page, `${storyPath}?view=preview`);
 	const preview = page.locator('.story-preview');
 	await expect(preview).toContainText('First paragraph.');
 	await expect(preview).toHaveAttribute('style', /line-height: 2\.1/);

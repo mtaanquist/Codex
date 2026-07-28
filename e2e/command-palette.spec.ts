@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The command palette: Ctrl+K opens it anywhere, search jumps to what it
 // finds, and the contextual commands act on the open story.
 test('command palette: search jumps to a story, commands create a scene', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Palette Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
@@ -11,7 +12,7 @@ test('command palette: search jumps to a story, commands create a scene', async 
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	const storyTitle = `Needle ${Date.now()}`;
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -22,7 +23,7 @@ test('command palette: search jumps to a story, commands create a scene', async 
 
 	// From the library, the topbar button opens the palette; search finds
 	// the story and opens it.
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page.getByRole('button', { name: /Search and commands/ }).click();
 	await page.getByLabel('Search everything').fill(storyTitle);
 	await expect(page.getByRole('option', { name: new RegExp(`Story ${storyTitle}`) })).toBeVisible();

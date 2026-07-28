@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // Writing goals: an account daily word goal and a per-story target and
 // deadline, both persisting across a reload.
@@ -7,7 +8,7 @@ test('set a daily word goal and a per-story target and deadline', async ({ page 
 	// it loses focus. The account outlives the run, so refilling the stored value
 	// would leave the field unchanged and no save would fire; pick whichever of
 	// the two goals is not the one already there.
-	await page.goto('/account/editor');
+	await gotoReady(page, '/account/editor');
 	const goal = page.getByLabel('Daily word goal');
 	const newGoal = (await goal.inputValue()) === '500' ? '750' : '500';
 	await goal.fill(newGoal);
@@ -18,11 +19,11 @@ test('set a daily word goal and a per-story target and deadline', async ({ page 
 
 	// A story to set a target and deadline on.
 	const stamp = Date.now();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Goalfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Goalfall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -31,7 +32,7 @@ test('set a daily word goal and a per-story target and deadline', async ({ page 
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/targets-${stamp}`);
 
-	await page.goto(`/stories/targets-${stamp}/settings/goals`);
+	await gotoReady(page, `/stories/targets-${stamp}/settings/goals`);
 	const target = page.getByLabel('Target words (optional)');
 	await target.fill('50000');
 	await target.blur();

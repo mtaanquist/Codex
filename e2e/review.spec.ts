@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The full review loop: the author makes a story and a review link, an
 // anonymous guest opens it, gives a name, comments on a scene and suggests an
@@ -9,14 +10,14 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	browser
 }) => {
 	// Author: a fresh story with one scene of prose.
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Review Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -34,7 +35,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	const storyId = page.url().match(/stories\/([^/?]+)/)![1];
 
 	// Create the review link in settings; it is shown once.
-	await page.goto(`/stories/${storyId}/settings/review`);
+	await gotoReady(page, `/stories/${storyId}/settings/review`);
 	await page.getByLabel('Who is this link for? (optional)').fill('e2e guest');
 	await page.getByRole('button', { name: 'Create review link' }).click();
 	const link = await page.locator('.review-link code').textContent();
@@ -43,7 +44,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	// Guest: a clean context with no session.
 	const guestContext = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const guest = await guestContext.newPage();
-	await guest.goto(link!);
+	await gotoReady(guest, link!);
 	await guest.getByLabel('Your name').fill('Margin Walker');
 	await guest.getByLabel('Email (optional)').fill('margin@example.com');
 	await guest.getByRole('button', { name: 'Start reviewing' }).click();
@@ -99,7 +100,7 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	// Author: the bell heard about both; the comment notification leads to the
 	// review page. Counts are not asserted because a long-lived local database
 	// may carry unread rows from earlier runs.
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page.getByRole('button', { name: /^Notifications/ }).click();
 	const bellMenu = page.locator('.bell-menu');
 	await expect(bellMenu).toContainText('Margin Walker commented on "Margin Notes"');
@@ -144,12 +145,12 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await expect(page.locator('.review-edit .cm-content .rv-resolved')).toBeVisible();
 
 	// A revoked link stops working for new visits.
-	await page.goto(`/stories/${storyId}/settings/review`);
+	await gotoReady(page, `/stories/${storyId}/settings/review`);
 	await page.getByRole('button', { name: 'Revoke' }).click();
 	await expect(page.getByText('Revoked')).toBeVisible();
 	const lateContext = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const late = await lateContext.newPage();
-	await late.goto(link!);
+	await gotoReady(late, link!);
 	await expect(late.getByRole('heading', { name: 'This review has ended' })).toBeVisible();
 	await lateContext.close();
 });
