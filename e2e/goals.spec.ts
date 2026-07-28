@@ -4,14 +4,17 @@ import { expect, test } from '@playwright/test';
 // deadline, both persisting across a reload.
 test('set a daily word goal and a per-story target and deadline', async ({ page }) => {
 	// Account-level daily word goal. Settings auto-save: a text field saves when
-	// it loses focus.
+	// it loses focus. The account outlives the run, so refilling the stored value
+	// would leave the field unchanged and no save would fire; pick whichever of
+	// the two goals is not the one already there.
 	await page.goto('/account/editor');
 	const goal = page.getByLabel('Daily word goal');
-	await goal.fill('500');
+	const newGoal = (await goal.inputValue()) === '500' ? '750' : '500';
+	await goal.fill(newGoal);
 	await goal.blur();
 	await expect(page.getByText('Saved.')).toBeVisible();
 	await page.reload();
-	await expect(page.getByLabel('Daily word goal')).toHaveValue('500');
+	await expect(page.getByLabel('Daily word goal')).toHaveValue(newGoal);
 
 	// A story to set a target and deadline on.
 	const stamp = Date.now();
