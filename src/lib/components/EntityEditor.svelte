@@ -508,8 +508,7 @@
 		rows="2"
 		placeholder="One or two lines. Shown when a mention is hovered."
 		bind:value={summary}
-		oninput={scheduleSave}
-	></textarea>
+		oninput={scheduleSave}></textarea>
 
 	<div class="section-label">Description</div>
 	<div class="editor-cm" bind:this={editorEl}></div>
@@ -611,8 +610,7 @@
 			rows="3"
 			placeholder="Notes that apply only to this story."
 			bind:value={notes}
-			oninput={scheduleSave}
-		></textarea>
+			oninput={scheduleSave}></textarea>
 	{/if}
 </div>
 

@@ -789,8 +789,7 @@
 				placeholder="Ask about your story, or type / for commands..."
 				value={input}
 				oninput={grow}
-				onkeydown={onKeydown}
-			></textarea>
+				onkeydown={onKeydown}></textarea>
 			<div
 				class="composer-menu-wrap"
 				use:dismiss={{ enabled: actionsOpen, close: () => (actionsOpen = false) }}

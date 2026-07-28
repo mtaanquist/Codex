@@ -99,15 +99,13 @@
 				act: () => run(toggleBulletList)
 			},
 			{ kind: 'sep' },
-			...ALIGNMENTS.map(
-				(align): Item => ({
-					kind: 'cmd',
-					id: `align-${align}`,
-					title: `Align ${align}`,
-					icon: `align-${align}` as IconName,
-					act: () => run(setAlignment(align))
-				})
-			),
+			...ALIGNMENTS.map((align): Item => ({
+				kind: 'cmd',
+				id: `align-${align}`,
+				title: `Align ${align}`,
+				icon: `align-${align}` as IconName,
+				act: () => run(setAlignment(align))
+			})),
 			{ kind: 'sep' },
 			{
 				kind: 'cmd',

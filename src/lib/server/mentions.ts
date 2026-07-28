@@ -57,27 +57,21 @@ export async function universeMentionContext(
 		.from(loreEntries)
 		.where(and(eq(loreEntries.universeId, universeId), eq(loreEntries.autoDetectMentions, true)));
 	const targets: MentionTarget[] = [
-		...cast.map(
-			(character): MentionTarget => ({
-				id: character.id,
-				type: 'character',
-				names: [character.name, ...character.aliases]
-			})
-		),
-		...placeRows.map(
-			(place): MentionTarget => ({
-				id: place.id,
-				type: 'place',
-				names: [place.name, ...place.aliases]
-			})
-		),
-		...loreRows.map(
-			(entry): MentionTarget => ({
-				id: entry.id,
-				type: 'lore_entry',
-				names: [entry.title, ...entry.keywords]
-			})
-		)
+		...cast.map((character): MentionTarget => ({
+			id: character.id,
+			type: 'character',
+			names: [character.name, ...character.aliases]
+		})),
+		...placeRows.map((place): MentionTarget => ({
+			id: place.id,
+			type: 'place',
+			names: [place.name, ...place.aliases]
+		})),
+		...loreRows.map((entry): MentionTarget => ({
+			id: entry.id,
+			type: 'lore_entry',
+			names: [entry.title, ...entry.keywords]
+		}))
 	];
 	return { universeId, targets, stories: new Map() };
 }

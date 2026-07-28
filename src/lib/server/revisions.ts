@@ -23,12 +23,7 @@ import {
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
 
 export type RevisionEntityType =
-	| 'scene'
-	| 'character'
-	| 'place'
-	| 'lore_entry'
-	| 'chapter'
-	| 'note';
+	'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note';
 
 export type RevisionReason = 'autosave' | 'checkpoint' | 'restore' | 'suggestion';
 

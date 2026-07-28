@@ -200,8 +200,7 @@
 						name="replacement"
 						class="rv-draft-input"
 						aria-label="Suggested text"
-						bind:value={composerBody}
-					></textarea>
+						bind:value={composerBody}></textarea>
 					<div class="rv-draft-help">
 						The original stays struck through; your replacement is offered for the author to accept
 						or reject.
@@ -215,8 +214,7 @@
 						class="rv-draft-input"
 						placeholder="Add your comment..."
 						aria-label="Your comment"
-						bind:value={composerBody}
-					></textarea>
+						bind:value={composerBody}></textarea>
 				{/if}
 
 				<div class="rv-actions">

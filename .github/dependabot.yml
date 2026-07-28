@@ -10,6 +10,12 @@ updates:
       # Keep noise down: one PR per week for routine updates.
       all-dependencies:
         patterns: ['*']
+    ignore:
+      # svelte-check 4.7.4 still peers on typescript ^5 || ^6, so a bump to 7
+      # fails npm ci and takes the whole grouped PR down with it. Drop this
+      # entry once svelte-check accepts typescript 7.
+      - dependency-name: typescript
+        versions: ['7.x']
   - package-ecosystem: github-actions
     directory: /
     target-branch: develop

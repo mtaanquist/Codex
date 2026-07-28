@@ -182,61 +182,47 @@ export async function searchAll(
 		]);
 
 	return [
-		...storyRows.map(
-			(row): SearchResult => ({
-				type: 'story',
-				label: row.title,
-				sublabel: row.universeName,
-				href: `/stories/${row.slug}`
-			})
-		),
-		...sceneRows.map(
-			(row): SearchResult => ({
-				type: 'scene',
-				label: row.title ?? 'Untitled scene',
-				sublabel: row.storyTitle,
-				href: `/stories/${row.storySlug}?scene=${row.id}`
-			})
-		),
-		...passageRows.map(
-			(row): SearchResult => ({
-				type: 'passage',
-				label: row.snippet.replace(/\s+/g, ' ').trim(),
-				sublabel: `${row.title ?? 'Untitled scene'} - ${row.storyTitle}`,
-				href: `/stories/${row.storySlug}?scene=${row.id}`
-			})
-		),
-		...universeRows.map(
-			(row): SearchResult => ({
-				type: 'universe',
-				label: row.name,
-				sublabel: null,
-				href: `/universes/${row.slug}/plan`
-			})
-		),
-		...characterRows.map(
-			(row): SearchResult => ({
-				type: 'character',
-				label: row.name,
-				sublabel: row.universeName,
-				href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
-			})
-		),
-		...placeRows.map(
-			(row): SearchResult => ({
-				type: 'place',
-				label: row.name,
-				sublabel: row.universeName,
-				href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
-			})
-		),
-		...loreRows.map(
-			(row): SearchResult => ({
-				type: 'lore',
-				label: row.title,
-				sublabel: row.universeName,
-				href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
-			})
-		)
+		...storyRows.map((row): SearchResult => ({
+			type: 'story',
+			label: row.title,
+			sublabel: row.universeName,
+			href: `/stories/${row.slug}`
+		})),
+		...sceneRows.map((row): SearchResult => ({
+			type: 'scene',
+			label: row.title ?? 'Untitled scene',
+			sublabel: row.storyTitle,
+			href: `/stories/${row.storySlug}?scene=${row.id}`
+		})),
+		...passageRows.map((row): SearchResult => ({
+			type: 'passage',
+			label: row.snippet.replace(/\s+/g, ' ').trim(),
+			sublabel: `${row.title ?? 'Untitled scene'} - ${row.storyTitle}`,
+			href: `/stories/${row.storySlug}?scene=${row.id}`
+		})),
+		...universeRows.map((row): SearchResult => ({
+			type: 'universe',
+			label: row.name,
+			sublabel: null,
+			href: `/universes/${row.slug}/plan`
+		})),
+		...characterRows.map((row): SearchResult => ({
+			type: 'character',
+			label: row.name,
+			sublabel: row.universeName,
+			href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
+		})),
+		...placeRows.map((row): SearchResult => ({
+			type: 'place',
+			label: row.name,
+			sublabel: row.universeName,
+			href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
+		})),
+		...loreRows.map((row): SearchResult => ({
+			type: 'lore',
+			label: row.title,
+			sublabel: row.universeName,
+			href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
+		}))
 	];
 }

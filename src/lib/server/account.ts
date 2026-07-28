@@ -207,8 +207,7 @@ export async function changePassword(
 }
 
 export type EmailChangeResult =
-	| { ok: true; token: string; newEmail: string }
-	| { ok: false; reason: string };
+	{ ok: true; token: string; newEmail: string } | { ok: false; reason: string };
 
 // Begins an email change: verifies the password, checks the address is valid
 // and free, records it as pending, and returns a token for the link sent to
