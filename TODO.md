@@ -355,43 +355,43 @@ Author review mode batch (2026-06-08, branch `feat/author-review-mode`;
       on the line being edited). Closes the original feedback issues #301-#309.
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
-     design agreed 2026-06-06). Imports our own story export ZIP into a
-     chosen universe, always as a new story, from universe settings
-     next to Export. Always two steps: upload, preview (counts plus
-     every collision and its resolution), confirm. Collision rules as
-     agreed: duplicate story titles allowed (slug auto-suffixes),
-     chapters/scenes cannot collide, notes match entities by trimmed
-     case-insensitive name + kind (match attaches and joins the story,
-     no match creates a minimal entity, ambiguity skips with a flag),
-     aliases never match, assets re-upload as new ids, re-import makes
-     a sibling story. The exporter writes chapter.md so chapter titles
-     round-trip. Out of scope: universe/account archive import, foreign
-     markdown, import into existing stories. Merged 2026-06-06 (#178),
-     shipped as v2.29.0.
+      design agreed 2026-06-06). Imports our own story export ZIP into a
+      chosen universe, always as a new story, from universe settings
+      next to Export. Always two steps: upload, preview (counts plus
+      every collision and its resolution), confirm. Collision rules as
+      agreed: duplicate story titles allowed (slug auto-suffixes),
+      chapters/scenes cannot collide, notes match entities by trimmed
+      case-insensitive name + kind (match attaches and joins the story,
+      no match creates a minimal entity, ambiguity skips with a flag),
+      aliases never match, assets re-upload as new ids, re-import makes
+      a sibling story. The exporter writes chapter.md so chapter titles
+      round-trip. Out of scope: universe/account archive import, foreign
+      markdown, import into existing stories. Merged 2026-06-06 (#178),
+      shipped as v2.29.0.
 - [x] 4. Export completeness (capability review, 2026-06-06). Story
-     notes ride in the story, universe, and account exports as per-story
-     notes/ folders; relationships as a relationships.md per universe;
-     and the account export carries each story's review threads with
-     comments, attribution, and anchored excerpts (author's call:
-     review threads yes, revision history no - the current text is
-     already exported). Frozen editions stay prose-only. Merged
-     2026-06-06 (#174), shipped as v2.28.0.
+      notes ride in the story, universe, and account exports as per-story
+      notes/ folders; relationships as a relationships.md per universe;
+      and the account export carries each story's review threads with
+      comments, attribution, and anchored excerpts (author's call:
+      review threads yes, revision history no - the current text is
+      already exported). Frozen editions stay prose-only. Merged
+      2026-06-06 (#174), shipped as v2.28.0.
 - [x] 5. Notifications (capability review, 2026-06-06; scope agreed
-     2026-06-06). The generic core as agreed: a notifications table
-     (kind, payload, read/emailed state), a bell in every topbar with
-     an unread badge and dropdown (click marks read and follows the
-     link, mark-all-read), and a per-kind preference matrix on the
-     account page (in-app and email toggles, both defaulting on).
-     Events fan out per the matrix: in-app rows immediately, email
-     through batched worker digests (10 min singleton window per
-     recipient). Kinds: review activity on your stories, replies to
-     your review comments (account reviewers), and new accounts
-     awaiting approval (admins; replaces the operator email).
-     Transactional email stays outside the matrix. Guest reviewers
-     with an email get a reviewer digest with a signed opt-out link
-     (/review-email-opt-out); reviewer notifications inform without
-     navigating, since review links are stored hash-only and cannot be
-     rebuilt into the email or bell. Shipped as v2.30.0.
+      2026-06-06). The generic core as agreed: a notifications table
+      (kind, payload, read/emailed state), a bell in every topbar with
+      an unread badge and dropdown (click marks read and follows the
+      link, mark-all-read), and a per-kind preference matrix on the
+      account page (in-app and email toggles, both defaulting on).
+      Events fan out per the matrix: in-app rows immediately, email
+      through batched worker digests (10 min singleton window per
+      recipient). Kinds: review activity on your stories, replies to
+      your review comments (account reviewers), and new accounts
+      awaiting approval (admins; replaces the operator email).
+      Transactional email stays outside the matrix. Guest reviewers
+      with an email get a reviewer digest with a signed opt-out link
+      (/review-email-opt-out); reviewer notifications inform without
+      navigating, since review links are stored hash-only and cannot be
+      rebuilt into the email or bell. Shipped as v2.30.0.
 
 Review redesign (2026-06-10, branch `feat/review-page-redesign`):
 ported the Claude Design "Review mode" onto the editor's three-column
@@ -1338,26 +1338,26 @@ deferrals. Agreed 2026-06-06: these close out the current phase; the
 softer findings went to the roadmap as candidates for the next phase.
 
 - [x] 1. Chapter management + scene delete. Chapters gained hover tools
-     (inline rename, move up/down, delete; deleted chapters drop their
-     scenes to a new "Unfiled scenes" list, author's call 2026-06-06), and
-     scenes gained a trash (scenes.deleted_at, migration 0036): one click
-     deletes into a "Deleted scenes" sidebar section with restore and a
-     confirmed delete-forever that cascades markers, mentions, revisions,
-     review threads, and outline links. Trashed scenes leave every live
-     read (board, story view, exports, search, todos, insights, ordering,
-     APIs) and the mention rebuilder clears trashed scenes so a queued
-     rebuild cannot resurrect them. Merged 2026-06-06 (#147), shipped as
-     v2.19.0.
+      (inline rename, move up/down, delete; deleted chapters drop their
+      scenes to a new "Unfiled scenes" list, author's call 2026-06-06), and
+      scenes gained a trash (scenes.deleted_at, migration 0036): one click
+      deletes into a "Deleted scenes" sidebar section with restore and a
+      confirmed delete-forever that cascades markers, mentions, revisions,
+      review threads, and outline links. Trashed scenes leave every live
+      read (board, story view, exports, search, todos, insights, ordering,
+      APIs) and the mention rebuilder clears trashed scenes so a queued
+      rebuild cannot resurrect them. Merged 2026-06-06 (#147), shipped as
+      v2.19.0.
 - [x] 2. Find/replace + full-text prose search. The editor gained the
-     @codemirror/search panel (Ctrl+F, find as you type, replace one or
-     all) through the shared prose extension base, styled to the design
-     system; the palette's search now also matches scene bodies and
-     returns "In the text" results with a SQL-computed snippet, owner
-     scoped and trash-aware, backed by pg_trgm and a trigram index over
-     scenes.body_md (migration 0037). Merged 2026-06-06 (#151), shipped
-     as v2.20.0.
-     Items 3-5 (markdown import, export completeness, review notifications)
-     are still open; they live in the Open section at the top of this file.
+      @codemirror/search panel (Ctrl+F, find as you type, replace one or
+      all) through the shared prose extension base, styled to the design
+      system; the palette's search now also matches scene bodies and
+      returns "In the text" results with a SQL-computed snippet, owner
+      scoped and trash-aware, backed by pg_trgm and a trigram index over
+      scenes.body_md (migration 0037). Merged 2026-06-06 (#151), shipped
+      as v2.20.0.
+      Items 3-5 (markdown import, export completeness, review notifications)
+      are still open; they live in the Open section at the top of this file.
 
 ## Design alignment (author feedback, 2026-06-06)
 

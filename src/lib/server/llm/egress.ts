@@ -36,12 +36,7 @@ export class EgressDeniedError extends Error {
 }
 
 export type AddressClass =
-	| 'public'
-	| 'loopback'
-	| 'private'
-	| 'link-local'
-	| 'unique-local'
-	| 'invalid';
+	'public' | 'loopback' | 'private' | 'link-local' | 'unique-local' | 'invalid';
 
 function classifyV4(ip: string): AddressClass {
 	const octets = ip.split('.').map((d) => Number(d));

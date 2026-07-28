@@ -7,8 +7,7 @@ import type { ImportedChapter, ImportedScene } from './import-markdown';
 // lands in one chapter and one scene. Pure over its input, no I/O.
 
 export type DocBlock =
-	| { kind: 'heading'; level: number; text: string }
-	| { kind: 'para'; md: string };
+	{ kind: 'heading'; level: number; text: string } | { kind: 'para'; md: string };
 
 export type DetectedStructure = { chapters: ImportedChapter[]; problems: string[] };
 

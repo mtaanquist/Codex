@@ -148,8 +148,7 @@
 				e.preventDefault();
 				void generate();
 			}
-		}}
-	></textarea>
+		}}></textarea>
 	{#if error}
 		<p class="coauthor-error">{error}</p>
 	{/if}

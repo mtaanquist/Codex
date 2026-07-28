@@ -22,13 +22,7 @@
 	beforeNavigate(flushFocusedField);
 
 	type Section =
-		| 'profile'
-		| 'security'
-		| 'assistant'
-		| 'display'
-		| 'editor'
-		| 'notifications'
-		| 'pagesetup';
+		'profile' | 'security' | 'assistant' | 'display' | 'editor' | 'notifications' | 'pagesetup';
 
 	// Each section is its own page (/account/security, /account/display);
 	// a plain /account is the profile. Forms post to the section they sit

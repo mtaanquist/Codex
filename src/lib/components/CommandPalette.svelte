@@ -87,8 +87,7 @@
 			// The Assistant's quick actions, gated like its other surfaces; the
 			// write page's data carries the gate and the open story.
 			const assistant = page.data.assistant as
-				| { surfacesEnabled: boolean; name: string }
-				| undefined;
+				{ surfacesEnabled: boolean; name: string } | undefined;
 			const storyId = (page.data.story as { id: string; slug: string } | undefined)?.id;
 			const storySlug = (page.data.story as { id: string; slug: string } | undefined)?.slug;
 			const sceneId = (page.data.selectedScene as { id: string } | null | undefined)?.id;

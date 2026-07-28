@@ -1,8 +1,7 @@
 <script lang="ts" module>
 	// Right-click menu for sidebar rows: chapter tools or the scene actions.
 	export type RowMenuTarget =
-		| { kind: 'chapter'; id: string; index: number }
-		| { kind: 'scene'; id: string };
+		{ kind: 'chapter'; id: string; index: number } | { kind: 'scene'; id: string };
 	export type RowMenuState = { x: number; y: number; target: RowMenuTarget };
 </script>
 

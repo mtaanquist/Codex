@@ -40,8 +40,7 @@ export type EntitySave = {
 };
 
 export type EntitySaveResult =
-	| { ok: true; universeId: string; mentionsAffected: boolean }
-	| { ok: false; reason: string };
+	{ ok: true; universeId: string; mentionsAffected: boolean } | { ok: false; reason: string };
 
 const NOUN: Record<EntitySaveKind, { label: string; nameNoun: string }> = {
 	character: { label: 'character', nameNoun: 'name' },
