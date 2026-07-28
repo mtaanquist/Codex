@@ -5,6 +5,32 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Dev environment automation (2026-07-28, branch
+`feat/dev-env-automation`). Setting the project up on a fresh macOS
+machine turned up three things CI never sees, all fixed here.
+`npm run test:e2e` did not work as documented: the app reads
+`process.env` directly, CI supplies `ASSET_S3_*` as job-level variables,
+and nothing loaded `.env` locally, so asset storage looked unconfigured
+and every export spec timed out waiting for a button that never
+rendered. `playwright.config.ts` now loads `.env` with Node's built-in
+`process.loadEnvFile` (no new dependency; shell variables still win, so
+CI and one-off `DATABASE_URL` overrides are unaffected), and
+`compose.dev.yaml` gained the MinIO the export and upload paths need.
+Two specs hardcoded `Control+f`, `Control+k`, and `Control+End`, which
+are Linux-only against CodeMirror's `Mod-` bindings, so they could never
+pass on macOS; they use `ControlOrMeta+` now, like the rest of the
+suite. `goals.spec.ts` was not idempotent against a persistent database
+(it refilled the stored value, so no save fired and the "Saved." toast
+never appeared), and now picks a value that differs from what is there.
+Also added `npm run restore:prod-copy`, which restores an off-site
+backup into a separate `codex_prod_copy` database and drops the
+`asset-storage`, `smtp`, and `backup-storage` rows the dump carries;
+left in place they point local work at the real buckets and relay, and
+reading one without the source `APP_SECRET` throws rather than failing
+soft, which breaks every page that resolves asset storage. Three
+parallel-load flakes remain (`account`, `author-review`), unchanged by
+this work and green when run serially; worth a look separately.
+
 The capability review queue closed 2026-06-06 (items 1-5 all shipped;
 see the follow-ups section below). Next up: the next-phase candidates
 recorded in the roadmap from the 2026-06-06 capability review (Notes

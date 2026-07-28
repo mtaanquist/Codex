@@ -29,10 +29,25 @@ if [ ! -f package.json ]; then
   exit 0
 fi
 
-# Bring up Postgres. Prefer the compose database used for local dev; in the web
-# sandbox Postgres is pre-installed but not running, so fall back to the service.
+# Without Node every step below fails, and under `set -e` the first one ends the
+# script with no clue why. Say so instead.
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node is not on the PATH; install Node 24 and start a new session." >&2
+  echo "  macOS:  brew install node@24" >&2
+  exit 1
+fi
+
+# A fresh clone has no .env; the defaults in the example match the dev stack.
+if [ ! -f .env ] && [ -f .env.example ]; then
+  cp .env.example .env
+  echo "Created .env from .env.example."
+fi
+
+# Bring up Postgres and the asset storage the export and upload paths need.
+# Prefer the compose services used for local dev; in the web sandbox Postgres is
+# pre-installed but not running, so fall back to the service.
 if command -v docker >/dev/null 2>&1 && [ -f compose.dev.yaml ]; then
-  docker compose -f compose.dev.yaml up -d db || true
+  docker compose -f compose.dev.yaml up -d || true
 elif command -v pg_ctlcluster >/dev/null 2>&1; then
   service postgresql start >/dev/null 2>&1 || sudo service postgresql start >/dev/null 2>&1 || true
 fi

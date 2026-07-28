@@ -123,13 +123,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await docEditor.click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Edited in the flow.');
 	await docSave;
 
 	// Vertical arrows cross scene boundaries.
 	await page.locator('.doc-scene').nth(0).locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.press('ArrowDown');
 	await expect(page.locator('.doc-scene').nth(1).locator('.cm-content')).toBeFocused();
 	await page.locator('.scene-row').nth(1).click();
@@ -249,7 +249,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.locator('.scene-row').nth(1).click();
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	// Capture the autosave so the prose (and its mention rebuild) is persisted
 	// before the reload below, independent of the autosave debounce.
 	const fenwickSave = page.waitForResponse(
@@ -305,14 +305,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Entity autocomplete, popup mode (the default): typing part of a name
 	// offers the full one.
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Ali');
-	// Ctrl-Space asks for the completion explicitly. Re-ask until the filtered
+	// Mod-Space asks for the completion explicitly. Re-ask until the filtered
 	// list shows: a single request can land before the editor has registered
 	// the typed text, opening the popup unfiltered, and re-asking re-runs the
 	// source against the current text.
 	await expect(async () => {
-		await page.keyboard.press('Control+Space');
+		await page.keyboard.press('ControlOrMeta+Space');
 		await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
 			'Alice Vane',
 			{ timeout: 2000 }
@@ -339,7 +339,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.goto(proseSceneUrl);
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Hal');
 	await expect(page.locator('.cm-ghost-text')).toHaveText('den');
 	const ghostSave = page.waitForResponse(
@@ -366,7 +366,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' The end.');
 	await tailSave;
 
@@ -399,7 +399,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.press('Enter');
 	await page.keyboard.type('TODO: tighten the toll scene');
 	await todoSave;
@@ -411,7 +411,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/markers') && r.request().method() === 'POST' && r.ok()
 	);
 	await page.keyboard.press('Shift+Home');
-	await page.keyboard.press('Control+Alt+m');
+	await page.keyboard.press('ControlOrMeta+Alt+m');
 	await markerCreate;
 	await expect(page.locator('.todo-marker')).toHaveCount(1);
 	await expect(page.locator('.todo-row')).toHaveCount(2);
@@ -452,7 +452,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		// Cursor to the end so the dropped image lands after the prose rather
 		// than splitting a word; the drop handler falls back to the caret when
 		// the drop point is past the text.
-		await page.keyboard.press('Control+End');
+		await page.keyboard.press('ControlOrMeta+End');
 		const dropSave = page.waitForResponse(
 			(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 		);

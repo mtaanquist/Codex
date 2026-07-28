@@ -32,9 +32,9 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await page.keyboard.type(`The haystack hid a needle${stamp} near the well.`);
 	await save;
 
-	// Find and replace: Ctrl+F opens the panel, replace rewrites the word.
+	// Find and replace: Mod-F opens the panel, replace rewrites the word.
 	// The replacement is a document change, so it autosaves on its own.
-	await page.keyboard.press('Control+f');
+	await page.keyboard.press('ControlOrMeta+f');
 	const panel = page.locator('.cm-panel.cm-search');
 	await expect(panel).toBeVisible();
 	const resave = page.waitForResponse(
@@ -52,7 +52,7 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await resave;
 
 	// The palette finds the prose and lands on the scene.
-	await page.keyboard.press('Control+k');
+	await page.keyboard.press('ControlOrMeta+k');
 	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
 	const passage = page.locator('.palette-item', { hasText: 'In the text' });
 	await expect(passage).toHaveCount(1);
@@ -73,7 +73,7 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).not.toContainText(`pin${stamp}`);
 
-	await page.keyboard.press('Control+k');
+	await page.keyboard.press('ControlOrMeta+k');
 	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
 	const jump = page.locator('.palette-item', { hasText: 'In the text' });
 	await expect(jump).toHaveCount(1);

@@ -151,11 +151,15 @@ You need Node 24 and Docker.
 
 ```
 npm install
-cp .env.example .env          # defaults match the dev database below
-docker compose -f compose.dev.yaml up -d   # Postgres only
+cp .env.example .env          # defaults match the dev services below
+docker compose -f compose.dev.yaml up -d   # Postgres and MinIO
 npm run dev                   # the app, on http://localhost:5173
 npm run worker                # in a second terminal
 ```
+
+MinIO is the asset storage exports and image uploads need. Both stay hidden in
+the app until asset storage is configured, and the end-to-end suite covers
+them, so leave it running.
 
 Run the worker too: without it mentions never index, and the Reference
 panel stays empty.
@@ -172,6 +176,23 @@ npm run test:e2e              # Playwright; builds and previews on :4173
 Schema changes go through generated migrations: edit
 `src/lib/server/db/schema.ts`, then `npx drizzle-kit generate`. Migrations
 are additive and forward-only by convention.
+
+### Develop against a copy of real data
+
+With `BACKUP_S3_*` set, `npm run restore:prod-copy` pulls the newest backup
+into a separate `codex_prod_copy` database, drops the service settings the
+dump carries, and migrates it. Run the app and the worker against it together,
+or they will use different databases:
+
+```
+npm run dev:prod-copy
+npm run worker:prod-copy      # in a second terminal
+```
+
+It stays out of `codex`, which the end-to-end suite writes to. Leave
+`APP_SECRET` unset so the restored credentials stay unreadable; the script
+refuses to run otherwise. Accounts with two-factor enabled cannot sign in on
+the copy, since their secrets were encrypted with the source instance's key.
 
 ## Layout
 

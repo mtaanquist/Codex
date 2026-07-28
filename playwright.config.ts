@@ -1,4 +1,11 @@
+import { existsSync } from 'node:fs';
 import { defineConfig } from '@playwright/test';
+
+// The preview server, the seeded worker, and global setup all read process.env
+// directly, so .env has to reach this process for a local run to match CI.
+// Variables already set in the shell are left alone, which is how CI supplies
+// its own and how DATABASE_URL can be pointed elsewhere for a single run.
+if (existsSync('.env')) process.loadEnvFile('.env');
 
 export default defineConfig({
 	testDir: 'e2e',
