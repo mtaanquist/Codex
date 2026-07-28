@@ -1,17 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // A scene rename must survive a browser reload, even one inside the
 // autosave debounce window: the pending edit is flushed on the way out.
 // The flush races the reloading page's own load, so the assertion allows
 // a second reload rather than demanding the very first paint win.
 test('scene title survives a reload', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Titlefall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Titlefall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -35,13 +36,13 @@ test('scene title survives a reload', async ({ page }) => {
 
 // Opening a story without naming a scene resumes the one edited last.
 test('opening a story resumes the last-edited scene', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Resumefall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Resumefall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -63,7 +64,7 @@ test('opening a story resumes the last-edited scene', async ({ page }) => {
 	await saved;
 
 	// Landing on the bare story URL opens that scene again.
-	await page.goto(`/stories/bookmarks-${stamp}`);
+	await gotoReady(page, `/stories/bookmarks-${stamp}`);
 	await expect(page.locator('.editor-title-input')).toHaveValue('Second thoughts');
 
 	// The sidebar filter narrows the tree by name; clearing restores it.

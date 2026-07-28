@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 import { clickTool } from './toolbar';
 
 // Increase/decrease indent: a toolbar button steps a paragraph's block indent,
@@ -7,12 +8,12 @@ import { clickTool } from './toolbar';
 test('a paragraph can be indented from the toolbar, in the editor and preview', async ({
 	page
 }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Indent ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Indent ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })

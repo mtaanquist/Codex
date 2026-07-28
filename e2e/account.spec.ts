@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { openRowMenu } from './context-menu';
+import { gotoReady } from './navigate';
 
 test('account settings: rename and see the current session', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	await page.getByLabel('Account menu').click();
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
@@ -72,7 +74,7 @@ test('account settings: rename and see the current session', async ({ page }) =>
 });
 
 test('account assistant: kill switch, identity, and endpoint persist', async ({ page }) => {
-	await page.goto('/account/assistant');
+	await gotoReady(page, '/account/assistant');
 	await expect(page.getByRole('heading', { name: 'Assistant', level: 1 })).toBeVisible();
 
 	// The real checkbox is a zero-size hidden input behind the toggle track, so
@@ -144,7 +146,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// dimmed and not interactable while it is off. Then set an endpoint (no
 	// network: nothing is sent until a message is actually asked). The tab needs
 	// both an endpoint and the master on.
-	await page.goto('/account/assistant');
+	await gotoReady(page, '/account/assistant');
 	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
 	await expect(status).toHaveText('Assistant on');
 	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
@@ -153,12 +155,12 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 
 	// A throwaway story to open the editor against.
 	const universeName = `AI gate ${Date.now()}`;
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -212,8 +214,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.ref-chip')).toHaveCount(0);
 
 	// The sidebar row menu groups its assistant actions the same way.
-	await page.locator('.scene-row').first().click({ button: 'right' });
-	await expect(page.locator('.row-menu')).toBeVisible();
+	await openRowMenu(page, page.locator('.scene-row').first());
 	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
 	await expect(
 		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review with the Assistant...' })
@@ -251,10 +252,10 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible();
 
 	// Turning the account switch off removes the tab entirely (gated, not greyed).
-	await page.goto('/account/assistant');
+	await gotoReady(page, '/account/assistant');
 	await killToggle.click();
 	await expect(status).toHaveText('Assistant off');
-	await page.goto(storyUrl);
+	await gotoReady(page, storyUrl);
 	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
 	await expect(page.locator('.rtab', { hasText: 'Assistant' })).toHaveCount(0);
 
@@ -268,8 +269,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 		0
 	);
 	await page.keyboard.press('Escape');
-	await page.locator('.scene-row').first().click({ button: 'right' });
-	await expect(page.locator('.row-menu')).toBeVisible();
+	await openRowMenu(page, page.locator('.scene-row').first());
 	await expect(page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' })).toHaveCount(
 		0
 	);

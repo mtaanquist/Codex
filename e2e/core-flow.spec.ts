@@ -1,22 +1,23 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	// A long journey that waits on the async worker twice; the default 30s
 	// budget is too tight on a loaded CI runner and was silently capping the
 	// 60s indexing wait below. Tripling it to 90s gives that wait its room.
 	test.slow();
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	// Repeated runs share the seeded user, so pin the preferences to their
 	// defaults before exercising them later. They live on the account page now.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
 	// These settings auto-save on change; the last change confirms with "Saved.".
 	await page.getByLabel('Editing mode').selectOption('rich');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	// Backups belong to the site admin; a regular account sees no panel.
 	await expect(page.getByRole('heading', { name: 'Backups' })).toHaveCount(0);
@@ -28,7 +29,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -333,11 +334,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Ghost mode comes from the user preference: an unambiguous prefix
 	// shows the rest of the name, and Tab accepts it.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('ghost');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto(proseSceneUrl);
+	await gotoReady(page, proseSceneUrl);
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Hal');
@@ -447,7 +448,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		expect(served.status()).toBe(200);
 		expect(served.headers()['content-type']).toBe('image/png');
 
-		await page.goto(proseSceneUrl);
+		await gotoReady(page, proseSceneUrl);
 		await page.locator('.cm-content').click();
 		// Cursor to the end so the dropped image lands after the prose rather
 		// than splitting a word; the drop handler falls back to the caret when
@@ -493,7 +494,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const reader = await anonymous.newPage();
-	await reader.goto('/@e2e-tester');
+	await gotoReady(reader, '/@e2e-tester');
 	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
 	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
 	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
@@ -524,7 +525,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		.getByRole('link', { name: 'Download' });
 	await expect(async () => {
 		// Navigate by GET; page.reload() here would re-submit the prepare POST.
-		await page.goto(exportUrl);
+		await gotoReady(page, exportUrl);
 		await expect(zipLink).toBeVisible({ timeout: 1000 });
 	}).toPass({ timeout: 60_000 });
 	const zipDownload = page.waitForEvent('download');
@@ -536,7 +537,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		.locator('.export-row', { hasText: '.epub' })
 		.getByRole('link', { name: 'Download' });
 	await expect(async () => {
-		await page.goto(exportUrl);
+		await gotoReady(page, exportUrl);
 		await expect(epubLink).toBeVisible({ timeout: 1000 });
 	}).toPass({ timeout: 60_000 });
 	const epubDownload = page.waitForEvent('download');
@@ -547,17 +548,17 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL(/\/print$/);
 	await expect(page.locator('.title-page h1')).toHaveText('Book of Ash');
 	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');
-	await page.goto(proseSceneUrl);
+	await gotoReady(page, proseSceneUrl);
 
 	// Scene marks in the story view follow the display preference.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto(`${proseSceneUrl}&view=story`);
+	await gotoReady(page, `${proseSceneUrl}&view=story`);
 	await expect(page.locator('.doc-scene').first()).toBeVisible();
 	await expect(page.locator('.doc-scene-mark')).toHaveCount(0);
-	await page.goto(proseSceneUrl);
+	await gotoReady(page, proseSceneUrl);
 
 	// The breadcrumb leads to the universe editor: the same cast at universe
 	// scope, with no per-story notes section.
@@ -646,7 +647,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Deleting a story that has chapters, scenes, markers, revisions, and a
 	// published edition succeeds rather than 500ing on the foreign keys, and
 	// lands back on the universe.
-	await page.goto(`${proseSceneUrl.split('?')[0]}/settings/danger`);
+	await gotoReady(page, `${proseSceneUrl.split('?')[0]}/settings/danger`);
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
@@ -657,7 +658,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 test('wrong password is rejected', async ({ browser }) => {
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const page = await anonymous.newPage();
-	await page.goto('/login');
+	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('e2e@example.com');
 	await page.getByLabel('Password').fill('not-the-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();

@@ -1,16 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The scene board: a story's plan shows its scenes in status lanes, and
 // moving a card changes the scene's status for good.
 test('scene board: a card moves along the status ladder and stays there', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Board Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -40,7 +41,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await save;
 
 	// The plan opens on the board; a new scene starts in Draft.
-	await page.goto(`/stories/${storyId}/plan`);
+	await gotoReady(page, `/stories/${storyId}/plan`);
 	const draftLane = page.getByRole('region', { name: 'Draft scenes' });
 	const card = page.locator('.card', { hasText: 'The crossing' });
 	await expect(draftLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
@@ -61,7 +62,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 
 	// Opening an entity replaces the board; the pinned sidebar row brings
 	// it back. The right pane keeps the same three pills either way.
-	await page.goto(`/stories/${storyId}/plan`);
+	await gotoReady(page, `/stories/${storyId}/plan`);
 	await expect(page.getByRole('button', { name: 'Reference' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'History' })).toBeVisible();
 	await page.getByPlaceholder('New character name').fill('Ferry');
@@ -82,7 +83,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	// The universe plan shows the story board: this story sits in the lane
 	// of its derived status, and its card opens the story.
 	const universeSlug = `board-test-${universeName.split(' ').pop()}`;
-	await page.goto(`/universes/${universeSlug}/plan`);
+	await gotoReady(page, `/universes/${universeSlug}/plan`);
 	const revisingLane = page.getByRole('region', { name: 'Revising stories' });
 	await expect(revisingLane.locator('.card', { hasText: 'Lanes' })).toBeVisible();
 	await page.locator('.card-title', { hasText: 'Lanes' }).click();
@@ -90,7 +91,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 
 	// The book switcher: a second story in the universe makes the sidebar
 	// header a menu that jumps between them.
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })

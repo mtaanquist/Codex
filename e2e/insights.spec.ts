@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The universe Insights view: progress stats and the world heatmap render
 // from a fresh universe's first words.
 test('insights: words written show up in progress and the heatmap', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Insights Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
@@ -11,7 +12,7 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	const universeId = page.url().match(/universes\/([^/?]+)/)![1];
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -37,15 +38,22 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await save;
 
 	// A character no scene mentions, for the cold end of the heatmap.
-	await page.goto(`/universes/${universeId}/plan`);
+	await gotoReady(page, `/universes/${universeId}/plan`);
 	await page.getByPlaceholder('New character name').fill('Heimdall');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.locator('.ent-row', { hasText: 'Heimdall' })).toBeVisible();
 
-	// A sibling pair, for the relationship web.
+	// A sibling pair, for the relationship web. Wait for Freya to land before
+	// opening the relationship form: its entity list is built from what the page
+	// knows, so getting there first leaves a dropdown with no Freya in it.
 	await page.getByPlaceholder('New character name').fill('Freya');
 	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page.locator('.ent-row', { hasText: 'Freya' })).toBeVisible();
 	await page.locator('.ent-row', { hasText: 'Heimdall' }).click();
+	// The editor is keyed on the selected entity, so it remounts when the
+	// selection lands. Opening the relationship form before that happens gets it
+	// torn down mid-fill. Wait for Heimdall's own editor first.
+	await expect(page.locator('.detail-title-input')).toHaveValue('Heimdall');
 	await page.getByRole('button', { name: '+ Add relationship' }).click();
 	await page.getByLabel('Relation').selectOption({ label: 'sibling of' });
 	await page.getByLabel('Related entity').selectOption({ label: 'Freya' });
@@ -79,22 +87,22 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 
 	// The story plan lists the universe's other entities behind a fold.
-	await page.goto(`/stories/${storyRef}/plan`);
+	await gotoReady(page, `/stories/${storyRef}/plan`);
 	// The "In the universe" list starts open; the row is right there.
 	await page.locator('.uni-row', { hasText: 'Heimdall' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 
 	// Hiding the streak on the account page empties the Session tab's
 	// streak card; the words stay. Restore it for the other specs.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Writing streak').selectOption('hidden');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto(`/stories/${storyRef}/plan`);
+	await gotoReady(page, `/stories/${storyRef}/plan`);
 	await page.getByRole('button', { name: 'Session' }).click();
 	await expect(page.locator('.sess-n').first()).toBeVisible();
 	await expect(page.locator('.streak-row')).toHaveCount(0);
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Writing streak').selectOption('shown');
 	await expect(page.getByRole('status')).toHaveText('Saved.');

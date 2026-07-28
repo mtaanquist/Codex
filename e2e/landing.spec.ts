@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // These journeys start signed out; skip the shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -7,7 +8,7 @@ test.use({ storageState: { cookies: [], origins: [] } });
 // action lead into the styled auth screens, and signing in lands in the
 // library as before.
 test('landing page greets signed-out visitors and leads to sign-in', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await expect(page.getByRole('heading', { name: /Plan the world/ })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Request access' })).toHaveAttribute(
 		'href',

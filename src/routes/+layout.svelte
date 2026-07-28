@@ -23,6 +23,15 @@
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
 
+	// Marks the document once the client has taken over. Server-rendered markup
+	// is clickable before its handlers are attached, so a test that clicks
+	// straight after a navigation can hit a button that does nothing; this gives
+	// the end-to-end suite something to wait for. Effects only run in the
+	// browser, and only once the component tree is mounted.
+	$effect(() => {
+		document.documentElement.dataset.hydrated = 'true';
+	});
+
 	// Apply the signed-in user's saved theme and accent, syncing the pre-paint
 	// keys so the next load matches without a flash.
 	$effect(() => {

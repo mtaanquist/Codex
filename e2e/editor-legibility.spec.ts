@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 import { toggleView, viewChecked } from './toolbar';
 
 const DEFAULTS = { nonPrintingMarks: 'hidden', commandMarkers: 'hidden' };
@@ -7,7 +8,7 @@ const DEFAULTS = { nonPrintingMarks: 'hidden', commandMarkers: 'hidden' };
 // and the formatting bar's view toggles show non-printing marks and remember
 // their setting.
 test('Enter makes a paragraph; the view toggles show marks and persist', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 	// The toggles are remembered per user, so start from a known baseline
 	// regardless of earlier runs against the shared e2e account.
 	await page.request.post('/api/editor-view', { data: DEFAULTS });
@@ -16,7 +17,7 @@ test('Enter makes a paragraph; the view toggles show marks and persist', async (
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })

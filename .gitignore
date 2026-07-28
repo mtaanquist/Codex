@@ -27,6 +27,12 @@ playwright-report/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
+# Git worktrees checked out inside the repo. A second copy of the tree, which
+# eslint (which reads this file for its ignores) and prettier would otherwise
+# check alongside the real one, failing the lint for reasons that are not in
+# the branch being worked on.
+.claude/worktrees/
+
 # Planning prototype: regenerable from Claude Design, kept out of the repo.
 # The system-design docs under scratch/ are committed; the prototype is not.
 scratch/app-design/

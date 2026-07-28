@@ -1,17 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The read-only entity card: hovering a mention and choosing "Open full
 // details" replaces the right column with the entity's card; Back returns
 // to the tabs.
 test('entity card: open from a mention, then back to the tabs', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Card Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })

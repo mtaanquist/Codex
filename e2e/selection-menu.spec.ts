@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The editor's right-click selection menu: create an entity from the
 // selected text without leaving the page, and quick-format the selection.
 test('selection menu: create a character from a selection, then bold it', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Selection Test ${Date.now()}`;
 	await page.getByRole('button', { name: 'New universe' }).click();
@@ -11,7 +12,7 @@ test('selection menu: create a character from a selection, then bold it', async 
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	const universeId = page.url().match(/universes\/([^/?]+)/)![1];
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: universeName })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -73,7 +74,7 @@ test('selection menu: create a character from a selection, then bold it', async 
 
 	// The character landed in the story plan as a member, and the lore
 	// entry filed under the flyout's category.
-	await page.goto(`/universes/${universeId}/plan`);
+	await gotoReady(page, `/universes/${universeId}/plan`);
 	await expect(page.locator('.ent-row', { hasText: 'Veylan' })).toBeVisible();
 	await expect(page.locator('.ent-row', { hasText: 'Duskward Pact' })).toBeVisible();
 });

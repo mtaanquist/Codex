@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The library dashboard: universe sections with story cards, the per-universe
 // new-story card, the Recent row, and the status pill.
 test('dashboard: universe sections, story cards, and the new-story card', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
@@ -12,7 +13,7 @@ test('dashboard: universe sections, story cards, and the new-story card', async 
 	await expect(page).toHaveURL(`/universes/shelffall-${stamp}`);
 
 	// The new universe has its own section with a new-story card.
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const section = page.locator('.universe-section', { hasText: `Shelffall ${stamp}` });
 	await expect(section.locator('.universe-mark')).toHaveAttribute('title', 'Universe');
 	await section.getByRole('button', { name: 'New story in this universe' }).click();
@@ -21,7 +22,7 @@ test('dashboard: universe sections, story cards, and the new-story card', async 
 	await expect(page).toHaveURL(`/stories/shelved-${stamp}`);
 
 	// Its card shows up in the section and in Recent, outlining with no prose.
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const card = section.locator('.story-card', { hasText: `Shelved ${stamp}` });
 	await expect(card).toHaveCount(1);
 	await expect(card.locator('.story-card-status')).toHaveText(/Outlining/);

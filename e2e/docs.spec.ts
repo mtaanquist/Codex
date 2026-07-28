@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 test('help: browse the index and open an article', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
-	await page.goto('/docs');
+	await gotoReady(page, '/docs');
 	await expect(page.getByRole('heading', { name: 'Help', level: 1 })).toBeVisible();
 
 	await page.getByRole('link', { name: /Writing in the editor/ }).click();

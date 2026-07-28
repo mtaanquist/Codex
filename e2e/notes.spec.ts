@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // The Notes view: reach it from the editor's Notes toggle, write a note that
 // persists, pin it, and confirm a story note shows under the universe view's
@@ -6,13 +7,13 @@ import { expect, test } from '@playwright/test';
 test('write, persist, and pin a story note', async ({ page }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	await page.getByRole('button', { name: 'New universe' }).click();
 	await page.getByLabel('New universe').fill(`Notefall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
+	await gotoReady(page, '/');
 	await page
 		.locator('.universe-section', { hasText: `Notefall ${stamp}` })
 		.getByRole('button', { name: 'New story in this universe' })
@@ -43,12 +44,12 @@ test('write, persist, and pin a story note', async ({ page }) => {
 	await expect(page.locator('.group-label', { hasText: 'Pinned' })).toBeVisible();
 
 	// A universe note shows in the story view under "From the universe".
-	await page.goto(`/universes/notefall-${stamp}/notes`);
+	await gotoReady(page, `/universes/notefall-${stamp}/notes`);
 	await page.getByRole('button', { name: 'New note' }).click();
 	await page.getByPlaceholder('Untitled note').fill('World fact');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	await page.goto(`/stories/logs-${stamp}/notes`);
+	await gotoReady(page, `/stories/logs-${stamp}/notes`);
 	await expect(page.locator('.group-label', { hasText: 'From the universe' })).toBeVisible();
 	await expect(page.locator('.note-row', { hasText: 'World fact' })).toBeVisible();
 });
