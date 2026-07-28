@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reanchorPoint, reanchorRange } from './review-anchor';
+import { createAnchorMapper, reanchorPoint, reanchorRange } from './review-anchor';
 
 const BASE = 'The quick brown fox jumps over the lazy dog.';
 // Anchor "brown fox" = [10, 19).
@@ -82,5 +82,63 @@ describe('reanchorPoint', () => {
 	it('rejects out-of-bounds positions', () => {
 		expect(reanchorPoint(BASE, BASE, -1)).toBeNull();
 		expect(reanchorPoint(BASE, BASE, BASE.length + 1)).toBeNull();
+	});
+});
+
+describe('createAnchorMapper', () => {
+	// The mapper reuses one diff per pair of texts, so what it returns has to
+	// stay identical to re-anchoring each anchor on its own.
+	const CASES: Array<[string, string]> = [
+		[BASE, BASE],
+		[BASE, 'A very ' + BASE],
+		[BASE, BASE.replace('lazy dog', 'sleeping cat')],
+		[BASE, BASE.replace('brown fox', 'brown furry fox')],
+		[BASE, BASE.replace('brown fox', 'red vixen')],
+		[BASE, BASE.replace('brown fox ', '')]
+	];
+
+	it('matches reanchorRange on every offset', () => {
+		const mapper = createAnchorMapper();
+		for (const [base, current] of CASES) {
+			for (let start = 0; start < base.length; start++) {
+				for (let end = start; end <= base.length + 1; end++) {
+					expect(mapper.range(base, current, start, end)).toEqual(
+						reanchorRange(base, current, start, end)
+					);
+				}
+			}
+		}
+	});
+
+	it('matches reanchorPoint on every position', () => {
+		const mapper = createAnchorMapper();
+		for (const [base, current] of CASES) {
+			for (let position = -1; position <= base.length + 1; position++) {
+				expect(mapper.point(base, current, position)).toEqual(
+					reanchorPoint(base, current, position)
+				);
+			}
+		}
+	});
+
+	it('keeps separate results for different current texts against one base', () => {
+		const mapper = createAnchorMapper();
+		const shifted = 'A very ' + BASE;
+		const rewritten = BASE.replace('brown fox', 'red vixen');
+		expect(mapper.range(BASE, shifted, START, END)).toEqual({ start: START + 7, end: END + 7 });
+		expect(mapper.range(BASE, rewritten, START, END)).toBeNull();
+		// Repeating the first pair still maps through its own diff, not the second's.
+		expect(mapper.range(BASE, shifted, START, END)).toEqual({ start: START + 7, end: END + 7 });
+	});
+
+	it('diffs each pair of texts once however many anchors map through it', () => {
+		const mapper = createAnchorMapper();
+		const current = BASE.replace('lazy dog', 'sleeping cat');
+		const first = mapper.range(BASE, current, START, END);
+		const t0 = performance.now();
+		for (let i = 0; i < 1000; i++) mapper.range(BASE, current, START, END);
+		// A thousand cached maps cost far less than a thousand diffs would.
+		expect(performance.now() - t0).toBeLessThan(50);
+		expect(mapper.range(BASE, current, START, END)).toEqual(first);
 	});
 });

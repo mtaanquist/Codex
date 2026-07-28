@@ -13,7 +13,7 @@ import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/ass
 import { buildReviewReplyMessage, excerptAround } from '$lib/server/llm/prompts/review-reply';
 import { complete } from '$lib/server/llm/gateway';
 import { addComment, listSuggestions, listThreads } from '$lib/server/review';
-import { reanchorRange } from '$lib/review-anchor';
+import { createAnchorMapper } from '$lib/review-anchor';
 import { isUuid } from '$lib/slug';
 import type { ChatMessage } from '$lib/server/llm/providers/types';
 
@@ -48,8 +48,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const layout = await requireAssistantGate(userId, story.id);
 
-	// The full thread view carries the re-anchored range and display names.
-	const threads = await listThreads(db, story.id, reanchorRange, { userId });
+	// The full thread view carries the re-anchored range and display names. One
+	// mapper covers the threads and the suggestion lookup below, so a scene
+	// revision is diffed once rather than once per anchor.
+	const anchors = createAnchorMapper();
+	const threads = await listThreads(db, story.id, anchors.range, { userId });
 	const thread = threads.find((t) => t.id === threadId);
 	if (!thread) error(404, 'That thread does not exist.');
 	if (!thread.comments[0]?.isAssistant) {
@@ -57,7 +60,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const suggestion = thread.suggestionId
-		? ((await listSuggestions(db, story.id)).find((s) => s.id === thread.suggestionId) ?? null)
+		? ((await listSuggestions(db, story.id, undefined, anchors)).find(
+				(s) => s.id === thread.suggestionId
+			) ?? null)
 		: null;
 
 	const [scene] = await db
