@@ -15,7 +15,7 @@ import {
 import { hashToken } from './tokens.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import { recordRevision } from './revisions.ts';
-import { reanchorPoint, reanchorRange } from '../review-anchor.ts';
+import { createAnchorMapper, type AnchorMapper } from '../review-anchor.ts';
 import { wordCount } from '../word-count.ts';
 import { normaliseAssistantName } from './llm/prompts/persona.ts';
 import { EMAIL_RE } from './signup.ts';
@@ -634,24 +634,26 @@ export type SuggestionView = {
 };
 
 // Re-anchors the proposed range onto the current text: a real range maps
-// through reanchorRange, a pure insertion point through reanchorPoint.
+// through the mapper's range, a pure insertion point through its point.
 function mapSuggestionRange(
+	mapper: AnchorMapper,
 	baseText: string,
 	currentText: string,
 	start: number,
 	end: number
 ): { start: number; end: number } | null {
 	if (start === end) {
-		const point = reanchorPoint(baseText, currentText, start);
+		const point = mapper.point(baseText, currentText, start);
 		return point === null ? null : { start: point, end: point };
 	}
-	return reanchorRange(baseText, currentText, start, end);
+	return mapper.range(baseText, currentText, start, end);
 }
 
 // Where a decided suggestion now sits, so the Done view can point at it: the
 // accepted replacement (the new text it left behind) or the rejected original
 // (still in place). Null when there is nothing to mark or it cannot be found.
 function decidedAnchor(
+	mapper: AnchorMapper,
 	status: 'accepted' | 'rejected',
 	baseText: string,
 	currentText: string,
@@ -662,20 +664,24 @@ function decidedAnchor(
 	if (status === 'rejected') {
 		// Rejection left the text untouched, so the original passage maps as-is.
 		if (start === end) return null; // a rejected insertion left no text
-		return reanchorRange(baseText, currentText, start, end);
+		return mapper.range(baseText, currentText, start, end);
 	}
 	// Accepted: the replacement now occupies the spot the original held.
 	if (replacement.length === 0) return null; // a deletion leaves nothing to mark
-	const point = reanchorPoint(baseText, currentText, start);
+	const point = mapper.point(baseText, currentText, start);
 	if (point === null) return null;
 	const at = { start: point, end: point + replacement.length };
 	return at.end <= currentText.length ? at : null;
 }
 
+// The mapper is shared with listThreads when both run for the same story, so
+// each scene revision is diffed once for the whole page rather than once per
+// thread and once per suggestion.
 export async function listSuggestions(
 	db: Database,
 	storyId: string,
-	viewer?: ReviewViewer
+	viewer?: ReviewViewer,
+	mapper: AnchorMapper = createAnchorMapper()
 ): Promise<SuggestionView[]> {
 	const rows = await db
 		.select({
@@ -701,8 +707,9 @@ export async function listSuggestions(
 		// anchors to where it now sits, so the Done view can point at it.
 		const anchor =
 			row.suggestion.status === 'pending'
-				? mapSuggestionRange(row.baseBody, row.currentBody, rangeStart, rangeEnd)
+				? mapSuggestionRange(mapper, row.baseBody, row.currentBody, rangeStart, rangeEnd)
 				: decidedAnchor(
+						mapper,
 						row.suggestion.status,
 						row.baseBody,
 						row.currentBody,
@@ -819,7 +826,10 @@ export async function decideSuggestion(
 				.where(eq(scenes.id, row.scene.id))
 				.for('update');
 			if (!scene) return { ok: false, reason: 'That scene does not exist.' };
+			// One anchor against the text just read under the lock, so there is
+			// nothing for a shared mapper to reuse.
 			const anchor = mapSuggestionRange(
+				createAnchorMapper(),
 				row.baseBody,
 				scene.bodyMd,
 				row.suggestion.rangeStart,

@@ -20,7 +20,7 @@ import { gatherStory } from '$lib/server/export';
 import { storyPreferences } from '$lib/server/preferences';
 import { storyPageSetup } from '$lib/server/page-setup';
 import { reviewMentionData } from '$lib/server/mention-entities';
-import { reanchorRange } from '$lib/review-anchor';
+import { createAnchorMapper } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
@@ -38,6 +38,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// navigation as the editor. The author's review takes the full cast
 	// (restrictToMentioned is false), so reviewMentionData needs no scene ids and
 	// nothing here waits on gatherStory.
+	// Threads and suggestions re-anchor against the same scene revisions, so one
+	// mapper covers both and each revision is diffed once for the page.
+	const anchors = createAnchorMapper();
 	const [
 		content,
 		mentions,
@@ -56,8 +59,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			restrictToMentioned: false
 		}),
 		listTrashedScenes(db, story.id),
-		listThreads(db, story.id, reanchorRange, { userId: locals.user!.id }),
-		listSuggestions(db, story.id, { userId: locals.user!.id }),
+		listThreads(db, story.id, anchors.range, { userId: locals.user!.id }),
+		listSuggestions(db, story.id, { userId: locals.user!.id }, anchors),
 		storyPreferences(db, locals.user!.id, story.id),
 		storyPageSetup(db, story.id),
 		assistantLayout(db, locals.user!.id, story.id)
