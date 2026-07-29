@@ -176,8 +176,17 @@ npm run test:e2e              # Playwright; builds and previews on its own port
 Both suites create their own throwaway database, named for the checkout, and
 the end-to-end preview server takes a port derived the same way. Two worktrees
 can run tests at the same time without emptying each other's tables or, worse,
-attaching to each other's preview server and testing the wrong branch. Set
-`TEST_DATABASE_URL`, `E2E_DATABASE_URL` or `E2E_PORT` to pin any of them.
+attaching to each other's preview server and testing the wrong branch. None of
+that needs configuring.
+
+To point a run somewhere else, pass it on the command line. These belong there
+rather than in `.env`, which is the running instance's configuration:
+
+```
+TEST_DATABASE_URL=postgres://...  npm run test:unit -- --run
+E2E_DATABASE_URL=postgres://...   npm run test:e2e
+E2E_PORT=4173                     npm run test:e2e
+```
 
 Schema changes go through generated migrations: edit
 `src/lib/server/db/schema.ts`, then `npx drizzle-kit generate`. Migrations
