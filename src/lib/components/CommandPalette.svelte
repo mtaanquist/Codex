@@ -342,7 +342,7 @@
 
 {#if palette.open}
 	<div
-		class="modal-backdrop"
+		class="modal-backdrop top"
 		role="presentation"
 		onclick={(event) => {
 			if (event.target === event.currentTarget) closePalette();
