@@ -642,8 +642,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Corvin');
 
-	// The dashboard reaches the story directly, under its universe.
-	await page.locator('.brand').click();
+	// The dashboard reaches the story directly, under its universe. The brand
+	// in the bar is the way home from anywhere.
+	await page.getByRole('link', { name: 'Codex, your library' }).click();
 	await expect(page).toHaveURL('/');
 	const universeSection = page.locator('section', { hasText: universeName });
 	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
