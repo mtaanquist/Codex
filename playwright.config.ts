@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { defineConfig } from '@playwright/test';
+import { E2E_DATABASE_URL } from './e2e/database';
 
 // The preview server, the seeded worker, and global setup all read process.env
 // directly, so .env has to reach this process for a local run to match CI.
@@ -38,9 +39,11 @@ export default defineConfig({
 		port: 4173,
 		reuseExistingServer: !process.env.CI,
 		// Two-factor encrypts its secret with APP_SECRET; give the preview server
-		// a value so the 2FA journey works without extra setup.
+		// a value so the 2FA journey works without extra setup. The database is
+		// the suite's own, not the one in .env (see e2e/database.ts).
 		env: {
 			...(process.env as Record<string, string>),
+			DATABASE_URL: E2E_DATABASE_URL,
 			APP_SECRET: process.env.APP_SECRET ?? 'e2e-app-secret'
 		}
 	}

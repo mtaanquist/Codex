@@ -33,9 +33,10 @@ export async function ensureBuiltInRelationTypes(pool: pg.Pool) {
 // Create the throwaway test database if it is missing, so the suite runs
 // against any Postgres the environment provides without extra setup. Every
 // integration test file calls this in beforeAll; test files run serially
-// (see vite.config.ts), so there is no creation race.
-export async function ensureTestDatabase() {
-	const url = new URL(TEST_DATABASE_URL);
+// (see vite.config.ts), so there is no creation race. The end-to-end global
+// setup passes its own database in (see e2e/database.ts).
+export async function ensureTestDatabase(connectionString: string = TEST_DATABASE_URL) {
+	const url = new URL(connectionString);
 	const dbName = url.pathname.slice(1);
 	url.pathname = '/postgres';
 	const admin = new pg.Client({ connectionString: url.toString() });
