@@ -10,7 +10,7 @@ import { resolve } from '$app/paths';
 // The line under the mode strip at universe scope. Write and Review need a
 // story open, so both open the universe's own list of stories.
 export const UNIVERSE_MODE_NOTE =
-	'Write and Review need a story open. Both take you to the story list below.';
+	'Write and Review need a story open. Both take you to the story list.';
 
 // The line under the mode strip for an invited reviewer.
 export const GUEST_MODE_NOTE =
