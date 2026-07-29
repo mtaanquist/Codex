@@ -1,7 +1,11 @@
 import pg from 'pg';
+import { checkoutId } from '../checkout-id';
 
+// The name carries the checkout id so two worktrees running the suite at once
+// do not truncate each other's tables between tests.
 export const TEST_DATABASE_URL =
-	process.env.TEST_DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex_test';
+	process.env.TEST_DATABASE_URL ??
+	`postgres://codex:codex@localhost:5432/codex_test_${checkoutId()}`;
 
 // The built-in relation types are seeded by migration 0008, but any test
 // file that truncates universes with cascade wipes relation_types too (the
