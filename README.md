@@ -169,9 +169,15 @@ Checks, in the order CI runs them:
 ```
 npm run lint                  # prettier + eslint
 npm run check                 # svelte-check
-npm run test:unit -- --run    # unit + integration (throwaway codex_test db)
-npm run test:e2e              # Playwright; builds and previews on :4173
+npm run test:unit -- --run    # unit + integration (throwaway database)
+npm run test:e2e              # Playwright; builds and previews on its own port
 ```
+
+Both suites create their own throwaway database, named for the checkout, and
+the end-to-end preview server takes a port derived the same way. Two worktrees
+can run tests at the same time without emptying each other's tables or, worse,
+attaching to each other's preview server and testing the wrong branch. Set
+`TEST_DATABASE_URL`, `E2E_DATABASE_URL` or `E2E_PORT` to pin any of them.
 
 Schema changes go through generated migrations: edit
 `src/lib/server/db/schema.ts`, then `npx drizzle-kit generate`. Migrations
