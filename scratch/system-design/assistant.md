@@ -1,15 +1,14 @@
 # The Assistant (LLM integration)
 
-Status: Phase 9, in progress. The server-only gateway plumbing is built,
-tested, and merged to `develop` (the `src/lib/server/llm/` module: config,
-egress guard, OpenAI-compatible provider, context assembly, tools, and the
-setup helpers). The first surface is built: the account Assistant settings
-page at `/account/assistant` (PR #325). The remaining surfaces (chat, inline,
-review, the admin egress panel, the per-story mute) and the worker jobs are
-not yet built; the "Frontend wiring map" at the end tracks each one. Parts of
-this document remain deliberately ahead of the code, so treat the numbers and
-prompts as placeholders (marked TODO) until a real prose corpus is available
-to calibrate them against.
+Status: Phase 9, shipped (status reconciled 2026-07-29). The gateway
+(`src/lib/server/llm/`), the account settings page, the chat tab, inline
+co-author and continuation, the reviewer role, the admin egress panel, the
+per-story mute, and the background jobs with their activity cards are all
+merged. The "Frontend wiring map" at the end records where each surface
+landed. The design intent below still holds and the shipped code matches
+its shape; where the text speaks of the work in the future tense, read it
+as the rationale that produced what is now built. Numbers and prompts
+marked TODO remain placeholders to calibrate against a real prose corpus.
 
 The feature is named the Assistant throughout, in the UI and the code. "AI"
 and "LLM" describe the mechanism; the Assistant is the thing the writer

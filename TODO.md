@@ -16,9 +16,19 @@ navigation and wayfinding, secondary-surface cohesion, and a primitive
 consolidation sheet. The audit found the drift the briefs target: 20+
 button skins, 9 menu systems, 3 modals, ~400 lines of dead CSS,
 hard-coded colours bypassing tokens, and four pages outside any shell
-(docs, print, guest review, public reader). Next: run the briefs in
-Claude Design, port the results, then the code-side consolidation
-refactor the sheet's backlog section lists.
+(docs, print, guest review, public reader). Also on this branch: a
+reconciliation pass over `design.md` against the shipped app (the AI
+section rewritten for the shipped Assistant, continuous-view editing,
+EPUB/PDF exports, the four sign-up modes, the flat shelf with links and
+commissions, scene-mark preferences, plus a new "Beyond the writing
+surface" section stating what review, insights, goals, notifications,
+print, import, and admin are each for), the stale status header in
+`assistant.md`, and three stale schema comments (`llm_config` twice,
+`cover_asset_id`). Next: build the design kit preview bundle
+(`scratch/design-kit/`, one card per canonical primitive in all three
+themes, DesignSync-ready), run the briefs in Claude Design, port the
+results, then the code-side consolidation refactor the sheet's backlog
+section lists.
 
 Dev environment automation (2026-07-28, branch
 `feat/dev-env-automation`). Setting the project up on a fresh macOS

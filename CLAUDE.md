@@ -24,6 +24,7 @@ Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for backg
 - Authored content stays exportable. Anything holding a user's words is stored as markdown that round-trips through export; do not introduce a format that traps content.
 - Prefer what is already here. Reach for the standard library or an existing dependency before adding a new one, favour stable low-churn packages, and match the patterns and naming already in the file.
 - Keep the in-app help current. When you add or change user-facing functionality, check whether a help article in `src/lib/docs/` covers it and update or add one so the docs stay in step with the features. Admin-only panels do not need help articles.
+- Keep the design docs honest. When a change ships something `scratch/system-design/` describes as future, absent, or an open question, update the relevant doc (`design.md`, `assistant.md`, a status header) in the same branch. A doc that describes shipped work in the future tense misleads every later session that reads it as the spec.
 
 ## Testing
 
