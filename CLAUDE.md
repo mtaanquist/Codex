@@ -4,6 +4,8 @@ A writing workspace for long-form creative work: novels, serials, worldbuilding,
 
 The prototype (`scratch/app-design/`) is gitignored, so a fresh clone will not have it. Without it, work from the committed design docs in `scratch/system-design/`, the design system already ported to `src/lib/styles/`, and the patterns in the existing screens; if a step genuinely needs the visual spec and it is absent, say so rather than inventing a layout.
 
+Before building a new page or changing an existing one, read the components sheet at `scratch/system-design/design-system.md`. It names the canonical primitives and shells, the legacy patterns that must not be copied, and the per-page checklist; keep it updated when a primitive is added or changed.
+
 Progress is tracked in `TODO.md` (current step, feedback backlog, review follow-ups); keep it updated as steps complete.
 
 Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for background jobs, CodeMirror 6 for the editor, Caddy for TLS.
