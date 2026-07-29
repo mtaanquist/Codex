@@ -6,6 +6,8 @@ import pg from 'pg';
 import { hash } from '@node-rs/argon2';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { ensureBuiltInRelationTypes, ensureTestDatabase } from '../tests/integration/test-db';
+import { E2E_DATABASE_URL } from './database';
 
 export const WORKER_PID_FILE = join(tmpdir(), 'codex-e2e-worker.pid');
 export const WORKER_LOG_FILE = join(tmpdir(), 'codex-e2e-worker.log');
@@ -38,15 +40,24 @@ export default async function globalSetup() {
 		{
 			stdio: ['ignore', log, log],
 			detached: true,
-			env: process.env
+			// The worker has its own default database; point it at the suite's, or
+			// it processes the jobs of whatever else is running.
+			env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL }
 		}
 	);
 	worker.unref();
 	writeFileSync(WORKER_PID_FILE, String(worker.pid));
-	const connectionString =
-		process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
-	const pool = new pg.Pool({ connectionString, max: 1 });
+	await ensureTestDatabase(E2E_DATABASE_URL);
+	const pool = new pg.Pool({ connectionString: E2E_DATABASE_URL, max: 1 });
 	await migrate(drizzle(pool), { migrationsFolder: 'drizzle' });
+
+	// Start from an empty workspace. The specs do not clean up after themselves,
+	// and the cost of that only shows up much later, as a slow dashboard and
+	// assertions that miss their timeout. Cascading takes the built-in relation
+	// types with it (they hang off universes by a nullable key), so put them
+	// back; the accounts below are untouched, nothing points users at universes.
+	await pool.query('truncate universes cascade');
+	await ensureBuiltInRelationTypes(pool);
 	const passwordHash = await hash('e2e-password', {
 		memoryCost: 19456,
 		timeCost: 2,
