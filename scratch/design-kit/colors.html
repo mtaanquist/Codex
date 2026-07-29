@@ -1,0 +1,98 @@
+<!-- @dsCard group="Foundations" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Colors</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			.sw-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+				gap: 8px;
+				margin-bottom: 6px;
+			}
+			.sw {
+				border: 1px solid var(--border);
+				border-radius: var(--radius-sm);
+				overflow: hidden;
+				font-size: 10.5px;
+				color: var(--text-muted);
+			}
+			.sw i {
+				display: block;
+				height: 32px;
+			}
+			.sw span {
+				display: block;
+				padding: 4px 6px;
+			}
+			.tx b {
+				display: block;
+				font-weight: 500;
+				font-size: 13.5px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Surfaces, back to front</div>
+			<div class="sw-grid">
+				<div class="sw"><i style="background: var(--bg)"></i><span>bg</span></div>
+				<div class="sw"><i style="background: var(--bg-elevated)"></i><span>bg-elevated</span></div>
+				<div class="sw"><i style="background: var(--bg-panel)"></i><span>bg-panel</span></div>
+				<div class="sw"><i style="background: var(--bg-card)"></i><span>bg-card</span></div>
+				<div class="sw"><i style="background: var(--bg-canvas)"></i><span>bg-canvas</span></div>
+				<div class="sw"><i style="background: var(--bg-inset)"></i><span>bg-inset</span></div>
+				<div class="sw"><i style="background: var(--bg-hover)"></i><span>bg-hover</span></div>
+				<div class="sw"><i style="background: var(--bg-active)"></i><span>bg-active</span></div>
+			</div>
+			<div class="kit-h">Text tiers and borders</div>
+			<div class="row tx">
+				<b style="color: var(--text)">text</b>
+				<b style="color: var(--text-muted)">text-muted</b>
+				<b style="color: var(--text-faint)">text-faint</b>
+			</div>
+			<div class="sw-grid">
+				<div class="sw"><i style="background: var(--border)"></i><span>border</span></div>
+				<div class="sw"><i style="background: var(--border-strong)"></i><span>border-strong</span></div>
+			</div>
+			<div class="kit-h">Accent and danger</div>
+			<div class="sw-grid">
+				<div class="sw"><i style="background: var(--accent)"></i><span>accent</span></div>
+				<div class="sw"><i style="background: var(--accent-soft)"></i><span>accent-soft</span></div>
+				<div class="sw"><i style="background: var(--accent-line)"></i><span>accent-line</span></div>
+				<div class="sw"><i style="background: var(--danger)"></i><span>danger</span></div>
+				<div class="sw"><i style="background: var(--danger-soft)"></i><span>danger-soft</span></div>
+			</div>
+			<div class="kit-h">Status</div>
+			<div class="sw-grid">
+				<div class="sw"><i style="background: var(--status-outline)"></i><span>outline</span></div>
+				<div class="sw"><i style="background: var(--status-draft)"></i><span>draft</span></div>
+				<div class="sw"><i style="background: var(--status-revised)"></i><span>revised</span></div>
+				<div class="sw"><i style="background: var(--status-final)"></i><span>final</span></div>
+			</div>
+			<div class="kit-h">Category tints</div>
+			<div class="sw-grid">
+				<div class="sw"><i style="background: var(--cat-violet)"></i><span>violet</span></div>
+				<div class="sw"><i style="background: var(--cat-rose)"></i><span>rose</span></div>
+				<div class="sw"><i style="background: var(--cat-green)"></i><span>green</span></div>
+				<div class="sw"><i style="background: var(--cat-blue)"></i><span>blue</span></div>
+				<div class="sw"><i style="background: var(--cat-amber)"></i><span>amber</span></div>
+				<div class="sw"><i style="background: var(--cat-red)"></i><span>red</span></div>
+				<div class="sw"><i style="background: var(--cat-lime)"></i><span>lime</span></div>
+				<div class="sw"><i style="background: var(--cat-teal)"></i><span>teal</span></div>
+				<div class="sw"><i style="background: var(--cat-cyan)"></i><span>cyan</span></div>
+				<div class="sw"><i style="background: var(--cat-fuchsia)"></i><span>fuchsia</span></div>
+			</div>
+			<p class="note">
+				Every colour in the app is one of these tokens. Text on accent fills uses
+				accent-contrast, never white. Status colours mark scene and story state only; category
+				tints mark whatever the user colour-codes. New tints derive with color-mix over a token.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

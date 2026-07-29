@@ -1,0 +1,35 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Empty states</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			.pane .kit-frame {
+				border: 1px dashed var(--border-strong);
+				border-radius: var(--radius);
+				margin-bottom: 14px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-frame">
+				<div class="empty">Select a scene to start writing.</div>
+			</div>
+			<div class="kit-frame">
+				<div class="empty">No mentions in this scene yet.</div>
+			</div>
+			<p class="note">
+				One empty-state primitive: centred, faint, thirteen pixels. The text is one short
+				sentence telling the user what to do next, never why the area exists. The dashed frame
+				here is scaffolding, not part of the primitive.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>
