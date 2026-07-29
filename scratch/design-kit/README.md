@@ -22,10 +22,11 @@ the card's group; the Design System pane uses it to build its index.
 - Markup in the cards mirrors real call sites in `src/lib/components/` and
   `src/routes/`. When a primitive's markup changes in the app, update its
   card.
-- Fonts: the app loads Hanken Grotesk, Spectral, and JetBrains Mono via
-  fontsource. The kit does not, so previews fall back to the system stacks
-  declared in the tokens. Shapes and colours are accurate; letterforms are
-  approximate.
+- Fonts: `fonts.css` bundles the real families (Hanken Grotesk, Spectral,
+  JetBrains Mono; latin subsets, SIL OFL) copied from the same fontsource
+  packages the app loads, so previews use the actual letterforms. When the
+  app's font versions change, re-copy the woff2 files from
+  `node_modules` into `fonts/`.
 
 ## Viewing locally
 
@@ -39,11 +40,12 @@ present to approve the plan):
 
 1. `list_projects`, or `create_project` the first time.
 2. `finalize_plan` with writes for `styles/*.css`, `*.html`, `kit.css`,
-   and `kit.js`, with this directory as `localDir`.
-3. `write_files` uploading the stylesheets into the project's `styles/`
-   and the cards plus the two kit scaffold files at the project root. The
-   symlink means `localPath: styles/tokens.css` resolves to the shipped
-   file.
+   `kit.js`, `fonts.css`, and `fonts/*.woff2`. Use the repository root as
+   `localDir`: the tool refuses to read through the `styles/` symlink
+   (it resolves outside this directory), so the stylesheets upload from
+   `src/lib/styles/` directly.
+3. `write_files` uploading the stylesheets into the project's `styles/`,
+   and the cards, scaffold, and font files at their kit-relative paths.
 
 Re-run the sync whenever a primitive or token changes. The sync is one-way,
 repo to project; never edit the system inside the project.
