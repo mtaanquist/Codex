@@ -72,7 +72,9 @@ test('opening a story resumes the last-edited scene', async ({ page }) => {
 	await expect(page.locator('.scene-row')).toHaveCount(1);
 	await expect(page.locator('.scene-row .scene-name')).toHaveText('Second thoughts');
 	await page.getByLabel('Filter chapters and scenes...').fill('zzz-no-such-scene');
-	await expect(page.locator('.search-empty')).toBeVisible();
+	await expect(
+		page.locator('.empty-state-text', { hasText: 'No chapters or scenes match.' })
+	).toBeVisible();
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await expect(page.locator('.scene-row')).toHaveCount(2);
 });

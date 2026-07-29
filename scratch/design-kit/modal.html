@@ -1,0 +1,100 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Modal</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/pages.css" />
+		<link rel="stylesheet" href="styles/menus.css" />
+		<link rel="stylesheet" href="styles/primitives.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			/* The real backdrop is fixed to the viewport; the card pins it in flow so
+			   three themes can sit side by side. Everything else is the primitive. */
+			.pane .modal-backdrop {
+				position: relative;
+				inset: auto;
+				z-index: auto;
+				padding: var(--space-5);
+				border-radius: var(--radius);
+				border: 1px dashed var(--border-strong);
+				margin-bottom: 14px;
+			}
+			.pane .modal-panel {
+				animation: none;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Default (420px)</div>
+			<div class="modal-backdrop">
+				<div class="modal-panel">
+					<div class="modal-head">
+						<div class="modal-head-main">
+							<h2 class="modal-title">Delete this scene?</h2>
+							<p class="modal-sub">
+								The scene and its review notes go with it. This cannot be undone.
+							</p>
+						</div>
+						<button class="icon-btn sm" type="button" title="Close" aria-label="Close">
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M6 6l12 12M18 6 6 18" />
+							</svg>
+						</button>
+					</div>
+					<div class="modal-foot">
+						<div class="modal-foot-note">Esc to close</div>
+						<button class="btn btn-sm btn-secondary" type="button">Cancel</button>
+						<button class="btn btn-sm btn-danger" type="button">Delete</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="kit-h">Wide (modal-lg), search head and rows</div>
+			<div class="modal-backdrop">
+				<div class="modal-panel modal-lg">
+					<div class="modal-head searching">
+						<input
+							class="modal-search"
+							type="text"
+							placeholder="Search, or type a command..."
+							aria-label="Search everything"
+						/>
+					</div>
+					<div class="modal-body rows">
+						<div class="modal-label">Commands</div>
+						<button class="menu-item active" type="button">Start a review</button>
+						<button class="menu-item" type="button">New scene</button>
+						<button class="menu-item" type="button">Export the story</button>
+					</div>
+					<div class="modal-foot">
+						<div class="modal-foot-note">
+							<span><kbd>Enter</kbd> to open</span>
+							<span><kbd>Esc</kbd> to close</span>
+						</div>
+					</div>
+				</div>
+			</div>
+			<p class="note">
+				One overlay primitive, two sizes and no third: 420px by default, 640px for a list to scan
+				or a passage to read. The backdrop is drawn from the page background, so each theme dims
+				in its own key. The head carries a title or a search field, the close is an icon-btn sm,
+				and the primary action sits last in the footer. Esc closes, focus is trapped in the panel
+				and returned to the opener, and a backdrop click closes only when nothing is unsaved:
+				that behaviour is the component's, not the CSS's.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

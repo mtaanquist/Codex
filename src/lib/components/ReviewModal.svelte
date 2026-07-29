@@ -113,7 +113,7 @@
 
 {#if reviewModal.open}
 	<div
-		class="review-modal-backdrop"
+		class="modal-backdrop"
 		role="presentation"
 		onclick={(event) => {
 			if (event.target === event.currentTarget) closeReviewModal();
@@ -121,84 +121,69 @@
 		onkeydown={onKeydown}
 	>
 		<div
-			class="review-modal"
+			class="modal-panel modal-lg"
 			role="dialog"
 			aria-modal="true"
 			aria-label="Review with the Assistant"
 		>
-			<h2 class="rm-title">Review with the Assistant</h2>
+			<div class="modal-head">
+				<div class="modal-head-main">
+					<h2 class="modal-title">Review with the Assistant</h2>
+				</div>
+			</div>
 
-			<fieldset class="rm-group">
-				<legend>What to review</legend>
-				{#each levels as option (option.id)}
-					<label class="rm-radio">
-						<input type="radio" name="review-level" value={option.id} bind:group={level} />
-						<span>{option.label}</span>
-					</label>
-				{/each}
-			</fieldset>
+			<div class="modal-body">
+				<fieldset class="rm-group">
+					<legend>What to review</legend>
+					{#each levels as option (option.id)}
+						<label class="rm-radio">
+							<input type="radio" name="review-level" value={option.id} bind:group={level} />
+							<span>{option.label}</span>
+						</label>
+					{/each}
+				</fieldset>
 
-			<fieldset class="rm-group">
-				<legend>What to check</legend>
-				<label class="rm-check">
-					<input type="checkbox" bind:checked={general} disabled={categories.length > 0} />
-					<span>
-						General notes
-						<span class="rm-hint">a few high-value observations</span>
-					</span>
-				</label>
-				{#each CATEGORY_OPTIONS as option (option.id)}
+				<fieldset class="rm-group">
+					<legend>What to check</legend>
 					<label class="rm-check">
-						<input type="checkbox" bind:checked={picked[option.id]} />
-						<span>{option.label}</span>
+						<input type="checkbox" bind:checked={general} disabled={categories.length > 0} />
+						<span>
+							General notes
+							<span class="rm-hint">a few high-value observations</span>
+						</span>
 					</label>
-				{/each}
-				<p class="rm-note">
-					{#if categories.length === 0}
-						The Assistant leaves a few high-value notes.
-					{:else if categories.length === REVIEW_CATEGORIES.length}
-						A full copyedit: every category, plus a cross-scene consistency pass.
-					{:else}
-						An exhaustive pass over the categories you picked.
-					{/if}
-				</p>
-			</fieldset>
+					{#each CATEGORY_OPTIONS as option (option.id)}
+						<label class="rm-check">
+							<input type="checkbox" bind:checked={picked[option.id]} />
+							<span>{option.label}</span>
+						</label>
+					{/each}
+					<p class="rm-note">
+						{#if categories.length === 0}
+							The Assistant leaves a few high-value notes.
+						{:else if categories.length === REVIEW_CATEGORIES.length}
+							A full copyedit: every category, plus a cross-scene consistency pass.
+						{:else}
+							An exhaustive pass over the categories you picked.
+						{/if}
+					</p>
+				</fieldset>
+			</div>
 
-			<div class="rm-actions">
-				<button class="btn" type="button" onclick={closeReviewModal}>Cancel</button>
-				<button class="btn btn-primary" type="button" onclick={start}>Start review</button>
+			<div class="modal-foot">
+				<div class="modal-foot-note"></div>
+				<button class="btn btn-sm btn-secondary" type="button" onclick={closeReviewModal}>
+					Cancel
+				</button>
+				<button class="btn btn-sm btn-primary" type="button" onclick={start}>Start review</button>
 			</div>
 		</div>
 	</div>
 {/if}
 
 <style>
-	.review-modal-backdrop {
-		position: fixed;
-		inset: 0;
-		background: color-mix(in oklab, var(--bg-canvas) 55%, transparent);
-		backdrop-filter: blur(2px);
-		z-index: 85;
-		display: flex;
-		justify-content: center;
-		align-items: flex-start;
-		padding-top: 14vh;
-	}
-	.review-modal {
-		width: min(420px, calc(100vw - 32px));
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		padding: 18px 20px 16px;
-		font-family: var(--font-ui);
-	}
-	.rm-title {
-		margin: 0 0 14px;
-		font-size: 16px;
-		font-weight: 600;
-		color: var(--text);
-	}
+	/* The overlay, panel, head and footer come from the modal primitive; what is
+	   left here is the shape of the two option groups. */
 	.rm-group {
 		border: 0;
 		margin: 0 0 14px;
@@ -207,7 +192,7 @@
 	.rm-group legend {
 		padding: 0;
 		margin-bottom: 7px;
-		font-size: 11px;
+		font-size: var(--text-micro);
 		letter-spacing: 0.07em;
 		text-transform: uppercase;
 		color: var(--text-faint);
@@ -218,29 +203,23 @@
 		align-items: baseline;
 		gap: 9px;
 		padding: 5px 0;
-		font-size: 13.5px;
+		font-size: var(--text-base);
 		color: var(--text);
 		cursor: pointer;
 	}
 	.rm-radio input,
 	.rm-check input {
 		margin: 0;
-		accent-color: var(--accent, currentColor);
+		accent-color: var(--accent);
 	}
 	.rm-hint {
 		display: block;
-		font-size: 12px;
+		font-size: var(--text-meta);
 		color: var(--text-faint);
 	}
 	.rm-note {
 		margin: 8px 0 0;
-		font-size: 12px;
+		font-size: var(--text-meta);
 		color: var(--text-faint);
-	}
-	.rm-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 8px;
-		margin-top: 16px;
 	}
 </style>

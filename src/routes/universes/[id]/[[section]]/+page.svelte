@@ -311,7 +311,7 @@
 						<div class="category-row">
 							<span class="category-tools">
 								<button
-									class="tool-btn turn-up"
+									class="icon-btn sm turn-up"
 									type="button"
 									title="Move category up"
 									disabled={index === 0}
@@ -320,7 +320,7 @@
 									<Icon name="chevron" size={12} />
 								</button>
 								<button
-									class="tool-btn turn-down"
+									class="icon-btn sm turn-down"
 									type="button"
 									title="Move category down"
 									disabled={index === drafts.length - 1}
@@ -405,19 +405,23 @@
 			</div>
 			<div class="revision-filters">
 				<span class="revision-filter-label">Filter</span>
-				{#each FILTERS as filter (filter.id)}
-					<button
-						class="revision-filter-chip"
-						class:active={historyFilter === filter.id}
-						type="button"
-						onclick={() => (historyFilter = filter.id)}
-					>
-						{filter.label}
-					</button>
-				{/each}
+				<div class="seg">
+					{#each FILTERS as filter (filter.id)}
+						<button
+							class="seg-btn"
+							class:active={historyFilter === filter.id}
+							type="button"
+							onclick={() => (historyFilter = filter.id)}
+						>
+							{filter.label}
+						</button>
+					{/each}
+				</div>
 			</div>
 			{#if filteredTimeline.length === 0}
-				<p class="block-empty">Nothing recorded yet. Changes appear here as you work.</p>
+				<div class="empty-state tight">
+					<p class="empty-state-text">Nothing recorded yet. Changes appear here as you work.</p>
+				</div>
 			{:else}
 				<div class="revision-panel">
 					{#each timelineGroups as group (group.label)}
@@ -431,7 +435,7 @@
 								></span>
 								<div class="revision-main">
 									<div class="revision-source">
-										<span class="revision-source-kind">
+										<span class="pill">
 											{KIND_LABELS[row.entityType] ?? row.entityType}
 										</span>
 										{row.entityName ?? 'Untitled'}
@@ -677,10 +681,10 @@
 		gap: 1px;
 		flex: none;
 	}
-	.category-tools .tool-btn.turn-up :global(svg) {
+	.category-tools .icon-btn.turn-up :global(svg) {
 		transform: rotate(-90deg);
 	}
-	.category-tools .tool-btn.turn-down :global(svg) {
+	.category-tools .icon-btn.turn-down :global(svg) {
 		transform: rotate(90deg);
 	}
 	.category-color-dot {

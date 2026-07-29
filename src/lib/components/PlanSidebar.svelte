@@ -320,7 +320,9 @@
 		{/if}
 
 		{#if !anyMatch}
-			<div class="search-empty">Nothing matches.</div>
+			<div class="empty-state tight">
+				<p class="empty-state-text">Nothing matches.</p>
+			</div>
 		{/if}
 		{#if q === ''}
 			<form method="POST" action="?/createCategory" class="new-entity">

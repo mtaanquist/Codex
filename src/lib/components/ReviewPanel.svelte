@@ -176,7 +176,7 @@
 							{composer.anchored ? 'On the selected passage' : 'On the whole scene'}
 						</div>
 					</div>
-					<span class="rv-type-pill">
+					<span class="pill">
 						{#if composer.mode === 'suggest'}<Icon name="suggest" size={11} /> Edit{:else}<Icon
 								name="comment"
 								size={11}
@@ -218,10 +218,12 @@
 				{/if}
 
 				<div class="rv-actions">
-					<button class="rv-btn solid" type="submit" disabled={!canSave}>
+					<button class="btn btn-sm btn-primary" type="submit" disabled={!canSave}>
 						{composer.mode === 'suggest' ? 'Save suggestion' : 'Comment'}
 					</button>
-					<button class="rv-btn ghost" type="button" onclick={onCloseComposer}>Cancel</button>
+					<button class="btn btn-sm btn-ghost" type="button" onclick={onCloseComposer}
+						>Cancel</button
+					>
 				</div>
 			</form>
 		</div>
@@ -229,19 +231,19 @@
 		<div class="rv-panel-head">
 			<div class="rv-panel-title">
 				<span>Review</span>
-				<button class="rv-scene-comment" type="button" onclick={onStartSceneComment}>
+				<button class="btn btn-sm btn-secondary" type="button" onclick={onStartSceneComment}>
 					<Icon name="comment-plus" size={13} /> Whole scene
 				</button>
 			</div>
-			<div class="rv-filters">
+			<div class="seg full">
 				{#each FILTERS as f (f.id)}
 					<button
-						class="rv-filter"
+						class="seg-btn"
 						class:active={filter === f.id}
 						type="button"
 						onclick={() => setFilter(f.id)}
 					>
-						{f.label}<span class="rv-filter-n">{f.n}</span>
+						{f.label}<span class="seg-count">{f.n}</span>
 					</button>
 				{/each}
 			</div>
@@ -262,7 +264,7 @@
 					onsubmit={confirmAcceptAll}
 				>
 					<input type="hidden" name="sceneId" value={scene.id} />
-					<button class="rv-acceptall" type="submit">
+					<button class="btn btn-sm btn-accept" type="submit">
 						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{pluralSuffix(nAcceptable)}
 					</button>
 				</form>
@@ -271,9 +273,9 @@
 
 		<div class="rv-panel-scroll" bind:this={scrollEl}>
 			{#if cards.length === 0}
-				<div class="rv-panel-empty">
-					<Icon name="check-circle" size={26} />
-					<div>
+				<div class="empty-state tight">
+					<div class="empty-state-icon"><Icon name="check-circle" size={22} /></div>
+					<p class="empty-state-text">
 						{#if filter === 'resolved'}
 							Nothing resolved in this scene yet.
 						{:else}
@@ -281,7 +283,7 @@
 								? ' or suggest an edit'
 								: ''}.
 						{/if}
-					</div>
+					</p>
 				</div>
 			{/if}
 

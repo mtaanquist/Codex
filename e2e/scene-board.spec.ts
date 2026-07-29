@@ -77,7 +77,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await expect(page.locator('.ent-row')).toHaveCount(1);
 	await expect(page.locator('.ent-row .name')).toHaveText('Ferry');
 	await page.getByLabel('Filter characters, places, lore...').fill('zzz-nobody');
-	await expect(page.locator('.search-empty')).toBeVisible();
+	await expect(page.locator('.empty-state-text', { hasText: 'Nothing matches.' })).toBeVisible();
 	await page.getByRole('button', { name: 'Clear' }).click();
 
 	// The universe plan shows the story board: this story sits in the lane

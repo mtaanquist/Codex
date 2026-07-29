@@ -12,6 +12,8 @@
 	import '$lib/styles/editor.css';
 	import '$lib/styles/review.css';
 	import '$lib/styles/menus.css';
+	// Last, so the consolidated primitives win over any screen-local skin.
+	import '$lib/styles/primitives.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';

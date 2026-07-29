@@ -46,7 +46,7 @@
 	{#if entity.related && entity.related.length > 0}
 		<div class="pop-related">
 			{#each entity.related.slice(0, 4) as other (other.name)}
-				<span class="pop-chip">
+				<span class="chip">
 					<EntityBadge name={other.name} categoryColor={other.color} size="dot" />
 					{other.name}
 				</span>
@@ -55,6 +55,6 @@
 	{/if}
 	{#if href}
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-		<a class="pop-open" {href}>Open full details</a>
+		<a class="btn btn-primary" {href}>Open full details</a>
 	{/if}
 </div>

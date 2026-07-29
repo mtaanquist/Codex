@@ -30,6 +30,25 @@ themes, DesignSync-ready), run the briefs in Claude Design, port the
 results, then the code-side consolidation refactor the sheet's backlog
 section lists.
 
+Primitives consolidation (2026-07-29, branch
+`feat/primitives-consolidation`). The fourth brief's result, ported.
+New `src/lib/styles/primitives.css`, loaded last, owns the families that
+had no single owner: the modal, the empty state, the chip remove
+affordance, and the shared focus ring. `.btn` is now the complete family
+(states plus `.btn-accept`), `.icon-btn` gains `.sm` and `.danger`,
+`.seg` gains `.seg-count`, and `tokens.css` gains the seven-step type
+ramp, `--danger-contrast`, and a per-theme `--select-caret`. Migrated
+across the app: the `.rv-btn` family, `.rv-quick-btn`, `.rb-btn`,
+`.mini-btn`, `.tool-btn`, `.send-btn` and `.pop-open` onto `.btn`/
+`.icon-btn`; `.rtabs`, `.rv-filters`, `.rv-mtabs` and
+`.revision-filter-chip` onto `.seg`; the three hand-rolled modals onto
+one primitive; twelve empty-state spellings onto `.empty-state`. About
+1,400 lines of CSS deleted, including the drift sheet's dead blocks
+(`.ctx-menu`, `.settings-nav`, `.note-card`, `.icon-button`, `.kbd`).
+Remaining from the sheet's backlog: the duplicated component blocks
+(assistant chat, `.insp-*`, kanban), the residual bare `#fff`, and focus
+reachability on the sidebar rows.
+
 Dev environment automation (2026-07-28, branch
 `feat/dev-env-automation`). Setting the project up on a fresh macOS
 machine turned up three things CI never sees, all fixed here.

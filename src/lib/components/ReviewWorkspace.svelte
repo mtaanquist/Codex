@@ -390,9 +390,9 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="review-shell">
-	<nav class="rv-mtabs" aria-label="Review sections">
+	<nav class="seg full" aria-label="Review sections">
 		<button
-			class="rv-mtab"
+			class="seg-btn"
 			class:active={mobileTab === 'nav'}
 			type="button"
 			onclick={() => (mobileTab = 'nav')}
@@ -400,7 +400,7 @@
 			Scenes
 		</button>
 		<button
-			class="rv-mtab"
+			class="seg-btn"
 			class:active={mobileTab === 'read'}
 			type="button"
 			onclick={() => (mobileTab = 'read')}
@@ -408,12 +408,12 @@
 			Manuscript
 		</button>
 		<button
-			class="rv-mtab"
+			class="seg-btn"
 			class:active={mobileTab === 'notes'}
 			type="button"
 			onclick={() => (mobileTab = 'notes')}
 		>
-			Notes{#if sceneOpen > 0}<span class="rv-mtab-n">{sceneOpen}</span>{/if}
+			Notes{#if sceneOpen > 0}<span class="seg-count">{sceneOpen}</span>{/if}
 		</button>
 	</nav>
 	<div class="body" data-mtab={mobileTab}>
@@ -499,16 +499,18 @@
 					{/if}
 				{/key}
 			{:else}
-				<div class="rv-empty-scene">This story has no scenes to review yet.</div>
+				<div class="empty-state">
+					<p class="empty-state-text">This story has no scenes to review yet.</p>
+				</div>
 			{/if}
 		</main>
 
 		<aside class="pane right">
 			{#if assistantTab}
 				<div class="rv-rhead">
-					<div class="rtabs">
+					<div class="seg full">
 						<button
-							class="rtab"
+							class="seg-btn"
 							class:active={rightTab === 'review'}
 							type="button"
 							onclick={() => (rightTab = 'review')}
@@ -516,7 +518,7 @@
 							Review
 						</button>
 						<button
-							class="rtab"
+							class="seg-btn"
 							class:active={rightTab === 'assistant'}
 							type="button"
 							onclick={() => (rightTab = 'assistant')}

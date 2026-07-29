@@ -123,12 +123,14 @@
 					}}
 				/>
 			{:else if data.characters.length === 0 && data.places.length === 0}
-				<div class="empty">
-					<p>Nothing here yet. Add a character or a place in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">
+						Nothing here yet. Add a character or a place in the sidebar.
+					</p>
 				</div>
 			{:else}
-				<div class="empty">
-					<p>Select a character or place in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">Select a character or place in the sidebar.</p>
 				</div>
 			{/if}
 		</main>
@@ -136,9 +138,9 @@
 			<div class="right-head">
 				<!-- The same three pills whether the centre shows the board or an
 				     entity, so the pane never changes shape underfoot. -->
-				<div class="rtabs">
+				<div class="seg full">
 					<button
-						class="rtab"
+						class="seg-btn"
 						class:active={rightTab === 'reference'}
 						type="button"
 						onclick={() => (rightTab = 'reference')}
@@ -146,7 +148,7 @@
 						Reference
 					</button>
 					<button
-						class="rtab"
+						class="seg-btn"
 						class:active={rightTab === 'history'}
 						type="button"
 						onclick={() => (rightTab = 'history')}
@@ -154,7 +156,7 @@
 						History
 					</button>
 					<button
-						class="rtab"
+						class="seg-btn"
 						class:active={rightTab === 'session'}
 						type="button"
 						onclick={() => (rightTab = 'session')}
@@ -163,7 +165,7 @@
 					</button>
 					{#if data.assistant.tabEnabled}
 						<button
-							class="rtab"
+							class="seg-btn"
 							class:active={rightTab === 'assistant'}
 							type="button"
 							onclick={() => (rightTab = 'assistant')}
@@ -195,7 +197,9 @@
 					/>
 				{:else}
 					<div class="right-scroll">
-						<div class="empty">Select a character or place to see its history.</div>
+						<div class="empty-state tight">
+							<p class="empty-state-text">Select a character or place to see its history.</p>
+						</div>
 					</div>
 				{/if}
 			{:else}
@@ -238,11 +242,15 @@
 							{/each}
 						</div>
 					{:else if data.selected}
-						<div class="empty">
-							No mentions in this story yet. Mentions appear shortly after the prose is saved.
+						<div class="empty-state tight">
+							<p class="empty-state-text">
+								No mentions in this story yet. Mentions appear shortly after the prose is saved.
+							</p>
 						</div>
 					{:else}
-						<div class="empty">Mentions and relationships arrive here.</div>
+						<div class="empty-state tight">
+							<p class="empty-state-text">Mentions and relationships arrive here.</p>
+						</div>
 					{/if}
 					{#if data.selected}
 						<div class="r-card mentions-card">

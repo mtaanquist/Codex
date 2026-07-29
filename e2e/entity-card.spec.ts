@@ -48,10 +48,10 @@ test('entity card: open from a mention, then back to the tabs', async ({ page })
 	await expect(card.locator('.insp-name')).toHaveText('Veylan');
 	await expect(card.locator('.insp-open')).toBeVisible();
 	// The tabs are replaced while the card is open.
-	await expect(page.locator('.rtabs')).toHaveCount(0);
+	await expect(page.locator('.right-head .seg')).toHaveCount(0);
 
 	// Back returns to the tabbed panel.
 	await card.locator('.back-btn').click();
 	await expect(card).toHaveCount(0);
-	await expect(page.locator('.rtabs')).toBeVisible();
+	await expect(page.locator('.right-head .seg')).toBeVisible();
 });
