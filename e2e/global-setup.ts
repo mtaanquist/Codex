@@ -7,10 +7,15 @@ import { hash } from '@node-rs/argon2';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { ensureBuiltInRelationTypes, ensureTestDatabase } from '../tests/integration/test-db';
-import { E2E_DATABASE_URL } from './database';
+import { checkoutId } from '../tests/checkout-id';
+import { e2eDatabaseUrl } from './database';
 
-export const WORKER_PID_FILE = join(tmpdir(), 'codex-e2e-worker.pid');
-export const WORKER_LOG_FILE = join(tmpdir(), 'codex-e2e-worker.log');
+// Named for this checkout: two worktrees running at once would otherwise
+// overwrite each other's pid file (so teardown kills the wrong worker) and
+// share the log the readiness check reads, letting one run start on the other's
+// "Worker started".
+export const WORKER_PID_FILE = join(tmpdir(), `codex-e2e-worker-${checkoutId()}.pid`);
+export const WORKER_LOG_FILE = join(tmpdir(), `codex-e2e-worker-${checkoutId()}.log`);
 
 // The worker logs this once pg-boss has started and the queues are registered.
 const WORKER_READY_MARKER = 'Worker started';
@@ -42,13 +47,14 @@ export default async function globalSetup() {
 			detached: true,
 			// The worker has its own default database; point it at the suite's, or
 			// it processes the jobs of whatever else is running.
-			env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL }
+			env: { ...process.env, DATABASE_URL: e2eDatabaseUrl() }
 		}
 	);
 	worker.unref();
 	writeFileSync(WORKER_PID_FILE, String(worker.pid));
-	await ensureTestDatabase(E2E_DATABASE_URL);
-	const pool = new pg.Pool({ connectionString: E2E_DATABASE_URL, max: 1 });
+	const databaseUrl = e2eDatabaseUrl();
+	await ensureTestDatabase(databaseUrl);
+	const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
 	await migrate(drizzle(pool), { migrationsFolder: 'drizzle' });
 
 	// Start from an empty workspace. The specs do not clean up after themselves,
