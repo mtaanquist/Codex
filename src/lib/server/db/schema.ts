@@ -58,7 +58,8 @@ export const users = pgTable('users', {
 	publicArchiveEnabled: boolean('public_archive_enabled').notNull().default(false),
 	passwordHash: text('password_hash').notNull(),
 	role: text('role', { enum: ['admin', 'user'] }).notNull(),
-	// Reserved for future LLM integration; inert in v1.
+	// The Assistant's BYO endpoint, key (encrypted at rest), and per-role
+	// models; see $lib/server/llm/config.ts.
 	llmConfig: jsonb('llm_config').notNull().default({}),
 	// Theme, content width, autocomplete mode, entity underline toggle, etc.
 	preferences: jsonb('preferences').notNull().default({}),
@@ -178,10 +179,11 @@ export const stories = pgTable(
 			.default('private'),
 		// Author-flagged adult content; readers avoid it by default.
 		isAdult: boolean('is_adult').notNull().default(false),
-		// References assets(id) once that table exists (phase 4); null renders a
-		// default cover from title and author.
+		// References assets(id); null renders a generated default cover on the
+		// public shelf.
 		coverAssetId: uuid('cover_asset_id'),
-		// Reserved for future LLM integration; inert in v1.
+		// Per-story Assistant overrides (the mute, model choices); merged over
+		// users.llm_config in $lib/server/llm/config.ts.
 		llmConfig: jsonb('llm_config').notNull().default({}),
 		// Per-story overrides of the owner's editor preferences; keys absent
 		// here fall back to users.preferences at load time.
