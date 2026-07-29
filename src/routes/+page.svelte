@@ -2,7 +2,8 @@
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
 	import Landing from '$lib/components/Landing.svelte';
-	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
@@ -82,7 +83,7 @@
 
 {#snippet library()}
 	<div class="page-shell">
-		<PageTopBar help={{ topic: 'getting-started', label: 'the library' }} />
+		<AppBar crumbs={[libraryCrumb(true)]} helpTopic="getting-started" helpLabel="the library" />
 
 		<div class="page-body">
 			<div class="page-container">
@@ -171,18 +172,26 @@
 									>
 										<h2 class="universe-name">{universe.name}</h2>
 									</a>
-									<a
-										class="universe-edit"
-										href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
-										title="Universe settings"
-										aria-label="Universe settings"
-									>
-										<Icon name="gear" size={15} />
-									</a>
 								</div>
 								{#if universe.descriptionMd}
 									<p class="universe-description">{universe.descriptionMd}</p>
 								{/if}
+							</div>
+							<div class="universe-actions">
+								<a
+									class="btn btn-sm btn-ghost"
+									href={resolve('/universes/[id]/insights', { id: universe.slug })}
+									aria-label="Insights for {universe.name}"
+								>
+									Insights
+								</a>
+								<a
+									class="btn btn-sm btn-ghost"
+									href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
+									aria-label="Settings for {universe.name}"
+								>
+									Settings
+								</a>
 							</div>
 						</header>
 						<div class="story-grid">

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { libraryCrumb, pageCrumb } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import type { Section } from './sections';
 	import type { ActionData, PageData } from './$types';
@@ -37,7 +38,7 @@
 
 <SettingsShell>
 	{#snippet topbar()}
-		<PageTopBar back={{ href: resolve('/'), label: 'Library' }} />
+		<AppBar crumbs={[libraryCrumb(), pageCrumb('Site admin')]} />
 	{/snippet}
 	{#snippet sidebar()}
 		<div class="admin-sidebar-title">

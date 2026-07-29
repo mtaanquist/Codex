@@ -14,6 +14,7 @@
 		planHref,
 		writeHref,
 		reviewHref,
+		modeNote,
 		universeNotes = [],
 		universeNotesPath,
 		form
@@ -22,10 +23,12 @@
 		selectedId?: string;
 		notesPath: string;
 		planHref: string;
-		// Present at story scope only; the universe Notes view has no Write.
+		// At universe scope both point at the universe's own story list, which
+		// is where you pick the story to write in or review.
 		writeHref?: string;
-		// Present at story scope only; the universe Notes view has no Review.
 		reviewHref?: string;
+		// The line under the mode strip, when the strip needs explaining.
+		modeNote?: string;
 		// Universe notes shown read-only at story scope, linking to the universe
 		// Notes view to edit. Empty at universe scope.
 		universeNotes?: NoteListItem[];
@@ -46,7 +49,11 @@
 
 <aside class="pane left">
 	<div class="left-head">
-		<ModeSwitcher active="notes" hrefs={{ write: writeHref, plan: planHref, review: reviewHref }} />
+		<ModeSwitcher
+			active="notes"
+			hrefs={{ write: writeHref, plan: planHref, review: reviewHref }}
+			note={modeNote}
+		/>
 		<SidebarSearch bind:query placeholder="Filter notes..." />
 	</div>
 	<div class="left-scroll">

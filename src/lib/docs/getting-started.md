@@ -16,7 +16,7 @@ For a story that does not belong to any world, use the "New standalone story" ca
 
 That is enough to start writing. When you are ready, the planning tools help you keep track of who and what is in your world, and publishing turns a finished story into a public reading page.
 
-Each of those has its own help article. Look for the "?" next to a heading anywhere in the app to open the guide for what you are looking at.
+Each of those has its own help article. Select the "?" at the top right of any page to open the guide for what you are looking at; select it again to go back to what you were doing. The "?" next to a heading opens the guide for that section.
 
 ## Deleting things
 

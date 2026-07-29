@@ -8,7 +8,8 @@
 	import StoryBoard from '$lib/components/StoryBoard.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { UNIVERSE_MODE_NOTE, universePath } from '$lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -99,10 +100,11 @@
 {/snippet}
 
 <div class="app">
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
+	<AppBar
+		crumbs={universePath(data.universe, { universeAt: 'universe' })}
 		{saveStatus}
-		help={{ topic: 'planning', label: 'the planning view' }}
+		helpTopic="planning"
+		helpLabel="the planning view"
 	/>
 	<div class="body">
 		<PlanSidebar
@@ -113,6 +115,10 @@
 			{selectedId}
 			{planPath}
 			notesHref={resolve('/universes/[id]/notes', { id: data.universe.slug })}
+			writeHref={planPath}
+			reviewHref={planPath}
+			modeNote={UNIVERSE_MODE_NOTE}
+			insightsHref={resolve('/universes/[id]/insights', { id: data.universe.slug })}
 			boardHref={planPath}
 			boardActive={!data.selected}
 			boardLabel="Story board"

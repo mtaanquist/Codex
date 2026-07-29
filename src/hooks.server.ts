@@ -23,6 +23,9 @@ const PUBLIC_PATHS = new Set([
 	// themselves on the signed challenge cookie.
 	'/api/passkeys/signin-options',
 	'/api/passkeys/signin',
+	// The help pages. The question mark in the bar is there for a guest
+	// reviewer and a reader too, and neither has an account.
+	'/docs',
 	// Liveness probe for the reverse proxy and orchestrators; no auth.
 	'/healthz'
 ]);
@@ -30,7 +33,7 @@ const PUBLIC_PATHS = new Set([
 const AUTH_PATHS = new Set(['/login', '/signup']);
 // Reader pages are public; assets and export downloads check publication
 // state themselves, and review pages guard on the magic-link token.
-const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/'];
+const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/', '/docs/'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;

@@ -48,12 +48,28 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await guest.getByLabel('Your name').fill('Margin Walker');
 	await guest.getByLabel('Email (optional)').fill('margin@example.com');
 	await guest.getByRole('button', { name: 'Start reviewing' }).click();
+	// The guest shell: the same bar with the parts a reviewer has no use for
+	// removed, and the parts they were missing (theme, help) put back.
 	await expect(guest.getByText('Reviewing as Margin Walker')).toBeVisible();
+	await expect(guest.locator('.appbar.guest')).toBeVisible();
+	await expect(guest.getByRole('navigation', { name: 'Where you are' })).toContainText(
+		'Review only'
+	);
+	await expect(guest.getByRole('button', { name: /^Theme:/ })).toBeVisible();
+	await expect(guest.getByRole('link', { name: 'Help: reviewing' })).toBeVisible();
+	// No search, no bell, no account menu for someone without an account.
+	await expect(guest.getByRole('button', { name: 'Search and commands' })).toHaveCount(0);
+	await expect(guest.getByRole('button', { name: 'Account menu' })).toHaveCount(0);
 	await expect(guest.locator('.review-prose')).toContainText('opinions about this gate');
 
-	// A guest cannot leave review mode: the other tabs are disabled.
-	await expect(guest.locator('.seg-btn', { hasText: 'Write' })).toBeDisabled();
-	await expect(guest.locator('.seg-btn', { hasText: 'Plan' })).toBeDisabled();
+	// A guest cannot leave review mode: the strip keeps all four modes, three
+	// switched off in place, and one line under it says why.
+	const modes = guest.locator('.mode-strip .seg-btn');
+	await expect(modes).toHaveCount(4);
+	for (const mode of ['Write', 'Plan', 'Notes']) {
+		await expect(modes.filter({ hasText: mode })).toHaveAttribute('aria-disabled', 'true');
+	}
+	await expect(guest.locator('.mode-note')).toContainText('belong to the author');
 
 	// A whole-scene comment from the panel.
 	await guest.getByRole('button', { name: 'Whole scene' }).click();

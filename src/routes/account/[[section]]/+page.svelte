@@ -3,7 +3,8 @@
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
 	import { flushFocusedField } from '$lib/autosave-form';
-	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { libraryCrumb, pageCrumb } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import AccountProfile from './AccountProfile.svelte';
 	import AccountSecurity from './AccountSecurity.svelte';
@@ -52,12 +53,10 @@
 
 <SettingsShell>
 	{#snippet topbar()}
-		<PageTopBar
-			back={{ href: resolve('/'), label: 'Library' }}
-			help={{
-				topic: active === 'security' ? 'security' : 'account',
-				label: active === 'security' ? 'account security' : 'your account'
-			}}
+		<AppBar
+			crumbs={[libraryCrumb(), pageCrumb('Account')]}
+			helpTopic={active === 'security' ? 'security' : 'account'}
+			helpLabel={active === 'security' ? 'account security' : 'your account'}
 		/>
 	{/snippet}
 	{#snippet sidebar()}

@@ -16,6 +16,7 @@ import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisi
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { ownedStory } from '$lib/server/story-access';
+import { readingPageRef } from '$lib/server/publish';
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
@@ -252,6 +253,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		trashedScenes,
 		story,
 		universe,
+		reading: await readingPageRef(db, story.id),
 		preferences,
 		assistantChat,
 		storySiblings,

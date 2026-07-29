@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { pageCrumb } from '$lib/chrome';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -12,6 +14,14 @@
 		<meta name="robots" content="noindex" />
 	{/if}
 </svelte:head>
+
+<AppBar
+	shell="reader"
+	crumbs={[pageCrumb(data.title)]}
+	byline={data.author ? `by ${data.author}` : undefined}
+	pathLabel="What you are reading"
+	helpLabel="Codex and reading pages"
+/>
 
 {#if data.gate}
 	<main class="reader gate">

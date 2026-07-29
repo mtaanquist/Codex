@@ -27,18 +27,20 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.keyboard.press('Escape');
 	await expect(avatar).toHaveAttribute('aria-expanded', 'false');
 
-	// The avatar-menu theme toggle persists across a reload, not just the current
-	// view (regression: it used to write only localStorage, so the next
-	// server-rendered navigation reverted it).
+	// The avatar-menu theme control walks the same dark -> light -> warm cycle
+	// as the bar's theme tool, and the choice persists across a reload, not
+	// just the current view (regression: it used to write only localStorage, so
+	// the next server-rendered navigation reverted it).
 	await avatar.click();
-	const wasDark = (await page.locator('html').getAttribute('data-theme')) === 'dark';
-	const toggleTo = wasDark ? 'light' : 'dark';
+	const CYCLE = ['dark', 'light', 'warm'];
+	const before = (await page.locator('html').getAttribute('data-theme')) ?? 'dark';
+	const next = CYCLE[(CYCLE.indexOf(before) + 1) % CYCLE.length];
 	const themeSave = page.waitForResponse((r) => r.url().includes('/api/appearance') && r.ok());
-	await page.getByRole('menuitem', { name: `Switch to ${toggleTo}` }).click();
+	await page.getByRole('menuitem', { name: `Switch to ${next}` }).click();
 	await themeSave;
-	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
+	await expect(page.locator('html')).toHaveAttribute('data-theme', next);
 	await page.reload();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
+	await expect(page.locator('html')).toHaveAttribute('data-theme', next);
 
 	// Sessions live under Security, on its own page; the signed-in device
 	// shows as current.
@@ -64,12 +66,12 @@ test('account settings: rename and see the current session', async ({ page }) =>
 
 	// Display: a saved theme applies app-wide via the data-theme attribute.
 	await page.getByRole('link', { name: 'Display' }).click();
-	await page.getByLabel('Theme').selectOption('dark');
+	await page.getByLabel('Theme', { exact: true }).selectOption('dark');
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
 	// Reset so repeated runs start from a known theme.
-	await page.getByLabel('Theme').selectOption('system');
+	await page.getByLabel('Theme', { exact: true }).selectOption('system');
 	await expect(page.getByRole('status')).toContainText('Saved');
 });
 

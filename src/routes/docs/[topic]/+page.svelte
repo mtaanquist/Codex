@@ -1,46 +1,48 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
+	import DocsShell from '$lib/components/DocsShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// The next article in the registry order, so reading straight through works.
+	const next = $derived.by(() => {
+		const at = data.topics.findIndex((topic) => topic.slug === data.article.slug);
+		return at >= 0 ? data.topics[at + 1] : undefined;
+	});
 </script>
 
 <svelte:head>
 	<title>{data.article.title} - Help - Codex</title>
 </svelte:head>
 
-<main class="docs">
-	<a class="back" href={resolve('/docs')}>All help</a>
+<DocsShell topics={data.topics} active={data.article}>
+	<div class="kicker">Help</div>
 	<!-- Trusted, committed markdown; renderMarkdown also escapes raw HTML. -->
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 	<article class="prose">{@html renderMarkdown(data.article.body)}</article>
 
-	<nav class="more">
-		<h2>More help</h2>
-		<ul>
-			{#each data.topics.filter((t) => t.slug !== data.article.slug) as topic (topic.slug)}
-				<li><a href={resolve('/docs/[topic]', { topic: topic.slug })}>{topic.title}</a></li>
-			{/each}
-		</ul>
-	</nav>
-</main>
+	{#if next}
+		<nav class="more">
+			<a class="btn btn-secondary" href={resolve('/docs/[topic]', { topic: next.slug })}>
+				Next: {next.title}
+			</a>
+		</nav>
+	{/if}
+</DocsShell>
 
 <style>
-	.docs {
-		max-width: 44rem;
-		margin: 0 auto;
-		padding: 3rem 1.25rem 5rem;
-		color: var(--text);
-	}
-	.back {
-		font-size: 0.9rem;
-		color: var(--text-muted);
+	.kicker {
+		font-size: var(--text-micro);
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+		margin-bottom: 6px;
 	}
 	.prose {
 		font-family: var(--font-serif);
 		line-height: 1.7;
-		margin-top: 1rem;
 	}
 	.prose :global(h1) {
 		font-size: 1.7rem;
@@ -72,24 +74,8 @@
 		border-radius: var(--radius-sm);
 	}
 	.more {
-		margin-top: 3rem;
-		padding-top: 1.5rem;
+		margin-top: var(--space-10);
+		padding-top: var(--space-5);
 		border-top: 1px solid var(--border);
-	}
-	.more h2 {
-		font-size: 0.95rem;
-		color: var(--text-muted);
-		margin: 0 0 0.5rem;
-	}
-	.more ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem 1.25rem;
-	}
-	.more a {
-		color: var(--accent);
 	}
 </style>

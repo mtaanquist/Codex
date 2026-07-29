@@ -1,6 +1,6 @@
 # Your account
 
-Open your account page from the avatar menu in the top bar. It has four
+Open your account page from the avatar menu at the top right of any page. It has four
 sections: Profile, Security, Assistant, and Display. Changes save when you
 select the save button in each block.
 

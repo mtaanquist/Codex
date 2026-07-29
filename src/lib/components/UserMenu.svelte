@@ -2,22 +2,21 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
-	import { flipTheme } from '$lib/theme';
+	import { cycleTheme, currentTheme, nextTheme } from '$lib/theme';
 	import { dismiss } from '$lib/dismiss';
 	import { authorInitials } from '$lib/review-ui';
 	import Icon from './Icon.svelte';
+	import type { ConcreteTheme } from '$lib/appearance';
 
 	type MenuUser = { displayName: string; email: string; isAdmin: boolean };
 	const user = $derived(page.data.user as MenuUser | null);
 
 	let open = $state(false);
 
-	// Accent is left untouched; flipTheme handles the flip, the localStorage
-	// mirror, and the account persist.
-	let dark = $state(browser && document.documentElement.getAttribute('data-theme') === 'dark');
-	function toggleTheme() {
-		dark = flipTheme(true) === 'dark';
-	}
+	// The same dark -> light -> warm cycle as the bar's theme tool; accent is
+	// left untouched, and cycleTheme handles the localStorage mirror and the
+	// account persist.
+	let theme = $state<ConcreteTheme>(browser ? currentTheme() : 'dark');
 </script>
 
 {#if user}
@@ -60,14 +59,18 @@
 
 			<div class="avatar-dd-sep"></div>
 			<div class="avatar-dd-group">
-				<button class="avatar-dd-item" role="menuitem" type="button" onclick={toggleTheme}>
-					{#if dark}
+				<button
+					class="avatar-dd-item"
+					role="menuitem"
+					type="button"
+					onclick={() => (theme = cycleTheme(true))}
+				>
+					{#if theme === 'dark'}
 						<Icon name="sun" size={16} />
-						<span class="lbl">Switch to light</span>
 					{:else}
 						<Icon name="moon" size={16} />
-						<span class="lbl">Switch to dark</span>
 					{/if}
+					<span class="lbl">Switch to {nextTheme(theme)}</span>
 				</button>
 			</div>
 

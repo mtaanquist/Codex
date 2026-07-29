@@ -100,6 +100,26 @@ export async function publishStory(
 	}
 }
 
+// The story's public reading page, for the story menu in the app bar. Null
+// unless the story has a current, non-removed edition under a handle, so the
+// menu leaves the item out rather than offering a link that 404s.
+export async function readingPageRef(
+	db: Database,
+	storyId: string
+): Promise<{ handle: string; storyId: string } | null> {
+	const [row] = await db
+		.select({ handle: publications.handle, storyId: publications.storyId })
+		.from(publications)
+		.where(
+			and(
+				eq(publications.storyId, storyId),
+				eq(publications.isCurrent, true),
+				isNull(publications.removedAt)
+			)
+		);
+	return row ?? null;
+}
+
 // The author shelf: current, non-removed editions of stories the author
 // has set public. Unlisted stories stay reachable by direct link only.
 export async function publicShelf(db: Database, handle: string) {

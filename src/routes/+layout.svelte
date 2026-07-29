@@ -12,12 +12,13 @@
 	import '$lib/styles/editor.css';
 	import '$lib/styles/review.css';
 	import '$lib/styles/menus.css';
-	// Last, so the consolidated primitives win over any screen-local skin.
+	// Late, so the consolidated primitives win over any screen-local skin.
 	import '$lib/styles/primitives.css';
+	// Last of all: the one navigation bar, which beats the bars it replaces.
+	import '$lib/styles/chrome.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';
-	import HelpModal from '$lib/components/HelpModal.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
@@ -52,7 +53,6 @@
 </svelte:head>
 
 {@render children()}
-<HelpModal />
 {#if data.user}
 	<CommandPalette />
 	<ActivityCenter />

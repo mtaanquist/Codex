@@ -105,9 +105,9 @@ Every page uses exactly one of these four wrappers. Do not build a fifth.
 
 | Shell | Component(s) | Used by |
 |---|---|---|
-| Workspace | `.app` grid + `TopBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes (universe scope) |
-| Page | `.page-shell` + `PageTopBar.svelte` | Library |
-| Settings | `SettingsShell.svelte` + `PageTopBar.svelte` | Account, admin, story settings, universe settings, insights |
+| Workspace | `.app` grid + `AppBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes (universe scope); help; guest review |
+| Page | `.page-shell` + `AppBar.svelte` | Library, print preview, public reading pages |
+| Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings, insights |
 | Auth | `AuthShell.svelte` | Sign-in, sign-up, and every email-flow page |
 
 The workspace shell is a three-column grid: structure left (fixed 240px),
@@ -115,12 +115,81 @@ work centre, reference right (fixed 280px). Sidebar widths are a settled
 decision; resize is deferred. Focus mode (`.app.focus-mode`) hides both
 sidebars with `visibility: hidden` so the prose column does not shift.
 
-`TopBar` carries breadcrumbs (Library > Universe > Story), save status,
-palette button, notification bell, help, and the user menu. `PageTopBar`
-carries a single back link instead of breadcrumbs. The pages that currently
-escape all shells (docs, print, guest review, public reader) are known
-drift; the fix is scoped in `design-pass-prompts.md`, brief 2. Do not model
-a new page on them.
+Every one of them wears the same bar; see Chrome below. Nothing escapes a
+shell any more: docs, print, guest review and the public reader all carry it.
+
+## Chrome
+
+One navigation bar for every page type, defined in `chrome.css` (imported
+last, so it beats the bars it replaced) and rendered by `AppBar.svelte`:
+brand, then the path, then the tools, in that order, 52px, `--bg-elevated`,
+one bottom border.
+
+Three shells, one family. A shell may drop a tool; none reorders one, and
+none adds a second bar.
+
+| Shell | Brand | Path | Tools |
+|---|---|---|---|
+| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Theme, Help, Notifications, You |
+| `.appbar.guest` | lockup, not a link | the one story they were sent, plus a "Review only" pill | Theme, Help, "Reviewing as ..." |
+| `.appbar.reader` | links to Codex | the story and its author, as text | Theme, Help |
+
+The path and its crumb menus:
+
+- The path is `Library / Universe / Story / Page`. Every crumb opens that
+  place's home; the last crumb is the page you are on and does not link.
+- **Crumbs go to homes.** The story crumb opens the story's Write mode; the
+  universe crumb opens the universe's Plan, always, whether or not a story
+  is open.
+- **A place in the path is a menu; a page in the path is text.** The
+  universe and story crumbs are `.crumb-menu` buttons carrying a caret. The
+  menu's first item goes to the place itself ("Go to the universe", "Go to
+  the story") and is ticked when you are already there; below it sit that
+  place's own things. Crumbs for pages (Insights, Print preview, a help
+  article) are plain current text, because nothing belongs to them.
+- There is no gear anywhere in the chrome, and no icon-only destination.
+- Menus compose the shared `.popover`/`.menu-item` skin, carry
+  `aria-haspopup`/`aria-expanded`, tick the current page with
+  `aria-current="page"`, and close on outside pointerdown or Escape through
+  the shared `dismiss` action.
+- Paths are built by `$lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
+  `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
+  spells the same destinations the same way. Do not hand-roll a path.
+
+Page actions are not bar actions. Anything that acts on the page (Print,
+Page setup, Save, New universe) lives in the page header under the bar,
+never in the bar.
+
+Tools:
+
+- `.tool-search` is the palette trigger: a labelled button with a `kbd`
+  hint, not an icon. Ctrl+K does the same.
+- The theme tool cycles dark -> light -> warm (`$lib/theme.ts`,
+  `cycleTheme`). A signed-in viewer's choice persists through the appearance
+  API; a guest reviewer's and a reader's is kept in localStorage only.
+- The `?` is a tool that is a place, not a popup: it navigates to the help
+  pages, lights up with `aria-current="page"` while you are there, and takes
+  you back to where you were when pressed again. There is no help modal.
+
+The left slot is always 240px, whatever fills it:
+
+- **The mode strip is always four.** Write, Plan, Notes, Review, same order,
+  same width, wherever it appears; it never resizes silently.
+  `ModeSwitcher.svelte` is the only implementation. At universe scope Write
+  and Review stay live and open the universe's story list. For a guest,
+  three are `aria-disabled` and stay in place. Where a mode is unavailable,
+  one `.mode-note` line under the strip says why: rendered, not a tooltip,
+  so it is readable by keyboard and by screen reader. The two lines live as
+  `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `$lib/chrome.ts`.
+- Where there is no mode at all (settings, insights, print, help) the same
+  slot holds that page's own section list: `.side-nav`, with
+  `.side-nav-label` group headings, `.side-head` for the identity block, and
+  `aria-current="page"` on the open item. In-page anchors are a sanctioned
+  use of `.side-nav`.
+
+The command palette stays the fast path to everything, but it is a shortcut
+to this model, never a substitute for it: anything reachable only from the
+palette is a bug.
 
 The right sidebar of the workspace shell has up to four tabs with fixed
 semantics (see `design.md`): Reference (what is in view), History (what was
@@ -204,8 +273,8 @@ A head can carry a `.modal-search` field instead of a title, with
 
 The behaviour is the component's, not the CSS's: Esc closes, focus is
 trapped in the panel and returned to the opener, and a backdrop click
-closes only when nothing is unsaved. `CommandPalette`, `ReviewModal` and
-`HelpModal` are the three reference uses.
+closes only when nothing is unsaved. `CommandPalette` and `ReviewModal` are
+the two reference uses. Help is not one of them: it is a page, not a modal.
 
 ### Badges, chips, pills
 
@@ -272,8 +341,8 @@ inline ad-hoc SVG in components.
 
 ### Status and feedback
 
-- Save state: the top-bar save pill (`Saving...` / `Saved just now` /
-  retry on error).
+- Save state: the app bar's save pill in the tools cluster (`Saving...` /
+  `Saved just now` / retry on error), on the editor pages only.
 - Keyboard hints: the `kbd` element (styled globally in `pages.css`).
 - Tooltips: native `title` attributes plus `aria-label` for icon-only
   controls. There is no custom tooltip primitive; do not build one ad hoc.
@@ -318,8 +387,9 @@ shared class inside a component (this still happens for `.btn-sm` and
 
 ## New page checklist
 
-1. Pick the shell; wire the top bar (breadcrumbs or back link) and the
-   palette/bell/help/user cluster that shell provides.
+1. Pick the shell; wire `AppBar` with a path built from `$lib/chrome.ts` and
+   the tools cluster that shell provides. A new page adds a crumb; it does
+   not add a bar.
 2. Compose from the canonical primitives above; extend shared CSS if a
    variant is genuinely missing.
 3. Tokens only; no raw colours, no `[data-theme]` branches, no token
@@ -393,18 +463,18 @@ once the drag handlers stop swallowing keyboard events.
 ## Component index
 
 Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
-`ModeSwitcher`, `ThemeToggle`, `PaletteButton`, `SidebarSearch`,
+`ModeSwitcher`, `ThemeToggle`, `CrumbMenu`, `SidebarSearch`,
 `HelpLink`, `FormStatus`, `ReviewAvatar`, `ReviewReplyForm`,
 `ReviewReplyRow`, `ReviewMarginRail`, `ReviewSelectionToolbar`.
 
-Shared composites: `TopBar`, `PageTopBar`, `SettingsShell`, `AuthShell`,
+Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 `UserMenu`, `NotificationBell`, `ActivityCenter`, `ViewMenu`,
 `EditorToolbar`, `SelectionMenu`, `NotesSidebar`, `PlanSidebar`,
 `StoryOutline`, `StoryRowMenu`, `RevisionHistory`, `EntityBadgePicker`,
 `EntityRelationships`, `ReviewSurface`, `ReviewPanel`, `ReviewCommentCard`,
 `ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`.
 
-Single-purpose surfaces: `Landing`, `CommandPalette`, `HelpModal`,
+Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
 `SessionPanel`, `ExportPanel`, `AssistantPanel`, `CoauthorPanel`,
 `ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `EntityEditor`,

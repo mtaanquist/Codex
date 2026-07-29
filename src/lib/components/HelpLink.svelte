@@ -1,20 +1,21 @@
 <script lang="ts">
-	import { openHelp } from '$lib/help.svelte';
+	import { resolve } from '$app/paths';
 
-	// Opens the relevant help article in a modal. `label` names what is being
+	// The inline question mark beside a heading. It opens the relevant help
+	// article as a page, the same destination as the one in the app bar, so
+	// help never opens over the top of your work. `label` names what is being
 	// explained, for the accessible name and tooltip (e.g. "the editor").
 	let { topic, label }: { topic: string; label: string } = $props();
 </script>
 
-<button
+<a
 	class="help-link"
-	type="button"
+	href={resolve('/docs/[topic]', { topic })}
 	title={`Help: ${label}`}
 	aria-label={`Help: ${label}`}
-	onclick={() => openHelp(topic)}
 >
 	?
-</button>
+</a>
 
 <style>
 	.help-link {
@@ -30,7 +31,7 @@
 		font-size: 11px;
 		font-weight: 700;
 		line-height: 1;
-		cursor: pointer;
+		text-decoration: none;
 		vertical-align: middle;
 	}
 	.help-link:hover {
