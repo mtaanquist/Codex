@@ -1,230 +1,244 @@
-# Visual design pass - briefs for Claude Design
+# Visual design pass - session prompts for Claude Design
 
-Status: drafted 2026-07-29. Prompts to run in Claude Design, one session per
-brief. Each session should produce an updated prototype in the usual handoff
-format (see "Handoff format" below), which then gets ported to Svelte the same
-way the original design was.
+Status: rewritten 2026-07-29 as paste-ready prompts. The Codex
+design-system project on claude.ai/design holds the shipped CSS
+(`styles/`), the preview cards, and the registered fonts, so sessions see
+the real system; nothing needs pasting besides these prompts.
 
-The goal of the pass is cohesion and intuitiveness, not novelty. The app's
-look is settled and liked; the work is tightening the seams: one navigation
-model, one shell family, screens that were built later brought back in line
-with the system, and a landing page that earns its place.
+The goal of the pass is cohesion and intuitiveness, not novelty. The
+app's look is settled and liked; the work is tightening the seams.
+Companion document: `design-system.md`, the components sheet audited from
+the shipped code. The prompts below restate what a session needs; the
+sheet is the fuller reference.
 
-Companion document: `design-system.md`, the components sheet written from a
-full audit of the shipped CSS and components. It lists the canonical
-primitives, the legacy skins, and the known drift; briefs 3 and 4 draw
-directly on it.
+## How to run the pass
 
-## How to use this document
+- Run order: primitives, then navigation, then secondary surfaces, then
+  landing. The primitives sheet settles the vocabulary the other
+  sessions design with, and the landing page runs last so its workspace
+  render shows the finished chrome.
+- One prompt per session, in the Codex project. Iterate in the session
+  until it looks right; only then hand the result back for porting.
+- Before the navigation and secondary-surface sessions, capture current
+  screenshots (list at the end) and attach the relevant ones.
+- After each session lands and is ported, re-sync the kit so the next
+  session designs against the updated system.
 
-1. Start every Claude Design session with the "Shared context" block below,
-   pasted verbatim, plus the current `tokens.css` and `theme.css` from
-   `src/lib/styles/` so the session works from the real system.
-2. Follow with one brief. Do not run two briefs in one session; each brief is
-   scoped to produce one reviewable handoff.
-3. Screenshots of the current screens help more than descriptions. The list
-   of screens worth capturing is at the end of this document.
+## Session 1: Primitives
 
-## Shared context (paste into every session)
+Paste everything in the block below.
 
-Codex is a self-hosted writing workspace for long-form creative work: novels,
-serials, worldbuilding, TTRPG campaigns. It is calm, text-first, and dense in
-the way a good tool is dense: no marketing gloss inside the app, no decoration
-that does not carry information. The UI font is Hanken Grotesk, prose is set
-in a serif (Spectral/Literata), and the palette is built from CSS custom
-properties with three themes (dark, light, warm) selected by a `data-theme`
-attribute. Category colours (ten tints) mark entity kinds; four status
-colours (draft, revised, final, outline) mark scene state. All colour,
-spacing, and radius values come from tokens; nothing is hardcoded.
+```text
+Codex is a self-hosted writing workspace for long-form creative work:
+novels, serials, worldbuilding, TTRPG campaigns. The app is calm and
+text-first; nothing decorative that does not carry information. This
+project's Design System pane shows the shipped primitives, rendered from
+the app's real CSS in styles/ with the real fonts.
 
-The app has four page shells:
+Constraints for everything you produce:
+- Use only the tokens in styles/tokens.css for colour, radius, spacing,
+  and fonts. If a real gap needs a new token, propose it explicitly.
+- Every design must work in all three themes: html[data-theme] set to
+  dark, light, and warm. Check all three.
+- Plain ASCII punctuation in UI text: no em dashes, no curly quotes.
+- Keyboard reachability and visible focus are requirements.
+- Deliver as self-contained HTML pages added to this project, built like
+  the existing cards (link styles/ and kit.css, render the three themes
+  side by side), plus a short written note of the decisions and their
+  migration impact.
 
-- Workspace: a three-column layout (structure left, work centre, reference
-  right) with a top bar carrying breadcrumbs (Library > Universe > Story),
-  save status, command palette button, notifications, help, and user menu.
-  Used by Write, Plan, Notes, and Review at story scope, and Plan and Notes
-  at universe scope. A segmented "mode strip" (Write | Plan | Notes | Review)
-  sits at the top of the left sidebar.
-- Page shell: single-column pages (the library) with a simpler top bar that
-  has a one-level back link instead of breadcrumbs.
-- Settings shell: two-column settings pages (account, admin, story settings,
-  universe settings) with a sectioned sidebar nav.
-- Auth shell: the landing chrome (brand, theme toggle, footer) around a
-  centred card, used by sign-in, sign-up, and every email-flow page.
+The task: the app's screens look cohesive, but the vocabulary underneath
+has drifted: an audit found 20+ button skins where one system (.btn) was
+intended, 13+ badge and pill spellings, 9 menu implementations, three
+hand-rolled modals with three different backdrops, and a dozen
+empty-state styles. Produce a single consolidated primitives sheet - the
+one page that becomes the reference for every future screen:
 
-Constraints that hold for every brief:
+1. Buttons: the .btn family (primary, secondary, ghost, danger; default
+   and small) plus icon-btn, in rest, hover, active, disabled, and focus
+   states. Decide whether the review surface's rv-btn variants fold into
+   .btn or stay a scoped family, and show the outcome.
+2. One modal primitive: backdrop, panel, header, footer with .btn
+   actions, close affordance, two sizes. The command palette, the review
+   modal, and the help modal must all be expressible with it.
+3. One segmented strip (.seg) covering the mode strip, the review tabs,
+   and the filter pill rows, including disabled items and items carrying
+   a count.
+4. Badge, chip, pill: confirm the three-way split (identity badge,
+   interactive chip, static pill) and render the full set, including the
+   entity badge at dot, small, and large, in image and initial forms.
+5. Empty states: one pattern, with and without an icon, with and without
+   an action.
+6. The form kit: field, label, hint, input, textarea, select with a
+   token-driven caret, toggle row, error and success lines, and the
+   focus ring, shown once as the single source.
+7. A type ramp: current sizes are ad hoc (15, 13.5, 12.5, 11.5px).
+   Propose a small named scale that covers the existing screens without
+   visibly changing them.
 
-- Work within the existing tokens. Propose a new token only if a real gap
-  exists, and say so explicitly; never inline a raw colour or size.
-- All three themes must work. Check dark, light, and warm.
-- Plain ASCII punctuation in all UI text: no em dashes, no curly quotes.
-- Help and instruction text addresses someone who has never seen the app;
-  tell them what to do, and leave the reasoning out.
-- The editor in the prototype is a mock; the real editor is CodeMirror 6.
-  Design editor-adjacent chrome freely, but do not design inside-the-editor
-  behaviour beyond what already exists.
-- Keyboard reachability and visible focus are requirements, not polish.
+For each primitive, add one line in the sheet's own voice saying what it
+is for and when not to use it; this page doubles as the reference given
+to coding agents. Nothing here should need new tokens beyond the type
+ramp. Where a current screen contradicts the sheet, the sheet wins; list
+that screen as a migration in the decisions note.
+```
 
-## Brief 1: Landing page
+## Session 2: Navigation and wayfinding
 
-The current landing page is a hero ("Plan the world. / Write the book."),
-four one-word feature markers (Plan, Write, Remember, Yours) with a sentence
-each, two CTAs (Sign in, Request access), and a one-line footer
-(Self-hosted - Invite-only). No imagery, no product shots.
+Attach current screenshots of the write view, library, story settings,
+docs, print, and guest review pages, then paste the block.
 
-Redesign it to do three jobs the current page does not:
+```text
+Codex is a self-hosted writing workspace for long-form creative work:
+novels, serials, worldbuilding, TTRPG campaigns. This project's Design
+System pane shows the shipped primitives (updated with the consolidated
+set from the primitives session); styles/ holds the real CSS.
 
-1. Show the product. The three-column workspace is the pitch; a reader
-   should see it, not read about it. Consider a stylised, token-accurate
-   rendering of the workspace (not a raster screenshot) so it stays crisp
-   in all three themes.
-2. Speak to all three audiences: the novelist, the worldbuilder, and the
-   TTRPG designer or DM. They overlap, and the page should show one tool
-   with three postures rather than three feature lists.
-3. Explain the model honestly: self-hosted or hosted, same code, invite
-   gated, your words exportable as markdown, no AI in the writing loop.
-   These are differentiators for the audience this tool wants; state them
-   plainly rather than burying them in the footer.
+Constraints: tokens only; all three themes (data-theme dark, light,
+warm); ASCII punctuation in UI text; help text tells a first-time user
+what to do; keyboard reachable with visible focus. Sidebar widths are
+fixed (240 left, 280 right). Write and Review stay separate peer modes -
+that is settled, do not merge them. Deliver as self-contained HTML pages
+in this project (one per key screen state) plus a decisions note stating
+the navigation rules in plain sentences.
 
-Keep: the tone (quiet confidence, no superlatives), the serif hero, the
-existing auth shell chrome so sign-in and sign-up still feel like part of
-the same surface. The page must also respect the signup mode: when sign-up
-is closed the Request access CTA disappears, and the page has to still make
-sense with only Sign in.
+The task: the workspace is liked; moving between its parts is where the
+seams show. A code audit found these problems. Solve them as one system,
+not as patches:
 
-Out of scope: pricing (there is none), testimonials, screenshots of real
-user content.
-
-## Brief 2: Navigation and wayfinding
-
-The workspace is liked; getting between its parts is where the seams show.
-A code audit found these concrete problems. Solve them as one system, not
-as sixteen patches:
-
-- Two different top bars (workspace breadcrumbs vs single back link), plus
-  two more one-off bars on the print page and the guest review page, and no
-  bar at all on the help pages and public reader pages.
+- Two different top bars (workspace breadcrumbs vs a single back link),
+  two more one-off bars on the print and guest review pages, and no bar
+  at all on the help pages and public reader pages.
 - The breadcrumb is ambiguous: the story-title crumb links to story
-  settings (while a gear two icons away goes to the same place), and the
-  universe crumb goes to plan when a story is open but to universe settings
-  when it is not.
-- The mode strip silently changes size: four modes at story scope, two at
-  universe scope, four-with-three-disabled for guest reviewers.
-- Universe insights is nearly unreachable: only a link inside the Session
+  settings while a gear two icons away goes to the same place, and the
+  universe crumb goes to plan when a story is open but to universe
+  settings when it is not.
+- The mode strip changes size silently: four modes at story scope, two
+  at universe scope, four-with-three-disabled for guest reviewers.
+- Universe insights is nearly unreachable: one link inside the Session
   tab and a command palette entry.
-- Dead ends: the print page has no way back, the docs pages drop the user
-  out of the app chrome entirely, and the guest review page has no help or
+- Dead ends: the print page has no way back, the docs pages drop the
+  user out of the app chrome entirely, and guest review has no help or
   theme control.
-- Help exists in two presentations: a modal (from the ? button) and a bare
-  standalone page (from the palette and footer links), for the same
-  articles.
+- Help has two presentations for the same articles: a modal from the ?
+  button, and a bare standalone page from the palette and footer links.
 
 Deliver:
-
-1. One navigation model: define what the top bar shows on every page type,
-   when breadcrumbs appear, what each crumb links to, and where settings
-   entry points live. The rule should be statable in a sentence or two.
-2. A consistent mode strip: decide how it behaves at universe scope and for
-   guests (fewer items, disabled items, or a different control) and apply
-   it everywhere.
+1. One navigation model: what the top bar shows on every page type, when
+   breadcrumbs appear, what each crumb links to, where settings entry
+   points live. The rule must be statable in a sentence or two.
+2. A consistent mode strip: how it behaves at universe scope and for
+   guests, applied everywhere.
 3. A home for insights, docs, and print inside that model.
-4. The guest review chrome as a deliberate reduced shell rather than an
-   accident: what a guest can see and reach, styled as part of the family.
+4. The guest review chrome as a deliberate reduced shell, styled as part
+   of the family.
+```
 
-Constraint: do not merge Write and Review; they stay peer modes (settled
-decision, see write-review-unification.md). Sidebar widths are fixed (240
-left, 280 right); resize is out of scope.
+## Session 3: Secondary surfaces
 
-## Brief 3: Shell and secondary-surface cohesion
+Attach current screenshots of the notes view, review workspace, story
+settings, universe insights, library, and public reader pages, then
+paste the block.
 
-The core workspace held together; the surfaces added later drifted. Bring
-them back into the system:
+```text
+Codex is a self-hosted writing workspace for long-form creative work:
+novels, serials, worldbuilding, TTRPG campaigns. This project's Design
+System pane shows the consolidated primitives; styles/ holds the real
+CSS. The navigation model from the previous session applies.
+
+Constraints: tokens only; all three themes (data-theme dark, light,
+warm); ASCII punctuation; help text tells a first-time user what to do;
+keyboard reachable with visible focus; the reader pages must meet WCAG
+2.1 AA. Deliver as self-contained HTML pages in this project plus a
+decisions note.
+
+The task: the core workspace held together; surfaces added later
+drifted. Bring them back into the system:
 
 - The right-pane tab strip differs per mode: up to four tabs on Write,
   three or four on Plan, two on Review, and a fake non-interactive
-  "History" pill on Notes. Define the tab strip once: which tabs exist in
-  which mode, what happens when a tab does not apply (hide it), and one
-  label for the Assistant tab (it currently varies by page).
-- The settings family (account, admin, story settings, universe settings,
-  insights) shares a shell but insights uses its sidebar for in-page
-  anchors while every sibling uses it for routes. Decide what insights is:
-  a settings section, or a workspace view with the standard right-pane
-  treatment.
-- The public reader pages (`/@handle` shelf and the story reader) hardcode
-  their own serif and colours instead of using tokens, and carry no brand
-  or footer. Design them as the outward face of the product: reader-first,
-  minimal, but recognisably Codex, honouring the reader's theme preference
-  and WCAG AA.
-- The library screen has three different creation affordances (header
-  button, per-universe card, standalone card) plus a text link for import.
-  Rationalise into one pattern with variants.
+  History pill on Notes. Define the strip once: which tabs exist in
+  which mode, hide a tab that does not apply, and settle one label for
+  the Assistant tab (it currently varies by page).
+- The settings family (account, admin, story settings, universe
+  settings, insights) shares a shell, but insights uses its sidebar for
+  in-page anchors while every sibling uses it for routes. Decide what
+  insights is: a settings section, or a workspace view with the standard
+  right-pane treatment.
+- The public reader pages (the /@handle shelf and the story reader)
+  hardcode their own serif and colours instead of tokens and carry no
+  brand or footer. Design them as the outward face of the product:
+  reader-first, minimal, recognisably Codex, honouring the reader's
+  theme preference.
+- The library has three creation affordances on one screen (header
+  button, per-universe card, standalone card) plus a text link for
+  import. Rationalise into one pattern with variants.
+```
 
-Deliver a component-level spec for each: the tab strip, the settings
-sidebar, the reader chrome, and the creation affordance, each shown in all
-three themes.
+## Session 4: Landing page
 
-## Brief 4: Primitive consolidation sheet
+Run last, so the workspace render shows the finished chrome. Attach a
+screenshot of the redesigned write view, then paste the block.
 
-A code audit (see `design-system.md`) found the system underneath the
-screens has drifted: 20+ button skins where one system (`.btn`) was
-intended, 13+ badge/pill spellings, 9 menu implementations where 2 use the
-shared popover skin, three hand-rolled modals with three different
-backdrops, and a dozen empty-state styles. The screens look cohesive; the
-vocabulary underneath is not, and every new page risks widening the gap.
+```text
+Codex is a self-hosted writing workspace for long-form creative work:
+novels, serials, worldbuilding, TTRPG campaigns. This project's Design
+System pane shows the consolidated primitives; styles/ holds the real
+CSS. The tone is quiet confidence: no superlatives, no marketing gloss.
 
-Produce a single-page components sheet as a designed artifact: every
-canonical primitive rendered in all its variants and states, in all three
-themes, on one reference page. Specifically:
+Constraints: tokens only; all three themes; ASCII punctuation; keyboard
+reachable with visible focus. The auth chrome (brand, theme toggle,
+footer) stays, so sign-in and sign-up remain visually part of the same
+surface. The page must also work when sign-up is closed: the Request
+access button disappears and Sign in stands alone. Deliver as
+self-contained HTML pages in this project plus a decisions note. Out of
+scope: pricing (there is none), testimonials, screenshots of real user
+content.
 
-1. Buttons: `.btn` primary/secondary/ghost/danger, default and `.btn-sm`,
-   plus `.icon-btn`, in rest/hover/active/disabled/focus states. Decide
-   whether the review surface's `.rv-btn` variants become `.btn` variants
-   or stay a scoped family, and show the result.
-2. One modal primitive: backdrop, panel, header, footer with `.btn`
-   actions, close affordance, at two sizes. The palette, review modal, and
-   help modal should all be expressible with it.
-3. One segmented strip (`.seg`) covering the mode strip, the review tabs,
-   and the filter pill rows, including disabled and counted (badge) items.
-4. Badge/chip/pill: confirm the three-way split (identity badge,
-   interactive chip, static pill) and render the full set, including the
-   entity badge at its three sizes with image and initial forms.
-5. Empty states: one pattern with icon/no-icon and action/no-action
-   variants.
-6. Form kit: field, label, hint, input, textarea, select (with a
-   token-driven caret), toggle row, error and success status lines, and
-   the focus ring, shown once as the single source.
-7. A type ramp: today's sizes are ad hoc (13.5px, 12.5px, 11.5px); propose
-   a small named scale that covers the existing screens without visibly
-   changing them.
+The task: the current landing page is a serif hero ("Plan the world. /
+Write the book."), four one-word feature markers with a sentence each,
+two buttons, and a one-line footer. Redesign it to do three jobs the
+current page does not:
 
-For each primitive, the sheet should state in a line what it is for and
-when not to use it, in the sheet's own voice, since this page doubles as
-the reference given to coding agents. Nothing on this page should require
-new tokens beyond the type ramp; where a current screen contradicts the
-sheet, the sheet wins and the screen is listed as a migration.
+1. Show the product. The three-column workspace is the pitch; a reader
+   should see it, not read about it. Prefer a stylised, token-accurate
+   rendering of the workspace (not a raster screenshot) so it stays
+   crisp in all three themes; base it on the attached screenshot of the
+   current chrome.
+2. Speak to all three audiences - the novelist, the worldbuilder, the
+   TTRPG designer or DM - as one tool with three postures, not three
+   feature lists.
+3. State the model plainly: self-hosted or hosted, same code; invite
+   gated; your words exportable as markdown; no AI unbidden and fully
+   usable with it off. These are differentiators for this audience;
+   they belong on the page, not in the footer.
+```
 
-## Handoff format
+## Porting and handoff
 
-Same as the original handoff: a no-build React prototype (`codex.html`
-mounting `src/*.jsx` with Babel over fake data on `window.CODEX_DATA`),
-with the design system in `tokens.css`, `theme.css`, and `pages.css`.
-Changed or new CSS goes in those files, not inline. Reference screenshots
-accompany the prototype. The prototype is a visual and behaviour spec; the
-Svelte implementation reimplements it rather than transplanting the JSX.
+Results come back as pages in the Codex project; pull them with
+DesignSync and port to Svelte, reimplementing rather than transplanting.
+CSS decisions land in `src/lib/styles/`; the components sheet
+(`design-system.md`) and the kit cards update in the same change, and
+the kit re-syncs so the project reflects the new canon. The older
+`scratch/app-design/` prototype handoff remains valid if a session is
+run outside the project.
 
-## Screens to capture before starting
+## Screens to capture
 
 1. Landing page, signed out
 2. Library, signed in
-3. Write view with a scene open (the three-column workspace)
+3. Write view with a scene open
 4. Continuous whole-story view
 5. Plan at story scope with the scene board
-6. Plan at universe scope with an entity open (relationships visible)
+6. Plan at universe scope with an entity open
 7. Review workspace as the author
 8. Command palette open over the editor
-9. Story settings (stands in for the whole settings family)
+9. Story settings
 10. Universe insights
-11. Public reader page for a published story
+11. Docs index and one article
+12. Print view
+13. Guest review page
+14. Public reader page for a published story
 
-Capture each in dark and light at minimum; warm where colour decisions are
-being made.
+Dark and light at minimum; warm where colour decisions are being made.
