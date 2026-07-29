@@ -266,7 +266,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Alice joined the Factions category above; the kind line carries it.
 	await expect(page.locator('.entity-card .pop-role')).toHaveText('Character · Factions');
 	await expect(page.locator('.entity-card .pop-summary')).toHaveText('A toll-road smuggler.');
-	await expect(page.locator('.entity-card .pop-open')).toHaveAttribute('href', /\/plan\?entity=/);
+	await expect(page.locator('.entity-card .btn-primary')).toHaveAttribute(
+		'href',
+		/\/plan\?entity=/
+	);
 	await fenwickSave;
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
@@ -609,7 +612,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const relDelete = page.waitForResponse(
 		(r) => r.url().includes('/api/relationships/') && r.request().method() === 'DELETE' && r.ok()
 	);
-	await page.locator('.rel-remove').click();
+	await page.locator('.rel-row .icon-btn').click();
 	await relDelete;
 	await expect(page.locator('.rel-row')).toHaveCount(0);
 

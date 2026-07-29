@@ -71,13 +71,13 @@
 		</div>
 	</div>
 	<div class="revision-banner-actions">
-		<button class="rb-btn ghost" type="button" onclick={() => (showDiff = !showDiff)}>
+		<button class="btn btn-sm btn-secondary" type="button" onclick={() => (showDiff = !showDiff)}>
 			{showDiff ? 'Show text' : 'Show changes'}
 		</button>
 		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-		<a class="rb-btn ghost" href={exitHref}>Exit preview</a>
+		<a class="btn btn-sm btn-secondary" href={exitHref}>Exit preview</a>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
-		<button class="rb-btn solid" type="button" disabled={restoring} onclick={restore}>
+		<button class="btn btn-sm btn-primary" type="button" disabled={restoring} onclick={restore}>
 			Restore this version
 		</button>
 	</div>
@@ -137,7 +137,9 @@
 			<p>{paragraph}</p>
 		{/each}
 		{#if paragraphs.length === 0}
-			<p class="empty-body">This revision is empty.</p>
+			<div class="empty-state tight">
+				<p class="empty-state-text">This revision is empty.</p>
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -182,13 +184,5 @@
 		background: color-mix(in oklab, var(--danger, #b00020) 18%, transparent);
 		text-decoration: line-through;
 		border-radius: 3px;
-	}
-	.rb-btn {
-		text-decoration: none;
-		cursor: pointer;
-	}
-	.empty-body {
-		color: var(--text-faint);
-		font-style: italic;
 	}
 </style>

@@ -77,8 +77,10 @@
 		<div class="editor story-preview" class:spaced={previewSpaced} style={previewStyle}>
 			<h1 class="doc-title">{storyTitle}</h1>
 			{#if storyDoc.length === 0}
-				<div class="empty">
-					<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">
+						Nothing written yet. Switch back to the editor to add scenes.
+					</p>
 				</div>
 			{/if}
 			{#each chapters as chapter, index (chapter.id)}

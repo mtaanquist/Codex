@@ -108,24 +108,6 @@
 	background: var(--accent);
 	opacity: 0.7;
 }
-.icon-button {
-	width: 32px;
-	height: 32px;
-	border-radius: 8px;
-	border: 1px solid transparent;
-	background: none;
-	display: grid;
-	place-items: center;
-	color: var(--text-muted);
-}
-.icon-button:hover {
-	background: var(--bg-hover);
-	color: var(--text);
-}
-.icon-button svg {
-	width: 16px;
-	height: 16px;
-}
 .avatar {
 	width: 28px;
 	height: 28px;
@@ -316,6 +298,10 @@
 }
 
 /* ============ BUTTONS ============ */
+/* The one general button system. A clickable that reads as a button is .btn
+   plus exactly one variant. Forced-state hooks (.is-hover / .is-active /
+   .is-focus) sit beside the real pseudo-states so the primitives sheet can
+   render the full matrix from these same declarations. */
 .btn {
 	display: inline-flex;
 	align-items: center;
@@ -325,7 +311,7 @@
 	padding: 0 15px;
 	border-radius: 9px;
 	border: 1px solid transparent;
-	font-size: 13.5px;
+	font-size: var(--text-base);
 	font-weight: 600;
 	white-space: nowrap;
 	text-decoration: none;
@@ -341,39 +327,91 @@
 .btn-sm {
 	height: 30px;
 	padding: 0 11px;
-	font-size: 12.5px;
+	font-size: var(--text-sm);
 	border-radius: 8px;
+}
+.btn-sm svg {
+	width: 12px;
+	height: 12px;
+}
+.btn:focus-visible,
+.btn.is-focus {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.btn:disabled,
+.btn[aria-disabled='true'] {
+	opacity: 0.45;
+	cursor: default;
 }
 .btn-primary {
 	background: var(--accent);
 	color: var(--accent-contrast);
 }
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled),
+.btn-primary.is-hover {
 	background: color-mix(in oklab, var(--accent) 88%, #fff);
+}
+.btn-primary:active:not(:disabled),
+.btn-primary.is-active {
+	background: color-mix(in oklab, var(--accent) 86%, #000);
 }
 .btn-secondary {
 	background: var(--bg-inset);
 	border-color: var(--border);
 	color: var(--text);
 }
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled),
+.btn-secondary.is-hover {
 	background: var(--bg-hover);
+	border-color: var(--border-strong);
+}
+.btn-secondary:active:not(:disabled),
+.btn-secondary.is-active {
+	background: var(--bg-active);
 	border-color: var(--border-strong);
 }
 .btn-ghost {
 	background: none;
 	color: var(--text-muted);
 }
-.btn-ghost:hover {
+.btn-ghost:hover:not(:disabled),
+.btn-ghost.is-hover {
 	background: var(--bg-hover);
+	color: var(--text);
+}
+.btn-ghost:active:not(:disabled),
+.btn-ghost.is-active {
+	background: var(--bg-active);
 	color: var(--text);
 }
 .btn-danger {
 	background: var(--danger);
-	color: #fff;
+	color: var(--danger-contrast);
 }
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled),
+.btn-danger.is-hover {
 	background: color-mix(in oklab, var(--danger) 88%, #000);
+}
+.btn-danger:active:not(:disabled),
+.btn-danger.is-active {
+	background: color-mix(in oklab, var(--danger) 78%, #000);
+}
+/* The affirmative decision (accept a suggestion, approve a pass). Replaces the
+   review surface's rv-btn.accept; it is a variant, not a second family. */
+.btn-accept {
+	background: color-mix(in oklab, var(--status-final) 12%, transparent);
+	border-color: color-mix(in oklab, var(--status-final) 38%, transparent);
+	color: var(--status-final);
+}
+.btn-accept:hover:not(:disabled),
+.btn-accept.is-hover {
+	background: color-mix(in oklab, var(--status-final) 20%, transparent);
+	border-color: color-mix(in oklab, var(--status-final) 52%, transparent);
+}
+.btn-accept:active:not(:disabled),
+.btn-accept.is-active {
+	background: color-mix(in oklab, var(--status-final) 26%, transparent);
 }
 
 /* ============ DASHBOARD ============ */
@@ -564,44 +602,6 @@
 	gap: var(--space-8);
 	align-items: start;
 }
-.settings-nav {
-	position: sticky;
-	top: 76px;
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-.settings-nav-item {
-	text-align: left;
-	border: 0;
-	background: none;
-	color: var(--text-muted);
-	padding: 8px 12px;
-	border-radius: 8px;
-	font-size: 13.5px;
-	font-weight: 500;
-	position: relative;
-}
-.settings-nav-item:hover {
-	background: var(--bg-hover);
-	color: var(--text);
-}
-.settings-nav-item.active {
-	background: var(--bg-active);
-	color: var(--text);
-	font-weight: 600;
-}
-.settings-nav-item.active::before {
-	content: '';
-	position: absolute;
-	left: -1px;
-	top: 50%;
-	transform: translateY(-50%);
-	width: 3px;
-	height: 16px;
-	border-radius: 99px;
-	background: var(--accent);
-}
 
 .settings-content {
 	min-width: 0;
@@ -656,7 +656,7 @@
 }
 .field > label {
 	display: block;
-	font-size: 12.5px;
+	font-size: var(--text-sm);
 	font-weight: 600;
 	color: var(--text);
 	margin-bottom: 7px;
@@ -677,26 +677,22 @@
 	cursor: pointer;
 }
 .field-hint {
-	font-size: 12px;
+	font-size: var(--text-meta);
 	color: var(--text-faint);
 	line-height: 1.5;
 	margin: 7px 0 0;
 }
-/* Form status lines on the settings pages. */
+/* Form status lines on the settings pages. Success is deliberately quiet: the
+   app confirms, it does not celebrate. */
 .form-error {
-	color: var(--danger, #c0564f);
-	font-size: 13px;
+	color: var(--danger);
+	font-size: var(--text-base);
 	margin: 0 0 10px;
 }
 .form-saved {
 	color: var(--text-muted);
-	font-size: 13px;
+	font-size: var(--text-base);
 	margin: 0 0 10px;
-}
-.block-empty {
-	color: var(--text-muted);
-	font-size: 13px;
-	margin: 0;
 }
 .input,
 .textarea,
@@ -707,9 +703,13 @@
 	border-radius: var(--radius);
 	padding: 9px 12px;
 	color: var(--text);
-	font-size: 14px;
+	font-size: var(--text-base);
 	outline: none;
 	transition: border-color 0.12s;
+}
+.input::placeholder,
+.textarea::placeholder {
+	color: var(--text-faint);
 }
 .textarea {
 	resize: vertical;
@@ -724,7 +724,7 @@
 }
 .select {
 	appearance: none;
-	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%238a8a93' stroke-width='1.4'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
+	background-image: var(--select-caret);
 	background-repeat: no-repeat;
 	background-position: right 12px center;
 	padding-right: 32px;
@@ -996,26 +996,6 @@
 	color: var(--text-faint);
 	margin-right: 2px;
 }
-.revision-filter-chip {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	border: 1px solid var(--border);
-	background: var(--bg);
-	color: var(--text-muted);
-	border-radius: 99px;
-	padding: 5px 12px;
-	font-size: 12.5px;
-}
-.revision-filter-chip:hover {
-	border-color: var(--border-strong);
-	color: var(--text);
-}
-.revision-filter-chip.active {
-	background: var(--accent-soft);
-	border-color: var(--accent-line);
-	color: var(--text);
-}
 
 .revision-panel {
 	border: 1px solid var(--border);
@@ -1065,18 +1045,6 @@
 .revision-source {
 	font-size: 14px;
 	font-weight: 550;
-}
-.revision-source-kind {
-	font-size: 10.5px;
-	font-weight: 650;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: var(--text-faint);
-	background: var(--bg-inset);
-	border: 1px solid var(--border);
-	padding: 1px 6px;
-	border-radius: 5px;
-	margin-right: 8px;
 }
 .revision-meta {
 	display: flex;
@@ -1152,11 +1120,6 @@
 	.settings-layout {
 		grid-template-columns: 1fr;
 	}
-	.settings-nav {
-		position: static;
-		flex-direction: row;
-		flex-wrap: wrap;
-	}
 	.role-row {
 		grid-template-columns: 1fr;
 	}
@@ -1183,11 +1146,7 @@
 	font-size: 12.5px;
 	font-weight: 700;
 	letter-spacing: 0.02em;
-	background: linear-gradient(
-		150deg,
-		var(--accent),
-		color-mix(in oklab, var(--accent) 45%, #1b2a55)
-	);
+	background: linear-gradient(150deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
 	color: #fff;
 }
 .user-row-identity {

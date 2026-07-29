@@ -15,9 +15,10 @@ Companion documents: `design.md` (product intent and page semantics),
 Use tokens for every colour, radius, and font. Wrap every page in one of the
 four shells. Build controls from the canonical primitives below (`.btn`,
 `.icon-btn`, `.field`/`.input`, `.popover`/`.menu-item`, `.seg`, `.badge`,
-`.chip`, `.pill`, `.empty`, `Icon.svelte`). Check all three themes. Do not
-invent a new button skin, menu system, modal, or empty state; the codebase
-already has too many, and the list of offenders is at the end of this sheet.
+`.chip`, `.pill`, `.modal-panel`, `.empty-state`, `Icon.svelte`). Check all
+three themes. Do not invent a new button skin, menu system, modal, or empty
+state; the consolidation that removed the previous crop is described at the
+end of this sheet.
 
 ## Tokens
 
@@ -33,6 +34,17 @@ Fonts:
 - `--font-serif` (Spectral) for prose and display headings; the editor's
   content face is `--font-content`, which the user can switch.
 - `--font-mono` (JetBrains Mono) for code and identifiers.
+
+Type ramp, seven steps covering every chrome and prose size. Use a step
+rather than a raw pixel value; the serif display sizes stay per-surface
+decisions, because a story title is not a card title.
+
+- `--text-micro` (11px) - segment counts, uppercase eyebrows.
+- `--text-meta` (11.5px) - field hints, timestamps.
+- `--text-sm` (12.5px) - small buttons, labels, secondary rows.
+- `--text-base` (13.5px) - the default chrome size.
+- `--text-lg` (15px) - modal titles, search fields.
+- `--text-prose-sm` (14.5px) / `--text-prose` (19px) - reading surfaces.
 
 Surfaces, from back to front:
 
@@ -52,6 +64,14 @@ Text tiers: `--text` (primary), `--text-muted` (secondary), `--text-faint`
 Accent family: `--accent` (fills), `--accent-contrast` (text on accent
 fills; use this, never `#fff`), `--accent-soft` (selection, focus glow,
 soft fills), `--accent-line` (focused borders).
+
+Assets and contrast:
+
+- `--danger-contrast` - text on a `--danger` fill (`.btn-danger`). The
+  danger twin of `--accent-contrast`; never write `#fff` on danger.
+- `--select-caret` - the `.select` caret, declared per theme. A data URL
+  cannot read a custom property, so each theme carries its own faint stroke
+  colour in the asset. `.select` is the only consumer.
 
 Meaning colours:
 
@@ -113,19 +133,35 @@ The rule for all of them: if the control you need is close to one of these,
 use or extend the primitive; if it is genuinely new, add it to the shared
 CSS with a considered name and add it to this sheet.
 
+Forced-state hooks: every state rule in the shared CSS also matches
+`.is-hover`, `.is-active`, or `.is-focus` beside the real pseudo-state.
+These exist for one reason only, so the primitives sheet can render a full
+state matrix from the shipped declarations instead of restating them, which
+is how the drift started. Product Svelte code must never use them; if a
+component needs to look hovered, that is a real state and needs a real
+class. One pre-existing exception is grandfathered: `EditorToolbar` and
+`ViewMenu` put `.is-active` on `.md-tool`, which predates the hooks. It
+does not collide, because every hook selector is compound and needs the
+primitive's own class too, but do not copy the pattern.
+
 ### Buttons
 
 - `.btn` with `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-danger`,
-  size modifier `.btn-sm`. Defined in `pages.css`. This is the only general
-  button system.
-- `.icon-btn` for icon-only buttons (top bars, panel headers). Defined in
-  `theme.css`; also styles `a.icon-btn`.
+  `.btn-accept`, size modifier `.btn-sm`. Defined in `pages.css`. This is
+  the only general button system.
+- `.btn-accept` is the affirmative decision (accept a suggestion, approve a
+  pass), built on `--status-final`. It is a variant, not a second family.
+- Every variant carries `:hover:not(:disabled)`, `:active`,
+  `:focus-visible`, and `:disabled` at 0.45 opacity. Disabled buttons do
+  not light up on hover.
+- `.icon-btn` for icon-only buttons, 32px in chrome (top bars, panel
+  headers). `.icon-btn.sm` is 28px, for inside cards, panel headers and
+  modal headers where a 32px target would crowd the row. `.icon-btn.danger`
+  tints the hover for a destructive action. Defined in `theme.css`; also
+  styles `a.icon-btn`. There are two icon sizes and no third.
 - Scoped exceptions that stay: `.md-tool` (editor toolbar), `.seg-btn`
-  (segmented strips), `.rv-btn` family (review surfaces, pending
-  consolidation).
-- Everything else (`.tool-btn`, `.mini-btn`, `.rb-btn`, `.send-btn`,
-  `.card-add`, `.outline-add`, and the rest of the 20+ skins) is legacy.
-  Do not use them in new code and do not create new ones.
+  (segmented strips).
+- An icon-only button always carries an `aria-label`.
 
 ### Forms
 
@@ -150,10 +186,24 @@ CSS with a considered name and add it to this sheet.
 
 ### Modals
 
-There is no shared modal primitive yet; three hand-rolled ones exist. Until
-one is extracted, model a new modal on `ReviewModal.svelte`: token-based
-backdrop (`color-mix` over `--bg-canvas`), panel on `--bg-elevated`, footer
-buttons using `.btn`. Do not copy `HelpModal`'s hard-coded black backdrop.
+`.modal-backdrop` wrapping a `.modal-panel`, defined in `primitives.css`.
+Two sizes and no third: 420px by default, 640px with `.modal-lg` for a list
+to scan or a passage to read. The backdrop is derived from `--bg`, so all
+three themes dim in their own key; there is no backdrop token and none is
+needed.
+
+Structure: `.modal-head` (with `.modal-head-main`, `.modal-title`,
+`.modal-sub`, `.modal-kind`), `.modal-body` (add `.rows` when it holds
+`.menu-item` rows rather than prose), `.modal-foot` (with
+`.modal-foot-note` on the left for a hint or shortcut legend). The close
+control is an `.icon-btn.sm`; the primary action sits last in the footer.
+A head can carry a `.modal-search` field instead of a title, with
+`.modal-head.searching`.
+
+The behaviour is the component's, not the CSS's: Esc closes, focus is
+trapped in the panel and returned to the opener, and a backdrop click
+closes only when nothing is unsaved. `CommandPalette`, `ReviewModal` and
+`HelpModal` are the three reference uses.
 
 ### Badges, chips, pills
 
@@ -162,22 +212,27 @@ Three words, three meanings; keep them straight:
 - `.badge` - an entity identity mark (image or initial), sized `dot`, `sm`,
   `lg`, rendered by `EntityBadge.svelte`.
 - `.chip` - an interactive token: tags, removable filters, add-affordances
-  (`.muted`, `.dashed`, `.link`).
+  (`.muted`, `.dashed`, `.link`). `.chip-x` is the remove affordance inside
+  a removable chip; it only ever appears inside a `.chip`. A chip whose
+  removal needs confirming is not a chip, it is a row with a danger action.
 - `.pill` - a small static status label (`.pill-accent`).
 
-The dozen other spellings (`.role-tag`, `.nav-badge`, `.rv-type-pill`,
-`.tfa-badge`, ...) are scoped legacy; do not add new ones.
+A thing that is both a label and a control is a chip, not a pill.
+
+The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
+...) are legacy; do not add new ones.
 
 ### Segmented strips and filters
 
-- `.seg` container with `.seg-btn` items (`.active`, `:disabled`) - the
-  mode strip and any exclusive-choice strip. `ModeSwitcher.svelte` is the
-  reference use.
-- `.rtabs`/`.rtab` in the review workspace is a duplicate of `.seg` and is
-  marked for consolidation. Known bug to not replicate: `.seg-btn.active`
-  has a light-theme shadow soften; `.rtab.active` lacks it.
-- Filter pill rows also exist twice (`.rv-filters` and `.revision-filters`);
-  prefer extending `.seg` semantics rather than adding a third.
+- `.seg` container with `.seg-btn` items (`.active`, `:disabled`,
+  `:focus-visible`) - the mode strip, the right-panel tabs, the review
+  tabs, and any exclusive choice of two to four peers. `.seg.full` stretches
+  the items to fill the row. `ModeSwitcher.svelte` is the reference use.
+- `.seg-count` is a tally riding inside a `.seg-btn` (open notes, filtered
+  results) at `--text-micro`. It is not a second badge family and appears
+  nowhere else.
+- The line: an exclusive choice is a `.seg`; a multi-select filter row is
+  chips.
 
 ### Lists, rows, tables
 
@@ -198,9 +253,12 @@ new settings content composes `.admin-card`.
 
 ### Empty states
 
-`.empty` (centred, `--text-faint`, 13px) is the primitive. The other eleven
-spellings are legacy. An empty state is one short sentence telling the user
-what to do, per the writing rules.
+`.empty-state` is the primitive, defined in `primitives.css`: a centred
+column at `--text-faint`, with an optional `.empty-state-icon`, a required
+`.empty-state-text`, and an optional `.empty-state-action`. Add `.tight`
+inside a right-panel card or a sidebar list, where the full padding would
+push the panel into a scroll. An empty state is one short sentence telling
+the user what to do, per the writing rules.
 
 ### Icons
 
@@ -234,9 +292,9 @@ From CLAUDE.md, repeated here because every screen touches it:
 ## CSS file map
 
 Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`,
-`pages.css`, `admin.css`, `editor.css`, `review.css`, `menus.css`. All
-global and unscoped, so a later file silently wins a specificity tie; check
-for an existing definition before adding a class.
+`pages.css`, `admin.css`, `editor.css`, `review.css`, `menus.css`,
+`primitives.css`. All global and unscoped, so a later file silently wins a
+specificity tie; check for an existing definition before adding a class.
 
 - `tokens.css` - tokens and base element rules only. No components.
 - `theme.css` - the workspace shell and its components (outline rows,
@@ -247,11 +305,14 @@ for an existing definition before adding a class.
   cards, autocomplete popup).
 - `review.css` - review surfaces.
 - `menus.css` - the shared popover/menu skin.
+- `primitives.css` - loaded last, so it wins over any screen-local skin.
+  Holds the families that had no single owner before: the modal, the empty
+  state, the chip remove affordance, and the shared focus ring.
 
 Component `<style>` blocks are for genuinely local layout only. If a rule
 could apply anywhere else, it belongs in the shared files. Never redefine a
-shared class inside a component (this currently happens for `.btn-sm`,
-`.mini-btn`, `.field-hint`, and two entire blocks; see below).
+shared class inside a component (this still happens for `.btn-sm` and
+`.field-hint`; see below).
 
 ## New page checklist
 
@@ -274,34 +335,58 @@ shared class inside a component (this currently happens for `.btn-sm`,
 Found in the 2026-07 audit. Copying any of these into new code makes the
 problem worse; fixing them is scheduled work, not drive-by refactoring.
 
-Dead CSS (defined, zero call sites, ~400 lines): `.icon-button`,
-`.btn-mini`, `.add-mini`, the whole `.ctx-menu` system, `.settings-nav`,
-`.note-card` block, `.storage-bar`/`.usage-bar` blocks, `.goal-bar`,
-`.ac-menu`/`.ac-item`, `.entity-pop`, `.quick-select` block, the `.kbd`
-class.
+### Removed in the primitives consolidation
+
+These names no longer exist. They are listed so an older screenshot, branch
+or design note that still mentions them can be read; do not reintroduce
+them.
+
+- Button skins folded into `.btn` and `.icon-btn`: the whole `.rv-btn`
+  family, `.rv-quick-btn`, `.rb-btn`, `.btn-mini`, `.mini-btn`,
+  `.tool-btn`, `.send-btn`, `.pop-open`, `.rv-scene-comment`,
+  `.rv-acceptall`, `.trash-act`, `.rel-remove`.
+- Tab and filter strips folded into `.seg`: `.rtabs`/`.rtab`,
+  `.rv-filters`/`.rv-filter`/`.rv-filter-n`, `.rv-mtabs`/`.rv-mtab`/
+  `.rv-mtab-n`, `.revision-filter-chip`.
+- The three hand-rolled modals folded into `.modal-backdrop`/
+  `.modal-panel`: `.palette-*`, `.review-modal*`/`.rm-title`/`.rm-actions`,
+  `.help-overlay`/`.help-modal*`/`.help-close`/`.help-eyebrow`.
+- Empty states folded into `.empty-state`: `.empty`, `.rv-panel-empty`,
+  `.rv-empty-scene`, `.block-empty`, `.trash-empty`, `.search-empty`,
+  `.note-empty`, `.bell-empty`, `.web-empty`, `.lane-empty`,
+  `.insights-empty`, `.empty-body`.
+- Labels and tokens folded into `.pill` and `.chip`: `.rv-type-pill`,
+  `.trash-kind`, `.revision-source-kind`, `.rv-sub-chip`, `.pop-chip`,
+  the `.note-tag*` family.
+- Dead CSS swept at the same time: `.icon-button`, `.add-mini`, the
+  `.ctx-menu`/`.ctx-item` system, `.settings-nav`, the `.note-card` block,
+  the `.kbd` class (the bare `kbd` element rule stays), `.quick-select`,
+  `.storage-bar`/`.usage-bar`, `.goal-bar`, `.ac-menu`/`.ac-item`/
+  `.ac-name`/`.ac-kind`, `.entity-pop`.
+
+### Still outstanding
 
 Duplicated definitions (later file or component style wins): the assistant
 chat block (`theme.css` and `AssistantPanel.svelte`), the `.insp-*`
 inspector (`theme.css` and `EntityCard.svelte`), the kanban CSS
 (`SceneBoard.svelte` and `StoryBoard.svelte` are copy-pasted),
-`.revision-dot`, `.brand-name`, `.mini-btn`, `.rb-btn`, `.btn-sm`,
-`.field-hint`, `.ent-row`, `.chapter-row`/`.scene-row`.
+`.revision-dot`, `.brand-name`, `.btn-sm`, `.field-hint`, `.ent-row`,
+`.chapter-row`/`.scene-row`.
 
-Hard-coded colours that bypass tokens: the `.select` caret SVG stroke, the
-`.swatch-custom` gradient hexes, the `color-mix(... #1b2a55)` navy in three
-places, the QR block's fixed light/dark backgrounds, `.toggle-track`'s
-`#fff` knob, a dozen bare `color: #fff` where `--accent-contrast` exists,
-inline `style="color: #fff"` on both top-bar brand marks, and the
-mismatched `var(--token, #hex)` fallbacks.
+Hard-coded colours that bypass tokens: the `.swatch-custom` gradient hexes,
+the QR block's fixed light/dark backgrounds, `.toggle-track`'s `#fff` knob,
+the remaining bare `color: #fff` where `--accent-contrast` exists, and
+inline `style="color: #fff"` on both top-bar brand marks. The `.select`
+caret now reads `--select-caret`, the `#1b2a55` navy is gone, and the
+`var(--token, #hex)` fallbacks are cleared from the files the
+consolidation touched.
 
-Parallel systems pending a decision: `.seg` vs `.rtabs`; `.rv-filters` vs
-`.revision-filters`; `.saved` vs `.save-status`; `FormStatus.svelte` vs
-`.form-error`/`.form-saved`; three modal implementations; twelve empty
-states; six avatar classes.
+Parallel systems pending a decision: `.saved` vs `.save-status`;
+`FormStatus.svelte` vs `.form-error`/`.form-saved`; six avatar classes.
 
-The visual side of consolidating these is brief 4 in
-`design-pass-prompts.md`; the code side is a follow-up refactor once that
-brief lands.
+Focus reachability is its own pass: the ring is defined and shared, but the
+sidebar rows (`.ent-row`, `.scene-row`, `.chapter-row`) are only reachable
+once the drag handlers stop swallowing keyboard events.
 
 ## Component index
 

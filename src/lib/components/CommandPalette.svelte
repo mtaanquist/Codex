@@ -334,7 +334,7 @@
 	// selection would otherwise scroll out of the list while Enter still ran it.
 	$effect(() => {
 		void selected;
-		listEl?.querySelector('.palette-item.active')?.scrollIntoView({ block: 'nearest' });
+		listEl?.querySelector('.menu-item.active')?.scrollIntoView({ block: 'nearest' });
 	});
 </script>
 
@@ -342,27 +342,29 @@
 
 {#if palette.open}
 	<div
-		class="palette-backdrop"
+		class="modal-backdrop"
 		role="presentation"
 		onclick={(event) => {
 			if (event.target === event.currentTarget) closePalette();
 		}}
 	>
-		<div class="palette" role="dialog" aria-label="Command palette">
-			<input
-				bind:this={inputEl}
-				bind:value={query}
-				oninput={search}
-				onkeydown={onPaletteKey}
-				class="palette-input"
-				type="text"
-				placeholder="Search, or type a command..."
-				aria-label="Search everything"
-			/>
-			<div class="palette-list" role="listbox" aria-label="Results" bind:this={listEl}>
+		<div class="modal-panel modal-lg" role="dialog" aria-label="Command palette">
+			<div class="modal-head searching">
+				<input
+					bind:this={inputEl}
+					bind:value={query}
+					oninput={search}
+					onkeydown={onPaletteKey}
+					class="modal-search"
+					type="text"
+					placeholder="Search, or type a command..."
+					aria-label="Search everything"
+				/>
+			</div>
+			<div class="modal-body rows" role="listbox" aria-label="Results" bind:this={listEl}>
 				{#each items as item, index (index)}
 					<button
-						class="palette-item"
+						class="menu-item"
 						class:active={index === selected}
 						role="option"
 						aria-selected={index === selected}
@@ -378,77 +380,28 @@
 					</button>
 				{/each}
 				{#if items.length === 0}
-					<p class="palette-none">Nothing matches.</p>
+					<div class="empty-state tight">
+						<p class="empty-state-text">Nothing matches.</p>
+					</div>
 				{/if}
 			</div>
-			<div class="palette-foot">
-				<span><kbd>&uarr;</kbd><kbd>&darr;</kbd> to choose</span>
-				<span><kbd>Enter</kbd> to open</span>
-				<span><kbd>Esc</kbd> to close</span>
+			<div class="modal-foot">
+				<div class="modal-foot-note">
+					<span><kbd>&uarr;</kbd><kbd>&darr;</kbd> to choose</span>
+					<span><kbd>Enter</kbd> to open</span>
+					<span><kbd>Esc</kbd> to close</span>
+				</div>
 			</div>
 		</div>
 	</div>
 {/if}
 
 <style>
-	.palette-backdrop {
-		position: fixed;
-		inset: 0;
-		background: color-mix(in oklab, var(--bg-canvas) 55%, transparent);
-		backdrop-filter: blur(2px);
-		z-index: 80;
-		display: flex;
-		justify-content: center;
-		align-items: flex-start;
-		padding-top: 14vh;
-	}
-	.palette {
-		width: min(560px, calc(100vw - 32px));
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		box-shadow: var(--shadow);
-		overflow: hidden;
-		font-family: var(--font-ui);
-	}
-	.palette-input {
-		width: 100%;
-		border: 0;
-		border-bottom: 1px solid var(--border);
-		background: none;
-		color: var(--text);
-		font-size: 15px;
-		padding: 14px 16px;
-		outline: none;
-	}
-	.palette-input::placeholder {
-		color: var(--text-faint);
-	}
-	.palette-list {
-		max-height: 320px;
-		overflow-y: auto;
-		padding: 6px;
-	}
-	.palette-item {
-		display: flex;
-		align-items: baseline;
-		gap: 10px;
-		width: 100%;
-		border: 0;
-		background: none;
-		color: var(--text);
-		text-align: left;
-		font-size: 13.5px;
-		padding: 8px 10px;
-		border-radius: 7px;
-		cursor: pointer;
-	}
-	.palette-item.active {
-		background: var(--bg-hover);
-	}
+	/* Row content only: the overlay, the rows and the footer come from the
+	   modal, menu-item and empty-state primitives. */
 	.palette-kind {
 		flex: 0 0 72px;
-		font-size: 10.5px;
+		font-size: var(--text-micro);
 		letter-spacing: 0.07em;
 		text-transform: uppercase;
 		color: var(--text-faint);
@@ -458,31 +411,15 @@
 	}
 	.palette-sub {
 		color: var(--text-faint);
-		font-size: 12.5px;
+		font-size: var(--text-sm);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.palette-none {
-		color: var(--text-faint);
-		font-size: 13px;
-		padding: 10px 12px;
-		margin: 0;
-	}
-	.palette-foot {
-		display: flex;
+	.modal-foot-note {
 		gap: 14px;
-		border-top: 1px solid var(--border);
-		color: var(--text-faint);
-		font-size: 11.5px;
-		padding: 8px 14px;
 	}
-	.palette-foot kbd {
-		font-family: var(--font-mono);
-		font-size: 10.5px;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		padding: 0 4px;
+	.modal-foot-note kbd {
 		margin-right: 2px;
 	}
 </style>

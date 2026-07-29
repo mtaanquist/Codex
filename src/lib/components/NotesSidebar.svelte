@@ -100,9 +100,11 @@
 		{/if}
 
 		{#if shown.length === 0}
-			<p class="note-empty">
-				{q === '' ? 'No notes here yet.' : 'No notes match your filter.'}
-			</p>
+			<div class="empty-state tight">
+				<p class="empty-state-text">
+					{q === '' ? 'No notes here yet.' : 'No notes match your filter.'}
+				</p>
+			</div>
 		{/if}
 
 		{#if shownUniverse.length > 0 && universeNotesPath}
@@ -161,10 +163,5 @@
 		color: var(--danger, #b00020);
 		font-size: 12.5px;
 		margin: 0 0 8px;
-	}
-	.note-empty {
-		color: var(--text-faint);
-		font-size: 13px;
-		padding: 4px 8px;
 	}
 </style>

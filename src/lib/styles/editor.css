@@ -37,15 +37,12 @@
 .cm-tooltip:has(.entity-card) {
 	background: var(--bg-elevated);
 	border: 1px solid var(--border-strong);
-	border-radius: var(--radius-lg, 14px);
+	border-radius: var(--radius-lg);
 	box-shadow: var(--shadow);
 	padding: 15px 16px 13px;
 	width: 320px;
 	font-family: var(--font-ui);
 	animation: popIn 0.13s ease;
-}
-.entity-card .pop-open {
-	text-decoration: none;
 }
 
 /* A mention whose text belongs to more than one entity: dotted underline,
@@ -164,7 +161,7 @@
 	color: var(--text);
 	font-family: var(--font-ui);
 	font-size: 12.5px;
-	border-radius: var(--radius, 9px);
+	border-radius: var(--radius);
 	box-shadow: var(--shadow);
 }
 .editor-cm .cm-panels.cm-panels-bottom {
@@ -232,12 +229,12 @@
 
 /* TODO markers: highlighted selections and TODO: lines. */
 .cm-line.todo-line {
-	background: color-mix(in oklab, var(--cat-amber, #b8860b) 14%, transparent);
+	background: color-mix(in oklab, var(--cat-amber) 14%, transparent);
 	border-radius: 3px;
 }
 .todo-marker {
-	background: color-mix(in oklab, var(--cat-amber, #b8860b) 28%, transparent);
-	border-bottom: 1.5px solid var(--cat-amber, #b8860b);
+	background: color-mix(in oklab, var(--cat-amber) 28%, transparent);
+	border-bottom: 1.5px solid var(--cat-amber);
 	border-radius: 2px;
 }
 

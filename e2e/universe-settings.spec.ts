@@ -61,7 +61,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await page.getByRole('link', { name: 'History' }).click();
 	const entry = page.locator('.revision-entry', { hasText: 'Histor' }).first();
 	await expect(entry).toBeVisible();
-	await expect(entry.locator('.revision-source-kind')).toHaveText('Character');
+	await expect(entry.locator('.pill')).toHaveText('Character');
 	await page.getByRole('button', { name: 'Checkpoints only' }).click();
 	await expect(page.locator('.revision-entry', { hasText: 'Histor' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'All', exact: true }).click();

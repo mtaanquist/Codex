@@ -17,6 +17,7 @@
 	/* Text on accent fills (primary buttons). White reads on the accent presets
 	   and any reasonable custom colour; dark text was illegible on the blues. */
 	--accent-contrast: #ffffff;
+	--danger-contrast: #ffffff;
 
 	/* density */
 	--row-h: 36px;
@@ -27,6 +28,18 @@
 	--radius-md: 9px;
 	--radius: 9px;
 	--radius-lg: 14px;
+
+	/* Type ramp. Seven named steps that cover every chrome and prose size in
+	   the product; the display sizes of the serif headings stay per-surface
+	   decisions. Values land on sizes already shipped, so adopting a step never
+	   moves a screen by more than half a pixel. */
+	--text-micro: 11px;
+	--text-meta: 11.5px;
+	--text-sm: 12.5px;
+	--text-base: 13.5px;
+	--text-lg: 15px;
+	--text-prose-sm: 14.5px;
+	--text-prose: 19px;
 
 	/* spacing scale */
 	--space-1: 4px;
@@ -71,6 +84,11 @@
 	--danger: #e2687c;
 	--danger-soft: color-mix(in oklab, var(--danger) 16%, transparent);
 
+	/* The select caret. A data URL cannot read a custom property, so the one
+	   caret asset is declared per theme carrying that theme's faint text
+	   colour; .select is the only consumer. */
+	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%2362626b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
+
 	/* category tints (lore/factions/etc.) */
 	--cat-violet: #9b7bff;
 	--cat-rose: #d4708a;
@@ -102,6 +120,7 @@
 	--text-faint: #9a9aa2;
 	--shadow: 0 18px 44px -24px rgba(20, 20, 40, 0.28);
 	--pane-shadow: rgba(20, 20, 45, 0.13);
+	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%239a9aa2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
 	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
 
@@ -142,6 +161,7 @@
 	--text-faint: #a89a83;
 	--shadow: 0 18px 44px -24px rgba(70, 50, 25, 0.3);
 	--pane-shadow: rgba(70, 50, 25, 0.15);
+	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23a89a83' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
 	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
 

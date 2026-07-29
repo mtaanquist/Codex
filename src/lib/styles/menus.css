@@ -7,7 +7,7 @@
 .popover {
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
-	border-radius: var(--radius, 9px);
+	border-radius: var(--radius);
 	box-shadow: var(--shadow);
 	padding: 6px;
 }
@@ -35,6 +35,11 @@
 .menu-item:disabled {
 	color: var(--text-faint);
 }
+/* Keyboard selection, when a list of rows is driven by the arrow keys rather
+   than by the pointer (the command palette). */
+.menu-item.active {
+	background: var(--bg-hover);
+}
 .menu-item.danger:hover:not(:disabled) {
-	color: var(--danger, #c0564f);
+	color: var(--danger);
 }

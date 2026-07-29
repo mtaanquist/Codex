@@ -28,10 +28,17 @@
 				<button class="seg-btn active" type="button">Comments</button>
 				<button class="seg-btn" type="button">Suggestions</button>
 			</div>
+			<div class="kit-h">With counts (seg-count)</div>
+			<div class="seg full">
+				<button class="seg-btn active" type="button">Open<span class="seg-count">7</span></button>
+				<button class="seg-btn" type="button">Done<span class="seg-count">12</span></button>
+			</div>
 			<p class="note">
 				The exclusive-choice strip: modes, tab pairs, filters. Items are links when they navigate
 				and buttons when they select in place; an unavailable item is disabled, not hidden
-				mid-session. The review workspace's rtabs duplicate is marked for consolidation onto this.
+				mid-session. A seg-count rides inside a segment when the choice has a tally behind it; it
+				is not a second badge family and only ever appears inside a seg-btn. Multi-select filters
+				are chips, not a seg.
 			</p>
 		</template>
 		<script src="kit.js"></script>

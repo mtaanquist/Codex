@@ -79,14 +79,14 @@
 					<NoteEditor note={data.selected} onStatus={(status) => (saveStatus = status)} />
 				{/key}
 			{:else}
-				<div class="empty">
-					<p>Select a note, or make a new one in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">Select a note, or make a new one in the sidebar.</p>
 				</div>
 			{/if}
 		</main>
 		<aside class="pane right">
 			<div class="right-head">
-				<div class="rtabs"><span class="rtab active">History</span></div>
+				<div class="seg full"><span class="seg-btn active">History</span></div>
 			</div>
 			{#if data.selected}
 				<RevisionHistory
@@ -98,7 +98,9 @@
 				/>
 			{:else}
 				<div class="right-scroll">
-					<div class="empty">Select a note to see its history.</div>
+					<div class="empty-state tight">
+						<p class="empty-state-text">Select a note to see its history.</p>
+					</div>
 				</div>
 			{/if}
 		</aside>

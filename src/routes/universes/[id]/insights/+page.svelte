@@ -211,7 +211,9 @@
 			<p class="admin-block-sub">Where each story stands, scene by scene.</p>
 		</div>
 		{#if data.stories.length === 0}
-			<p class="insights-empty">No stories in this universe yet.</p>
+			<div class="empty-state tight">
+				<p class="empty-state-text">No stories in this universe yet.</p>
+			</div>
 		{:else}
 			<div class="story-rows">
 				{#each data.stories as story (story.id)}
@@ -272,7 +274,9 @@
 								{/each}
 							</div>
 						{:else}
-							<p class="insights-empty">No scenes yet.</p>
+							<div class="empty-state tight">
+								<p class="empty-state-text">No scenes yet.</p>
+							</div>
 						{/if}
 					</div>
 				{/each}
@@ -289,7 +293,11 @@
 			</p>
 		</div>
 		{#if data.heat.length === 0}
-			<p class="insights-empty">No characters, places, or lore yet. Add them in the Plan view.</p>
+			<div class="empty-state tight">
+				<p class="empty-state-text">
+					No characters, places, or lore yet. Add them in the Plan view.
+				</p>
+			</div>
 		{:else}
 			{#each ['character', 'place', 'lore_entry'] as type (type)}
 				{@const group = data.heat.filter((entity) => entity.type === type)}
@@ -537,11 +545,5 @@
 	.heat-tile-meta {
 		font-size: 11.5px;
 		color: var(--text-muted);
-	}
-
-	.insights-empty {
-		color: var(--text-muted);
-		font-size: 13px;
-		margin: 0;
 	}
 </style>

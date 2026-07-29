@@ -25,14 +25,14 @@
 			No open review activity in this scene.
 		{:else}
 			{#if openComments > 0}
-				<span class="rv-sub-chip">
+				<span class="chip">
 					<Icon name="comment" size={13} />
 					{openComments}
 					{openComments === 1 ? 'comment' : 'comments'}
 				</span>
 			{/if}
 			{#if openSuggestions > 0}
-				<span class="rv-sub-chip">
+				<span class="chip">
 					<Icon name="suggest" size={13} />
 					{openSuggestions}
 					{openSuggestions === 1 ? 'suggestion' : 'suggestions'}

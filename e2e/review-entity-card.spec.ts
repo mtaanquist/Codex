@@ -44,7 +44,7 @@ test('review: hovering an entity mention opens its quick card', async ({ page })
 	const card = page.locator('.entity-card');
 	await expect(card).toBeVisible();
 	await expect(card.locator('.pop-name')).toHaveText('Veylan');
-	await expect(card.locator('.pop-open')).toBeVisible();
+	await expect(card.locator('.btn-primary')).toBeVisible();
 
 	// Moving the pointer away dismisses it.
 	await page.mouse.move(2, 2);

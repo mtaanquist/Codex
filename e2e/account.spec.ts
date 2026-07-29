@@ -173,7 +173,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// With the account on, the Assistant tab shows; opening it reveals the chat.
 	// The click retries: right after the create-story navigation the page may
 	// not be hydrated yet, and a pre-hydration click goes nowhere.
-	const tab = page.locator('.rtab', { hasText: 'Assistant' });
+	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	await expect(tab).toBeVisible();
 	await expect(async () => {
 		await tab.click();
@@ -237,10 +237,10 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 
 	// The command palette carries the Assistant's quick actions while it is on.
 	await page.keyboard.press('ControlOrMeta+k');
-	await expect(page.locator('.palette')).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toBeVisible();
+	await expect(page.locator('.modal-panel')).toBeVisible();
+	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Catch me up' })).toBeVisible();
 	await expect(
-		page.locator('.palette-item', { hasText: 'Review with the Assistant' })
+		page.locator('.modal-panel .menu-item', { hasText: 'Review with the Assistant' })
 	).toBeVisible();
 	await page.keyboard.press('Escape');
 
@@ -257,7 +257,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(status).toHaveText('Assistant off');
 	await gotoReady(page, storyUrl);
 	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
-	await expect(page.locator('.rtab', { hasText: 'Assistant' })).toHaveCount(0);
+	await expect(page.locator('.right-head .seg-btn', { hasText: 'Assistant' })).toHaveCount(0);
 
 	// And the menus carry no Assistant entries while it is off.
 	await expect(page.locator('.cm-content')).toBeVisible();
@@ -277,7 +277,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 
 	// And the palette drops the Assistant commands.
 	await page.keyboard.press('ControlOrMeta+k');
-	await expect(page.locator('.palette')).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Focus mode' })).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toHaveCount(0);
+	await expect(page.locator('.modal-panel')).toBeVisible();
+	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Focus mode' })).toBeVisible();
+	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Catch me up' })).toHaveCount(0);
 });

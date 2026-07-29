@@ -55,7 +55,7 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	// The palette finds the prose and lands on the scene.
 	await page.keyboard.press('ControlOrMeta+k');
 	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
-	const passage = page.locator('.palette-item', { hasText: 'In the text' });
+	const passage = page.locator('.modal-panel .menu-item', { hasText: 'In the text' });
 	await expect(passage).toHaveCount(1);
 	await expect(passage).toContainText(`pin${stamp} near the well`);
 	await passage.click();
@@ -76,7 +76,7 @@ test('find in the editor and search the prose from the palette', async ({ page }
 
 	await page.keyboard.press('ControlOrMeta+k');
 	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
-	const jump = page.locator('.palette-item', { hasText: 'In the text' });
+	const jump = page.locator('.modal-panel .menu-item', { hasText: 'In the text' });
 	await expect(jump).toHaveCount(1);
 	await jump.click();
 	await expect(page.locator('.cm-content')).toContainText(`pin${stamp}`);

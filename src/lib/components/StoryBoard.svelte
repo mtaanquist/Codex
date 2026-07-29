@@ -49,7 +49,9 @@
 					</article>
 				{/each}
 				{#if cards.length === 0}
-					<p class="lane-empty">Nothing here.</p>
+					<div class="empty-state tight">
+						<p class="empty-state-text">Nothing here.</p>
+					</div>
 				{/if}
 			</div>
 		</section>
@@ -106,11 +108,6 @@
 		gap: 8px;
 		padding: 0 10px 12px;
 		overflow-y: auto;
-	}
-	.lane-empty {
-		color: var(--text-faint);
-		font-size: 12.5px;
-		margin: 2px 2px 0;
 	}
 	.card {
 		display: flex;

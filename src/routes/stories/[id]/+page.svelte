@@ -618,8 +618,10 @@
 						<div class="editor story-doc">
 							<h1 class="doc-title">{data.story.title}</h1>
 							{#if (data.storyDoc ?? []).length === 0}
-								<div class="empty">
-									<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+								<div class="empty-state">
+									<p class="empty-state-text">
+										Nothing written yet. Switch back to the editor to add scenes.
+									</p>
 								</div>
 							{/if}
 							{#each data.chapters as chapter, index (chapter.id)}
@@ -709,12 +711,14 @@
 					/>
 				{/key}
 			{:else if data.scenes.length === 0}
-				<div class="empty">
-					<p>Create a chapter in the sidebar, then add a scene to it to start writing.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">
+						Create a chapter in the sidebar, then add a scene to it to start writing.
+					</p>
 				</div>
 			{:else}
-				<div class="empty">
-					<p>Select a scene in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">Select a scene in the sidebar.</p>
 				</div>
 			{/if}
 		</main>
@@ -728,14 +732,14 @@
 						planHref={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${inspectCard.id}`}
 					/>
 				{:else}
-					<div class="empty">Loading...</div>
+					<div class="empty-state tight"><p class="empty-state-text">Loading...</p></div>
 				{/if}
 			{:else}
 				<div class="right-head">
-					<div class="rtabs">
+					<div class="seg full">
 						{#if data.selectedScene}
 							<button
-								class="rtab"
+								class="seg-btn"
 								class:active={rightTab === 'reference'}
 								type="button"
 								onclick={() => (rightTab = 'reference')}
@@ -743,7 +747,7 @@
 								Reference
 							</button>
 							<button
-								class="rtab"
+								class="seg-btn"
 								class:active={rightTab === 'history'}
 								type="button"
 								onclick={() => (rightTab = 'history')}
@@ -752,7 +756,7 @@
 							</button>
 						{/if}
 						<button
-							class="rtab"
+							class="seg-btn"
 							class:active={rightTab === 'session'}
 							type="button"
 							onclick={() => (rightTab = 'session')}
@@ -761,7 +765,7 @@
 						</button>
 						{#if data.assistant.tabEnabled}
 							<button
-								class="rtab"
+								class="seg-btn"
 								class:active={rightTab === 'assistant'}
 								type="button"
 								onclick={() => (rightTab = 'assistant')}
@@ -864,7 +868,9 @@
 								{/each}
 							</div>
 						{:else}
-							<div class="empty">Nothing to show yet.</div>
+							<div class="empty-state tight">
+								<p class="empty-state-text">Nothing to show yet.</p>
+							</div>
 						{/if}
 					</div>
 				{/if}

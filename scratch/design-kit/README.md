@@ -54,4 +54,4 @@ repo to project; never edit the system inside the project.
 
 Foundations: `colors.html`, `type.html`, `spacing.html`.
 Components: `buttons.html`, `forms.html`, `menus.html`, `badges.html`,
-`seg.html`, `cards.html`, `empty-states.html`.
+`seg.html`, `cards.html`, `empty-states.html`, `modal.html`.

@@ -129,7 +129,7 @@
 						<span class="rel-note">{relationship.notesMd}</span>
 					{/if}
 					<button
-						class="rel-remove"
+						class="icon-btn sm danger"
 						type="button"
 						title="Remove relationship"
 						onclick={() => removeRelationship(relationship.id)}

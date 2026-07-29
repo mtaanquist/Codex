@@ -79,7 +79,7 @@
 			bind:value={label}
 			aria-label="Checkpoint name"
 		/>
-		<button class="mini-btn solid" type="submit" disabled={saving}>Checkpoint now</button>
+		<button class="btn btn-sm btn-secondary" type="submit" disabled={saving}>Checkpoint now</button>
 	</form>
 	<div class="hist-list">
 		{#each shownRevisions as row (row.id)}
@@ -96,7 +96,7 @@
 					{#if row.id !== previewId}
 						<div class="hist-actions">
 							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-							<a class="mini-btn" href={previewHref(row.id)}>Preview</a>
+							<a class="btn btn-sm btn-secondary" href={previewHref(row.id)}>Preview</a>
 							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						</div>
 					{/if}
@@ -106,7 +106,7 @@
 	</div>
 	{#if hiddenAutosaves > 0}
 		<button
-			class="mini-btn show-all"
+			class="btn btn-sm btn-ghost show-all"
 			type="button"
 			onclick={() => (showAllAutosaves = !showAllAutosaves)}
 		>
@@ -143,22 +143,8 @@
 	.cp-form input::placeholder {
 		color: var(--text-faint);
 	}
-	.mini-btn {
-		text-decoration: none;
-		cursor: pointer;
-	}
 	.show-all {
-		display: block;
 		width: 100%;
-		text-align: center;
-		padding: 6px;
 		margin-top: 6px;
-		border: 0;
-		background: none;
-		color: var(--text-muted);
-		font-size: 12px;
-	}
-	.show-all:hover {
-		color: var(--text);
 	}
 </style>
