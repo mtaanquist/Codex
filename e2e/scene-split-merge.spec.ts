@@ -42,13 +42,19 @@ test('split a scene at the cursor, then merge the halves back', async ({ page })
 	await expect(page.locator('.cm-content')).not.toContainText('First part stays here.');
 
 	// Merge them back: select both rows for merging, then merge.
-	await (await openRowMenu(page, page.locator('.scene-row').nth(0)))
+	await (
+		await openRowMenu(page, page.locator('.scene-row').nth(0))
+	)
 		.getByRole('menuitem', { name: 'Select for merging' })
 		.click();
-	await (await openRowMenu(page, page.locator('.scene-row').nth(1)))
+	await (
+		await openRowMenu(page, page.locator('.scene-row').nth(1))
+	)
 		.getByRole('menuitem', { name: 'Select for merging' })
 		.click();
-	await (await openRowMenu(page, page.locator('.scene-row').nth(0)))
+	await (
+		await openRowMenu(page, page.locator('.scene-row').nth(0))
+	)
 		.getByRole('menuitem', { name: 'Merge 2 scenes' })
 		.click();
 
@@ -88,7 +94,9 @@ test('duplicate a scene from the row menu', async ({ page }) => {
 	await page.keyboard.type('Reusable template body.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 
-	await (await openRowMenu(page, page.locator('.scene-row').nth(0)))
+	await (
+		await openRowMenu(page, page.locator('.scene-row').nth(0))
+	)
 		.getByRole('menuitem', { name: 'Duplicate scene' })
 		.click();
 

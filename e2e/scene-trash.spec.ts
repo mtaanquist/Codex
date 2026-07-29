@@ -26,7 +26,9 @@ test('scene trash and chapter tools', async ({ page }) => {
 	// An untitled chapter, renamed through the right-click menu.
 	await page.getByRole('button', { name: 'New chapter' }).click();
 	await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
-	await (await openRowMenu(page, page.locator('.chapter-row')))
+	await (
+		await openRowMenu(page, page.locator('.chapter-row'))
+	)
 		.getByRole('menuitem', { name: 'Rename chapter' })
 		.click();
 	await page.locator('.chapter-rename-input').fill('Act One');
@@ -36,7 +38,9 @@ test('scene trash and chapter tools', async ({ page }) => {
 	// A scene, deleted into the trash. Deleting the open scene closes it.
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page.locator('.scene-row')).toHaveCount(1);
-	await (await openRowMenu(page, page.locator('.scene-row')))
+	await (
+		await openRowMenu(page, page.locator('.scene-row'))
+	)
 		.getByRole('menuitem', { name: 'Delete scene' })
 		.click();
 	await expect(page).toHaveURL(`/stories/bins-${stamp}`);
@@ -50,7 +54,9 @@ test('scene trash and chapter tools', async ({ page }) => {
 	await expect(page.locator('.trash')).toHaveCount(0);
 
 	// Delete forever empties the trash for good.
-	await (await openRowMenu(page, page.locator('.scene-row')))
+	await (
+		await openRowMenu(page, page.locator('.scene-row'))
+	)
 		.getByRole('menuitem', { name: 'Delete scene' })
 		.click();
 	await page.getByRole('button', { name: 'Deleted scenes' }).click();
@@ -60,7 +66,9 @@ test('scene trash and chapter tools', async ({ page }) => {
 
 	// Deleting a chapter drops its scenes to the unfiled list.
 	await page.getByRole('button', { name: 'New scene' }).click();
-	await (await openRowMenu(page, page.locator('.chapter-row').first()))
+	await (
+		await openRowMenu(page, page.locator('.chapter-row').first())
+	)
 		.getByRole('menuitem', { name: 'Delete chapter' })
 		.click();
 	await expect(page.locator('.chapter-name', { hasText: 'Act One' })).toHaveCount(0);
