@@ -1,0 +1,36 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Menus</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/menus.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			/* Cards render the popover in flow; in the app it is positioned. */
+			.pane .popover {
+				position: static;
+				display: inline-block;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="popover" role="menu">
+				<button class="menu-item" type="button" role="menuitem">Rename chapter</button>
+				<button class="menu-item" type="button" role="menuitem">New scene here</button>
+				<button class="menu-item is-current" type="button" role="menuitem">Scene view</button>
+				<button class="menu-item" type="button" role="menuitem" disabled>Merge with next</button>
+				<button class="menu-item danger" type="button" role="menuitem">Move to trash</button>
+			</div>
+			<p class="note">
+				The one shared dropdown skin: a popover panel of menu-item rows. Every new menu uses it;
+				the avatar dropdown is the single sanctioned exception. Escape closes, arrows move.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

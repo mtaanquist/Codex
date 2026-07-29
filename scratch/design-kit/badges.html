@@ -1,0 +1,49 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Badges, chips, pills</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/pages.css" />
+		<link rel="stylesheet" href="kit.css" />
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Badge: entity identity</div>
+			<div class="row">
+				<span class="badge dot" style="background: var(--cat-violet)"></span>
+				<span class="badge sm" style="background: var(--cat-teal)">H</span>
+				<span class="badge sm" style="background: var(--cat-rose)">A</span>
+				<span class="badge lg" style="background: var(--cat-blue)">M</span>
+			</div>
+			<div class="kit-h">Chip: interactive token</div>
+			<div class="row">
+				<span class="chip">Mrs. Fenwick <button type="button" class="chip-x" aria-label="Remove">&times;</button></span>
+				<span class="chip muted">treaty</span>
+				<span class="chip dashed">Add alias</span>
+				<span class="chip link">Halden</span>
+			</div>
+			<div class="kit-h">Pill: static status label</div>
+			<div class="row">
+				<span class="pill">Nightly</span>
+				<span class="pill pill-accent">Current</span>
+			</div>
+			<div class="kit-h">Status dots</div>
+			<div class="row">
+				<span class="scene-dot" style="background: var(--status-outline)"></span> outline
+				<span class="scene-dot" style="background: var(--status-draft)"></span> draft
+				<span class="scene-dot" style="background: var(--status-revised)"></span> revised
+				<span class="scene-dot" style="background: var(--status-final)"></span> final
+			</div>
+			<p class="note">
+				Three words, three meanings: a badge marks an entity's identity, a chip is an interactive
+				token (tags, filters, add-affordances), a pill is a small static label. Status dots use
+				the four status tokens only.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

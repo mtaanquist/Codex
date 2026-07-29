@@ -1,0 +1,46 @@
+/* Card scaffold shared by every preview. The system CSS comes from
+   styles/; this file only lays out the three theme panes. */
+body {
+	margin: 0;
+}
+.themes {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	min-height: 100vh;
+}
+.pane {
+	background: var(--bg);
+	color: var(--text);
+	padding: 24px;
+	font-family: var(--font-ui);
+}
+.pane-label {
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin-bottom: 18px;
+}
+.row {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	flex-wrap: wrap;
+	margin-bottom: 14px;
+}
+.note {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 16px;
+	max-width: 34em;
+}
+.kit-h {
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin: 18px 0 8px;
+}
+.kit-h:first-child {
+	margin-top: 0;
+}

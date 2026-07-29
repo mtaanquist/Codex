@@ -1,0 +1,63 @@
+<!-- @dsCard group="Foundations" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Spacing and radii</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			.sp {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				margin-bottom: 6px;
+				font-size: 11px;
+				color: var(--text-muted);
+			}
+			.sp i {
+				display: block;
+				height: 10px;
+				background: var(--accent-soft);
+				border: 1px solid var(--accent-line);
+				border-radius: 2px;
+			}
+			.rad {
+				width: 64px;
+				height: 44px;
+				background: var(--bg-card);
+				border: 1px solid var(--border-strong);
+				display: grid;
+				place-items: center;
+				font-size: 10.5px;
+				color: var(--text-muted);
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Spacing scale</div>
+			<div class="sp"><i style="width: var(--space-1)"></i>space-1 (4px)</div>
+			<div class="sp"><i style="width: var(--space-2)"></i>space-2 (8px)</div>
+			<div class="sp"><i style="width: var(--space-3)"></i>space-3 (12px)</div>
+			<div class="sp"><i style="width: var(--space-4)"></i>space-4 (16px)</div>
+			<div class="sp"><i style="width: var(--space-5)"></i>space-5 (20px)</div>
+			<div class="sp"><i style="width: var(--space-6)"></i>space-6 (24px)</div>
+			<div class="sp"><i style="width: var(--space-8)"></i>space-8 (32px)</div>
+			<div class="sp"><i style="width: var(--space-10)"></i>space-10 (44px)</div>
+			<div class="kit-h">Radii</div>
+			<div class="row">
+				<div class="rad" style="border-radius: var(--radius-sm)">sm 6</div>
+				<div class="rad" style="border-radius: var(--radius)">md 9</div>
+				<div class="rad" style="border-radius: var(--radius-lg)">lg 14</div>
+			</div>
+			<div class="kit-h">Density</div>
+			<p class="note" style="margin-top: 0">
+				row-h is 36px (30px compact via data-density); pane-pad 22px (16px compact);
+				content-max 720px for the prose column. Sidebars are fixed: 240px left, 280px right.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>
