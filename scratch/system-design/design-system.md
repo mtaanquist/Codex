@@ -190,7 +190,9 @@ primitive's own class too, but do not copy the pattern.
 Two sizes and no third: 420px by default, 640px with `.modal-lg` for a list
 to scan or a passage to read. The backdrop is derived from `--bg`, so all
 three themes dim in their own key; there is no backdrop token and none is
-needed.
+needed. The panel centres by default; `.modal-backdrop.top` anchors it at
+14vh for an overlay whose content height changes while open (the command
+palette), so the top edge stays still as results come and go.
 
 Structure: `.modal-head` (with `.modal-head-main`, `.modal-title`,
 `.modal-sub`, `.modal-kind`), `.modal-body` (add `.rows` when it holds
