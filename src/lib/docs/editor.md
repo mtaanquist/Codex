@@ -26,13 +26,13 @@ Right-click a scene in the sidebar and choose "Delete scene". A deleted scene go
 
 ## Formatting
 
-Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I (Cmd on a Mac) do bold and italic from the keyboard.
+Write markdown and it styles in place: **bold** shows bold, # headings show large, > quotes show muted. The toolbar above the editor sets headings, bold, italic, quotes, and bullet lists on whatever is selected; Ctrl+B and Ctrl+I do bold and italic from the keyboard.
 
 The four alignment buttons set how the paragraphs under the selection sit on the page: left, centered, right, or justified. Alignment is written into the text as a small marker at the paragraph's start, like \center, so it travels with exports and shows correctly on reading pages, in EPUB, and in PDF. The marker dims in the editor; the left button removes it, so the paragraph follows the default alignment.
 
 Paragraphs without a marker use the default text alignment from your page setup (left unless you change it), set under Page setup on your account page or per story in its settings. The writing area's own font and line spacing are separate: set those under Editor on your account page, so you can write in one font on screen and export in another. The review screen's editor uses the same writing appearance.
 
-The two indent buttons beside them step the selected paragraphs in from the left and back out again (Ctrl+] and Ctrl+[, Cmd on a Mac). Like alignment, the indent is written as a marker (\indent) that rides with the text and shows everywhere, including exports.
+The two indent buttons beside them step the selected paragraphs in from the left and back out again (Ctrl+] and Ctrl+[). Like alignment, the indent is written as a marker (\indent) that rides with the text and shows everywhere, including exports.
 
 There are two ways to see your prose while you write, chosen under Editor behaviour on your account page (and per story in its settings):
 
@@ -66,7 +66,7 @@ For a clean read, select Preview. It is on the toolbar in both the single-scene 
 
 ## Find and replace
 
-Press Ctrl+F (Cmd+F on a Mac) in the editor to search the open scene. The panel finds as you type; Enter jumps to the next match, and the replace field swaps one match or all of them. Press Escape to close it. To search across every scene, use Ctrl+K instead.
+Press Ctrl+F in the editor to search the open scene. The panel finds as you type; Enter jumps to the next match, and the replace field swaps one match or all of them. Press Escape to close it. To search across every scene, use Ctrl+K instead.
 
 The field at the top of the sidebar filters the chapter and scene list by name as you type, which is the quick way to find a scene in a long story.
 
@@ -124,7 +124,7 @@ When you come back to a story after time away, select "Catch me up" from the men
 
 Select "Update summaries" from the menu next to the send button to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
 
-While you are writing, press Ctrl+J (Cmd+J on a Mac) to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
+While you are writing, press Ctrl+J to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 
 To have the Assistant write a passage for you, select "Write" on the formatting toolbar. Tell it what you want in a sentence or two, and it drafts a passage that fits the scene and your world. The panel shows where you are in the prose - the text you had selected, or the passage leading up to your cursor - so a brief like "continue from here" picks up in the right place; select the x on that quote if you do not want it sent. On a new or nearly empty scene that follows another, it reads the end of the previous scene, so a brief like "continue from the previous scene" picks up the events and voice where they left off. You can edit the draft right there, then select "Insert at cursor" to drop it into the scene, ask for another try, or discard it. Nothing goes into your scene until you insert it.
 

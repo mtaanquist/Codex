@@ -27,3 +27,10 @@ export function altLabel(): 'Option' | 'Alt' {
 	if (!browser) return 'Alt';
 	return isApplePlatform(currentPlatform()) ? 'Option' : 'Alt';
 }
+
+// Rewrites shortcut combos in help text for Apple keyboards: Ctrl+ becomes
+// Cmd+ and Alt+ becomes Option+. Only the combo forms are touched, so prose
+// that merely names the keys stays as written.
+export function appleShortcutLabels(text: string): string {
+	return text.replace(/\bCtrl\+/g, 'Cmd+').replace(/\bAlt\+/g, 'Option+');
+}

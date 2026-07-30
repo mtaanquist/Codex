@@ -82,7 +82,7 @@ If you run a campaign, a note per sitting works well: keep the running log in a 
 
 A note can also be attached to one scene. In the editor, open the Notes panel on the right and select "New note on this scene": the note is made, attached, and opened in the Notes view for you to write. From then on it shows at the top of the Notes panel whenever the scene is open, and in the story's note list like any other note.
 
-To jot something down without leaving the editor, press Ctrl+Alt+N (Cmd+Option+N on a Mac) or run "Quick note" from the command palette. A small card opens over the editor: write the thought, then Ctrl+Enter or "Save note" files it with the story's notes - attached to the open scene when there is one - and puts you back where you were. The first line becomes the note's title.
+To jot something down without leaving the editor, press Ctrl+Alt+N or run "Quick note" from the command palette. A small card opens over the editor: write the thought, then Ctrl+Enter or "Save note" files it with the story's notes - attached to the open scene when there is one - and puts you back where you were. The first line becomes the note's title.
 
 ## History
 
