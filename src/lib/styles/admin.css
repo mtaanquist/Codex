@@ -507,11 +507,7 @@ a.nav-item {
 	place-items: center;
 	font-size: 11.5px;
 	font-weight: 700;
-	background: linear-gradient(
-		150deg,
-		var(--accent),
-		color-mix(in oklab, var(--accent) 45%, #1b2a55)
-	);
+	background: linear-gradient(150deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
 	color: #fff;
 }
 .cell-name {
@@ -568,15 +564,6 @@ a.nav-item {
 	background: var(--text-faint);
 }
 
-/* ============ STORAGE BREAKDOWN ============ */
-.storage-bar {
-	height: 12px;
-	border-radius: 99px;
-	overflow: hidden;
-	display: flex;
-	background: var(--bg-inset);
-	margin: 4px 0 16px;
-}
 .storage-seg {
 	height: 100%;
 }
@@ -624,24 +611,6 @@ a.nav-item {
 .storage-cap .total {
 	font-size: 13px;
 	color: var(--text-faint);
-}
-
-/* usage mini-bar inside table */
-.usage-bar {
-	width: 90px;
-	height: 6px;
-	border-radius: 99px;
-	background: var(--bg-inset);
-	overflow: hidden;
-	display: inline-block;
-	vertical-align: middle;
-	margin-left: 10px;
-}
-.usage-bar > i {
-	display: block;
-	height: 100%;
-	background: var(--accent);
-	border-radius: 99px;
 }
 
 /* ============ INVITE / SNAPSHOT ROWS ============ */
@@ -924,11 +893,7 @@ a.nav-item {
 	font-weight: 700;
 	letter-spacing: 0.01em;
 	color: #fff;
-	background: linear-gradient(
-		150deg,
-		var(--accent),
-		color-mix(in oklab, var(--accent) 45%, #1b2a55)
-	);
+	background: linear-gradient(150deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
 	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .avatar-lg img {
@@ -1219,9 +1184,9 @@ a.nav-item {
 .tfa-guard input[type='password'] {
 	flex: 1;
 	min-width: 0;
-	background: var(--bg-inset, var(--bg));
+	background: var(--bg-inset);
 	border: 1px solid var(--border);
-	border-radius: var(--radius-sm, 6px);
+	border-radius: var(--radius-sm);
 	color: var(--text);
 	font-size: 12.5px;
 	padding: 6px 9px;

@@ -4,6 +4,8 @@ A writing workspace for long-form creative work: novels, serials, worldbuilding,
 
 The prototype (`scratch/app-design/`) is gitignored, so a fresh clone will not have it. Without it, work from the committed design docs in `scratch/system-design/`, the design system already ported to `src/lib/styles/`, and the patterns in the existing screens; if a step genuinely needs the visual spec and it is absent, say so rather than inventing a layout.
 
+Before building a new page or changing an existing one, read the components sheet at `scratch/system-design/design-system.md`. It names the canonical primitives and shells, the legacy patterns that must not be copied, and the per-page checklist; keep it updated when a primitive is added or changed.
+
 Progress is tracked in `TODO.md` (current step, feedback backlog, review follow-ups); keep it updated as steps complete.
 
 Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for background jobs, CodeMirror 6 for the editor, Caddy for TLS.
@@ -22,6 +24,7 @@ Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for backg
 - Authored content stays exportable. Anything holding a user's words is stored as markdown that round-trips through export; do not introduce a format that traps content.
 - Prefer what is already here. Reach for the standard library or an existing dependency before adding a new one, favour stable low-churn packages, and match the patterns and naming already in the file.
 - Keep the in-app help current. When you add or change user-facing functionality, check whether a help article in `src/lib/docs/` covers it and update or add one so the docs stay in step with the features. Admin-only panels do not need help articles.
+- Keep the design docs honest. When a change ships something `scratch/system-design/` describes as future, absent, or an open question, update the relevant doc (`design.md`, `assistant.md`, a status header) in the same branch. A doc that describes shipped work in the future tense misleads every later session that reads it as the spec.
 
 ## Testing
 

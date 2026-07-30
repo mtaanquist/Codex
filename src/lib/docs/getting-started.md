@@ -8,15 +8,15 @@ Codex organises your writing into three layers.
 
 ## Your first story
 
-1. On the library page, press "New universe", give it a name, and create it. Every new universe starts with two entity categories, "Lore" and "Faction"; you can rename or replace them later.
-2. Back on the library, use the "New story in this universe" card under the universe to create a story.
+1. On the library page, open the "New" menu at the top right and choose "New universe", give it a name, and create it. Every new universe starts with two entity categories, "Lore" and "Faction"; you can rename or replace them later.
+2. Back on the library, open the "New story" menu on the universe's own row and choose "New story in ..." to create a story. A universe with no stories yet offers the same menu in the space its stories will fill.
 3. Open the story and add a scene. The scene editor is where your prose goes.
 
-For a story that does not belong to any world, use the "New standalone story" card in the library's "Standalone stories" section instead. That universe is created for you the first time you add a story there, and the story works like any other.
+For a story that does not belong to any world, choose "New standalone story" from either the library's "New" menu or the "Standalone stories" section's own menu instead. That universe is created for you the first time you add a story there, and the story works like any other.
 
 That is enough to start writing. When you are ready, the planning tools help you keep track of who and what is in your world, and publishing turns a finished story into a public reading page.
 
-Each of those has its own help article. Look for the "?" next to a heading anywhere in the app to open the guide for what you are looking at.
+Each of those has its own help article. Select the "?" at the top right of any page to open the guide for what you are looking at; select it again to go back to what you were doing. The "?" next to a heading opens the guide for that section.
 
 ## Deleting things
 
@@ -28,7 +28,7 @@ Everything you write can leave as markdown: each story's settings offer a zip of
 
 A story export zip can also come back in. Open the universe's settings, go to "Import and export", and upload the zip under "Import a story". You get a preview first: how many chapters, scenes, and words are coming, and how each story note will be handled. A note whose character, place, or lore entry already exists in the universe (matched by name) attaches to it; a name with no match creates a new entry; a name shared by more than one entry is skipped, and the preview says so. Nothing is written until you press "Import story", and the import always creates a new story, even if one with the same title exists.
 
-You can bring in a manuscript written elsewhere the same way. Upload a Word document (.docx) or an EPUB (.epub) in that same "Import a story" box, or use the "Import story" link on the library and the planning board. Codex reads the chapters and scenes from the way the document marks them: chapter headings, "Chapter 1" lines, and scene breaks such as a centered row of asterisks. When a document has no such markers, the whole text comes in as a single scene that you can split up afterward. Pictures embedded in the document come along when image storage is set up; the preview tells you if any will be left out. As with a zip, you check the preview before anything is written.
+You can bring in a manuscript written elsewhere the same way. Upload a Word document (.docx) or an EPUB (.epub) in that same "Import a story" box, or choose "Import a story from a file..." from a New menu on the library, which opens that same box. Codex reads the chapters and scenes from the way the document marks them: chapter headings, "Chapter 1" lines, and scene breaks such as a centered row of asterisks. When a document has no such markers, the whole text comes in as a single scene that you can split up afterward. Pictures embedded in the document come along when image storage is set up; the preview tells you if any will be left out. As with a zip, you check the preview before anything is written.
 
 ## Jumping around
 

@@ -1,0 +1,57 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Forms</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/pages.css" />
+		<link rel="stylesheet" href="kit.css" />
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="field">
+				<label for="kit-title">Title</label>
+				<input id="kit-title" class="input" value="The long cold" />
+				<div class="field-hint">Shown on the cover and the shelf.</div>
+			</div>
+			<div class="field">
+				<label for="kit-brief">Brief</label>
+				<textarea id="kit-brief" class="textarea" rows="3">
+Three sentences of description, at most.</textarea
+				>
+			</div>
+			<div class="field">
+				<label for="kit-status">Status</label>
+				<select id="kit-status" class="select">
+					<option>Outline</option>
+					<option selected>Draft</option>
+					<option>Revised</option>
+					<option>Final</option>
+				</select>
+			</div>
+			<div class="toggle-row">
+				<label class="toggle">
+					<input type="checkbox" checked />
+					<span class="toggle-track"></span>
+				</label>
+				<div style="flex: 1">
+					<div class="t-title">Underline known entities</div>
+					<div class="t-sub">Dotted underlines in the category colour.</div>
+				</div>
+			</div>
+			<div class="settings-actions">
+				<button class="btn btn-secondary" type="button">Cancel</button>
+				<button class="btn btn-primary" type="button">Save</button>
+			</div>
+			<p class="note">
+				Every text control is one of these; the focus ring (accent border plus soft glow) comes
+				from the shared rule and is never redefined. Inline save results use the FormStatus
+				component in the app.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

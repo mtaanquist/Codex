@@ -1,8 +1,14 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
 	import { dismiss } from '$lib/dismiss';
+	import { modLabel } from '$lib/keys';
 	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import Icon from './Icon.svelte';
+
+	// SSR cannot know the platform, so the modifier label settles after mount.
+	let mod = $state<'Cmd' | 'Ctrl'>('Ctrl');
+	onMount(() => (mod = modLabel()));
 
 	// The right-click selection menu: quick formatting plus create-from-selection
 	// and an Assistant hand-off. The parent opens it from the pane's context menu
@@ -79,7 +85,7 @@
 			class="sel-format"
 			type="button"
 			role="menuitem"
-			title="Bold (Ctrl+B)"
+			title={`Bold (${mod}+B)`}
 			onclick={() => runFormat(toggleBold)}
 		>
 			<Icon name="bold" size={15} />
@@ -88,7 +94,7 @@
 			class="sel-format"
 			type="button"
 			role="menuitem"
-			title="Italic (Ctrl+I)"
+			title={`Italic (${mod}+I)`}
 			onclick={() => runFormat(toggleItalic)}
 		>
 			<Icon name="italic" size={15} />

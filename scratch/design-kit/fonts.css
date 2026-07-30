@@ -1,0 +1,44 @@
+/* The real families, latin subsets, copied from the fontsource packages
+   the app loads (all SIL OFL). Family names match tokens.css. */
+@font-face {
+	font-family: 'Hanken Grotesk Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 100 900;
+	src: url(./fonts/hanken-grotesk-latin-wght-normal.woff2) format('woff2-variations');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 400;
+	src: url(./fonts/spectral-latin-400-normal.woff2) format('woff2');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: italic;
+	font-display: swap;
+	font-weight: 400;
+	src: url(./fonts/spectral-latin-400-italic.woff2) format('woff2');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 500;
+	src: url(./fonts/spectral-latin-500-normal.woff2) format('woff2');
+}
+@font-face {
+	font-family: 'Spectral';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 600;
+	src: url(./fonts/spectral-latin-600-normal.woff2) format('woff2');
+}
+@font-face {
+	font-family: 'JetBrains Mono Variable';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 100 800;
+	src: url(./fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations');
+}

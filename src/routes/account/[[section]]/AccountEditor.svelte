@@ -273,8 +273,8 @@
 					</select>
 				</div>
 				<div class="behavior-body">
-					The Session tab's streak card: the week's writing days and the run you are on. Hide it if
-					the scorekeeping is not for you.
+					The writing streak on a universe's insights page: the week's writing days and the run you
+					are on. Hide it if the scorekeeping is not for you.
 				</div>
 			</div>
 			<div class="behavior-card">
@@ -292,7 +292,7 @@
 					/>
 				</div>
 				<div class="behavior-body">
-					A daily word target. The Session tab and Insights show progress toward it. Leave it blank
+					A daily word target. A universe's Insights page shows progress toward it. Leave it blank
 					or zero for no goal.
 				</div>
 			</div>

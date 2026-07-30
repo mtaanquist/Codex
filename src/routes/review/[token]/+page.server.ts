@@ -22,7 +22,7 @@ import {
 } from '$lib/server/review';
 import { gatherStory } from '$lib/server/export';
 import { reviewMentionData } from '$lib/server/mention-entities';
-import { reanchorRange } from '$lib/review-anchor';
+import { createAnchorMapper } from '$lib/review-anchor';
 import { rateLimit } from '$lib/server/rate-limit';
 import { notifyReviewActivity } from '$lib/server/notify';
 
@@ -88,6 +88,9 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 		sceneIds: scenes.map((scene) => scene.id),
 		restrictToMentioned: true
 	});
+	// Threads and suggestions re-anchor against the same scene revisions, so one
+	// mapper covers both and each revision is diffed once for the page.
+	const anchors = createAnchorMapper();
 	return {
 		state: 'review' as const,
 		storyTitle: resolved.storyTitle,
@@ -95,8 +98,8 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 		canSuggest: resolved.invitation.canSuggest,
 		chapters: content.chapters,
 		scenes,
-		threads: await listThreads(db, storyId, reanchorRange, { reviewerId: reviewer.id }),
-		suggestions: await listSuggestions(db, storyId, { reviewerId: reviewer.id }),
+		threads: await listThreads(db, storyId, anchors.range, { reviewerId: reviewer.id }),
+		suggestions: await listSuggestions(db, storyId, { reviewerId: reviewer.id }, anchors),
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins

@@ -1,0 +1,512 @@
+/* ===========================================================================
+   Codex surfaces: the four late arrivals, brought back into the system.
+   Imported after chrome.css, so it also beats any screen-local skin. Tokens
+   only; no new colours, no new fonts.
+
+   1. THE RIGHT PANE STRIP (.panel-strip / .panel-head)
+      The left strip is routes and never changes shape. The right strip is
+      panels about whatever the centre holds, so it changes with the mode: a
+      panel with no subject is hidden, never disabled and never renamed. When
+      one panel is left, the pane wears a title (.panel-head), not a strip -
+      because a control with one choice is not a control.
+
+   2. INSIGHTS is a workspace view, not a settings section. Nothing here is
+      needed for that: it wears the ordinary three-pane shell. Its on-page
+      anchors use .contents-nav, so .side-nav stays what it is on every
+      settings page - a list of routes.
+
+   3. THE READER (.reader-*) The outward face: tokens, brand, footer, and the
+      reader's own theme. Body text is --text and --text-muted only; --text-faint
+      is not a reading colour. Links in reading text are underlined body colour
+      rather than accent, which is what keeps them AA in all three themes.
+
+   4. ONE CREATION PATTERN (.menu-host / .collection-empty) Every collection
+      makes new things from its own header, with the same menu shape: make,
+      then import. An empty collection repeats that action in the empty space,
+      which is the only variant.
+   =========================================================================== */
+
+/* ---- 1. the right pane strip ---- */
+.panel-strip {
+	width: 100%;
+}
+/* PanelStrip.svelte keeps .active and aria-selected in step, so the selected
+   tab wears the one .seg-btn.active skin and nothing depends on a second rule. */
+.panel-strip .seg-btn {
+	cursor: pointer;
+}
+[role='tabpanel'][hidden] {
+	display: none;
+}
+/* A tab panel fills the pane below the strip, so a panel that scrolls (the
+   chat, a revision list) keeps its own scroll instead of growing the pane. */
+.panel-body {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+/* The one-panel case, and the header above a panel's own filter. */
+.panel-head {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	min-height: 30px;
+}
+.panel-head-title {
+	font-size: var(--text-base);
+	font-weight: 650;
+	margin: 0;
+}
+.panel-head-sub {
+	margin-left: auto;
+	font-size: var(--text-meta);
+	color: var(--text-muted);
+}
+/* A panel's first line of help, for a first-time reader of that panel. */
+.panel-note {
+	margin: 0;
+	padding: var(--space-3) 12px 0;
+	font-size: var(--text-meta);
+	line-height: 1.5;
+	color: var(--text-muted);
+	text-wrap: pretty;
+}
+
+/* ---- 2. a page's own sections, listed in the left pane ---- */
+/* Same treatment as .side-nav, different meaning: .side-nav is routes to
+   sibling pages, .contents-nav is anchors inside this one. */
+.contents-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	padding: 0 6px 10px;
+}
+.contents-nav a {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 30px;
+	padding: 0 8px;
+	border-radius: var(--radius-sm);
+	color: var(--text-muted);
+	font-size: var(--text-base);
+	text-decoration: none;
+}
+.contents-nav a:hover {
+	background: var(--bg-hover);
+	color: var(--text);
+}
+.contents-nav a[aria-current='true'] {
+	background: var(--bg-active);
+	color: var(--text);
+	font-weight: 600;
+}
+.contents-nav a:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+/* ---- 4. one creation pattern ---- */
+.row-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+.menu-host {
+	position: relative;
+	display: inline-flex;
+}
+.menu-host > .popover {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	min-width: 244px;
+	display: none;
+	z-index: 40;
+}
+.menu-host.open > .popover {
+	display: block;
+}
+.menu-host.start > .popover {
+	left: 0;
+	right: auto;
+}
+.menu-host .menu-item {
+	width: 100%;
+	font-size: var(--text-base);
+	cursor: pointer;
+}
+.menu-note {
+	padding: 7px 7px 3px;
+	font-size: var(--text-meta);
+	line-height: 1.5;
+	color: var(--text-muted);
+	text-wrap: pretty;
+}
+.menu-sep {
+	height: 1px;
+	background: var(--border);
+	margin: 5px 7px;
+}
+.new-caret {
+	width: 11px;
+	height: 11px;
+	flex: none;
+	opacity: 0.75;
+}
+/* The variant: the same action, in the empty space it would fill. */
+.collection-empty {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-3);
+	padding: var(--space-6);
+	border: 1px dashed var(--border-strong);
+	border-radius: var(--radius-lg);
+	background: var(--bg-inset);
+}
+.collection-empty-text {
+	font-size: var(--text-base);
+	color: var(--text-muted);
+	max-width: 46em;
+	text-wrap: pretty;
+	margin: 0;
+}
+
+/* ---- 3. the reader ---- */
+.reader-shell {
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	background: var(--bg);
+}
+.reader-main {
+	flex: 1 1 auto;
+	overflow: auto;
+}
+.reader-col {
+	width: 100%;
+	max-width: 37rem;
+	margin: 0 auto;
+	padding: var(--space-10) var(--space-6) 72px;
+}
+.reader-col.wide {
+	max-width: 62rem;
+}
+.reader-kicker {
+	margin: 0 0 var(--space-3);
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+.reader-title {
+	margin: 0;
+	font-family: var(--font-serif);
+	font-size: clamp(30px, 4vw, 40px);
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	line-height: 1.14;
+	text-wrap: balance;
+}
+.reader-byline {
+	margin: var(--space-3) 0 0;
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+.reader-brief {
+	margin: var(--space-4) 0 0;
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.6;
+	color: var(--text-muted);
+	text-wrap: pretty;
+}
+.reader-brief p {
+	margin: 0 0 0.6em;
+}
+.reader-toc {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	margin: var(--space-6) 0 0;
+	padding: var(--space-4) 0 0;
+	border-top: 1px solid var(--border);
+}
+.reader-toc-label {
+	font-size: var(--text-micro);
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+	margin-bottom: var(--space-2);
+}
+.reader-toc a {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-3);
+	padding: 5px 0;
+	font-size: var(--text-prose-sm);
+}
+.reader-toc a .n {
+	margin-left: auto;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+/* A list of chapters is identifiable as links by being a list; underlining six
+   rows edge to edge would fight the prose below it. */
+.reader-main .reader-toc a {
+	text-decoration: none;
+}
+.reader-main .reader-toc a:hover {
+	text-decoration: underline;
+	text-decoration-color: currentColor;
+}
+.reader-toc a[aria-current='page'] {
+	font-weight: 600;
+}
+.reader-chapter {
+	margin: var(--space-10) 0 var(--space-6);
+	padding-top: var(--space-8);
+	border-top: 1px solid var(--border);
+	font-family: var(--font-serif);
+	font-size: 23px;
+	font-weight: 600;
+	line-height: 1.25;
+}
+.reader-prose {
+	font-family: var(--font-content);
+	font-size: var(--text-prose);
+	line-height: 1.75;
+	color: var(--text);
+}
+.reader-prose p {
+	margin: 0;
+	text-wrap: pretty;
+}
+/* Book setting: a new paragraph is an indent, not a gap. */
+.reader-prose p + p {
+	text-indent: 1.5em;
+}
+/* Aligned paragraphs from the editor drop the indent. */
+.reader-prose p.align-center,
+.reader-prose p.align-right {
+	text-indent: 0;
+}
+.reader-prose p.align-center {
+	text-align: center;
+}
+.reader-prose p.align-right {
+	text-align: right;
+}
+.reader-prose p.align-justify {
+	text-align: justify;
+}
+.reader-prose img {
+	max-width: 100%;
+}
+.reader-prose .break {
+	margin: 1.2em 0;
+	text-align: center;
+	color: var(--text-muted);
+	letter-spacing: 0.5em;
+}
+.reader-pager {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-4);
+	margin-top: var(--space-10);
+	padding-top: var(--space-5);
+	border-top: 1px solid var(--border);
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+/* Reading text takes its links underlined and in the body colour: accent on a
+   light background is under 4.5:1, and a book underlines anyway. */
+.reader-main a,
+.reader-foot a {
+	color: var(--text);
+	text-decoration: underline;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 2px;
+}
+.reader-main a:hover,
+.reader-foot a:hover {
+	text-decoration-color: currentColor;
+}
+.reader-main a:focus-visible,
+.reader-foot a:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: 3px;
+}
+
+/* the shelf: /@handle */
+.shelf-head {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-5);
+}
+.shelf-avatar {
+	width: 58px;
+	height: 58px;
+	flex: none;
+	display: grid;
+	place-items: center;
+	border-radius: 99px;
+	border: 1px solid var(--border);
+	background: var(--bg-inset);
+	font-family: var(--font-serif);
+	font-size: 21px;
+	color: var(--text-muted);
+	overflow: hidden;
+}
+.shelf-avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+.shelf-name {
+	margin: 0;
+	font-family: var(--font-serif);
+	font-size: 30px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	line-height: 1.15;
+}
+.shelf-handle {
+	margin: 5px 0 0;
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+.shelf-bio {
+	margin: var(--space-4) 0 0;
+	max-width: 42em;
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.6;
+	text-wrap: pretty;
+}
+.shelf-bio p {
+	margin: 0 0 0.6em;
+}
+.shelf-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2) var(--space-5);
+	margin: var(--space-4) 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+.shelf-label {
+	margin: var(--space-10) 0 var(--space-4);
+	padding-top: var(--space-5);
+	border-top: 1px solid var(--border);
+	font-size: var(--text-micro);
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+.shelf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+	gap: var(--space-5);
+	padding: 0;
+	margin: 0;
+	list-style: none;
+}
+.shelf-item {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	padding: var(--space-4);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	background: var(--bg-card);
+	color: var(--text);
+	transition:
+		border-color 0.14s,
+		transform 0.14s;
+}
+.reader-main a.shelf-item {
+	text-decoration: none;
+}
+.shelf-item:hover {
+	border-color: var(--border-strong);
+	transform: translateY(-2px);
+}
+/* The cover a story has before anyone draws one: its own title, set. */
+.shelf-cover {
+	aspect-ratio: 3 / 4;
+	display: flex;
+	align-items: flex-end;
+	padding: var(--space-4);
+	border-radius: var(--radius);
+	border: 1px solid var(--border);
+	background: var(--bg-inset);
+	font-family: var(--font-serif);
+	font-size: 17px;
+	line-height: 1.2;
+	color: var(--text-muted);
+	text-wrap: balance;
+	overflow: hidden;
+}
+.shelf-cover img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	border-radius: var(--radius);
+}
+.shelf-item-title {
+	font-family: var(--font-serif);
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.2;
+}
+.shelf-item-meta {
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+.shelf-item-brief {
+	margin: 0;
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.55;
+	color: var(--text-muted);
+	text-wrap: pretty;
+}
+.shelf-item-brief p {
+	margin: 0;
+}
+
+/* the footer both reading pages carry */
+.reader-foot {
+	flex: none;
+	border-top: 1px solid var(--border);
+	background: var(--bg-elevated);
+}
+.reader-foot-in {
+	max-width: 62rem;
+	margin: 0 auto;
+	padding: var(--space-6);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-3) var(--space-6);
+	font-size: var(--text-prose-sm);
+	color: var(--text-muted);
+}
+.reader-foot-brand {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	color: var(--text);
+}
+.reader-foot-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-5);
+	margin-left: auto;
+}

@@ -13,6 +13,7 @@
 		toggleQuote
 	} from '$lib/editor-format';
 	import { ALIGNMENTS } from '$lib/alignment';
+	import { modLabel } from '$lib/keys';
 	import { dismiss } from '$lib/dismiss';
 	import ViewMenu, { type ViewItem } from './ViewMenu.svelte';
 
@@ -75,17 +76,27 @@
 
 	// The ordered main-tool list. The same descriptors render inline (icon
 	// button) or, once overflowed, as a row in the "more" menu.
+	// SSR cannot know the platform, so the modifier label settles after mount.
+	let mod = $state<'Cmd' | 'Ctrl'>('Ctrl');
+	onMount(() => (mod = modLabel()));
+
 	const items = $derived.by(() => {
 		const out: Item[] = [
 			{ kind: 'cmd', id: 'h1', title: 'Heading 1', label: 'H1', act: () => run(setHeading(1)) },
 			{ kind: 'cmd', id: 'h2', title: 'Heading 2', label: 'H2', act: () => run(setHeading(2)) },
 			{ kind: 'cmd', id: 'h3', title: 'Heading 3', label: 'H3', act: () => run(setHeading(3)) },
 			{ kind: 'sep' },
-			{ kind: 'cmd', id: 'bold', title: 'Bold (Ctrl+B)', icon: 'bold', act: () => run(toggleBold) },
+			{
+				kind: 'cmd',
+				id: 'bold',
+				title: `Bold (${mod}+B)`,
+				icon: 'bold',
+				act: () => run(toggleBold)
+			},
 			{
 				kind: 'cmd',
 				id: 'italic',
-				title: 'Italic (Ctrl+I)',
+				title: `Italic (${mod}+I)`,
 				icon: 'italic',
 				act: () => run(toggleItalic)
 			},
@@ -99,27 +110,25 @@
 				act: () => run(toggleBulletList)
 			},
 			{ kind: 'sep' },
-			...ALIGNMENTS.map(
-				(align): Item => ({
-					kind: 'cmd',
-					id: `align-${align}`,
-					title: `Align ${align}`,
-					icon: `align-${align}` as IconName,
-					act: () => run(setAlignment(align))
-				})
-			),
+			...ALIGNMENTS.map((align): Item => ({
+				kind: 'cmd',
+				id: `align-${align}`,
+				title: `Align ${align}`,
+				icon: `align-${align}` as IconName,
+				act: () => run(setAlignment(align))
+			})),
 			{ kind: 'sep' },
 			{
 				kind: 'cmd',
 				id: 'indent-dec',
-				title: 'Decrease indent (Ctrl+[)',
+				title: `Decrease indent (${mod}+[)`,
 				icon: 'indent-decrease',
 				act: () => run(decreaseIndent)
 			},
 			{
 				kind: 'cmd',
 				id: 'indent-inc',
-				title: 'Increase indent (Ctrl+])',
+				title: `Increase indent (${mod}+])`,
 				icon: 'indent-increase',
 				act: () => run(increaseIndent)
 			}

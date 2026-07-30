@@ -26,7 +26,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 			universes: [],
 			stories: [],
 			trashedUniverses: [],
-			signupOpen: (await signupMode(db)) !== 'none'
+			// The mode, not a boolean: the landing page offers a sign-up only
+			// where a visitor without an invite code can finish one.
+			signupMode: await signupMode(db)
 		};
 	}
 	const user = locals.user;

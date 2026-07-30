@@ -5,6 +5,148 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Public surfaces (2026-07-30, branch `feat/design-public-pages`). The fourth and
+last design-pass brief's result, ported: everything a signed-out visitor sees.
+`src/lib/styles/public.css` is a new layer loaded last, and the `.landing-*`
+block is deleted from `pages.css`. One public shell now covers the landing
+page, sign-in, sign-up and every page an email link lands on: `.public-surface`
+over `AppBar` with a fourth reduction (`shell="public"`: brand linking home,
+theme and help, no path) and `ReaderFooter` with a public reduction, so
+`AuthShell` is the card inside that shell rather than a frame of its own. The
+landing page shows the workspace instead of describing it: a `.ws-*` figure
+drawn from tokens, correct in all three themes, with a real three-way posture
+tablist (Novelist, Worldbuilder, Game master) carrying the same keyboard
+contract as `PanelStrip`, then four model statements in sentences and the
+reading pages' footer. The owner's ratified amendments: sign-in keeps email and
+password, the passkey button and forgot-password (no magic link); sign-up keeps
+display name, email, password and the invite code with every existing mode and
+sent state (no "what are you working on" field); and the open/closed switch is
+now mode-aware through `signupOffered()` in the new `$lib/signup-mode.ts`,
+which offers sign-up under approval and open but not under invite, where a
+codeless visitor could not finish one. New help article
+`src/lib/docs/selfhosting.md`, so every handbook link on these pages reaches an
+article that exists. Deferred to the backlog: magic-link sign-in, the sign-up
+work note, a public searchable library, an instance-role setting, and an
+offline desktop app.
+
+Secondary surfaces (2026-07-30, branch `feat/secondary-surfaces`). The third
+design-pass brief's result, ported. The right pane is now one model: five
+panels (Reference, Comments, Assistant, History, Notes) in one order with one
+label each, hidden where they have no subject, decided in `$lib/panels.ts` and
+rendered by one `PanelStrip.svelte` that is a real tablist (roving tabindex,
+arrows, Home/End, `aria-controls`). One panel left means a `.panel-head` title
+rather than a one-segment strip (Notes mode's fake History pill, guest review,
+insights); no panel left closes the pane (Plan with nothing open). Review's
+pane is Comments plus Assistant, with the Open/Done filter moved inside the
+Comments panel. The Session tab is gone: its stats are the new "Writing
+sessions" section of a universe's Insights, which became a workspace view
+(mode strip with no mode current and a `.mode-note` saying why, its section
+anchors as `.contents-nav`, the Assistant alone on the right). Write gained a
+Notes panel over the existing `notes.scene_id`, with "New note on this scene".
+The reading pages are rebuilt on tokens (`.reader-shell`, one footer, covers
+as the story's own title in the serif, AA links underlined in the body
+colour), and they follow the reader's system theme live until the reader
+chooses. The library has one creation pattern: a New menu per collection
+(`NewMenu.svelte`), no dashed add tiles in populated grids, no import text
+links. Deleted: `SessionPanel.svelte`, `/api/universes/[id]/session`, and the
+`.sess-*`/`.streak-*` CSS. Deferred: a Notes panel on Plan (a note attaches to
+a scene, and there is no column for an entry, so it needs a migration), and
+chapter-by-chapter reader pagination (the reading page still renders the whole
+edition with an in-page contents list).
+
+Navigation model (2026-07-30, branch `feat/navigation-model`, PR #507). The
+second design-pass brief's result, ported. One `AppBar.svelte` over
+`src/lib/styles/chrome.css` replaces the editor's `.topbar`, the pages'
+`.page-shell .topbar` with its `.back-link`, the print page's one-off bar and
+`.review-guest-bar`, in three shells (author, guest, reader). The two
+contested decisions landed as the owner ratified them: a place in the path is
+a menu, so the universe and story names open everything belonging to them
+starting with "Go to the ...", with no gear anywhere in the chrome; and the
+help modal is deleted, the `?` now navigating to the help pages, lighting up
+while there and returning when pressed again. Paths are built in
+`$lib/chrome.ts`; the theme tool cycles dark -> light -> warm through
+`theme.ts` (`cycleTheme` replaces `flipTheme`, and the avatar menu walks the
+same cycle); the mode strip is always four, with a rendered note where a mode
+is unavailable. Every page that escaped a shell now has one: docs, print,
+guest review, and the public reader. `/docs` became public, because the guest
+and reader shells keep the help tool. Deleted with it: `HelpModal`, `TopBar`,
+`PageTopBar`, `PaletteButton`, and the `.topbar`, `.crumbs`, `.back-link`,
+`.breadcrumb`, `.save-status`, `.review-guest-bar` and `.universe-edit` CSS.
+New kit card `scratch/design-kit/appbar.html`. Deferred on purpose: the mock's
+universe-overview restructure (the Plan page keeps its `PlanSidebar` entity
+list, gaining only the bar, the four-mode strip and a small Insights link),
+and full reader retheming, which is session 3.
+
+Visual design pass (2026-07-29, branch `worktree-design-system-sheet`).
+Groundwork for a whole-app cohesion pass with Claude Design: a components
+sheet written from a full audit of `src/lib/styles/` and
+`src/lib/components/` (`scratch/system-design/design-system.md`, now
+referenced from CLAUDE.md as required reading for page work), and four
+session briefs for Claude Design
+(`scratch/system-design/design-pass-prompts.md`): landing page,
+navigation and wayfinding, secondary-surface cohesion, and a primitive
+consolidation sheet. The audit found the drift the briefs target: 20+
+button skins, 9 menu systems, 3 modals, ~400 lines of dead CSS,
+hard-coded colours bypassing tokens, and four pages outside any shell
+(docs, print, guest review, public reader). Also on this branch: a
+reconciliation pass over `design.md` against the shipped app (the AI
+section rewritten for the shipped Assistant, continuous-view editing,
+EPUB/PDF exports, the four sign-up modes, the flat shelf with links and
+commissions, scene-mark preferences, plus a new "Beyond the writing
+surface" section stating what review, insights, goals, notifications,
+print, import, and admin are each for), the stale status header in
+`assistant.md`, and three stale schema comments (`llm_config` twice,
+`cover_asset_id`). Next: build the design kit preview bundle
+(`scratch/design-kit/`, one card per canonical primitive in all three
+themes, DesignSync-ready), run the briefs in Claude Design, port the
+results, then the code-side consolidation refactor the sheet's backlog
+section lists.
+
+Primitives consolidation (2026-07-29, branch
+`feat/primitives-consolidation`). The fourth brief's result, ported.
+New `src/lib/styles/primitives.css`, loaded last, owns the families that
+had no single owner: the modal, the empty state, the chip remove
+affordance, and the shared focus ring. `.btn` is now the complete family
+(states plus `.btn-accept`), `.icon-btn` gains `.sm` and `.danger`,
+`.seg` gains `.seg-count`, and `tokens.css` gains the seven-step type
+ramp, `--danger-contrast`, and a per-theme `--select-caret`. Migrated
+across the app: the `.rv-btn` family, `.rv-quick-btn`, `.rb-btn`,
+`.mini-btn`, `.tool-btn`, `.send-btn` and `.pop-open` onto `.btn`/
+`.icon-btn`; `.rtabs`, `.rv-filters`, `.rv-mtabs` and
+`.revision-filter-chip` onto `.seg`; the three hand-rolled modals onto
+one primitive; twelve empty-state spellings onto `.empty-state`. About
+1,400 lines of CSS deleted, including the drift sheet's dead blocks
+(`.ctx-menu`, `.settings-nav`, `.note-card`, `.icon-button`, `.kbd`).
+Remaining from the sheet's backlog: the duplicated component blocks
+(assistant chat, `.insp-*`, kanban), the residual bare `#fff`, and focus
+reachability on the sidebar rows.
+
+Dev environment automation (2026-07-28, branch
+`feat/dev-env-automation`). Setting the project up on a fresh macOS
+machine turned up three things CI never sees, all fixed here.
+`npm run test:e2e` did not work as documented: the app reads
+`process.env` directly, CI supplies `ASSET_S3_*` as job-level variables,
+and nothing loaded `.env` locally, so asset storage looked unconfigured
+and every export spec timed out waiting for a button that never
+rendered. `playwright.config.ts` now loads `.env` with Node's built-in
+`process.loadEnvFile` (no new dependency; shell variables still win, so
+CI and one-off `DATABASE_URL` overrides are unaffected), and
+`compose.dev.yaml` gained the MinIO the export and upload paths need.
+Two specs hardcoded `Control+f`, `Control+k`, and `Control+End`, which
+are Linux-only against CodeMirror's `Mod-` bindings, so they could never
+pass on macOS; they use `ControlOrMeta+` now, like the rest of the
+suite. `goals.spec.ts` was not idempotent against a persistent database
+(it refilled the stored value, so no save fired and the "Saved." toast
+never appeared), and now picks a value that differs from what is there.
+Also added `npm run restore:prod-copy`, which restores an off-site
+backup into a separate `codex_prod_copy` database and drops the
+`asset-storage`, `smtp`, and `backup-storage` rows the dump carries;
+left in place they point local work at the real buckets and relay, and
+reading one without the source `APP_SECRET` throws rather than failing
+soft, which breaks every page that resolves asset storage. Three
+parallel-load flakes remain (`account`, `author-review`), unchanged by
+this work and green when run serially; worth a look separately.
+
 The capability review queue closed 2026-06-06 (items 1-5 all shipped;
 see the follow-ups section below). Next up: the next-phase candidates
 recorded in the roadmap from the 2026-06-06 capability review (Notes
@@ -329,43 +471,43 @@ Author review mode batch (2026-06-08, branch `feat/author-review-mode`;
       on the line being edited). Closes the original feedback issues #301-#309.
 
 - [x] 3. Markdown import (capability review, 2026-06-06; collision
-     design agreed 2026-06-06). Imports our own story export ZIP into a
-     chosen universe, always as a new story, from universe settings
-     next to Export. Always two steps: upload, preview (counts plus
-     every collision and its resolution), confirm. Collision rules as
-     agreed: duplicate story titles allowed (slug auto-suffixes),
-     chapters/scenes cannot collide, notes match entities by trimmed
-     case-insensitive name + kind (match attaches and joins the story,
-     no match creates a minimal entity, ambiguity skips with a flag),
-     aliases never match, assets re-upload as new ids, re-import makes
-     a sibling story. The exporter writes chapter.md so chapter titles
-     round-trip. Out of scope: universe/account archive import, foreign
-     markdown, import into existing stories. Merged 2026-06-06 (#178),
-     shipped as v2.29.0.
+      design agreed 2026-06-06). Imports our own story export ZIP into a
+      chosen universe, always as a new story, from universe settings
+      next to Export. Always two steps: upload, preview (counts plus
+      every collision and its resolution), confirm. Collision rules as
+      agreed: duplicate story titles allowed (slug auto-suffixes),
+      chapters/scenes cannot collide, notes match entities by trimmed
+      case-insensitive name + kind (match attaches and joins the story,
+      no match creates a minimal entity, ambiguity skips with a flag),
+      aliases never match, assets re-upload as new ids, re-import makes
+      a sibling story. The exporter writes chapter.md so chapter titles
+      round-trip. Out of scope: universe/account archive import, foreign
+      markdown, import into existing stories. Merged 2026-06-06 (#178),
+      shipped as v2.29.0.
 - [x] 4. Export completeness (capability review, 2026-06-06). Story
-     notes ride in the story, universe, and account exports as per-story
-     notes/ folders; relationships as a relationships.md per universe;
-     and the account export carries each story's review threads with
-     comments, attribution, and anchored excerpts (author's call:
-     review threads yes, revision history no - the current text is
-     already exported). Frozen editions stay prose-only. Merged
-     2026-06-06 (#174), shipped as v2.28.0.
+      notes ride in the story, universe, and account exports as per-story
+      notes/ folders; relationships as a relationships.md per universe;
+      and the account export carries each story's review threads with
+      comments, attribution, and anchored excerpts (author's call:
+      review threads yes, revision history no - the current text is
+      already exported). Frozen editions stay prose-only. Merged
+      2026-06-06 (#174), shipped as v2.28.0.
 - [x] 5. Notifications (capability review, 2026-06-06; scope agreed
-     2026-06-06). The generic core as agreed: a notifications table
-     (kind, payload, read/emailed state), a bell in every topbar with
-     an unread badge and dropdown (click marks read and follows the
-     link, mark-all-read), and a per-kind preference matrix on the
-     account page (in-app and email toggles, both defaulting on).
-     Events fan out per the matrix: in-app rows immediately, email
-     through batched worker digests (10 min singleton window per
-     recipient). Kinds: review activity on your stories, replies to
-     your review comments (account reviewers), and new accounts
-     awaiting approval (admins; replaces the operator email).
-     Transactional email stays outside the matrix. Guest reviewers
-     with an email get a reviewer digest with a signed opt-out link
-     (/review-email-opt-out); reviewer notifications inform without
-     navigating, since review links are stored hash-only and cannot be
-     rebuilt into the email or bell. Shipped as v2.30.0.
+      2026-06-06). The generic core as agreed: a notifications table
+      (kind, payload, read/emailed state), a bell in every topbar with
+      an unread badge and dropdown (click marks read and follows the
+      link, mark-all-read), and a per-kind preference matrix on the
+      account page (in-app and email toggles, both defaulting on).
+      Events fan out per the matrix: in-app rows immediately, email
+      through batched worker digests (10 min singleton window per
+      recipient). Kinds: review activity on your stories, replies to
+      your review comments (account reviewers), and new accounts
+      awaiting approval (admins; replaces the operator email).
+      Transactional email stays outside the matrix. Guest reviewers
+      with an email get a reviewer digest with a signed opt-out link
+      (/review-email-opt-out); reviewer notifications inform without
+      navigating, since review links are stored hash-only and cannot be
+      rebuilt into the email or bell. Shipped as v2.30.0.
 
 Review redesign (2026-06-10, branch `feat/review-page-redesign`):
 ported the Claude Design "Review mode" onto the editor's three-column
@@ -1312,26 +1454,26 @@ deferrals. Agreed 2026-06-06: these close out the current phase; the
 softer findings went to the roadmap as candidates for the next phase.
 
 - [x] 1. Chapter management + scene delete. Chapters gained hover tools
-     (inline rename, move up/down, delete; deleted chapters drop their
-     scenes to a new "Unfiled scenes" list, author's call 2026-06-06), and
-     scenes gained a trash (scenes.deleted_at, migration 0036): one click
-     deletes into a "Deleted scenes" sidebar section with restore and a
-     confirmed delete-forever that cascades markers, mentions, revisions,
-     review threads, and outline links. Trashed scenes leave every live
-     read (board, story view, exports, search, todos, insights, ordering,
-     APIs) and the mention rebuilder clears trashed scenes so a queued
-     rebuild cannot resurrect them. Merged 2026-06-06 (#147), shipped as
-     v2.19.0.
+      (inline rename, move up/down, delete; deleted chapters drop their
+      scenes to a new "Unfiled scenes" list, author's call 2026-06-06), and
+      scenes gained a trash (scenes.deleted_at, migration 0036): one click
+      deletes into a "Deleted scenes" sidebar section with restore and a
+      confirmed delete-forever that cascades markers, mentions, revisions,
+      review threads, and outline links. Trashed scenes leave every live
+      read (board, story view, exports, search, todos, insights, ordering,
+      APIs) and the mention rebuilder clears trashed scenes so a queued
+      rebuild cannot resurrect them. Merged 2026-06-06 (#147), shipped as
+      v2.19.0.
 - [x] 2. Find/replace + full-text prose search. The editor gained the
-     @codemirror/search panel (Ctrl+F, find as you type, replace one or
-     all) through the shared prose extension base, styled to the design
-     system; the palette's search now also matches scene bodies and
-     returns "In the text" results with a SQL-computed snippet, owner
-     scoped and trash-aware, backed by pg_trgm and a trigram index over
-     scenes.body_md (migration 0037). Merged 2026-06-06 (#151), shipped
-     as v2.20.0.
-     Items 3-5 (markdown import, export completeness, review notifications)
-     are still open; they live in the Open section at the top of this file.
+      @codemirror/search panel (Ctrl+F, find as you type, replace one or
+      all) through the shared prose extension base, styled to the design
+      system; the palette's search now also matches scene bodies and
+      returns "In the text" results with a SQL-computed snippet, owner
+      scoped and trash-aware, backed by pg_trgm and a trigram index over
+      scenes.body_md (migration 0037). Merged 2026-06-06 (#151), shipped
+      as v2.20.0.
+      Items 3-5 (markdown import, export completeness, review notifications)
+      are still open; they live in the Open section at the top of this file.
 
 ## Design alignment (author feedback, 2026-06-06)
 
@@ -1430,6 +1572,69 @@ shipping as its own PR.
       Merged 2026-06-06 (#170). Both shipped as v2.27.0.
 
 ## Feedback backlog
+
+From the design pass click-throughs (2026-07-30):
+
+- [ ] Quick note capture while writing. Switching to the Notes tab (or
+      mode) to jot something down is cumbersome and takes you away from the
+      text. Wanted: a "quick note" affordance that floats over whatever you
+      are doing - a small corner card or overlay, likely on a shortcut -
+      that saves to the story's notes (attached to the open scene when
+      there is one) without moving focus away from the editor for more
+      than the jot itself. Design it in a later pass; not part of the
+      Session 3 port.
+- [ ] A review toolbar for bulk decisions. "Accept all" was removed
+      (2026-07-30): applying every pending edit at once can change far
+      more than is on screen. If bulk accept/reject comes back, it
+      belongs in a purpose-built review toolbar that shows what it is
+      about to do, not a single button above the cards.
+- [ ] Ask for a pen name when publishing. The reading pages name the
+      author by pen name, falling back to the account's display name
+      (Session 3 port). An author publishing pseudonymously whose display
+      name is their real name would be named on the public page without
+      realising. When a story is published (or a handle claimed) and the
+      account has no pen name, ask for one - offering the display name as
+      the default - so the fallback is always a choice the author made.
+- [ ] Magic-link sign-in as a secondary option (2026-07-30). The public
+      surfaces design proposed "Send me a sign-in link instead" under the
+      password field. It did not ship: there is no backend for it, and the
+      owner does not want it primary, because a link in an inbox defeats a
+      password manager. If it comes back it is a secondary route beside the
+      password and the passkey, and it needs the token, the mail, and the
+      rate limiting to go with it.
+- [ ] Sign-up "What are you working on?" note for approval mode
+      (2026-07-30). The design put a one-line textarea on the sign-up form
+      with the hint that a person reads it, which is true and worth saying.
+      It did not ship: storing it needs an additive migration, and it is
+      only useful if the admin approval panel shows it beside the account
+      it belongs to. Both halves or neither.
+- [ ] A public searchable library of published stories (2026-07-30), the
+      way Archive of Our Own works: browse and search what people have
+      published, rather than needing an author's handle or a direct link.
+      Service-only - a self-hosted Codex has nothing to index but its own
+      handful of accounts - so it belongs with the instance-role setting
+      below. Today's design deliberately has no site-wide directory (see
+      design.md), so this is a design decision to make, not just a feature
+      to build. Its own pass.
+- [ ] An "instance role" setting (2026-07-30), personal or managed
+      service, alongside the sign-up mode in app_settings. It would decide
+      how the landing page presents itself: a private self-hosted Codex
+      could show a quieter door, hero and sign-in only, while the managed
+      service shows the full pitch. It also gates copy only the service
+      can honestly say - "let us run it for you", pricing, how long
+      approval takes - and it is the natural anchor for the public library
+      above, which is service-only. Not to build now; recorded so the
+      landing work does not have to be redone when the service exists.
+- [ ] A standalone offline desktop app (2026-07-30), probably Electron:
+      run the built SvelteKit server locally against PGlite, which Drizzle
+      supports, so the Postgres schema and queries carry over unchanged;
+      assets on the filesystem instead of S3; background jobs in-process
+      instead of pg-boss. No sign-in, no accounts and no email at all
+      locally - your Codex lives on this machine. Signing in would only
+      matter for a later feature that connects the desktop app to a hosted
+      Codex and syncs when the network comes back (writing through a
+      flight, reconciling on landing), and that sync is the hard design
+      problem, its own pass. Not roadmap work now.
 
 From first real use (2026-06-03):
 

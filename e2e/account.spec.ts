@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { openRowMenu } from './context-menu';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 test('account settings: rename and see the current session', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	await page.getByLabel('Account menu').click();
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
@@ -25,18 +28,20 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await page.keyboard.press('Escape');
 	await expect(avatar).toHaveAttribute('aria-expanded', 'false');
 
-	// The avatar-menu theme toggle persists across a reload, not just the current
-	// view (regression: it used to write only localStorage, so the next
-	// server-rendered navigation reverted it).
+	// The avatar-menu theme control walks the same dark -> light -> warm cycle
+	// as the bar's theme tool, and the choice persists across a reload, not
+	// just the current view (regression: it used to write only localStorage, so
+	// the next server-rendered navigation reverted it).
 	await avatar.click();
-	const wasDark = (await page.locator('html').getAttribute('data-theme')) === 'dark';
-	const toggleTo = wasDark ? 'light' : 'dark';
+	const CYCLE = ['dark', 'light', 'warm'];
+	const before = (await page.locator('html').getAttribute('data-theme')) ?? 'dark';
+	const next = CYCLE[(CYCLE.indexOf(before) + 1) % CYCLE.length];
 	const themeSave = page.waitForResponse((r) => r.url().includes('/api/appearance') && r.ok());
-	await page.getByRole('menuitem', { name: `Switch to ${toggleTo}` }).click();
+	await page.getByRole('menuitem', { name: `Switch to ${next}` }).click();
 	await themeSave;
-	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
+	await expect(page.locator('html')).toHaveAttribute('data-theme', next);
 	await page.reload();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', toggleTo);
+	await expect(page.locator('html')).toHaveAttribute('data-theme', next);
 
 	// Sessions live under Security, on its own page; the signed-in device
 	// shows as current.
@@ -62,17 +67,17 @@ test('account settings: rename and see the current session', async ({ page }) =>
 
 	// Display: a saved theme applies app-wide via the data-theme attribute.
 	await page.getByRole('link', { name: 'Display' }).click();
-	await page.getByLabel('Theme').selectOption('dark');
+	await page.getByLabel('Theme', { exact: true }).selectOption('dark');
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
 	// Reset so repeated runs start from a known theme.
-	await page.getByLabel('Theme').selectOption('system');
+	await page.getByLabel('Theme', { exact: true }).selectOption('system');
 	await expect(page.getByRole('status')).toContainText('Saved');
 });
 
 test('account assistant: kill switch, identity, and endpoint persist', async ({ page }) => {
-	await page.goto('/account/assistant');
+	await gotoReady(page, '/account/assistant');
 	await expect(page.getByRole('heading', { name: 'Assistant', level: 1 })).toBeVisible();
 
 	// The real checkbox is a zero-size hidden input behind the toggle track, so
@@ -144,7 +149,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// dimmed and not interactable while it is off. Then set an endpoint (no
 	// network: nothing is sent until a message is actually asked). The tab needs
 	// both an endpoint and the master on.
-	await page.goto('/account/assistant');
+	await gotoReady(page, '/account/assistant');
 	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
 	await expect(status).toHaveText('Assistant on');
 	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
@@ -153,16 +158,13 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 
 	// A throwaway story to open the editor against.
 	const universeName = `AI gate ${Date.now()}`;
-	await page.goto('/');
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await gotoReady(page, '/');
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Gatekeeper');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
@@ -171,7 +173,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// With the account on, the Assistant tab shows; opening it reveals the chat.
 	// The click retries: right after the create-story navigation the page may
 	// not be hydrated yet, and a pre-hydration click goes nowhere.
-	const tab = page.locator('.rtab', { hasText: 'Assistant' });
+	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	await expect(tab).toBeVisible();
 	await expect(async () => {
 		await tab.click();
@@ -212,8 +214,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.locator('.ref-chip')).toHaveCount(0);
 
 	// The sidebar row menu groups its assistant actions the same way.
-	await page.locator('.scene-row').first().click({ button: 'right' });
-	await expect(page.locator('.row-menu')).toBeVisible();
+	await openRowMenu(page, page.locator('.scene-row').first());
 	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
 	await expect(
 		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review with the Assistant...' })
@@ -236,10 +237,10 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 
 	// The command palette carries the Assistant's quick actions while it is on.
 	await page.keyboard.press('ControlOrMeta+k');
-	await expect(page.locator('.palette')).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toBeVisible();
+	await expect(page.locator('.modal-panel')).toBeVisible();
+	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Catch me up' })).toBeVisible();
 	await expect(
-		page.locator('.palette-item', { hasText: 'Review with the Assistant' })
+		page.locator('.modal-panel .menu-item', { hasText: 'Review with the Assistant' })
 	).toBeVisible();
 	await page.keyboard.press('Escape');
 
@@ -251,12 +252,12 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible();
 
 	// Turning the account switch off removes the tab entirely (gated, not greyed).
-	await page.goto('/account/assistant');
+	await gotoReady(page, '/account/assistant');
 	await killToggle.click();
 	await expect(status).toHaveText('Assistant off');
-	await page.goto(storyUrl);
+	await gotoReady(page, storyUrl);
 	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');
-	await expect(page.locator('.rtab', { hasText: 'Assistant' })).toHaveCount(0);
+	await expect(page.locator('.right-head .seg-btn', { hasText: 'Assistant' })).toHaveCount(0);
 
 	// And the menus carry no Assistant entries while it is off.
 	await expect(page.locator('.cm-content')).toBeVisible();
@@ -268,8 +269,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 		0
 	);
 	await page.keyboard.press('Escape');
-	await page.locator('.scene-row').first().click({ button: 'right' });
-	await expect(page.locator('.row-menu')).toBeVisible();
+	await openRowMenu(page, page.locator('.scene-row').first());
 	await expect(page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' })).toHaveCount(
 		0
 	);
@@ -277,7 +277,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 
 	// And the palette drops the Assistant commands.
 	await page.keyboard.press('ControlOrMeta+k');
-	await expect(page.locator('.palette')).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Focus mode' })).toBeVisible();
-	await expect(page.locator('.palette-item', { hasText: 'Catch me up' })).toHaveCount(0);
+	await expect(page.locator('.modal-panel')).toBeVisible();
+	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Focus mode' })).toBeVisible();
+	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Catch me up' })).toHaveCount(0);
 });

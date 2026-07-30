@@ -83,7 +83,7 @@
 				<form method="POST" action="?/resolve" use:enhance>
 					<input type="hidden" name="threadId" value={thread.id} />
 					<button
-						class="rv-quick-btn resolve"
+						class="icon-btn sm resolve"
 						type="submit"
 						title="Resolve comment"
 						aria-label="Resolve comment"
@@ -93,7 +93,7 @@
 				</form>
 			</div>
 		{:else}
-			<span class="rv-type-pill comment"><Icon name="comment" size={11} /> Comment</span>
+			<span class="pill"><Icon name="comment" size={11} /> Comment</span>
 		{/if}
 	</div>
 
@@ -133,8 +133,13 @@
 				<div class="rv-actions">
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
-						<button class="rv-btn ghost danger" type="submit" aria-label="Delete your comment">
-							<Icon name="trash" size={14} /> Delete
+						<button
+							class="icon-btn sm danger"
+							type="submit"
+							aria-label="Delete your comment"
+							title="Delete"
+						>
+							<Icon name="trash" size={15} />
 						</button>
 					</form>
 				</div>
@@ -145,7 +150,7 @@
 				{#if role === 'author'}
 					<form method="POST" action="?/reopen" use:enhance>
 						<input type="hidden" name="threadId" value={thread.id} />
-						<button class="rv-btn ghost" type="submit">
+						<button class="btn btn-sm btn-ghost" type="submit">
 							<Icon name="reply" size={14} /> Reopen
 						</button>
 					</form>
@@ -153,8 +158,13 @@
 				{#if canDeleteThread}
 					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
-						<button class="rv-btn ghost danger" type="submit" aria-label="Delete your comment">
-							<Icon name="trash" size={14} /> Delete
+						<button
+							class="icon-btn sm danger"
+							type="submit"
+							aria-label="Delete your comment"
+							title="Delete"
+						>
+							<Icon name="trash" size={15} />
 						</button>
 					</form>
 				{/if}

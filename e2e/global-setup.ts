@@ -6,9 +6,16 @@ import pg from 'pg';
 import { hash } from '@node-rs/argon2';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { ensureBuiltInRelationTypes, ensureTestDatabase } from '../tests/integration/test-db';
+import { checkoutId } from '../tests/checkout-id';
+import { e2eDatabaseUrl } from './database';
 
-export const WORKER_PID_FILE = join(tmpdir(), 'codex-e2e-worker.pid');
-export const WORKER_LOG_FILE = join(tmpdir(), 'codex-e2e-worker.log');
+// Named for this checkout: two worktrees running at once would otherwise
+// overwrite each other's pid file (so teardown kills the wrong worker) and
+// share the log the readiness check reads, letting one run start on the other's
+// "Worker started".
+export const WORKER_PID_FILE = join(tmpdir(), `codex-e2e-worker-${checkoutId()}.pid`);
+export const WORKER_LOG_FILE = join(tmpdir(), `codex-e2e-worker-${checkoutId()}.log`);
 
 // The worker logs this once pg-boss has started and the queues are registered.
 const WORKER_READY_MARKER = 'Worker started';
@@ -38,15 +45,25 @@ export default async function globalSetup() {
 		{
 			stdio: ['ignore', log, log],
 			detached: true,
-			env: process.env
+			// The worker has its own default database; point it at the suite's, or
+			// it processes the jobs of whatever else is running.
+			env: { ...process.env, DATABASE_URL: e2eDatabaseUrl() }
 		}
 	);
 	worker.unref();
 	writeFileSync(WORKER_PID_FILE, String(worker.pid));
-	const connectionString =
-		process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
-	const pool = new pg.Pool({ connectionString, max: 1 });
+	const databaseUrl = e2eDatabaseUrl();
+	await ensureTestDatabase(databaseUrl);
+	const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
 	await migrate(drizzle(pool), { migrationsFolder: 'drizzle' });
+
+	// Start from an empty workspace. The specs do not clean up after themselves,
+	// and the cost of that only shows up much later, as a slow dashboard and
+	// assertions that miss their timeout. Cascading takes the built-in relation
+	// types with it (they hang off universes by a nullable key), so put them
+	// back; the accounts below are untouched, nothing points users at universes.
+	await pool.query('truncate universes cascade');
+	await ensureBuiltInRelationTypes(pool);
 	const passwordHash = await hash('e2e-password', {
 		memoryCost: 19456,
 		timeCost: 2,

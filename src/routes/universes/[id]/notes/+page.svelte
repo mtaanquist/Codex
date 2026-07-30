@@ -2,9 +2,12 @@
 	import { resolve } from '$app/paths';
 	import NotesSidebar from '$lib/components/NotesSidebar.svelte';
 	import NoteEditor from '$lib/components/NoteEditor.svelte';
+	import PanelStrip from '$lib/components/PanelStrip.svelte';
+	import { visiblePanels } from '$lib/panels';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { UNIVERSE_MODE_NOTE, universePath } from '$lib/chrome';
 	import Icon from '$lib/components/Icon.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -21,6 +24,11 @@
 	const notesPath = $derived(resolve('/universes/[id]/notes', { id: data.universe.slug }));
 	const itemHref = $derived(data.selected ? `${notesPath}?note=${data.selected.id}` : notesPath);
 	const currentBody = $derived(data.selected?.bodyMd ?? '');
+
+	// A note mentions nothing, has no comments and no notes of its own, so
+	// History is the only panel with a subject here: the pane wears a title
+	// rather than a one-segment strip, and closes when no note is open.
+	const panels = $derived(visiblePanels({ history: Boolean(data.selected) }));
 </script>
 
 <svelte:head>
@@ -28,17 +36,21 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
+	<AppBar
+		crumbs={universePath(data.universe)}
 		{saveStatus}
-		help={{ topic: 'planning', label: 'notes' }}
+		helpTopic="planning"
+		helpLabel="notes"
 	/>
-	<div class="body">
+	<div class="body" class:no-right={panels.length === 0}>
 		<NotesSidebar
 			notes={data.universeNotes}
 			{selectedId}
 			{notesPath}
 			planHref={resolve('/universes/[id]/plan', { id: data.universe.slug })}
+			writeHref={resolve('/universes/[id]/plan', { id: data.universe.slug })}
+			reviewHref={resolve('/universes/[id]/plan', { id: data.universe.slug })}
+			modeNote={UNIVERSE_MODE_NOTE}
 			{form}
 		/>
 		<main class="pane center">
@@ -79,29 +91,31 @@
 					<NoteEditor note={data.selected} onStatus={(status) => (saveStatus = status)} />
 				{/key}
 			{:else}
-				<div class="empty">
-					<p>Select a note, or make a new one in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">Select a note, or make a new one in the sidebar.</p>
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right">
-			<div class="right-head">
-				<div class="rtabs"><span class="rtab active">History</span></div>
-			</div>
-			{#if data.selected}
-				<RevisionHistory
-					entityType="note"
-					entityId={data.selected.id}
-					revisions={data.revisionRows}
-					previewId={data.revisionPreview?.id}
-					previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
-				/>
-			{:else}
-				<div class="right-scroll">
-					<div class="empty">Select a note to see its history.</div>
-				</div>
-			{/if}
-		</aside>
+		{#if data.selected}
+			{@const openNote = data.selected}
+			<aside class="pane right">
+				<PanelStrip {panels} active="history" onSelect={() => {}} sub="this note">
+					{#snippet panel()}
+						<RevisionHistory
+							entityType="note"
+							entityId={openNote.id}
+							revisions={data.revisionRows}
+							previewId={data.revisionPreview?.id}
+							previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+						/>
+						<p class="panel-note">
+							A note has versions like anything else you type here. Codex autosaves; name a
+							checkpoint when you want to find your way back to this wording.
+						</p>
+					{/snippet}
+				</PanelStrip>
+			</aside>
+		{/if}
 	</div>
 </div>
 

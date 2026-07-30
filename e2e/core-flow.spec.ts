@@ -1,58 +1,76 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady, waitForHydration } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	// A long journey that waits on the async worker twice; the default 30s
 	// budget is too tight on a loaded CI runner and was silently capping the
 	// 60s indexing wait below. Tripling it to 90s gives that wait its room.
 	test.slow();
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	// Repeated runs share the seeded user, so pin the preferences to their
 	// defaults before exercising them later. They live on the account page now.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('popup');
 	await page.getByLabel('Scene marks in the story view').selectOption('shown');
 	// These settings auto-save on change; the last change confirms with "Saved.".
 	await page.getByLabel('Editing mode').selectOption('rich');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	// Backups belong to the site admin; a regular account sees no panel.
 	await expect(page.getByRole('heading', { name: 'Backups' })).toHaveCount(0);
 
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Book of Ash');
 	await page.getByRole('button', { name: 'Create story' }).click();
 
-	// Opening a story lands in the editor shell: breadcrumb and sidebar both
-	// carry the story title.
-	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
+	// Opening a story lands in the editor shell: the path and the sidebar both
+	// carry the story title, and the story crumb is the menu of everything that
+	// belongs to the story, starting with going there.
+	const path = page.getByRole('navigation', { name: 'Where you are' });
+	const storyCrumb = path.getByRole('button', { name: 'Book of Ash' });
+	await expect(storyCrumb).toHaveAttribute('aria-current', 'page');
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
-	// The top-bar help opens the editor article in a modal; Esc closes it.
-	// Opening is idempotent, so retry the click until the dialog shows: a lone
-	// click can be dropped if it lands as the top bar re-renders.
-	const help = page.getByRole('dialog', { name: 'Writing in the editor' });
-	await expect(async () => {
-		await page.getByRole('button', { name: 'Help: the editor' }).click();
-		await expect(help.getByRole('heading', { name: 'Writing in the editor' })).toBeVisible({
-			timeout: 2000
-		});
-	}).toPass({ timeout: 15000 });
+	// The create-story submit navigated, so the crumb is on screen before its
+	// handler is attached; a click landing in that window opens nothing.
+	await waitForHydration(page);
+	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'false');
+	await storyCrumb.click();
+	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'true');
+	const storyMenu = page.getByRole('menu');
+	await expect(storyMenu.getByRole('menuitem', { name: 'Go to the story' })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+	await expect(storyMenu.getByRole('menuitem', { name: 'Story settings' })).toBeVisible();
+	await expect(storyMenu.getByRole('menuitem', { name: 'Print preview' })).toBeVisible();
+	// No public edition yet, so the reading page is left out rather than dead.
+	await expect(storyMenu.getByRole('menuitem', { name: 'Public reading page' })).toHaveCount(0);
 	await page.keyboard.press('Escape');
-	await expect(help).toBeHidden();
+	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'false');
+
+	// The help tool is a place, not an overlay: it navigates to the editor
+	// article, lights up while there, and comes back when pressed again.
+	await page.getByRole('link', { name: 'Help: the editor' }).click();
+	await expect(page).toHaveURL('/docs/editor');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(
+		page.getByRole('heading', { name: 'Writing in the editor', level: 1 })
+	).toBeVisible();
+	await page.getByRole('link', { name: /Help is open/ }).click();
+	await expect(page).toHaveURL(/\/stories\//);
 
 	// Build the tree: a chapter, then a scene inside it, which opens.
 	await page.getByRole('button', { name: 'New chapter' }).click();
@@ -66,9 +84,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// menu on the editor's formatting bar, so it needs a scene open.
 	await page.getByTitle('Switch view').click();
 	await page.getByRole('menuitem', { name: 'Focus' }).click();
-	await expect(page.locator('.topbar')).toBeHidden();
+	await expect(page.locator('.appbar')).toBeHidden();
 	await page.keyboard.press('Escape');
-	await expect(page.locator('.topbar')).toBeVisible();
+	await expect(page.locator('.appbar')).toBeVisible();
 
 	// Write prose: the autosave chip confirms, and a reload preserves it.
 	await page.locator('.cm-content').click();
@@ -123,13 +141,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await docEditor.click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Edited in the flow.');
 	await docSave;
 
 	// Vertical arrows cross scene boundaries.
 	await page.locator('.doc-scene').nth(0).locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.press('ArrowDown');
 	await expect(page.locator('.doc-scene').nth(1).locator('.cm-content')).toBeFocused();
 	await page.locator('.scene-row').nth(1).click();
@@ -249,7 +267,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.locator('.scene-row').nth(1).click();
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	// Capture the autosave so the prose (and its mention rebuild) is persisted
 	// before the reload below, independent of the autosave debounce.
 	const fenwickSave = page.waitForResponse(
@@ -265,7 +283,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Alice joined the Factions category above; the kind line carries it.
 	await expect(page.locator('.entity-card .pop-role')).toHaveText('Character · Factions');
 	await expect(page.locator('.entity-card .pop-summary')).toHaveText('A toll-road smuggler.');
-	await expect(page.locator('.entity-card .pop-open')).toHaveAttribute('href', /\/plan\?entity=/);
+	await expect(page.locator('.entity-card .btn-primary')).toHaveAttribute(
+		'href',
+		/\/plan\?entity=/
+	);
 	await fenwickSave;
 
 	// The worker indexes the mention asynchronously; once it has, the scene's
@@ -305,14 +326,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Entity autocomplete, popup mode (the default): typing part of a name
 	// offers the full one.
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Ali');
-	// Ctrl-Space asks for the completion explicitly. Re-ask until the filtered
+	// Mod-Space asks for the completion explicitly. Re-ask until the filtered
 	// list shows: a single request can land before the editor has registered
 	// the typed text, opening the popup unfiltered, and re-asking re-runs the
 	// source against the current text.
 	await expect(async () => {
-		await page.keyboard.press('Control+Space');
+		await page.keyboard.press('ControlOrMeta+Space');
 		await expect(page.locator('.cm-tooltip-autocomplete .cm-completionLabel').first()).toHaveText(
 			'Alice Vane',
 			{ timeout: 2000 }
@@ -333,13 +354,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Ghost mode comes from the user preference: an unambiguous prefix
 	// shows the rest of the name, and Tab accepts it.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Entity autocomplete').selectOption('ghost');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto(proseSceneUrl);
+	await gotoReady(page, proseSceneUrl);
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' Hal');
 	await expect(page.locator('.cm-ghost-text')).toHaveText('den');
 	const ghostSave = page.waitForResponse(
@@ -351,7 +372,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// History: the autosaves are already on the timeline; a named
 	// checkpoint joins them.
-	await page.getByRole('button', { name: 'History' }).click();
+	// The right pane's strip is a real tablist now, so the panels are tabs.
+	await page.getByRole('tab', { name: 'History' }).click();
 	await expect(page.locator('.hist-row').first()).toBeVisible();
 	const checkpointSave = page.waitForResponse(
 		(r) => r.url().includes('/api/revisions') && r.request().method() === 'POST' && r.ok()
@@ -366,7 +388,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.type(' The end.');
 	await tailSave;
 
@@ -394,12 +416,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// TODO markers: a TODO: line highlights in the prose and lands in the
 	// To do panel.
-	await page.getByRole('button', { name: 'Reference' }).click();
+	await page.getByRole('tab', { name: 'Reference' }).click();
 	const todoSave = page.waitForResponse(
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.locator('.cm-content').click();
-	await page.keyboard.press('Control+End');
+	await page.keyboard.press('ControlOrMeta+End');
 	await page.keyboard.press('Enter');
 	await page.keyboard.type('TODO: tighten the toll scene');
 	await todoSave;
@@ -411,7 +433,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/markers') && r.request().method() === 'POST' && r.ok()
 	);
 	await page.keyboard.press('Shift+Home');
-	await page.keyboard.press('Control+Alt+m');
+	await page.keyboard.press('ControlOrMeta+Alt+m');
 	await markerCreate;
 	await expect(page.locator('.todo-marker')).toHaveCount(1);
 	await expect(page.locator('.todo-row')).toHaveCount(2);
@@ -431,7 +453,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const PNG_B64 =
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 	if (process.env.ASSET_S3_BUCKET) {
-		await page.locator('.crumb.current').click();
+		// Settings sits behind the story's own name in the path.
+		await path.getByRole('button', { name: 'Book of Ash' }).click();
+		await page.getByRole('menuitem', { name: 'Story settings' }).click();
 		await page.getByRole('link', { name: 'Cover' }).click();
 		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
 		await expect(page.locator('svg.cover')).toBeVisible();
@@ -447,12 +471,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		expect(served.status()).toBe(200);
 		expect(served.headers()['content-type']).toBe('image/png');
 
-		await page.goto(proseSceneUrl);
+		await gotoReady(page, proseSceneUrl);
 		await page.locator('.cm-content').click();
 		// Cursor to the end so the dropped image lands after the prose rather
 		// than splitting a word; the drop handler falls back to the caret when
 		// the drop point is past the text.
-		await page.keyboard.press('Control+End');
+		await page.keyboard.press('ControlOrMeta+End');
 		const dropSave = page.waitForResponse(
 			(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 		);
@@ -482,7 +506,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Publishing: set the story public, freeze an edition, and read it
 	// back anonymously on the public pages.
-	await page.locator('.crumb.current').click();
+	await path.getByRole('button', { name: 'Book of Ash' }).click();
+	await page.getByRole('menuitem', { name: 'Story settings' }).click();
 	await page.getByRole('link', { name: 'Publish' }).click();
 	await expect(page.getByRole('heading', { name: 'Publish' })).toBeVisible();
 	await page.getByLabel('Visibility').selectOption('public');
@@ -493,15 +518,32 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const reader = await anonymous.newPage();
-	await reader.goto('/@e2e-tester');
-	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
+	await gotoReady(reader, '/@e2e-tester');
+	// The shelf names the author - the pen name if the account has one, else the
+	// display name, never the raw handle - and keeps the handle as the address
+	// under it. Which of the two names it is depends on whether the account spec
+	// has run, so assert the shape rather than one of them.
+	const shelfName = reader.locator('.shelf-name');
+	await expect(shelfName).toContainText('Tester');
+	await expect(shelfName).not.toContainText('@');
+	await expect(reader.locator('.shelf-handle')).toContainText('@e2e-tester');
+	// A cover is the story's own title, set, until an author uploads artwork -
+	// which this journey does when image storage is configured.
+	const cover = reader.locator('.shelf-cover').first();
+	await expect(cover).toBeVisible();
+	if (!process.env.ASSET_S3_BUCKET) await expect(cover).toContainText('Book of Ash');
 	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
 	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
-	await expect(reader.locator('.reader')).toContainText('The gate of Halden');
+	// main.reader-main is the prose; .appbar.reader above it is the chrome shell.
+	await expect(reader.locator('main.reader-main')).toContainText('The gate of Halden');
+	// One footer, on both pages: the mark, who published it, and three links.
+	await expect(reader.locator('.reader-foot')).toContainText('Written in Codex');
+	await expect(reader.locator('.reader-foot')).toContainText('Published by');
+	await expect(reader.getByRole('link', { name: 'Write your own' })).toBeVisible();
 	// Inline images of a published edition must serve to the anonymous
 	// reader, not 404 (bug_004).
 	if (process.env.ASSET_S3_BUCKET) {
-		const inlineImg = reader.locator('.reader article img').first();
+		const inlineImg = reader.locator('.reader-prose img').first();
 		await expect(inlineImg).toHaveCount(1);
 		const src = await inlineImg.getAttribute('src');
 		const served = await reader.request.get(src!);
@@ -524,7 +566,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		.getByRole('link', { name: 'Download' });
 	await expect(async () => {
 		// Navigate by GET; page.reload() here would re-submit the prepare POST.
-		await page.goto(exportUrl);
+		await gotoReady(page, exportUrl);
 		await expect(zipLink).toBeVisible({ timeout: 1000 });
 	}).toPass({ timeout: 60_000 });
 	const zipDownload = page.waitForEvent('download');
@@ -536,7 +578,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		.locator('.export-row', { hasText: '.epub' })
 		.getByRole('link', { name: 'Download' });
 	await expect(async () => {
-		await page.goto(exportUrl);
+		await gotoReady(page, exportUrl);
 		await expect(epubLink).toBeVisible({ timeout: 1000 });
 	}).toPass({ timeout: 60_000 });
 	const epubDownload = page.waitForEvent('download');
@@ -547,21 +589,22 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page).toHaveURL(/\/print$/);
 	await expect(page.locator('.title-page h1')).toHaveText('Book of Ash');
 	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');
-	await page.goto(proseSceneUrl);
+	await gotoReady(page, proseSceneUrl);
 
 	// Scene marks in the story view follow the display preference.
-	await page.goto('/account');
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Scene marks in the story view').selectOption('hidden');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto(`${proseSceneUrl}&view=story`);
+	await gotoReady(page, `${proseSceneUrl}&view=story`);
 	await expect(page.locator('.doc-scene').first()).toBeVisible();
 	await expect(page.locator('.doc-scene-mark')).toHaveCount(0);
-	await page.goto(proseSceneUrl);
+	await gotoReady(page, proseSceneUrl);
 
-	// The breadcrumb leads to the universe editor: the same cast at universe
-	// scope, with no per-story notes section.
-	await page.getByRole('link', { name: universeName }).click();
+	// The universe crumb has one destination now, its Plan: the same cast at
+	// universe scope, with no per-story notes section.
+	await path.getByRole('button', { name: universeName }).click();
+	await page.getByRole('menuitem', { name: 'Go to the universe' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+\/plan$/);
 	await page.locator('.ent-row', { hasText: 'Alice Vane' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
@@ -608,7 +651,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const relDelete = page.waitForResponse(
 		(r) => r.url().includes('/api/relationships/') && r.request().method() === 'DELETE' && r.ok()
 	);
-	await page.locator('.rel-remove').click();
+	await page.locator('.rel-row .icon-btn').click();
 	await relDelete;
 	await expect(page.locator('.rel-row')).toHaveCount(0);
 
@@ -617,8 +660,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Corvin');
 
-	// The dashboard reaches the story directly, under its universe.
-	await page.locator('.brand').click();
+	// The dashboard reaches the story directly, under its universe. The brand
+	// in the bar is the way home from anywhere.
+	await page.getByRole('link', { name: 'Codex, your library' }).click();
 	await expect(page).toHaveURL('/');
 	const universeSection = page.locator('section', { hasText: universeName });
 	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
@@ -646,7 +690,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Deleting a story that has chapters, scenes, markers, revisions, and a
 	// published edition succeeds rather than 500ing on the foreign keys, and
 	// lands back on the universe.
-	await page.goto(`${proseSceneUrl.split('?')[0]}/settings/danger`);
+	await gotoReady(page, `${proseSceneUrl.split('?')[0]}/settings/danger`);
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
@@ -657,7 +701,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 test('wrong password is rejected', async ({ browser }) => {
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const page = await anonymous.newPage();
-	await page.goto('/login');
+	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('e2e@example.com');
 	await page.getByLabel('Password').fill('not-the-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();

@@ -1,0 +1,68 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Cards</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/pages.css" />
+		<link rel="stylesheet" href="styles/admin.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			.pane .story-card {
+				max-width: 300px;
+			}
+			.pane .r-card,
+			.pane .admin-card {
+				max-width: 300px;
+				margin-bottom: 14px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Story card (library)</div>
+			<a class="story-card" href="#story" style="margin-bottom: 14px">
+				<div class="story-card-header">
+					<h3 class="story-card-title">Book of ash</h3>
+					<span class="story-card-status">
+						<span class="scene-dot" style="background: var(--status-draft)"></span>
+						Draft
+					</span>
+				</div>
+				<p class="story-card-brief">The first winter after the burning of the archive.</p>
+				<div class="story-card-meta">
+					<span>12 chapters</span>
+					<span class="story-card-meta-sep">&middot;</span>
+					<span>48,200 words</span>
+					<span class="story-card-meta-sep">&middot;</span>
+					<span>edited 3 weeks ago</span>
+				</div>
+			</a>
+			<div class="kit-h">Reference card (right pane)</div>
+			<div class="r-card">
+				<h5>Today</h5>
+				<div class="r-sub">Words in this story</div>
+				<div class="r-line">1,240</div>
+			</div>
+			<div class="kit-h">Settings card</div>
+			<div class="admin-card">
+				<div class="field">
+					<label for="kit-card-name">Universe name</label>
+					<input id="kit-card-name" class="input" value="The shattered realms" />
+				</div>
+				<div class="settings-actions">
+					<button class="btn btn-primary" type="button">Save</button>
+				</div>
+			</div>
+			<p class="note">
+				Three card families by home: story-card on the library, r-card in the right reference
+				pane, admin-card for settings and admin sections. New content in those homes composes the
+				matching family.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

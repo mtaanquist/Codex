@@ -151,11 +151,15 @@ You need Node 24 and Docker.
 
 ```
 npm install
-cp .env.example .env          # defaults match the dev database below
-docker compose -f compose.dev.yaml up -d   # Postgres only
+cp .env.example .env          # defaults match the dev services below
+docker compose -f compose.dev.yaml up -d   # Postgres and MinIO
 npm run dev                   # the app, on http://localhost:5173
 npm run worker                # in a second terminal
 ```
+
+MinIO is the asset storage exports and image uploads need. Both stay hidden in
+the app until asset storage is configured, and the end-to-end suite covers
+them, so leave it running.
 
 Run the worker too: without it mentions never index, and the Reference
 panel stays empty.
@@ -165,13 +169,45 @@ Checks, in the order CI runs them:
 ```
 npm run lint                  # prettier + eslint
 npm run check                 # svelte-check
-npm run test:unit -- --run    # unit + integration (throwaway codex_test db)
-npm run test:e2e              # Playwright; builds and previews on :4173
+npm run test:unit -- --run    # unit + integration (throwaway database)
+npm run test:e2e              # Playwright; builds and previews on its own port
+```
+
+Both suites create their own throwaway database, named for the checkout, and
+the end-to-end preview server takes a port derived the same way. Two worktrees
+can run tests at the same time without emptying each other's tables or, worse,
+attaching to each other's preview server and testing the wrong branch. None of
+that needs configuring.
+
+To point a run somewhere else, pass it on the command line. These belong there
+rather than in `.env`, which is the running instance's configuration:
+
+```
+TEST_DATABASE_URL=postgres://...  npm run test:unit -- --run
+E2E_DATABASE_URL=postgres://...   npm run test:e2e
+E2E_PORT=4173                     npm run test:e2e
 ```
 
 Schema changes go through generated migrations: edit
 `src/lib/server/db/schema.ts`, then `npx drizzle-kit generate`. Migrations
 are additive and forward-only by convention.
+
+### Develop against a copy of real data
+
+With `BACKUP_S3_*` set, `npm run restore:prod-copy` pulls the newest backup
+into a separate `codex_prod_copy` database, drops the service settings the
+dump carries, and migrates it. Run the app and the worker against it together,
+or they will use different databases:
+
+```
+npm run dev:prod-copy
+npm run worker:prod-copy      # in a second terminal
+```
+
+It stays out of `codex`, which the end-to-end suite writes to. Leave
+`APP_SECRET` unset so the restored credentials stay unreadable; the script
+refuses to run otherwise. Accounts with two-factor enabled cannot sign in on
+the copy, since their secrets were encrypted with the source instance's key.
 
 ## Layout
 

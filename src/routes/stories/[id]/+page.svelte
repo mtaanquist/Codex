@@ -31,10 +31,12 @@
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { EditorView } from '@codemirror/view';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
-	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
+	import PanelStrip from '$lib/components/PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath as storyCrumbs } from '$lib/chrome';
 	import type { PageData, Snapshot } from './$types';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
@@ -392,6 +394,7 @@
 	// bar treats them as one "whole story" state that toggles back to a scene.
 	const inWholeStory = $derived(viewStory || viewPreview);
 	const storyPath = $derived(resolve('/stories/[id]', { id: data.story.slug }));
+	const notesPath = $derived(resolve('/stories/[id]/notes', { id: data.story.slug }));
 
 	// Entering the story view carries the open scene along; leaving it returns
 	// there.
@@ -433,14 +436,24 @@
 	let activeDocId = $state<string | null>(null);
 	const toolbarView = () => docEditors[activeDocId ?? docOrder[0]]?.getView();
 
-	// Right column tabs; History holds the open scene's timeline. The Assistant
-	// tab appears only when the account has it configured and switched on.
-	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
+	// The right pane's panels. Reference is about the prose in view, so it is
+	// always here; History and Notes need one open scene; the Assistant needs
+	// the account to have it configured and switched on.
+	const panels = $derived(
+		visiblePanels({
+			reference: true,
+			assistant: data.assistant.tabEnabled,
+			history: Boolean(data.selectedScene),
+			notes: data.selectedScene ? data.sceneNotes.length : false
+		})
+	);
+	let chosenPanel = $state<PanelId | null>('reference');
+	const rightTab = $derived(activePanel(panels, chosenPanel));
 
 	// An Assistant intent (from a menu here or the command palette) opens the
-	// tab; the panel consumes the intent itself once it renders.
+	// panel; the panel consumes the intent itself once it renders.
 	$effect(() => {
-		if (assistantIntent.pending && data.assistant.tabEnabled) rightTab = 'assistant';
+		if (assistantIntent.pending && data.assistant.tabEnabled) chosenPanel = 'assistant';
 	});
 
 	// "Ask the Assistant about this" on an editor selection: the passage goes
@@ -519,11 +532,17 @@
 </svelte:head>
 
 <div class="app" class:focus-mode={focusMode.on}>
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
-		story={{ slug: data.story.slug, title: data.story.title }}
+	<AppBar
+		crumbs={storyCrumbs(
+			data.universe,
+			{ ...data.story, reading: data.reading },
+			{
+				storyAt: 'story'
+			}
+		)}
 		{saveStatus}
-		help={{ topic: 'editor', label: 'the editor' }}
+		helpTopic="editor"
+		helpLabel="the editor"
 	/>
 	<div class="body">
 		<aside class="pane left">
@@ -618,8 +637,10 @@
 						<div class="editor story-doc">
 							<h1 class="doc-title">{data.story.title}</h1>
 							{#if (data.storyDoc ?? []).length === 0}
-								<div class="empty">
-									<p>Nothing written yet. Switch back to the editor to add scenes.</p>
+								<div class="empty-state">
+									<p class="empty-state-text">
+										Nothing written yet. Switch back to the editor to add scenes.
+									</p>
 								</div>
 							{/if}
 							{#each data.chapters as chapter, index (chapter.id)}
@@ -709,12 +730,14 @@
 					/>
 				{/key}
 			{:else if data.scenes.length === 0}
-				<div class="empty">
-					<p>Create a chapter in the sidebar, then add a scene to it to start writing.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">
+						Create a chapter in the sidebar, then add a scene to it to start writing.
+					</p>
 				</div>
 			{:else}
-				<div class="empty">
-					<p>Select a scene in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">Select a scene in the sidebar.</p>
 				</div>
 			{/if}
 		</main>
@@ -728,146 +751,150 @@
 						planHref={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${inspectCard.id}`}
 					/>
 				{:else}
-					<div class="empty">Loading...</div>
+					<div class="empty-state tight"><p class="empty-state-text">Loading...</p></div>
 				{/if}
 			{:else}
-				<div class="right-head">
-					<div class="rtabs">
-						{#if data.selectedScene}
-							<button
-								class="rtab"
-								class:active={rightTab === 'reference'}
-								type="button"
-								onclick={() => (rightTab = 'reference')}
-							>
-								Reference
-							</button>
-							<button
-								class="rtab"
-								class:active={rightTab === 'history'}
-								type="button"
-								onclick={() => (rightTab = 'history')}
-							>
-								History
-							</button>
-						{/if}
-						<button
-							class="rtab"
-							class:active={rightTab === 'session'}
-							type="button"
-							onclick={() => (rightTab = 'session')}
-						>
-							Session
-						</button>
-						{#if data.assistant.tabEnabled}
-							<button
-								class="rtab"
-								class:active={rightTab === 'assistant'}
-								type="button"
-								onclick={() => (rightTab = 'assistant')}
-							>
-								Assistant
-							</button>
-						{/if}
-					</div>
-				</div>
-				{#if rightTab === 'assistant' && data.assistant.tabEnabled}
-					<AssistantPanel
-						scope={{ storyId: data.story.id, storyTitle: data.story.title }}
-						sceneId={data.selectedScene?.id ?? null}
-						name={data.assistant.name}
-						muted={data.assistant.muted}
-						suggestions={assistantSuggestions}
-						initialMessages={data.assistantChat}
-						onConfirmSplit={confirmAssistantSplit}
-						onRevertSplit={revertAssistantSplit}
-						reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
-						onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
-							? (text) => sceneEditor?.insertAtCursor(text)
-							: undefined}
-						getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
-							? () => sceneEditor?.getSelectionText() ?? null
-							: undefined}
-						onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
-							? (text) => sceneEditor?.replaceSelection(text)
-							: undefined}
-					/>
-				{:else if rightTab === 'session'}
-					<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
-				{:else if data.selectedScene && rightTab === 'history'}
-					<RevisionHistory
-						entityType="scene"
-						entityId={data.selectedScene.id}
-						revisions={data.sceneRevisions}
-						previewId={data.revisionPreview?.id}
-						previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
-					/>
-				{:else}
-					<div class="right-scroll">
-						{#if data.storyTodos.length > 0}
-							<div class="r-card">
-								<h5>To do</h5>
-								{#each data.storyTodos as todo, ti (ti)}
-									<div class="todo-row">
-										{#if todo.markerId}
-											<button
-												class="todo-check"
-												type="button"
-												title="Mark done"
-												onclick={async () => {
-													await fetch(`/api/markers/${todo.markerId}`, {
-														method: 'PUT',
-														headers: { 'content-type': 'application/json' },
-														body: JSON.stringify({ resolved: true })
-													});
-													await invalidateAll();
-												}}
-											></button>
-										{:else}
-											<span class="todo-dot" title="A TODO: line; delete it when done"></span>
-										{/if}
-										<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-										<a class="todo-text" href={`${storyPath}?scene=${todo.sceneId}`}>
-											{todo.text}
-											<span class="todo-scene">{todo.sceneTitle ?? 'Untitled scene'}</span>
-										</a>
-										<!-- eslint-enable svelte/no-navigation-without-resolve -->
-									</div>
-								{/each}
-								<div class="todo-hint">
-									Write a line starting with TODO:, or select prose and press Ctrl+Alt+M.
-								</div>
-							</div>
-						{/if}
-						{#if data.selectedScene && data.inScene.length > 0}
-							<div class="r-card">
-								<h5>In this scene</h5>
-								{#each IN_SCENE_GROUPS as group (group.kind)}
-									{@const rows = data.inScene.filter((entity) => entity.kind === group.kind)}
-									{#if rows.length > 0}
-										<h6 class="r-sub">{group.label}</h6>
-										{#each rows as entity (entity.id)}
-											<button class="r-line" type="button" onclick={() => openCard(entity.id)}>
+				<PanelStrip
+					{panels}
+					active={rightTab ?? 'reference'}
+					onSelect={(id) => (chosenPanel = id)}
+					label="Panels about this scene"
+				>
+					{#snippet panel(id)}
+						{#if id === 'assistant'}
+							<AssistantPanel
+								scope={{ storyId: data.story.id, storyTitle: data.story.title }}
+								sceneId={data.selectedScene?.id ?? null}
+								name={data.assistant.name}
+								muted={data.assistant.muted}
+								suggestions={assistantSuggestions}
+								initialMessages={data.assistantChat}
+								onConfirmSplit={confirmAssistantSplit}
+								onRevertSplit={revertAssistantSplit}
+								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
+								onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
+									? (text) => sceneEditor?.insertAtCursor(text)
+									: undefined}
+								getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+									? () => sceneEditor?.getSelectionText() ?? null
+									: undefined}
+								onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+									? (text) => sceneEditor?.replaceSelection(text)
+									: undefined}
+							/>
+						{:else if id === 'history' && data.selectedScene}
+							<RevisionHistory
+								entityType="scene"
+								entityId={data.selectedScene.id}
+								revisions={data.sceneRevisions}
+								previewId={data.revisionPreview?.id}
+								previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
+							/>
+						{:else if id === 'notes' && data.selectedScene}
+							<div class="right-scroll">
+								{#if data.sceneNotes.length > 0}
+									<div class="r-card">
+										<h5>On this scene</h5>
+										{#each data.sceneNotes as note (note.id)}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a class="r-line" href={`${notesPath}?note=${note.id}`}>
 												<span class="r-line-left">
-													<EntityBadge
-														name={entity.name}
-														badgeColor={entity.badgeColor}
-														badgeAssetId={entity.badgeAssetId}
-														categoryColor={entity.categoryColor}
-													/>
-													<span class="r-line-name">{entity.name}</span>
+													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
 												</span>
-												<span class="r-count">{entity.count}</span>
-											</button>
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
-									{/if}
-								{/each}
+									</div>
+								{:else}
+									<div class="empty-state tight">
+										<p class="empty-state-text">No notes on this scene yet.</p>
+									</div>
+								{/if}
+								<form method="POST" action="?/newSceneNote">
+									<input type="hidden" name="sceneId" value={data.selectedScene.id} />
+									<button class="btn btn-sm btn-secondary" type="submit">
+										New note on this scene
+									</button>
+								</form>
 							</div>
+							<p class="panel-note">
+								Notes attached to this scene. Open one to read or edit it in Notes mode, which shows
+								every note in the story.
+							</p>
 						{:else}
-							<div class="empty">Nothing to show yet.</div>
+							<div class="right-scroll">
+								{#if data.storyTodos.length > 0}
+									<div class="r-card">
+										<h5>To do</h5>
+										{#each data.storyTodos as todo, ti (ti)}
+											<div class="todo-row">
+												{#if todo.markerId}
+													<button
+														class="todo-check"
+														type="button"
+														title="Mark done"
+														onclick={async () => {
+															await fetch(`/api/markers/${todo.markerId}`, {
+																method: 'PUT',
+																headers: { 'content-type': 'application/json' },
+																body: JSON.stringify({ resolved: true })
+															});
+															await invalidateAll();
+														}}
+													></button>
+												{:else}
+													<span class="todo-dot" title="A TODO: line; delete it when done"></span>
+												{/if}
+												<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+												<a class="todo-text" href={`${storyPath}?scene=${todo.sceneId}`}>
+													{todo.text}
+													<span class="todo-scene">{todo.sceneTitle ?? 'Untitled scene'}</span>
+												</a>
+												<!-- eslint-enable svelte/no-navigation-without-resolve -->
+											</div>
+										{/each}
+										<div class="todo-hint">
+											Write a line starting with TODO:, or select prose and press Ctrl+Alt+M.
+										</div>
+									</div>
+								{/if}
+								{#if data.selectedScene && data.inScene.length > 0}
+									<div class="r-card">
+										<h5>In this scene</h5>
+										{#each IN_SCENE_GROUPS as group (group.kind)}
+											{@const rows = data.inScene.filter((entity) => entity.kind === group.kind)}
+											{#if rows.length > 0}
+												<h6 class="r-sub">{group.label}</h6>
+												{#each rows as entity (entity.id)}
+													<button class="r-line" type="button" onclick={() => openCard(entity.id)}>
+														<span class="r-line-left">
+															<EntityBadge
+																name={entity.name}
+																badgeColor={entity.badgeColor}
+																badgeAssetId={entity.badgeAssetId}
+																categoryColor={entity.categoryColor}
+															/>
+															<span class="r-line-name">{entity.name}</span>
+														</span>
+														<span class="r-count">{entity.count}</span>
+													</button>
+												{/each}
+											{/if}
+										{/each}
+									</div>
+								{:else}
+									<div class="empty-state tight">
+										<p class="empty-state-text">Nothing to show yet.</p>
+									</div>
+								{/if}
+							</div>
+							<p class="panel-note">
+								Everything the prose in view mentions that also has an entry in Plan. Open one to
+								read or edit it.
+							</p>
 						{/if}
-					</div>
-				{/if}
+					{/snippet}
+				</PanelStrip>
 			{/if}
 		</aside>
 	</div>

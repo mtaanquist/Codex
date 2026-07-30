@@ -1,27 +1,31 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The library dashboard: universe sections with story cards, the per-universe
-// new-story card, the Recent row, and the status pill.
-test('dashboard: universe sections, story cards, and the new-story card', async ({ page }) => {
-	await page.goto('/');
+// New story menu, the Recent row, and the status pill.
+test('dashboard: universe sections, story cards, and the New story menu', async ({ page }) => {
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Shelffall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page).toHaveURL(`/universes/shelffall-${stamp}`);
 
-	// The new universe has its own section with a new-story card.
-	await page.goto('/');
+	// The new universe has its own section, and an empty one offers the same
+	// menu in the space its stories will fill.
+	await gotoReady(page, '/');
 	const section = page.locator('.universe-section', { hasText: `Shelffall ${stamp}` });
 	await expect(section.locator('.universe-mark')).toHaveAttribute('title', 'Universe');
-	await section.getByRole('button', { name: 'New story in this universe' }).click();
+	await expect(section.locator('.collection-empty')).toHaveCount(1);
+	await startStoryInUniverse(page, `Shelffall ${stamp}`);
 	await page.getByLabel('New story').fill(`Shelved ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/shelved-${stamp}`);
 
 	// Its card shows up in the section and in Recent, outlining with no prose.
-	await page.goto('/');
+	await gotoReady(page, '/');
 	const card = section.locator('.story-card', { hasText: `Shelved ${stamp}` });
 	await expect(card).toHaveCount(1);
 	await expect(card.locator('.story-card-status')).toHaveText(/Outlining/);
@@ -29,6 +33,27 @@ test('dashboard: universe sections, story cards, and the new-story card', async 
 	await expect(
 		page.locator('.recent-row .story-card', { hasText: `Shelved ${stamp}` })
 	).toHaveCount(1);
+
+	// One creation pattern: nothing says "import" until a New menu is open, and a
+	// populated grid has no dashed add tile.
+	await expect(section.locator('.collection-empty')).toHaveCount(0);
+	await expect(section.locator('.card-add')).toHaveCount(0);
+	// Nothing offers an import until a New menu is open (a closed menu's rows are
+	// out of the accessibility tree, which is what getByRole reads).
+	await expect(page.getByRole('menuitem', { name: /^Import a story/ })).toHaveCount(0);
+	await section.getByRole('button', { name: 'New story', exact: true }).click();
+	await expect(
+		page.getByRole('menuitem', { name: 'Import a story into this universe...' })
+	).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('menuitem', { name: 'New story in Shelffall' })).toHaveCount(0);
+
+	// The library header makes both kinds of thing, and imports, from one menu.
+	await page.getByRole('button', { name: 'New', exact: true }).click();
+	for (const item of ['New universe', 'New standalone story', 'Import a story from a file...']) {
+		await expect(page.getByRole('menuitem', { name: item })).toBeVisible();
+	}
+	await page.keyboard.press('Escape');
 
 	// The card opens the story.
 	await card.click();

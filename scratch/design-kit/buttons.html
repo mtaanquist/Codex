@@ -1,0 +1,101 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Buttons</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/pages.css" />
+		<link rel="stylesheet" href="kit.css" />
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="row">
+				<button class="btn btn-primary" type="button">Primary</button>
+				<button class="btn btn-secondary" type="button">Secondary</button>
+				<button class="btn btn-ghost" type="button">Ghost</button>
+				<button class="btn btn-danger" type="button">Delete</button>
+				<button class="btn btn-accept" type="button">Accept</button>
+			</div>
+			<div class="row">
+				<button class="btn btn-primary btn-sm" type="button">Small primary</button>
+				<button class="btn btn-secondary btn-sm" type="button">Small secondary</button>
+				<button class="btn btn-accept btn-sm" type="button">Accept all</button>
+				<button class="btn btn-secondary" type="button" disabled>Disabled</button>
+			</div>
+			<div class="row">
+				<button class="icon-btn" type="button" title="Add" aria-label="Add">
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M12 5v14M5 12h14" />
+					</svg>
+				</button>
+				<button class="icon-btn" type="button" title="Search" aria-label="Search">
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<circle cx="11" cy="11" r="7" />
+						<path d="m21 21-4.3-4.3" />
+					</svg>
+				</button>
+				<button class="icon-btn sm" type="button" title="Add" aria-label="Add">
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M12 5v14M5 12h14" />
+					</svg>
+				</button>
+				<button class="icon-btn sm danger" type="button" title="Delete" aria-label="Delete">
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
+					</svg>
+				</button>
+				<button class="icon-btn sm" type="button" title="Add" aria-label="Add" disabled>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M12 5v14M5 12h14" />
+					</svg>
+				</button>
+			</div>
+			<p class="note">
+				The only general button system. One primary action per view; ghost for quiet actions
+				inside panels; danger only for destructive actions; accept for the affirmative decision.
+				Icon-only buttons use icon-btn with an aria-label, at 32px in chrome and 28px (icon-btn
+				sm) inside cards, panel heads and modal heads. Disabled buttons drop to 0.45 opacity and
+				do not light up on hover. Do not invent a new button skin.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

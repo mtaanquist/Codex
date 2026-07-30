@@ -1,0 +1,46 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Segmented strip</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			.pane .seg {
+				max-width: 320px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Mode strip (seg full)</div>
+			<div class="seg full">
+				<button class="seg-btn active" type="button">Write</button>
+				<a class="seg-btn" href="#plan">Plan</a>
+				<a class="seg-btn" href="#notes">Notes</a>
+				<button class="seg-btn" type="button" disabled>Review</button>
+			</div>
+			<div class="kit-h">Standalone</div>
+			<div class="seg">
+				<button class="seg-btn active" type="button">Comments</button>
+				<button class="seg-btn" type="button">Suggestions</button>
+			</div>
+			<div class="kit-h">With counts (seg-count)</div>
+			<div class="seg full">
+				<button class="seg-btn active" type="button">Open<span class="seg-count">7</span></button>
+				<button class="seg-btn" type="button">Done<span class="seg-count">12</span></button>
+			</div>
+			<p class="note">
+				The exclusive-choice strip: modes, tab pairs, filters. Items are links when they navigate
+				and buttons when they select in place; an unavailable item is disabled, not hidden
+				mid-session. A seg-count rides inside a segment when the choice has a tally behind it; it
+				is not a second badge family and only ever appears inside a seg-btn. Multi-select filters
+				are chips, not a seg.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>

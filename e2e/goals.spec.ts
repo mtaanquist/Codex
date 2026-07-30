@@ -1,34 +1,36 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Writing goals: an account daily word goal and a per-story target and
 // deadline, both persisting across a reload.
 test('set a daily word goal and a per-story target and deadline', async ({ page }) => {
 	// Account-level daily word goal. Settings auto-save: a text field saves when
-	// it loses focus.
-	await page.goto('/account/editor');
+	// it loses focus. The account outlives the run, so refilling the stored value
+	// would leave the field unchanged and no save would fire; pick whichever of
+	// the two goals is not the one already there.
+	await gotoReady(page, '/account/editor');
 	const goal = page.getByLabel('Daily word goal');
-	await goal.fill('500');
+	const newGoal = (await goal.inputValue()) === '500' ? '750' : '500';
+	await goal.fill(newGoal);
 	await goal.blur();
 	await expect(page.getByText('Saved.')).toBeVisible();
 	await page.reload();
-	await expect(page.getByLabel('Daily word goal')).toHaveValue('500');
+	await expect(page.getByLabel('Daily word goal')).toHaveValue(newGoal);
 
 	// A story to set a target and deadline on.
 	const stamp = Date.now();
-	await page.goto('/');
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await gotoReady(page, '/');
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Goalfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: `Goalfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, `Goalfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Targets ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/targets-${stamp}`);
 
-	await page.goto(`/stories/targets-${stamp}/settings/goals`);
+	await gotoReady(page, `/stories/targets-${stamp}/settings/goals`);
 	const target = page.getByLabel('Target words (optional)');
 	await target.fill('50000');
 	await target.blur();

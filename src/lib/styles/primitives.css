@@ -1,0 +1,239 @@
+/* Codex - the consolidated primitives layer.
+
+   Loaded last in styles.css, so where a screen's local skin contradicts a rule
+   here, this file wins. It holds the families that had no single owner before:
+   the modal, the empty state, the removable chip, and the shared focus ring.
+   Buttons live with .btn in pages.css; the segmented strip and the entity badge
+   live in theme.css. Nothing in this file introduces a colour, radius, or
+   spacing value that is not a token. */
+
+/* ===================== FOCUS ===================== */
+/* One focus shape for every control that is not a text field: a 2px accent
+   outline, offset so it never touches the control's own border. Text fields
+   keep their border-and-glow focus, which shows while typing as well. */
+.chip:focus-visible,
+.menu-item:focus-visible,
+.ent-row:focus-visible,
+.scene-row:focus-visible,
+.chapter-row:focus-visible,
+.chip-x:focus-visible,
+.modal-panel:focus-visible,
+.toggle input:focus-visible + .toggle-track {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* ===================== CHIP: THE REMOVE AFFORDANCE ===================== */
+/* The x inside a removable chip. Only ever inside .chip; a chip whose removal
+   needs confirmation is not a chip, it is a row with a danger action. */
+.chip-x {
+	display: inline-grid;
+	place-items: center;
+	width: 15px;
+	height: 15px;
+	margin-right: -3px;
+	border: 0;
+	border-radius: 99px;
+	background: none;
+	color: var(--text-faint);
+	font-size: var(--text-sm);
+	line-height: 1;
+	padding: 0;
+}
+.chip-x:hover,
+.chip-x.is-hover {
+	background: var(--bg-active);
+	color: var(--danger);
+}
+a.chip {
+	text-decoration: none;
+}
+button.chip:hover,
+a.chip:hover {
+	border-color: var(--border-strong);
+	background: var(--bg-hover);
+}
+
+/* ===================== MODAL ===================== */
+/* One overlay primitive. The backdrop is the workspace receding, drawn from the
+   page background so all three themes dim in their own key. */
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: grid;
+	place-items: center;
+	padding: var(--space-6);
+	background: color-mix(in oklab, var(--bg) 76%, transparent);
+	backdrop-filter: blur(3px);
+}
+/* Top-anchored: for an overlay whose content height changes while it is open
+   (the command palette filtering as you type). Anchoring the top edge keeps
+   the input still; a centred panel would drift with every keystroke. */
+.modal-backdrop.top {
+	place-items: start center;
+	padding-top: 14vh;
+}
+.modal-panel {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-width: 420px;
+	max-height: min(84vh, 660px);
+	background: var(--bg-elevated);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow);
+	overflow: hidden;
+	animation: popIn 0.13s ease;
+}
+/* The wide size: a list to scan or a passage to read. There are two sizes and
+   no third. */
+.modal-lg {
+	max-width: 640px;
+}
+.modal-head {
+	flex: none;
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
+	padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.modal-head-main {
+	flex: 1;
+	min-width: 0;
+}
+.modal-title {
+	font-size: var(--text-lg);
+	font-weight: 650;
+	letter-spacing: -0.01em;
+	margin: 0;
+}
+.modal-sub {
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+	line-height: 1.5;
+	margin: 4px 0 0;
+}
+.modal-kind {
+	font-size: var(--text-micro);
+	font-weight: 650;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	margin: 0 0 6px;
+}
+/* The head can carry a search field instead of a title (the command palette).
+   The field is flush and borderless: the panel edge is the border. */
+.modal-search {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	background: none;
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: var(--text-lg);
+	padding: 0;
+	outline: none;
+}
+.modal-search::placeholder {
+	color: var(--text-faint);
+}
+.modal-head.searching {
+	align-items: center;
+	padding: var(--space-3) var(--space-4);
+	border-bottom: 1px solid var(--border);
+}
+.modal-body {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding: 0 var(--space-4) var(--space-4);
+}
+/* A body that holds rows (menu-item, ent-row) instead of prose keeps its own
+   padding so the rows can run to the panel edge. */
+.modal-body.rows {
+	padding: var(--space-2);
+}
+.modal-body p {
+	font-size: var(--text-base);
+	line-height: 1.6;
+	color: var(--text-muted);
+	margin: 0 0 0.85em;
+	text-wrap: pretty;
+}
+.modal-body p:last-child {
+	margin-bottom: 0;
+}
+.modal-label {
+	font-size: var(--text-micro);
+	font-weight: 650;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	padding: var(--space-3) var(--space-2) var(--space-1);
+}
+.modal-foot {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-3) var(--space-4);
+	border-top: 1px solid var(--border);
+	background: var(--bg-inset);
+}
+/* The footer's left side: a hint, a shortcut legend, or a count. Actions sit at
+   the right, primary last. */
+.modal-foot-note {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: var(--text-meta);
+	color: var(--text-faint);
+}
+
+/* ===================== EMPTY STATE ===================== */
+/* One pattern for every nothing-here surface: a centred column, faint, one
+   short sentence saying what to do next. The icon and the action are optional;
+   the sentence is not. */
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-3);
+	text-align: center;
+	padding: var(--space-8) var(--space-6);
+	color: var(--text-faint);
+}
+.empty-state-icon {
+	display: grid;
+	place-items: center;
+	color: var(--text-faint);
+	opacity: 0.55;
+}
+.empty-state-icon svg {
+	width: 22px;
+	height: 22px;
+}
+.empty-state-text {
+	font-size: var(--text-base);
+	line-height: 1.5;
+	max-width: 34ch;
+	margin: 0;
+	text-wrap: pretty;
+}
+.empty-state-action {
+	margin-top: var(--space-1);
+}
+/* Inside a right-panel card or a sidebar list, where the full padding would
+   push the panel into a scroll. */
+.empty-state.tight {
+	padding: var(--space-5) var(--space-4);
+	gap: var(--space-2);
+}
+.empty-state.tight .empty-state-text {
+	font-size: var(--text-sm);
+}

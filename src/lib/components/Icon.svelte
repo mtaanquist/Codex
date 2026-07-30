@@ -3,6 +3,8 @@
 	const PATHS = {
 		feather: ['M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z', 'M16 8 2 22', 'M17.5 15H9'],
 		chevron: ['M9 6l6 6-6 6'],
+		// Points down at rest; the crumb menu rotates it when the menu opens.
+		caret: ['M6 9.5 12 15.5 18 9.5'],
 		// Marks a link that leaves the current view.
 		'arrow-out': ['M7 17 17 7', 'M8 7h9v9'],
 		plus: ['M12 5v14', 'M5 12h14'],
@@ -71,6 +73,16 @@
 			'M17.7 6.3l2.1-2.1'
 		],
 		moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
+		// A low sun on the horizon: the warm theme.
+		sunset: [
+			'M12 5v4',
+			'M4.9 10.9l1.4 1.4',
+			'M19.1 10.9l-1.4 1.4',
+			'M2 18h2',
+			'M20 18h2',
+			'M16 18a4 4 0 0 0-8 0',
+			'M22 22H2'
+		],
 		search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'M21 21l-4.3-4.3'],
 		link: [
 			'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5',

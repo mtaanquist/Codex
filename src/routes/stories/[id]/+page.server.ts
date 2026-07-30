@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -16,6 +17,8 @@ import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisi
 import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { ownedStory } from '$lib/server/story-access';
+import { readingPageRef } from '$lib/server/publish';
+import { createSceneNote, listSceneNotes } from '$lib/server/notes';
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
@@ -173,6 +176,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// The scene-keyed wave: timeline, markers, preview, and who is mentioned
 	// in the open scene (read from the worker-built index).
+	let sceneNotes: Awaited<ReturnType<typeof listSceneNotes>> = [];
 	let sceneRevisions: RevisionRow[] = [];
 	let revisionPreview = null;
 	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
@@ -222,18 +226,28 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 					table.badgeAssetId
 				);
 		};
-		const [revs, markers, preview, mentionedCharacters, mentionedPlaces, mentionedLore] =
-			await Promise.all([
-				listRevisions(db, 'scene', selectedScene.id),
-				listSceneMarkers(db, selectedScene.id),
-				revisionId ? getRevision(db, revisionId, 'scene', selectedScene.id) : Promise.resolve(null),
-				mentionCounts(characters, 'character'),
-				mentionCounts(places, 'place'),
-				mentionCounts(loreEntries, 'lore_entry')
-			]);
+		const [
+			revs,
+			markers,
+			preview,
+			notesOnScene,
+			mentionedCharacters,
+			mentionedPlaces,
+			mentionedLore
+		] = await Promise.all([
+			listRevisions(db, 'scene', selectedScene.id),
+			listSceneMarkers(db, selectedScene.id),
+			revisionId ? getRevision(db, revisionId, 'scene', selectedScene.id) : Promise.resolve(null),
+			// The Notes panel: what is written about this scene, not the story.
+			listSceneNotes(db, selectedScene.id, locals.user!.id),
+			mentionCounts(characters, 'character'),
+			mentionCounts(places, 'place'),
+			mentionCounts(loreEntries, 'lore_entry')
+		]);
 		sceneRevisions = revs;
 		sceneMarkers = markers;
 		revisionPreview = preview ?? null;
+		sceneNotes = notesOnScene;
 		// Tagged with the kind so the panel can group them by entity type.
 		inScene = [
 			...mentionedCharacters.map((row) => ({ ...row, kind: 'character' as const })),
@@ -252,12 +266,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		trashedScenes,
 		story,
 		universe,
+		reading: await readingPageRef(db, story.id),
 		preferences,
 		assistantChat,
 		storySiblings,
 		chapters: chapterList,
 		scenes: sceneList,
 		selectedScene,
+		sceneNotes,
 		sceneRevisions,
 		revisionPreview,
 		sceneMarkers,
@@ -285,6 +301,24 @@ export const actions: Actions = {
 	// the account again. Neither can light the Assistant up when the account is
 	// off (the master is the kill switch). The default enhance reloads the page,
 	// so the gate re-renders.
+	// "New note on this scene" from the Notes panel: makes the note and opens
+	// it in Notes mode, which is where notes are managed.
+	newSceneNote: async ({ request, params, locals }) => {
+		const { story, universe } = await ownedStory(params.id, locals.user!.id);
+		const sceneId = String((await request.formData()).get('sceneId') ?? '');
+		if (!isUuid(sceneId)) {
+			return fail(400, { scope: 'scene-note', message: 'Could not add a note to that scene.' });
+		}
+		const [scene] = await db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.where(and(eq(scenes.id, sceneId), eq(scenes.storyId, story.id)));
+		if (!scene) {
+			return fail(400, { scope: 'scene-note', message: 'Could not add a note to that scene.' });
+		}
+		const noteId = await createSceneNote(db, locals.user!.id, universe.id, story.id, sceneId);
+		redirect(303, `/stories/${story.slug}/notes?note=${noteId}`);
+	},
 	muteAssistant: async ({ params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		await saveStoryLlmOverride(db, story.id, { enabled: false });

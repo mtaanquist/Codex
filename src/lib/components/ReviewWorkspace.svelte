@@ -25,6 +25,9 @@
 	import type { SaveStatus } from './SceneEditor.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
+	import PanelStrip from './PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
+	import { GUEST_MODE_NOTE } from '$lib/chrome';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction
@@ -102,7 +105,7 @@
 				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			} | null;
 		}[];
-		// The author editor's autosave feedback, surfaced in the page's TopBar.
+		// The author editor's autosave feedback, surfaced in the page's app bar.
 		onSaveStatus?: (status: SaveStatus) => void;
 	} = $props();
 
@@ -177,9 +180,11 @@
 	// On a narrow screen the three panes stack behind a tab bar; on desktop the
 	// tab bar is hidden and all three show side by side.
 	let mobileTab = $state<'nav' | 'read' | 'notes'>('read');
-	// The right pane toggles between the notes (Review) and the chat (Assistant),
-	// shown only when the Assistant tab is available for this story.
-	let rightTab = $state<'review' | 'assistant'>('review');
+	// The right pane's panels. You are not editing here, so there is no History
+	// and no Reference: Comments is what this text has, and the Assistant reads
+	// it when the author has one. A reviewer gets Comments alone, so their pane
+	// wears the panel's title instead of a one-segment strip.
+	let chosenPanel = $state<PanelId | null>('comments');
 	// The Assistant tab is the author's own page, with the Assistant turned on at
 	// the account level. surfacesEnabled is the stricter gate (not muted) for the
 	// thread answers and the review launcher.
@@ -269,6 +274,9 @@
 		sceneThreads.filter((t) => t.resolvedAt === null).length +
 			sceneSuggestions.filter((s) => s.status === 'pending').length
 	);
+
+	const panels = $derived(visiblePanels({ comments: sceneOpen, assistant: assistantTab }));
+	const rightPanel = $derived(activePanel(panels, chosenPanel));
 
 	function selectScene(id: string) {
 		if (id !== selectedSceneId) {
@@ -390,9 +398,9 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="review-shell">
-	<nav class="rv-mtabs" aria-label="Review sections">
+	<nav class="seg full" aria-label="Review sections">
 		<button
-			class="rv-mtab"
+			class="seg-btn"
 			class:active={mobileTab === 'nav'}
 			type="button"
 			onclick={() => (mobileTab = 'nav')}
@@ -400,7 +408,7 @@
 			Scenes
 		</button>
 		<button
-			class="rv-mtab"
+			class="seg-btn"
 			class:active={mobileTab === 'read'}
 			type="button"
 			onclick={() => (mobileTab = 'read')}
@@ -408,12 +416,12 @@
 			Manuscript
 		</button>
 		<button
-			class="rv-mtab"
+			class="seg-btn"
 			class:active={mobileTab === 'notes'}
 			type="button"
 			onclick={() => (mobileTab = 'notes')}
 		>
-			Notes{#if sceneOpen > 0}<span class="rv-mtab-n">{sceneOpen}</span>{/if}
+			Notes{#if sceneOpen > 0}<span class="seg-count">{sceneOpen}</span>{/if}
 		</button>
 	</nav>
 	<div class="body" data-mtab={mobileTab}>
@@ -425,6 +433,7 @@
 					hrefs={seg
 						? { write: seg.writeHref, plan: seg.planHref, notes: seg.notesHref }
 						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
+					note={seg ? undefined : GUEST_MODE_NOTE}
 				/>
 				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />
 			</div>
@@ -499,60 +508,19 @@
 					{/if}
 				{/key}
 			{:else}
-				<div class="rv-empty-scene">This story has no scenes to review yet.</div>
+				<div class="empty-state">
+					<p class="empty-state-text">This story has no scenes to review yet.</p>
+				</div>
 			{/if}
 		</main>
 
 		<aside class="pane right">
-			{#if assistantTab}
-				<div class="rv-rhead">
-					<div class="rtabs">
-						<button
-							class="rtab"
-							class:active={rightTab === 'review'}
-							type="button"
-							onclick={() => (rightTab = 'review')}
-						>
-							Review
-						</button>
-						<button
-							class="rtab"
-							class:active={rightTab === 'assistant'}
-							type="button"
-							onclick={() => (rightTab = 'assistant')}
-						>
-							Assistant
-						</button>
-					</div>
-				</div>
-			{/if}
-			<div class="rv-right-body">
-				{#if assistantTab && rightTab === 'assistant'}
-					{#if assistantSurfaces}
-						<button
-							class="rv-review-btn"
-							type="button"
-							onclick={() =>
-								openReviewModal(
-									selectedSceneId
-										? { level: 'scene', sceneId: selectedSceneId }
-										: { level: 'story' }
-								)}
-						>
-							<Icon name="sparkles" size={13} /> Review with the Assistant
-						</button>
-					{/if}
-					<div class="rv-assistant-wrap">
-						<AssistantPanel
-							scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
-							sceneId={selectedSceneId || null}
-							name={assistant?.name ?? 'Assistant'}
-							muted={assistant?.muted ?? false}
-							suggestions={assistantSuggestions}
-							initialMessages={assistantChat}
-						/>
-					</div>
-				{:else if selectedScene}
+			<!-- One panel invocation, two shapes of pane: with the Assistant the strip
+			     is a real tablist, without it the pane is just the Comments panel,
+			     which carries its own title. The props must not drift between the
+			     two - dropping onAccepted here once cost the author's live accept. -->
+			{#snippet commentsPanel()}
+				{#if selectedScene}
 					<ReviewPanel
 						scene={selectedScene}
 						threads={sceneThreads}
@@ -572,7 +540,48 @@
 						onAssistantReply={assistantSurfaces ? assistantReply : null}
 					/>
 				{/if}
-			</div>
+			{/snippet}
+			{#if assistantTab}
+				<PanelStrip
+					{panels}
+					active={rightPanel ?? 'comments'}
+					onSelect={(id) => (chosenPanel = id)}
+					label="Panels about this scene"
+				>
+					{#snippet panel(id)}
+						{#if id === 'assistant'}
+							{#if assistantSurfaces}
+								<button
+									class="rv-review-btn"
+									type="button"
+									onclick={() =>
+										openReviewModal(
+											selectedSceneId
+												? { level: 'scene', sceneId: selectedSceneId }
+												: { level: 'story' }
+										)}
+								>
+									<Icon name="sparkles" size={13} /> Review with the Assistant
+								</button>
+							{/if}
+							<div class="rv-assistant-wrap">
+								<AssistantPanel
+									scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
+									sceneId={selectedSceneId || null}
+									name={assistant?.name ?? 'Assistant'}
+									muted={assistant?.muted ?? false}
+									suggestions={assistantSuggestions}
+									initialMessages={assistantChat}
+								/>
+							</div>
+						{:else}
+							{@render commentsPanel()}
+						{/if}
+					{/snippet}
+				</PanelStrip>
+			{:else}
+				<div class="rv-right-body">{@render commentsPanel()}</div>
+			{/if}
 		</aside>
 	</div>
 </div>
@@ -597,12 +606,7 @@
 {/if}
 
 <style>
-	/* The right pane stacks an optional tab strip over the active panel. */
-	.rv-rhead {
-		flex: none;
-		padding: 8px;
-		border-bottom: 1px solid var(--border);
-	}
+	/* One panel: the pane is just the panel, which carries its own title. */
 	.rv-right-body {
 		flex: 1;
 		min-height: 0;

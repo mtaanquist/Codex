@@ -198,7 +198,7 @@ export function mentionExtensions(
 				if (related.length > 0) {
 					const chips = el('div', 'pop-related');
 					for (const other of related.slice(0, TOOLTIP_RELATED)) {
-						const chip = el('span', 'pop-chip');
+						const chip = el('span', 'chip');
 						chip.appendChild(badge({ name: other.name, categoryColor: other.color }, 'dot'));
 						chip.appendChild(document.createTextNode(` ${other.name}`));
 						chips.appendChild(chip);
@@ -206,7 +206,7 @@ export function mentionExtensions(
 					dom.appendChild(chips);
 				}
 				if (options.onOpenCard || options.entityHref) {
-					const open = el('a', 'pop-open', 'Open full details') as HTMLAnchorElement;
+					const open = el('a', 'btn btn-primary', 'Open full details') as HTMLAnchorElement;
 					if (options.entityHref) {
 						open.href = options.entityHref({ type: entity.type, id: entity.id });
 					}

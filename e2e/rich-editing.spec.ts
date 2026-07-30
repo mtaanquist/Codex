@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The live markdown surface: rich is the default, so syntax marks hide
 // away from the cursor while the stored prose stays markdown; switching
@@ -6,18 +8,15 @@ import { expect, test } from '@playwright/test';
 test('rich editing: toolbar formats, marks hide by default, override shows them', async ({
 	page
 }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Rich Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Soft Surface');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Soft Surface');
@@ -57,7 +56,7 @@ test('rich editing: toolbar formats, marks hide by default, override shows them'
 
 	// Switch this story to raw markdown, written in Danish, through its
 	// settings overrides.
-	await page.goto(`/stories/${storyId}/settings/editor`);
+	await gotoReady(page, `/stories/${storyId}/settings/editor`);
 	await page.getByLabel('Editing mode').selectOption('markdown');
 	// These settings auto-save on change; the last change confirms with "Saved.".
 	await page.getByLabel('Writing language').selectOption('Dansk');
@@ -65,7 +64,7 @@ test('rich editing: toolbar formats, marks hide by default, override shows them'
 
 	// Back in the editor the marks stay visible as typed, and the language
 	// override reached the spell-checker.
-	await page.goto(editorUrl);
+	await gotoReady(page, editorUrl);
 	await expect(page.locator('.cm-content')).toBeVisible();
 	await expect(page.locator('.cm-content')).toHaveAttribute('lang', 'da');
 	await expect(page.locator('.cm-content')).toContainText('**The gate held fast.**');

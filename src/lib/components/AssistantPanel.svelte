@@ -789,8 +789,7 @@
 				placeholder="Ask about your story, or type / for commands..."
 				value={input}
 				oninput={grow}
-				onkeydown={onKeydown}
-			></textarea>
+				onkeydown={onKeydown}></textarea>
 			<div
 				class="composer-menu-wrap"
 				use:dismiss={{ enabled: actionsOpen, close: () => (actionsOpen = false) }}
@@ -843,12 +842,12 @@
 				{/if}
 			</div>
 			{#if busy}
-				<button class="send-btn" type="button" title="Stop generating" onclick={stop}>
+				<button class="icon-btn" type="button" title="Stop generating" onclick={stop}>
 					<span class="stop-glyph"></span>
 				</button>
 			{:else}
 				<button
-					class="send-btn"
+					class="icon-btn"
 					type="button"
 					disabled={!input.trim()}
 					title="Send"
@@ -1156,27 +1155,11 @@
 		z-index: 60;
 		min-width: 190px;
 	}
-	.send-btn {
-		flex: none;
-		width: 36px;
-		height: 36px;
-		border-radius: 9px;
-		border: 0;
-		background: var(--accent);
-		color: var(--accent-contrast);
-		display: grid;
-		place-items: center;
-		cursor: pointer;
-	}
-	.send-btn:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
 	.stop-glyph {
 		width: 11px;
 		height: 11px;
 		border-radius: 2px;
-		background: var(--accent-contrast);
+		background: currentColor;
 	}
 	.assistant-muted {
 		padding: 28px 22px;

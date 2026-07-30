@@ -1,7 +1,11 @@
 import pg from 'pg';
+import { checkoutId } from '../checkout-id';
 
+// The name carries the checkout id so two worktrees running the suite at once
+// do not truncate each other's tables between tests.
 export const TEST_DATABASE_URL =
-	process.env.TEST_DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex_test';
+	process.env.TEST_DATABASE_URL ??
+	`postgres://codex:codex@localhost:5432/codex_test_${checkoutId()}`;
 
 // The built-in relation types are seeded by migration 0008, but any test
 // file that truncates universes with cascade wipes relation_types too (the
@@ -33,9 +37,10 @@ export async function ensureBuiltInRelationTypes(pool: pg.Pool) {
 // Create the throwaway test database if it is missing, so the suite runs
 // against any Postgres the environment provides without extra setup. Every
 // integration test file calls this in beforeAll; test files run serially
-// (see vite.config.ts), so there is no creation race.
-export async function ensureTestDatabase() {
-	const url = new URL(TEST_DATABASE_URL);
+// (see vite.config.ts), so there is no creation race. The end-to-end global
+// setup passes its own database in (see e2e/database.ts).
+export async function ensureTestDatabase(connectionString: string = TEST_DATABASE_URL) {
+	const url = new URL(connectionString);
 	const dbName = url.pathname.slice(1);
 	url.pathname = '/postgres';
 	const admin = new pg.Client({ connectionString: url.toString() });

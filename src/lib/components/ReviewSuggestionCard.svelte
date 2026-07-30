@@ -106,7 +106,7 @@
 					>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
 						<button
-							class="rv-quick-btn accept"
+							class="icon-btn sm accept"
 							type="submit"
 							title="Accept suggestion"
 							aria-label="Accept suggestion"
@@ -118,7 +118,7 @@
 				<form method="POST" action="?/rejectSuggestion" use:enhance>
 					<input type="hidden" name="suggestionId" value={suggestion.id} />
 					<button
-						class="rv-quick-btn reject"
+						class="icon-btn sm reject"
 						type="submit"
 						title="Reject suggestion"
 						aria-label="Reject suggestion"
@@ -128,7 +128,7 @@
 				</form>
 			</div>
 		{:else}
-			<span class="rv-type-pill sugg"><Icon name="suggest" size={11} /> {verb}</span>
+			<span class="pill"><Icon name="suggest" size={11} /> {verb}</span>
 		{/if}
 	</div>
 
@@ -171,11 +171,12 @@
 					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
 						<button
-							class="rv-btn ghost danger"
+							class="icon-btn sm danger"
 							type="submit"
 							aria-label="Delete your suggested edit"
+							title="Delete"
 						>
-							<Icon name="trash" size={14} /> Delete
+							<Icon name="trash" size={15} />
 						</button>
 					</form>
 				</div>

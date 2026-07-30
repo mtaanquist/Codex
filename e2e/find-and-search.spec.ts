@@ -1,19 +1,18 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Item 2 of the capability review: find/replace inside the editor, and
 // body-text search from the command palette.
 test('find in the editor and search the prose from the palette', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Findfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: `Findfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, `Findfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Needles ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 
@@ -32,9 +31,9 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await page.keyboard.type(`The haystack hid a needle${stamp} near the well.`);
 	await save;
 
-	// Find and replace: Ctrl+F opens the panel, replace rewrites the word.
+	// Find and replace: Mod-F opens the panel, replace rewrites the word.
 	// The replacement is a document change, so it autosaves on its own.
-	await page.keyboard.press('Control+f');
+	await page.keyboard.press('ControlOrMeta+f');
 	const panel = page.locator('.cm-panel.cm-search');
 	await expect(panel).toBeVisible();
 	const resave = page.waitForResponse(
@@ -52,9 +51,9 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await resave;
 
 	// The palette finds the prose and lands on the scene.
-	await page.keyboard.press('Control+k');
+	await page.keyboard.press('ControlOrMeta+k');
 	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
-	const passage = page.locator('.palette-item', { hasText: 'In the text' });
+	const passage = page.locator('.modal-panel .menu-item', { hasText: 'In the text' });
 	await expect(passage).toHaveCount(1);
 	await expect(passage).toContainText(`pin${stamp} near the well`);
 	await passage.click();
@@ -73,9 +72,9 @@ test('find in the editor and search the prose from the palette', async ({ page }
 	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).not.toContainText(`pin${stamp}`);
 
-	await page.keyboard.press('Control+k');
+	await page.keyboard.press('ControlOrMeta+k');
 	await page.getByPlaceholder('Search, or type a command...').fill(`pin${stamp}`);
-	const jump = page.locator('.palette-item', { hasText: 'In the text' });
+	const jump = page.locator('.modal-panel .menu-item', { hasText: 'In the text' });
 	await expect(jump).toHaveCount(1);
 	await jump.click();
 	await expect(page.locator('.cm-content')).toContainText(`pin${stamp}`);

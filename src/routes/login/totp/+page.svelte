@@ -53,7 +53,9 @@
 				/>
 			</div>
 		{/if}
-		<button class="btn btn-primary" type="submit">Verify</button>
+		<div class="auth-actions">
+			<button class="btn btn-primary" type="submit">Verify</button>
+		</div>
 	</form>
 	<div class="auth-links">
 		<button type="button" onclick={() => (recovery = !recovery)}>

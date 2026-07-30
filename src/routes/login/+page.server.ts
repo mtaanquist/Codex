@@ -18,9 +18,10 @@ const LOGIN_WINDOW_MS = 5 * 60 * 1000;
 // for the address to be the real client rather than the proxy.
 const LOGIN_IP_LIMIT = 50;
 
-// Whether to offer the sign-up link at all.
+// The mode, not a boolean: what the page says about getting an account depends
+// on whether a visitor without an invite code can finish a sign-up.
 export const load: PageServerLoad = async () => {
-	return { signupOpen: (await signupMode(db)) !== 'none' };
+	return { signupMode: await signupMode(db) };
 };
 
 export const actions: Actions = {

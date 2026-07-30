@@ -1,10 +1,10 @@
 import { fail } from '@sveltejs/kit';
 import { isUuid } from '$lib/slug';
 import { ownedStory } from '$lib/server/story-access';
+import { readingPageRef } from '$lib/server/publish';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
-	acceptAllInScene,
 	addComment,
 	createSuggestion,
 	createThread,
@@ -20,7 +20,7 @@ import { gatherStory } from '$lib/server/export';
 import { storyPreferences } from '$lib/server/preferences';
 import { storyPageSetup } from '$lib/server/page-setup';
 import { reviewMentionData } from '$lib/server/mention-entities';
-import { reanchorRange } from '$lib/review-anchor';
+import { createAnchorMapper } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
@@ -38,6 +38,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// navigation as the editor. The author's review takes the full cast
 	// (restrictToMentioned is false), so reviewMentionData needs no scene ids and
 	// nothing here waits on gatherStory.
+	// Threads and suggestions re-anchor against the same scene revisions, so one
+	// mapper covers both and each revision is diffed once for the page.
+	const anchors = createAnchorMapper();
 	const [
 		content,
 		mentions,
@@ -56,8 +59,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			restrictToMentioned: false
 		}),
 		listTrashedScenes(db, story.id),
-		listThreads(db, story.id, reanchorRange, { userId: locals.user!.id }),
-		listSuggestions(db, story.id, { userId: locals.user!.id }),
+		listThreads(db, story.id, anchors.range, { userId: locals.user!.id }),
+		listSuggestions(db, story.id, { userId: locals.user!.id }, anchors),
 		storyPreferences(db, locals.user!.id, story.id),
 		storyPageSetup(db, story.id),
 		assistantLayout(db, locals.user!.id, story.id)
@@ -77,6 +80,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },
+		reading: await readingPageRef(db, story.id),
 		chapters: content.chapters,
 		scenes,
 		// The author's sidebar manages structure here too, trash included.
@@ -229,19 +233,6 @@ export const actions: Actions = {
 		const result = await decideSuggestion(db, locals.user!.id, suggestionId, false);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
-	},
-	// Accepts every pending suggestion in one scene at once.
-	acceptAll: async ({ params, request, locals }) => {
-		const { story } = await ownedStory(params.id, locals.user!.id);
-		const data = await request.formData();
-		const sceneId = String(data.get('sceneId') ?? '');
-		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
-		const result = await acceptAllInScene(db, locals.user!.id, story.id, sceneId);
-		// The body changed; keep the mention index in step.
-		if (result.accepted > 0) await queueSceneMentions(sceneId);
-		// The applied ids ride back so the editor can fold the accepted text
-		// into the live document at once.
-		return { done: true, acceptedIds: result.acceptedIds };
 	},
 	// The author retracting a comment of their own.
 	deleteComment: async ({ params, request, locals }) => {

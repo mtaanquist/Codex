@@ -1,6 +1,7 @@
 <script lang="ts">
-	import Icon from '$lib/components/Icon.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
 	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
+	import { pageCrumb } from '$lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -15,16 +16,14 @@
 
 {#if data.state === 'review'}
 	<div class="app">
-		<header class="topbar">
-			<span class="brand">
-				<span class="brand-mark" style="color: #fff"><Icon name="feather" size={15} /></span>
-				<span class="brand-name">Codex</span>
-			</span>
-			<div class="review-guest-bar">
-				<span class="rg-title">{data.storyTitle}</span>
-				<span class="rg-who">Reviewing as {data.reviewerName}</span>
-			</div>
-		</header>
+		<AppBar
+			shell="guest"
+			crumbs={[pageCrumb(data.storyTitle)]}
+			pill="Review only"
+			who={data.reviewerName}
+			helpTopic="reviewing"
+			helpLabel="reviewing"
+		/>
 		{#if form?.message}<p class="review-error" role="alert">{form.message}</p>{/if}
 		<ReviewWorkspace
 			chapters={data.chapters}

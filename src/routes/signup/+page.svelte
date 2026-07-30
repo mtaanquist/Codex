@@ -4,20 +4,35 @@
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// An invite code gets you in without waiting, so a Codex that takes codes
+	// asks for an account rather than for permission.
+	const title = $derived(
+		data.mode === 'none'
+			? 'New accounts are closed'
+			: data.mode === 'approval'
+				? 'Request access'
+				: 'Create an account'
+	);
+	const sub = $derived(
+		data.mode === 'approval'
+			? 'Accounts open by invitation while the work is young. Ask, and you get an answer either way.'
+			: data.mode === 'invite'
+				? 'An invite code gets you in. If you do not have one, ask someone who already writes here.'
+				: undefined
+	);
 </script>
 
 <svelte:head>
-	<title>Create an account - Codex</title>
+	<title>{title} - Codex</title>
 </svelte:head>
 
-<AuthShell title="Create an account">
+<AuthShell {title} sub={data.mode === 'none' ? undefined : sub}>
 	{#if data.mode === 'none'}
 		<p class="auth-note" role="status">
 			This Codex is not taking new accounts. Ask the person who runs it for access.
 		</p>
-		<div class="auth-links">
-			<a href={resolve('/login')}>Back to sign in</a>
-		</div>
+		<p class="auth-alt"><a href={resolve('/login')}>Back to sign in</a></p>
 	{:else if form?.sent}
 		<p class="auth-note" role="status">
 			{#if form.pendingApproval}
@@ -28,12 +43,9 @@
 				you can sign in.
 			{/if}
 		</p>
-		<div class="auth-links">
-			<a href={resolve('/login')}>Back to sign in</a>
-		</div>
+		<p class="auth-alt"><a href={resolve('/login')}>Back to sign in</a></p>
 	{:else}
 		<form method="POST">
-			<p class="auth-lede">Create an account to start writing.</p>
 			{#if form?.message}
 				<p class="form-error" role="alert">{form.message}</p>
 			{/if}
@@ -95,10 +107,18 @@
 					</span>
 				</div>
 			{/if}
-			<button class="btn btn-primary" type="submit">Create account</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Create account</button>
+			</div>
 		</form>
-		<div class="auth-links">
-			<a href={resolve('/login')}>Already have an account? Sign in</a>
-		</div>
+		<p class="auth-alt">
+			Already have an account? <a href={resolve('/login')}>Sign in</a>.
+		</p>
 	{/if}
+
+	{#snippet aside()}
+		You can also
+		<a href={resolve('/docs/[topic]', { topic: 'selfhosting' })}>run Codex on your own computer</a>,
+		where there is no invite to wait for.
+	{/snippet}
 </AuthShell>

@@ -91,7 +91,9 @@
 				{/if}
 			</div>
 			{#if items.length === 0}
-				<p class="bell-empty">{loaded ? 'Nothing yet.' : 'Loading...'}</p>
+				<div class="empty-state tight">
+					<p class="empty-state-text">{loaded ? 'Nothing yet.' : 'Loading...'}</p>
+				</div>
 			{:else}
 				<ul class="bell-list">
 					{#each items as item (item.id)}
@@ -170,13 +172,6 @@
 		font-size: 12px;
 		cursor: pointer;
 		padding: 0;
-	}
-	.bell-empty {
-		margin: 0;
-		padding: 18px 12px;
-		font-size: 13px;
-		color: var(--text-muted);
-		text-align: center;
 	}
 	.bell-list {
 		list-style: none;

@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu } from './library';
 
 // The universe settings page: contents tiles, the category manager, the
 // history panel, the export download, and the trash round trip.
@@ -6,11 +8,11 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	page
 }) => {
 	page.on('dialog', (dialog) => dialog.accept());
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	const name = `Settle ${stamp}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(name);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page).toHaveURL(`/universes/settle-${stamp}`);
@@ -42,7 +44,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 
 	// History: a worldbuilding change shows up with its kind chip. Creating
 	// alone records nothing; the first edit does.
-	await page.goto(`/universes/settle-${stamp}/plan`);
+	await gotoReady(page, `/universes/settle-${stamp}/plan`);
 	await page.getByPlaceholder('New character name').fill('Histor');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.locator('.ent-row', { hasText: 'Histor' })).toBeVisible();
@@ -56,23 +58,23 @@ test('universe settings: contents, categories, history, export, and the trash', 
 		.getByPlaceholder('One or two lines. Shown when a mention is hovered.')
 		.fill('Keeper of the record.');
 	await entitySave;
-	await page.goto(`/universes/settle-${stamp}`);
+	await gotoReady(page, `/universes/settle-${stamp}`);
 	await page.getByRole('link', { name: 'History' }).click();
 	const entry = page.locator('.revision-entry', { hasText: 'Histor' }).first();
 	await expect(entry).toBeVisible();
-	await expect(entry.locator('.revision-source-kind')).toHaveText('Character');
+	await expect(entry.locator('.pill')).toHaveText('Character');
 	await page.getByRole('button', { name: 'Checkpoints only' }).click();
 	await expect(page.locator('.revision-entry', { hasText: 'Histor' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'All', exact: true }).click();
 
 	// Export: prepare the archive (built in the worker), then download it.
 	const exportUrl = `/universes/settle-${stamp}/export`;
-	await page.goto(exportUrl);
+	await gotoReady(page, exportUrl);
 	await page.getByRole('button', { name: 'Prepare markdown archive (.zip)' }).click();
 	const downloadLink = page.locator('.export-row a', { hasText: 'Download' }).first();
 	await expect(async () => {
 		// Navigate by GET; page.reload() here would re-submit the prepare POST.
-		await page.goto(exportUrl);
+		await gotoReady(page, exportUrl);
 		await expect(downloadLink).toBeVisible({ timeout: 1000 });
 	}).toPass({ timeout: 60_000 });
 	const archive = await page.request.get((await downloadLink.getAttribute('href'))!);
@@ -91,7 +93,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await expect(page.locator('.trash-uni', { hasText: name })).toHaveCount(0);
 
 	// Gone for good.
-	await page.goto(`/universes/settle-${stamp}`);
+	await gotoReady(page, `/universes/settle-${stamp}`);
 	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
 	await expect(page).toHaveURL('/');
@@ -100,6 +102,6 @@ test('universe settings: contents, categories, history, export, and the trash', 
 		.getByRole('button', { name: 'Delete forever' })
 		.click();
 	await expect(page.locator('.trash-uni', { hasText: name })).toHaveCount(0);
-	const gone = await page.goto(`/universes/settle-${stamp}`);
+	const gone = await gotoReady(page, `/universes/settle-${stamp}`);
 	expect(gone!.status()).toBe(404);
 });

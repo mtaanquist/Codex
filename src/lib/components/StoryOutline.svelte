@@ -337,7 +337,9 @@
 									if (e.key === 'Escape') renamingChapterId = null;
 								}}
 							/>
-							<button class="tool-btn" type="submit" title="Save chapter name">Save</button>
+							<button class="btn btn-sm btn-secondary" type="submit" title="Save chapter name"
+								>Save</button
+							>
 						</form>
 					{:else}
 						<button
@@ -405,7 +407,9 @@
 			</div>
 		{/if}
 		{#if query !== '' && visibleOrphans.length === 0 && !chapters.some((chapter, index) => filterChapter(query, chapter.title, `Chapter ${index + 1}`, chapterScenes(chapter.id)).visible)}
-			<div class="search-empty">No chapters or scenes match.</div>
+			<div class="empty-state tight">
+				<p class="empty-state-text">No chapters or scenes match.</p>
+			</div>
 		{/if}
 		{#if canManage && query === ''}
 			<form method="POST" action="?/createChapter" use:enhance>
@@ -431,7 +435,7 @@
 								{/if}
 								<form method="POST" action="?/restoreScene" use:enhance>
 									<input type="hidden" name="sceneId" value={scene.id} />
-									<button class="tool-btn" type="submit" title="Restore scene">
+									<button class="icon-btn sm" type="submit" title="Restore scene">
 										<Icon name="restore" size={12} />
 									</button>
 								</form>
@@ -445,7 +449,7 @@
 								>
 									<input type="hidden" name="sceneId" value={scene.id} />
 									{@render openSceneField()}
-									<button class="tool-btn danger" type="submit" title="Delete forever">
+									<button class="icon-btn sm danger" type="submit" title="Delete forever">
 										<Icon name="trash" size={12} />
 									</button>
 								</form>

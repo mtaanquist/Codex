@@ -114,6 +114,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		assetsConfigured,
 		archive,
 		edition,
+		reading: edition && archive?.handle ? { handle: archive.handle, storyId: story.id } : null,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
 		exports: await listUserExports(db, locals.user!.id, { scope: 'story', targetId: story.id }),
 		reviewInvitations,

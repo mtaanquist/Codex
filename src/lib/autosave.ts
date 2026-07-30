@@ -15,7 +15,7 @@ export type AutosaveOptions = {
 	// must outlive the page (note the keepalive body cap; the debounced saves
 	// already covered the text up to the last pause).
 	save: (opts: { keepalive: boolean }) => Promise<void>;
-	// Save feedback for a status indicator (the TopBar).
+	// Save feedback for a status indicator (the app bar's save pill).
 	onStatus?: (status: SaveStatus) => void;
 	// Runs after a save that succeeded and was not re-dirtied mid-flight; for
 	// follow-ups that want settled text (an entity rename offer).

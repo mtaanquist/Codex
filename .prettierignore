@@ -9,6 +9,10 @@ bun.lockb
 .svelte-kit/
 build/
 
+# Git worktrees checked out inside the repo: a second copy of the tree, which
+# would otherwise be format-checked alongside the real one.
+.claude/worktrees/
+
 # Planning material: the prototype and design docs are not ours to format.
 scratch/
 

@@ -4,12 +4,14 @@
 	import EntityEditor from '$lib/components/EntityEditor.svelte';
 	import SceneBoard from '$lib/components/SceneBoard.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
-	import SessionPanel from '$lib/components/SessionPanel.svelte';
+	import PanelStrip from '$lib/components/PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath } from '$lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -35,9 +37,17 @@
 		return prompts;
 	});
 
-	// Right column tabs; History holds the open item's timeline. The Assistant
-	// tab appears only when the Assistant is on for this story.
-	let rightTab = $state<'reference' | 'history' | 'session' | 'assistant'>('reference');
+	// The right pane's panels: every one of them is about the open entry, so
+	// with nothing selected the pane closes rather than standing empty.
+	const panels = $derived(
+		visiblePanels({
+			reference: Boolean(data.selected),
+			assistant: data.selected ? data.assistant.tabEnabled : false,
+			history: Boolean(data.selected)
+		})
+	);
+	let chosenPanel = $state<PanelId | null>('reference');
+	const rightTab = $derived(activePanel(panels, chosenPanel));
 	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
 	const currentBody = $derived(data.selected?.bodyMd ?? '');
 </script>
@@ -47,13 +57,13 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
-		story={{ slug: data.story.slug, title: data.story.title }}
+	<AppBar
+		crumbs={storyPath(data.universe, { ...data.story, reading: data.reading })}
 		{saveStatus}
-		help={{ topic: 'planning', label: 'the planning view' }}
+		helpTopic="planning"
+		helpLabel="the planning view"
 	/>
-	<div class="body">
+	<div class="body" class:no-right={panels.length === 0}>
 		<PlanSidebar
 			characters={data.characters}
 			places={data.places}
@@ -123,136 +133,117 @@
 					}}
 				/>
 			{:else if data.characters.length === 0 && data.places.length === 0}
-				<div class="empty">
-					<p>Nothing here yet. Add a character or a place in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">
+						Nothing here yet. Add a character or a place in the sidebar.
+					</p>
 				</div>
 			{:else}
-				<div class="empty">
-					<p>Select a character or place in the sidebar.</p>
+				<div class="empty-state">
+					<p class="empty-state-text">Select a character or place in the sidebar.</p>
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right">
-			<div class="right-head">
-				<!-- The same three pills whether the centre shows the board or an
-				     entity, so the pane never changes shape underfoot. -->
-				<div class="rtabs">
-					<button
-						class="rtab"
-						class:active={rightTab === 'reference'}
-						type="button"
-						onclick={() => (rightTab = 'reference')}
-					>
-						Reference
-					</button>
-					<button
-						class="rtab"
-						class:active={rightTab === 'history'}
-						type="button"
-						onclick={() => (rightTab = 'history')}
-					>
-						History
-					</button>
-					<button
-						class="rtab"
-						class:active={rightTab === 'session'}
-						type="button"
-						onclick={() => (rightTab = 'session')}
-					>
-						Session
-					</button>
-					{#if data.assistant.tabEnabled}
-						<button
-							class="rtab"
-							class:active={rightTab === 'assistant'}
-							type="button"
-							onclick={() => (rightTab = 'assistant')}
-						>
-							{data.assistant.name}
-						</button>
-					{/if}
-				</div>
-			</div>
-			{#if rightTab === 'assistant' && data.assistant.tabEnabled}
-				<AssistantPanel
-					scope={{ storyId: data.story.id, storyTitle: data.story.title }}
-					name={data.assistant.name}
-					muted={data.assistant.muted}
-					suggestions={assistantSuggestions}
-					initialMessages={data.assistantChat}
-					reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
-				/>
-			{:else if rightTab === 'session'}
-				<SessionPanel universeSlug={data.universe.slug} storyId={data.story.id} />
-			{:else if rightTab === 'history'}
-				{#if data.revisionTarget}
-					<RevisionHistory
-						entityType={data.revisionTarget.type}
-						entityId={data.revisionTarget.id}
-						revisions={data.revisionRows}
-						previewId={data.revisionPreview?.id}
-						previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
-					/>
-				{:else}
-					<div class="right-scroll">
-						<div class="empty">Select a character or place to see its history.</div>
-					</div>
-				{/if}
-			{:else}
-				<div class="right-scroll">
-					{#if data.selected && data.relationships.length > 0}
-						<div class="r-card">
-							<h5>Relationships</h5>
-							{#each data.relationships as relationship (relationship.id)}
-								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-								<a class="r-line" href={`${planPath}?entity=${relationship.otherId}`}>
-									<span class="r-line-left">
-										<span class="rel-label">{relationship.label}</span>
-										<span class="r-line-name">{relationship.otherName}</span>
-									</span>
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{/each}
-						</div>
-					{/if}
-					{#if data.selected && data.appearsIn.length > 0}
-						{@const scenesSeen = [...new Map(data.appearsIn.map((m) => [m.sceneId, m])).values()]}
-						<div class="r-card">
-							<h5>Appears in</h5>
-							{#each scenesSeen as sceneRef (sceneRef.sceneId)}
-								{@const mentions = data.appearsIn.filter((m) => m.sceneId === sceneRef.sceneId)}
-								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-								<a
-									class="r-line"
-									href={`${resolve('/stories/[id]', { id: data.story.slug })}?scene=${sceneRef.sceneId}`}
-								>
-									<span class="r-line-left">
-										<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
-									</span>
-									<span class="r-count">{mentions.length}</span>
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-								{#each mentions as mention, mi (mi)}
-									<div class="snippet">{mention.snippet}</div>
-								{/each}
-							{/each}
-						</div>
-					{:else if data.selected}
-						<div class="empty">
-							No mentions in this story yet. Mentions appear shortly after the prose is saved.
-						</div>
-					{:else}
-						<div class="empty">Mentions and relationships arrive here.</div>
-					{/if}
-					{#if data.selected}
-						<div class="r-card mentions-card">
-							<span>All mentions</span>
-							<span class="r-count">{data.mentionTotal}</span>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		</aside>
+		{#if rightTab}
+			<aside class="pane right">
+				<PanelStrip
+					{panels}
+					active={rightTab}
+					onSelect={(id) => (chosenPanel = id)}
+					label="Panels about this entry"
+				>
+					{#snippet panel(id)}
+						{#if id === 'assistant'}
+							<AssistantPanel
+								scope={{ storyId: data.story.id, storyTitle: data.story.title }}
+								name={data.assistant.name}
+								muted={data.assistant.muted}
+								suggestions={assistantSuggestions}
+								initialMessages={data.assistantChat}
+								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
+							/>
+						{:else if id === 'history'}
+							{#if data.revisionTarget}
+								<RevisionHistory
+									entityType={data.revisionTarget.type}
+									entityId={data.revisionTarget.id}
+									revisions={data.revisionRows}
+									previewId={data.revisionPreview?.id}
+									previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+								/>
+							{:else}
+								<div class="right-scroll">
+									<div class="empty-state tight">
+										<p class="empty-state-text">No versions of this entry yet.</p>
+									</div>
+								</div>
+							{/if}
+						{:else}
+							<div class="right-scroll">
+								{#if data.selected && data.relationships.length > 0}
+									<div class="r-card">
+										<h5>Relationships</h5>
+										{#each data.relationships as relationship (relationship.id)}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a class="r-line" href={`${planPath}?entity=${relationship.otherId}`}>
+												<span class="r-line-left">
+													<span class="rel-label">{relationship.label}</span>
+													<span class="r-line-name">{relationship.otherName}</span>
+												</span>
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+										{/each}
+									</div>
+								{/if}
+								{#if data.selected && data.appearsIn.length > 0}
+									{@const scenesSeen = [
+										...new Map(data.appearsIn.map((m) => [m.sceneId, m])).values()
+									]}
+									<div class="r-card">
+										<h5>Appears in</h5>
+										{#each scenesSeen as sceneRef (sceneRef.sceneId)}
+											{@const mentions = data.appearsIn.filter(
+												(m) => m.sceneId === sceneRef.sceneId
+											)}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a
+												class="r-line"
+												href={`${resolve('/stories/[id]', { id: data.story.slug })}?scene=${sceneRef.sceneId}`}
+											>
+												<span class="r-line-left">
+													<span class="r-line-name">{sceneRef.sceneTitle ?? 'Untitled scene'}</span>
+												</span>
+												<span class="r-count">{mentions.length}</span>
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+											{#each mentions as mention, mi (mi)}
+												<div class="snippet">{mention.snippet}</div>
+											{/each}
+										{/each}
+									</div>
+								{:else if data.selected}
+									<div class="empty-state tight">
+										<p class="empty-state-text">
+											No mentions in this story yet. Mentions appear shortly after the prose is
+											saved.
+										</p>
+									</div>
+								{/if}
+								{#if data.selected}
+									<div class="r-card mentions-card">
+										<span>All mentions</span>
+										<span class="r-count">{data.mentionTotal}</span>
+									</div>
+								{/if}
+							</div>
+							<p class="panel-note">
+								Where this entry turns up in the prose, and who it is connected to.
+							</p>
+						{/if}
+					{/snippet}
+				</PanelStrip>
+			</aside>
+		{/if}
 	</div>
 </div>
 

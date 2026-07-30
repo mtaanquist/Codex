@@ -2,7 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { scenes } from './db/schema.ts';
 import { listThreads } from './review.ts';
-import { reanchorRange } from '../review-anchor.ts';
+import { createAnchorMapper } from '../review-anchor.ts';
 import type { ExportReviewThread, ReviewLoader } from './export.ts';
 
 // Long selections are trimmed: the excerpt locates the thread, the scene
@@ -15,7 +15,7 @@ const EXCERPT_MAX = 240;
 // export builders does not drag in the review module.
 export function reviewLoader(db: Database): ReviewLoader {
 	return async (storyId) => {
-		const threads = await listThreads(db, storyId, reanchorRange);
+		const threads = await listThreads(db, storyId, createAnchorMapper().range);
 		if (threads.length === 0) return [];
 		const sceneRows = await db
 			.select({ id: scenes.id, title: scenes.title, bodyMd: scenes.bodyMd })

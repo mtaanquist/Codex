@@ -11,7 +11,6 @@
 		type ReviewSuggestion,
 		type ReviewThread
 	} from '$lib/review-ui';
-	import { pluralSuffix } from '$lib/format';
 
 	// A pending comment or edit the reviewer is composing, anchored to a
 	// selection (or to the whole scene when anchored is false).
@@ -72,22 +71,6 @@
 		threads.filter((t) => t.resolvedAt !== null).length +
 			suggestions.filter((s) => s.status !== 'pending').length
 	);
-	// Pending suggestions whose passage still matches, so "Accept all" has
-	// something to apply. Anchor-lost ones can only be rejected.
-	const nAcceptable = $derived(
-		suggestions.filter((s) => s.status === 'pending' && !s.anchorLost).length
-	);
-
-	function confirmAcceptAll(e: SubmitEvent) {
-		if (
-			!confirm(
-				`Accept all ${nAcceptable} suggested edit${pluralSuffix(nAcceptable)} in this scene? This updates the manuscript.`
-			)
-		) {
-			e.preventDefault();
-		}
-	}
-
 	const FILTERS = $derived([
 		{ id: 'all' as const, label: 'Open', n: nComments + nSugg },
 		{ id: 'resolved' as const, label: 'Done', n: nResolved }
@@ -176,7 +159,7 @@
 							{composer.anchored ? 'On the selected passage' : 'On the whole scene'}
 						</div>
 					</div>
-					<span class="rv-type-pill">
+					<span class="pill">
 						{#if composer.mode === 'suggest'}<Icon name="suggest" size={11} /> Edit{:else}<Icon
 								name="comment"
 								size={11}
@@ -200,8 +183,7 @@
 						name="replacement"
 						class="rv-draft-input"
 						aria-label="Suggested text"
-						bind:value={composerBody}
-					></textarea>
+						bind:value={composerBody}></textarea>
 					<div class="rv-draft-help">
 						The original stays struck through; your replacement is offered for the author to accept
 						or reject.
@@ -215,67 +197,54 @@
 						class="rv-draft-input"
 						placeholder="Add your comment..."
 						aria-label="Your comment"
-						bind:value={composerBody}
-					></textarea>
+						bind:value={composerBody}></textarea>
 				{/if}
 
 				<div class="rv-actions">
-					<button class="rv-btn solid" type="submit" disabled={!canSave}>
+					<button class="btn btn-sm btn-primary" type="submit" disabled={!canSave}>
 						{composer.mode === 'suggest' ? 'Save suggestion' : 'Comment'}
 					</button>
-					<button class="rv-btn ghost" type="button" onclick={onCloseComposer}>Cancel</button>
+					<button class="btn btn-sm btn-ghost" type="button" onclick={onCloseComposer}
+						>Cancel</button
+					>
 				</div>
 			</form>
 		</div>
 	{:else}
 		<div class="rv-panel-head">
-			<div class="rv-panel-title">
-				<span>Review</span>
-				<button class="rv-scene-comment" type="button" onclick={onStartSceneComment}>
-					<Icon name="comment-plus" size={13} /> Whole scene
+			<!-- The panel's own title, and under it the panel's own filter: two
+			     segmented controls in one pane are never mistaken for each other
+			     when only one of them sits under a heading. -->
+			<div class="panel-head">
+				<h2 class="panel-head-title">Comments</h2>
+				<button
+					class="btn btn-sm btn-secondary"
+					type="button"
+					style="margin-left: auto"
+					onclick={onStartSceneComment}
+				>
+					<Icon name="comment-plus" size={13} /> On the whole scene
 				</button>
 			</div>
-			<div class="rv-filters">
+			<div class="seg full" aria-label="Filter comments">
 				{#each FILTERS as f (f.id)}
 					<button
-						class="rv-filter"
+						class="seg-btn"
 						class:active={filter === f.id}
 						type="button"
 						onclick={() => setFilter(f.id)}
 					>
-						{f.label}<span class="rv-filter-n">{f.n}</span>
+						{f.label}<span class="seg-count">{f.n}</span>
 					</button>
 				{/each}
 			</div>
-			{#if role === 'author' && nAcceptable > 0}
-				<form
-					method="POST"
-					action="?/acceptAll"
-					use:enhance={() =>
-						async ({ result, update }) => {
-							if (result.type === 'success') {
-								const ids = result.data?.acceptedIds;
-								if (Array.isArray(ids)) {
-									onAccepted?.(ids.filter((id): id is string => typeof id === 'string'));
-								}
-							}
-							await update();
-						}}
-					onsubmit={confirmAcceptAll}
-				>
-					<input type="hidden" name="sceneId" value={scene.id} />
-					<button class="rv-acceptall" type="submit">
-						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{pluralSuffix(nAcceptable)}
-					</button>
-				</form>
-			{/if}
 		</div>
 
 		<div class="rv-panel-scroll" bind:this={scrollEl}>
 			{#if cards.length === 0}
-				<div class="rv-panel-empty">
-					<Icon name="check-circle" size={26} />
-					<div>
+				<div class="empty-state tight">
+					<div class="empty-state-icon"><Icon name="check-circle" size={22} /></div>
+					<p class="empty-state-text">
 						{#if filter === 'resolved'}
 							Nothing resolved in this scene yet.
 						{:else}
@@ -283,7 +252,7 @@
 								? ' or suggest an edit'
 								: ''}.
 						{/if}
-					</div>
+					</p>
 				</div>
 			{/if}
 
@@ -311,6 +280,11 @@
 					/>
 				{/if}
 			{/each}
+
+			<p class="panel-note">
+				Every comment and suggestion on this scene, from you and from anyone you invited. Select a
+				run of prose in the middle to add one.
+			</p>
 		</div>
 	{/if}
 </div>

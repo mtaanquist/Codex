@@ -5,6 +5,7 @@ import {
 	suggestionAuthor,
 	suggestionKind,
 	threadAuthor,
+	trimAnchorEdges,
 	type ReviewFilter,
 	type ReviewSuggestion,
 	type ReviewThread
@@ -66,16 +67,20 @@ export function buildReviewMarks(
 	threads: ReviewThread[],
 	suggestions: ReviewSuggestion[],
 	filter: ReviewFilter,
-	docLength: number,
+	docText: string,
 	focusedId: string | null = null
 ): DecorationSet {
+	const docLength = docText.length;
 	const ranges: { from: number; to: number; deco: Decoration }[] = [];
 	const markClass = (base: string, id: string) => (id === focusedId ? `${base} is-focused` : base);
 
 	for (const thread of threads) {
 		if (!commentInline(thread, filter)) continue;
-		const a = thread.anchor!;
-		if (a.start >= a.end || a.start < 0 || a.end > docLength) continue;
+		const raw = thread.anchor!;
+		if (raw.start >= raw.end || raw.start < 0 || raw.end > docLength) continue;
+		// Edge whitespace stays untinted; see trimAnchorEdges.
+		const a = trimAnchorEdges(docText, raw.start, raw.end);
+		if (a.start >= a.end) continue;
 		const color = authorColor(threadAuthor(thread));
 		ranges.push({
 			from: a.start,
@@ -106,9 +111,11 @@ export function buildReviewMarks(
 			continue;
 		}
 		if (a.start >= a.end || a.start < 0 || a.end > docLength) continue;
+		const t = trimAnchorEdges(docText, a.start, a.end);
+		if (t.start >= t.end) continue;
 		ranges.push({
-			from: a.start,
-			to: a.end,
+			from: t.start,
+			to: t.end,
 			deco: Decoration.mark({
 				class: markClass(`rv-mark rv-${kind === 'delete' ? 'del' : 'replace'}`, suggestion.id),
 				attributes: { 'data-rid': suggestion.id, style: `--auth:${color}` }
@@ -134,9 +141,11 @@ export function buildReviewMarks(
 			const a = thread.anchor;
 			if (thread.resolvedAt === null || !a || thread.anchorLost) continue;
 			if (a.start >= a.end || a.start < 0 || a.end > docLength) continue;
+			const t = trimAnchorEdges(docText, a.start, a.end);
+			if (t.start >= t.end) continue;
 			ranges.push({
-				from: a.start,
-				to: a.end,
+				from: t.start,
+				to: t.end,
 				deco: Decoration.mark({
 					class: markClass('rv-mark rv-resolved', thread.id),
 					attributes: { 'data-rid': thread.id }
@@ -147,9 +156,11 @@ export function buildReviewMarks(
 			const a = suggestion.anchor;
 			if (suggestion.status === 'pending' || !a || suggestion.anchorLost) continue;
 			if (a.start >= a.end || a.start < 0 || a.end > docLength) continue;
+			const t = trimAnchorEdges(docText, a.start, a.end);
+			if (t.start >= t.end) continue;
 			ranges.push({
-				from: a.start,
-				to: a.end,
+				from: t.start,
+				to: t.end,
 				deco: Decoration.mark({
 					class: markClass('rv-mark rv-resolved', suggestion.id),
 					attributes: { 'data-rid': suggestion.id }

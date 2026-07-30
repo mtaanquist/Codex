@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import DocsShell from '$lib/components/DocsShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -9,10 +10,13 @@
 	<title>Help - Codex</title>
 </svelte:head>
 
-<main class="docs">
-	<a class="back" href={resolve('/')}>Back to your library</a>
-	<h1>Help</h1>
-	<p class="lede">Short guides to the parts of Codex. Pick a topic to get started.</p>
+<DocsShell topics={data.topics}>
+	<div class="page-header">
+		<div>
+			<h1 class="page-title">Help</h1>
+			<p class="page-subtitle">Short guides to the parts of Codex. Pick a topic to get started.</p>
+		</div>
+	</div>
 	<ul class="topics">
 		{#each data.topics as topic (topic.slug)}
 			<li>
@@ -23,27 +27,9 @@
 			</li>
 		{/each}
 	</ul>
-</main>
+</DocsShell>
 
 <style>
-	.docs {
-		max-width: 44rem;
-		margin: 0 auto;
-		padding: 3rem 1.25rem 5rem;
-		color: var(--text);
-	}
-	.back {
-		font-size: 0.9rem;
-		color: var(--text-muted);
-	}
-	h1 {
-		font-family: var(--font-serif);
-		margin: 1rem 0 0.25rem;
-	}
-	.lede {
-		color: var(--text-muted);
-		margin: 0 0 1.75rem;
-	}
 	.topics {
 		list-style: none;
 		padding: 0;

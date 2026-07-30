@@ -277,8 +277,10 @@
 		/>
 
 		{#if scene.bodyMd.trim() === ''}
-			<div class="rv-empty-scene">
-				This scene has not been drafted yet, so there is nothing to review.
+			<div class="empty-state">
+				<p class="empty-state-text">
+					This scene has not been drafted yet, so there is nothing to review.
+				</p>
 			</div>
 		{:else}
 			<div class="review-prose" bind:this={proseEl}>

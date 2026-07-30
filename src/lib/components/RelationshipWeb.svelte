@@ -63,10 +63,12 @@
 </script>
 
 {#if links.length === 0}
-	<p class="web-empty">
-		No relationships yet. Add them on an entity's page in the Plan view, and the web draws itself
-		here.
-	</p>
+	<div class="empty-state tight">
+		<p class="empty-state-text">
+			No relationships yet. Add them on an entity's page in the Plan view, and the web draws itself
+			here.
+		</p>
+	</div>
 {:else}
 	<div class="web-filters">
 		{#each available as category (category)}
@@ -87,7 +89,9 @@
 		</select>
 	</div>
 	{#if placed.nodes.length === 0}
-		<p class="web-empty">Nothing matches these filters.</p>
+		<div class="empty-state tight">
+			<p class="empty-state-text">Nothing matches these filters.</p>
+		</div>
 	{:else}
 		<svg
 			class="web"
@@ -199,10 +203,5 @@
 		font-size: 12px;
 		fill: var(--text);
 		text-anchor: middle;
-	}
-	.web-empty {
-		color: var(--text-muted);
-		font-size: 13px;
-		margin: 0;
 	}
 </style>

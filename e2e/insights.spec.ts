@@ -1,21 +1,20 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The universe Insights view: progress stats and the world heatmap render
 // from a fresh universe's first words.
 test('insights: words written show up in progress and the heatmap', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Insights Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	const universeId = page.url().match(/universes\/([^/?]+)/)![1];
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('First Light');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('First Light');
@@ -37,28 +36,39 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await save;
 
 	// A character no scene mentions, for the cold end of the heatmap.
-	await page.goto(`/universes/${universeId}/plan`);
+	await gotoReady(page, `/universes/${universeId}/plan`);
 	await page.getByPlaceholder('New character name').fill('Heimdall');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.locator('.ent-row', { hasText: 'Heimdall' })).toBeVisible();
 
-	// A sibling pair, for the relationship web.
+	// A sibling pair, for the relationship web. Wait for Freya to land before
+	// opening the relationship form: its entity list is built from what the page
+	// knows, so getting there first leaves a dropdown with no Freya in it.
 	await page.getByPlaceholder('New character name').fill('Freya');
 	await page.getByRole('button', { name: 'Add character' }).click();
+	await expect(page.locator('.ent-row', { hasText: 'Freya' })).toBeVisible();
 	await page.locator('.ent-row', { hasText: 'Heimdall' }).click();
+	// The editor is keyed on the selected entity, so it remounts when the
+	// selection lands. Opening the relationship form before that happens gets it
+	// torn down mid-fill. Wait for Heimdall's own editor first.
+	await expect(page.locator('.detail-title-input')).toHaveValue('Heimdall');
 	await page.getByRole('button', { name: '+ Add relationship' }).click();
 	await page.getByLabel('Relation').selectOption({ label: 'sibling of' });
 	await page.getByLabel('Related entity').selectOption({ label: 'Freya' });
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(page.locator('.rel-row', { hasText: 'Freya' })).toBeVisible();
 
-	// The right pane's Session tab carries the short version, and links to
-	// the full view.
-	await page.getByRole('button', { name: 'Session' }).click();
-	await expect(page.locator('.sess-n').first()).not.toHaveText('0');
-	await expect(page.locator('.streak-day.today')).toBeVisible();
-	await page.getByRole('link', { name: 'All insights' }).click();
-	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
+	// Insights is a workspace view now: the ordinary three-pane shell, with the
+	// mode strip at the top of the left pane and no mode current, the page's own
+	// sections listed under it, and the Assistant alone in the right pane.
+	await gotoReady(page, `/universes/${universeId}/insights`);
+	await expect(page.getByRole('heading', { name: 'Insights', level: 1 })).toBeVisible();
+	await expect(page.locator('.mode-strip .seg-btn.active')).toHaveCount(0);
+	await expect(page.locator('.mode-note')).toContainText('no mode is current');
+	const contents = page.getByRole('navigation', { name: 'Sections of this page' });
+	await expect(contents.getByRole('link', { name: 'Writing sessions' })).toBeVisible();
+	// The mode strip goes back to the work.
+	await expect(page.locator('.mode-strip').getByRole('link', { name: 'Plan' })).toBeVisible();
 
 	// Progress counts the words; the story row carries them too.
 	await expect(page.locator('.admin-stat', { hasText: 'Total words' })).toContainText('5');
@@ -79,22 +89,28 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 
 	// The story plan lists the universe's other entities behind a fold.
-	await page.goto(`/stories/${storyRef}/plan`);
+	await gotoReady(page, `/stories/${storyRef}/plan`);
 	// The "In the universe" list starts open; the row is right there.
 	await page.locator('.uni-row', { hasText: 'Heimdall' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Heimdall');
 
-	// Hiding the streak on the account page empties the Session tab's
-	// streak card; the words stay. Restore it for the other specs.
-	await page.goto('/account');
+	// Writing sessions carries what the story pane's Session tab used to: today's
+	// words and the days written lately.
+	await gotoReady(page, `/universes/${universeId}/insights`);
+	const sessions = page.locator('#sessions');
+	await expect(sessions.getByRole('heading', { name: 'Writing sessions' })).toBeVisible();
+	await expect(sessions.locator('.week-row .week-day.today')).toBeVisible();
+
+	// Hiding the streak on the account page drops the week strip; the word
+	// counts stay. Restore it for the other specs.
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Writing streak').selectOption('hidden');
 	await expect(page.getByRole('status')).toHaveText('Saved.');
-	await page.goto(`/stories/${storyRef}/plan`);
-	await page.getByRole('button', { name: 'Session' }).click();
-	await expect(page.locator('.sess-n').first()).toBeVisible();
-	await expect(page.locator('.streak-row')).toHaveCount(0);
-	await page.goto('/account');
+	await gotoReady(page, `/universes/${universeId}/insights`);
+	await expect(page.locator('#sessions .admin-stat').first()).toBeVisible();
+	await expect(page.locator('.week-row')).toHaveCount(0);
+	await gotoReady(page, '/account');
 	await page.getByRole('link', { name: 'Editor' }).click();
 	await page.getByLabel('Writing streak').selectOption('shown');
 	await expect(page.getByRole('status')).toHaveText('Saved.');

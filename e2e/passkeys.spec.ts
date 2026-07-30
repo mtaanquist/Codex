@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
 
 // These journeys start signed out; skip the shared session.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -21,7 +22,7 @@ test('passkeys: register, sign in with one, remove it', async ({ page }) => {
 		}
 	});
 
-	await page.goto('/login');
+	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('passkey-e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();

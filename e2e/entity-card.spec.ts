@@ -1,21 +1,20 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The read-only entity card: hovering a mention and choosing "Open full
 // details" replaces the right column with the entity's card; Back returns
 // to the tabs.
 test('entity card: open from a mention, then back to the tabs', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const universeName = `Card Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Cards');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Cards');
@@ -47,10 +46,10 @@ test('entity card: open from a mention, then back to the tabs', async ({ page })
 	await expect(card.locator('.insp-name')).toHaveText('Veylan');
 	await expect(card.locator('.insp-open')).toBeVisible();
 	// The tabs are replaced while the card is open.
-	await expect(page.locator('.rtabs')).toHaveCount(0);
+	await expect(page.locator('.right-head .seg')).toHaveCount(0);
 
 	// Back returns to the tabbed panel.
 	await card.locator('.back-btn').click();
 	await expect(card).toHaveCount(0);
-	await expect(page.locator('.rtabs')).toBeVisible();
+	await expect(page.locator('.right-head .seg')).toBeVisible();
 });

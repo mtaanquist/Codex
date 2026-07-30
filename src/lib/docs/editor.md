@@ -2,7 +2,7 @@
 
 The editor is where you draft scenes. It saves on its own as you type, so there is no save button; the status near the top shows when your work was last stored.
 
-The gear in the top bar opens the story's settings: details, cover, page setup, publishing, review links, exports, and more. Clicking the story's title in the breadcrumb goes there too.
+The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
 ## Scenes and chapters
 
@@ -94,7 +94,7 @@ The History tab on the right keeps past versions of the open scene. Use "Checkpo
 
 ## The Assistant
 
-When you have set up the Assistant on your account page, an Assistant tab appears on the right alongside Reference, History, and Session. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
+When you have set up the Assistant on your account page, an Assistant panel appears on the right alongside Reference, History, and Notes. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
 
 To ask about a particular passage, select it in the editor, right-click, and choose Assistant, then "Ask the Assistant about this". The passage appears above the chat box as a quote; type your question and send, or select the x on the quote to drop it.
 

@@ -1,21 +1,20 @@
 import { expect, test } from '@playwright/test';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The story import round trip: write a story, download its export zip, and
 // import the zip back through the universe settings preview flow.
 test('story import: preview and import a story export zip', async ({ page }) => {
-	await page.goto('/');
+	await gotoReady(page, '/');
 
 	const stamp = Date.now();
 	const universeName = `Importland ${stamp}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
-	await page.goto('/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Roundtrip');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Roundtrip');
@@ -37,7 +36,7 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 	await page.keyboard.type('They paid in silver.');
 	await save;
 
-	await page.goto(`/stories/${storySlug}/plan`);
+	await gotoReady(page, `/stories/${storySlug}/plan`);
 	await page.getByPlaceholder('New character name').fill('Bram');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	const noteSave = page.waitForResponse(
@@ -52,19 +51,19 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 	// Prepare the export (built in the worker), wait for it to land, then feed
 	// it back through the import form.
 	const exportUrl = `/stories/${storySlug}/settings/export`;
-	await page.goto(exportUrl);
+	await gotoReady(page, exportUrl);
 	await page.getByRole('button', { name: 'Prepare markdown (.zip)' }).click();
 	const downloadLink = page.locator('.export-row a', { hasText: 'Download' }).first();
 	await expect(async () => {
 		// Navigate by GET; page.reload() here would re-submit the prepare POST.
-		await page.goto(exportUrl);
+		await gotoReady(page, exportUrl);
 		await expect(downloadLink).toBeVisible({ timeout: 1000 });
 	}).toPass({ timeout: 60_000 });
 	const archive = await page.request.get((await downloadLink.getAttribute('href'))!);
 	expect(archive.status()).toBe(200);
 	const zipBytes = await archive.body();
 
-	await page.goto(`/universes/importland-${stamp}`);
+	await gotoReady(page, `/universes/importland-${stamp}`);
 	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.locator('input[name="archive"]').setInputFiles({
 		name: 'roundtrip.zip',
