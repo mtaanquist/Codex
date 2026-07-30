@@ -17,9 +17,10 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// The preference forms (Display, Editor, Notifications, Page setup) save on
-	// change instead of with a button; see $lib/autosave-form. Flushing a
-	// focused field before navigation is page-level, across every section.
+	// The settings forms save on change instead of with a button; see
+	// $lib/autosave-form. One-shot actions (claim a handle, change the
+	// password, test the connection) keep their buttons. Flushing a focused
+	// field before navigation is page-level, across every section.
 	beforeNavigate(flushFocusedField);
 
 	type Section =

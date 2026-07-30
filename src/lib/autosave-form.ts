@@ -13,8 +13,12 @@ export const autosaveSubmit: SubmitFunction =
 	async ({ update }) =>
 		update({ reset: false });
 
-// Use as a form's onchange handler: any control change submits the form.
+// Use as a form's onchange handler: any control change submits the form. A
+// control marked data-no-autosave only changes the view (a filter box), so its
+// changes do not save.
 export function autosubmitForm(event: Event & { currentTarget: HTMLFormElement }) {
+	const control = event.target as HTMLElement | null;
+	if (control?.dataset && 'noAutosave' in control.dataset) return;
 	event.currentTarget.requestSubmit();
 }
 
