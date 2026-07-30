@@ -76,10 +76,7 @@ test('the public shell carries the brand, the tools and the footer', async ({ pa
 
 	// The footer brand is a lockup linking home, from any signed-out page.
 	await gotoReady(page, '/login');
-	await page
-		.getByRole('contentinfo')
-		.getByRole('link', { name: 'Codex', exact: true })
-		.click();
+	await page.getByRole('contentinfo').getByRole('link', { name: 'Codex', exact: true }).click();
 	await expect(page).toHaveURL('/');
 	await expect(page.getByRole('heading', { name: /Write the story/ })).toBeVisible();
 });
