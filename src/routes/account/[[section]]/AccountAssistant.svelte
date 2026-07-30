@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { enhance } from '$app/forms';
+	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { pluralSuffix } from '$lib/format';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -47,11 +49,15 @@
 	const savedTuning = $derived(
 		data.assistant.tuning as Record<string, { thinking?: boolean; effort?: string } | undefined>
 	);
-	const discoveredModels = $derived(
-		form?.scope === 'assistant-discover' && 'models' in form
-			? (form.models as DiscoveredModel[])
-			: []
-	);
+	// A discovery result must outlive the action data that carried it: with
+	// role picks saving on change, the next save would otherwise wipe the list
+	// after the first pick.
+	let discoveredModels = $state<DiscoveredModel[]>([]);
+	$effect(() => {
+		if (form?.scope === 'assistant-discover' && 'models' in form) {
+			discoveredModels = form.models as DiscoveredModel[];
+		}
+	});
 	let modelFilter = $state('');
 	const modelOptions = $derived.by(() => {
 		const filter = modelFilter.trim().toLowerCase();
@@ -242,7 +248,12 @@
 					and writes back in the tone you pick.
 				</p>
 			</header>
-			<form method="POST" action="?/saveAssistantIdentity">
+			<form
+				method="POST"
+				action="?/saveAssistantIdentity"
+				use:enhance={autosaveSubmit}
+				onchange={autosubmitForm}
+			>
 				<div class="field">
 					<label for="assistant_name">Name</label>
 					<input
@@ -274,7 +285,6 @@
 						error={form?.scope === 'assistant-identity' && form.message ? form.message : null}
 						success={form?.scope === 'assistant-identity' && form.saved ? 'Saved.' : null}
 					/>
-					<button type="submit" class="btn btn-primary">Save identity</button>
 				</div>
 			</form>
 		</div>
@@ -288,7 +298,12 @@
 					Pick a provider, or point at any OpenAI-compatible endpoint.
 				</p>
 			</header>
-			<form method="POST" action="?/saveAssistantEndpoint">
+			<form
+				method="POST"
+				action="?/saveAssistantEndpoint"
+				use:enhance={autosaveSubmit}
+				onchange={autosubmitForm}
+			>
 				<div class="field">
 					<label for="assistant_provider">Provider</label>
 					<select
@@ -371,7 +386,6 @@
 					<button type="submit" class="btn btn-ghost" formaction="?/testAssistant"
 						>Test connection</button
 					>
-					<button type="submit" class="btn btn-primary">Save endpoint</button>
 				</div>
 			</form>
 		</div>
@@ -386,7 +400,12 @@
 					defaults.
 				</p>
 			</header>
-			<form method="POST" action="?/saveAssistantModels">
+			<form
+				method="POST"
+				action="?/saveAssistantModels"
+				use:enhance={autosaveSubmit}
+				onchange={autosubmitForm}
+			>
 				{#if discoveredModels.length > 20}
 					<div class="field">
 						<label for="model_filter">Filter models</label>
@@ -394,6 +413,7 @@
 							id="model_filter"
 							type="search"
 							class="input"
+							data-no-autosave
 							bind:value={modelFilter}
 							placeholder="Type part of a model name"
 						/>
@@ -475,7 +495,6 @@
 					<button type="submit" class="btn btn-ghost" formaction="?/discoverAssistantModels"
 						>Discover models</button
 					>
-					<button type="submit" class="btn btn-primary">Save models</button>
 				</div>
 			</form>
 		</div>

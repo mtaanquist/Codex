@@ -5,6 +5,44 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+UX pass (2026-07-30, author-scoped after the design pass; steers taken up
+front: book-cover library grid, Notes to the right rail only, invites as an
+admin-set allowance of single-use codes, all designed in-repo). One branch per
+item off develop:
+
+- [x] Account auto-save (branch `feat/account-autosave`): the Profile and
+      Assistant sections drop their save buttons and save on field exit or
+      change, like the other four sections already did. One-shot actions
+      (claim handle, enable publishing, test connection, discover models,
+      everything in Security) keep their buttons. `autosubmitForm` learned to
+      skip `data-no-autosave` controls (the model filter box), a discovery
+      result now outlives the next action result, and removing a profile link
+      saves itself. account.spec reworked for blur-driven saves with
+      alternating values so repeated runs against a persistent database stay
+      deterministic.
+- [ ] Import modal: a shared Modal primitive and drop-zone file picker; the
+      two-step import (upload, preview collisions, confirm) moves into a
+      modal opened from the library and the universe settings page, so
+      importing no longer lands next to the danger zone.
+- [ ] Library covers: the landing page renders stories as 2:3 book covers
+      (uploaded cover or the SVG fallback), themed with tokens; the library
+      load learns cover_asset_id.
+- [ ] Notes to the right rail: Notes leaves the left mode strip (Write /
+      Plan / Review remain); the right-rail Notes panel becomes the way in
+      everywhere, including both Plan views (holding the open entity's
+      notes), with an open-in-full link to the Notes page. Plus quick note
+      capture: a floating jot affordance on a shortcut that saves to the
+      story's notes without leaving the editor (backlog item folded in).
+- [ ] User invites: admins grant a per-user allowance; users generate
+      single-use codes from a new account section; codes auto-approve the
+      invited account. Additive migration, admin control, help article.
+- [ ] Pen name on publish (backlog item folded in): publishing or claiming a
+      handle with no pen name set asks for one, display name as the offered
+      default.
+- [ ] Public page preview (author request 2026-07-30): the owner can open
+      their own `/@handle` page as a preview even while it is not public,
+      marked as visible only to them.
+
 Public surfaces (2026-07-30, branch `feat/design-public-pages`). The fourth and
 last design-pass brief's result, ported: everything a signed-out visitor sees.
 `src/lib/styles/public.css` is a new layer loaded last, and the `.landing-*`

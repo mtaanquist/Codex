@@ -12,10 +12,15 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	// The sidebar shows who is signed in.
 	await expect(page.getByRole('complementary').getByText('e2e@example.com')).toBeVisible();
 
-	// Profile is the default section; a fixed name keeps repeated runs idempotent.
-	await page.getByLabel('Display name').fill('E2E Tester');
-	await page.getByLabel('Pen name').fill('E. Tester');
-	await page.getByRole('button', { name: 'Save changes' }).click();
+	// Profile is the default section. Fields save when they lose focus; the
+	// name alternates between two values so a repeated run against a
+	// persistent database still changes it (an unchanged field fires no
+	// change event and has nothing to save). Both values keep the "Tester"
+	// substring the core-flow shelf assertion reads for.
+	const nameField = page.getByLabel('Display name');
+	const savedName = await nameField.inputValue();
+	await nameField.fill(savedName === 'E2E Tester' ? 'E2E Tester II' : 'E2E Tester');
+	await nameField.blur();
 	await expect(page.getByRole('status')).toContainText('Saved');
 
 	// The top-right avatar opens the account menu; Esc closes it.
@@ -101,21 +106,22 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await expect(status).toHaveText('Assistant on');
 	await expect(gated).not.toHaveClass(/off/);
 
-	// Identity saves a name and tone and reads them back after a reload. Exact
-	// labels: "Name" otherwise also matches "Display name" and "Pen name".
+	// Identity saves on change: picking a style submits the form, carrying the
+	// name typed just before it. selectOption always fires a change event, so
+	// this saves deterministically even on repeated runs. Exact labels: "Name"
+	// otherwise also matches "Display name" and "Pen name".
 	await page.getByLabel('Name', { exact: true }).fill('Margin');
 	await page.getByLabel('Style', { exact: true }).selectOption('concise');
-	await page.getByRole('button', { name: 'Save identity' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await page.reload();
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Margin');
 
-	// A provider preset prefills and locks the base URL and persists on save.
+	// A provider preset prefills and locks the base URL, and picking one saves
+	// at once.
 	await page.getByLabel('Provider', { exact: true }).selectOption('anthropic');
 	const presetUrl = page.getByLabel('Base URL', { exact: true });
 	await expect(presetUrl).toHaveValue('https://api.anthropic.com');
 	await expect(presetUrl).toHaveAttribute('readonly', '');
-	await page.getByRole('button', { name: 'Save endpoint' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await page.reload();
 	await expect(page.getByLabel('Provider', { exact: true })).toHaveValue('anthropic');
@@ -123,11 +129,20 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 		'https://api.anthropic.com'
 	);
 
-	// Back to a custom endpoint: the URL field frees up and saves what is typed.
+	// Back to a custom endpoint: switching the provider saves at once (with an
+	// empty URL), then typing the URL and leaving the field saves again. The
+	// reload below must not race that second save, so wait for its response;
+	// the "Saved." from the provider switch is already on screen.
 	await page.getByLabel('Provider', { exact: true }).selectOption('custom');
-	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
-	await page.getByRole('button', { name: 'Save endpoint' }).click();
 	await expect(page.getByRole('status')).toContainText('Saved');
+	const urlField = page.getByLabel('Base URL', { exact: true });
+	await urlField.fill('http://ollama.local:11434/v1');
+	const endpointSaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantEndpoint') && response.request().method() === 'POST'
+	);
+	await urlField.blur();
+	await endpointSaved;
 	await page.reload();
 	await expect(page.getByLabel('Base URL', { exact: true })).toHaveValue(
 		'http://ollama.local:11434/v1'
@@ -152,9 +167,15 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await gotoReady(page, '/account/assistant');
 	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
 	await expect(status).toHaveText('Assistant on');
-	await page.getByLabel('Base URL', { exact: true }).fill('http://ollama.local:11434/v1');
-	await page.getByRole('button', { name: 'Save endpoint' }).click();
-	await expect(page.getByRole('status')).toContainText('Saved');
+	// The first test normally leaves the custom Ollama endpoint saved; set it
+	// only when absent, since an unchanged field fires no change event.
+	const urlField = page.getByLabel('Base URL', { exact: true });
+	if ((await urlField.inputValue()) !== 'http://ollama.local:11434/v1') {
+		await page.getByLabel('Provider', { exact: true }).selectOption('custom');
+		await urlField.fill('http://ollama.local:11434/v1');
+		await urlField.blur();
+		await expect(page.getByRole('status')).toContainText('Saved');
+	}
 
 	// A throwaway story to open the editor against.
 	const universeName = `AI gate ${Date.now()}`;
