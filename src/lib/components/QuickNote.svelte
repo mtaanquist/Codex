@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { modLabel } from '$lib/keys';
 	import { quickNote, openQuickNote, closeQuickNote } from '$lib/quick-note.svelte';
 
 	// The quick-note jot: a small card floating over the editor, opened with
@@ -16,6 +18,10 @@
 		// The open scene; a note made while one is open attaches to it.
 		sceneId?: string | null;
 	} = $props();
+
+	// The platform's command modifier for the hint line; SSR says Ctrl.
+	let mod = $state<'Cmd' | 'Ctrl'>('Ctrl');
+	onMount(() => (mod = modLabel()));
 
 	let text = $state('');
 	let saving = $state(false);
@@ -115,7 +121,7 @@
 			<p class="qn-error" role="alert">{message}</p>
 		{/if}
 		<footer class="qn-foot">
-			<span class="qn-hint">Ctrl+Enter saves, Esc closes.</span>
+			<span class="qn-hint">{mod}+Enter saves, Esc closes.</span>
 			<button class="btn btn-sm btn-ghost" type="button" onclick={close}>Close</button>
 			<button
 				class="btn btn-sm btn-primary"

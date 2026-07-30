@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { altLabel, modLabel } from '$lib/keys';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { focusMode } from '$lib/focus-mode.svelte';
@@ -47,6 +49,14 @@
 	} from '$lib/editor-view';
 
 	let { data }: { data: PageData } = $props();
+
+	// The platform's modifier labels for shortcut hints; SSR says Ctrl/Alt.
+	let mod = $state<'Cmd' | 'Ctrl'>('Ctrl');
+	let alt = $state<'Option' | 'Alt'>('Alt');
+	onMount(() => {
+		mod = modLabel();
+		alt = altLabel();
+	});
 
 	// The writing surface's typography as CSS variables: the font and line
 	// spacing come from the writer's editor-appearance preferences; the default
@@ -877,7 +887,7 @@
 											</div>
 										{/each}
 										<div class="todo-hint">
-											Write a line starting with TODO:, or select prose and press Ctrl+Alt+M.
+											Write a line starting with TODO:, or select prose and press {mod}+{alt}+M.
 										</div>
 									</div>
 								{/if}
