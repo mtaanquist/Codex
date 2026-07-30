@@ -78,7 +78,7 @@
 </svelte:head>
 
 {#if !data.user}
-	<Landing signupOpen={data.signupOpen ?? true} />
+	<Landing mode={data.signupMode ?? 'approval'} />
 {:else}
 	{@render library()}
 {/if}

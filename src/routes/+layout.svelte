@@ -19,6 +19,9 @@
 	// Last of all: the secondary surfaces (right-pane panels, the reader, the
 	// creation menus), so they beat any screen-local skin they replace.
 	import '$lib/styles/surfaces.css';
+	// After the surfaces, because the signed-out pages reuse the reading pages'
+	// footer and the shared primitives and then set their own type on top.
+	import '$lib/styles/public.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';

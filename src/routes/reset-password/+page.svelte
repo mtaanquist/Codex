@@ -35,7 +35,9 @@
 					autocomplete="new-password"
 				/>
 			</div>
-			<button class="btn btn-primary" type="submit">Update password</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Update password</button>
+			</div>
 		</form>
 		<div class="auth-links">
 			<a href={resolve('/login')}>Back to sign in</a>

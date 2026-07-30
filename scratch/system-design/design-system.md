@@ -2,7 +2,9 @@
 
 Status: written 2026-07-29 from a full audit of `src/lib/styles/` and
 `src/lib/components/`; updated 2026-07-30 for the secondary surfaces pass
-(the right pane's panel strip, the reading pages, one creation pattern). This is the canonical reference for anyone (person or
+(the right pane's panel strip, the reading pages, one creation pattern) and
+again for the public surfaces pass (the public shell, the landing figure).
+This is the canonical reference for anyone (person or
 agent) building a new page or changing an existing one. It says which
 primitives are canon, which are legacy, and which patterns must not be
 copied. When the code and this sheet disagree, fix one of them; do not let
@@ -110,7 +112,7 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Page | `.page-shell` + `AppBar.svelte` | Library, print preview |
 | Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings |
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
-| Auth | `AuthShell.svelte` | Sign-in, sign-up, and every email-flow page |
+| Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, and every email-flow page |
 
 The workspace shell is a three-column grid: structure left (fixed 240px),
 work centre, reference right (fixed 280px). Sidebar widths are a settled
@@ -137,7 +139,7 @@ last, so it beats the bars it replaced) and rendered by `AppBar.svelte`:
 brand, then the path, then the tools, in that order, 52px, `--bg-elevated`,
 one bottom border.
 
-Three shells, one family. A shell may drop a tool; none reorders one, and
+Four shells, one family. A shell may drop a tool; none reorders one, and
 none adds a second bar.
 
 | Shell | Brand | Path | Tools |
@@ -145,6 +147,7 @@ none adds a second bar.
 | `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Theme, Help, Notifications, You |
 | `.appbar.guest` | lockup, not a link | the one story they were sent, plus a "Review only" pill | Theme, Help, "Reviewing as ..." |
 | `.appbar.reader` | links to Codex | the story and its author, as text | Theme, Help |
+| `.appbar.public` | links home | none at all: a signed-out visitor is not anywhere in the library | Theme, Help |
 
 The path and its crumb menus:
 
@@ -448,6 +451,48 @@ The outward face of the work, built from the same tokens as everything else.
   handle. The handle keeps appearing where it is an address: the URL, and the
   shelf header's "@handle - N stories published" line.
 
+### The public surfaces
+
+Everything a signed-out visitor sees, in `public.css`, loaded last.
+`.public-surface` wraps `AppBar` (`shell="public"`), the page's own main, and
+`ReaderFooter` (`shell="public"`). The landing page fills it with `.public-in`;
+`AuthShell.svelte` fills it with `.auth-main` and one `.auth-card`.
+
+- **The public bar is the fourth reduction of the one bar**, not a second
+  header: brand linking home, then theme and help, and no path, because a
+  visitor is not anywhere in the library. `AppBar` takes `crumbs` optional for
+  this shell and leaves out the rule and the path nav entirely.
+- **One footer serves both public faces.** `ReaderFooter` takes
+  `shell="reader" | "public"`. The public reduction says "Codex" rather than
+  "Written in Codex", names no author, and links to the handbook and Reading in
+  Codex. Every link on these pages points at an article that exists.
+- **The landing page shows the workspace rather than describing it.** `.ws-*`
+  is a stylised rendering of the three-pane shell drawn from the same tokens as
+  the product, so it is correct in dark, light and warm and stays crisp at any
+  zoom. Its tools are three plain squares on purpose: a public figure must not
+  invite a click on a control that is not there. The panes carry `--bg` and the
+  document carries `--bg-canvas`, exactly as the real ones do. It keeps all
+  three columns at every width inside `.ws-scroll`, which is focusable so a
+  keyboard can scroll it.
+- **`.posture-strip` is a real tablist**, the same contract as the right pane's
+  `PanelStrip`: one tab stop, arrows between tabs, Home and End to the ends,
+  `aria-selected` and `.active` set together, panels hidden with `hidden`.
+  Switching posture changes the path, the lists and the open panel, and nothing
+  about the chrome, which is the argument the figure is making.
+- The game-master posture names campaign sessions. That is a writer's own
+  content, not a product surface, so it does not breach the rule that the word
+  "Session" names nothing in the app.
+- **`.model-grid` states the model in sentences, on the page.** Four terms with
+  a full sentence each; no adjectives, and nothing that the figure does not
+  show or the sentences do not say.
+- **Prose links are underlined body colour**, as on the reading pages. Accent is
+  kept for the focus ring.
+- **What the page offers depends on the sign-up mode, not a boolean.**
+  `signupOffered()` in `$lib/signup-mode.ts` is the one answer: `open` and
+  `approval` offer the page (labelled "Create an account" in `open`), `invite`
+  and `none` do not, because a visitor with no code cannot finish one. Render
+  conditionally from the mode; there is no `[data-signup]` attribute switch.
+
 ### Empty states
 
 `.empty-state` is the primitive, defined in `primitives.css`: a centred
@@ -490,14 +535,14 @@ From CLAUDE.md, repeated here because every screen touches it:
 
 Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`,
 `pages.css`, `admin.css`, `editor.css`, `review.css`, `menus.css`,
-`primitives.css`, `chrome.css`, `surfaces.css`. All global and unscoped, so a
-later file silently wins a specificity tie; check for an existing definition
-before adding a class.
+`primitives.css`, `chrome.css`, `surfaces.css`, `public.css`. All global and
+unscoped, so a later file silently wins a specificity tie; check for an existing
+definition before adding a class.
 
 - `tokens.css` - tokens and base element rules only. No components.
 - `theme.css` - the workspace shell and its components (outline rows,
   panels, editor chrome, entity UI).
-- `pages.css` - the page/settings shells, buttons, forms, cards, landing.
+- `pages.css` - the page/settings shells, buttons, forms, cards.
 - `admin.css` - settings and admin surfaces (used by account pages too).
 - `editor.css` - CodeMirror-specific rules (mention underlines, hover
   cards, autocomplete popup).
@@ -506,9 +551,13 @@ before adding a class.
 - `primitives.css` - the families that had no single owner before: the modal,
   the empty state, the chip remove affordance, and the shared focus ring.
 - `chrome.css` - the one navigation bar, the mode strip's skin, `.side-nav`.
-- `surfaces.css` - loaded last, so it wins over any screen-local skin. The
-  right pane's panel strip and panel head, `.contents-nav`, the creation
-  menus and `.collection-empty`, and the reading pages.
+- `surfaces.css` - the right pane's panel strip and panel head,
+  `.contents-nav`, the creation menus and `.collection-empty`, and the reading
+  pages.
+- `public.css` - loaded last, so it wins over any screen-local skin. The
+  signed-out surfaces: the public shell, the hero, the `.ws-*` figure and its
+  posture strip, `.model-*`, and the `.auth-*` card every signed-out form sits
+  in.
 
 Component `<style>` blocks are for genuinely local layout only. If a rule
 could apply anywhere else, it belongs in the shared files. Never redefine a
@@ -584,6 +633,24 @@ them.
   `.panel-head`; `.rv-rhead` folded into `PanelStrip`'s `.right-head`.
 - `.card-add-stack` and `.card-add-import` (the dashed tile plus an import
   text link under every grid), folded into one `NewMenu` per collection.
+
+### Removed in the public surfaces pass
+
+- The whole `.landing-*` block: `.landing-surface`, `.landing-nav`,
+  `.landing-hero`, `.landing-hero-inner`, `.landing-kicker`, `.landing-title`,
+  `.landing-tagline`, `.landing-cta`, `.landing-features`, `.landing-feature`,
+  `.landing-feature-marker`, `.landing-feature-body`, `.landing-foot`. It was a
+  bespoke frame with its own nav and its own one-line footer, and the auth
+  pages borrowed it. `public.css` owns the signed-out surfaces now, over the one
+  bar and the reading pages' footer. Do not reintroduce a page-specific header
+  or footer for a public page.
+- `AuthShell`'s component-scoped `:global` block for `.auth-card`,
+  `.auth-title`, `.auth-lede`, `.auth-note` and `.auth-links`. Those classes
+  live in `public.css`, so the pages that use them and the pages that do not
+  read from one file.
+- The prototype's `[data-signup='closed']` attribute switch and its
+  `.signup-closed` / `[data-signup-only]` rules. That is scaffolding for static
+  HTML; Svelte renders from the mode.
 
 ### Still outstanding
 

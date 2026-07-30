@@ -14,11 +14,11 @@
 	import type { Crumb } from '$lib/chrome';
 
 	// The one navigation bar: brand, path, tools, in that order, on every page.
-	// Three shells share it. A shell may drop a tool; none reorders one, and
+	// Four shells share it. A shell may drop a tool; none reorders one, and
 	// none adds a second bar.
 	let {
 		shell = 'author',
-		crumbs,
+		crumbs = [],
 		pathLabel = 'Where you are',
 		saveStatus = 'idle',
 		helpTopic,
@@ -28,9 +28,10 @@
 		who
 	}: {
 		// author: the signed-in writer. guest: an invited reviewer.
-		// reader: the public reading pages.
-		shell?: 'author' | 'guest' | 'reader';
-		crumbs: Crumb[];
+		// reader: the public reading pages. public: the signed-out pages, which
+		// carry no path because a visitor is not anywhere in the library yet.
+		shell?: 'author' | 'guest' | 'reader' | 'public';
+		crumbs?: Crumb[];
 		pathLabel?: string;
 		saveStatus?: 'idle' | 'saving' | 'saved' | 'error';
 		// The help article this page is about; the tool opens it.
@@ -73,38 +74,52 @@
 	onMount(() => (mod = modLabel()));
 </script>
 
-<header class="appbar" class:guest={shell === 'guest'} class:reader={shell === 'reader'}>
+<header
+	class="appbar"
+	class:guest={shell === 'guest'}
+	class:reader={shell === 'reader'}
+	class:public={shell === 'public'}
+>
 	{#if shell === 'guest'}
 		<span class="appbar-brand">
 			<span class="logo"><Icon name="feather" size={15} /></span>
 			<span class="brand-name">Codex</span>
 		</span>
 	{:else}
-		<a class="appbar-brand" href={home} aria-label="Codex, your library">
+		<a
+			class="appbar-brand"
+			href={home}
+			aria-label={shell === 'public' ? 'Codex, home' : 'Codex, your library'}
+		>
 			<span class="logo"><Icon name="feather" size={15} /></span>
 			<span class="brand-name">Codex</span>
 		</a>
 	{/if}
-	<span class="appbar-rule"></span>
 
-	<!-- eslint-disable svelte/no-navigation-without-resolve (chrome.ts resolves every href) -->
-	<nav class="path" aria-label={pathLabel}>
-		{#each crumbs as crumb, index (index)}
-			{#if index > 0}
-				<span class="crumb-sep" aria-hidden="true"><Icon name="chevron" /></span>
-			{/if}
-			{#if crumb.kind === 'link'}
-				<a class="crumb" href={crumb.href}>{crumb.label}</a>
-			{:else if crumb.kind === 'text'}
-				<span class="crumb current" aria-current="page">{crumb.label}</span>
-			{:else}
-				<CrumbMenu label={crumb.label} current={crumb.current} groups={crumb.groups} />
-			{/if}
-		{/each}
-		{#if pill}<span class="pill">{pill}</span>{/if}
-		{#if byline}<span class="appbar-by">{byline}</span>{/if}
-	</nav>
-	<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	<!-- A signed-out visitor is not anywhere in the library, so the public bar
+	     carries no path and no rule to divide one from the brand. -->
+	{#if shell !== 'public'}
+		<span class="appbar-rule"></span>
+
+		<!-- eslint-disable svelte/no-navigation-without-resolve (chrome.ts resolves every href) -->
+		<nav class="path" aria-label={pathLabel}>
+			{#each crumbs as crumb, index (index)}
+				{#if index > 0}
+					<span class="crumb-sep" aria-hidden="true"><Icon name="chevron" /></span>
+				{/if}
+				{#if crumb.kind === 'link'}
+					<a class="crumb" href={crumb.href}>{crumb.label}</a>
+				{:else if crumb.kind === 'text'}
+					<span class="crumb current" aria-current="page">{crumb.label}</span>
+				{:else}
+					<CrumbMenu label={crumb.label} current={crumb.current} groups={crumb.groups} />
+				{/if}
+			{/each}
+			{#if pill}<span class="pill">{pill}</span>{/if}
+			{#if byline}<span class="appbar-by">{byline}</span>{/if}
+		</nav>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/if}
 
 	<div class="appbar-tools">
 		{#if saveStatus !== 'idle'}

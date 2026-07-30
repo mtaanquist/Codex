@@ -26,7 +26,9 @@
 	{:else if data.valid}
 		<p class="auth-note">Press the button to confirm this email address for your account.</p>
 		<form method="POST">
-			<button class="btn btn-primary" type="submit">Confirm my email</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Confirm my email</button>
+			</div>
 		</form>
 	{:else}
 		<p class="form-error auth-note" role="alert">

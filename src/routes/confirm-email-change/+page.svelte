@@ -25,7 +25,9 @@
 			keeps its current address.
 		</p>
 		<form method="POST">
-			<button class="btn btn-primary" type="submit">Confirm the change</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Confirm the change</button>
+			</div>
 		</form>
 	{:else}
 		<p class="form-error auth-note" role="alert">

@@ -5,6 +5,30 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Public surfaces (2026-07-30, branch `feat/design-public-pages`). The fourth and
+last design-pass brief's result, ported: everything a signed-out visitor sees.
+`src/lib/styles/public.css` is a new layer loaded last, and the `.landing-*`
+block is deleted from `pages.css`. One public shell now covers the landing
+page, sign-in, sign-up and every page an email link lands on: `.public-surface`
+over `AppBar` with a fourth reduction (`shell="public"`: brand linking home,
+theme and help, no path) and `ReaderFooter` with a public reduction, so
+`AuthShell` is the card inside that shell rather than a frame of its own. The
+landing page shows the workspace instead of describing it: a `.ws-*` figure
+drawn from tokens, correct in all three themes, with a real three-way posture
+tablist (Novelist, Worldbuilder, Game master) carrying the same keyboard
+contract as `PanelStrip`, then four model statements in sentences and the
+reading pages' footer. The owner's ratified amendments: sign-in keeps email and
+password, the passkey button and forgot-password (no magic link); sign-up keeps
+display name, email, password and the invite code with every existing mode and
+sent state (no "what are you working on" field); and the open/closed switch is
+now mode-aware through `signupOffered()` in the new `$lib/signup-mode.ts`,
+which offers sign-up under approval and open but not under invite, where a
+codeless visitor could not finish one. New help article
+`src/lib/docs/selfhosting.md`, so every handbook link on these pages reaches an
+article that exists. Deferred to the backlog: magic-link sign-in, the sign-up
+work note, a public searchable library, an instance-role setting, and an
+offline desktop app.
+
 Secondary surfaces (2026-07-30, branch `feat/secondary-surfaces`). The third
 design-pass brief's result, ported. The right pane is now one model: five
 panels (Reference, Comments, Assistant, History, Notes) in one order with one
@@ -1571,6 +1595,46 @@ From the design pass click-throughs (2026-07-30):
       realising. When a story is published (or a handle claimed) and the
       account has no pen name, ask for one - offering the display name as
       the default - so the fallback is always a choice the author made.
+- [ ] Magic-link sign-in as a secondary option (2026-07-30). The public
+      surfaces design proposed "Send me a sign-in link instead" under the
+      password field. It did not ship: there is no backend for it, and the
+      owner does not want it primary, because a link in an inbox defeats a
+      password manager. If it comes back it is a secondary route beside the
+      password and the passkey, and it needs the token, the mail, and the
+      rate limiting to go with it.
+- [ ] Sign-up "What are you working on?" note for approval mode
+      (2026-07-30). The design put a one-line textarea on the sign-up form
+      with the hint that a person reads it, which is true and worth saying.
+      It did not ship: storing it needs an additive migration, and it is
+      only useful if the admin approval panel shows it beside the account
+      it belongs to. Both halves or neither.
+- [ ] A public searchable library of published stories (2026-07-30), the
+      way Archive of Our Own works: browse and search what people have
+      published, rather than needing an author's handle or a direct link.
+      Service-only - a self-hosted Codex has nothing to index but its own
+      handful of accounts - so it belongs with the instance-role setting
+      below. Today's design deliberately has no site-wide directory (see
+      design.md), so this is a design decision to make, not just a feature
+      to build. Its own pass.
+- [ ] An "instance role" setting (2026-07-30), personal or managed
+      service, alongside the sign-up mode in app_settings. It would decide
+      how the landing page presents itself: a private self-hosted Codex
+      could show a quieter door, hero and sign-in only, while the managed
+      service shows the full pitch. It also gates copy only the service
+      can honestly say - "let us run it for you", pricing, how long
+      approval takes - and it is the natural anchor for the public library
+      above, which is service-only. Not to build now; recorded so the
+      landing work does not have to be redone when the service exists.
+- [ ] A standalone offline desktop app (2026-07-30), probably Electron:
+      run the built SvelteKit server locally against PGlite, which Drizzle
+      supports, so the Postgres schema and queries carry over unchanged;
+      assets on the filesystem instead of S3; background jobs in-process
+      instead of pg-boss. No sign-in, no accounts and no email at all
+      locally - your Codex lives on this machine. Signing in would only
+      matter for a later feature that connects the desktop app to a hosted
+      Codex and syncs when the network comes back (writing through a
+      flight, reconciling on landing), and that sync is the hard design
+      problem, its own pass. Not roadmap work now.
 
 From first real use (2026-06-03):
 

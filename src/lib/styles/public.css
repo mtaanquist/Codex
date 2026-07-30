@@ -1,0 +1,613 @@
+/* ===========================================================================
+   PUBLIC SURFACES - the landing page and every signed-out page.
+
+   One shell for everything a signed-out visitor sees: the brand lockup, the
+   theme tool, the help tool, and the reading pages' footer. It is the fourth
+   reduction of the one bar (.appbar.public), so sign-in, sign-up and the
+   landing page are visibly the same surface as each other and as the product
+   behind them.
+
+   Three things this layer exists to do, in order of the space they take:
+   1. show the workspace (.ws-*), drawn from tokens rather than a screenshot,
+      so it is correct in dark, light and warm;
+   2. hold one posture switch over that one figure (.posture-strip), because
+      the novelist, the worldbuilder and the game master use the same tool;
+   3. state the model in full sentences (.model-*), on the page, not the footer.
+
+   It supersedes the .landing-* block that lived in pages.css.
+   =========================================================================== */
+
+.public-surface {
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg);
+}
+.public-main {
+	flex: 1;
+}
+.public-in {
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 0 var(--space-8);
+}
+/* Links in public prose are underlined body colour, as on the reading pages:
+   accent text on the light and warm backgrounds falls short of 4.5:1. */
+.public-surface a:not(.btn):not(.appbar-brand):not(.icon-btn) {
+	color: var(--text);
+	text-decoration: underline;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 2px;
+}
+.public-surface a:not(.btn):not(.appbar-brand):not(.icon-btn):hover {
+	text-decoration-color: currentColor;
+}
+.public-surface a:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* ---- the public shell: brand, then the two tools it can honour ---- */
+.appbar.public .brand-name {
+	font-size: var(--text-lg);
+}
+
+/* ============ HERO ============ */
+.hero {
+	padding: clamp(40px, 6vw, 76px) 0 0;
+}
+.hero-title {
+	font-family: var(--font-serif);
+	font-size: clamp(36px, 5vw, 60px);
+	font-weight: 600;
+	line-height: 1.04;
+	letter-spacing: -0.025em;
+	margin: 0;
+	max-width: 21ch;
+	text-wrap: balance;
+}
+.hero-title em {
+	font-style: italic;
+	color: var(--text-muted);
+}
+.hero-lede {
+	font-family: var(--font-content);
+	font-size: var(--text-prose);
+	line-height: 1.65;
+	color: var(--text-muted);
+	max-width: 56ch;
+	margin: var(--space-6) 0 0;
+	text-wrap: pretty;
+}
+.hero-cta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-3);
+	margin-top: var(--space-8);
+}
+.hero-cta .btn {
+	height: 44px;
+	padding: 0 22px;
+	font-size: var(--text-lg);
+}
+
+/* ============ THE FIGURE: one workspace, three postures ============ */
+.figure {
+	margin-top: var(--space-10);
+}
+.figure-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-3) var(--space-5);
+	margin-bottom: var(--space-4);
+}
+.figure-label {
+	font-size: var(--text-micro);
+	font-weight: 650;
+	letter-spacing: 0.11em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.posture-strip {
+	flex: none;
+}
+.figure-cap {
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.6;
+	color: var(--text-muted);
+	max-width: 74ch;
+	margin: var(--space-4) 0 0;
+	text-wrap: pretty;
+}
+.figure-cap b {
+	color: var(--text);
+	font-weight: 600;
+}
+/* The figure sits in its own scroll container, so it keeps all three columns at
+   narrow widths and a keyboard can reach and scroll it. */
+.ws-scroll {
+	overflow-x: auto;
+}
+.ws-scroll:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+	border-radius: var(--radius-lg);
+}
+
+/* ---- the stylised workspace ---- */
+.ws {
+	min-width: 920px;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-lg);
+	background: var(--bg);
+	overflow: hidden;
+	box-shadow: var(--shadow);
+}
+.ws-bar {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	height: 38px;
+	padding: 0 var(--space-3);
+	background: var(--bg-elevated);
+	border-bottom: 1px solid var(--border);
+}
+.ws-logo {
+	width: 18px;
+	height: 18px;
+	flex: none;
+	border-radius: 5px;
+	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
+	display: grid;
+	place-items: center;
+	color: var(--accent-contrast);
+}
+.ws-logo svg {
+	width: 11px;
+	height: 11px;
+}
+.ws-brand {
+	font-size: var(--text-sm);
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+.ws-rule {
+	width: 1px;
+	height: 14px;
+	background: var(--border);
+}
+.ws-path {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	font-size: var(--text-meta);
+	color: var(--text-muted);
+}
+.ws-path .now {
+	color: var(--text);
+	font-weight: 600;
+}
+.ws-path .sep {
+	color: var(--text-faint);
+}
+.ws-tools {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.ws-tool {
+	width: 16px;
+	height: 16px;
+	border-radius: 5px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+}
+.ws-body {
+	display: grid;
+	grid-template-columns: 210px 1fr 268px;
+	min-height: 404px;
+}
+.ws-col {
+	min-width: 0;
+	padding: var(--space-3);
+	background: var(--bg);
+}
+.ws-col + .ws-col {
+	border-left: 1px solid var(--border);
+}
+.ws-col.centre {
+	position: relative;
+	overflow: hidden;
+	padding: var(--space-6) var(--space-6) 0;
+	background: var(--bg-canvas);
+}
+/* The centre is a document, so it runs past the bottom of the figure rather
+   than stopping on a tidy line. */
+.ws-fade {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 56px;
+	background: linear-gradient(to bottom, transparent, var(--bg-canvas));
+}
+
+/* mini segmented strips: the mode strip and the panel strip, always four wide */
+.ws-seg {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 2px;
+	padding: 2px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	border-radius: 7px;
+}
+.ws-seg span {
+	text-align: center;
+	padding: 3px 2px;
+	border-radius: 5px;
+	font-size: var(--text-micro);
+	font-weight: 550;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ws-seg span.on {
+	background: var(--bg-elevated);
+	color: var(--text);
+	font-weight: 650;
+	box-shadow: 0 1px 2px var(--pane-shadow);
+}
+.ws-filter {
+	margin-top: 8px;
+	height: 22px;
+	border-radius: 6px;
+	background: var(--bg-inset);
+	border: 1px solid var(--border);
+	display: flex;
+	align-items: center;
+	padding: 0 7px;
+	font-size: var(--text-micro);
+	color: var(--text-faint);
+}
+.ws-label {
+	display: flex;
+	align-items: center;
+	margin: var(--space-4) 0 var(--space-1);
+	font-size: var(--text-micro);
+	font-weight: 650;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.ws-label .n {
+	margin-left: auto;
+	letter-spacing: 0;
+	text-transform: none;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+.ws-row {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 4px 6px;
+	border-radius: 6px;
+	font-size: var(--text-meta);
+	color: var(--text-muted);
+	min-width: 0;
+}
+.ws-row .t {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.ws-row .n {
+	margin-left: auto;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+	flex: none;
+}
+.ws-row.head {
+	color: var(--text);
+	font-weight: 600;
+}
+.ws-row.on {
+	background: var(--bg-active);
+	color: var(--text);
+	font-weight: 600;
+}
+.ws-row.sub {
+	padding-left: 18px;
+}
+.ws-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 99px;
+	flex: none;
+	background: var(--text-faint);
+}
+.ws-chip {
+	width: 15px;
+	height: 15px;
+	flex: none;
+	border-radius: 4px;
+	display: grid;
+	place-items: center;
+	font-size: 9px;
+	font-weight: 700;
+	color: var(--accent-contrast);
+}
+
+/* centre: the document itself */
+.ws-kicker {
+	font-size: var(--text-micro);
+	font-weight: 650;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.ws-title {
+	font-family: var(--font-serif);
+	font-size: 24px;
+	font-weight: 600;
+	letter-spacing: -0.015em;
+	line-height: 1.2;
+	margin: 6px 0 var(--space-4);
+}
+.ws-prose {
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.7;
+	color: var(--text);
+	max-width: 46ch;
+}
+.ws-prose p {
+	margin: 0 0 var(--space-4);
+	text-wrap: pretty;
+}
+/* Anything the page mentions that also has an entry: the same underline the
+   editor uses, so the link between the two columns is visible in the figure. */
+.ws-ref {
+	text-decoration: underline;
+	text-decoration-color: var(--accent-line);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 2px;
+}
+
+/* right: a panel with a subject */
+.ws-card {
+	margin-top: var(--space-3);
+	padding: var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--bg-card);
+}
+.ws-card-title {
+	font-size: var(--text-sm);
+	font-weight: 650;
+}
+.ws-note {
+	margin: var(--space-2) 0 0;
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--bg-card);
+	font-size: var(--text-micro);
+	line-height: 1.55;
+	color: var(--text);
+	text-wrap: pretty;
+}
+.ws-hint {
+	margin: var(--space-3) 0 0;
+	font-size: var(--text-micro);
+	line-height: 1.5;
+	color: var(--text-faint);
+	text-wrap: pretty;
+}
+
+/* ============ THE MODEL, STATED ============ */
+.model {
+	margin-top: var(--space-10);
+	padding-top: var(--space-10);
+	border-top: 1px solid var(--border);
+}
+.model-head {
+	font-family: var(--font-serif);
+	font-size: clamp(24px, 3vw, 33px);
+	font-weight: 600;
+	line-height: 1.18;
+	letter-spacing: -0.018em;
+	margin: 0;
+	max-width: 30ch;
+}
+.model-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 1px;
+	margin-top: var(--space-6);
+	background: var(--border);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	overflow: hidden;
+}
+.model-item {
+	background: var(--bg);
+	padding: var(--space-5);
+}
+.model-term {
+	font-size: var(--text-base);
+	font-weight: 650;
+	letter-spacing: -0.005em;
+}
+.model-body {
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.62;
+	color: var(--text-muted);
+	margin: var(--space-2) 0 0;
+	max-width: 46ch;
+	text-wrap: pretty;
+}
+.close-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-4) var(--space-6);
+	margin: var(--space-8) 0 var(--space-10);
+}
+.close-note {
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.6;
+	color: var(--text-muted);
+	margin: 0;
+	max-width: 48ch;
+	text-wrap: pretty;
+}
+.close-row .cta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-3);
+}
+
+/* ============ AUTH PAGES ============
+   The card every signed-out form sits in: sign-in and sign-up, and the pages
+   the email links land on. */
+.auth-main {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-10) var(--space-6);
+}
+.auth-card {
+	width: 100%;
+	max-width: 404px;
+	padding: var(--space-8);
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow);
+}
+.auth-title {
+	font-family: var(--font-serif);
+	font-size: 27px;
+	font-weight: 600;
+	line-height: 1.2;
+	letter-spacing: -0.015em;
+	margin: 0;
+}
+.auth-sub {
+	font-family: var(--font-content);
+	font-size: var(--text-prose-sm);
+	line-height: 1.6;
+	color: var(--text-muted);
+	margin: var(--space-2) 0 var(--space-6);
+	text-wrap: pretty;
+}
+.auth-card form {
+	display: flex;
+	flex-direction: column;
+}
+.auth-card .field:last-of-type {
+	margin-bottom: 0;
+}
+.auth-card .btn {
+	justify-content: center;
+	width: 100%;
+	height: 40px;
+}
+.auth-actions {
+	margin-top: var(--space-6);
+}
+.auth-alt {
+	margin: var(--space-5) 0 0;
+	padding-top: var(--space-5);
+	border-top: 1px solid var(--border);
+	font-size: var(--text-base);
+	line-height: 1.55;
+	color: var(--text-muted);
+	text-wrap: pretty;
+}
+.auth-aside {
+	margin: var(--space-4) auto 0;
+	max-width: 404px;
+	font-size: var(--text-sm);
+	line-height: 1.55;
+	color: var(--text-faint);
+	text-align: center;
+	text-wrap: pretty;
+}
+
+/* The pages an email link lands on carry a sentence and sometimes one button
+   rather than a form: same card, same voice as the two forms above. */
+.auth-lede {
+	font-size: var(--text-base);
+	line-height: 1.6;
+	color: var(--text-muted);
+	margin: 0 0 var(--space-5);
+	text-wrap: pretty;
+}
+.auth-note {
+	font-size: var(--text-base);
+	line-height: 1.6;
+	color: var(--text-muted);
+	margin: var(--space-5) 0 0;
+	text-wrap: pretty;
+}
+/* .auth-note is the muted body colour, so an error that is also a note has to
+   say danger louder than the class beside it. */
+.auth-card .form-error {
+	color: var(--danger);
+}
+/* A second action under the first (the passkey button under Sign in) sits
+   closer than the gap that lifts the first off the fields. */
+.auth-actions + .auth-actions {
+	margin-top: var(--space-3);
+}
+.auth-links {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-2);
+	margin: var(--space-5) 0 0;
+	padding-top: var(--space-5);
+	border-top: 1px solid var(--border);
+	font-size: var(--text-base);
+}
+/* One of these is a button (swapping the two-factor code for a recovery code),
+   so it has to look like the links beside it. */
+.auth-links button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 2px;
+}
+.auth-links button:hover {
+	text-decoration-color: currentColor;
+}
+.auth-links button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+@media (max-width: 880px) {
+	.public-in {
+		padding: 0 var(--space-5);
+	}
+	.model-grid {
+		grid-template-columns: 1fr;
+	}
+}

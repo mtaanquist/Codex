@@ -44,9 +44,8 @@
 	<title>Sign in - Codex</title>
 </svelte:head>
 
-<AuthShell title="Sign in">
+<AuthShell title="Sign in" sub="Back to the desk.">
 	<form method="POST">
-		<p class="auth-lede">Sign in with your email and password.</p>
 		{#if form?.message}
 			<p class="form-error" role="alert">{form.message}</p>
 		{/if}
@@ -72,32 +71,52 @@
 				required
 				autocomplete="current-password webauthn"
 			/>
+			<p class="field-hint">
+				<a href={resolve('/forgot-password')}>Forgot your password?</a>
+			</p>
 		</div>
-		<button class="btn btn-primary" type="submit">Sign in</button>
+		<div class="auth-actions">
+			<button class="btn btn-primary" type="submit">Sign in</button>
+		</div>
 	</form>
 	{#if passkeyError}
 		<p class="form-error auth-note" role="alert">{passkeyError}</p>
 	{/if}
-	<p class="auth-note">
+	<div class="auth-actions">
 		<button
-			class="btn btn-secondary passkey"
+			class="btn btn-secondary"
 			type="button"
 			disabled={passkeyBusy}
 			onclick={signInWithPasskey}
 		>
 			{passkeyBusy ? 'Waiting for your device...' : 'Use a passkey instead'}
 		</button>
-	</p>
-	<div class="auth-links">
-		<a href={resolve('/forgot-password')}>Forgot password?</a>
-		{#if data.signupOpen}
-			<a href={resolve('/signup')}>Create an account</a>
-		{/if}
 	</div>
-</AuthShell>
 
-<style>
-	.passkey {
-		width: 100%;
-	}
-</style>
+	<!-- What to do without an account depends on who can make one here. -->
+	{#if data.signupMode === 'open'}
+		<p class="auth-alt">
+			No account yet? <a href={resolve('/signup')}>Create an account</a> and start writing.
+		</p>
+	{:else if data.signupMode === 'approval'}
+		<p class="auth-alt">
+			No account yet? Accounts here open by invitation while the work is young.
+			<a href={resolve('/signup')}>Request access</a> and you will get an answer rather than a place in
+			a queue.
+		</p>
+	{:else if data.signupMode === 'invite'}
+		<p class="auth-alt">
+			No account yet? Accounts here open by invitation. Anyone already writing here can invite you,
+			so ask them for a code.
+		</p>
+	{:else}
+		<p class="auth-alt">
+			This Codex is not taking new accounts at the moment. Ask the person who runs it for access.
+		</p>
+	{/if}
+
+	{#snippet aside()}
+		Running Codex yourself? This is the same page on your own computer. The handbook covers
+		<a href={resolve('/docs/[topic]', { topic: 'selfhosting' })}>self-hosting</a>.
+	{/snippet}
+</AuthShell>
