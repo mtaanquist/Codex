@@ -13,6 +13,7 @@ import {
 	scenes
 } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
+import { listStoryNotes } from '$lib/server/notes';
 import { readingPageRef } from '$lib/server/publish';
 import { planActions } from '$lib/server/plan-actions';
 import {
@@ -213,6 +214,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		universe,
 		reading: await readingPageRef(db, story.id),
 		...lists,
+		// The right pane's Notes panel, the way into the Notes page.
+		storyNotes: await listStoryNotes(db, story.id, locals.user!.id),
 		selected,
 		selectedKind,
 		assetsConfigured: (await effectiveAssetConfig(db)) !== null,

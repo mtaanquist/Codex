@@ -72,7 +72,7 @@ The relationship web draws every recorded relationship as a map: entities are do
 
 ## Notes
 
-The Notes view holds freeform writing notes: ideas, threads to pull, anything that does not belong to one character or place. Open it from the Notes button at the top of the sidebar, in a story or a universe.
+The Notes view holds freeform writing notes: ideas, threads to pull, anything that does not belong to one character or place. Open it from the Notes panel on the right of the Write and Plan views: select a note there, or "All notes", to land on the full Notes page. The command palette also jumps there with "Story notes" and "Universe notes".
 
 A note in a story belongs to that story. A note in a universe belongs to the whole universe and shows in every story under it, under "From the universe" in the story's note list; open one there to jump to it and edit it in the universe view. Select "New note" to make one, give it a title, and write in the body. Notes save on their own as you type.
 
@@ -80,7 +80,9 @@ Pin the notes you reach for often with the Pin button above a note; pinned notes
 
 If you run a campaign, a note per sitting works well: keep the running log in a story note, and world facts the players have learned in a universe note. The right pane of the Notes view keeps past versions of the open note, the same way it does for scenes and entries; a note mentions nothing and has no comments, so History is the only panel there.
 
-A note can also be attached to one scene. In the editor, open the Notes panel on the right and select "New note on this scene": the note is made, attached, and opened in the Notes view for you to write. From then on it shows in that scene's Notes panel whenever the scene is open, and in the story's note list like any other note.
+A note can also be attached to one scene. In the editor, open the Notes panel on the right and select "New note on this scene": the note is made, attached, and opened in the Notes view for you to write. From then on it shows at the top of the Notes panel whenever the scene is open, and in the story's note list like any other note.
+
+To jot something down without leaving the editor, press Ctrl+Alt+N (Cmd+Alt+N on a Mac) or run "Quick note" from the command palette. A small card opens over the editor: write the thought, then Ctrl+Enter or "Save note" files it with the story's notes - attached to the open scene when there is one - and puts you back where you were. The first line becomes the note's title.
 
 ## History
 

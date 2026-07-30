@@ -79,7 +79,7 @@
 		book?: { title: string; subtitle: string | null } | null;
 		canSuggest?: boolean;
 		// The mode switcher links, shown on the author side only.
-		seg?: { writeHref: string; planHref: string; notesHref: string } | null;
+		seg?: { writeHref: string; planHref: string } | null;
 		// Entity mention data for the centre's highlights and quick cards.
 		entities?: MentionEntity[];
 		mentionMembers?: string[];
@@ -431,8 +431,8 @@
 				<ModeSwitcher
 					active="review"
 					hrefs={seg
-						? { write: seg.writeHref, plan: seg.planHref, notes: seg.notesHref }
-						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
+						? { write: seg.writeHref, plan: seg.planHref }
+						: { write: 'disabled', plan: 'disabled' }}
 					note={seg ? undefined : GUEST_MODE_NOTE}
 				/>
 				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />

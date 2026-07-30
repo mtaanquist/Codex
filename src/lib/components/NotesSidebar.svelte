@@ -3,6 +3,7 @@
 	import SidebarSearch from './SidebarSearch.svelte';
 	import type { NoteListItem } from '$lib/wire-types';
 	import ModeSwitcher from './ModeSwitcher.svelte';
+	import { NOTES_MODE_NOTE } from '$lib/chrome';
 
 	// The left pane of a Notes view, shared by the story and universe scopes.
 	// Note links keep the current page and swap the ?note= query; the new-note
@@ -49,10 +50,12 @@
 
 <aside class="pane left">
 	<div class="left-head">
+		<!-- The Notes page sits beside the modes, so nothing is lit and one
+		     line says how you got here. -->
 		<ModeSwitcher
-			active="notes"
+			active={null}
 			hrefs={{ write: writeHref, plan: planHref, review: reviewHref }}
-			note={modeNote}
+			note={modeNote ?? NOTES_MODE_NOTE}
 		/>
 		<SidebarSearch bind:query placeholder="Filter notes..." />
 	</div>
