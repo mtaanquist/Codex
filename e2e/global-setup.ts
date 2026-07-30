@@ -70,11 +70,18 @@ export default async function globalSetup() {
 		parallelism: 1
 	});
 	await pool.query(
-		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at, handle, public_archive_enabled)
-		 values ($1, 'E2E Tester', $2, 'user', now(), now(), 'e2e-tester', true)
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at, handle, public_archive_enabled, invite_allowance)
+		 values ($1, 'E2E Tester', $2, 'user', now(), now(), 'e2e-tester', true, 5)
 		 on conflict (email) do update set password_hash = excluded.password_hash,
-		   handle = excluded.handle, public_archive_enabled = excluded.public_archive_enabled`,
+		   handle = excluded.handle, public_archive_enabled = excluded.public_archive_enabled,
+		   invite_allowance = excluded.invite_allowance`,
 		['e2e@example.com', passwordHash]
+	);
+	// The account-invites spec spends and revokes invites; clearing the unused
+	// ones keeps repeated runs at the same starting point.
+	await pool.query(
+		`delete from invite_codes where used_count = 0
+		 and created_by = (select id from users where email = 'e2e@example.com')`
 	);
 	// A separate account for the two-factor journey, so toggling 2FA there never
 	// trips the password-only sign-ins the other specs rely on.

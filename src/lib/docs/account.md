@@ -17,6 +17,14 @@ show this page to visitors; leave it off to keep it hidden.
 You can upload an avatar when image storage is set up on the instance. Without
 it, your initials stand in.
 
+## Invites
+
+When an admin has given your account invites, an Invites section appears in
+the sidebar. Select "Generate an invite" to make a code, then "Copy link" to
+get a sign-up link to send your friend. Each code admits one person, who can
+sign in as soon as their email is confirmed. Revoke a code that has not been
+used to take it back; that frees the invite so you can generate another.
+
 The public page and avatar only appear to visitors once an admin has enabled
 publishing for your account and your profile is set to public.
 
