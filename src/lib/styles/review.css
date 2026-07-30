@@ -769,6 +769,10 @@
 	font-family: var(--editor-font, var(--font-content));
 	font-size: 19px;
 	line-height: var(--editor-line-height, 1.72);
+	/* The manuscript wraps its lines, so the only horizontal overflow is a
+	   suggestion ghost's padding poking a few pixels past the measure - not
+	   something to grow a scrollbar over. */
+	overflow-x: hidden;
 }
 
 /* The fixed error toast both review pages float over the workspace. */
