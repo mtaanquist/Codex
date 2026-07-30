@@ -6,6 +6,7 @@
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { openReviewModal } from '$lib/review-modal.svelte';
+	import { openQuickNote } from '$lib/quick-note.svelte';
 	import { startSummariesJob } from '$lib/assistant-actions';
 	import type { SearchResult } from '$lib/wire-types';
 
@@ -82,6 +83,15 @@
 				run: () => {
 					focusMode.on = !focusMode.on;
 					closePalette();
+				}
+			});
+			list.push({
+				label: 'Quick note',
+				sublabel: 'Jot a note without leaving the editor',
+				kind: 'Command',
+				run: () => {
+					closePalette();
+					openQuickNote();
 				}
 			});
 			// The Assistant's quick actions, gated like its other surfaces; the
@@ -169,6 +179,12 @@
 					run: navigate(`/stories/${storyRef}/plan`)
 				},
 				{
+					label: 'Story notes',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate(`/stories/${storyRef}/notes`)
+				},
+				{
 					label: 'Story settings',
 					sublabel: null,
 					kind: 'Go to',
@@ -190,6 +206,12 @@
 					sublabel: null,
 					kind: 'Go to',
 					run: navigate(`/universes/${universeRef}/plan`)
+				},
+				{
+					label: 'Universe notes',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate(`/universes/${universeRef}/notes`)
 				},
 				{
 					label: 'Universe insights',

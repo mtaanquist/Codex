@@ -25,7 +25,6 @@
 		lore,
 		selectedId,
 		planPath,
-		notesHref,
 		writeHref,
 		reviewHref,
 		modeNote,
@@ -49,8 +48,6 @@
 		}[];
 		selectedId?: string;
 		planPath: string;
-		// The Notes view at this scope; caller resolves the path.
-		notesHref: string;
 		// At universe scope both point at the universe's own story list, which
 		// is where you pick the story to write in or review.
 		writeHref?: string;
@@ -106,11 +103,7 @@
 
 <aside class="pane left">
 	<div class="left-head">
-		<ModeSwitcher
-			active="plan"
-			hrefs={{ write: writeHref, notes: notesHref, review: reviewHref }}
-			note={modeNote}
-		/>
+		<ModeSwitcher active="plan" hrefs={{ write: writeHref, review: reviewHref }} note={modeNote} />
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>
 	<div class="left-scroll">

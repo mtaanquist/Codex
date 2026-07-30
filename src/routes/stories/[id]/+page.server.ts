@@ -18,7 +18,7 @@ import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { ownedStory } from '$lib/server/story-access';
 import { readingPageRef } from '$lib/server/publish';
-import { createSceneNote, listSceneNotes } from '$lib/server/notes';
+import { createSceneNote, listSceneNotes, listStoryNotes } from '$lib/server/notes';
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
@@ -80,7 +80,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		preferences,
 		trashedScenes,
 		pageSetup,
-		assistant
+		assistant,
+		storyNotes
 	] = await Promise.all([
 		// The sidebar's book switcher: every story in the universe, with the
 		// chapter and word counts its menu rows show.
@@ -161,7 +162,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		// What Assistant UI to render: the tab, whether surfaces are live, the
 		// per-story mute, the Assistant's name. Absent entirely when not enabled,
 		// the way asset-backed features hide when no bucket is configured.
-		assistantLayout(db, locals.user!.id, story.id)
+		assistantLayout(db, locals.user!.id, story.id),
+		// The Notes panel's story-wide list; the Notes page is reached from it.
+		listStoryNotes(db, story.id, locals.user!.id)
 	]);
 
 	const storySiblings = siblingResult.rows.map((row) => {
@@ -274,6 +277,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		scenes: sceneList,
 		selectedScene,
 		sceneNotes,
+		storyNotes,
 		sceneRevisions,
 		revisionPreview,
 		sceneMarkers,
