@@ -1,8 +1,28 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import HelpLink from '$lib/components/HelpLink.svelte';
+	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// The first publish with no pen name set asks what name goes public; the
+	// chosen name rides the publish form as a hidden field.
+	let publishForm = $state<HTMLFormElement>();
+	let penPromptOpen = $state(false);
+	let chosenPenName = $state('');
+	function onPublishSubmit(event: SubmitEvent) {
+		if (!data.archive.penName && !chosenPenName) {
+			event.preventDefault();
+			penPromptOpen = true;
+		}
+	}
+	async function confirmPenName(penName: string) {
+		chosenPenName = penName;
+		penPromptOpen = false;
+		await tick();
+		publishForm?.requestSubmit();
+	}
 
 	const FORMAT_LABELS: Record<string, string> = {
 		markdown: 'Markdown (.zip)',
@@ -49,7 +69,8 @@
 			<button class="btn btn-primary" type="submit">Save visibility</button>
 		</div>
 	</form>
-	<form method="POST" action="?/publish">
+	<form method="POST" action="?/publish" bind:this={publishForm} onsubmit={onPublishSubmit}>
+		<input type="hidden" name="penName" value={chosenPenName} />
 		{#if form?.action === 'publish' && 'published' in form && form.published}
 			<p class="field-hint" role="status" style="color:var(--status-final);">
 				Edition published. Readers see it at
@@ -138,6 +159,13 @@
 		</form>
 	{/if}
 </div>
+
+<PenNamePrompt
+	open={penPromptOpen}
+	displayName={data.displayName}
+	onConfirm={confirmPenName}
+	onCancel={() => (penPromptOpen = false)}
+/>
 
 <style>
 	.sub-head {

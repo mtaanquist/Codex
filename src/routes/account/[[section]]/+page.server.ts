@@ -8,6 +8,7 @@ import {
 	changePassword,
 	claimHandle,
 	enableOwnPublishing,
+	setPenNameIfUnset,
 	listSessions,
 	parseLinks,
 	requestEmailChange,
@@ -283,6 +284,11 @@ export const actions: Actions = {
 	},
 	claimHandle: async ({ request, locals }) => {
 		const data = await request.formData();
+		// Claiming the handle is the first step into public, so the form may
+		// carry the author-name choice; it lands as the pen name unless one is
+		// already set.
+		const penName = String(data.get('penName') ?? '');
+		if (penName) await setPenNameIfUnset(db, locals.user!.id, penName);
 		const result = await claimHandle(db, locals.user!.id, String(data.get('handle') ?? ''));
 		if (!result.ok) return fail(400, { scope: 'handle', message: result.reason });
 		return { scope: 'handle', saved: true };

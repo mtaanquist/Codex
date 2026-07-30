@@ -514,6 +514,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Save visibility' }).click();
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.getByRole('button', { name: 'Publish edition' }).click();
+	// The first publish with no pen name set asks what name goes public;
+	// whether it appears depends on whether the account spec has run, so
+	// keep the offered display name when it does. The dialog opens
+	// synchronously from the intercepted submit.
+	const penPrompt = page.getByRole('dialog', { name: 'Choose your author name' });
+	if (await penPrompt.isVisible()) {
+		await penPrompt.getByRole('button', { name: 'Continue' }).click();
+	}
 	await expect(page.getByRole('status')).toContainText('Edition published.');
 
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });

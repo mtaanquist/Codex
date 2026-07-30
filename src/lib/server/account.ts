@@ -48,6 +48,23 @@ export async function saveIdentity(
 	return { ok: true };
 }
 
+// The publish-time pen-name choice: records the name the author picked when
+// first going public (which may simply be their display name, making the
+// fallback a decision rather than an accident), but never overwrites a pen
+// name already set.
+export async function setPenNameIfUnset(
+	db: Database,
+	userId: string,
+	rawPenName: string
+): Promise<void> {
+	const pen = rawPenName.trim().slice(0, MAX_PEN_NAME);
+	if (!pen) return;
+	await db
+		.update(users)
+		.set({ penName: pen })
+		.where(and(eq(users.id, userId), isNull(users.penName)));
+}
+
 export type ProfileLink = { label: string; url: string };
 
 const MAX_LINKS = 8;

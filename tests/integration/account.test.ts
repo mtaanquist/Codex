@@ -16,6 +16,7 @@ import {
 	revokeOwnSession,
 	saveIdentity,
 	saveProfile,
+	setPenNameIfUnset,
 	verifyAccountPassword
 } from '../../src/lib/server/account';
 import { hashPassword, verifyPassword } from '../../src/lib/server/password';
@@ -92,6 +93,24 @@ describe('saveIdentity', () => {
 		[row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.penName).toBeNull();
 		expect((await saveIdentity(db, userId, { displayName: '   ', penName: '' })).ok).toBe(false);
+	});
+});
+
+describe('setPenNameIfUnset', () => {
+	it('records the publish-time choice once, never overwriting', async () => {
+		// Blank input records nothing.
+		await setPenNameIfUnset(db, userId, '   ');
+		let [row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.penName).toBeNull();
+
+		await setPenNameIfUnset(db, userId, '  Quill  ');
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.penName).toBe('Quill');
+
+		// A pen name already set stays; the prompt only ever fills a blank.
+		await setPenNameIfUnset(db, userId, 'Other');
+		[row] = await db.select().from(users).where(eq(users.id, userId));
+		expect(row.penName).toBe('Quill');
 	});
 });
 
