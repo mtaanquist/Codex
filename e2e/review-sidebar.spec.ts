@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { openRowMenu } from './context-menu';
 
 // The Review sidebar is the same outline as Write (StoryOutline), so the author
@@ -10,14 +11,11 @@ import { openRowMenu } from './context-menu';
 test('the author manages chapters and scenes from the Review sidebar', async ({ page }) => {
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Sidebar ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Sidebar ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Sidebar ${stamp}`);
 	await page.getByLabel('New story').fill('Outline');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Outline');
@@ -58,14 +56,11 @@ test('the guest reviewer gets the outline read-only, with no row menu', async ({
 }) => {
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Guestbar ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Guestbar ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Guestbar ${stamp}`);
 	await page.getByLabel('New story').fill('Locked');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await page.getByRole('button', { name: 'New chapter' }).click();

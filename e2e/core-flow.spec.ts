@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	// A long journey that waits on the async worker twice; the default 30s
@@ -24,16 +25,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Unique name so repeated local runs do not collide.
 	const universeName = `Testverse ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Book of Ash');
 	await page.getByRole('button', { name: 'Create story' }).click();
 
@@ -371,7 +369,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// History: the autosaves are already on the timeline; a named
 	// checkpoint joins them.
-	await page.getByRole('button', { name: 'History' }).click();
+	// The right pane's strip is a real tablist now, so the panels are tabs.
+	await page.getByRole('tab', { name: 'History' }).click();
 	await expect(page.locator('.hist-row').first()).toBeVisible();
 	const checkpointSave = page.waitForResponse(
 		(r) => r.url().includes('/api/revisions') && r.request().method() === 'POST' && r.ok()
@@ -414,7 +413,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// TODO markers: a TODO: line highlights in the prose and lands in the
 	// To do panel.
-	await page.getByRole('button', { name: 'Reference' }).click();
+	await page.getByRole('tab', { name: 'Reference' }).click();
 	const todoSave = page.waitForResponse(
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
@@ -517,15 +516,23 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const reader = await anonymous.newPage();
 	await gotoReady(reader, '/@e2e-tester');
-	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
+	// The shelf names the author, and keeps the handle as the address under it.
+	await expect(reader.getByRole('heading', { name: 'E2E Tester', level: 1 })).toBeVisible();
+	await expect(reader.locator('.shelf-handle')).toContainText('@e2e-tester');
+	// A cover is the story's own title, set, until an author uploads artwork.
+	await expect(reader.locator('.shelf-cover').first()).toContainText('Book of Ash');
 	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
 	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
-	// main.reader is the prose; .appbar.reader above it is the chrome shell.
-	await expect(reader.locator('main.reader')).toContainText('The gate of Halden');
+	// main.reader-main is the prose; .appbar.reader above it is the chrome shell.
+	await expect(reader.locator('main.reader-main')).toContainText('The gate of Halden');
+	// One footer, on both pages: the mark, who published it, and three links.
+	await expect(reader.locator('.reader-foot')).toContainText('Written in Codex');
+	await expect(reader.locator('.reader-foot')).toContainText('Published by');
+	await expect(reader.getByRole('link', { name: 'Write your own' })).toBeVisible();
 	// Inline images of a published edition must serve to the anonymous
 	// reader, not 404 (bug_004).
 	if (process.env.ASSET_S3_BUCKET) {
-		const inlineImg = reader.locator('.reader article img').first();
+		const inlineImg = reader.locator('.reader-prose img').first();
 		await expect(inlineImg).toHaveCount(1);
 		const src = await inlineImg.getAttribute('src');
 		const served = await reader.request.get(src!);

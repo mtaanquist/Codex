@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Leaving the editor (say, to look up an entity on the Plan view) and
 // pressing the browser back button returns to the same scroll position,
@@ -8,14 +9,11 @@ test('back button returns to the editor spot it left', async ({ page }) => {
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Spotfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Spotfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Spotfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Spots ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/spots-${stamp}`);

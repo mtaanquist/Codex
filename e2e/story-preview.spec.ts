@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { clickTool } from './toolbar';
 
 // The whole-story view is the editor (it carries the formatting toolbar);
@@ -9,15 +10,12 @@ test('whole-story view has the toolbar; preview hides the markers', async ({ pag
 	await gotoReady(page, '/');
 
 	const universeName = `Preview Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('The Quiet Coast');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('The Quiet Coast');

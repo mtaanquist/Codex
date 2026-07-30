@@ -165,6 +165,17 @@ export async function publicProfile(db: Database, handle: string) {
 	return row ?? null;
 }
 
+// The author's name for the reader chrome. The crumb and the footer name the
+// author on both reading pages whether or not they list their profile; the bio,
+// links, avatar and commissions stay behind profilePublic in publicProfile.
+export async function publicAuthorIdentity(db: Database, handle: string) {
+	const [row] = await db
+		.select({ penName: users.penName, displayName: users.displayName })
+		.from(users)
+		.where(eq(users.handle, handle));
+	return row ?? null;
+}
+
 // True when an asset is the current avatar of a user whose profile is listed
 // publicly, which makes it servable without a session. Turning the profile
 // private or changing the avatar revokes public access immediately.

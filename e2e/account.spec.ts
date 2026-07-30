@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { openRowMenu } from './context-menu';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 test('account settings: rename and see the current session', async ({ page }) => {
 	await gotoReady(page, '/');
@@ -158,15 +159,12 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// A throwaway story to open the editor against.
 	const universeName = `AI gate ${Date.now()}`;
 	await gotoReady(page, '/');
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Gatekeeper');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Gatekeeper');

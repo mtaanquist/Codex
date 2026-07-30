@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { toggleView, viewChecked } from './toolbar';
 
 const DEFAULTS = { nonPrintingMarks: 'hidden', commandMarkers: 'hidden' };
@@ -14,14 +15,11 @@ test('Enter makes a paragraph; the view toggles show marks and persist', async (
 	await page.request.post('/api/editor-view', { data: DEFAULTS });
 
 	const universeName = `Legible ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Breaks');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Breaks');

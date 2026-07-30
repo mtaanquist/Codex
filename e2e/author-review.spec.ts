@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // #301: the author opens their own story in review mode and leaves their own
 // comment and a suggested edit, then accepts the suggestion - the same surface
@@ -9,14 +10,11 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Selfreview ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Selfreview ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Selfreview ${stamp}`);
 	await page.getByLabel('New story').fill('Solo');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Solo');
@@ -118,14 +116,11 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Stay ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Stay ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Stay ${stamp}`);
 	await page.getByLabel('New story').fill('Stay');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await page.getByRole('button', { name: 'New chapter' }).click();
@@ -191,14 +186,11 @@ test('typing immediately after an accept keeps the accepted text', async ({ page
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Race ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Race ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Race ${stamp}`);
 	await page.getByLabel('New story').fill('Race');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await page.getByRole('button', { name: 'New chapter' }).click();

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Readable URLs: universes and stories get slugs generated from their
 // names, and a rename in settings moves the address along with it.
@@ -8,17 +9,14 @@ test('slugs: created things get readable addresses that follow renames', async (
 
 	// The universe lands on a slugged address derived from its name.
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Slugfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page).toHaveURL(`/universes/slugfall-${stamp}`);
 
 	// So does the story.
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Slugfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Slugfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Toll Road ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/toll-road-${stamp}`);

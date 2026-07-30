@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The scene board: a story's plan shows its scenes in status lanes, and
 // moving a card changes the scene's status for good.
@@ -7,15 +8,12 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await gotoReady(page, '/');
 
 	const universeName = `Board Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Lanes');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Lanes');
@@ -61,14 +59,16 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	await expect(page.getByPlaceholder('Untitled scene')).toHaveValue('The crossing');
 
 	// Opening an entity replaces the board; the pinned sidebar row brings
-	// it back. The right pane keeps the same three pills either way.
+	// it back. Every panel on Plan is about the open entry, so with the board
+	// showing there is no right pane at all, and opening an entry brings it back.
 	await gotoReady(page, `/stories/${storyId}/plan`);
-	await expect(page.getByRole('button', { name: 'Reference' })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'History' })).toBeVisible();
+	await expect(page.locator('.pane.right')).toHaveCount(0);
 	await page.getByPlaceholder('New character name').fill('Ferry');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page).toHaveURL(/entity=/);
 	await expect(page.locator('.board')).toHaveCount(0);
+	await expect(page.getByRole('tab', { name: 'Reference' })).toBeVisible();
+	await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
 	await page.getByRole('link', { name: 'Scene board' }).click();
 	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
 
@@ -92,10 +92,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	// The book switcher: a second story in the universe makes the sidebar
 	// header a menu that jumps between them.
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Detours');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Detours');

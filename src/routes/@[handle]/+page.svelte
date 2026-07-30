@@ -17,7 +17,7 @@
 	const profile = $derived(data.profile);
 	// The chrome names the author; the handle is the address, so it stays in the
 	// URL and in the header line under the name.
-	const author = $derived(authorName(profile));
+	const author = $derived(authorName(data.identity));
 	const shelfHref = $derived(resolve('/@[handle]', { handle: data.handle }));
 
 	// Only http(s) addresses become live links; anything else (a bare handle,
