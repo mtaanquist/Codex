@@ -14,7 +14,9 @@
 	// by the control.
 	let theme = $state<ConcreteTheme>(browser ? currentTheme() : 'dark');
 
-	const label = $derived(`Theme: ${theme}. Click for ${nextTheme(theme)}.`);
+	// The icon shows what clicking gives you, matching the label.
+	const next = $derived(nextTheme(theme));
+	const label = $derived(`Theme: ${theme}. Click for ${next}.`);
 </script>
 
 <button
@@ -24,5 +26,7 @@
 	aria-label={label}
 	onclick={() => (theme = cycleTheme(Boolean(page.data.user)))}
 >
-	{#if theme === 'dark'}<Icon name="sun" />{:else}<Icon name="moon" />{/if}
+	{#if next === 'light'}<Icon name="sun" />{:else if next === 'warm'}<Icon
+			name="sunset"
+		/>{:else}<Icon name="moon" />{/if}
 </button>
