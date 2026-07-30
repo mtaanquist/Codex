@@ -47,6 +47,9 @@
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	text-wrap: pretty;
+	/* pre-wrap hangs a space that lands on a line break past the measure;
+	   invisible until a mark tints it. Clip the paint at the measure. */
+	overflow-x: clip;
 }
 
 /* inline marks */
@@ -64,7 +67,11 @@
 .rv-comment {
 	background: color-mix(in oklab, var(--auth) 15%, transparent);
 	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
+	/* The negative margin gives the padding back to the line, so the marked
+	   text sits exactly where unmarked text would; the box bleeds outward
+	   instead, and the prose clip swallows any bleed at the measure. */
 	padding: 2px 3px;
+	margin: 0 -3px;
 }
 .rv-comment:hover {
 	background: color-mix(in oklab, var(--auth) 26%, transparent);
@@ -86,8 +93,10 @@
 .rv-mark.rv-del,
 .rv-mark.rv-replace {
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
-	/* Wide enough that the focused inset ring never sits on a glyph. */
+	/* Wide enough that the focused inset ring never sits on a glyph; the
+	   margin hands the width back so the prose keeps its measure. */
 	padding: 2px 3px;
+	margin: 0 -3px;
 }
 .rv-mark.rv-ins:hover,
 .rv-mark.rv-del:hover,
@@ -724,7 +733,11 @@
 .review-edit .cm-content .rv-comment {
 	background: color-mix(in oklab, var(--auth) 15%, transparent);
 	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
+	/* The negative margin gives the padding back to the line, so the marked
+	   text sits exactly where unmarked text would; the box bleeds outward
+	   instead, and the prose clip swallows any bleed at the measure. */
 	padding: 2px 3px;
+	margin: 0 -3px;
 }
 .review-edit .cm-content .rv-del,
 .review-edit .cm-content .rv-replace {
@@ -732,8 +745,10 @@
 	text-decoration: line-through;
 	text-decoration-color: color-mix(in oklab, var(--auth) 70%, var(--text-faint));
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
-	/* Wide enough that the focused inset ring never sits on a glyph. */
+	/* Wide enough that the focused inset ring never sits on a glyph; the
+	   margin hands the width back so the prose keeps its measure. */
 	padding: 2px 3px;
+	margin: 0 -3px;
 }
 /* The proposed replacement/insertion rides as a non-editable ghost. The
    margin keeps it off the deleted text it follows, like the read surface. */
@@ -770,6 +785,11 @@
    measure and rhythm, so switching roles does not reflow the manuscript. */
 .review-edit {
 	max-width: 660px;
+}
+.review-edit .cm-content .cm-line {
+	/* Same hanging-space clip as .review-prose, per line: a tinted space on a
+	   justified line break would otherwise paint past the measure. */
+	overflow-x: clip;
 }
 .review-edit .cm-scroller {
 	font-family: var(--editor-font, var(--font-content));

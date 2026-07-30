@@ -138,7 +138,21 @@ type MarkOp = { start: number; end: number; build: (text: string) => ReviewMark 
 // The sorted, deduplicated mark operations for a scene: open comment anchors
 // and pending suggestion ranges, gated by the filter. Shared by reviewMarks
 // and reviewProse so they always agree on what is marked.
+// An anchor's edge whitespace is left out of the painted range: a selection
+// that grabbed the space before a word would otherwise tint it, which in
+// justified prose reads as a stray indent. The stored anchor is untouched.
+export function trimAnchorEdges(
+	text: string,
+	start: number,
+	end: number
+): { start: number; end: number } {
+	while (start < end && /\s/.test(text[start])) start++;
+	while (end > start && /\s/.test(text[end - 1])) end--;
+	return { start, end };
+}
+
 function markOps(
+	bodyMd: string,
 	threads: MarkThread[],
 	suggestions: MarkSuggestion[],
 	filter: ReviewFilter
@@ -149,9 +163,10 @@ function markOps(
 		for (const thread of threads) {
 			if (!thread.anchor) continue;
 			const color = authorColor(thread.author);
+			const a = trimAnchorEdges(bodyMd, thread.anchor.start, thread.anchor.end);
 			ops.push({
-				start: thread.anchor.start,
-				end: thread.anchor.end,
+				start: a.start,
+				end: a.end,
 				build: (text) => ({ kind: 'comment', text, id: thread.id, color })
 			});
 		}
@@ -169,15 +184,17 @@ function markOps(
 					build: () => ({ kind: 'ins', text: suggestion.replacement, id: suggestion.id, color })
 				});
 			} else if (kind === 'delete') {
+				const a = trimAnchorEdges(bodyMd, suggestion.anchor.start, suggestion.anchor.end);
 				ops.push({
-					start: suggestion.anchor.start,
-					end: suggestion.anchor.end,
+					start: a.start,
+					end: a.end,
 					build: (text) => ({ kind: 'del', text, id: suggestion.id, color })
 				});
 			} else {
+				const a = trimAnchorEdges(bodyMd, suggestion.anchor.start, suggestion.anchor.end);
 				ops.push({
-					start: suggestion.anchor.start,
-					end: suggestion.anchor.end,
+					start: a.start,
+					end: a.end,
 					build: (text) => ({
 						kind: 'replace',
 						before: text,
@@ -205,7 +222,7 @@ export function reviewMarks(
 	suggestions: MarkSuggestion[],
 	filter: ReviewFilter
 ): ReviewMark[] {
-	const ops = markOps(threads, suggestions, filter);
+	const ops = markOps(bodyMd, threads, suggestions, filter);
 	const out: ReviewMark[] = [];
 	let ptr = 0;
 	for (const op of ops) {
@@ -236,7 +253,7 @@ export function reviewProse(
 	filter: ReviewFilter,
 	mentions: ProseMention[]
 ): ReviewProseRun[] {
-	const ops = markOps(threads, suggestions, filter);
+	const ops = markOps(bodyMd, threads, suggestions, filter);
 	const sortedMentions = [...mentions].sort((a, b) => a.position - b.position);
 	const out: ReviewProseRun[] = [];
 
