@@ -57,7 +57,6 @@
 	// universes at all there is nowhere to import into yet, and the row is left
 	// out rather than pointing at a page that cannot exist.
 	function importHref(slug: string): string {
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() plus a static hash
 		return `${resolve('/universes/[id]/[[section]]', { id: slug, section: 'export' })}#import-story`;
 	}
 	const libraryImportTarget = $derived(standaloneUniverse ?? data.universes[0]);

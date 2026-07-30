@@ -515,6 +515,32 @@
 		</main>
 
 		<aside class="pane right">
+			<!-- One panel invocation, two shapes of pane: with the Assistant the strip
+			     is a real tablist, without it the pane is just the Comments panel,
+			     which carries its own title. The props must not drift between the
+			     two - dropping onAccepted here once cost the author's live accept. -->
+			{#snippet commentsPanel()}
+				{#if selectedScene}
+					<ReviewPanel
+						scene={selectedScene}
+						threads={sceneThreads}
+						suggestions={sceneSuggestions}
+						{discussions}
+						{filter}
+						setFilter={(f) => (filter = f)}
+						{focusedId}
+						setFocused={focusFromPanel}
+						{role}
+						{canSuggest}
+						{composer}
+						onCloseComposer={() => (composer = null)}
+						onStartSceneComment={startSceneComment}
+						onAccepted={role === 'author' ? (ids) => editorRef?.applyAccepted(ids) : null}
+						assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
+						onAssistantReply={assistantSurfaces ? assistantReply : null}
+					/>
+				{/if}
+			{/snippet}
 			{#if assistantTab}
 				<PanelStrip
 					{panels}
@@ -548,51 +574,13 @@
 									initialMessages={assistantChat}
 								/>
 							</div>
-						{:else if selectedScene}
-							<ReviewPanel
-								scene={selectedScene}
-								threads={sceneThreads}
-								suggestions={sceneSuggestions}
-								{discussions}
-								{filter}
-								setFilter={(f) => (filter = f)}
-								{focusedId}
-								setFocused={focusFromPanel}
-								{role}
-								{canSuggest}
-								{composer}
-								onCloseComposer={() => (composer = null)}
-								onStartSceneComment={startSceneComment}
-								onAccepted={role === 'author' ? (ids) => editorRef?.applyAccepted(ids) : null}
-								assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
-								onAssistantReply={assistantSurfaces ? assistantReply : null}
-							/>
+						{:else}
+							{@render commentsPanel()}
 						{/if}
 					{/snippet}
 				</PanelStrip>
-			{:else if selectedScene}
-				<!-- One panel, so the pane wears the panel's own title (rendered by
-				     ReviewPanel) rather than a strip with a single segment. -->
-				<div class="rv-right-body">
-					<ReviewPanel
-						scene={selectedScene}
-						threads={sceneThreads}
-						suggestions={sceneSuggestions}
-						{discussions}
-						{filter}
-						setFilter={(f) => (filter = f)}
-						{focusedId}
-						setFocused={focusFromPanel}
-						{role}
-						{canSuggest}
-						{composer}
-						onCloseComposer={() => (composer = null)}
-						onStartSceneComment={startSceneComment}
-						onAccepted={null}
-						assistant={null}
-						onAssistantReply={null}
-					/>
-				</div>
+			{:else}
+				<div class="rv-right-body">{@render commentsPanel()}</div>
 			{/if}
 		</aside>
 	</div>

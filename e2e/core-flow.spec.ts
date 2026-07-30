@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoReady } from './navigate';
+import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
@@ -43,6 +43,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(storyCrumb).toHaveAttribute('aria-current', 'page');
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
+	// The create-story submit navigated, so the crumb is on screen before its
+	// handler is attached; a click landing in that window opens nothing.
+	await waitForHydration(page);
 	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'false');
 	await storyCrumb.click();
 	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'true');
@@ -516,11 +519,19 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const reader = await anonymous.newPage();
 	await gotoReady(reader, '/@e2e-tester');
-	// The shelf names the author, and keeps the handle as the address under it.
-	await expect(reader.getByRole('heading', { name: 'E2E Tester', level: 1 })).toBeVisible();
+	// The shelf names the author - the pen name if the account has one, else the
+	// display name, never the raw handle - and keeps the handle as the address
+	// under it. Which of the two names it is depends on whether the account spec
+	// has run, so assert the shape rather than one of them.
+	const shelfName = reader.locator('.shelf-name');
+	await expect(shelfName).toContainText('Tester');
+	await expect(shelfName).not.toContainText('@');
 	await expect(reader.locator('.shelf-handle')).toContainText('@e2e-tester');
-	// A cover is the story's own title, set, until an author uploads artwork.
-	await expect(reader.locator('.shelf-cover').first()).toContainText('Book of Ash');
+	// A cover is the story's own title, set, until an author uploads artwork -
+	// which this journey does when image storage is configured.
+	const cover = reader.locator('.shelf-cover').first();
+	await expect(cover).toBeVisible();
+	if (!process.env.ASSET_S3_BUCKET) await expect(cover).toContainText('Book of Ash');
 	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
 	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
 	// main.reader-main is the prose; .appbar.reader above it is the chrome shell.

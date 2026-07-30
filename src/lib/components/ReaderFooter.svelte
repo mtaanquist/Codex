@@ -27,6 +27,7 @@
 		{#if author}
 			<span>
 				{belongs === 'shelf' ? 'This shelf belongs to' : 'Published by'}
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (the caller resolves the shelf path) -->
 				<a href={shelfHref}>{author}</a>
 			</span>
 		{/if}

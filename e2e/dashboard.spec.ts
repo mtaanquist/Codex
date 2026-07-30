@@ -38,7 +38,9 @@ test('dashboard: universe sections, story cards, and the New story menu', async 
 	// populated grid has no dashed add tile.
 	await expect(section.locator('.collection-empty')).toHaveCount(0);
 	await expect(section.locator('.card-add')).toHaveCount(0);
-	await expect(page.getByText('Import a story from a file')).toHaveCount(0);
+	// Nothing offers an import until a New menu is open (a closed menu's rows are
+	// out of the accessibility tree, which is what getByRole reads).
+	await expect(page.getByRole('menuitem', { name: /^Import a story/ })).toHaveCount(0);
 	await section.getByRole('button', { name: 'New story', exact: true }).click();
 	await expect(
 		page.getByRole('menuitem', { name: 'Import a story into this universe...' })

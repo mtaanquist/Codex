@@ -126,21 +126,22 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 	await page.getByRole('button', { name: 'New chapter' }).click();
 
 	// Two scenes, each with a unique tail token the edit never touches.
-	// Known flake, not yet fixed: this occasionally reaches Review with scene
-	// two empty, failing the TWOTAIL check below. The saved indicator is shared
-	// by the workspace, so after the first scene it can already read "Saved just
-	// now" and wave the second one through unsaved. Waiting on the scene's own
-	// PUT was tried and did not hold: neither the scene in the URL nor the
-	// request body reliably identifies the write while it is still in flight.
-	async function typeScene(text: string) {
+	// The editor remounts per scene, so wait until it holds the new, empty scene
+	// before typing: typing into the previous scene's body still on screen was
+	// how this used to reach Review with the two scenes' text run together, and
+	// the shared saved indicator (already reading "Saved just now" from the first
+	// scene) waved it through.
+	async function typeScene(text: string, previous?: string) {
 		await page.getByRole('button', { name: 'New scene' }).click();
+		if (previous) await expect(page.locator('.cm-content')).not.toContainText(previous);
 		await page.locator('.cm-content').click();
 		await page.keyboard.type(text);
 		await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+		await expect(page.locator('.cm-content')).toHaveText(text);
 	}
 
 	await typeScene('Sceneword ONETAIL closing.');
-	await typeScene('Sceneword TWOTAIL closing.');
+	await typeScene('Sceneword TWOTAIL closing.', 'ONETAIL');
 
 	await page.getByRole('link', { name: 'Review', exact: true }).click();
 	const prose = page.locator('.review-edit .cm-content');
