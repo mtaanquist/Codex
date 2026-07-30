@@ -1,14 +1,39 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import { enhance } from '$app/forms';
+	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import FormStatus from '$lib/components/FormStatus.svelte';
+	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let avatarForm = $state<HTMLFormElement | null>(null);
+	let profileForm = $state<HTMLFormElement | null>(null);
+
+	// Claiming the handle is the first step into public, so with no pen name
+	// set it asks what name goes on the page; the choice rides the claim form
+	// as a hidden field.
+	let handleForm = $state<HTMLFormElement | null>(null);
+	let penPromptOpen = $state(false);
+	let chosenPenName = $state('');
+	function onClaimSubmit(event: SubmitEvent) {
+		if (!data.profile.penName && !chosenPenName) {
+			event.preventDefault();
+			penPromptOpen = true;
+		}
+	}
+	async function confirmPenName(penName: string) {
+		chosenPenName = penName;
+		penPromptOpen = false;
+		await tick();
+		handleForm?.requestSubmit();
+	}
 
 	// The links editor works on a local copy seeded once from the loaded
 	// profile; the form posts it as JSON. Start with one empty row so there is
-	// always something to fill in.
+	// always something to fill in. Removing a row is a button click, not a
+	// field change, so it saves itself once the hidden JSON catches up.
 	// svelte-ignore state_referenced_locally
 	let links = $state(
 		data.profile.links?.length
@@ -18,9 +43,11 @@
 	function addLink() {
 		links = [...links, { label: '', url: '' }];
 	}
-	function removeLink(index: number) {
+	async function removeLink(index: number) {
 		links = links.filter((_, i) => i !== index);
 		if (links.length === 0) links = [{ label: '', url: '' }];
+		await tick();
+		profileForm?.requestSubmit();
 	}
 	const linksJson = $derived(JSON.stringify(links.filter((link) => link.url.trim())));
 
@@ -84,7 +111,12 @@
 			</div>
 		</div>
 
-		<form method="POST" action="?/updateName">
+		<form
+			method="POST"
+			action="?/updateName"
+			use:enhance={autosaveSubmit}
+			onchange={autosubmitForm}
+		>
 			<div class="field">
 				<label for="display-name">Display name</label>
 				<input
@@ -115,7 +147,6 @@
 					error={form?.scope === 'name' && form.message ? form.message : null}
 					success={form?.scope === 'name' && form.saved ? 'Saved.' : null}
 				/>
-				<button type="submit" class="btn btn-primary">Save changes</button>
 			</div>
 		</form>
 	</div>
@@ -147,7 +178,8 @@
 		</div>
 	{:else if !data.profile.handle}
 		<div class="admin-card">
-			<form method="POST" action="?/claimHandle">
+			<form method="POST" action="?/claimHandle" bind:this={handleForm} onsubmit={onClaimSubmit}>
+				<input type="hidden" name="penName" value={chosenPenName} />
 				<div class="field" style="margin-bottom:0;">
 					<label for="handle">Claim your handle</label>
 					<input
@@ -172,7 +204,13 @@
 		</div>
 	{:else}
 		<div class="admin-card">
-			<form method="POST" action="?/saveProfile">
+			<form
+				method="POST"
+				action="?/saveProfile"
+				bind:this={profileForm}
+				use:enhance={autosaveSubmit}
+				onchange={autosubmitForm}
+			>
 				<div class="toggle-row vis-head" style="margin-bottom:var(--space-4);">
 					<div>
 						<div class="t-title">Visibility</div>
@@ -191,7 +229,12 @@
 					<div class="copy-field">
 						<input id="page-address" type="text" value={handleUrl} readonly />
 					</div>
-					<p class="field-hint">Where your page lives. Publish stories from their settings page.</p>
+					<p class="field-hint">
+						Where your page lives.
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (absolute URL on this origin) -->
+						<a href={handleUrl}>Open your page</a> - until visibility is on, it shows a preview only you
+						can see. Publish stories from their settings page.
+					</p>
 				</div>
 
 				<div class="field">
@@ -293,9 +336,15 @@
 						error={form?.scope === 'profile' && form.message ? form.message : null}
 						success={form?.scope === 'profile' && form.saved ? 'Saved.' : null}
 					/>
-					<button type="submit" class="btn btn-primary">Save public page</button>
 				</div>
 			</form>
 		</div>
 	{/if}
 </div>
+
+<PenNamePrompt
+	open={penPromptOpen}
+	displayName={data.displayName}
+	onConfirm={confirmPenName}
+	onCancel={() => (penPromptOpen = false)}
+/>

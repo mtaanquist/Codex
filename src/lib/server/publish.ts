@@ -165,6 +165,26 @@ export async function publicProfile(db: Database, handle: string) {
 	return row ?? null;
 }
 
+// The owner's own view of their shelf header, listed or not, so they can
+// preview the page before turning visibility on. Carries profilePublic so the
+// caller can say when only the owner sees it.
+export async function ownProfilePreview(db: Database, userId: string, handle: string) {
+	const [row] = await db
+		.select({
+			displayName: users.displayName,
+			penName: users.penName,
+			bioMd: users.bioMd,
+			links: users.links,
+			commissionsOpen: users.commissionsOpen,
+			commissionsMd: users.commissionsMd,
+			avatarAssetId: users.avatarAssetId,
+			profilePublic: users.profilePublic
+		})
+		.from(users)
+		.where(and(eq(users.id, userId), eq(users.handle, handle)));
+	return row ?? null;
+}
+
 // The author's name for the reader chrome. The crumb and the footer name the
 // author on both reading pages whether or not they list their profile; the bio,
 // links, avatar and commissions stay behind profilePublic in publicProfile.

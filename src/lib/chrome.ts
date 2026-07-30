@@ -19,7 +19,12 @@ export const INSIGHTS_MODE_NOTE =
 
 // The line under the mode strip for an invited reviewer.
 export const GUEST_MODE_NOTE =
-	'You were invited to review. Write, Plan and Notes belong to the author, so they are here but switched off.';
+	'You were invited to review. Write and Plan belong to the author, so they are here but switched off.';
+
+// The line under the mode strip on the Notes pages, which sit beside the
+// modes rather than being one.
+export const NOTES_MODE_NOTE =
+	'Notes sit beside every mode; the Notes panel on the right of Write and Plan brings you here. Pick a mode to go back to the work.';
 
 export type CrumbMenuItem = { label: string; href: string; current?: boolean };
 

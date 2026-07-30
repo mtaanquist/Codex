@@ -6,6 +6,8 @@ Codex keeps to a small set of shortcuts. On a Mac, use Cmd where Ctrl is shown.
 
 - **Ctrl+K**: open the command palette to jump to any universe, story, scene, or
   entity, or run a command (new scene, switch view, focus mode, and more).
+- **Ctrl+Alt+N**: on a story's Write page, open the quick-note card to jot a
+  note without leaving the editor. Ctrl+Enter saves it, Esc closes it.
 
 ## In the editor
 

@@ -215,6 +215,21 @@
 						<td class="cell-muted">{formatDate(account.createdAt)}</td>
 						<td class="row-actions">
 							<div class="row-actions-inner">
+								<form method="POST" action="?/setInviteAllowance" class="allowance-form">
+									<input type="hidden" name="userId" value={account.id} />
+									<label class="allowance-label">
+										Invites
+										<input
+											class="input allowance-input"
+											type="number"
+											name="allowance"
+											min="0"
+											max="99"
+											value={account.inviteAllowance}
+										/>
+									</label>
+									<button type="submit" class="btn btn-ghost btn-sm">Set</button>
+								</form>
 								{#if account.publicArchiveEnabled}
 									<form method="POST" action="?/disableArchive">
 										<input type="hidden" name="userId" value={account.id} />
@@ -410,3 +425,25 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	/* The per-row invite allowance: a number and a Set, kept small enough to
+	   share the actions cell. */
+	.allowance-form {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.allowance-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--text-muted);
+	}
+	.allowance-input {
+		width: 3.6rem;
+		padding: 3px 6px;
+		font-size: 12.5px;
+	}
+</style>

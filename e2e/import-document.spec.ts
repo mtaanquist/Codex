@@ -57,16 +57,21 @@ test('story import: preview and import a Word manuscript', async ({ page }) => {
 		title
 	);
 
+	// The settings page's Import button is the modal's second entry point;
+	// import-story.spec covers the library-menu one. Picking a file previews
+	// it at once.
 	await gotoReady(page, `/universes/docland-${stamp}`);
 	await page.getByRole('link', { name: 'Import and export' }).click();
-	await page.locator('input[name="archive"]').setInputFiles({
+	await page.getByRole('button', { name: 'Import a story...' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Import a story' });
+	await expect(dialog).toBeVisible();
+	await dialog.locator('input[name="archive"]').setInputFiles({
 		name: 'manuscript.docx',
 		mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 		buffer: docx
 	});
-	await page.getByRole('button', { name: 'Preview' }).click();
 
-	const report = page.locator('.import-report');
+	const report = dialog.locator('.import-report');
 	await expect(report).toContainText(`"${title}": 2 chapters, 3 scenes`);
 
 	await page.getByRole('button', { name: 'Import story' }).click();

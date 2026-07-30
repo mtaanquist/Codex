@@ -24,8 +24,7 @@
 	// left - reply, resolve, accept, reject.
 	const seg = $derived({
 		writeHref: resolve('/stories/[id]', { id: data.story.slug }),
-		planHref: resolve('/stories/[id]/plan', { id: data.story.slug }),
-		notesHref: resolve('/stories/[id]/notes', { id: data.story.slug })
+		planHref: resolve('/stories/[id]/plan', { id: data.story.slug })
 	});
 	// The author can open an entity's full details from its quick card.
 	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.slug }));

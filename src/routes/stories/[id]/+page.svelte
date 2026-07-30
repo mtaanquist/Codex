@@ -7,6 +7,7 @@
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { openReviewModal } from '$lib/review-modal.svelte';
 	import ReviewModal from '$lib/components/ReviewModal.svelte';
+	import QuickNote from '$lib/components/QuickNote.svelte';
 	import EntityBadge from '$lib/components/EntityBadge.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import StoryPreview from '$lib/components/StoryPreview.svelte';
@@ -437,14 +438,16 @@
 	const toolbarView = () => docEditors[activeDocId ?? docOrder[0]]?.getView();
 
 	// The right pane's panels. Reference is about the prose in view, so it is
-	// always here; History and Notes need one open scene; the Assistant needs
-	// the account to have it configured and switched on.
+	// always here; History needs one open scene; Notes is about the whole
+	// story, and is the way into the Notes page now that the mode strip does
+	// not carry one; the Assistant needs the account to have it configured
+	// and switched on.
 	const panels = $derived(
 		visiblePanels({
 			reference: true,
 			assistant: data.assistant.tabEnabled,
 			history: Boolean(data.selectedScene),
-			notes: data.selectedScene ? data.sceneNotes.length : false
+			notes: data.storyNotes.length
 		})
 	);
 	let chosenPanel = $state<PanelId | null>('reference');
@@ -551,7 +554,6 @@
 					active="write"
 					hrefs={{
 						plan: resolve('/stories/[id]/plan', { id: data.story.slug }),
-						notes: resolve('/stories/[id]/notes', { id: data.story.slug }),
 						review: resolve('/stories/[id]/review', { id: data.story.slug })
 					}}
 				/>
@@ -790,36 +792,57 @@
 								previewId={data.revisionPreview?.id}
 								previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
 							/>
-						{:else if id === 'notes' && data.selectedScene}
+						{:else if id === 'notes'}
+							{@const onScene = new Set(data.sceneNotes.map((note) => note.id))}
+							{@const otherNotes = data.storyNotes.filter((note) => !onScene.has(note.id))}
 							<div class="right-scroll">
-								{#if data.sceneNotes.length > 0}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+								{#if data.selectedScene && data.sceneNotes.length > 0}
 									<div class="r-card">
 										<h5>On this scene</h5>
 										{#each data.sceneNotes as note (note.id)}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 											<a class="r-line" href={`${notesPath}?note=${note.id}`}>
 												<span class="r-line-left">
 													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
 												</span>
 											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
 									</div>
-								{:else}
+								{/if}
+								{#if otherNotes.length > 0}
+									<div class="r-card">
+										<h5>In this story</h5>
+										{#each otherNotes as note (note.id)}
+											<a class="r-line" href={`${notesPath}?note=${note.id}`}>
+												<span class="r-line-left">
+													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
+												</span>
+											</a>
+										{/each}
+									</div>
+								{:else if data.storyNotes.length === 0}
 									<div class="empty-state tight">
-										<p class="empty-state-text">No notes on this scene yet.</p>
+										<p class="empty-state-text">No notes in this story yet.</p>
 									</div>
 								{/if}
-								<form method="POST" action="?/newSceneNote">
-									<input type="hidden" name="sceneId" value={data.selectedScene.id} />
-									<button class="btn btn-sm btn-secondary" type="submit">
-										New note on this scene
-									</button>
-								</form>
+								{#if data.selectedScene}
+									<form method="POST" action="?/newSceneNote">
+										<input type="hidden" name="sceneId" value={data.selectedScene.id} />
+										<button class="btn btn-sm btn-secondary" type="submit">
+											New note on this scene
+										</button>
+									</form>
+								{:else}
+									<form method="POST" action="{notesPath}?/createNote">
+										<button class="btn btn-sm btn-secondary" type="submit">New note</button>
+									</form>
+								{/if}
+								<a class="btn btn-sm btn-ghost" href={notesPath}>All notes</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
 							<p class="panel-note">
-								Notes attached to this scene. Open one to read or edit it in Notes mode, which shows
-								every note in the story.
+								The story's notes; ones attached to the open scene lead. Open one, or All notes, to
+								read and edit on the Notes page.
 							</p>
 						{:else}
 							<div class="right-scroll">
@@ -942,6 +965,8 @@
 		defaultSceneId={selectedSceneId ?? null}
 	/>
 {/if}
+
+<QuickNote storyId={data.story.id} sceneId={data.selectedScene?.id ?? null} />
 
 <style>
 	main.pane.center {

@@ -8,6 +8,7 @@ import {
 	changePassword,
 	claimHandle,
 	enableOwnPublishing,
+	setPenNameIfUnset,
 	listSessions,
 	parseLinks,
 	requestEmailChange,
@@ -30,6 +31,7 @@ import { queueEmail, queueUserExport } from '$lib/server/jobs';
 import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
 import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
 import { savePreferences, userPreferences } from '$lib/server/preferences';
+import { createUserInvite, deleteUserInviteCode, listUserInviteCodes } from '$lib/server/invites';
 import {
 	accountLlmView,
 	ASSISTANT_ROLES,
@@ -91,9 +93,15 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	// Profile rests on /account itself; the other sections have their own page.
 	if (
 		params.section !== undefined &&
-		!['security', 'display', 'editor', 'notifications', 'pagesetup', 'assistant'].includes(
-			params.section
-		)
+		![
+			'security',
+			'display',
+			'editor',
+			'notifications',
+			'pagesetup',
+			'assistant',
+			'invites'
+		].includes(params.section)
 	)
 		error(404, 'Not found');
 	const user = locals.user!;
@@ -159,9 +167,21 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		totpSetup,
 		passkeys: await listPasskeys(db, user.id),
 		passkeysAvailable: secretsAvailable(),
-		exports: await listUserExports(db, user.id, { scope: 'account' })
+		exports: await listUserExports(db, user.id, { scope: 'account' }),
+		// The Invites section: how many codes the admin has granted, and the
+		// ones already generated. The section hides while both are empty.
+		inviteAllowance: await userInviteAllowance(db, user.id),
+		myInvites: await listUserInviteCodes(db, user.id)
 	};
 };
+
+async function userInviteAllowance(dbc: typeof db, userId: string): Promise<number> {
+	const [row] = await dbc
+		.select({ allowance: users.inviteAllowance })
+		.from(users)
+		.where(eq(users.id, userId));
+	return row?.allowance ?? 0;
+}
 
 // The Assistant section saves in pieces (identity, endpoint, models, the kill
 // switch), each its own button. saveAccountLlmConfig replaces the whole config
@@ -264,6 +284,11 @@ export const actions: Actions = {
 	},
 	claimHandle: async ({ request, locals }) => {
 		const data = await request.formData();
+		// Claiming the handle is the first step into public, so the form may
+		// carry the author-name choice; it lands as the pen name unless one is
+		// already set.
+		const penName = String(data.get('penName') ?? '');
+		if (penName) await setPenNameIfUnset(db, locals.user!.id, penName);
 		const result = await claimHandle(db, locals.user!.id, String(data.get('handle') ?? ''));
 		if (!result.ok) return fail(400, { scope: 'handle', message: result.reason });
 		return { scope: 'handle', saved: true };
@@ -579,5 +604,24 @@ export const actions: Actions = {
 		// The account is now deactivated; end the current session.
 		cookies.delete(SESSION_COOKIE, { path: '/' });
 		redirect(303, '/login');
+	},
+	// The Invites section: generate a single-use code against the admin-set
+	// allowance, or revoke one that has not been used.
+	createInvite: async ({ locals }) => {
+		const code = await createUserInvite(db, locals.user!.id);
+		if (!code) {
+			return fail(400, { scope: 'invites', message: 'You have no invites left.' });
+		}
+		return { scope: 'invites', saved: true };
+	},
+	deleteInvite: async ({ request, locals }) => {
+		const inviteId = String((await request.formData()).get('inviteId') ?? '');
+		if (!isUuid(inviteId) || !(await deleteUserInviteCode(db, locals.user!.id, inviteId))) {
+			return fail(400, {
+				scope: 'invites',
+				message: 'Only your own unused invites can be revoked.'
+			});
+		}
+		return { scope: 'invites', saved: true };
 	}
 };

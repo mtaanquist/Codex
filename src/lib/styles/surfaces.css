@@ -342,6 +342,19 @@
 }
 
 /* the shelf: /@handle */
+/* The owner's private-preview note, above the header they alone can see. */
+.preview-note {
+	margin: 0 0 var(--space-5);
+	padding: 10px 14px;
+	border: 1px solid color-mix(in oklab, var(--accent) 38%, transparent);
+	border-radius: var(--radius-md);
+	background: color-mix(in oklab, var(--accent) 9%, var(--bg-card));
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+.preview-note a {
+	color: var(--accent);
+}
 .shelf-head {
 	display: flex;
 	align-items: flex-start;

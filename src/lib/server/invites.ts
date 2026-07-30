@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
-import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import { inviteCodes } from './db/schema.ts';
+import { inviteCodes, users } from './db/schema.ts';
 import { isUniqueViolation } from './db-errors.ts';
 
 // Invite codes skip the admin approval queue at sign-up. The admin mints a
@@ -30,7 +30,7 @@ export function normalizeInviteCode(input: string): string {
 export type InviteCode = typeof inviteCodes.$inferSelect;
 
 export async function createInviteCode(
-	db: Database,
+	db: DbLike,
 	input: { createdBy: string; label?: string; maxUses?: number; expiresAt?: Date | null }
 ): Promise<InviteCode> {
 	const label = input.label?.trim() || null;
@@ -65,6 +65,73 @@ export async function deleteInviteCode(db: Database, id: string): Promise<boolea
 		.delete(inviteCodes)
 		.where(eq(inviteCodes.id, id))
 		.returning({ id: inviteCodes.id });
+	return Boolean(row);
+}
+
+// A user's own invites: the admin grants an allowance on the account, and
+// each generated code admits one person. Codes count against the allowance
+// while they exist, so revoking an unused one frees its slot.
+
+export async function listUserInviteCodes(db: Database, userId: string): Promise<InviteCode[]> {
+	return await db
+		.select()
+		.from(inviteCodes)
+		.where(eq(inviteCodes.createdBy, userId))
+		.orderBy(desc(inviteCodes.createdAt));
+}
+
+/**
+ * Generates one single-use code against the user's allowance, or returns null
+ * when none is left. The user row is locked so two racing requests cannot
+ * both take the last slot.
+ */
+export async function createUserInvite(db: Database, userId: string): Promise<InviteCode | null> {
+	return db.transaction(async (tx) => {
+		const [user] = await tx
+			.select({ allowance: users.inviteAllowance })
+			.from(users)
+			.where(eq(users.id, userId))
+			.for('update');
+		if (!user) return null;
+		const [existing] = await tx
+			.select({ n: count() })
+			.from(inviteCodes)
+			.where(eq(inviteCodes.createdBy, userId));
+		if (existing.n >= user.allowance) return null;
+		return createInviteCode(tx, { createdBy: userId });
+	});
+}
+
+/** Revokes one of the user's own codes, but never one already used. */
+export async function deleteUserInviteCode(
+	db: Database,
+	userId: string,
+	inviteId: string
+): Promise<boolean> {
+	const [row] = await db
+		.delete(inviteCodes)
+		.where(
+			and(
+				eq(inviteCodes.id, inviteId),
+				eq(inviteCodes.createdBy, userId),
+				eq(inviteCodes.usedCount, 0)
+			)
+		)
+		.returning({ id: inviteCodes.id });
+	return Boolean(row);
+}
+
+export async function setInviteAllowance(
+	db: Database,
+	userId: string,
+	allowance: number
+): Promise<boolean> {
+	const value = Math.max(0, Math.floor(allowance));
+	const [row] = await db
+		.update(users)
+		.set({ inviteAllowance: value })
+		.where(eq(users.id, userId))
+		.returning({ id: users.id });
 	return Boolean(row);
 }
 

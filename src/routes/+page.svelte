@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
+	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
 	import Landing from '$lib/components/Landing.svelte';
 	import NewMenu from '$lib/components/NewMenu.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
@@ -52,12 +53,13 @@
 		[...data.universes].sort((a, b) => Number(a.standalone) - Number(b.standalone))
 	);
 
-	// Importing lands a story in a universe, so the link carries one: the
+	// Importing lands a story in a universe, so the modal carries one: the
 	// standalone home when there is one, otherwise the first universe. With no
 	// universes at all there is nowhere to import into yet, and the row is left
-	// out rather than pointing at a page that cannot exist.
-	function importHref(slug: string): string {
-		return `${resolve('/universes/[id]/[[section]]', { id: slug, section: 'export' })}#import-story`;
+	// out rather than opening a dialog that cannot finish.
+	let importFor = $state<{ slug: string; name: string; standalone?: boolean } | null>(null);
+	function startImport(universe: { slug: string; name: string; standalone?: boolean }) {
+		importFor = { slug: universe.slug, name: universe.name, standalone: universe.standalone };
 	}
 	const libraryImportTarget = $derived(standaloneUniverse ?? data.universes[0]);
 
@@ -85,6 +87,16 @@
 
 {#snippet storyCard(story: Story)}
 	<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
+		<!-- The published shelf's cover pattern: the uploaded artwork, or the
+		     story's own title set on the cover blank. Hidden from readers
+		     because the title repeats right below. -->
+		<span class="shelf-cover story-card-cover" aria-hidden="true">
+			{#if story.coverAssetId}
+				<img src="/assets/{story.coverAssetId}" alt="" />
+			{:else}
+				{story.title}
+			{/if}
+		</span>
 		<div class="story-card-header">
 			<h3 class="story-card-title" class:story-card-empty={story.words === 0}>{story.title}</h3>
 			<span class="story-card-status">
@@ -157,7 +169,7 @@
 								importItem={libraryImportTarget
 									? {
 											label: 'Import a story from a file...',
-											href: importHref(libraryImportTarget.slug)
+											onSelect: () => startImport(libraryImportTarget)
 										}
 									: undefined}
 								note={IMPORT_NOTE}
@@ -239,7 +251,7 @@
 										label: universe.standalone
 											? 'Import a story from a file...'
 											: 'Import a story into this universe...',
-										href: importHref(universe.slug)
+										onSelect: () => startImport(universe)
 									}}
 									note={universe.standalone ? STANDALONE_NOTE : UNIVERSE_STORY_NOTE}
 								/>
@@ -307,7 +319,7 @@
 											label: universe.standalone
 												? 'Import a story from a file...'
 												: 'Import a story into this universe...',
-											href: importHref(universe.slug)
+											onSelect: () => startImport(universe)
 										}}
 										note={universe.standalone ? STANDALONE_NOTE : UNIVERSE_STORY_NOTE}
 									/>
@@ -437,6 +449,8 @@
 			</div>
 		</div>
 	</div>
+
+	<ImportStoryModal universe={importFor} onClose={() => (importFor = null)} />
 {/snippet}
 
 <style>

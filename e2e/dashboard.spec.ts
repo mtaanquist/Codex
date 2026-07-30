@@ -30,6 +30,8 @@ test('dashboard: universe sections, story cards, and the New story menu', async 
 	await expect(card).toHaveCount(1);
 	await expect(card.locator('.story-card-status')).toHaveText(/Outlining/);
 	await expect(card.locator('.story-card-meta')).toContainText('edited just now');
+	// With no artwork uploaded, the cover blank carries the title.
+	await expect(card.locator('.story-card-cover')).toContainText(`Shelved ${stamp}`);
 	await expect(
 		page.locator('.recent-row .story-card', { hasText: `Shelved ${stamp}` })
 	).toHaveCount(1);

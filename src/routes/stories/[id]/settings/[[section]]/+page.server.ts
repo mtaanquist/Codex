@@ -8,6 +8,7 @@ import { stories } from '$lib/server/db/schema';
 import { storyTimeline } from '$lib/server/revisions';
 import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
 import { publishStory } from '$lib/server/publish';
+import { setPenNameIfUnset } from '$lib/server/account';
 import { listEditionArtifacts, setDownloadsPublic } from '$lib/server/export-artifacts';
 import {
 	createReviewInvitation,
@@ -91,7 +92,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	] = await Promise.all([
 		storyTimeline(db, story.id, 30),
 		db
-			.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
+			.select({
+				handle: users.handle,
+				enabled: users.publicArchiveEnabled,
+				penName: users.penName
+			})
 			.from(users)
 			.where(eq(users.id, locals.user!.id)),
 		currentEdition(story.id),
@@ -113,6 +118,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		timeline,
 		assetsConfigured,
 		archive,
+		// The first publish with no pen name set asks what name goes public.
+		displayName: locals.user!.displayName,
 		edition,
 		reading: edition && archive?.handle ? { handle: archive.handle, storyId: story.id } : null,
 		artifacts: edition ? await listEditionArtifacts(db, edition.id) : [],
@@ -306,6 +313,10 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const versionLabel = String(data.get('versionLabel') ?? '');
+		// The first publish asks what name goes public; the chosen name rides
+		// the form and lands as the pen name, unless one is already set.
+		const penName = String(data.get('penName') ?? '');
+		if (penName) await setPenNameIfUnset(db, locals.user!.id, penName);
 		const result = await publishStory(db, locals.user!.id, story.id, versionLabel);
 		if (!result.ok) {
 			return fail(400, { action: 'publish', message: result.reason });
