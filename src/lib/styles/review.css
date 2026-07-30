@@ -91,28 +91,26 @@
 .rv-mark.rv-replace:hover {
 	background: color-mix(in oklab, var(--auth) 18%, transparent);
 }
+/* The focus ring sits inside the tinted box (inset), because an outward ring
+   on wrapped inline text draws around every line fragment and collides with
+   its own next line - and with the ghost widget sitting beside a deletion.
+   Clone closes each fragment's own ring at the line break. */
 .rv-mark.is-focused {
-	box-shadow:
-		0 0 0 2px var(--bg-canvas),
-		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--auth) 65%, transparent);
 	background: color-mix(in oklab, var(--auth) 24%, transparent);
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
 	animation: rvPulse 0.6s ease;
 }
 @keyframes rvPulse {
 	0% {
-		box-shadow:
-			0 0 0 2px var(--bg-canvas),
-			0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+		background: color-mix(in oklab, var(--auth) 24%, transparent);
 	}
 	50% {
-		box-shadow:
-			0 0 0 2px var(--bg-canvas),
-			0 0 0 8px color-mix(in oklab, var(--auth) 24%, transparent);
+		background: color-mix(in oklab, var(--auth) 42%, transparent);
 	}
 	100% {
-		box-shadow:
-			0 0 0 2px var(--bg-canvas),
-			0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+		background: color-mix(in oklab, var(--auth) 24%, transparent);
 	}
 }
 
@@ -734,13 +732,15 @@
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
 	padding: 0 1px;
 }
-/* The proposed replacement/insertion rides as a non-editable ghost. */
+/* The proposed replacement/insertion rides as a non-editable ghost. The
+   margin keeps it off the deleted text it follows, like the read surface. */
 .review-edit .cm-content .rv-ghost {
 	color: var(--auth);
 	text-decoration: none;
 	border-bottom: 2px solid color-mix(in oklab, var(--auth) 60%, transparent);
 	cursor: pointer;
 	white-space: pre-wrap;
+	margin-left: 3px;
 }
 /* A resolved comment or decided suggestion, shown only under the Done filter:
    a faint outline marking where it sat, lighter than an open note. */
@@ -750,17 +750,15 @@
 	padding: 0 1px;
 }
 .review-edit .cm-content .rv-mark.is-focused {
-	box-shadow:
-		0 0 0 2px var(--bg-canvas),
-		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--auth) 65%, transparent);
 	background: color-mix(in oklab, var(--auth) 24%, transparent);
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
 	animation: rvPulse 0.6s ease;
 }
 /* Resolved marks carry no author colour, so focus them in a neutral tone. */
 .review-edit .cm-content .rv-resolved.is-focused {
-	box-shadow:
-		0 0 0 2px var(--bg-canvas),
-		0 0 0 4px color-mix(in oklab, var(--text-muted) 55%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--text-muted) 55%, transparent);
 	background: color-mix(in oklab, var(--text-muted) 16%, transparent);
 }
 
