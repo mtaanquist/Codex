@@ -62,7 +62,7 @@
 .rv-comment {
 	background: color-mix(in oklab, var(--auth) 15%, transparent);
 	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
-	padding: 0 1px;
+	padding: 2px 3px;
 }
 .rv-comment:hover {
 	background: color-mix(in oklab, var(--auth) 26%, transparent);
@@ -84,7 +84,8 @@
 .rv-mark.rv-del,
 .rv-mark.rv-replace {
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
-	padding: 1px 2px;
+	/* Wide enough that the focused inset ring never sits on a glyph. */
+	padding: 2px 3px;
 }
 .rv-mark.rv-ins:hover,
 .rv-mark.rv-del:hover,
@@ -722,7 +723,7 @@
 .review-edit .cm-content .rv-comment {
 	background: color-mix(in oklab, var(--auth) 15%, transparent);
 	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
-	padding: 0 1px;
+	padding: 2px 3px;
 }
 .review-edit .cm-content .rv-del,
 .review-edit .cm-content .rv-replace {
@@ -730,7 +731,8 @@
 	text-decoration: line-through;
 	text-decoration-color: color-mix(in oklab, var(--auth) 70%, var(--text-faint));
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
-	padding: 0 1px;
+	/* Wide enough that the focused inset ring never sits on a glyph. */
+	padding: 2px 3px;
 }
 /* The proposed replacement/insertion rides as a non-editable ghost. The
    margin keeps it off the deleted text it follows, like the read surface. */
@@ -739,8 +741,11 @@
 	text-decoration: none;
 	border-bottom: 2px solid color-mix(in oklab, var(--auth) 60%, transparent);
 	cursor: pointer;
-	white-space: pre-wrap;
+	/* pre-line, not pre-wrap: collapsed spaces stretch with the justified
+	   paragraph, while a newline in the suggestion still breaks. */
+	white-space: pre-line;
 	margin-left: 3px;
+	padding: 2px 3px;
 }
 /* A resolved comment or decided suggestion, shown only under the Done filter:
    a faint outline marking where it sat, lighter than an open note. */
