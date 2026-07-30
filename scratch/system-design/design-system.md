@@ -490,8 +490,10 @@ Everything a signed-out visitor sees, in `public.css`, loaded last.
 - **What the page offers depends on the sign-up mode, not a boolean.**
   `signupOffered()` in `$lib/signup-mode.ts` is the one answer: `open` and
   `approval` offer the page (labelled "Create an account" in `open`), `invite`
-  and `none` do not, because a visitor with no code cannot finish one. Render
-  conditionally from the mode; there is no `[data-signup]` attribute switch.
+  and `none` do not, because a visitor with no code cannot finish one. The
+  invite-mode text still links the page in prose ("Have a code already?") for
+  someone who was handed a code without a link. Render conditionally from the
+  mode; there is no `[data-signup]` attribute switch.
 
 ### Empty states
 

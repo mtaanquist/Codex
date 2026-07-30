@@ -107,7 +107,7 @@
 	{:else if data.signupMode === 'invite'}
 		<p class="auth-alt">
 			No account yet? Accounts here open by invitation. Anyone already writing here can invite you,
-			so ask them for a code.
+			so ask them for a code. Have a code already? <a href={resolve('/signup')}>Use it here</a>.
 		</p>
 	{:else}
 		<p class="auth-alt">

@@ -149,7 +149,8 @@
 							<div class="model-term">Accounts open by invitation, for now</div>
 							<p class="model-body">
 								Accounts open by invitation while the work is young. Requests are closed at the
-								moment, but anyone already writing here can invite you, so ask them for a code.
+								moment, but anyone already writing here can invite you, so ask them for a code. Have
+								a code already? <a href={resolve('/signup')}>Use it here</a>.
 							</p>
 						{:else}
 							<div class="model-term">Accounts open by invitation, for now</div>
