@@ -14,11 +14,15 @@
 	import '$lib/styles/menus.css';
 	// Late, so the consolidated primitives win over any screen-local skin.
 	import '$lib/styles/primitives.css';
-	// Last of all: the one navigation bar, which beats the bars it replaces.
+	// Late: the one navigation bar, which beats the bars it replaces.
 	import '$lib/styles/chrome.css';
+	// Last of all: the secondary surfaces (right-pane panels, the reader, the
+	// creation menus), so they beat any screen-local skin they replace.
+	import '$lib/styles/surfaces.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { browser } from '$app/environment';
 	import { applyAppearance } from '$lib/appearance-apply';
+	import { followSystemTheme } from '$lib/theme';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
@@ -34,6 +38,11 @@
 	$effect(() => {
 		document.documentElement.dataset.hydrated = 'true';
 	});
+
+	// With no theme choice stored on this device, the palette follows the system
+	// and keeps following it while the page is open. A reader who has not chosen
+	// gets the theme their system asks for, including when it changes mid-page.
+	$effect(() => followSystemTheme());
 
 	// Apply the signed-in user's saved theme and accent, syncing the pre-paint
 	// keys so the next load matches without a flash.

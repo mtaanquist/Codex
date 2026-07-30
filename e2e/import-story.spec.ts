@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The story import round trip: write a story, download its export zip, and
 // import the zip back through the universe settings preview flow.
@@ -8,15 +9,12 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 
 	const stamp = Date.now();
 	const universeName = `Importland ${stamp}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Roundtrip');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Roundtrip');

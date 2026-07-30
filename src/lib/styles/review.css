@@ -47,14 +47,19 @@
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	text-wrap: pretty;
+	/* pre-wrap hangs a space that lands on a line break past the measure;
+	   invisible until a mark tints it. Clip the paint at the measure. */
+	overflow-x: clip;
 }
 
 /* inline marks */
 .rv-mark {
 	cursor: pointer;
 	border-radius: 3px;
-	-webkit-box-decoration-break: clone;
-	box-decoration-break: clone;
+	/* Slice, not clone: padding and margin exist only at the mark's true start
+	   and end, so a fragment at a line edge sits flush with the margin and
+	   nothing shifts when focus arrives. The inset ring simply has no side
+	   strokes at a wrap point. */
 	transition:
 		background 0.14s,
 		box-shadow 0.14s;
@@ -62,7 +67,11 @@
 .rv-comment {
 	background: color-mix(in oklab, var(--auth) 15%, transparent);
 	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
-	padding: 0 1px;
+	/* The negative margin gives the padding back to the line, so the marked
+	   text sits exactly where unmarked text would; the box bleeds outward
+	   instead, and the prose clip swallows any bleed at the measure. */
+	padding: 2px 3px;
+	margin: 0 -3px;
 }
 .rv-comment:hover {
 	background: color-mix(in oklab, var(--auth) 26%, transparent);
@@ -84,35 +93,33 @@
 .rv-mark.rv-del,
 .rv-mark.rv-replace {
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
-	padding: 1px 2px;
+	/* Wide enough that the focused inset ring never sits on a glyph; the
+	   margin hands the width back so the prose keeps its measure. */
+	padding: 2px 3px;
+	margin: 0 -3px;
 }
 .rv-mark.rv-ins:hover,
 .rv-mark.rv-del:hover,
 .rv-mark.rv-replace:hover {
 	background: color-mix(in oklab, var(--auth) 18%, transparent);
 }
+/* The focus ring sits inside the tinted box (inset), because an outward ring
+   on wrapped inline text draws around every line fragment and collides with
+   its own next line - and with the ghost widget sitting beside a deletion. */
 .rv-mark.is-focused {
-	box-shadow:
-		0 0 0 2px var(--bg-canvas),
-		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--auth) 65%, transparent);
 	background: color-mix(in oklab, var(--auth) 24%, transparent);
 	animation: rvPulse 0.6s ease;
 }
 @keyframes rvPulse {
 	0% {
-		box-shadow:
-			0 0 0 2px var(--bg-canvas),
-			0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+		background: color-mix(in oklab, var(--auth) 24%, transparent);
 	}
 	50% {
-		box-shadow:
-			0 0 0 2px var(--bg-canvas),
-			0 0 0 8px color-mix(in oklab, var(--auth) 24%, transparent);
+		background: color-mix(in oklab, var(--auth) 42%, transparent);
 	}
 	100% {
-		box-shadow:
-			0 0 0 2px var(--bg-canvas),
-			0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+		background: color-mix(in oklab, var(--auth) 24%, transparent);
 	}
 }
 
@@ -210,16 +217,10 @@
 	padding: 12px 12px 10px;
 	border-bottom: 1px solid var(--border);
 }
-.rv-panel-title {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
+/* The panel's title sits above its own filter; the shared .panel-head skin
+   carries the type, so only the spacing is local. */
+.rv-panel-head .panel-head {
 	margin-bottom: 10px;
-}
-.rv-panel-title > span {
-	font-size: 14px;
-	font-weight: 700;
-	letter-spacing: -0.005em;
 }
 
 .rv-panel-scroll {
@@ -360,6 +361,10 @@
 	margin-bottom: 8px;
 }
 .rv-draft-input {
+	/* Block with real space before the actions: as an inline element its only
+	   gap was the baseline slack, which read as an overlap. */
+	display: block;
+	margin-bottom: 10px;
 	width: 100%;
 	box-sizing: border-box;
 	min-height: 66px;
@@ -613,8 +618,16 @@
 	flex: 1;
 	min-height: 0;
 }
+/* The tab bar exists for narrow screens only; the media query brings it back. */
+.review-shell > .seg {
+	display: none;
+}
 
 @media (max-width: 820px) {
+	.review-shell > .seg {
+		display: flex;
+		margin: 8px 10px 0;
+	}
 	.review-shell .body {
 		grid-template-columns: 1fr;
 	}
@@ -709,8 +722,10 @@
 .review-edit .cm-content .rv-mark {
 	cursor: pointer;
 	border-radius: 3px;
-	-webkit-box-decoration-break: clone;
-	box-decoration-break: clone;
+	/* Slice, not clone: padding and margin exist only at the mark's true start
+	   and end, so a fragment at a line edge sits flush with the margin and
+	   nothing shifts when focus arrives. The inset ring simply has no side
+	   strokes at a wrap point. */
 	transition:
 		background 0.14s,
 		box-shadow 0.14s;
@@ -718,7 +733,11 @@
 .review-edit .cm-content .rv-comment {
 	background: color-mix(in oklab, var(--auth) 15%, transparent);
 	box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--auth) 55%, transparent);
-	padding: 0 1px;
+	/* The negative margin gives the padding back to the line, so the marked
+	   text sits exactly where unmarked text would; the box bleeds outward
+	   instead, and the prose clip swallows any bleed at the measure. */
+	padding: 2px 3px;
+	margin: 0 -3px;
 }
 .review-edit .cm-content .rv-del,
 .review-edit .cm-content .rv-replace {
@@ -726,15 +745,23 @@
 	text-decoration: line-through;
 	text-decoration-color: color-mix(in oklab, var(--auth) 70%, var(--text-faint));
 	background: color-mix(in oklab, var(--auth) 9%, transparent);
-	padding: 0 1px;
+	/* Wide enough that the focused inset ring never sits on a glyph; the
+	   margin hands the width back so the prose keeps its measure. */
+	padding: 2px 3px;
+	margin: 0 -3px;
 }
-/* The proposed replacement/insertion rides as a non-editable ghost. */
+/* The proposed replacement/insertion rides as a non-editable ghost. The
+   margin keeps it off the deleted text it follows, like the read surface. */
 .review-edit .cm-content .rv-ghost {
 	color: var(--auth);
 	text-decoration: none;
 	border-bottom: 2px solid color-mix(in oklab, var(--auth) 60%, transparent);
 	cursor: pointer;
-	white-space: pre-wrap;
+	/* pre-line, not pre-wrap: collapsed spaces stretch with the justified
+	   paragraph, while a newline in the suggestion still breaks. */
+	white-space: pre-line;
+	margin-left: 3px;
+	padding: 2px 3px;
 }
 /* A resolved comment or decided suggestion, shown only under the Done filter:
    a faint outline marking where it sat, lighter than an open note. */
@@ -744,17 +771,13 @@
 	padding: 0 1px;
 }
 .review-edit .cm-content .rv-mark.is-focused {
-	box-shadow:
-		0 0 0 2px var(--bg-canvas),
-		0 0 0 4px color-mix(in oklab, var(--auth) 70%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--auth) 65%, transparent);
 	background: color-mix(in oklab, var(--auth) 24%, transparent);
 	animation: rvPulse 0.6s ease;
 }
 /* Resolved marks carry no author colour, so focus them in a neutral tone. */
 .review-edit .cm-content .rv-resolved.is-focused {
-	box-shadow:
-		0 0 0 2px var(--bg-canvas),
-		0 0 0 4px color-mix(in oklab, var(--text-muted) 55%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--text-muted) 55%, transparent);
 	background: color-mix(in oklab, var(--text-muted) 16%, transparent);
 }
 
@@ -763,10 +786,19 @@
 .review-edit {
 	max-width: 660px;
 }
+.review-edit .cm-content .cm-line {
+	/* Same hanging-space clip as .review-prose, per line: a tinted space on a
+	   justified line break would otherwise paint past the measure. */
+	overflow-x: clip;
+}
 .review-edit .cm-scroller {
 	font-family: var(--editor-font, var(--font-content));
 	font-size: 19px;
 	line-height: var(--editor-line-height, 1.72);
+	/* The manuscript wraps its lines, so the only horizontal overflow is a
+	   suggestion ghost's padding poking a few pixels past the measure - not
+	   something to grow a scrollbar over. */
+	overflow-x: hidden;
 }
 
 /* The fixed error toast both review pages float over the workspace. */

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Writing goals: an account daily word goal and a per-story target and
 // deadline, both persisting across a reload.
@@ -20,14 +21,11 @@ test('set a daily word goal and a per-story target and deadline', async ({ page 
 	// A story to set a target and deadline on.
 	const stamp = Date.now();
 	await gotoReady(page, '/');
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Goalfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Goalfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Goalfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Targets ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/targets-${stamp}`);

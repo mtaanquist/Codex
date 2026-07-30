@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The live markdown surface: rich is the default, so syntax marks hide
 // away from the cursor while the stored prose stays markdown; switching
@@ -10,15 +11,12 @@ test('rich editing: toolbar formats, marks hide by default, override shows them'
 	await gotoReady(page, '/');
 
 	const universeName = `Rich Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Soft Surface');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Soft Surface');

@@ -167,7 +167,7 @@
 		if (!view) return;
 		view.dispatch({
 			effects: setReviewMarks.of(
-				buildReviewMarks(threads, suggestions, filter, view.state.doc.length, focusedId)
+				buildReviewMarks(threads, suggestions, filter, view.state.doc.toString(), focusedId)
 			)
 		});
 	}

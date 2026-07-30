@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu } from './library';
 import { strToU8, zipSync, type Zippable } from 'fflate';
 
 // Builds a minimal but valid .docx in the test so the import covers a real
@@ -38,7 +39,7 @@ test('story import: preview and import a Word manuscript', async ({ page }) => {
 
 	const stamp = Date.now();
 	const universeName = `Docland ${stamp}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);

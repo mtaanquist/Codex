@@ -30,15 +30,15 @@ Details are short facts about an entry, each with a label and a value: Status, A
 
 When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
 
-## The Assistant tab
+## The Assistant panel
 
-When you have set up the Assistant on your account page, the right column of the plan gains a tab with its name, next to Reference, History, and Session. It is a chat grounded in your world, so you can ask questions and work through ideas while you plan.
+When you have set up the Assistant on your account page, the right column of the plan gains an Assistant panel, next to Reference and History. It is a chat grounded in your world, so you can ask questions and work through ideas while you plan.
 
-On a story's plan, the tab talks about that story, and it shares one conversation with the story's Write and Review views: send a message in one and it is there when you open another. On a universe's plan, the tab talks about the whole universe and keeps its own separate conversation.
+On a story's plan, the panel talks about that story, and it shares one conversation with the story's Write and Review views: send a message in one and it is there when you open another. On a universe's plan, the panel talks about the whole universe and keeps its own separate conversation.
 
 The Assistant can read across every story in the universe, not just the one in front of you. So while you plan a new book you can ask it to check a detail, an event, or a character against the earlier ones, and it will find the scene it comes from and tell you where. Ask it to check continuity across the stories and it will look for facts, timelines, and character details that disagree between the books.
 
-If you do not want the Assistant on a particular story, open its tab and select "Mute for this story"; the tab stays so you can turn it back on. To turn the Assistant off everywhere, use the master switch on your account page.
+If you do not want the Assistant on a particular story, open its panel and select "Mute for this story"; the panel stays so you can turn it back on. To turn the Assistant off everywhere, use the master switch on your account page.
 
 ## Relationships
 
@@ -58,7 +58,9 @@ A universe's plan shows its stories the same way when nothing else is open: each
 
 ## Insights
 
-Open Insights from the Session tab in the right column (the "All insights" link), or search for it with Ctrl+K. The page shows how the writing is going and how much of the world the prose uses. The Session tab itself keeps the short version in view while you work: words written today, the week's writing days, and your streak. If the streak is not for you, hide its card under Editor behaviour on your account page.
+Open Insights from the universe crumb in the top bar, or search for it with Ctrl+K. The page shows how the writing is going and how much of the world the prose uses. Insights reads the whole universe, so none of the four modes is current while you are there; pick one from the strip on the left to go back to the work, and use the list under it to jump between the page's sections.
+
+Writing sessions shows what you have written today, how many of the last 30 days and last 7 days you wrote on, and your progress towards a daily word goal. If the streak is not for you, hide it under Editor behaviour on your account page.
 
 Progress shows total words, net words written this week, your writing streak, and a chart of words per day for the last 30 days. A day counts towards the streak when you saved any scene that day. Each story below shows its word count and how its scenes split between outline, draft, revised, and final.
 
@@ -76,10 +78,12 @@ A note in a story belongs to that story. A note in a universe belongs to the who
 
 Pin the notes you reach for often with the Pin button above a note; pinned notes sit at the top of the list. Delete removes a note for good. The filter field at the top of the list narrows it by title.
 
-If you run a campaign, a note per session works well: keep the running log in a story note, and world facts the players have learned in a universe note. The History tab keeps past versions of a note the same way it does for scenes and entries.
+If you run a campaign, a note per sitting works well: keep the running log in a story note, and world facts the players have learned in a universe note. The right pane of the Notes view keeps past versions of the open note, the same way it does for scenes and entries; a note mentions nothing and has no comments, so History is the only panel there.
+
+A note can also be attached to one scene. In the editor, open the Notes panel on the right and select "New note on this scene": the note is made, attached, and opened in the Notes view for you to write. From then on it shows in that scene's Notes panel whenever the scene is open, and in the story's note list like any other note.
 
 ## History
 
-The History tab on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.
+The History panel on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.
 
 Select "Preview" on a version to read it; the panel above the text lists the fields as they were then. "Restore this version" brings the whole entry back to that state, including its relationships. Restoring never deletes history: the version you replaced stays in the list, so you can return to it the same way.

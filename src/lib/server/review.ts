@@ -869,40 +869,6 @@ export async function decideSuggestion(
 	return { ok: true, sceneId: row.scene.id };
 }
 
-// Accepts every pending suggestion in one scene, in creation order. Each accept
-// re-anchors against the now-current text, so applying them one after another
-// stays correct; a suggestion whose passage was rewritten cannot apply and is
-// counted as failed rather than aborting the rest. Ownership is enforced per
-// suggestion by decideSuggestion.
-export async function acceptAllInScene(
-	db: Database,
-	userId: string,
-	storyId: string,
-	sceneId: string
-): Promise<{ accepted: number; failed: number; acceptedIds: string[] }> {
-	const rows = await db
-		.select({ id: reviewSuggestions.id })
-		.from(reviewSuggestions)
-		.where(
-			and(
-				eq(reviewSuggestions.storyId, storyId),
-				eq(reviewSuggestions.sceneId, sceneId),
-				eq(reviewSuggestions.status, 'pending')
-			)
-		)
-		.orderBy(asc(reviewSuggestions.createdAt));
-	// The ids that applied, in application order, so the client can fold the
-	// same changes into its live editor without waiting for the data reload.
-	const acceptedIds: string[] = [];
-	let failed = 0;
-	for (const row of rows) {
-		const result = await decideSuggestion(db, userId, row.id, true);
-		if (result.ok) acceptedIds.push(row.id);
-		else failed++;
-	}
-	return { accepted: acceptedIds.length, failed, acceptedIds };
-}
-
 // Retracts a comment the viewer authored. A reply is removed on its own; the
 // thread's opening comment can only be removed when no one else has joined the
 // thread (so a retraction never takes someone else's reply with it), and then

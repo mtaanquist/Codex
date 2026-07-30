@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { openRowMenu } from './context-menu';
 import { clickTool } from './toolbar';
 
@@ -9,14 +10,11 @@ test('split a scene at the cursor, then merge the halves back', async ({ page })
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Cutfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Cutfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Cutfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Cuts ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/cuts-${stamp}`);
@@ -74,14 +72,11 @@ test('duplicate a scene from the row menu', async ({ page }) => {
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Dupes ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Dupes ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Dupes ${stamp}`);
 	await page.getByLabel('New story').fill(`Copies ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/copies-${stamp}`);

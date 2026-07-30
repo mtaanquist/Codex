@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
 	import Landing from '$lib/components/Landing.svelte';
+	import NewMenu from '$lib/components/NewMenu.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
@@ -9,10 +10,10 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// The header's New universe button and each section's new-story card
-	// swap to an inline title form when clicked. The standalone section's
-	// card uses the 'standalone' sentinel, since that universe may not
-	// exist yet.
+	// Every collection makes new things from its own header, with the same menu
+	// shape: make, then import. Picking a make row swaps in that collection's
+	// inline title form. The standalone section uses the 'standalone' sentinel,
+	// since that universe may not exist yet.
 	let creatingUniverse = $state(false);
 	let newStoryFor = $state<string | null>(null);
 
@@ -46,9 +47,30 @@
 	// rendered from nothing so the create card always has a home, and once
 	// it exists it stays pinned after the real universes.
 	const hasStandalone = $derived(data.universes.some((u) => u.standalone));
+	const standaloneUniverse = $derived(data.universes.find((u) => u.standalone));
 	const orderedUniverses = $derived(
 		[...data.universes].sort((a, b) => Number(a.standalone) - Number(b.standalone))
 	);
+
+	// Importing lands a story in a universe, so the link carries one: the
+	// standalone home when there is one, otherwise the first universe. With no
+	// universes at all there is nowhere to import into yet, and the row is left
+	// out rather than pointing at a page that cannot exist.
+	function importHref(slug: string): string {
+		return `${resolve('/universes/[id]/[[section]]', { id: slug, section: 'export' })}#import-story`;
+	}
+	const libraryImportTarget = $derived(standaloneUniverse ?? data.universes[0]);
+
+	// "New standalone story" from anywhere: the standalone home's own form when
+	// it exists, otherwise the form that creates the home on first use.
+	function startStandaloneStory() {
+		newStoryFor = standaloneUniverse?.id ?? 'standalone';
+	}
+
+	const IMPORT_NOTE =
+		"Import reads a Codex export, a Word document (.docx) and an EPUB; the document's headings become your chapters. A universe holds stories that share a world, cast and notes.";
+	const UNIVERSE_STORY_NOTE = 'A story in a universe shares its cast, places and notes.';
+	const STANDALONE_NOTE = 'A standalone story keeps its own cast and notes.';
 </script>
 
 <svelte:head>
@@ -101,7 +123,7 @@
 					<div class="page-actions">
 						{#if creatingUniverse}
 							<form class="new-inline" method="POST" action="?/createUniverse">
-								<!-- svelte-ignore a11y_autofocus (the field only appears on the button click) -->
+								<!-- svelte-ignore a11y_autofocus (the field only appears on the menu choice) -->
 								<input
 									class="input"
 									type="text"
@@ -124,13 +146,22 @@
 								</button>
 							</form>
 						{:else}
-							<button
-								class="btn btn-secondary"
-								type="button"
-								onclick={() => (creatingUniverse = true)}
-							>
-								New universe
-							</button>
+							<NewMenu
+								label="New"
+								variant="primary"
+								size="md"
+								items={[
+									{ label: 'New universe', onSelect: () => (creatingUniverse = true) },
+									{ label: 'New standalone story', onSelect: startStandaloneStory }
+								]}
+								importItem={libraryImportTarget
+									? {
+											label: 'Import a story from a file...',
+											href: importHref(libraryImportTarget.slug)
+										}
+									: undefined}
+								note={IMPORT_NOTE}
+							/>
 						{/if}
 					</div>
 				</div>
@@ -177,14 +208,16 @@
 									<p class="universe-description">{universe.descriptionMd}</p>
 								{/if}
 							</div>
-							<div class="universe-actions">
-								<a
-									class="btn btn-sm btn-ghost"
-									href={resolve('/universes/[id]/insights', { id: universe.slug })}
-									aria-label="Insights for {universe.name}"
-								>
-									Insights
-								</a>
+							<div class="universe-actions row-actions">
+								{#if !universe.standalone}
+									<a
+										class="btn btn-sm btn-ghost"
+										href={resolve('/universes/[id]/insights', { id: universe.slug })}
+										aria-label="Insights for {universe.name}"
+									>
+										Insights
+									</a>
+								{/if}
 								<a
 									class="btn btn-sm btn-ghost"
 									href={resolve('/universes/[id]/[[section]]', { id: universe.slug })}
@@ -192,6 +225,24 @@
 								>
 									Settings
 								</a>
+								<NewMenu
+									label="New story"
+									items={[
+										universe.standalone
+											? { label: 'New standalone story', onSelect: startStandaloneStory }
+											: {
+													label: `New story in ${universe.name}`,
+													onSelect: () => (newStoryFor = universe.id)
+												}
+									]}
+									importItem={{
+										label: universe.standalone
+											? 'Import a story from a file...'
+											: 'Import a story into this universe...',
+										href: importHref(universe.slug)
+									}}
+									note={universe.standalone ? STANDALONE_NOTE : UNIVERSE_STORY_NOTE}
+								/>
 							</div>
 						</header>
 						<div class="story-grid">
@@ -228,28 +279,38 @@
 										</button>
 									</div>
 								</form>
-							{:else}
-								<div class="card-add-stack">
-									<button
-										class="card-add"
-										type="button"
-										onclick={() => (newStoryFor = universe.id)}
-									>
-										<span class="plus">+</span>
-										<span
-											>{universe.standalone
-												? 'New standalone story'
-												: 'New story in this universe'}</span
-										>
-									</button>
-									<!-- eslint-disable svelte/no-navigation-without-resolve (resolve() plus a static hash) -->
-									<a
-										class="card-add-import"
-										href={`${resolve('/universes/[id]/[[section]]', { id: universe.slug, section: 'export' })}#import-story`}
-									>
-										Import a story from a file
-									</a>
-									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{:else if universeStories(universe.id).length === 0}
+								<!-- The one variant: an empty collection repeats its header's
+								     menu in the space the stories would fill. -->
+								<div class="collection-empty">
+									<p class="collection-empty-text">
+										{universe.standalone
+											? 'No standalone stories yet. A story that does not share a world lives here.'
+											: 'No stories in this universe yet. The world you have built here - its cast, places and notes - is waiting for one.'}
+									</p>
+									<NewMenu
+										label={universe.standalone
+											? 'New standalone story'
+											: `New story in ${universe.name}`}
+										variant="primary"
+										size="md"
+										align="start"
+										items={[
+											universe.standalone
+												? { label: 'New standalone story', onSelect: startStandaloneStory }
+												: {
+														label: `New story in ${universe.name}`,
+														onSelect: () => (newStoryFor = universe.id)
+													}
+										]}
+										importItem={{
+											label: universe.standalone
+												? 'Import a story from a file...'
+												: 'Import a story into this universe...',
+											href: importHref(universe.slug)
+										}}
+										note={universe.standalone ? STANDALONE_NOTE : UNIVERSE_STORY_NOTE}
+									/>
 								</div>
 							{/if}
 						</div>
@@ -270,6 +331,13 @@
 								<p class="universe-description">
 									Stories that stand on their own, outside any shared world.
 								</p>
+							</div>
+							<div class="universe-actions row-actions">
+								<NewMenu
+									label="New story"
+									items={[{ label: 'New standalone story', onSelect: startStandaloneStory }]}
+									note={STANDALONE_NOTE}
+								/>
 							</div>
 						</header>
 						<div class="story-grid">
@@ -303,9 +371,19 @@
 									</div>
 								</form>
 							{:else}
-								<button class="card-add" type="button" onclick={() => (newStoryFor = 'standalone')}>
-									<span class="plus">+</span><span>New standalone story</span>
-								</button>
+								<div class="collection-empty">
+									<p class="collection-empty-text">
+										No standalone stories yet. A story that does not share a world lives here.
+									</p>
+									<NewMenu
+										label="New standalone story"
+										variant="primary"
+										size="md"
+										align="start"
+										items={[{ label: 'New standalone story', onSelect: startStandaloneStory }]}
+										note={STANDALONE_NOTE}
+									/>
+								</div>
 							{/if}
 						</div>
 					</section>
@@ -375,10 +453,6 @@
 	.new-inline .input {
 		width: 220px;
 	}
-	button.card-add {
-		cursor: pointer;
-		font-family: inherit;
-	}
 	.card-add-form {
 		display: flex;
 		flex-direction: column;
@@ -391,23 +465,6 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-	}
-	.card-add-stack {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-	.card-add-stack :global(.card-add) {
-		width: 100%;
-	}
-	.card-add-import {
-		text-align: center;
-		font-size: 12.5px;
-		color: var(--text-muted);
-		text-decoration: none;
-	}
-	.card-add-import:hover {
-		text-decoration: underline;
 	}
 	.trash-list {
 		display: flex;

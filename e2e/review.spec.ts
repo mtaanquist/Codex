@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The full review loop: the author makes a story and a review link, an
 // anonymous guest opens it, gives a name, comments on a scene and suggests an
@@ -13,15 +14,12 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await gotoReady(page, '/');
 
 	const universeName = `Review Test ${Date.now()}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: universeName })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Margin Notes');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Margin Notes');
@@ -71,8 +69,14 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	}
 	await expect(guest.locator('.mode-note')).toContainText('belong to the author');
 
+	// One panel applies to a reviewer, so their pane wears the panel's title
+	// rather than a one-segment strip, with the Open/Done filter inside it.
+	await expect(guest.locator('.panel-strip')).toHaveCount(0);
+	await expect(guest.locator('.panel-head-title')).toHaveText('Comments');
+	await expect(guest.locator('.rv-panel-head .seg-btn', { hasText: 'Open' })).toBeVisible();
+
 	// A whole-scene comment from the panel.
-	await guest.getByRole('button', { name: 'Whole scene' }).click();
+	await guest.getByRole('button', { name: 'On the whole scene' }).click();
 	await guest.getByLabel('Your comment').fill('Strong opening, weak hinges.');
 	await guest
 		.locator('.rv-card.is-draft')

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Renaming an entity offers to sweep the old name out of the prose: the
 // banner counts what it will touch, Replace rewrites the scenes, and the
@@ -8,14 +9,11 @@ test('a rename offers to replace the old name in the prose', async ({ page }) =>
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Renamefall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Renamefall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Renamefall ${stamp}`);
 	await page.getByLabel('New story').fill(`Sweeps ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/sweeps-${stamp}`);

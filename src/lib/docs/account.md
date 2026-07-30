@@ -101,8 +101,8 @@ How the writing area works, as your personal defaults.
   scene marks in the continuous view, show or hide the writing streak, and set
   spell-check and your writing language. There is also a choice between the
   markdown editor and the softer rich editing surface.
-- **Daily word goal**: a daily word target. The Session tab and the Insights
-  page show how close you are to it. Leave it blank for no goal.
+- **Daily word goal**: a daily word target. A universe's Insights page shows how
+  close you are to it. Leave it blank for no goal.
 
 ## Notifications
 

@@ -1,22 +1,20 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // #301: the author opens their own story in review mode and leaves their own
 // comment and a suggested edit, then accepts the suggestion - the same surface
 // guests use, now driven by the logged-in author on the three-column workspace.
 test('the author can comment and suggest in their own review mode', async ({ page }) => {
-	// Retracting a comment and Accept all both ask for confirmation.
+	// Retracting a comment asks for confirmation.
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Selfreview ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Selfreview ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Selfreview ${stamp}`);
 	await page.getByLabel('New story').fill('Solo');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Solo');
@@ -78,15 +76,15 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await suggCard.getByRole('button', { name: 'Send reply' }).click();
 	await expect(suggCard.locator('.rv-reply-body')).toHaveText('Thinking about this one.');
 
-	// Accept all pending edits in the scene; the editable prose updates in place.
-	// Wait for the accept's data refresh before reading the text: the pending
-	// suggestion's ghost widget also renders the replacement, so the text
-	// check alone passes before the document itself has it - and typing into
-	// the stale document would win over the accepted text (local edits win).
-	// The Accept all button leaves with the last pending suggestion, which
-	// only happens once the refresh has landed.
-	await page.getByRole('button', { name: /^Accept all/ }).click();
-	await expect(page.getByRole('button', { name: /^Accept all/ })).toHaveCount(0);
+	// Accept the pending edit from its card; the editable prose updates in
+	// place. Wait for the accept's data refresh before reading the text: the
+	// pending suggestion's ghost widget also renders the replacement, so the
+	// text check alone passes before the document itself has it - and typing
+	// into the stale document would win over the accepted text (local edits
+	// win). The Accept button leaves with the pending suggestion, which only
+	// happens once the refresh has landed.
+	await suggCard.getByRole('button', { name: 'Accept suggestion' }).click();
+	await expect(suggCard.getByRole('button', { name: 'Accept suggestion' })).toHaveCount(0);
 	await expect(prose).toContainText('The revised sentence.');
 
 	// The author can now build on the accepted text: type into the manuscript
@@ -118,34 +116,32 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Stay ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Stay ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Stay ${stamp}`);
 	await page.getByLabel('New story').fill('Stay');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await page.getByRole('button', { name: 'New chapter' }).click();
 
 	// Two scenes, each with a unique tail token the edit never touches.
-	// Known flake, not yet fixed: this occasionally reaches Review with scene
-	// two empty, failing the TWOTAIL check below. The saved indicator is shared
-	// by the workspace, so after the first scene it can already read "Saved just
-	// now" and wave the second one through unsaved. Waiting on the scene's own
-	// PUT was tried and did not hold: neither the scene in the URL nor the
-	// request body reliably identifies the write while it is still in flight.
-	async function typeScene(text: string) {
+	// The editor remounts per scene, so wait until it holds the new, empty scene
+	// before typing: typing into the previous scene's body still on screen was
+	// how this used to reach Review with the two scenes' text run together, and
+	// the shared saved indicator (already reading "Saved just now" from the first
+	// scene) waved it through.
+	async function typeScene(text: string, previous?: string) {
 		await page.getByRole('button', { name: 'New scene' }).click();
+		if (previous) await expect(page.locator('.cm-content')).not.toContainText(previous);
 		await page.locator('.cm-content').click();
 		await page.keyboard.type(text);
 		await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+		await expect(page.locator('.cm-content')).toHaveText(text);
 	}
 
 	await typeScene('Sceneword ONETAIL closing.');
-	await typeScene('Sceneword TWOTAIL closing.');
+	await typeScene('Sceneword TWOTAIL closing.', 'ONETAIL');
 
 	await page.getByRole('link', { name: 'Review', exact: true }).click();
 	const prose = page.locator('.review-edit .cm-content');
@@ -191,14 +187,11 @@ test('typing immediately after an accept keeps the accepted text', async ({ page
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Race ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Race ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Race ${stamp}`);
 	await page.getByLabel('New story').fill('Race');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await page.getByRole('button', { name: 'New chapter' }).click();

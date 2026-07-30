@@ -12,6 +12,11 @@ import { resolve } from '$app/paths';
 export const UNIVERSE_MODE_NOTE =
 	'Write and Review need a story open. Both take you to the story list.';
 
+// The line under the mode strip on a universe page that is not one of the four
+// modes, so nothing in the strip is lit.
+export const INSIGHTS_MODE_NOTE =
+	'Insights reads the whole universe, so no mode is current. Pick one to go back to the work.';
+
 // The line under the mode strip for an invited reviewer.
 export const GUEST_MODE_NOTE =
 	'You were invited to review. Write, Plan and Notes belong to the author, so they are here but switched off.';

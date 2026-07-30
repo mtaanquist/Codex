@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { openRowMenu } from './context-menu';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Chapter management and the scene trash: rename and reorder chapters from
 // the sidebar, delete a scene into the trash, restore it, delete it forever,
@@ -11,14 +12,11 @@ test('scene trash and chapter tools', async ({ page }) => {
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Trashfall ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Trashfall ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Trashfall ${stamp}`);
 	await page.getByLabel('New story').fill(`Bins ${stamp}`);
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/bins-${stamp}`);

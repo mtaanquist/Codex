@@ -94,7 +94,7 @@ The History tab on the right keeps past versions of the open scene. Use "Checkpo
 
 ## The Assistant
 
-When you have set up the Assistant on your account page, an Assistant tab appears on the right alongside Reference, History, and Session. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
+When you have set up the Assistant on your account page, an Assistant panel appears on the right alongside Reference, History, and Notes. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
 
 To ask about a particular passage, select it in the editor, right-click, and choose Assistant, then "Ask the Assistant about this". The passage appears above the chat box as a quote; type your question and send, or select the x on the quote to drop it.
 

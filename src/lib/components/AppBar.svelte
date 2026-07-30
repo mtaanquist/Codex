@@ -9,6 +9,8 @@
 	import { openPalette } from '$lib/palette.svelte';
 	import { helpReturn, rememberLocation } from '$lib/help.svelte';
 	import { authorInitials } from '$lib/review-ui';
+	import { modLabel } from '$lib/keys';
+	import { onMount } from 'svelte';
 	import type { Crumb } from '$lib/chrome';
 
 	// The one navigation bar: brand, path, tools, in that order, on every page.
@@ -65,6 +67,10 @@
 	$effect(() => {
 		if (!onHelp) rememberLocation(page.url.pathname + page.url.search);
 	});
+
+	// SSR cannot know the platform, so the modifier label settles after mount.
+	let mod = $state<'Cmd' | 'Ctrl'>('Ctrl');
+	onMount(() => (mod = modLabel()));
 </script>
 
 <header class="appbar" class:guest={shell === 'guest'} class:reader={shell === 'reader'}>
@@ -108,12 +114,12 @@
 			<button
 				class="tool-search"
 				type="button"
-				title="Search and commands (Ctrl+K)"
+				title="Search and commands ({mod}+K)"
 				aria-label="Search and commands"
 				onclick={openPalette}
 			>
 				<Icon name="search" />
-				Search <kbd>Ctrl K</kbd>
+				Search <kbd>{mod} K</kbd>
 			</button>
 		{/if}
 		<ThemeToggle />

@@ -82,31 +82,32 @@ function suggestion(over: Partial<ReviewSuggestion> = {}): ReviewSuggestion {
 }
 
 const ALL: ReviewFilter = 'all';
+const DOC = 'x'.repeat(100);
 
 describe('buildReviewMarks', () => {
 	it('marks an open, anchored comment over its passage', () => {
-		const flat = flatten(buildReviewMarks([thread()], [], ALL, 100));
+		const flat = flatten(buildReviewMarks([thread()], [], ALL, DOC));
 		expect(flat).toHaveLength(1);
 		expect(flat[0]).toMatchObject({ from: 2, to: 6, rid: 't1' });
 		expect(flat[0].class).toContain('rv-comment');
 	});
 
 	it('hides comments under the suggestions filter and vice versa', () => {
-		expect(flatten(buildReviewMarks([thread()], [], 'suggestions', 100))).toHaveLength(0);
-		expect(flatten(buildReviewMarks([], [suggestion()], 'comments', 100))).toHaveLength(0);
+		expect(flatten(buildReviewMarks([thread()], [], 'suggestions', DOC))).toHaveLength(0);
+		expect(flatten(buildReviewMarks([], [suggestion()], 'comments', DOC))).toHaveLength(0);
 	});
 
 	it('excludes resolved threads and decided suggestions', () => {
 		expect(
-			flatten(buildReviewMarks([thread({ resolvedAt: '2026-02-01' })], [], ALL, 100))
+			flatten(buildReviewMarks([thread({ resolvedAt: '2026-02-01' })], [], ALL, DOC))
 		).toHaveLength(0);
 		expect(
-			flatten(buildReviewMarks([], [suggestion({ status: 'accepted' })], ALL, 100))
+			flatten(buildReviewMarks([], [suggestion({ status: 'accepted' })], ALL, DOC))
 		).toHaveLength(0);
 	});
 
 	it('draws a delete suggestion as a strikethrough mark over the text', () => {
-		const flat = flatten(buildReviewMarks([], [suggestion({ replacement: '' })], ALL, 100));
+		const flat = flatten(buildReviewMarks([], [suggestion({ replacement: '' })], ALL, DOC));
 		expect(flat).toHaveLength(1);
 		expect(flat[0]).toMatchObject({ from: 4, to: 7, rid: 'g1' });
 		expect(flat[0].class).toContain('rv-del');
@@ -114,7 +115,7 @@ describe('buildReviewMarks', () => {
 
 	it('rides an insert suggestion as a ghost widget at the anchor', () => {
 		const flat = flatten(
-			buildReviewMarks([], [suggestion({ original: '', replacement: 'new' })], ALL, 100)
+			buildReviewMarks([], [suggestion({ original: '', replacement: 'new' })], ALL, DOC)
 		);
 		expect(flat).toHaveLength(1);
 		expect(flat[0].from).toBe(flat[0].to);
@@ -123,7 +124,7 @@ describe('buildReviewMarks', () => {
 	});
 
 	it('draws a replace as a strikethrough mark plus a ghost widget at the end', () => {
-		const flat = flatten(buildReviewMarks([], [suggestion()], ALL, 100));
+		const flat = flatten(buildReviewMarks([], [suggestion()], ALL, DOC));
 		expect(flat).toHaveLength(2);
 		const mark = flat.find((f) => f.class?.includes('rv-replace'));
 		const ghost = flat.find((f) => f.widgetText);
@@ -133,10 +134,10 @@ describe('buildReviewMarks', () => {
 
 	it('skips anchors that fall outside the live document', () => {
 		expect(
-			flatten(buildReviewMarks([thread({ anchor: { start: 90, end: 120 } })], [], ALL, 100))
+			flatten(buildReviewMarks([thread({ anchor: { start: 90, end: 120 } })], [], ALL, DOC))
 		).toHaveLength(0);
 		expect(
-			flatten(buildReviewMarks([], [suggestion({ anchor: { start: 120, end: 130 } })], ALL, 100))
+			flatten(buildReviewMarks([], [suggestion({ anchor: { start: 120, end: 130 } })], ALL, DOC))
 		).toHaveLength(0);
 	});
 
@@ -144,9 +145,9 @@ describe('buildReviewMarks', () => {
 		const resolvedThread = thread({ resolvedAt: '2026-02-01' });
 		const decided = suggestion({ id: 'g1', status: 'accepted' });
 		// Not shown under the open filters.
-		expect(flatten(buildReviewMarks([resolvedThread], [decided], ALL, 100))).toHaveLength(0);
+		expect(flatten(buildReviewMarks([resolvedThread], [decided], ALL, DOC))).toHaveLength(0);
 		// Shown, faint, with no strikethrough or ghost, under Done.
-		const flat = flatten(buildReviewMarks([resolvedThread], [decided], 'resolved', 100));
+		const flat = flatten(buildReviewMarks([resolvedThread], [decided], 'resolved', DOC));
 		expect(flat).toHaveLength(2);
 		expect(flat.every((f) => f.class?.includes('rv-resolved'))).toBe(true);
 		expect(flat.some((f) => f.widgetText)).toBe(false);
@@ -155,11 +156,29 @@ describe('buildReviewMarks', () => {
 
 	it('skips a resolved mark whose anchor was lost', () => {
 		const lost = thread({ resolvedAt: '2026-02-01', anchorLost: true });
-		expect(flatten(buildReviewMarks([lost], [], 'resolved', 100))).toHaveLength(0);
+		expect(flatten(buildReviewMarks([lost], [], 'resolved', DOC))).toHaveLength(0);
+	});
+
+	it('leaves an anchor edge whitespace untinted', () => {
+		// The anchor grabbed the space before and after the passage; the painted
+		// range shrinks to the words, the stored anchor is untouched.
+		const doc = 'one two three four';
+		const flat = flatten(
+			buildReviewMarks([thread({ anchor: { start: 3, end: 14 } })], [], ALL, doc)
+		);
+		expect(flat).toHaveLength(1);
+		expect(flat[0]).toMatchObject({ from: 4, to: 13 });
+	});
+
+	it('skips a whitespace-only anchor instead of painting it', () => {
+		const doc = 'one two three four';
+		expect(
+			flatten(buildReviewMarks([thread({ anchor: { start: 3, end: 4 } })], [], ALL, doc))
+		).toHaveLength(0);
 	});
 
 	it('bakes the focus highlight into the matching mark only', () => {
-		const flat = flatten(buildReviewMarks([thread()], [suggestion()], ALL, 100, 't1'));
+		const flat = flatten(buildReviewMarks([thread()], [suggestion()], ALL, DOC, 't1'));
 		const comment = flat.find((f) => f.rid === 't1');
 		const sugg = flat.find((f) => f.rid === 'g1' && f.class);
 		expect(comment?.class).toContain('is-focused');
@@ -177,7 +196,7 @@ describe('review marks field', () => {
 		const handle = reviewMarksExtension({ onFocusMark: () => {}, onGeometry: () => {} });
 		let state = EditorState.create({ doc, extensions: handle.extension });
 		state = state.update({
-			effects: setReviewMarks.of(buildReviewMarks(threads, suggestions, ALL, doc.length))
+			effects: setReviewMarks.of(buildReviewMarks(threads, suggestions, ALL, doc))
 		}).state;
 		// anchorOf only reads view.state, so a state wrapper stands in for a view.
 		const viewOf = (s: EditorState) => ({ state: s }) as unknown as EditorView;

@@ -1,7 +1,8 @@
 # Codex design system - components sheet
 
 Status: written 2026-07-29 from a full audit of `src/lib/styles/` and
-`src/lib/components/`. This is the canonical reference for anyone (person or
+`src/lib/components/`; updated 2026-07-30 for the secondary surfaces pass
+(the right pane's panel strip, the reading pages, one creation pattern). This is the canonical reference for anyone (person or
 agent) building a new page or changing an existing one. It says which
 primitives are canon, which are legacy, and which patterns must not be
 copied. When the code and this sheet disagree, fix one of them; do not let
@@ -101,19 +102,30 @@ Rules:
 
 ## Shells
 
-Every page uses exactly one of these four wrappers. Do not build a fifth.
+Every page uses exactly one of these five wrappers. Do not build a sixth.
 
 | Shell | Component(s) | Used by |
 |---|---|---|
-| Workspace | `.app` grid + `AppBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes (universe scope); help; guest review |
-| Page | `.page-shell` + `AppBar.svelte` | Library, print preview, public reading pages |
-| Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings, insights |
+| Workspace | `.app` grid + `AppBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes, Insights (universe scope); help; guest review |
+| Page | `.page-shell` + `AppBar.svelte` | Library, print preview |
+| Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings |
+| Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Auth | `AuthShell.svelte` | Sign-in, sign-up, and every email-flow page |
 
 The workspace shell is a three-column grid: structure left (fixed 240px),
 work centre, reference right (fixed 280px). Sidebar widths are a settled
 decision; resize is deferred. Focus mode (`.app.focus-mode`) hides both
-sidebars with `visibility: hidden` so the prose column does not shift.
+sidebars with `visibility: hidden` so the prose column does not shift. Add
+`.body.no-right` when no panel has a subject, so the centre takes the space
+instead of a fixed empty column.
+
+**Workspace or settings, and how to tell.** A page that reads or changes the
+work wears the workspace shell; a page that configures the account, a story
+or a universe wears the settings shell. Insights reads the work, so it moved
+from the settings slot into the workspace one in the surfaces pass: mode
+strip at the top of the left pane, the page's own sections as the contents
+below it, the standard right pane. The question to ask of a new page is
+which of those two it is doing; nothing else decides it.
 
 Every one of them wears the same bar; see Chrome below. Nothing escapes a
 shell any more: docs, print, guest review and the public reader all carry it.
@@ -181,20 +193,77 @@ The left slot is always 240px, whatever fills it:
   one `.mode-note` line under the strip says why: rendered, not a tooltip,
   so it is readable by keyboard and by screen reader. The two lines live as
   `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `$lib/chrome.ts`.
-- Where there is no mode at all (settings, insights, print, help) the same
-  slot holds that page's own section list: `.side-nav`, with
-  `.side-nav-label` group headings, `.side-head` for the identity block, and
-  `aria-current="page"` on the open item. In-page anchors are a sanctioned
-  use of `.side-nav`.
+- **The mode strip may have nothing lit.** `ModeSwitcher` takes `active: Mode
+  | null`; a universe page that is not one of the four (insights) passes null,
+  keeps all four live, and says why in its `.mode-note`
+  (`INSIGHTS_MODE_NOTE`). A strip that lies about where you are is worse than
+  a strip with nothing lit.
+- Where there is no mode at all (settings, print, help) the same slot holds
+  that page's own section list: `.side-nav`, with `.side-nav-label` group
+  headings, `.side-head` for the identity block, and `aria-current="page"` on
+  the open item.
+- **`.side-nav` means routes, and only routes**, to the sibling pages of a
+  settings family. A list of anchors inside the page you are already on is
+  `.contents-nav` (same visual treatment, `aria-current="true"` on the open
+  section). Insights is the one user today; the two must not be confused,
+  because one navigates away and the other does not.
 
 The command palette stays the fast path to everything, but it is a shortcut
 to this model, never a substitute for it: anything reachable only from the
 palette is a bug.
 
-The right sidebar of the workspace shell has up to four tabs with fixed
-semantics (see `design.md`): Reference (what is in view), History (what was
-in view), Session (how you are working), Assistant (who you are working
-with). A tab that does not apply to a mode is hidden, not faked.
+## The right pane: panels about the document
+
+The left strip is routes and never changes shape. The right pane is panels
+about whatever the centre holds, so it changes with the mode. Five panels,
+one order, one label each - **Reference, Comments, Assistant, History,
+Notes** - and nothing is ever renamed per page.
+
+| Panel | Subject | Write | Plan | Notes | Review | Insights | Guest |
+|---|---|---|---|---|---|---|---|
+| Reference | what the prose or entry mentions | yes | yes | - | - | - | - |
+| Comments | comments and suggestions on this text | - | - | - | yes | - | yes |
+| Assistant | the text, read against story settings | yes | yes | - | yes | yes | - |
+| History | versions of what you are editing | yes | yes | yes | - | - | - |
+| Notes | notes on this scene | yes | - | - | - | - | - |
+
+Notes is on Write and not on Plan: a note attaches to a scene through the
+existing `notes.scene_id`, and there is no column that attaches one to a plan
+entry. An entry's own "story notes" field in `EntityEditor` is a different
+thing and stays where it is. Giving Plan a Notes panel needs a migration, so
+it waits for one.
+
+Rules, all of them enforced in one place (`$lib/panels.ts`):
+
+- **A panel exists where it has a subject, and is hidden where it does not.**
+  A route your role forbids is disabled in place, because permission can
+  change; a panel with no subject is hidden, because a subject is not
+  something a viewer can be granted. `visiblePanels()` takes the subjects and
+  returns the panels in the one order; `activePanel()` keeps the viewer's pick
+  while it still has a subject and otherwise falls back to the first.
+- **No panels means no pane.** `activePanel()` returns null; the page does not
+  render the `aside` and adds `.body.no-right`. This is Plan with no entry
+  open, and Notes with no note open.
+- **One panel left means a title, not a strip.** The pane keeps its 12px
+  header and wears `.panel-head`: the panel's name in `.panel-head-title`,
+  and what it is about in `.panel-head-sub` ("History" / "this note").
+- **Two or more is a real tablist.** `PanelStrip.svelte` is the only
+  implementation: `role="tablist"` on the `.seg.full.panel-strip`,
+  `role="tab"` with `aria-selected` and a roving tabindex on each
+  `.seg-btn`, arrows between panels, Home and End to the ends, and
+  `aria-controls` pointing at a `role="tabpanel"`. The `.active` skin and
+  `aria-selected` are set together, so the look and the announcement cannot
+  drift apart. Panel wrappers always render (so `aria-controls` always
+  resolves); only the open panel's contents are built.
+- **A filter inside a panel is not the strip.** Open / Done in Comments is a
+  `.seg` inside the panel, under the strip and under the panel's own
+  `.panel-head`, so the two segmented controls in that pane are never
+  mistaken for one another.
+- **A count on a tab is a `.seg-count`**, passed as the subject
+  (`visiblePanels({ notes: 3 })`); zero still shows the panel, and the badge
+  itself only renders above zero.
+- **`.panel-note`** is a panel's one line of help for a first-time reader of
+  that panel, at `--text-meta` and `--text-muted`, at the end of the panel.
 
 ## Canonical primitives
 
@@ -296,8 +365,8 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 ### Segmented strips and filters
 
 - `.seg` container with `.seg-btn` items (`.active`, `:disabled`,
-  `:focus-visible`) - the mode strip, the right-panel tabs, the review
-  tabs, and any exclusive choice of two to four peers. `.seg.full` stretches
+  `:focus-visible`) - the mode strip, the right pane's panel strip, and any
+  exclusive choice of two to four peers. `.seg.full` stretches
   the items to fill the row. `ModeSwitcher.svelte` is the reference use.
 - `.seg-count` is a tally riding inside a `.seg-btn` (open notes, filtered
   results) at `--text-micro`. It is not a second badge family and appears
@@ -321,6 +390,63 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 well outside admin), `.r-card` (right-pane reference blocks), `.rv-card`
 (review threads). New reference-pane content should compose `.r-card`;
 new settings content composes `.admin-card`.
+
+### Creation menus
+
+One creation pattern: **a collection makes new things from its own header**,
+with the same menu shape everywhere - make, then a rule, then import, then one
+line of help. `NewMenu.svelte` is the only implementation; it composes the
+shared `.popover`/`.menu-item` skin inside a `.menu-host`, carries
+`aria-haspopup`/`aria-expanded`, and closes on outside pointerdown or Escape
+through the shared `dismiss` action.
+
+- `.menu-host` positions the popover under its trigger; `.open` shows it, and
+  `.start` opens it from the left edge for a button on the left of its row.
+- `.menu-sep` is the rule between making and importing; `.menu-note` is the
+  one help line; `.new-caret` is the 11px caret in the trigger's label.
+- `.row-actions` is the action cluster a row's controls sit in (a universe row:
+  Insights, Settings, New story - one cluster, one order).
+- **Import is a way of making, not a link off to one side.** It is a row in the
+  menu. There are no import text links under a grid.
+- `.collection-empty` is the one variant: an empty collection repeats the same
+  menu in the space its items would fill, with one sentence
+  (`.collection-empty-text`) saying what goes there.
+- **`.card-add` is legacy in a populated grid.** A dashed tile beside real
+  cards was a third affordance for the same act. It survives only as the skin
+  of the inline title form the menu swaps in.
+
+### The reading pages
+
+The outward face of the work, built from the same tokens as everything else.
+`.reader-shell` wraps `AppBar` (`shell="reader"`), `.reader-main`, and
+`ReaderFooter.svelte`.
+
+- Type and colour are tokens: `.reader-prose` is `--font-content` at
+  `--text-prose`/1.75 in a 37rem `.reader-col` (`.wide` is 62rem for the
+  shelf). A new paragraph is an indent, not a gap.
+- **Body text is `--text` and `--text-muted` only.** `--text-faint` is a
+  chrome colour and measures under 4.5:1 on the dark background, so it is not
+  a reading colour and does not appear on these pages.
+- **Links in reading text are underlined in the body colour**, not accent:
+  accent on the light and warm backgrounds falls short of 4.5:1, and an
+  underline is what a book does anyway. Accent is kept for the focus ring,
+  where 3:1 is the bar.
+- **A cover is the story's own title**, set in `--font-serif` on `--bg-inset`
+  (`.shelf-cover`), until an author uploads artwork.
+- **One footer, on both pages:** the mark and "Written in Codex", who
+  published it, and three links (Reading in Codex, About Codex, Write your
+  own). "Write your own" targets the app root - the library for a signed-in
+  reader, the sign-in page otherwise - until a landing page exists to point it
+  at.
+- **The theme is the reader's.** With no choice stored on the device the page
+  opens in the theme the system asks for (the pre-paint script in
+  `app.html`), and `followSystemTheme()` in the root layout keeps following it
+  while the page is open. The theme tool in the bar overrides and remembers;
+  an author's account choice carries over, since it is the same key.
+- **The author is named, not addressed.** The path crumb and the footer show
+  `users.penName ?? users.displayName` (`$lib/author-name.ts`), never the raw
+  handle. The handle keeps appearing where it is an address: the URL, and the
+  shelf header's "@handle - N stories published" line.
 
 ### Empty states
 
@@ -364,8 +490,9 @@ From CLAUDE.md, repeated here because every screen touches it:
 
 Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`,
 `pages.css`, `admin.css`, `editor.css`, `review.css`, `menus.css`,
-`primitives.css`. All global and unscoped, so a later file silently wins a
-specificity tie; check for an existing definition before adding a class.
+`primitives.css`, `chrome.css`, `surfaces.css`. All global and unscoped, so a
+later file silently wins a specificity tie; check for an existing definition
+before adding a class.
 
 - `tokens.css` - tokens and base element rules only. No components.
 - `theme.css` - the workspace shell and its components (outline rows,
@@ -376,9 +503,12 @@ specificity tie; check for an existing definition before adding a class.
   cards, autocomplete popup).
 - `review.css` - review surfaces.
 - `menus.css` - the shared popover/menu skin.
-- `primitives.css` - loaded last, so it wins over any screen-local skin.
-  Holds the families that had no single owner before: the modal, the empty
-  state, the chip remove affordance, and the shared focus ring.
+- `primitives.css` - the families that had no single owner before: the modal,
+  the empty state, the chip remove affordance, and the shared focus ring.
+- `chrome.css` - the one navigation bar, the mode strip's skin, `.side-nav`.
+- `surfaces.css` - loaded last, so it wins over any screen-local skin. The
+  right pane's panel strip and panel head, `.contents-nav`, the creation
+  menus and `.collection-empty`, and the reading pages.
 
 Component `<style>` blocks are for genuinely local layout only. If a rule
 could apply anywhere else, it belongs in the shared files. Never redefine a
@@ -387,20 +517,27 @@ shared class inside a component (this still happens for `.btn-sm` and
 
 ## New page checklist
 
-1. Pick the shell; wire `AppBar` with a path built from `$lib/chrome.ts` and
-   the tools cluster that shell provides. A new page adds a crumb; it does
-   not add a bar.
+1. Pick the shell - workspace if the page reads or changes the work, settings
+   if it configures something - and wire `AppBar` with a path built from
+   `$lib/chrome.ts` and the tools cluster that shell provides. A new page adds
+   a crumb; it does not add a bar.
 2. Compose from the canonical primitives above; extend shared CSS if a
    variant is genuinely missing.
-3. Tokens only; no raw colours, no `[data-theme]` branches, no token
+3. On a workspace page, decide each of the five panels' subject and pass them
+   to `visiblePanels()`; render the pane through `PanelStrip`, and leave the
+   pane out entirely when nothing has a subject. Never rename a panel, never
+   disable one, never invent a sixth.
+4. If the page is a collection, it makes new things from its own header with
+   `NewMenu`: make, rule, import, one help line.
+5. Tokens only; no raw colours, no `[data-theme]` branches, no token
    fallbacks.
-4. Check dark, light, and warm, plus compact density if the page has rows.
-5. Keyboard: everything reachable, visible focus, `aria-label` on icon-only
+6. Check dark, light, and warm, plus compact density if the page has rows.
+7. Keyboard: everything reachable, visible focus, `aria-label` on icon-only
    controls, Escape closes any overlay.
-6. Empty, loading, and error states use the shared patterns.
-7. UI text follows the writing rules; help articles updated if behaviour
-   changed.
-8. Update this sheet if you added or changed a primitive.
+8. Empty, loading, and error states use the shared patterns.
+9. UI text follows the writing rules; help articles updated if behaviour
+   changed. The word "Session" does not appear in the product.
+10. Update this sheet if you added or changed a primitive.
 
 ## Known drift - do not copy, consolidation backlog
 
@@ -436,6 +573,18 @@ them.
   `.storage-bar`/`.usage-bar`, `.goal-bar`, `.ac-menu`/`.ac-item`/
   `.ac-name`/`.ac-kind`, `.entity-pop`.
 
+### Removed in the surfaces pass
+
+- `SessionPanel.svelte` and its `/api/universes/[id]/session` endpoint. The
+  word "Session" named a sitting, not a panel; the stats it carried are the
+  "Writing sessions" section of a universe's insights page, universe-scoped.
+  Its CSS went with it: `.sess-grid`, `.sess-stat`, `.sess-n`, `.sess-l`,
+  `.goal-meta`, `.streak-row`, `.streak-day`.
+- `.rv-panel-title` (the review panel's own heading) folded into
+  `.panel-head`; `.rv-rhead` folded into `PanelStrip`'s `.right-head`.
+- `.card-add-stack` and `.card-add-import` (the dashed tile plus an import
+  text link under every grid), folded into one `NewMenu` per collection.
+
 ### Still outstanding
 
 Duplicated definitions (later file or component style wins): the assistant
@@ -463,11 +612,12 @@ once the drag handlers stop swallowing keyboard events.
 ## Component index
 
 Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
-`ModeSwitcher`, `ThemeToggle`, `CrumbMenu`, `SidebarSearch`,
-`HelpLink`, `FormStatus`, `ReviewAvatar`, `ReviewReplyForm`,
+`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemeToggle`, `CrumbMenu`,
+`SidebarSearch`, `HelpLink`, `FormStatus`, `ReviewAvatar`, `ReviewReplyForm`,
 `ReviewReplyRow`, `ReviewMarginRail`, `ReviewSelectionToolbar`.
 
 Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
+`ReaderFooter`,
 `UserMenu`, `NotificationBell`, `ActivityCenter`, `ViewMenu`,
 `EditorToolbar`, `SelectionMenu`, `NotesSidebar`, `PlanSidebar`,
 `StoryOutline`, `StoryRowMenu`, `RevisionHistory`, `EntityBadgePicker`,
@@ -476,6 +626,6 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
-`SessionPanel`, `ExportPanel`, `AssistantPanel`, `CoauthorPanel`,
+`ExportPanel`, `AssistantPanel`, `CoauthorPanel`,
 `ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `EntityEditor`,
 `EntityCard`, `RelationshipWeb`, `SceneBoard`, `StoryBoard`.

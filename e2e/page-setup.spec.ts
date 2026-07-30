@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Line spacing and the binding gutter are page-setup knobs. The in-app preview
 // must reflect line spacing (and the page's text-column width); the alternating
@@ -8,14 +9,11 @@ import { gotoReady } from './navigate';
 test('page setup line spacing reflects in the story preview', async ({ page }) => {
 	await gotoReady(page, '/');
 	const stamp = Date.now();
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(`Setup ${stamp}`);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await gotoReady(page, '/');
-	await page
-		.locator('.universe-section', { hasText: `Setup ${stamp}` })
-		.getByRole('button', { name: 'New story in this universe' })
-		.click();
+	await startStoryInUniverse(page, `Setup ${stamp}`);
 	await page.getByLabel('New story').fill('Spacing');
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page.locator('.story-title')).toHaveText('Spacing');

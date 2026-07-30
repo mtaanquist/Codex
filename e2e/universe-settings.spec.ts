@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
+import { pickFromLibraryMenu } from './library';
 
 // The universe settings page: contents tiles, the category manager, the
 // history panel, the export download, and the trash round trip.
@@ -11,7 +12,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 
 	const stamp = Date.now();
 	const name = `Settle ${stamp}`;
-	await page.getByRole('button', { name: 'New universe' }).click();
+	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(name);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page).toHaveURL(`/universes/settle-${stamp}`);
