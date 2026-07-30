@@ -11,7 +11,9 @@ public pages. The public-page block is where you claim a handle: a short name
 that becomes your public address at `/@yourhandle`. You can claim a handle once,
 so pick it with care. Add a short bio and, if you take requests, a note that
 your commissions are open with the details. Turn on the public profile toggle to
-show this page to visitors; leave it off to keep it hidden.
+show this page to visitors; leave it off to keep it hidden. Either way, "Open
+your page" next to the page address shows you the page as visitors would see
+it; while it is hidden, a note on top says only you can see it.
 
 You can upload an avatar when image storage is set up on the instance. Without
 it, your initials stand in.

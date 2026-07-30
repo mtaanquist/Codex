@@ -191,7 +191,12 @@
 					<div class="copy-field">
 						<input id="page-address" type="text" value={handleUrl} readonly />
 					</div>
-					<p class="field-hint">Where your page lives. Publish stories from their settings page.</p>
+					<p class="field-hint">
+						Where your page lives.
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (absolute URL on this origin) -->
+						<a href={handleUrl}>Open your page</a> - until visibility is on, it shows a preview only you
+						can see. Publish stories from their settings page.
+					</p>
 				</div>
 
 				<div class="field">
