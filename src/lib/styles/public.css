@@ -33,14 +33,18 @@
 }
 /* Links in public prose are underlined body colour, as on the reading pages:
    accent text on the light and warm backgrounds falls short of 4.5:1. */
-.public-surface a:not(.btn):not(.appbar-brand):not(.icon-btn) {
+.public-surface a:not(.btn):not(.appbar-brand):not(.icon-btn):not(.reader-foot-brand) {
 	color: var(--text);
 	text-decoration: underline;
 	text-decoration-color: var(--border-strong);
 	text-underline-offset: 2px;
 }
-.public-surface a:not(.btn):not(.appbar-brand):not(.icon-btn):hover {
+.public-surface a:not(.btn):not(.appbar-brand):not(.icon-btn):not(.reader-foot-brand):hover {
 	text-decoration-color: currentColor;
+}
+/* The footer brand is a lockup linking home, like the bar's, not a prose link. */
+.public-surface a.reader-foot-brand {
+	text-decoration: none;
 }
 .public-surface a:focus-visible {
 	outline: 2px solid var(--accent);
@@ -63,7 +67,6 @@
 	line-height: 1.04;
 	letter-spacing: -0.025em;
 	margin: 0;
-	max-width: 21ch;
 	text-wrap: balance;
 }
 .hero-title em {
@@ -75,7 +78,9 @@
 	font-size: var(--text-prose);
 	line-height: 1.65;
 	color: var(--text-muted);
-	max-width: 56ch;
+	/* Loose measure: the one cap left on full-width prose, because a line the
+	   whole container wide is past what an eye tracks comfortably. */
+	max-width: 72ch;
 	margin: var(--space-6) 0 0;
 	text-wrap: pretty;
 }
@@ -117,7 +122,7 @@
 	font-size: var(--text-prose-sm);
 	line-height: 1.6;
 	color: var(--text-muted);
-	max-width: 74ch;
+	max-width: 90ch;
 	margin: var(--space-4) 0 0;
 	text-wrap: pretty;
 }
@@ -424,7 +429,6 @@
 	line-height: 1.18;
 	letter-spacing: -0.018em;
 	margin: 0;
-	max-width: 30ch;
 }
 .model-grid {
 	display: grid;
@@ -451,7 +455,7 @@
 	line-height: 1.62;
 	color: var(--text-muted);
 	margin: var(--space-2) 0 0;
-	max-width: 46ch;
+	/* No measure cap: the card is the measure. */
 	text-wrap: pretty;
 }
 .close-row {
@@ -467,7 +471,8 @@
 	line-height: 1.6;
 	color: var(--text-muted);
 	margin: 0;
-	max-width: 48ch;
+	flex: 1;
+	min-width: 32ch;
 	text-wrap: pretty;
 }
 .close-row .cta {

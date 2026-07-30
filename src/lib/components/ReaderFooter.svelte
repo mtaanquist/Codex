@@ -25,10 +25,17 @@
 
 <footer class="reader-foot">
 	<div class="reader-foot-in">
-		<span class="reader-foot-brand">
-			<span class="logo"><Icon name="feather" size={15} /></span>
-			{shell === 'public' ? 'Codex' : 'Written in Codex'}
-		</span>
+		{#if shell === 'public'}
+			<a class="reader-foot-brand" href={resolve('/')}>
+				<span class="logo"><Icon name="feather" size={15} /></span>
+				Codex
+			</a>
+		{:else}
+			<span class="reader-foot-brand">
+				<span class="logo"><Icon name="feather" size={15} /></span>
+				Written in Codex
+			</span>
+		{/if}
 		{#if shell === 'reader'}
 			{#if author}
 				<span>

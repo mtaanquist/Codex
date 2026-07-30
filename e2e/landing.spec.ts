@@ -73,4 +73,10 @@ test('the public shell carries the brand, the tools and the footer', async ({ pa
 	await page.getByRole('link', { name: 'run Codex yourself' }).click();
 	await expect(page).toHaveURL('/docs/selfhosting');
 	await expect(page.getByRole('heading', { name: 'Running Codex yourself' })).toBeVisible();
+
+	// The footer brand is a lockup linking home, from any signed-out page.
+	await gotoReady(page, '/login');
+	await page.getByRole('contentinfo').getByRole('link', { name: 'Codex' }).click();
+	await expect(page).toHaveURL('/');
+	await expect(page.getByRole('heading', { name: /Write the story/ })).toBeVisible();
 });
