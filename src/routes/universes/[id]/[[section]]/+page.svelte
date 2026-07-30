@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
+	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { universePath } from '$lib/chrome';
@@ -33,16 +33,8 @@
 		});
 	}
 
-	// The import form is enhanced so the chosen file survives the preview
-	// step; the Import button then posts the same file to the run action.
-	let importBusy = $state(false);
-	const importPreview = $derived(form?.action === 'import' ? (form.preview ?? null) : null);
-	const importResult = $derived(form?.action === 'import' ? (form.imported ?? null) : null);
-	const NOTE_OUTCOMES = {
-		match: 'matches an existing entry; the note attaches to it.',
-		create: 'has no match; a new entry will be created.',
-		ambiguous: 'matches more than one entry; the note will be skipped.'
-	} as const;
+	// The import runs in the shared modal; opening it hands over this universe.
+	let importFor = $state<{ slug: string; name: string; standalone?: boolean } | null>(null);
 
 	const universeColor = $derived(entityColor(data.universe.name));
 
@@ -505,94 +497,22 @@
 				<h2 class="admin-block-title">Import a story</h2>
 				<p class="admin-block-sub">
 					Bring a manuscript in as a new story in this universe: a Codex export zip, a Word document
-					(.docx), or an EPUB (.epub). Chapters and scenes are detected from the document where it
-					marks them; otherwise the whole text comes in as a single scene. Upload the file, check
-					the preview, then import.
+					(.docx), or an EPUB (.epub). You check a preview of what is coming before anything is
+					written.
 				</p>
 			</div>
-			<form
-				method="POST"
-				action="?/previewImport"
-				enctype="multipart/form-data"
-				use:enhance={() => {
-					importBusy = true;
-					return async ({ update }) => {
-						importBusy = false;
-						await update({ reset: false });
-					};
-				}}
+			<button
+				class="btn btn-secondary"
+				type="button"
+				onclick={() =>
+					(importFor = {
+						slug: data.universe.slug,
+						name: data.universe.name,
+						standalone: data.universe.standalone
+					})}
 			>
-				<div class="import-pick">
-					<input type="file" name="archive" accept=".zip,application/zip,.docx,.epub" required />
-					<button class="btn btn-secondary" type="submit" disabled={importBusy}> Preview </button>
-				</div>
-				{#if form?.action === 'import' && form.message}
-					<p class="field-hint import-error" role="status">{form.message}</p>
-				{/if}
-				{#if importResult}
-					<div class="import-report" role="status">
-						<p>
-							Imported {importResult.sceneCount}
-							{importResult.sceneCount === 1 ? 'scene' : 'scenes'}{importResult.notesAttached > 0
-								? ` and ${importResult.notesAttached} ${importResult.notesAttached === 1 ? 'story note' : 'story notes'}`
-								: ''}{importResult.entitiesCreated > 0
-								? `, creating ${importResult.entitiesCreated} ${importResult.entitiesCreated === 1 ? 'new entry' : 'new entries'}`
-								: ''}.
-						</p>
-						{#each importResult.problems as problem (problem)}
-							<p class="import-flag">{problem}</p>
-						{/each}
-						<!-- eslint-disable svelte/no-navigation-without-resolve (slug known at runtime) -->
-						<a class="btn btn-secondary" href="/stories/{importResult.slug}">Open the story</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					</div>
-				{:else if importPreview}
-					<div class="import-report">
-						<p>
-							"{importPreview.storyTitle}": {importPreview.chapterCount}
-							{importPreview.chapterCount === 1 ? 'chapter' : 'chapters'},
-							{importPreview.sceneCount}
-							{importPreview.sceneCount === 1 ? 'scene' : 'scenes'},
-							{formatNumber(importPreview.words)} words{importPreview.assetCount > 0
-								? `, ${importPreview.assetCount} ${importPreview.assetCount === 1 ? 'image' : 'images'}`
-								: ''}.
-						</p>
-						{#if importPreview.titleTaken}
-							<p class="import-flag">
-								A story named "{importPreview.storyTitle}" already exists here; this import creates
-								a second one.
-							</p>
-						{/if}
-						{#if importPreview.assetCount > 0 && !importPreview.assetsConfigured}
-							<p class="import-flag">
-								Image storage is not configured, so the bundled images will not be imported.
-							</p>
-						{/if}
-						{#if importPreview.notes.length > 0}
-							<ul class="import-notes">
-								{#each importPreview.notes as note (note.kind + note.name)}
-									<li>
-										<strong>{note.name}</strong>
-										({note.kind === 'lore' ? 'lore entry' : note.kind})
-										{NOTE_OUTCOMES[note.outcome]}
-									</li>
-								{/each}
-							</ul>
-						{/if}
-						{#each importPreview.problems as problem (problem)}
-							<p class="import-flag">{problem}</p>
-						{/each}
-						<button
-							class="btn btn-primary"
-							type="submit"
-							formaction="?/runImport"
-							disabled={importBusy}
-						>
-							Import story
-						</button>
-					</div>
-				{/if}
-			</form>
+				Import a story...
+			</button>
 		</div>
 
 		<div class="admin-block danger">
@@ -639,46 +559,9 @@
 	</section>
 </SettingsShell>
 
+<ImportStoryModal universe={importFor} onClose={() => (importFor = null)} />
+
 <style>
-	.import-pick {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		flex-wrap: wrap;
-	}
-	.import-pick input[type='file'] {
-		font-size: 13px;
-		color: var(--text-muted);
-	}
-	.import-error {
-		color: var(--danger);
-		margin: 8px 0 0;
-	}
-	.import-report {
-		margin-top: 12px;
-		padding: 12px 14px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		background: var(--bg-inset);
-		display: grid;
-		gap: 8px;
-		justify-items: start;
-	}
-	.import-report p {
-		margin: 0;
-		font-size: 13px;
-	}
-	.import-flag {
-		color: var(--text-muted);
-	}
-	.import-notes {
-		margin: 0;
-		padding-left: 18px;
-		font-size: 13px;
-		color: var(--text-muted);
-		display: grid;
-		gap: 2px;
-	}
 	.category-tools {
 		display: inline-flex;
 		gap: 1px;
