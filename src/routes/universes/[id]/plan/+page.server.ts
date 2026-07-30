@@ -28,6 +28,7 @@ import {
 } from '$lib/server/revisions';
 import { assistantLayout } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { listUniverseNotes } from '$lib/server/notes';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
 type StoryBoardRow = {
@@ -153,6 +154,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		universe,
 		...lists,
 		storyBoard,
+		// The right pane's Notes panel, the way into the universe Notes page.
+		universeNotes: await listUniverseNotes(db, universe.id, locals.user!.id),
 		selected,
 		selectedKind,
 		assetsConfigured: (await effectiveAssetConfig(db)) !== null,

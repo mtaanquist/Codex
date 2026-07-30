@@ -51,9 +51,11 @@
 		visiblePanels({
 			reference: Boolean(data.selected),
 			assistant: data.selected ? data.assistant.tabEnabled : false,
-			history: Boolean(data.selected)
+			history: Boolean(data.selected),
+			notes: data.selected ? data.universeNotes.length : false
 		})
 	);
+	const universeNotesPath = $derived(resolve('/universes/[id]/notes', { id: data.universe.slug }));
 	let chosenPanel = $state<PanelId | null>('reference');
 	const rightTab = $derived(activePanel(panels, chosenPanel));
 	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
@@ -123,7 +125,6 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
-			notesHref={resolve('/universes/[id]/notes', { id: data.universe.slug })}
 			writeHref={planPath}
 			reviewHref={planPath}
 			modeNote={UNIVERSE_MODE_NOTE}
@@ -223,6 +224,37 @@
 									</div>
 								</div>
 							{/if}
+						{:else if id === 'notes'}
+							<div class="right-scroll">
+								{#if data.universeNotes.length > 0}
+									<div class="r-card">
+										<h5>In this universe</h5>
+										{#each data.universeNotes as note (note.id)}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a class="r-line" href={`${universeNotesPath}?note=${note.id}`}>
+												<span class="r-line-left">
+													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
+												</span>
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+										{/each}
+									</div>
+								{:else}
+									<div class="empty-state tight">
+										<p class="empty-state-text">No notes in this universe yet.</p>
+									</div>
+								{/if}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path) -->
+								<form method="POST" action="{universeNotesPath}?/createNote">
+									<button class="btn btn-sm btn-secondary" type="submit">New note</button>
+								</form>
+								<a class="btn btn-sm btn-ghost" href={universeNotesPath}>All notes</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							</div>
+							<p class="panel-note">
+								The universe's notes, shared by every story in it. Open one, or All notes, to read
+								and edit on the Notes page.
+							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.selected && data.relationships.length > 0}

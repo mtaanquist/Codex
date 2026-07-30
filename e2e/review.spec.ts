@@ -60,11 +60,11 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await expect(guest.getByRole('button', { name: 'Account menu' })).toHaveCount(0);
 	await expect(guest.locator('.review-prose')).toContainText('opinions about this gate');
 
-	// A guest cannot leave review mode: the strip keeps all four modes, three
+	// A guest cannot leave review mode: the strip keeps all three modes, two
 	// switched off in place, and one line under it says why.
 	const modes = guest.locator('.mode-strip .seg-btn');
-	await expect(modes).toHaveCount(4);
-	for (const mode of ['Write', 'Plan', 'Notes']) {
+	await expect(modes).toHaveCount(3);
+	for (const mode of ['Write', 'Plan']) {
 		await expect(modes.filter({ hasText: mode })).toHaveAttribute('aria-disabled', 'true');
 	}
 	await expect(guest.locator('.mode-note')).toContainText('belong to the author');

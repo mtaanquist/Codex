@@ -53,7 +53,6 @@
 	};
 
 	const planPath = $derived(resolve('/universes/[id]/plan', { id: data.universe.slug }));
-	const notesPath = $derived(resolve('/universes/[id]/notes', { id: data.universe.slug }));
 
 	// Insights has no document, only numbers, so the Assistant is the one panel
 	// with a subject; when the account has it off, the pane closes.
@@ -146,11 +145,11 @@
 	<div class="body" class:no-right={panels.length === 0}>
 		<aside class="pane left">
 			<div class="left-head">
-				<!-- Insights is not one of the four modes, so none of them is lit and
+				<!-- Insights is not one of the three modes, so none of them is lit and
 				     one line says why. -->
 				<ModeSwitcher
 					active={null}
-					hrefs={{ write: planPath, plan: planPath, notes: notesPath, review: planPath }}
+					hrefs={{ write: planPath, plan: planPath, review: planPath }}
 					note={INSIGHTS_MODE_NOTE}
 				/>
 			</div>

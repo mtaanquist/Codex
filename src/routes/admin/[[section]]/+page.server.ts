@@ -21,7 +21,12 @@ import {
 } from '$lib/server/backups';
 import { applyBackupSchedule, queueAssetMigration, queueBackup } from '$lib/server/jobs';
 import { probeS3 } from '$lib/server/s3-client';
-import { createInviteCode, deleteInviteCode, listInviteCodes } from '$lib/server/invites';
+import {
+	createInviteCode,
+	deleteInviteCode,
+	listInviteCodes,
+	setInviteAllowance
+} from '$lib/server/invites';
 import { listPublications, takedownPublication } from '$lib/server/publish';
 import {
 	saveSignupMode,
@@ -219,6 +224,24 @@ export const actions: Actions = {
 			return fail(400, { scope: 'invites', message: 'That invite code does not exist.' });
 		}
 		return { scope: 'invites', done: true };
+	},
+	// How many invite codes a user may generate for friends from their
+	// account page.
+	setInviteAllowance: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const data = await request.formData();
+		const userId = String(data.get('userId') ?? '');
+		const allowance = Number(data.get('allowance') ?? 0);
+		if (!Number.isInteger(allowance) || allowance < 0 || allowance > 99) {
+			return fail(400, {
+				scope: 'accounts',
+				message: 'Invites must be a whole number from 0 to 99.'
+			});
+		}
+		if (!isUuid(userId) || !(await setInviteAllowance(db, userId, allowance))) {
+			return fail(400, { scope: 'accounts', message: 'That account does not exist.' });
+		}
+		return { scope: 'accounts', done: true };
 	},
 	takedown: async ({ request, locals }) => {
 		requireAdmin(locals);

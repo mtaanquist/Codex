@@ -8,6 +8,7 @@
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import AccountProfile from './AccountProfile.svelte';
 	import AccountSecurity from './AccountSecurity.svelte';
+	import AccountInvites from './AccountInvites.svelte';
 	import AccountAssistant from './AccountAssistant.svelte';
 	import AccountDisplay from './AccountDisplay.svelte';
 	import AccountEditor from './AccountEditor.svelte';
@@ -17,13 +18,25 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// The preference forms (Display, Editor, Notifications, Page setup) save on
-	// change instead of with a button; see $lib/autosave-form. Flushing a
-	// focused field before navigation is page-level, across every section.
+	// The settings forms save on change instead of with a button; see
+	// $lib/autosave-form. One-shot actions (claim a handle, change the
+	// password, test the connection) keep their buttons. Flushing a focused
+	// field before navigation is page-level, across every section.
 	beforeNavigate(flushFocusedField);
 
 	type Section =
-		'profile' | 'security' | 'assistant' | 'display' | 'editor' | 'notifications' | 'pagesetup';
+		| 'profile'
+		| 'security'
+		| 'invites'
+		| 'assistant'
+		| 'display'
+		| 'editor'
+		| 'notifications'
+		| 'pagesetup';
+
+	// The Invites section only exists once an admin has granted invites (or
+	// codes remain from an earlier grant).
+	const hasInvites = $derived(data.inviteAllowance > 0 || data.myInvites.length > 0);
 
 	// Each section is its own page (/account/security, /account/display);
 	// a plain /account is the profile. Forms post to the section they sit
@@ -101,6 +114,24 @@
 				>
 				<span class="lbl">Security</span>
 			</a>
+			{#if hasInvites}
+				<a class="nav-item" class:active={active === 'invites'} href={sectionHref('invites')}>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle
+							cx="9"
+							cy="7"
+							r="4"
+						/><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg
+					>
+					<span class="lbl">Invites</span>
+				</a>
+			{/if}
 
 			<div class="admin-nav-label">Workspace</div>
 			<a class="nav-item" class:active={active === 'assistant'} href={sectionHref('assistant')}>
@@ -229,6 +260,13 @@
 	<section class="admin-section" class:active={active === 'security'}>
 		<AccountSecurity {data} {form} />
 	</section>
+
+	<!-- ========== INVITES ========== -->
+	{#if hasInvites}
+		<section class="admin-section" class:active={active === 'invites'}>
+			<AccountInvites {data} {form} />
+		</section>
+	{/if}
 
 	<!-- ========== ASSISTANT ========== -->
 	<section class="admin-section" class:active={active === 'assistant'}>

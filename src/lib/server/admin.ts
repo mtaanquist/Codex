@@ -112,6 +112,7 @@ export type AdminUser = {
 	suspendedAt: Date | null;
 	deletionScheduledAt: Date | null;
 	publicArchiveEnabled: boolean;
+	inviteAllowance: number;
 	handle: string | null;
 	twoFactorEnabled: boolean;
 	createdAt: Date;
@@ -130,6 +131,7 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			suspendedAt: users.suspendedAt,
 			deletionScheduledAt: users.deletionScheduledAt,
 			publicArchiveEnabled: users.publicArchiveEnabled,
+			inviteAllowance: users.inviteAllowance,
 			handle: users.handle,
 			twoFactorEnabled: sql<boolean>`${userTotp.confirmedAt} is not null`,
 			createdAt: users.createdAt

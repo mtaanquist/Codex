@@ -1,8 +1,9 @@
 # Your account
 
 Open your account page from the avatar menu at the top right of any page. It has four
-sections: Profile, Security, Assistant, and Display. Changes save when you
-select the save button in each block.
+sections: Profile, Security, Assistant, and Display. Changes save on their own:
+a choice saves as soon as you make it, and a text field saves when you leave it.
+A "Saved." note confirms each save.
 
 ## Profile
 
@@ -15,6 +16,14 @@ show this page to visitors; leave it off to keep it hidden.
 
 You can upload an avatar when image storage is set up on the instance. Without
 it, your initials stand in.
+
+## Invites
+
+When an admin has given your account invites, an Invites section appears in
+the sidebar. Select "Generate an invite" to make a code, then "Copy link" to
+get a sign-up link to send your friend. Each code admits one person, who can
+sign in as soon as their email is confirmed. Revoke a code that has not been
+used to take it back; that frees the invite so you can generate another.
 
 The public page and avatar only appear to visitors once an admin has enabled
 publishing for your account and your profile is set to public.
@@ -53,7 +62,7 @@ contacts a model on its own.
     `http://localhost:11434/v1`). Local endpoints usually need no key, and your
     text never leaves your machine.
 - **Models per role**: pick which model handles each kind of help. Select Discover
-  models to fill the lists from your endpoint, choose one per role, then save. Roles
+  models to fill the lists from your endpoint, then choose one per role. Roles
   with no model chosen fall back to the endpoint's default. A single story can
   override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint

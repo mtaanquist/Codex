@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
-// The Notes view: reach it from the editor's Notes toggle, write a note that
-// persists, pin it, and confirm a story note shows under the universe view's
-// reach via the "From the universe" peek.
+// The Notes view: reach it from the editor's right-rail Notes panel, write a
+// note that persists, pin it, and confirm a story note shows under the
+// universe view's reach via the "From the universe" peek.
 test('write, persist, and pin a story note', async ({ page }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 
@@ -20,12 +20,17 @@ test('write, persist, and pin a story note', async ({ page }) => {
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/logs-${stamp}`);
 
-	// The Notes toggle now works (it used to be disabled).
-	await page.getByRole('link', { name: 'Notes' }).click();
-	await expect(page).toHaveURL(`/stories/logs-${stamp}/notes`);
+	// Notes lives in the right rail: the panel is the way in, and with no
+	// notes yet it offers the first one, landing on the Notes page.
+	await page.getByRole('tab', { name: 'Notes' }).click();
+	await expect(page.locator('.panel-body:not([hidden])')).toContainText('No notes in this story');
+	await page.getByRole('button', { name: 'New note', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`/stories/logs-${stamp}/notes\\?note=`));
 
-	await page.getByRole('button', { name: 'New note' }).click();
-	await expect(page).toHaveURL(/note=/);
+	// The strip on the Notes page lights nothing: Notes is not a mode.
+	await expect(page.locator('.mode-strip .seg-btn')).toHaveCount(3);
+	await expect(page.locator('.mode-strip .seg-btn.active')).toHaveCount(0);
+	await expect(page.locator('.mode-note')).toContainText('Notes sit beside every mode');
 
 	await page.getByPlaceholder('Untitled note').fill('Table talk');
 	await page.locator('.cm-content').click();
@@ -77,10 +82,10 @@ test('a note on the open scene, from the Notes panel in Write', async ({ page })
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page).toHaveURL(/scene=/);
 
-	// Four panels on Write, in the one order, and Notes starts empty.
+	// The Notes panel is always on the strip, and starts empty.
 	await expect(page.getByRole('tab', { name: 'Reference' })).toBeVisible();
 	await page.getByRole('tab', { name: 'Notes' }).click();
-	await expect(page.locator('.panel-body:not([hidden])')).toContainText('No notes on this scene');
+	await expect(page.locator('.panel-body:not([hidden])')).toContainText('No notes in this story');
 
 	// The action makes the note and opens it in Notes mode, where notes live.
 	await page.getByRole('button', { name: 'New note on this scene' }).click();
@@ -103,4 +108,17 @@ test('a note on the open scene, from the Notes panel in Write', async ({ page })
 		'true'
 	);
 	await expect(notesTab).toHaveAttribute('aria-selected', 'false');
+
+	// The quick-note jot: Ctrl+Alt+N over the editor, Ctrl+Enter to save. The
+	// note attaches to the open scene and the panel picks it up.
+	await page.keyboard.press('ControlOrMeta+Alt+KeyN');
+	const jot = page.locator('.quick-note');
+	await expect(jot).toBeVisible();
+	await expect(jot).toContainText('on this scene');
+	await page.keyboard.type('Ledger follow-up');
+	await page.keyboard.press('ControlOrMeta+Enter');
+	await expect(page.locator('.qn-saved')).toContainText('Saved.');
+	await expect(notesTab.locator('.seg-count')).toHaveText('2');
+	await notesTab.click();
+	await expect(page.locator('.panel-body:not([hidden])')).toContainText('Ledger follow-up');
 });

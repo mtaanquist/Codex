@@ -38,14 +38,17 @@
 	});
 
 	// The right pane's panels: every one of them is about the open entry, so
-	// with nothing selected the pane closes rather than standing empty.
+	// with nothing selected the pane closes rather than standing empty. Notes
+	// carries the story's notes, the way into the Notes page.
 	const panels = $derived(
 		visiblePanels({
 			reference: Boolean(data.selected),
 			assistant: data.selected ? data.assistant.tabEnabled : false,
-			history: Boolean(data.selected)
+			history: Boolean(data.selected),
+			notes: data.selected ? data.storyNotes.length : false
 		})
 	);
+	const storyNotesPath = $derived(resolve('/stories/[id]/notes', { id: data.story.slug }));
 	let chosenPanel = $state<PanelId | null>('reference');
 	const rightTab = $derived(activePanel(panels, chosenPanel));
 	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
@@ -71,7 +74,6 @@
 			lore={data.lore}
 			{selectedId}
 			{planPath}
-			notesHref={resolve('/stories/[id]/notes', { id: data.story.slug })}
 			writeHref={resolve('/stories/[id]', { id: data.story.slug })}
 			reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 			boardHref={planPath}
@@ -178,6 +180,36 @@
 									</div>
 								</div>
 							{/if}
+						{:else if id === 'notes'}
+							<div class="right-scroll">
+								{#if data.storyNotes.length > 0}
+									<div class="r-card">
+										<h5>In this story</h5>
+										{#each data.storyNotes as note (note.id)}
+											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
+											<a class="r-line" href={`${storyNotesPath}?note=${note.id}`}>
+												<span class="r-line-left">
+													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
+												</span>
+											</a>
+											<!-- eslint-enable svelte/no-navigation-without-resolve -->
+										{/each}
+									</div>
+								{:else}
+									<div class="empty-state tight">
+										<p class="empty-state-text">No notes in this story yet.</p>
+									</div>
+								{/if}
+								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path) -->
+								<form method="POST" action="{storyNotesPath}?/createNote">
+									<button class="btn btn-sm btn-secondary" type="submit">New note</button>
+								</form>
+								<a class="btn btn-sm btn-ghost" href={storyNotesPath}>All notes</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							</div>
+							<p class="panel-note">
+								The story's notes. Open one, or All notes, to read and edit on the Notes page.
+							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.selected && data.relationships.length > 0}
