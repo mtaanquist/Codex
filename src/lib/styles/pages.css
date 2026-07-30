@@ -434,6 +434,13 @@
 .story-card-meta-sep {
 	opacity: 0.6;
 }
+/* The card leads with a cover: the uploaded artwork, or the title set on the
+   cover blank (the reader shelf's pattern, reused). Sized down a step from
+   the reader shelf, since the real title sits right below. */
+.story-card-cover {
+	flex: none;
+	font-size: 15px;
+}
 
 .universe-section {
 	margin-top: var(--space-10);

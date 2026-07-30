@@ -44,7 +44,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// was last touched.
 	const result = await db.execute(sql`
 		select st.id, st.slug, st.title, st.brief, st.universe_id,
-			st.position_in_series, st.created_at,
+			st.cover_asset_id, st.position_in_series, st.created_at,
 			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
 			count(s.id)::int as scene_count,
 			coalesce(sum(s.word_count), 0)::int as words,
@@ -67,6 +67,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			title: string;
 			brief: string | null;
 			universe_id: string;
+			cover_asset_id: string | null;
 			chapters: number;
 			scene_count: number;
 			words: number;
@@ -83,6 +84,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			title: r.title,
 			brief: r.brief,
 			universeId: r.universe_id,
+			coverAssetId: r.cover_asset_id,
 			chapters: r.chapters,
 			words: r.words,
 			editedAt: editedAt.toISOString(),
