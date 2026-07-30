@@ -354,6 +354,10 @@
 	margin-bottom: 8px;
 }
 .rv-draft-input {
+	/* Block with real space before the actions: as an inline element its only
+	   gap was the baseline slack, which read as an overlap. */
+	display: block;
+	margin-bottom: 10px;
 	width: 100%;
 	box-sizing: border-box;
 	min-height: 66px;
