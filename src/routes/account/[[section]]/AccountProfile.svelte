@@ -1,10 +1,31 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import FormStatus from '$lib/components/FormStatus.svelte';
+	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	let avatarForm = $state<HTMLFormElement | null>(null);
+
+	// Claiming the handle is the first step into public, so with no pen name
+	// set it asks what name goes on the page; the choice rides the claim form
+	// as a hidden field.
+	let handleForm = $state<HTMLFormElement | null>(null);
+	let penPromptOpen = $state(false);
+	let chosenPenName = $state('');
+	function onClaimSubmit(event: SubmitEvent) {
+		if (!data.profile.penName && !chosenPenName) {
+			event.preventDefault();
+			penPromptOpen = true;
+		}
+	}
+	async function confirmPenName(penName: string) {
+		chosenPenName = penName;
+		penPromptOpen = false;
+		await tick();
+		handleForm?.requestSubmit();
+	}
 
 	// The links editor works on a local copy seeded once from the loaded
 	// profile; the form posts it as JSON. Start with one empty row so there is
@@ -147,7 +168,8 @@
 		</div>
 	{:else if !data.profile.handle}
 		<div class="admin-card">
-			<form method="POST" action="?/claimHandle">
+			<form method="POST" action="?/claimHandle" bind:this={handleForm} onsubmit={onClaimSubmit}>
+				<input type="hidden" name="penName" value={chosenPenName} />
 				<div class="field" style="margin-bottom:0;">
 					<label for="handle">Claim your handle</label>
 					<input
@@ -299,3 +321,10 @@
 		</div>
 	{/if}
 </div>
+
+<PenNamePrompt
+	open={penPromptOpen}
+	displayName={data.displayName}
+	onConfirm={confirmPenName}
+	onCancel={() => (penPromptOpen = false)}
+/>
