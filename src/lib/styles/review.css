@@ -607,8 +607,16 @@
 	flex: 1;
 	min-height: 0;
 }
+/* The tab bar exists for narrow screens only; the media query brings it back. */
+.review-shell > .seg {
+	display: none;
+}
 
 @media (max-width: 820px) {
+	.review-shell > .seg {
+		display: flex;
+		margin: 8px 10px 0;
+	}
 	.review-shell .body {
 		grid-template-columns: 1fr;
 	}
