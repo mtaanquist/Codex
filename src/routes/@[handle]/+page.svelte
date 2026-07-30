@@ -49,6 +49,12 @@
 
 	<main class="reader-main">
 		<div class="reader-col wide">
+			{#if data.preview}
+				<p class="preview-note" role="status">
+					Only you can see this page right now. Turn on visibility on your
+					<a href={resolve('/account/[[section]]', {})}>account page</a> to show it to readers.
+				</p>
+			{/if}
 			<div class="shelf-head">
 				<span class="shelf-avatar" aria-hidden="true">
 					{#if profile?.avatarAssetId}
