@@ -87,6 +87,16 @@
 
 {#snippet storyCard(story: Story)}
 	<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
+		<!-- The published shelf's cover pattern: the uploaded artwork, or the
+		     story's own title set on the cover blank. Hidden from readers
+		     because the title repeats right below. -->
+		<span class="shelf-cover story-card-cover" aria-hidden="true">
+			{#if story.coverAssetId}
+				<img src="/assets/{story.coverAssetId}" alt="" />
+			{:else}
+				{story.title}
+			{/if}
+		</span>
 		<div class="story-card-header">
 			<h3 class="story-card-title" class:story-card-empty={story.words === 0}>{story.title}</h3>
 			<span class="story-card-status">
