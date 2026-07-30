@@ -3,7 +3,7 @@ import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The story import round trip: write a story, download its export zip, and
-// import the zip back through the universe settings preview flow.
+// import the zip back through the library's import modal preview flow.
 test('story import: preview and import a story export zip', async ({ page }) => {
 	await gotoReady(page, '/');
 
@@ -63,16 +63,23 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 	expect(archive.status()).toBe(200);
 	const zipBytes = await archive.body();
 
-	await gotoReady(page, `/universes/importland-${stamp}`);
-	await page.getByRole('link', { name: 'Import and export' }).click();
-	await page.locator('input[name="archive"]').setInputFiles({
+	// Feed it back through the import modal, opened from the universe's New
+	// story menu on the library. Picking a file previews it at once.
+	await gotoReady(page, '/');
+	await page
+		.locator('.universe-section', { hasText: universeName })
+		.getByRole('button', { name: 'New story', exact: true })
+		.click();
+	await page.getByRole('menuitem', { name: 'Import a story into this universe...' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Import a story' });
+	await expect(dialog).toBeVisible();
+	await dialog.locator('input[name="archive"]').setInputFiles({
 		name: 'roundtrip.zip',
 		mimeType: 'application/zip',
 		buffer: zipBytes
 	});
-	await page.getByRole('button', { name: 'Preview' }).click();
 
-	const report = page.locator('.import-report');
+	const report = dialog.locator('.import-report');
 	await expect(report).toContainText('"Roundtrip": 1 chapter, 1 scene');
 	await expect(report).toContainText('A story named "Roundtrip" already exists');
 	await expect(report).toContainText('Bram');
