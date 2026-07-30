@@ -7,9 +7,13 @@ import * as schema from '../../src/lib/server/db/schema';
 import { inviteCodes, users } from '../../src/lib/server/db/schema';
 import {
 	createInviteCode,
+	createUserInvite,
 	deleteInviteCode,
+	deleteUserInviteCode,
 	listInviteCodes,
-	redeemInviteCode
+	listUserInviteCodes,
+	redeemInviteCode,
+	setInviteAllowance
 } from '../../src/lib/server/invites';
 import { INVALID_INVITE, registerUser } from '../../src/lib/server/signup';
 import type { Database } from '../../src/lib/server/auth';
@@ -71,6 +75,51 @@ describe('list and delete', () => {
 		expect(await deleteInviteCode(db, first.id)).toBe(true);
 		expect(await deleteInviteCode(db, first.id)).toBe(false);
 		expect((await listInviteCodes(db)).map((c) => c.id)).toEqual([second.id]);
+	});
+});
+
+describe('user invite allowance', () => {
+	let writerId: string;
+	beforeEach(async () => {
+		const [writer] = await db
+			.insert(users)
+			.values({ email: 'writer@example.com', displayName: 'W', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		writerId = writer.id;
+	});
+
+	it('generates single-use codes up to the allowance and no further', async () => {
+		expect(await createUserInvite(db, writerId)).toBeNull();
+
+		expect(await setInviteAllowance(db, writerId, 2)).toBe(true);
+		const first = await createUserInvite(db, writerId);
+		const second = await createUserInvite(db, writerId);
+		expect(first?.maxUses).toBe(1);
+		expect(second).not.toBeNull();
+		expect(await createUserInvite(db, writerId)).toBeNull();
+
+		const mine = await listUserInviteCodes(db, writerId);
+		expect(mine.map((c) => c.id).sort()).toEqual([first!.id, second!.id].sort());
+	});
+
+	it('revoking an unused code frees its slot; a used one stays', async () => {
+		await setInviteAllowance(db, writerId, 1);
+		const code = (await createUserInvite(db, writerId))!;
+		expect(await createUserInvite(db, writerId)).toBeNull();
+
+		expect(await deleteUserInviteCode(db, writerId, code.id)).toBe(true);
+		const fresh = (await createUserInvite(db, writerId))!;
+
+		// A spent code cannot be revoked, so a used invite never frees a slot.
+		expect(await redeemInviteCode(db, fresh.code)).toBe(true);
+		expect(await deleteUserInviteCode(db, writerId, fresh.id)).toBe(false);
+		expect(await createUserInvite(db, writerId)).toBeNull();
+	});
+
+	it("never deletes another user's code", async () => {
+		await setInviteAllowance(db, writerId, 1);
+		const code = (await createUserInvite(db, writerId))!;
+		expect(await deleteUserInviteCode(db, adminId, code.id)).toBe(false);
 	});
 });
 

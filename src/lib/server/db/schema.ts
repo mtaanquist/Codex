@@ -56,6 +56,9 @@ export const users = pgTable('users', {
 	profilePublic: boolean('profile_public').notNull().default(false),
 	// Admin grants this before a user may publish public pages.
 	publicArchiveEnabled: boolean('public_archive_enabled').notNull().default(false),
+	// How many invite codes the user may generate for friends; each code
+	// admits one person. Counted against the codes they have created.
+	inviteAllowance: integer('invite_allowance').notNull().default(0),
 	passwordHash: text('password_hash').notNull(),
 	role: text('role', { enum: ['admin', 'user'] }).notNull(),
 	// The Assistant's BYO endpoint, key (encrypted at rest), and per-role
