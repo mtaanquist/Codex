@@ -1341,7 +1341,7 @@
 	gap: 6px;
 }
 
-/* quick settings (Session tab) */
+/* quick settings (right pane) */
 .quick-row {
 	display: flex;
 	align-items: center;
@@ -1813,62 +1813,6 @@ a.icon-btn {
 	color: var(--text-faint);
 	font-size: 12px;
 	padding: 14px 2px 0;
-}
-
-/* ===== session panel ===== */
-.sess-grid {
-	display: grid;
-	grid-template-columns: 1fr 1fr;
-	gap: 10px;
-}
-.sess-stat {
-	background: var(--bg-inset);
-	border-radius: var(--radius);
-	padding: 12px 14px;
-}
-.sess-n {
-	font-family: var(--font-serif);
-	font-size: 26px;
-	font-weight: 600;
-	line-height: 1;
-}
-.sess-n span {
-	font-size: 15px;
-	color: var(--text-muted);
-}
-.sess-l {
-	font-size: 12px;
-	color: var(--text-muted);
-	margin-top: 4px;
-}
-.goal-meta {
-	display: flex;
-	justify-content: space-between;
-	font-size: 12px;
-	color: var(--text-faint);
-	margin-top: 8px;
-}
-.streak-row {
-	display: flex;
-	gap: 6px;
-}
-.streak-day {
-	flex: 1;
-	aspect-ratio: 1;
-	display: grid;
-	place-items: center;
-	border-radius: 7px;
-	font-size: 11px;
-	font-weight: 600;
-	color: var(--text-faint);
-	background: var(--bg-inset);
-}
-.streak-day.on {
-	background: var(--accent-soft);
-	color: var(--text);
-}
-.streak-day.today {
-	box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
 /* ===== ghost-text autocomplete (inline anchor - flows at the caret) ===== */

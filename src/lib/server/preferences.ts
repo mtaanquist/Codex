@@ -46,10 +46,10 @@ export type UserPreferences = {
 	// The language the prose is written in, as a BCP 47 tag, driving the
 	// spell-check dictionary. Blank follows the browser's language.
 	writingLanguage: string;
-	// The Session pane's streak card; not everyone wants the scorekeeping.
+	// The writing streak on the insights page; not everyone wants the scorekeeping.
 	sessionStreak: 'shown' | 'hidden';
-	// A daily word target. 0 means no goal; the Session pane and Insights show
-	// progress toward it when set.
+	// A daily word target. 0 means no goal; the insights page shows progress
+	// toward it when set.
 	dailyWordGoal: number;
 	// Per-kind notification channels (the bell and the email digest), both
 	// on unless turned off.
