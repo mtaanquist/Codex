@@ -1,4 +1,10 @@
-import type { ConcreteTheme } from './appearance';
+import {
+	DEFAULT_SYSTEM_DARK,
+	DEFAULT_SYSTEM_LIGHT,
+	isConcreteTheme,
+	resolveTheme,
+	type ConcreteTheme
+} from './appearance';
 
 // The order the theme tool in the app bar walks through. Every shell (author,
 // guest, reader) cycles the same three palettes from the same control.
@@ -36,4 +42,42 @@ export function cycleTheme(persist: boolean): ConcreteTheme {
 		});
 	}
 	return next;
+}
+
+// Reads a stored appearance key, treating a missing or malformed value as unset.
+function storedTheme(key: string, fallback: ConcreteTheme): ConcreteTheme {
+	try {
+		const value = localStorage.getItem(key);
+		return isConcreteTheme(value) ? value : fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+// Follows the system palette while the viewer has made no choice of their own on
+// this device. The pre-paint script in app.html resolves the same way on load;
+// this keeps a page that is already open in step when the system flips, which
+// matters most on the reading pages: they belong to the reader, not to us.
+// Returns the teardown.
+export function followSystemTheme(): () => void {
+	const media = window.matchMedia('(prefers-color-scheme: dark)');
+	const apply = () => {
+		let chosen: string | null = null;
+		try {
+			chosen = localStorage.getItem('codex-theme');
+		} catch {
+			/* no choice stored, so the system decides */
+		}
+		// An explicit choice, from this bar or from the account, always wins.
+		if (isConcreteTheme(chosen)) return;
+		const resolved = resolveTheme(
+			'system',
+			storedTheme('codex-system-light', DEFAULT_SYSTEM_LIGHT),
+			storedTheme('codex-system-dark', DEFAULT_SYSTEM_DARK),
+			media.matches
+		);
+		document.documentElement.setAttribute('data-theme', resolved);
+	};
+	media.addEventListener('change', apply);
+	return () => media.removeEventListener('change', apply);
 }

@@ -192,10 +192,15 @@ export async function publicEdition(db: Database, handle: string, storyId: strin
 			downloadsPublic: publications.downloadsPublic,
 			publishedAt: publications.publishedAt,
 			visibility: stories.visibility,
-			coverAssetId: stories.coverAssetId
+			coverAssetId: stories.coverAssetId,
+			// The reader chrome names the author by pen name, falling back to their
+			// display name; the handle stays the address in the URL.
+			penName: users.penName,
+			displayName: users.displayName
 		})
 		.from(publications)
 		.innerJoin(stories, eq(publications.storyId, stories.id))
+		.innerJoin(users, eq(publications.ownerId, users.id))
 		.where(
 			and(
 				eq(publications.handle, handle),
