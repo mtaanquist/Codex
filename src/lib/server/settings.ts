@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';
+import { SIGNUP_MODES, type SignupMode } from '$lib/signup-mode';
 
 const SMTP_KEY = 'smtp';
 const SIGNUP_KEY = 'signup';
@@ -155,11 +156,10 @@ export async function s3SettingsView(
 	};
 }
 
-// Who can create an account. 'approval' matches the behavior from before the
-// setting existed, so an instance that has never saved one keeps working the
-// same way.
-export const SIGNUP_MODES = ['none', 'invite', 'approval', 'open'] as const;
-export type SignupMode = (typeof SIGNUP_MODES)[number];
+// Who can create an account. The list and the type are shared with the browser
+// (the landing and sign-in pages render from the mode), so they live in
+// $lib/signup-mode.ts; reading and writing the setting stays here.
+export { SIGNUP_MODES, type SignupMode };
 
 export async function signupMode(db: Database): Promise<SignupMode> {
 	const [row] = await db.select().from(appSettings).where(eq(appSettings.key, SIGNUP_KEY));

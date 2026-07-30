@@ -14,12 +14,16 @@
    with going there and including its settings. A page in the path is plain
    text, because nothing belongs to it. There is no gear anywhere in the bar.
 
-   THREE SHELLS
+   FOUR SHELLS
    .appbar          signed-in author. Brand links home, full path, five tools.
    .appbar.guest    invited reviewer. Brand is a lockup, path starts at the one
                     story they were sent, tools reduced to theme, help, who.
    .appbar.reader   public reading page. Brand links to Codex, path is the
                     story and its author as text, tools reduced to theme, help.
+   .appbar.public   signed-out visitor (landing, sign-in, sign-up, the pages
+                    email links land on). Brand links home, no path at all,
+                    tools reduced to theme and help. Its type lives in
+                    public.css.
    A shell may drop a tool. It never reorders one and never adds a bar.
    =========================================================================== */
 

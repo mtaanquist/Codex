@@ -28,7 +28,9 @@
 			Press the button to cancel the scheduled deletion and keep your account.
 		</p>
 		<form method="POST">
-			<button class="btn btn-primary" type="submit">Keep my account</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Keep my account</button>
+			</div>
 		</form>
 	{:else}
 		<p class="form-error auth-note" role="alert">

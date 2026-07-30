@@ -27,7 +27,9 @@
 			any comments you left stay where they are.
 		</p>
 		<form method="POST">
-			<button class="btn btn-primary" type="submit">Stop these emails</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Stop these emails</button>
+			</div>
 		</form>
 	{:else}
 		<p class="form-error auth-note" role="alert">

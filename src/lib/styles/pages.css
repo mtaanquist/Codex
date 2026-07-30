@@ -1,9 +1,12 @@
-/* Codex - static pages (Library, account, settings, landing).
+/* Codex - static pages (Library, account, settings).
    Ported from the design prototype. Loaded globally after theme.css.
+
+   The signed-out surfaces (landing page, sign-in, sign-up, the pages email
+   links land on) live in public.css, which is loaded last.
 
    Reconciled with the editor design system in theme.css:
    - the one navigation bar lives in chrome.css and serves every shell; this
-     file keeps the brand lockup it shares with the auth and landing pages.
+     file keeps the brand lockup it shares with the public pages.
    - the segmented control (.seg / .seg-btn) and the toggle (.toggle /
      .toggle-track) already live in theme.css; this file reuses them and only
      adds .toggle-row. */
@@ -17,7 +20,7 @@
 
 /* ============ BRAND LOCKUP ============
    The bar itself is .appbar in chrome.css; the mark and wordmark below are
-   shared with the auth and landing surfaces. */
+   shared with the public surfaces. */
 .logo {
 	width: 26px;
 	height: 26px;
@@ -1186,117 +1189,4 @@ kbd {
 	display: flex;
 	align-items: flex-start;
 	gap: 13px;
-}
-
-/* ============ LANDING ============ */
-.landing-surface {
-	min-height: 100vh;
-	display: flex;
-	flex-direction: column;
-	background: var(--bg);
-}
-.landing-nav {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	padding: 20px 32px;
-	max-width: 1100px;
-	margin: 0 auto;
-	width: 100%;
-}
-.landing-hero {
-	flex: 1;
-	display: flex;
-	align-items: center;
-	padding: 40px 32px 64px;
-}
-.landing-hero-inner {
-	max-width: 1100px;
-	margin: 0 auto;
-	width: 100%;
-}
-.landing-kicker {
-	font-size: 12px;
-	font-weight: 650;
-	letter-spacing: 0.14em;
-	text-transform: uppercase;
-	color: var(--accent);
-	margin: 0 0 18px;
-}
-.landing-title {
-	font-family: var(--font-serif);
-	font-size: clamp(44px, 7vw, 86px);
-	font-weight: 600;
-	line-height: 1.02;
-	letter-spacing: -0.025em;
-	margin: 0;
-	max-width: 16ch;
-}
-.landing-title em {
-	font-style: italic;
-	color: var(--text-muted);
-}
-.landing-tagline {
-	font-family: var(--font-content);
-	font-size: 19px;
-	line-height: 1.6;
-	color: var(--text-muted);
-	max-width: 56ch;
-	margin: 26px 0 0;
-	text-wrap: pretty;
-}
-.landing-cta {
-	display: flex;
-	gap: 12px;
-	margin-top: 34px;
-}
-.landing-cta .btn {
-	height: 44px;
-	padding: 0 22px;
-	font-size: 14.5px;
-}
-.landing-features {
-	display: grid;
-	grid-template-columns: repeat(4, 1fr);
-	gap: 1px;
-	margin-top: 72px;
-	background: var(--border);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
-	overflow: hidden;
-}
-.landing-feature {
-	background: var(--bg);
-	padding: 22px 22px 26px;
-}
-.landing-feature-marker {
-	font-family: var(--font-serif);
-	font-size: 16px;
-	font-weight: 600;
-	color: var(--accent);
-}
-.landing-feature-body {
-	font-size: 13.5px;
-	line-height: 1.6;
-	color: var(--text-muted);
-	margin: 12px 0 0;
-	text-wrap: pretty;
-}
-.landing-foot {
-	padding: 24px 32px;
-	text-align: center;
-	color: var(--text-faint);
-	font-size: 12.5px;
-	border-top: 1px solid var(--border);
-}
-
-@media (max-width: 880px) {
-	.landing-features {
-		grid-template-columns: 1fr 1fr;
-	}
-}
-@media (max-width: 520px) {
-	.landing-features {
-		grid-template-columns: 1fr;
-	}
 }

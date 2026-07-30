@@ -32,7 +32,9 @@
 					autocomplete="email"
 				/>
 			</div>
-			<button class="btn btn-primary" type="submit">Send reset link</button>
+			<div class="auth-actions">
+				<button class="btn btn-primary" type="submit">Send reset link</button>
+			</div>
 		</form>
 	{/if}
 	<div class="auth-links">

@@ -36,7 +36,11 @@ const REGISTRY: { slug: string; summary: string }[] = [
 	{ slug: 'reviewing', summary: 'Asking someone to read a story and leave comments.' },
 	{ slug: 'account', summary: 'Your profile, public page, appearance, and editor defaults.' },
 	{ slug: 'security', summary: 'Password, two-factor, passkeys, sessions, export, and deletion.' },
-	{ slug: 'shortcuts', summary: 'The keyboard shortcuts worth knowing.' }
+	{ slug: 'shortcuts', summary: 'The keyboard shortcuts worth knowing.' },
+	{
+		slug: 'selfhosting',
+		summary: 'Running Codex on your own machine, and how that differs from a hosted one.'
+	}
 ];
 
 export function docTopics(): DocTopic[] {
