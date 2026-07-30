@@ -15,10 +15,11 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	// Profile is the default section. Fields save when they lose focus; the
 	// name alternates between two values so a repeated run against a
 	// persistent database still changes it (an unchanged field fires no
-	// change event and has nothing to save).
+	// change event and has nothing to save). Both values keep the "Tester"
+	// substring the core-flow shelf assertion reads for.
 	const nameField = page.getByLabel('Display name');
 	const savedName = await nameField.inputValue();
-	await nameField.fill(savedName === 'E2E Tester' ? 'E2E Retester' : 'E2E Tester');
+	await nameField.fill(savedName === 'E2E Tester' ? 'E2E Tester II' : 'E2E Tester');
 	await nameField.blur();
 	await expect(page.getByRole('status')).toContainText('Saved');
 
