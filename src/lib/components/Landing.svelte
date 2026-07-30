@@ -145,18 +145,18 @@
 								This Codex is not taking new accounts at the moment. If you need one, ask the person
 								who runs it.
 							</p>
+						{:else if mode === 'invite'}
+							<div class="model-term">Accounts open by invitation, for now</div>
+							<p class="model-body">
+								Accounts open by invitation while the work is young. Requests are closed at the
+								moment, but anyone already writing here can invite you, so ask them for a code.
+							</p>
 						{:else}
 							<div class="model-term">Accounts open by invitation, for now</div>
 							<p class="model-body">
 								Accounts open by invitation while the work is young. Ask for one and you get an
 								answer - yes, or when - rather than a place in a queue nobody describes.
 							</p>
-							{#if mode === 'invite'}
-								<p class="model-body">
-									Requests are closed at the moment. Anyone already writing here can invite you, so
-									ask them for a code.
-								</p>
-							{/if}
 						{/if}
 					</div>
 					<div class="model-item">
