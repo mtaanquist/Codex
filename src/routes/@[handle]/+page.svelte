@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import { renderMarkdown } from '$lib/markdown';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { pageCrumb } from '$lib/chrome';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -33,6 +35,13 @@
 		<meta name="robots" content="noindex" />
 	{/if}
 </svelte:head>
+
+<AppBar
+	shell="reader"
+	crumbs={[pageCrumb(authorName || `@${data.handle}`)]}
+	pathLabel="What you are reading"
+	helpLabel="Codex and reading pages"
+/>
 
 <main class="shelf">
 	{#if profile}

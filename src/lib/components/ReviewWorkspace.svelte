@@ -25,6 +25,7 @@
 	import type { SaveStatus } from './SceneEditor.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
+	import { GUEST_MODE_NOTE } from '$lib/chrome';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction
@@ -102,7 +103,7 @@
 				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			} | null;
 		}[];
-		// The author editor's autosave feedback, surfaced in the page's TopBar.
+		// The author editor's autosave feedback, surfaced in the page's app bar.
 		onSaveStatus?: (status: SaveStatus) => void;
 	} = $props();
 
@@ -425,6 +426,7 @@
 					hrefs={seg
 						? { write: seg.writeHref, plan: seg.planHref, notes: seg.notesHref }
 						: { write: 'disabled', plan: 'disabled', notes: 'disabled' }}
+					note={seg ? undefined : GUEST_MODE_NOTE}
 				/>
 				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />
 			</div>

@@ -34,7 +34,8 @@
 	import SessionPanel from '$lib/components/SessionPanel.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath as storyCrumbs } from '$lib/chrome';
 	import type { PageData, Snapshot } from './$types';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
@@ -519,11 +520,17 @@
 </svelte:head>
 
 <div class="app" class:focus-mode={focusMode.on}>
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
-		story={{ slug: data.story.slug, title: data.story.title }}
+	<AppBar
+		crumbs={storyCrumbs(
+			data.universe,
+			{ ...data.story, reading: data.reading },
+			{
+				storyAt: 'story'
+			}
+		)}
 		{saveStatus}
-		help={{ topic: 'editor', label: 'the editor' }}
+		helpTopic="editor"
+		helpLabel="the editor"
 	/>
 	<div class="body">
 		<aside class="pane left">

@@ -4,7 +4,8 @@
 	import NoteEditor from '$lib/components/NoteEditor.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath } from '$lib/chrome';
 	import Icon from '$lib/components/Icon.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -29,11 +30,11 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
-		story={{ slug: data.story.slug, title: data.story.title }}
+	<AppBar
+		crumbs={storyPath(data.universe, { ...data.story, reading: data.reading })}
 		{saveStatus}
-		help={{ topic: 'planning', label: 'notes' }}
+		helpTopic="planning"
+		helpLabel="notes"
 	/>
 	<div class="body">
 		<NotesSidebar

@@ -3,6 +3,8 @@
 	const PATHS = {
 		feather: ['M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z', 'M16 8 2 22', 'M17.5 15H9'],
 		chevron: ['M9 6l6 6-6 6'],
+		// Points down at rest; the crumb menu rotates it when the menu opens.
+		caret: ['M6 9.5 12 15.5 18 9.5'],
 		// Marks a link that leaves the current view.
 		'arrow-out': ['M7 17 17 7', 'M8 7h9v9'],
 		plus: ['M12 5v14', 'M5 12h14'],

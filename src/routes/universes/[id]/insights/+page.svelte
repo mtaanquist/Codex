@@ -5,7 +5,8 @@
 	import { entityColor } from '$lib/entity-color';
 	import { daysMetGoal, daysUntil } from '$lib/insights';
 	import { formatNumber } from '$lib/format';
-	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { universePath } from '$lib/chrome';
 	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import type { PageData } from './$types';
@@ -94,9 +95,10 @@
 
 <SettingsShell>
 	{#snippet topbar()}
-		<PageTopBar
-			back={{ href: planPath, label: data.universe.name }}
-			help={{ topic: 'planning', label: 'the planning view' }}
+		<AppBar
+			crumbs={universePath(data.universe, { universeAt: 'insights', page: 'Insights' })}
+			helpTopic="planning"
+			helpLabel="the planning view"
 		/>
 	{/snippet}
 	{#snippet sidebar()}
@@ -109,11 +111,16 @@
 				<div class="st">Universe</div>
 			</div>
 		</div>
-		<nav class="admin-nav">
-			<div class="admin-nav-label">Insights</div>
+		<div class="side-nav-label">Insights</div>
+		<nav class="side-nav">
 			{#each NAV as item (item.id)}
-				<a class="nav-item" href="#{item.id}">{item.label}</a>
+				<a href="#{item.id}">{item.label}</a>
 			{/each}
+		</nav>
+		<div class="side-nav-label">Back to the universe</div>
+		<nav class="side-nav">
+			<a href={planPath}>Plan</a>
+			<a href={resolve('/universes/[id]/notes', { id: data.universe.slug })}>Notes</a>
 		</nav>
 	{/snippet}
 

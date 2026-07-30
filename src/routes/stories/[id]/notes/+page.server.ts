@@ -11,6 +11,7 @@ import {
 	setNotePinned
 } from '$lib/server/notes';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
+import { readingPageRef } from '$lib/server/publish';
 import { isUuid } from '$lib/slug';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -41,7 +42,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
-	return { story, universe, storyNotes, universeNotes, selected, revisionRows, revisionPreview };
+	return {
+		story,
+		universe,
+		storyNotes,
+		universeNotes,
+		selected,
+		revisionRows,
+		revisionPreview,
+		reading: await readingPageRef(db, story.id)
+	};
 };
 
 export const actions: Actions = {

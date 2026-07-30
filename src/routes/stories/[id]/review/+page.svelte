@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath } from '$lib/chrome';
 	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
 	import ReviewModal from '$lib/components/ReviewModal.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
@@ -36,10 +37,10 @@
 </svelte:head>
 
 <div class="app" class:focus-mode={focusMode.on}>
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
-		story={{ slug: data.story.slug, title: data.story.title }}
-		help={{ topic: 'reviewing', label: 'reviewing' }}
+	<AppBar
+		crumbs={storyPath(data.universe, { ...data.story, reading: data.reading })}
+		helpTopic="reviewing"
+		helpLabel="reviewing"
 		{saveStatus}
 	/>
 	{#if form?.message}<p class="review-error" role="alert">{form.message}</p>{/if}

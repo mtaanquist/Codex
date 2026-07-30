@@ -13,6 +13,7 @@ import {
 	scenes
 } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
+import { readingPageRef } from '$lib/server/publish';
 import { planActions } from '$lib/server/plan-actions';
 import {
 	declareMembership,
@@ -210,6 +211,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	return {
 		story,
 		universe,
+		reading: await readingPageRef(db, story.id),
 		...lists,
 		selected,
 		selectedKind,

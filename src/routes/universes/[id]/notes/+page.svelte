@@ -4,7 +4,8 @@
 	import NoteEditor from '$lib/components/NoteEditor.svelte';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { UNIVERSE_MODE_NOTE, universePath } from '$lib/chrome';
 	import Icon from '$lib/components/Icon.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -28,10 +29,11 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
+	<AppBar
+		crumbs={universePath(data.universe)}
 		{saveStatus}
-		help={{ topic: 'planning', label: 'notes' }}
+		helpTopic="planning"
+		helpLabel="notes"
 	/>
 	<div class="body">
 		<NotesSidebar
@@ -39,6 +41,9 @@
 			{selectedId}
 			{notesPath}
 			planHref={resolve('/universes/[id]/plan', { id: data.universe.slug })}
+			writeHref={resolve('/universes/[id]/plan', { id: data.universe.slug })}
+			reviewHref={resolve('/universes/[id]/plan', { id: data.universe.slug })}
+			modeNote={UNIVERSE_MODE_NOTE}
 			{form}
 		/>
 		<main class="pane center">

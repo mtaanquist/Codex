@@ -28,6 +28,8 @@
 		notesHref,
 		writeHref,
 		reviewHref,
+		modeNote,
+		insightsHref,
 		boardHref,
 		boardActive = false,
 		boardLabel = 'Scene board',
@@ -49,10 +51,15 @@
 		planPath: string;
 		// The Notes view at this scope; caller resolves the path.
 		notesHref: string;
-		// Present at story scope only; the universe Plan has no Write view.
+		// At universe scope both point at the universe's own story list, which
+		// is where you pick the story to write in or review.
 		writeHref?: string;
-		// Present at story scope only; the universe Plan has no Review view.
 		reviewHref?: string;
+		// The line under the mode strip, when the strip needs explaining.
+		modeNote?: string;
+		// Universe scope only: insights covers the whole universe, so it sits
+		// at the foot of the sidebar rather than beside a single story.
+		insightsHref?: string;
 		// Returns to the board after something else filled the centre: the
 		// scene board at story scope, the story board at universe scope.
 		boardHref?: string;
@@ -102,6 +109,7 @@
 		<ModeSwitcher
 			active="plan"
 			hrefs={{ write: writeHref, notes: notesHref, review: reviewHref }}
+			note={modeNote}
 		/>
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>
@@ -340,6 +348,11 @@
 					<Icon name="plus" size={13} /> Add category
 				</button>
 			</form>
+		{/if}
+		{#if insightsHref}
+			<div class="side-nav-label">Across the universe</div>
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+			<nav class="side-nav"><a href={insightsHref}>Insights</a></nav>
 		{/if}
 	</div>
 </aside>

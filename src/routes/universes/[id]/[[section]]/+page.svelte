@@ -6,7 +6,8 @@
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
 	import Icon from '$lib/components/Icon.svelte';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
-	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { universePath } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import { formatNumber } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
@@ -161,15 +162,12 @@
 
 <SettingsShell>
 	{#snippet topbar()}
-		<PageTopBar
-			back={{
-				href: resolve('/universes/[id]/plan', { id: data.universe.slug }),
-				label: data.universe.name
-			}}
-			help={{
-				topic: active === 'export' ? 'getting-started' : 'planning',
-				label: 'universe settings'
-			}}
+		<AppBar
+			crumbs={universePath(data.universe, {
+				universeAt: active === 'export' ? 'export' : 'settings'
+			})}
+			helpTopic={active === 'export' ? 'getting-started' : 'planning'}
+			helpLabel="universe settings"
 		/>
 	{/snippet}
 	{#snippet sidebar()}
@@ -183,13 +181,18 @@
 			</div>
 		</div>
 		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-		<nav class="admin-nav">
-			<div class="admin-nav-label">Universe settings</div>
+		<div class="side-nav-label">Universe settings</div>
+		<nav class="side-nav">
 			{#each NAV as item (item.id)}
-				<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
+				<a href={sectionHref(item.id)} aria-current={active === item.id ? 'page' : undefined}>
 					{item.label}
 				</a>
 			{/each}
+		</nav>
+		<div class="side-nav-label">Back to the universe</div>
+		<nav class="side-nav">
+			<a href={resolve('/universes/[id]/plan', { id: data.universe.slug })}>Plan</a>
+			<a href={resolve('/universes/[id]/insights', { id: data.universe.slug })}>Insights</a>
 		</nav>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/snippet}

@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { isUuid } from '$lib/slug';
 import { ownedStory } from '$lib/server/story-access';
+import { readingPageRef } from '$lib/server/publish';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import {
@@ -80,6 +81,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },
+		reading: await readingPageRef(db, story.id),
 		chapters: content.chapters,
 		scenes,
 		// The author's sidebar manages structure here too, trash included.

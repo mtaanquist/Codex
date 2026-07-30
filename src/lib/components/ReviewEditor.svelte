@@ -85,7 +85,7 @@
 		entityHref: ((entity: MentionEntity) => string) | null;
 		onStartComment: (sel: { start: number; end: number; text: string }) => void;
 		onStartSuggest: (sel: { start: number; end: number; text: string }) => void;
-		// Save feedback for the TopBar, same contract as SceneEditor's.
+		// Save feedback for the app bar, same contract as SceneEditor's.
 		onStatus?: (status: SaveStatus) => void;
 	} = $props();
 

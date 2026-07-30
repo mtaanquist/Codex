@@ -9,7 +9,8 @@
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath } from '$lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -47,11 +48,11 @@
 </svelte:head>
 
 <div class="app">
-	<TopBar
-		universe={{ slug: data.universe.slug, name: data.universe.name }}
-		story={{ slug: data.story.slug, title: data.story.title }}
+	<AppBar
+		crumbs={storyPath(data.universe, { ...data.story, reading: data.reading })}
 		{saveStatus}
-		help={{ topic: 'planning', label: 'the planning view' }}
+		helpTopic="planning"
+		helpLabel="the planning view"
 	/>
 	<div class="body">
 		<PlanSidebar

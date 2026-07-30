@@ -37,23 +37,39 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByLabel('New story').fill('Book of Ash');
 	await page.getByRole('button', { name: 'Create story' }).click();
 
-	// Opening a story lands in the editor shell: breadcrumb and sidebar both
-	// carry the story title.
-	await expect(page.locator('.crumb.current')).toHaveText('Book of Ash');
+	// Opening a story lands in the editor shell: the path and the sidebar both
+	// carry the story title, and the story crumb is the menu of everything that
+	// belongs to the story, starting with going there.
+	const path = page.getByRole('navigation', { name: 'Where you are' });
+	const storyCrumb = path.getByRole('button', { name: 'Book of Ash' });
+	await expect(storyCrumb).toHaveAttribute('aria-current', 'page');
 	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
 
-	// The top-bar help opens the editor article in a modal; Esc closes it.
-	// Opening is idempotent, so retry the click until the dialog shows: a lone
-	// click can be dropped if it lands as the top bar re-renders.
-	const help = page.getByRole('dialog', { name: 'Writing in the editor' });
-	await expect(async () => {
-		await page.getByRole('button', { name: 'Help: the editor' }).click();
-		await expect(help.getByRole('heading', { name: 'Writing in the editor' })).toBeVisible({
-			timeout: 2000
-		});
-	}).toPass({ timeout: 15000 });
+	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'false');
+	await storyCrumb.click();
+	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'true');
+	const storyMenu = page.getByRole('menu');
+	await expect(storyMenu.getByRole('menuitem', { name: 'Go to the story' })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+	await expect(storyMenu.getByRole('menuitem', { name: 'Story settings' })).toBeVisible();
+	await expect(storyMenu.getByRole('menuitem', { name: 'Print preview' })).toBeVisible();
+	// No public edition yet, so the reading page is left out rather than dead.
+	await expect(storyMenu.getByRole('menuitem', { name: 'Public reading page' })).toHaveCount(0);
 	await page.keyboard.press('Escape');
-	await expect(help).toBeHidden();
+	await expect(storyCrumb).toHaveAttribute('aria-expanded', 'false');
+
+	// The help tool is a place, not an overlay: it navigates to the editor
+	// article, lights up while there, and comes back when pressed again.
+	await page.getByRole('link', { name: 'Help: the editor' }).click();
+	await expect(page).toHaveURL('/docs/editor');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(
+		page.getByRole('heading', { name: 'Writing in the editor', level: 1 })
+	).toBeVisible();
+	await page.getByRole('link', { name: /Help is open/ }).click();
+	await expect(page).toHaveURL(/\/stories\//);
 
 	// Build the tree: a chapter, then a scene inside it, which opens.
 	await page.getByRole('button', { name: 'New chapter' }).click();
@@ -67,9 +83,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// menu on the editor's formatting bar, so it needs a scene open.
 	await page.getByTitle('Switch view').click();
 	await page.getByRole('menuitem', { name: 'Focus' }).click();
-	await expect(page.locator('.topbar')).toBeHidden();
+	await expect(page.locator('.appbar')).toBeHidden();
 	await page.keyboard.press('Escape');
-	await expect(page.locator('.topbar')).toBeVisible();
+	await expect(page.locator('.appbar')).toBeVisible();
 
 	// Write prose: the autosave chip confirms, and a reload preserves it.
 	await page.locator('.cm-content').click();
@@ -435,7 +451,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const PNG_B64 =
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 	if (process.env.ASSET_S3_BUCKET) {
-		await page.locator('.crumb.current').click();
+		// Settings sits behind the story's own name in the path.
+		await path.getByRole('button', { name: 'Book of Ash' }).click();
+		await page.getByRole('menuitem', { name: 'Story settings' }).click();
 		await page.getByRole('link', { name: 'Cover' }).click();
 		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
 		await expect(page.locator('svg.cover')).toBeVisible();
@@ -486,7 +504,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Publishing: set the story public, freeze an edition, and read it
 	// back anonymously on the public pages.
-	await page.locator('.crumb.current').click();
+	await path.getByRole('button', { name: 'Book of Ash' }).click();
+	await page.getByRole('menuitem', { name: 'Story settings' }).click();
 	await page.getByRole('link', { name: 'Publish' }).click();
 	await expect(page.getByRole('heading', { name: 'Publish' })).toBeVisible();
 	await page.getByLabel('Visibility').selectOption('public');
@@ -501,7 +520,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(reader.getByRole('heading', { name: '@e2e-tester' })).toBeVisible();
 	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
 	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
-	await expect(reader.locator('.reader')).toContainText('The gate of Halden');
+	// main.reader is the prose; .appbar.reader above it is the chrome shell.
+	await expect(reader.locator('main.reader')).toContainText('The gate of Halden');
 	// Inline images of a published edition must serve to the anonymous
 	// reader, not 404 (bug_004).
 	if (process.env.ASSET_S3_BUCKET) {
@@ -563,9 +583,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.doc-scene-mark')).toHaveCount(0);
 	await gotoReady(page, proseSceneUrl);
 
-	// The breadcrumb leads to the universe editor: the same cast at universe
-	// scope, with no per-story notes section.
-	await page.getByRole('link', { name: universeName }).click();
+	// The universe crumb has one destination now, its Plan: the same cast at
+	// universe scope, with no per-story notes section.
+	await path.getByRole('button', { name: universeName }).click();
+	await page.getByRole('menuitem', { name: 'Go to the universe' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+\/plan$/);
 	await page.locator('.ent-row', { hasText: 'Alice Vane' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Alice Vane');
@@ -621,8 +642,9 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Corvin');
 
-	// The dashboard reaches the story directly, under its universe.
-	await page.locator('.brand').click();
+	// The dashboard reaches the story directly, under its universe. The brand
+	// in the bar is the way home from anywhere.
+	await page.getByRole('link', { name: 'Codex, your library' }).click();
 	await expect(page).toHaveURL('/');
 	const universeSection = page.locator('section', { hasText: universeName });
 	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();

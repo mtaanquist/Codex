@@ -4,7 +4,8 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { flushFocusedField } from '$lib/autosave-form';
 	import { entityColor } from '$lib/entity-color';
-	import PageTopBar from '$lib/components/PageTopBar.svelte';
+	import AppBar from '$lib/components/AppBar.svelte';
+	import { storyPath } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
 	import SettingsDetails from './SettingsDetails.svelte';
 	import SettingsEditor from './SettingsEditor.svelte';
@@ -78,9 +79,16 @@
 
 <SettingsShell>
 	{#snippet topbar()}
-		<PageTopBar
-			back={{ href: resolve('/stories/[id]', { id: data.story.slug }), label: data.story.title }}
-			help={{ topic: helpTopic, label: 'story settings' }}
+		<AppBar
+			crumbs={storyPath(
+				data.universe,
+				{ ...data.story, reading: data.reading },
+				{
+					storyAt: active === 'export' ? 'export' : 'settings'
+				}
+			)}
+			{helpTopic}
+			helpLabel="story settings"
 		/>
 	{/snippet}
 	{#snippet sidebar()}
@@ -94,10 +102,10 @@
 			</div>
 		</div>
 		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-		<nav class="admin-nav">
-			<div class="admin-nav-label">Story settings</div>
+		<div class="side-nav-label">Story settings</div>
+		<nav class="side-nav">
 			{#each NAV as item (item.id)}
-				<a class="nav-item" class:active={active === item.id} href={sectionHref(item.id)}>
+				<a href={sectionHref(item.id)} aria-current={active === item.id ? 'page' : undefined}>
 					{item.label}
 				</a>
 			{/each}
@@ -165,11 +173,5 @@
 
 	.danger-block {
 		border-color: color-mix(in oklab, var(--danger, #b00020) 35%, var(--border));
-	}
-	/* Anchor nav items reuse the admin nav button styling. */
-	.admin-nav a.nav-item {
-		text-decoration: none;
-		display: flex;
-		align-items: center;
 	}
 </style>

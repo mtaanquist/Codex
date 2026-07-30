@@ -2,7 +2,7 @@
 
 The editor is where you draft scenes. It saves on its own as you type, so there is no save button; the status near the top shows when your work was last stored.
 
-The gear in the top bar opens the story's settings: details, cover, page setup, publishing, review links, exports, and more. Clicking the story's title in the breadcrumb goes there too.
+The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
 ## Scenes and chapters
 

@@ -3,11 +3,19 @@ import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
 import { gatherStory } from '$lib/server/export';
 import { storyPageSetup } from '$lib/server/page-setup';
+import { readingPageRef } from '$lib/server/publish';
 
 // Data for the print-optimised view; "Export PDF" is the browser's print
 // dialog over this page.
 export const load: PageServerLoad = async ({ params, locals }) => {
-	const { story } = await ownedStory(params.id, locals.user!.id);
+	const { story, universe } = await ownedStory(params.id, locals.user!.id);
 	const { chapters, scenes } = await gatherStory(db, story);
-	return { story, chapters, scenes, pageSetup: await storyPageSetup(db, story.id) };
+	return {
+		story,
+		universe,
+		chapters,
+		scenes,
+		pageSetup: await storyPageSetup(db, story.id),
+		reading: await readingPageRef(db, story.id)
+	};
 };

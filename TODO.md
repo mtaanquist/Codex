@@ -5,6 +5,29 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Navigation model (2026-07-30, branch `feat/navigation-model`, PR #507). The
+second design-pass brief's result, ported. One `AppBar.svelte` over
+`src/lib/styles/chrome.css` replaces the editor's `.topbar`, the pages'
+`.page-shell .topbar` with its `.back-link`, the print page's one-off bar and
+`.review-guest-bar`, in three shells (author, guest, reader). The two
+contested decisions landed as the owner ratified them: a place in the path is
+a menu, so the universe and story names open everything belonging to them
+starting with "Go to the ...", with no gear anywhere in the chrome; and the
+help modal is deleted, the `?` now navigating to the help pages, lighting up
+while there and returning when pressed again. Paths are built in
+`$lib/chrome.ts`; the theme tool cycles dark -> light -> warm through
+`theme.ts` (`cycleTheme` replaces `flipTheme`, and the avatar menu walks the
+same cycle); the mode strip is always four, with a rendered note where a mode
+is unavailable. Every page that escaped a shell now has one: docs, print,
+guest review, and the public reader. `/docs` became public, because the guest
+and reader shells keep the help tool. Deleted with it: `HelpModal`, `TopBar`,
+`PageTopBar`, `PaletteButton`, and the `.topbar`, `.crumbs`, `.back-link`,
+`.breadcrumb`, `.save-status`, `.review-guest-bar` and `.universe-edit` CSS.
+New kit card `scratch/design-kit/appbar.html`. Deferred on purpose: the mock's
+universe-overview restructure (the Plan page keeps its `PlanSidebar` entity
+list, gaining only the bar, the four-mode strip and a small Insights link),
+and full reader retheming, which is session 3.
+
 Visual design pass (2026-07-29, branch `worktree-design-system-sheet`).
 Groundwork for a whole-app cohesion pass with Claude Design: a components
 sheet written from a full audit of `src/lib/styles/` and

@@ -1,0 +1,298 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>App bar</title>
+		<link rel="stylesheet" href="styles/tokens.css" />
+		<link rel="stylesheet" href="styles/theme.css" />
+		<link rel="stylesheet" href="styles/pages.css" />
+		<link rel="stylesheet" href="styles/menus.css" />
+		<link rel="stylesheet" href="styles/primitives.css" />
+		<link rel="stylesheet" href="styles/chrome.css" />
+		<link rel="stylesheet" href="kit.css" />
+		<style>
+			/* A 52px bar with a full path and five tools needs the whole width, so
+			   the theme panes stack instead of sitting three across. */
+			.themes {
+				grid-template-columns: 1fr;
+			}
+			/* The bars sit in a bordered frame so each one's own bottom border and
+			   elevated fill read against the page behind it. */
+			.bar-frame {
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				overflow: hidden;
+			}
+			.bar-frame .appbar {
+				position: static;
+			}
+			/* One menu is shown open, so the card documents the crumb menu too. */
+			.menu-sample {
+				display: block;
+				width: max-content;
+			}
+			.menu-sample .crumb-pop {
+				position: static;
+				display: block;
+				margin-top: 7px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="themes" id="themes"></div>
+		<template id="sample">
+			<div class="kit-h">Author shell (.appbar)</div>
+			<div class="bar-frame">
+				<header class="appbar">
+					<a class="appbar-brand" href="#" aria-label="Codex, your library">
+						<span class="logo"
+							><svg
+								viewBox="0 0 24 24"
+								width="15"
+								height="15"
+								fill="none"
+								stroke="#fff"
+								stroke-width="1.8"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+								<path d="M16 8 2 22" />
+								<path d="M17.5 15H9" />
+							</svg></span
+						>
+						<span class="brand-name">Codex</span>
+					</a>
+					<span class="appbar-rule"></span>
+					<nav class="path" aria-label="Where you are">
+						<a class="crumb" href="#">Library</a>
+						<span class="crumb-sep" aria-hidden="true"
+							><svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M9 6l6 6-6 6" /></svg
+						></span>
+						<span class="crumb-place">
+							<button class="crumb crumb-menu" type="button" aria-haspopup="menu" aria-expanded="false">
+								<span class="crumb-label">The Shattered Realms</span>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linecap="round"
+								>
+									<path d="M6 9.5 12 15.5 18 9.5" />
+								</svg>
+							</button>
+						</span>
+						<span class="crumb-sep" aria-hidden="true"
+							><svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M9 6l6 6-6 6" /></svg
+						></span>
+						<span class="crumb-place">
+							<button
+								class="crumb crumb-menu current"
+								type="button"
+								aria-haspopup="menu"
+								aria-expanded="false"
+								aria-current="page"
+							>
+								<span class="crumb-label">Book of Ash</span>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linecap="round"
+								>
+									<path d="M6 9.5 12 15.5 18 9.5" />
+								</svg>
+							</button>
+						</span>
+					</nav>
+					<div class="appbar-tools">
+						<span class="saved"><span class="dot"></span> Saved just now</span>
+						<button class="tool-search" type="button" aria-label="Search and commands">
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />
+								<path d="M21 21l-4.3-4.3" />
+							</svg>
+							Search <kbd>Ctrl K</kbd>
+						</button>
+						<button class="icon-btn" type="button" aria-label="Theme: dark. Click for light.">
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z" />
+								<path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3" />
+							</svg>
+						</button>
+						<a class="icon-btn help" href="#" aria-label="Help: the editor">?</a>
+						<button class="icon-btn" type="button" aria-label="Notifications">
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+								<path d="M13.7 21a2 2 0 0 1-3.4 0" />
+							</svg>
+						</button>
+						<button class="avatar" type="button" aria-label="Account menu">KE</button>
+					</div>
+				</header>
+			</div>
+
+			<div class="kit-h">Guest shell (.appbar.guest)</div>
+			<div class="bar-frame">
+				<header class="appbar guest">
+					<span class="appbar-brand">
+						<span class="logo"
+							><svg
+								viewBox="0 0 24 24"
+								width="15"
+								height="15"
+								fill="none"
+								stroke="#fff"
+								stroke-width="1.8"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+								<path d="M16 8 2 22" />
+								<path d="M17.5 15H9" />
+							</svg></span
+						>
+						<span class="brand-name">Codex</span>
+					</span>
+					<span class="appbar-rule"></span>
+					<nav class="path" aria-label="Where you are">
+						<span class="crumb current" aria-current="page">Book of Ash</span>
+						<span class="pill">Review only</span>
+					</nav>
+					<div class="appbar-tools">
+						<button class="icon-btn" type="button" aria-label="Theme: dark. Click for light.">
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z" />
+								<path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3" />
+							</svg>
+						</button>
+						<a class="icon-btn help" href="#" aria-label="Help: reviewing">?</a>
+						<span class="appbar-who"><span class="avatar">MW</span> Reviewing as Margin Walker</span>
+					</div>
+				</header>
+			</div>
+
+			<div class="kit-h">Reader shell (.appbar.reader)</div>
+			<div class="bar-frame">
+				<header class="appbar reader">
+					<a class="appbar-brand" href="#" aria-label="Codex">
+						<span class="logo"
+							><svg
+								viewBox="0 0 24 24"
+								width="15"
+								height="15"
+								fill="none"
+								stroke="#fff"
+								stroke-width="1.8"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+								<path d="M16 8 2 22" />
+								<path d="M17.5 15H9" />
+							</svg></span
+						>
+						<span class="brand-name">Codex</span>
+					</a>
+					<span class="appbar-rule"></span>
+					<nav class="path" aria-label="What you are reading">
+						<span class="crumb current" aria-current="page">Book of Ash</span>
+						<span class="appbar-by">by Kera Eressea</span>
+					</nav>
+					<div class="appbar-tools">
+						<button class="icon-btn" type="button" aria-label="Theme: dark. Click for light.">
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.8"
+								stroke-linecap="round"
+							>
+								<path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z" />
+								<path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3" />
+							</svg>
+						</button>
+						<a class="icon-btn help" href="#" aria-label="Help: Codex and reading pages">?</a>
+					</div>
+				</header>
+			</div>
+
+			<div class="kit-h">Crumb menu, open</div>
+			<span class="crumb-place open menu-sample">
+				<button class="crumb crumb-menu" type="button" aria-haspopup="menu" aria-expanded="true">
+					<span class="crumb-label">Book of Ash</span>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+					>
+						<path d="M6 9.5 12 15.5 18 9.5" />
+					</svg>
+				</button>
+				<div class="popover crumb-pop" role="menu">
+					<a class="menu-item" role="menuitem" href="#" aria-current="page">Go to the story</a>
+					<div class="crumb-pop-sep"></div>
+					<a class="menu-item" role="menuitem" href="#">Story settings</a>
+					<a class="menu-item" role="menuitem" href="#">Print preview</a>
+					<a class="menu-item" role="menuitem" href="#">Export a file</a>
+					<div class="crumb-pop-sep"></div>
+					<a class="menu-item" role="menuitem" href="#">Public reading page</a>
+				</div>
+			</span>
+
+			<p class="note">
+				One bar for every page: brand, then the path, then the tools, in that order. A shell may drop
+				a tool; none reorders one, and none adds a second bar. Every crumb opens that place's home,
+				the last crumb is the page you are on and does not link, and a place in the path is a menu
+				whose first item goes to the place itself and whose rest are that place's own things,
+				settings included. A page in the path is plain text, because nothing belongs to it. There is
+				no gear and no icon-only destination. Page actions (Print, Save, New universe) belong in the
+				page header under the bar, never in the bar.
+			</p>
+		</template>
+		<script src="kit.js"></script>
+	</body>
+</html>
