@@ -78,10 +78,12 @@ A note in a story belongs to that story. A note in a universe belongs to the who
 
 Pin the notes you reach for often with the Pin button above a note; pinned notes sit at the top of the list. Delete removes a note for good. The filter field at the top of the list narrows it by title.
 
-If you run a campaign, a note per session works well: keep the running log in a story note, and world facts the players have learned in a universe note. The History tab keeps past versions of a note the same way it does for scenes and entries.
+If you run a campaign, a note per sitting works well: keep the running log in a story note, and world facts the players have learned in a universe note. The right pane of the Notes view keeps past versions of the open note, the same way it does for scenes and entries; a note mentions nothing and has no comments, so History is the only panel there.
+
+A note can also be attached to one scene. In the editor, open the Notes panel on the right and select "New note on this scene": the note is made, attached, and opened in the Notes view for you to write. From then on it shows in that scene's Notes panel whenever the scene is open, and in the story's note list like any other note.
 
 ## History
 
-The History tab on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.
+The History panel on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like.
 
 Select "Preview" on a version to read it; the panel above the text lists the fields as they were then. "Restore this version" brings the whole entry back to that state, including its relationships. Restoring never deletes history: the version you replaced stays in the list, so you can return to it the same way.

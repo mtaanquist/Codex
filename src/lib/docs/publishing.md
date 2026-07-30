@@ -38,7 +38,17 @@ To force a page break inside a chapter, put \page alone on its own line in your 
 
 ## Your public page
 
-When your profile is set to public, your handle page shows your name, a short bio, any links you add, and your listed stories. You control all of that on your account page, under Profile.
+Your handle page is your shelf: your name, your handle, and every story you have set to public, each with its title, when it was published, and its description. When your profile is set to public it also shows a short bio, any links you add, and whether you are open for commissions. You control all of that on your account page, under Profile.
+
+A story you set to public gets its own reading page under your handle. It opens with the title, who wrote it, how long it is, and the story's description, then the contents and the prose itself.
+
+## What a reader sees
+
+The reading pages are the outward face of your work, so they are plain and quiet: one column of prose, chapter headings, and nothing between the reader and the words. A cover is the story's own title set in the reading typeface.
+
+Both pages name you the way you asked to be named: your pen name if you set one on your account page, otherwise your display name. Your handle stays the address in the link.
+
+A reader gets two controls in the bar: the theme, which starts in whichever of light or dark their device asks for and remembers a change they make, and the question mark, which opens these pages. At the end of both pages a footer says the work was written in Codex, who published it, and offers a link for a reader who wants to write something of their own.
 
 ## Taking something down
 

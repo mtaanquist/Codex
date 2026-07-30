@@ -5,6 +5,31 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Secondary surfaces (2026-07-30, branch `feat/secondary-surfaces`). The third
+design-pass brief's result, ported. The right pane is now one model: five
+panels (Reference, Comments, Assistant, History, Notes) in one order with one
+label each, hidden where they have no subject, decided in `$lib/panels.ts` and
+rendered by one `PanelStrip.svelte` that is a real tablist (roving tabindex,
+arrows, Home/End, `aria-controls`). One panel left means a `.panel-head` title
+rather than a one-segment strip (Notes mode's fake History pill, guest review,
+insights); no panel left closes the pane (Plan with nothing open). Review's
+pane is Comments plus Assistant, with the Open/Done filter moved inside the
+Comments panel. The Session tab is gone: its stats are the new "Writing
+sessions" section of a universe's Insights, which became a workspace view
+(mode strip with no mode current and a `.mode-note` saying why, its section
+anchors as `.contents-nav`, the Assistant alone on the right). Write gained a
+Notes panel over the existing `notes.scene_id`, with "New note on this scene".
+The reading pages are rebuilt on tokens (`.reader-shell`, one footer, covers
+as the story's own title in the serif, AA links underlined in the body
+colour), and they follow the reader's system theme live until the reader
+chooses. The library has one creation pattern: a New menu per collection
+(`NewMenu.svelte`), no dashed add tiles in populated grids, no import text
+links. Deleted: `SessionPanel.svelte`, `/api/universes/[id]/session`, and the
+`.sess-*`/`.streak-*` CSS. Deferred: a Notes panel on Plan (a note attaches to
+a scene, and there is no column for an entry, so it needs a migration), and
+chapter-by-chapter reader pagination (the reading page still renders the whole
+edition with an in-page contents list).
+
 Navigation model (2026-07-30, branch `feat/navigation-model`, PR #507). The
 second design-pass brief's result, ported. One `AppBar.svelte` over
 `src/lib/styles/chrome.css` replaces the editor's `.topbar`, the pages'
@@ -1523,6 +1548,17 @@ shipping as its own PR.
       Merged 2026-06-06 (#170). Both shipped as v2.27.0.
 
 ## Feedback backlog
+
+From the design pass click-throughs (2026-07-30):
+
+- [ ] Quick note capture while writing. Switching to the Notes tab (or
+      mode) to jot something down is cumbersome and takes you away from the
+      text. Wanted: a "quick note" affordance that floats over whatever you
+      are doing - a small corner card or overlay, likely on a shortcut -
+      that saves to the story's notes (attached to the open scene when
+      there is one) without moving focus away from the editor for more
+      than the jot itself. Design it in a later pass; not part of the
+      Session 3 port.
 
 From first real use (2026-06-03):
 
