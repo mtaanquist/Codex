@@ -1559,6 +1559,11 @@ From the design pass click-throughs (2026-07-30):
       there is one) without moving focus away from the editor for more
       than the jot itself. Design it in a later pass; not part of the
       Session 3 port.
+- [ ] A review toolbar for bulk decisions. "Accept all" was removed
+      (2026-07-30): applying every pending edit at once can change far
+      more than is on screen. If bulk accept/reject comes back, it
+      belongs in a purpose-built review toolbar that shows what it is
+      about to do, not a single button above the cards.
 - [ ] Ask for a pen name when publishing. The reading pages name the
       author by pen name, falling back to the account's display name
       (Session 3 port). An author publishing pseudonymously whose display

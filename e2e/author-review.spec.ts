@@ -6,7 +6,7 @@ import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 // comment and a suggested edit, then accepts the suggestion - the same surface
 // guests use, now driven by the logged-in author on the three-column workspace.
 test('the author can comment and suggest in their own review mode', async ({ page }) => {
-	// Retracting a comment and Accept all both ask for confirmation.
+	// Retracting a comment asks for confirmation.
 	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
@@ -76,15 +76,15 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 	await suggCard.getByRole('button', { name: 'Send reply' }).click();
 	await expect(suggCard.locator('.rv-reply-body')).toHaveText('Thinking about this one.');
 
-	// Accept all pending edits in the scene; the editable prose updates in place.
-	// Wait for the accept's data refresh before reading the text: the pending
-	// suggestion's ghost widget also renders the replacement, so the text
-	// check alone passes before the document itself has it - and typing into
-	// the stale document would win over the accepted text (local edits win).
-	// The Accept all button leaves with the last pending suggestion, which
-	// only happens once the refresh has landed.
-	await page.getByRole('button', { name: /^Accept all/ }).click();
-	await expect(page.getByRole('button', { name: /^Accept all/ })).toHaveCount(0);
+	// Accept the pending edit from its card; the editable prose updates in
+	// place. Wait for the accept's data refresh before reading the text: the
+	// pending suggestion's ghost widget also renders the replacement, so the
+	// text check alone passes before the document itself has it - and typing
+	// into the stale document would win over the accepted text (local edits
+	// win). The Accept button leaves with the pending suggestion, which only
+	// happens once the refresh has landed.
+	await suggCard.getByRole('button', { name: 'Accept suggestion' }).click();
+	await expect(suggCard.getByRole('button', { name: 'Accept suggestion' })).toHaveCount(0);
 	await expect(prose).toContainText('The revised sentence.');
 
 	// The author can now build on the accepted text: type into the manuscript

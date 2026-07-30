@@ -11,7 +11,6 @@
 		type ReviewSuggestion,
 		type ReviewThread
 	} from '$lib/review-ui';
-	import { pluralSuffix } from '$lib/format';
 
 	// A pending comment or edit the reviewer is composing, anchored to a
 	// selection (or to the whole scene when anchored is false).
@@ -72,22 +71,6 @@
 		threads.filter((t) => t.resolvedAt !== null).length +
 			suggestions.filter((s) => s.status !== 'pending').length
 	);
-	// Pending suggestions whose passage still matches, so "Accept all" has
-	// something to apply. Anchor-lost ones can only be rejected.
-	const nAcceptable = $derived(
-		suggestions.filter((s) => s.status === 'pending' && !s.anchorLost).length
-	);
-
-	function confirmAcceptAll(e: SubmitEvent) {
-		if (
-			!confirm(
-				`Accept all ${nAcceptable} suggested edit${pluralSuffix(nAcceptable)} in this scene? This updates the manuscript.`
-			)
-		) {
-			e.preventDefault();
-		}
-	}
-
 	const FILTERS = $derived([
 		{ id: 'all' as const, label: 'Open', n: nComments + nSugg },
 		{ id: 'resolved' as const, label: 'Done', n: nResolved }
@@ -255,28 +238,6 @@
 					</button>
 				{/each}
 			</div>
-			{#if role === 'author' && nAcceptable > 0}
-				<form
-					method="POST"
-					action="?/acceptAll"
-					use:enhance={() =>
-						async ({ result, update }) => {
-							if (result.type === 'success') {
-								const ids = result.data?.acceptedIds;
-								if (Array.isArray(ids)) {
-									onAccepted?.(ids.filter((id): id is string => typeof id === 'string'));
-								}
-							}
-							await update();
-						}}
-					onsubmit={confirmAcceptAll}
-				>
-					<input type="hidden" name="sceneId" value={scene.id} />
-					<button class="btn btn-sm btn-accept" type="submit">
-						<Icon name="check" size={13} /> Accept all {nAcceptable} edit{pluralSuffix(nAcceptable)}
-					</button>
-				</form>
-			{/if}
 		</div>
 
 		<div class="rv-panel-scroll" bind:this={scrollEl}>
