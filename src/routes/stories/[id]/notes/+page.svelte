@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import NotesSidebar from '$lib/components/NotesSidebar.svelte';
 	import NoteEditor from '$lib/components/NoteEditor.svelte';
+	import PanelStrip from '$lib/components/PanelStrip.svelte';
+	import { visiblePanels } from '$lib/panels';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
@@ -23,6 +25,11 @@
 	const universeNotesPath = $derived(resolve('/universes/[id]/notes', { id: data.universe.slug }));
 	const itemHref = $derived(data.selected ? `${notesPath}?note=${data.selected.id}` : notesPath);
 	const currentBody = $derived(data.selected?.bodyMd ?? '');
+
+	// A note mentions nothing, has no comments and no notes of its own, so
+	// History is the only panel with a subject here: the pane wears a title
+	// rather than a one-segment strip, and closes when no note is open.
+	const panels = $derived(visiblePanels({ history: Boolean(data.selected) }));
 </script>
 
 <svelte:head>
@@ -36,7 +43,7 @@
 		helpTopic="planning"
 		helpLabel="notes"
 	/>
-	<div class="body">
+	<div class="body" class:no-right={panels.length === 0}>
 		<NotesSidebar
 			notes={data.storyNotes}
 			universeNotes={data.universeNotes}
@@ -91,26 +98,26 @@
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right">
-			<div class="right-head">
-				<div class="seg full"><span class="seg-btn active">History</span></div>
-			</div>
-			{#if data.selected}
-				<RevisionHistory
-					entityType="note"
-					entityId={data.selected.id}
-					revisions={data.revisionRows}
-					previewId={data.revisionPreview?.id}
-					previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
-				/>
-			{:else}
-				<div class="right-scroll">
-					<div class="empty-state tight">
-						<p class="empty-state-text">Select a note to see its history.</p>
-					</div>
-				</div>
-			{/if}
-		</aside>
+		{#if data.selected}
+			{@const openNote = data.selected}
+			<aside class="pane right">
+				<PanelStrip {panels} active="history" onSelect={() => {}} sub="this note">
+					{#snippet panel()}
+						<RevisionHistory
+							entityType="note"
+							entityId={openNote.id}
+							revisions={data.revisionRows}
+							previewId={data.revisionPreview?.id}
+							previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+						/>
+						<p class="panel-note">
+							A note has versions like anything else you type here. Codex autosaves; name a
+							checkpoint when you want to find your way back to this wording.
+						</p>
+					{/snippet}
+				</PanelStrip>
+			</aside>
+		{/if}
 	</div>
 </div>
 

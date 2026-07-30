@@ -210,16 +210,10 @@
 	padding: 12px 12px 10px;
 	border-bottom: 1px solid var(--border);
 }
-.rv-panel-title {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
+/* The panel's title sits above its own filter; the shared .panel-head skin
+   carries the type, so only the spacing is local. */
+.rv-panel-head .panel-head {
 	margin-bottom: 10px;
-}
-.rv-panel-title > span {
-	font-size: 14px;
-	font-weight: 700;
-	letter-spacing: -0.005em;
 }
 
 .rv-panel-scroll {

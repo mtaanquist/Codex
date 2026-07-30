@@ -229,13 +229,21 @@
 		</div>
 	{:else}
 		<div class="rv-panel-head">
-			<div class="rv-panel-title">
-				<span>Review</span>
-				<button class="btn btn-sm btn-secondary" type="button" onclick={onStartSceneComment}>
-					<Icon name="comment-plus" size={13} /> Whole scene
+			<!-- The panel's own title, and under it the panel's own filter: two
+			     segmented controls in one pane are never mistaken for each other
+			     when only one of them sits under a heading. -->
+			<div class="panel-head">
+				<h2 class="panel-head-title">Comments</h2>
+				<button
+					class="btn btn-sm btn-secondary"
+					type="button"
+					style="margin-left: auto"
+					onclick={onStartSceneComment}
+				>
+					<Icon name="comment-plus" size={13} /> On the whole scene
 				</button>
 			</div>
-			<div class="seg full">
+			<div class="seg full" aria-label="Filter comments">
 				{#each FILTERS as f (f.id)}
 					<button
 						class="seg-btn"
@@ -311,6 +319,11 @@
 					/>
 				{/if}
 			{/each}
+
+			<p class="panel-note">
+				Every comment and suggestion on this scene, from you and from anyone you invited. Select a
+				run of prose in the middle to add one.
+			</p>
 		</div>
 	{/if}
 </div>

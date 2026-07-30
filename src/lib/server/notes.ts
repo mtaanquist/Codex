@@ -52,6 +52,19 @@ export async function listUniverseNotes(
 		.orderBy(desc(notes.pinned), desc(notes.updatedAt));
 }
 
+/** The notes attached to one scene, for the Notes panel beside the prose. */
+export async function listSceneNotes(
+	db: Database,
+	sceneId: string,
+	userId: string
+): Promise<NoteListItem[]> {
+	return db
+		.select(LIST_COLUMNS)
+		.from(notes)
+		.where(and(eq(notes.sceneId, sceneId), eq(notes.ownerId, userId)))
+		.orderBy(desc(notes.pinned), desc(notes.updatedAt));
+}
+
 /** One note, owner-guarded; null when it is missing or another user's. */
 export async function getNote(db: Database, noteId: string, userId: string): Promise<Note | null> {
 	const [row] = await db
@@ -93,6 +106,22 @@ export async function createStoryNote(
 	const [row] = await db
 		.insert(notes)
 		.values({ ownerId: userId, universeId, storyId })
+		.returning({ id: notes.id });
+	return row.id;
+}
+
+/** Creates a blank story note attached to one scene and returns its id. The
+ * caller checks story ownership and that the scene belongs to the story. */
+export async function createSceneNote(
+	db: Database,
+	userId: string,
+	universeId: string,
+	storyId: string,
+	sceneId: string
+): Promise<string> {
+	const [row] = await db
+		.insert(notes)
+		.values({ ownerId: userId, universeId, storyId, sceneId })
 		.returning({ id: notes.id });
 	return row.id;
 }

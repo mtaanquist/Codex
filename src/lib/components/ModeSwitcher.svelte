@@ -3,7 +3,8 @@
 	// the same four modes in the same order at the same width, wherever it
 	// appears. The active mode renders as the lit button; a mode you cannot
 	// use is switched off in place rather than removed, and the caller passes
-	// the one line under the strip that says why.
+	// the one line under the strip that says why. A page outside the four
+	// passes active null, so nothing is lit.
 	export type Mode = 'write' | 'plan' | 'notes' | 'review';
 
 	let {
@@ -11,7 +12,11 @@
 		hrefs,
 		note
 	}: {
-		active: Mode;
+		// null on a page that is not one of the four modes (insights reads the
+		// whole universe). All four stay live; the note says why none is lit,
+		// because a strip that lies about where you are is worse than a strip
+		// with nothing lit.
+		active: Mode | null;
 		hrefs: Partial<Record<Mode, string | 'disabled'>>;
 		// Rendered under the strip, not as a tooltip, so it can be read by
 		// keyboard and by screen reader.
