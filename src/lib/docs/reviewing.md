@@ -39,7 +39,7 @@ Open the review window and pick what to review and what to check. You can open i
 
 - Right-click a scene or chapter in the sidebar, open the Assistant submenu, and choose **Review with the Assistant**.
 - In Review mode, open the **Assistant** tab on the right and use the **Review with the Assistant** button at the top.
-- From the command bar (Ctrl+K, or Cmd+K on a Mac), choose **Review with the Assistant**.
+- From the command bar (Ctrl+K), choose **Review with the Assistant**.
 - In the Assistant chat, type `/review`.
 
 The window has two choices. First, **what to review**: this scene, this chapter, or the whole story. Second, **what to check**:

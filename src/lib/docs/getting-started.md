@@ -32,7 +32,7 @@ You can bring in a manuscript written elsewhere the same way. Pick a Word docume
 
 ## Jumping around
 
-Press Ctrl+K (Cmd+K on a Mac), or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose: matches in scene text show a snippet, and opening one selects the match in the editor. The same box lists commands for where you are, such as creating a scene, switching focus mode on, or reading the whole story as one document.
+Press Ctrl+K, or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose: matches in scene text show a snippet, and opening one selects the match in the editor. The same box lists commands for where you are, such as creating a scene, switching focus mode on, or reading the whole story as one document.
 
 Opening a story without picking a scene resumes the scene you edited last.
 

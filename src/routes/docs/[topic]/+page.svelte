@@ -1,10 +1,19 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
+	import { appleShortcutLabels, modLabel } from '$lib/keys';
 	import DocsShell from '$lib/components/DocsShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// The articles write shortcuts with the PC labels; an Apple reader sees
+	// Cmd and Option instead. The server cannot know the platform, so SSR
+	// serves the written form and the swap lands on mount.
+	let apple = $state(false);
+	onMount(() => (apple = modLabel() === 'Cmd'));
+	const body = $derived(apple ? appleShortcutLabels(data.article.body) : data.article.body);
 
 	// The next article in the registry order, so reading straight through works.
 	const next = $derived.by(() => {
@@ -21,7 +30,7 @@
 	<div class="kicker">Help</div>
 	<!-- Trusted, committed markdown; renderMarkdown also escapes raw HTML. -->
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-	<article class="prose">{@html renderMarkdown(data.article.body)}</article>
+	<article class="prose">{@html renderMarkdown(body)}</article>
 
 	{#if next}
 		<nav class="more">

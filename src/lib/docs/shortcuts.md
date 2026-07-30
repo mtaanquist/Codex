@@ -1,7 +1,7 @@
 # Keyboard shortcuts
 
-Codex keeps to a small set of shortcuts. On a Mac, use Cmd where Ctrl is shown
-and Option where Alt is shown.
+Codex keeps to a small set of shortcuts, shown for your keyboard: Cmd and
+Option on a Mac, Ctrl and Alt everywhere else.
 
 ## Anywhere
 
