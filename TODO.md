@@ -1559,6 +1559,13 @@ From the design pass click-throughs (2026-07-30):
       there is one) without moving focus away from the editor for more
       than the jot itself. Design it in a later pass; not part of the
       Session 3 port.
+- [ ] Ask for a pen name when publishing. The reading pages name the
+      author by pen name, falling back to the account's display name
+      (Session 3 port). An author publishing pseudonymously whose display
+      name is their real name would be named on the public page without
+      realising. When a story is published (or a handle claimed) and the
+      account has no pen name, ask for one - offering the display name as
+      the default - so the fallback is always a choice the author made.
 
 From first real use (2026-06-03):
 
