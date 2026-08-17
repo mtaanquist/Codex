@@ -255,7 +255,7 @@
 			progress = {
 				state: 'notstarted',
 				message: failure?.message,
-				refused: failure?.reason === 'rejected'
+				refused: failure?.reason === 'rejected' && failure?.status !== 409
 			};
 		};
 		if (level === 'chapter' && chapterId && chapter) {

@@ -18,7 +18,12 @@ thinking suppression; tolerant quote matching and server-side note dedupe;
 resumable review jobs with progress, per-scene failure reasons, and a
 summaries-first phase; pre-flight token/cost estimate with a warning
 threshold and a per-run spend cap; a utility role for summaries, extraction,
-and recap; per-role model guidance in settings and help.
+and recap; per-role model guidance in settings and help. Audited post-PR by
+four independent review passes (state machine, LLM semantics, data layer,
+conventions); the confirmed findings were fixed on the same branch, the
+largest being job expiry against double execution, capped-run resume by
+scope adoption, and keeping tools offered (tool_choice none) on concluding
+rounds.
 
 UX pass (2026-07-30, author-scoped after the design pass; steers taken up
 front: book-cover library grid, Notes to the right rail only, invites as an

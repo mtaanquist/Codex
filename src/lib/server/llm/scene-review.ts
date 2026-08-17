@@ -23,7 +23,8 @@ import {
 	assembleSceneDelta,
 	assembleStoryFrame,
 	buildSystemMessage,
-	type AssembledContext
+	type AssembledContext,
+	DEFAULT_BUDGET_TOKENS
 } from './context/assemble.ts';
 import {
 	buildConfirmMessage,
@@ -69,7 +70,6 @@ export function reviewTiers(categories: ReviewCategory[]): readonly string[] | u
 // the window is unknown, the same provisional default the context assembly
 // uses. A listing that overruns it is split into sequential chunks.
 const SURVEY_WINDOW_SHARE = 0.5;
-const SURVEY_FALLBACK_TOKENS = 6000;
 // Confirm rounds carry the full text of the scenes a candidate names, so each
 // body is capped at a quarter of the same budget (four scenes' worth of room).
 const CONFIRM_SCENE_SHARE = 4;
@@ -84,7 +84,7 @@ const CONFIRM_TOOL_BUDGET = 6;
 const CONFIRM_TOOL_NAMES = ['leave_comment', 'suggest_edit'];
 
 export function surveyBudgetTokens(contextWindow: number | undefined): number {
-	if (!contextWindow) return SURVEY_FALLBACK_TOKENS;
+	if (!contextWindow) return DEFAULT_BUDGET_TOKENS;
 	return Math.max(1000, Math.floor(contextWindow * SURVEY_WINDOW_SHARE));
 }
 
@@ -752,7 +752,8 @@ export async function reviewStoryContinuity(
 		throw err;
 	}
 	if (result.stopped) failures.push({ message: stoppedMessage(result.stopped) });
-	if (meter.notApplied) failures.push({ message: CAP_NOT_APPLIED_MESSAGE });
+	if (meter.notApplied)
+		failures.push({ message: meter.notAppliedMessage ?? CAP_NOT_APPLIED_MESSAGE });
 	run.state.notes += result.notes;
 	run.state.failures = failures;
 	run.state.phase = 'done';
@@ -845,7 +846,8 @@ export async function reviewUniverseContinuity(
 	const failures: ReviewFailure[] = result.stopped
 		? [{ message: stoppedMessage(result.stopped) }]
 		: [];
-	if (meter.notApplied) failures.push({ message: CAP_NOT_APPLIED_MESSAGE });
+	if (meter.notApplied)
+		failures.push({ message: meter.notAppliedMessage ?? CAP_NOT_APPLIED_MESSAGE });
 	run.state.notes += result.notes;
 	run.state.failures = failures;
 	run.state.phase = 'done';
@@ -1060,7 +1062,8 @@ export async function reviewStoryScenes(
 	}
 
 	// A ceiling that could not be priced is reported rather than quietly ignored.
-	if (meter.notApplied) failures.push({ message: CAP_NOT_APPLIED_MESSAGE });
+	if (meter.notApplied)
+		failures.push({ message: meter.notAppliedMessage ?? CAP_NOT_APPLIED_MESSAGE });
 
 	run.state.phase = 'done';
 	run.state.reviewed = reviewed;

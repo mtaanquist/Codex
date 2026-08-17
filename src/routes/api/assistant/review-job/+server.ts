@@ -56,7 +56,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
-	let jobId: string | null;
+	let jobId: string | 'coalesced' | null;
 	if (mode === 'continuity' && typeof payload.universeId === 'string') {
 		const universe = await requireAssistantUniverse(userId, payload.universeId);
 		jobId = await queueAssistantReview({
@@ -78,6 +78,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const categories = parseCategories(payload.categories);
 		const story = await requireAssistantStory(userId, payload.storyId);
 		jobId = await queueAssistantReview({ userId, storyId: story.id, chapterId, categories });
+	}
+	if (jobId === 'coalesced') {
+		error(
+			409,
+			'A review of this scope is already queued or running. It carries on; this request started nothing new.'
+		);
 	}
 	if (!jobId) error(503, 'Could not start the review. Try again in a moment.');
 

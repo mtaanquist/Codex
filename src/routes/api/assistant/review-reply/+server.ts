@@ -98,7 +98,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		includeTiers: ['frame', 'entities']
 	});
 	const messages: ChatMessage[] = context
-		? [buildSystemMessage(context, { tools: true }), task]
+		? // No tool hint: the slim reply context ships no outline for the hint's
+			// "scene ids shown in the outline" to point at, and the task message
+			// already names the scoped tools this turn may use.
+			[buildSystemMessage(context), task]
 		: [task];
 
 	const repliesBefore = await assistantCommentCount(threadId);

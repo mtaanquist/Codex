@@ -10,7 +10,7 @@ import {
 	REVIEW_CATEGORIES,
 	type ReviewCategory
 } from '../../../review-shape.ts';
-import { estimateTokens } from '../context/assemble.ts';
+import { bodyExcerpt, estimateTokens } from '../context/assemble.ts';
 
 // An open note the Assistant left on an earlier pass, carried into the next
 // run so it does not repeat itself.
@@ -146,16 +146,12 @@ export type SurveyScene = {
 
 // Where a scene has no summary yet (summaries are sparse until summary
 // maintenance fills them), the survey falls back to the opening of its body,
-// the same way the recap assembly does.
-const SURVEY_BODY_EXCERPT_CHARS = 1500;
-
+// through the same excerpt helper the recap assembly uses.
 function surveyContent(scene: SurveyScene): string {
 	const summary = scene.summaryMd?.trim();
 	if (summary) return summary;
-	const body = scene.bodyMd.trim();
-	if (!body) return '(empty)';
-	if (body.length <= SURVEY_BODY_EXCERPT_CHARS) return body;
-	return body.slice(0, SURVEY_BODY_EXCERPT_CHARS).trimEnd() + ' [...]';
+	if (!scene.bodyMd.trim()) return '(empty)';
+	return bodyExcerpt(scene.bodyMd);
 }
 
 function surveySceneBlock(scene: SurveyScene, index: number): string {

@@ -221,13 +221,17 @@ export async function queueAssistantReview(input: {
 	// mode, which runs the consistency pass alone.
 	categories: ReviewCategory[];
 	mode?: 'full' | 'continuity';
-}): Promise<string | null> {
+}): Promise<string | 'coalesced' | null> {
 	try {
 		const boss = await getBoss();
-		return await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
+		const jobId = await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
 			singletonKey: reviewScopeKey(input),
 			...ASSISTANT_SEND_OPTIONS
 		});
+		// pg-boss returns null when the singleton key coalesced this request into
+		// a review that is already queued or running; the endpoint tells the
+		// writer that, rather than reporting a failure.
+		return jobId ?? 'coalesced';
 	} catch (error) {
 		console.error('queueing assistant review failed:', error);
 		return null;
