@@ -689,9 +689,17 @@ A review job writes its progress to `assistant_review_runs` (one row per
 pg-boss job id, a jsonb state: phase, scenes completed, current scene, counts,
 and the failure list). The job-status endpoint reads it while the job runs, so
 the review window can show where the pass is; a retry of the same job after a
-worker restart reads it too and skips the scenes already handled. The
+worker restart reads it too and skips the scenes already handled. The state
+also records the scope the run was over (the same key the queue holds one
+unfinished job per), so a run that stopped at the spend cap is picked up by the
+next run over that scope even though it arrives with a new job id; only a
+capped run is adopted, and it starts again with the whole ceiling. The rows are
+disposable, and a daily worker sweep drops those older than 30 days. The
 `assistant-review` enqueue holds one unfinished job per scope, so a duplicate
-request cannot start a second pass over the same scenes. Before it reviews
+request cannot start a second pass over the same scenes, and both Assistant
+queues send with an expiry of hours rather than the pg-boss default of 15
+minutes, which would hand a long run to a second worker while the first is
+still going. Before it reviews
 anything, a story-level pass refreshes scene summaries that are missing or
 stale (the `assistant-summaries` logic, called directly), since both the
 context assembly and the cross-scene pass read them.
