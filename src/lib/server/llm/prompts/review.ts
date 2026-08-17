@@ -10,6 +10,7 @@ import {
 	REVIEW_CATEGORIES,
 	type ReviewCategory
 } from '../../../review-shape.ts';
+import { estimateTokens } from '../context/assemble.ts';
 
 // An open note the Assistant left on an earlier pass, carried into the next
 // run so it does not repeat itself.
@@ -122,54 +123,209 @@ export function buildReviewMessage(
 	return lines.join('\n');
 }
 
-// The cross-scene pass of a full story review: one run that reads the whole
-// story and looks only for issues no single-scene pass can see. Runs after
-// the per-scene passes so it does not duplicate their notes. Also the body of
-// the standalone continuity review, where there are no prior per-scene passes;
-// the wording holds either way ("Each scene has already had its own pass" is
-// true of the full review and harmlessly conservative for the standalone one).
-export function buildConsistencyMessage(sceneList: { id: string; title: string | null }[]): string {
-	const listing = sceneList
-		.map((scene, i) => `- ${(scene.title ?? '').trim() || `Scene ${i + 1}`} (id: ${scene.id})`)
-		.join('\n');
-	return [
-		'This is the cross-scene consistency pass. Read every scene below with get_scene, in order, then report only issues that span scenes; do not leave per-scene copyedit notes:',
-		'- Continuity: names, titles, or facts that drift between scenes; timeline arithmetic that does not add up across chapters.',
-		'- Lore: contradictions between scenes, or between a scene and the established world context.',
-		'- Convention drift: an idiom, spelling convention, or term rendered differently in different scenes.',
-		'- Recurring tics: a distinctive word or construction repeated across scenes often enough to register.',
-		'Anchor each note with leave_comment on the scene where the issue is clearest, quote the passage, and name the other scene(s) involved so the writer can find both sides. If everything holds together, leave a single brief comment on the first scene saying so.',
-		'The scenes, in story order:',
+// The cross-scene continuity pass runs in two stages, and the three builders
+// below are its prompts (see scene-review.ts for the run).
+//
+// Stage A (survey) hands the model the scene summaries in story order and asks
+// for candidate contradictions as JSON. No tools, no prose bodies: a whole story
+// of summaries fits a small context window where a whole story of prose does
+// not, and the old single pass silently compared only what survived the
+// overflow. Stage B (confirm) then takes one candidate at a time with the full
+// text of the named scenes, and stages a note only if the contradiction is real.
+
+// A scene as the survey sees it: enough to judge whether two scenes disagree,
+// never the whole body. storyTitle is set on the universe pass, where scenes
+// from several stories are listed together.
+export type SurveyScene = {
+	id: string;
+	title: string | null;
+	summaryMd: string | null;
+	bodyMd: string;
+	storyTitle?: string;
+};
+
+// Where a scene has no summary yet (summaries are sparse until summary
+// maintenance fills them), the survey falls back to the opening of its body,
+// the same way the recap assembly does.
+const SURVEY_BODY_EXCERPT_CHARS = 1500;
+
+function surveyContent(scene: SurveyScene): string {
+	const summary = scene.summaryMd?.trim();
+	if (summary) return summary;
+	const body = scene.bodyMd.trim();
+	if (!body) return '(empty)';
+	if (body.length <= SURVEY_BODY_EXCERPT_CHARS) return body;
+	return body.slice(0, SURVEY_BODY_EXCERPT_CHARS).trimEnd() + ' [...]';
+}
+
+function surveySceneBlock(scene: SurveyScene, index: number): string {
+	const title = (scene.title ?? '').trim() || `Scene ${index + 1}`;
+	return `- ${title} (id: ${scene.id}): ${surveyContent(scene)}`;
+}
+
+// Split the listing into sequential chunks that each fit the budget, story
+// order preserved and no overlap. A single scene that overruns the budget on
+// its own still gets its own chunk rather than being dropped.
+export function splitSurveyChunks(scenes: SurveyScene[], budgetTokens: number): SurveyScene[][] {
+	const chunks: SurveyScene[][] = [];
+	let current: SurveyScene[] = [];
+	let used = 0;
+	scenes.forEach((scene, i) => {
+		const cost = estimateTokens(surveySceneBlock(scene, i));
+		if (current.length > 0 && used + cost > budgetTokens) {
+			chunks.push(current);
+			current = [];
+			used = 0;
+		}
+		current.push(scene);
+		used += cost;
+	});
+	if (current.length) chunks.push(current);
+	return chunks;
+}
+
+// Consecutive scenes of the same story, for the universe listing.
+function groupByStory(scenes: SurveyScene[]): { storyTitle: string; scenes: SurveyScene[] }[] {
+	const groups: { storyTitle: string; scenes: SurveyScene[] }[] = [];
+	for (const scene of scenes) {
+		const storyTitle = (scene.storyTitle ?? '').trim() || 'Untitled story';
+		const last = groups[groups.length - 1];
+		if (last && last.storyTitle === storyTitle) last.scenes.push(scene);
+		else groups.push({ storyTitle, scenes: [scene] });
+	}
+	return groups;
+}
+
+const SURVEY_FORMAT = [
+	'Reply with a JSON array and nothing else: no prose before or after it, no code fence, no explanation.',
+	'[{"sceneIds": ["the ids of the scenes involved"], "claim": "one line naming what contradicts what"}]',
+	'One entry per suspected contradiction, each naming at least two scenes by the exact ids below. Keep the claim to one line. Do not stage notes and do not call tools; a later stage reads the full text of the scenes you name and discards whatever the prose does not bear out. If you see nothing, reply with [].'
+];
+
+const STORY_SURVEY_LOOKS_FOR = [
+	'- Continuity: names, titles, or facts that drift between scenes; timeline arithmetic that does not add up.',
+	'- Lore: a detail established one way in one scene and differently in another, or against the world context.',
+	'- Character: a trait, relationship, or history that contradicts another scene.'
+];
+
+const UNIVERSE_SURVEY_LOOKS_FOR = [
+	'- Facts and lore: a detail established one way in one story and differently in another.',
+	'- Timeline: dates, ages, or sequences that do not line up between stories.',
+	'- Character: a trait, name, title, or history that contradicts another story.',
+	'- Place: a location detail rendered inconsistently between stories.'
+];
+
+export type SurveyChunk = { index: number; total: number };
+
+// Stage A: the scene summaries in order, and the ask for candidate
+// contradictions as JSON. chunk is set when the listing was split, so the model
+// knows it is looking at part of the material and does not read the gaps as
+// contradictions.
+export function buildSurveyMessage(
+	scenes: SurveyScene[],
+	options: { scope: 'story' | 'universe'; chunk?: SurveyChunk }
+): string {
+	const universe = options.scope === 'universe';
+	const listing = universe
+		? groupByStory(scenes)
+				.map((group) =>
+					[
+						`Story: ${group.storyTitle}`,
+						...group.scenes.map((scene, i) => `  ${surveySceneBlock(scene, i)}`)
+					].join('\n')
+				)
+				.join('\n')
+		: scenes.map((scene, i) => surveySceneBlock(scene, i)).join('\n');
+	const lines = [
+		universe
+			? 'This is the survey stage of a universe-wide continuity pass. Below is every scene of every story in this universe, each with its summary or the opening of its text. Name the places where the material contradicts itself across stories:'
+			: 'This is the survey stage of the cross-scene continuity pass. Below are the scenes of the story in order, each with its summary or the opening of its text. Name the places where the material contradicts itself between scenes:',
+		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : STORY_SURVEY_LOOKS_FOR),
+		'Judge only what spans scenes; spelling, grammar, and phrasing inside one scene are not this pass.',
+		...SURVEY_FORMAT
+	];
+	if (options.chunk) {
+		lines.push(
+			`This is part ${options.chunk.index} of ${options.chunk.total} of the material; the other parts are surveyed separately, so do not treat what is missing here as a gap in the story.`
+		);
+	}
+	lines.push(
+		universe ? 'The stories and their scenes, in order:' : 'The scenes, in story order:',
 		listing
+	);
+	return lines.join('\n');
+}
+
+// A scene as the confirm stage sees it: the full text, capped so a pair of long
+// scenes still fits the window.
+export type ConfirmScene = {
+	id: string;
+	title: string | null;
+	bodyMd: string;
+	storyTitle?: string;
+};
+
+function confirmSceneBlock(scene: ConfirmScene, bodyChars: number): string {
+	const title = (scene.title ?? '').trim() || 'Untitled';
+	const story = scene.storyTitle?.trim() ? ` [story: ${scene.storyTitle.trim()}]` : '';
+	const body = scene.bodyMd.trim();
+	let text: string;
+	if (!body) text = '(empty)';
+	else if (body.length <= bodyChars) text = body;
+	else text = body.slice(0, bodyChars).trimEnd() + '\n[... the rest of this scene is cut to fit]';
+	return `### ${title} (id: ${scene.id})${story}\n${text}`;
+}
+
+// Stage B: one candidate contradiction and the full text of the scenes it
+// names. The bodies ride in the message, so the model has no reason to read
+// them again through the tools.
+export function buildConfirmMessage(
+	claim: string,
+	scenes: ConfirmScene[],
+	bodyChars: number
+): string {
+	return [
+		'This is the confirm stage of the continuity pass. A survey of the scene summaries flagged a possible contradiction; check it against the full text below, which is all you need (do not call get_scene).',
+		`Suspected contradiction: ${claim.trim()}`,
+		'If the text bears it out, stage one note: leave_comment on the scene where the contradiction is clearest, quoting the passage and naming the other scene(s) involved so the writer can find both sides. Use suggest_edit instead only when one exact short passage is plainly the wrong side of the contradiction.',
+		'If the text does not bear it out, or the two passages can both be true, reply with the single word "discarded" and leave no notes. Do not leave spelling, grammar, or style notes; this pass is continuity only.',
+		'The scenes involved:',
+		...scenes.map((scene) => confirmSceneBlock(scene, bodyChars))
 	].join('\n');
 }
 
-// The universe-wide continuity pass: one run across every story in the universe,
-// looking for facts that contradict each other between books. Scenes are listed
-// grouped by story (with ids) so the model knows which story each belongs to;
-// leave_comment resolves the owning story from the scene id, so a contradiction
-// found in one story anchors on that story's scene even when the pass was
-// launched from another.
-export function buildUniverseConsistencyMessage(
-	scenesByStory: { storyTitle: string; scenes: { id: string; title: string | null }[] }[]
-): string {
-	const listing = scenesByStory
-		.map((story) => {
-			const heading = `Story: ${story.storyTitle.trim() || 'Untitled story'}`;
-			const lines = story.scenes.map(
-				(scene, i) => `  - ${(scene.title ?? '').trim() || `Scene ${i + 1}`} (id: ${scene.id})`
-			);
-			return [heading, ...lines].join('\n');
-		})
-		.join('\n');
-	return [
-		'This is a universe-wide continuity pass across every story below. Flag facts, timeline, character, and place details that contradict each other across the stories in this universe. Read the relevant scenes with get_scene, and use find_appearances and search_text to follow a name or fact between stories. Report only cross-story contradictions, not per-scene copyedit notes:',
-		'- Facts and lore: a detail established one way in one story and differently in another.',
-		'- Timeline: dates, ages, or sequences that do not line up between stories.',
-		'- Character: a trait, name, title, or history that contradicts another story.',
-		'- Place: a location detail rendered inconsistently between stories.',
-		'Anchor each note with leave_comment on the scene where the contradiction is clearest, quote the passage, and name the other story and scene involved so the writer can find both sides. The note lands on the story that owns the scene you comment on, whichever story you launched this from. If everything holds together across the universe, leave a single brief comment on the first scene saying so.',
-		'The stories and their scenes, in order:',
-		listing
-	].join('\n');
+// A candidate contradiction from the survey stage.
+export type ContinuityCandidate = { sceneIds: string[]; claim: string };
+
+// The survey reply, read leniently: the adapters have no structured-output
+// mode, so the model is asked for a bare JSON array and often obliges with a
+// code fence or a sentence around it. Pull out the first array that parses and
+// keep the entries that carry both fields; null means nothing parsed, which the
+// caller retries once with a corrective turn.
+export function parseCandidates(reply: string): ContinuityCandidate[] | null {
+	const start = reply.indexOf('[');
+	if (start === -1) return null;
+	for (let end = reply.lastIndexOf(']'); end > start; end = reply.lastIndexOf(']', end - 1)) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(reply.slice(start, end + 1));
+		} catch {
+			continue;
+		}
+		if (!Array.isArray(parsed)) return null;
+		return parsed.flatMap((entry) => {
+			if (!entry || typeof entry !== 'object') return [];
+			const { sceneIds, claim } = entry as { sceneIds?: unknown; claim?: unknown };
+			if (typeof claim !== 'string' || !claim.trim()) return [];
+			if (!Array.isArray(sceneIds)) return [];
+			const ids = sceneIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+			if (!ids.length) return [];
+			return [{ sceneIds: ids, claim: claim.trim() }];
+		});
+	}
+	return null;
 }
+
+// The corrective turn after an unparseable survey reply.
+export const SURVEY_RETRY_MESSAGE =
+	'That reply could not be read. Send the same findings again as a JSON array and nothing else: no prose, no code fence. Each entry is {"sceneIds": ["..."], "claim": "..."}. Reply with [] if you found nothing.';

@@ -212,9 +212,23 @@ describe('reviewStoryScenes categories', () => {
 		}
 	});
 
-	it('all three categories sweep every scene, then run the cross-scene pass', async () => {
+	it('all three categories sweep every scene, then survey them for continuity', async () => {
 		const storyId = await seedStory(3);
-		const { provider, seen } = recordingProvider();
+		// The survey stage wants a JSON array back; an empty one ends the pass
+		// after its single request.
+		const seen: ChatMessage[][] = [];
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				seen.push(req.messages);
+				return { content: '[]', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
 		const result = await reviewStoryScenes(
 			db,
 			{ userId, storyId, categories: ['mechanics', 'prose', 'lore'] },
@@ -225,10 +239,10 @@ describe('reviewStoryScenes categories', () => {
 		for (const messages of seen.slice(0, 3)) {
 			expect(userText(messages)).toContain('full copyedit pass');
 		}
-		const consistency = userText(seen[3]);
-		expect(consistency).toContain('cross-scene consistency pass');
-		expect(consistency).toContain('Scene 1');
-		expect(consistency).toContain('Scene 3');
+		const survey = userText(seen[3]);
+		expect(survey).toContain('survey stage of the cross-scene continuity pass');
+		expect(survey).toContain('Scene 1');
+		expect(survey).toContain('Scene 3');
 	});
 
 	it('a single category sweeps each scene without the cross-scene pass', async () => {

@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-	buildConsistencyMessage,
+	buildConfirmMessage,
 	buildReviewMessage,
-	buildUniverseConsistencyMessage
+	buildSurveyMessage,
+	parseCandidates,
+	splitSurveyChunks,
+	type SurveyScene
 } from './review';
 
 describe('buildReviewMessage', () => {
@@ -113,31 +116,163 @@ describe('review categories', () => {
 	});
 });
 
-describe('buildConsistencyMessage', () => {
-	it('lists every scene with its id and confines the pass to cross-scene issues', () => {
-		const message = buildConsistencyMessage([
-			{ id: 's1', title: 'The Gate' },
-			{ id: 's2', title: null }
-		]);
-		expect(message).toContain('cross-scene consistency pass');
-		expect(message).toContain('do not leave per-scene copyedit notes');
-		expect(message).toContain('The Gate (id: s1)');
-		expect(message).toContain('Scene 2 (id: s2)');
-		expect(message).toContain('only issues that span scenes');
+const surveyScene = (over: Partial<SurveyScene> = {}): SurveyScene => ({
+	id: 's1',
+	title: 'The Gate',
+	summaryMd: null,
+	bodyMd: '',
+	...over
+});
+
+describe('buildSurveyMessage', () => {
+	it('lists the scenes in order with their summaries and asks for a JSON array', () => {
+		const message = buildSurveyMessage(
+			[
+				surveyScene({ id: 's1', summaryMd: 'She crosses the river.' }),
+				surveyScene({ id: 's2', title: null, summaryMd: 'He waits at the ford.' })
+			],
+			{ scope: 'story' }
+		);
+		expect(message).toContain('survey stage');
+		expect(message).toContain('The Gate (id: s1): She crosses the river.');
+		expect(message).toContain('Scene 2 (id: s2): He waits at the ford.');
+		expect(message).toContain('Reply with a JSON array and nothing else');
+		expect(message).toContain('"sceneIds"');
+	});
+
+	it('falls back to the opening of the body when a scene has no summary', () => {
+		const message = buildSurveyMessage([surveyScene({ bodyMd: 'The gate stood open.' })], {
+			scope: 'story'
+		});
+		expect(message).toContain('The Gate (id: s1): The gate stood open.');
+	});
+
+	it('cuts a long body excerpt and marks the cut', () => {
+		const message = buildSurveyMessage([surveyScene({ bodyMd: 'x'.repeat(2000) })], {
+			scope: 'story'
+		});
+		expect(message).toContain('[...]');
+		expect(message).not.toContain('x'.repeat(1600));
+	});
+
+	it('marks an empty scene rather than listing nothing', () => {
+		expect(buildSurveyMessage([surveyScene()], { scope: 'story' })).toContain('(empty)');
+	});
+
+	it('groups the universe listing by story and frames it as cross-story', () => {
+		const message = buildSurveyMessage(
+			[
+				surveyScene({ id: 's1', storyTitle: 'First Light', summaryMd: 'A' }),
+				surveyScene({ id: 's2', title: null, storyTitle: 'Second Dawn', summaryMd: 'B' })
+			],
+			{ scope: 'universe' }
+		);
+		expect(message).toContain('universe-wide continuity pass');
+		expect(message).toContain('Story: First Light');
+		expect(message).toContain('Story: Second Dawn');
+		expect(message).toContain('The Gate (id: s1): A');
+	});
+
+	it('says a chunked survey is one part of the material', () => {
+		const message = buildSurveyMessage([surveyScene({ summaryMd: 'A' })], {
+			scope: 'story',
+			chunk: { index: 2, total: 3 }
+		});
+		expect(message).toContain('part 2 of 3');
 	});
 });
 
-describe('buildUniverseConsistencyMessage', () => {
-	it('groups scenes under their story and frames the task as cross-story', () => {
-		const message = buildUniverseConsistencyMessage([
-			{ storyTitle: 'First Light', scenes: [{ id: 's1', title: 'The Gate' }] },
-			{ storyTitle: 'Second Dawn', scenes: [{ id: 's2', title: null }] }
+describe('splitSurveyChunks', () => {
+	it('keeps everything in one chunk when it fits', () => {
+		const scenes = [surveyScene({ id: 's1' }), surveyScene({ id: 's2' })];
+		expect(splitSurveyChunks(scenes, 1000)).toHaveLength(1);
+	});
+
+	it('splits in story order, without overlap, when the budget is spent', () => {
+		const scenes = ['s1', 's2', 's3', 's4'].map((id) =>
+			surveyScene({ id, summaryMd: 'y'.repeat(400) })
+		);
+		const chunks = splitSurveyChunks(scenes, 200);
+		expect(chunks.length).toBeGreaterThan(1);
+		expect(chunks.flat().map((s) => s.id)).toEqual(['s1', 's2', 's3', 's4']);
+	});
+
+	it('gives a scene that overruns the budget on its own a chunk of its own', () => {
+		const chunks = splitSurveyChunks(
+			[surveyScene({ id: 's1', summaryMd: 'z'.repeat(4000) }), surveyScene({ id: 's2' })],
+			10
+		);
+		expect(chunks).toHaveLength(2);
+		expect(chunks[0].map((s) => s.id)).toEqual(['s1']);
+	});
+});
+
+describe('buildConfirmMessage', () => {
+	it('carries the claim and the scene bodies, and forbids a re-read', () => {
+		const message = buildConfirmMessage(
+			'The harbour is east in one scene and west in the other.',
+			[
+				{ id: 's1', title: 'The Gate', bodyMd: 'The harbour lay east.' },
+				{ id: 's2', title: null, bodyMd: 'The harbour lay west.', storyTitle: 'Second Dawn' }
+			],
+			1000
+		);
+		expect(message).toContain('The harbour is east in one scene and west in the other.');
+		expect(message).toContain('do not call get_scene');
+		expect(message).toContain('### The Gate (id: s1)');
+		expect(message).toContain('The harbour lay east.');
+		expect(message).toContain('[story: Second Dawn]');
+		expect(message).toContain('discarded');
+	});
+
+	it('caps a long body and marks the cut', () => {
+		const message = buildConfirmMessage(
+			'claim',
+			[{ id: 's1', title: null, bodyMd: 'w'.repeat(500) }],
+			100
+		);
+		expect(message).toContain('the rest of this scene is cut to fit');
+		expect(message).not.toContain('w'.repeat(200));
+	});
+});
+
+describe('parseCandidates', () => {
+	it('reads a clean array', () => {
+		expect(parseCandidates('[{"sceneIds":["s1","s2"],"claim":"Names drift."}]')).toEqual([
+			{ sceneIds: ['s1', 's2'], claim: 'Names drift.' }
 		]);
-		expect(message).toContain('universe-wide continuity pass');
-		expect(message).toContain('contradict each other across the stories in this universe');
-		expect(message).toContain('Story: First Light');
-		expect(message).toContain('The Gate (id: s1)');
-		expect(message).toContain('Story: Second Dawn');
-		expect(message).toContain('Scene 1 (id: s2)');
+	});
+
+	it('reads an array inside a fenced code block', () => {
+		const reply = '```json\n[{"sceneIds": ["s1"], "claim": "Ages do not add up."}]\n```';
+		expect(parseCandidates(reply)).toEqual([{ sceneIds: ['s1'], claim: 'Ages do not add up.' }]);
+	});
+
+	it('reads an array wrapped in prose', () => {
+		const reply =
+			'Here is what I found:\n[{"sceneIds": ["s1", "s2"], "claim": "The harbour moves."}]\nThat is all.';
+		expect(parseCandidates(reply)).toEqual([
+			{ sceneIds: ['s1', 's2'], claim: 'The harbour moves.' }
+		]);
+	});
+
+	it('reads an empty array as no candidates', () => {
+		expect(parseCandidates('[]')).toEqual([]);
+		expect(parseCandidates('Nothing to report: []')).toEqual([]);
+	});
+
+	it('drops entries missing a claim or scene ids', () => {
+		const reply =
+			'[{"sceneIds":["s1"],"claim":"Real."},{"claim":"No scenes."},{"sceneIds":["s2"],"claim":"  "},"nonsense"]';
+		expect(parseCandidates(reply)).toEqual([{ sceneIds: ['s1'], claim: 'Real.' }]);
+	});
+
+	it('returns null when nothing parses', () => {
+		expect(parseCandidates('I could not find any contradictions.')).toBeNull();
+		expect(parseCandidates('[not json at all')).toBeNull();
+	});
+
+	it('treats an array of the wrong shape as no candidates, not a failure', () => {
+		expect(parseCandidates('{"sceneIds": ["s1"]}')).toEqual([]);
 	});
 });
