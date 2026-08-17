@@ -406,20 +406,42 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const models: ModelMap = {};
 		const tuning: TuningMap = {};
-		// This form owns thinking and effort only; temperature has no field yet,
-		// so a stored value is carried through instead of being wiped.
+		// The form shows the controls the provider can act on: effort for Claude,
+		// temperature for an OpenAI-compatible endpoint. A control the form did not
+		// show is not part of this save, so its stored value is carried through
+		// instead of being wiped (the blank-api-key pattern).
 		const stored = (await accountLlmView(db, locals.user!.id)).tuning;
 		for (const role of ASSISTANT_ROLES) {
 			const value = String(data.get(role) ?? '').trim();
 			if (value) models[role] = value;
 			const roleTuning: TuningMap[typeof role] = {};
-			const temperature = stored[role]?.temperature;
-			if (temperature !== undefined) roleTuning.temperature = temperature;
-			if (data.get(`${role}-thinking`) === 'on') roleTuning.thinking = true;
-			const effort = String(data.get(`${role}-effort`) ?? '');
-			if ((EFFORT_LEVELS as readonly string[]).includes(effort)) {
-				roleTuning.effort = effort as EffortLevel;
+
+			if (data.has(`${role}-thinking`)) {
+				const thinking = String(data.get(`${role}-thinking`));
+				if (thinking === 'on') roleTuning.thinking = true;
+				else if (thinking === 'off') roleTuning.thinking = false;
+			} else if (stored[role]?.thinking !== undefined) {
+				roleTuning.thinking = stored[role].thinking;
 			}
+
+			if (data.has(`${role}-effort`)) {
+				const effort = String(data.get(`${role}-effort`));
+				if ((EFFORT_LEVELS as readonly string[]).includes(effort)) {
+					roleTuning.effort = effort as EffortLevel;
+				}
+			} else if (stored[role]?.effort !== undefined) {
+				roleTuning.effort = stored[role].effort;
+			}
+
+			if (data.has(`${role}-temperature`)) {
+				// Blank clears it; the config clamps whatever number lands to 0..2.
+				const raw = String(data.get(`${role}-temperature`)).trim();
+				const temperature = Number(raw);
+				if (raw && Number.isFinite(temperature)) roleTuning.temperature = temperature;
+			} else if (stored[role]?.temperature !== undefined) {
+				roleTuning.temperature = stored[role].temperature;
+			}
+
 			if (Object.keys(roleTuning).length > 0) tuning[role] = roleTuning;
 		}
 		// A context field per model shown on the form (context-<model id>); a blank

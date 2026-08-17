@@ -12,32 +12,41 @@
 	const assistantOff = $derived(!data.assistant.enabled);
 
 	// Per-role model rows. The ids match the Assistant roles the gateway resolves
-	// a model for; the copy is presentational.
+	// a model for; the copy is presentational. Model names live here and in the
+	// help article, and nowhere else, so there are two places to refresh.
+	const FAST_SUGGESTION =
+		'Wants a fast model: hosted, Claude Haiku; on your own machine, a mixture-of-experts instruct model such as Qwen3 30B A3B (search for MoE instruct GGUF). Turn thinking off.';
 	const ROLE_META = [
 		{
 			id: 'chat',
 			name: 'Rubber duck',
-			hint: 'Conversational side panel. Best with a smart, chatty model.'
+			hint: 'Conversational side panel. Best with a smart, chatty model.',
+			suggestion: 'Any model you like talking to.'
 		},
 		{
 			id: 'coauthor',
 			name: 'Co-author',
-			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.'
+			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.',
+			suggestion: FAST_SUGGESTION
 		},
 		{
 			id: 'continuation',
 			name: 'Continuation',
-			hint: 'Inline ghost-text suggestions. Fast and light is what matters.'
+			hint: 'Inline ghost-text suggestions. Fast and light is what matters.',
+			suggestion: FAST_SUGGESTION
 		},
 		{
 			id: 'reviewer',
 			name: 'Reviewer',
-			hint: 'Reads a draft and leaves suggested edits in your name.'
+			hint: 'Reads a draft and leaves suggested edits in your name.',
+			suggestion:
+				'Wants the strongest model you can run: hosted, Claude Sonnet; on your own machine, a dense 32B instruct model such as Qwen3 32B (search for 32B instruct GGUF). Set a low temperature; thinking is optional.'
 		},
 		{
 			id: 'utility',
 			name: 'Background work',
-			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.'
+			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.',
+			suggestion: 'Use the same fast models as Continuation, with thinking off.'
 		}
 	] as const;
 
@@ -52,12 +61,21 @@
 	};
 	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
 
-	// Per-role thinking/effort, shown for the Claude provider only (mirrors
-	// EFFORT_LEVELS in $lib/server/llm/config, which cannot be imported here).
+	// Per-role tuning. Thinking and temperature apply to every provider; the
+	// effort levels are the Claude provider's own (mirrors EFFORT_LEVELS in
+	// $lib/server/llm/config, which cannot be imported here).
 	const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 	const savedTuning = $derived(
-		data.assistant.tuning as Record<string, { thinking?: boolean; effort?: string } | undefined>
+		data.assistant.tuning as Record<
+			string,
+			{ thinking?: boolean; effort?: string; temperature?: number } | undefined
+		>
 	);
+	// The thinking select is three-state: on, off, or the endpoint's default.
+	function thinkingValue(role: string): string {
+		const thinking = savedTuning[role]?.thinking;
+		return thinking === true ? 'on' : thinking === false ? 'off' : '';
+	}
 	// A discovery result must outlive the action data that carried it: with
 	// role picks saving on change, the next save would otherwise wipe the list
 	// after the first pick.
@@ -477,6 +495,7 @@
 							<div class="role-row-label">
 								<div class="role-row-name">{role.name}</div>
 								<div class="role-row-hint">{role.hint}</div>
+								<div class="role-row-hint">{role.suggestion}</div>
 							</div>
 							<div class="role-row-controls">
 								<select class="select" name={role.id}>
@@ -487,16 +506,18 @@
 										>
 									{/each}
 								</select>
-								{#if data.assistant.provider === 'anthropic'}
-									<div class="role-row-tuning">
-										<label class="check-row">
-											<input
-												type="checkbox"
-												name="{role.id}-thinking"
-												checked={Boolean(savedTuning[role.id]?.thinking)}
-											/>
-											Thinking
-										</label>
+								<div class="role-row-tuning">
+									<select
+										class="select"
+										name="{role.id}-thinking"
+										aria-label="{role.name} thinking"
+										value={thinkingValue(role.id)}
+									>
+										<option value="">Thinking: default</option>
+										<option value="on">Thinking on</option>
+										<option value="off">Thinking off</option>
+									</select>
+									{#if data.assistant.provider === 'anthropic'}
 										<select class="select" name="{role.id}-effort" aria-label="{role.name} effort">
 											<option value="" selected={!savedTuning[role.id]?.effort}
 												>Default effort</option
@@ -507,18 +528,40 @@
 												>
 											{/each}
 										</select>
-									</div>
-								{/if}
+									{:else}
+										<input
+											class="input"
+											type="number"
+											min="0"
+											max="2"
+											step="0.1"
+											name="{role.id}-temperature"
+											aria-label="{role.name} temperature"
+											value={savedTuning[role.id]?.temperature ?? ''}
+											placeholder="Temperature"
+										/>
+									{/if}
+								</div>
 							</div>
 						</div>
 					{/each}
 				</div>
+				<p class="field-hint">
+					Thinking lets the model reason before it answers: better feedback, slower and more tokens.
+					Pick Thinking off for the roles that need to be quick, or leave it on default to use
+					whatever your endpoint does already.
+				</p>
 				{#if data.assistant.provider === 'anthropic'}
 					<p class="field-hint">
-						Thinking lets the model reason before answering: better feedback, slower and more
-						tokens. Effort sets how hard it works; leave both unset for the model's defaults. Older
-						or lighter models may not accept every level - if a request fails, clear the effort
-						here. "xhigh" needs a recent Opus model.
+						Effort sets how hard the model works on each request; leave it unset for the model's
+						default. Older or lighter models may not accept every level - if a request fails, clear
+						the effort here. "xhigh" needs a recent Opus model.
+					</p>
+				{:else}
+					<p class="field-hint">
+						Temperature sets how freely the model varies its wording, from 0 to 2. Lower is more
+						precise and repeatable, higher is more surprising; the reviewer works best low, around
+						0.2. Leave a box empty to use your endpoint's own setting.
 					</p>
 				{/if}
 				{#if chosenModels.length > 0}

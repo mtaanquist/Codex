@@ -88,16 +88,27 @@ contacts a model on its own.
   go back to the reported value. If you run the model yourself, enter the size
   you started the server with (llama.cpp calls this the context size), not the
   largest the model could handle: that setting is what actually applies.
-- **Thinking and effort (Claude only)**: with the Claude provider, each role also
-  has a Thinking box and an effort list. Thinking lets the model reason before it
-  answers: noticeably better reviews and feedback, at the cost of more tokens and
-  a slower reply. Effort sets how hard the model works on each request, from low
-  (fast and cheap) to max (thorough and expensive); leave it unset to use the
-  model's default. A good starting point: thinking on with high effort for the
-  reviewer, everything unset for continuation so suggestions stay fast. Not every
-  model accepts every level ("xhigh" needs a recent Opus model, and small models
-  may reject effort entirely); if a request starts failing after a change here,
-  clear the effort for that role.
+- **Thinking**: each role has a Thinking list with three settings. On asks the
+  model to reason before it answers: noticeably better reviews and feedback, at
+  the cost of more tokens and a slower reply. Off tells the endpoint to skip that
+  step, which is what you want for Continuation, Co-author, and Background work,
+  where waiting is worse than a slightly plainer answer. Default leaves your
+  endpoint to do whatever it already does.
+- **Temperature**: on any endpoint other than Claude, each role has a temperature
+  box, from 0 to 2. Lower keeps the model close to the most likely wording, which
+  is what you want for the Reviewer (around 0.2) and for Background work, where
+  the answer should stick to the text. Higher lets it wander, which can suit the
+  Co-author. Leave the box empty to use your endpoint's own setting. The Claude
+  API is driven by the thinking and effort settings instead, so no temperature box
+  shows there.
+- **Effort (Claude only)**: with the Claude provider, each role also has an effort
+  list. Effort sets how hard the model works on each request, from low (fast and
+  cheap) to max (thorough and expensive); leave it unset to use the model's
+  default. A good starting point: thinking on with high effort for the reviewer,
+  everything unset for continuation so suggestions stay fast. Not every model
+  accepts every level ("xhigh" needs a recent Opus model, and small models may
+  reject effort entirely); if a request starts failing after a change here, clear
+  the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
   are known, an estimated cost shows too. With the Claude provider, repeated
@@ -108,6 +119,33 @@ contacts a model on its own.
   itself is never stored in this log.
 
 Your words are sent only to the endpoint you set here.
+
+### Which model to pick for each role
+
+The roles want different things, so a single model for all five is rarely the
+best you can do. Each role in the list shows a short suggestion; here is the
+longer version.
+
+Continuation, Co-author, and Background work want speed above all. Continuation
+runs while you type, and a suggestion that arrives after you have written the
+next line is worthless. Background work runs summaries, entity details, and
+recaps in bulk. Hosted, Claude Haiku is the cheap fast choice. On your own
+machine, look for a mixture-of-experts instruct model such as Qwen3 30B A3B
+(search for "MoE instruct GGUF"). A mixture-of-experts model holds many
+parameters but uses only a small slice of them per word, so it answers far
+faster than its size suggests, as long as it fits in memory. Turn thinking off
+for all three.
+
+The Reviewer wants the strongest model you can run, since it reads a whole draft
+and has to be right about what it quotes. Hosted, Claude Sonnet. On your own
+machine, a dense 32B instruct model such as Qwen3 32B (search for "32B instruct
+GGUF"). Dense means every parameter is used for every word: slower than a
+mixture-of-experts model of the same size, but steadier at close reading. Set a
+low temperature so it quotes your text faithfully instead of paraphrasing it;
+thinking is worth turning on here if you can afford the wait.
+
+Rubber duck is the one role with no technical requirement. Pick whichever model
+you enjoy talking to.
 
 ## Display
 
