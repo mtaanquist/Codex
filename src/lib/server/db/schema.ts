@@ -1251,6 +1251,9 @@ export type ReviewFailure = {
 // the retry skips them.
 export type ReviewRunState = {
 	phase: 'summaries' | 'scenes' | 'consistency' | 'done';
+	// What the run was over (mode and target, see reviewScopeKey), so a later
+	// run over the same scope can carry on from a capped one.
+	scope?: string;
 	total: number;
 	completed: string[];
 	currentSceneTitle?: string | null;
