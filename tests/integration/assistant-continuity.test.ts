@@ -135,7 +135,10 @@ async function seedStory(
 			storyId: story.id,
 			globalPosition: startPosition + i,
 			title: sceneTitles[i],
-			bodyMd: `Body of ${sceneTitles[i]}.${filler}`
+			bodyMd: `Body of ${sceneTitles[i]}.${filler}`,
+			// A summary the writer wrote (no generated-at watermark), so the pass
+			// finds nothing stale and never enters the summary phase.
+			summaryMd: `Summary of ${sceneTitles[i]}.${filler}`
 		});
 	}
 	return story.id;

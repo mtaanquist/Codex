@@ -133,7 +133,10 @@ async function seedStory(sceneCount: number): Promise<string> {
 			storyId: story.id,
 			globalPosition: i + 1,
 			title: `Scene ${i + 1}`,
-			bodyMd: `Body of scene ${i + 1}.`
+			bodyMd: `Body of scene ${i + 1}.`,
+			// A summary the writer wrote (no generated-at watermark), so the review
+			// finds nothing stale and never enters the summary phase.
+			summaryMd: `Summary of scene ${i + 1}.`
 		});
 	}
 	return story.id;

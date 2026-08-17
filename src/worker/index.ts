@@ -51,10 +51,12 @@ import {
 	s3AssetStore
 } from '../lib/server/assets.ts';
 import {
+	failureMessage,
 	reviewStoryScenes,
 	reviewStoryContinuity,
 	reviewUniverseContinuity
 } from '../lib/server/llm/scene-review.ts';
+import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -182,6 +184,12 @@ await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 	}
 });
 
+// The first distinct thing that went wrong in a run, for the notification
+// title. The whole list rides on the job status the review modal polls.
+function firstFailure(failures: ReviewFailure[] | undefined): string {
+	return [...new Set((failures ?? []).map((failure) => failure.message))][0] ?? '';
+}
+
 // Whole-story or single-chapter Assistant review: fan over the scenes in scope,
 // stage the Assistant's notes through the review tools, then tell the owner it
 // is ready (or that the endpoint could not be reached). Matches the inline
@@ -218,7 +226,11 @@ await boss.work<{
 			const href = `/universes/${universe.slug}/plan`;
 			let title: string;
 			try {
-				const result = await reviewUniverseContinuity(db, { userId, universeId });
+				const result = await reviewUniverseContinuity(db, {
+					userId,
+					universeId,
+					jobId: job.id
+				});
 				if (!result.ran) {
 					title = `There was nothing to compare for continuity in "${universe.name}".`;
 				} else if (result.notes === 0) {
@@ -226,8 +238,10 @@ await boss.work<{
 				} else {
 					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} across "${universe.name}".`;
 				}
-			} catch {
-				title = `The Assistant could not run the continuity pass on "${universe.name}". Check the endpoint in your settings.`;
+				const problem = firstFailure(result.failures);
+				if (problem) title += ` ${problem}`;
+			} catch (err) {
+				title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
 			}
 			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
 				title,
@@ -262,7 +276,7 @@ await boss.work<{
 		if (mode === 'continuity') {
 			let title: string;
 			try {
-				const result = await reviewStoryContinuity(db, { userId, storyId });
+				const result = await reviewStoryContinuity(db, { userId, storyId, jobId: job.id });
 				if (!result.ran) {
 					title = `"${story.title}" needs at least two scenes for a continuity pass.`;
 				} else if (result.notes === 0) {
@@ -270,8 +284,11 @@ await boss.work<{
 				} else {
 					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
 				}
-			} catch {
-				title = `The Assistant could not run the continuity pass on "${story.title}". Check the endpoint in your settings.`;
+				if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
+				const problem = firstFailure(result.failures);
+				if (problem) title += ` ${problem}`;
+			} catch (err) {
+				title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
 			}
 			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
 				title,
@@ -282,14 +299,29 @@ await boss.work<{
 			continue;
 		}
 
-		const result = await reviewStoryScenes(db, { userId, storyId, chapterId, categories });
+		const result = await reviewStoryScenes(db, {
+			userId,
+			storyId,
+			chapterId,
+			categories,
+			jobId: job.id
+		});
+		const problem = firstFailure(result.failures);
 		let title: string;
-		if (result.reviewed === 0 && result.failed > 0) {
-			title = `The Assistant could not review "${story.title}". Check the endpoint in your settings.`;
+		if (result.aborted) {
+			title = `The review of "${story.title}" was stopped before it finished.`;
+		} else if (result.reviewed === 0 && result.failed > 0) {
+			title = `The Assistant could not review "${story.title}": ${problem}`;
 		} else if (result.notes === 0) {
 			title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
 		} else {
 			title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
+		}
+		if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
+		if (result.failed > 0 && result.reviewed > 0) {
+			title += ` ${result.failed} scene${result.failed === 1 ? '' : 's'} failed: ${problem}`;
+		} else if (result.failed === 0 && problem) {
+			title += ` ${problem}`;
 		}
 		const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
 			title,

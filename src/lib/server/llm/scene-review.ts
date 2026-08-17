@@ -6,8 +6,12 @@ import {
 	reviewThreads,
 	revisions,
 	scenes,
-	stories
+	stories,
+	type ReviewFailure,
+	type ReviewRunState
 } from '../db/schema.ts';
+import { emptyReviewRun, loadReviewRun, saveReviewRun } from '../review-runs.ts';
+import { needsSummary, summariseStory } from './summaries.ts';
 import {
 	assembleContext,
 	assembleSceneDelta,
@@ -153,6 +157,28 @@ export async function openAssistantNotes(db: Database, sceneId: string): Promise
 	];
 }
 
+// What one pass produced: the notes it staged, and why it had to stop calling
+// tools when it did not finish on its own.
+export type ScenePassResult = { notes: number; stopped?: 'context' | 'budget' };
+
+// The text a caught error contributes to a failure list. Long provider messages
+// are cut so a notification title stays readable.
+const MAX_FAILURE_MESSAGE = 200;
+
+export function failureMessage(err: unknown): string {
+	const text = (err instanceof Error ? err.message : String(err)).trim();
+	if (!text) return 'The review failed for an unknown reason.';
+	return text.length > MAX_FAILURE_MESSAGE ? `${text.slice(0, MAX_FAILURE_MESSAGE)}...` : text;
+}
+
+// A pass that answered but was cut short is a degraded outcome, not a clean
+// run, so it is named in the failure list even though nothing threw.
+export function stoppedMessage(stopped: 'context' | 'budget'): string {
+	return stopped === 'context'
+		? 'Stopped early: the scene filled the model context window.'
+		: 'Stopped early: the run reached its tool-call limit.';
+}
+
 // One scene through the reviewer. Returns how many notes the run staged.
 // Throws if the gateway fails (no endpoint, unreachable, disabled), so the
 // caller can report it.
@@ -173,7 +199,7 @@ export async function reviewOneScene(
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
-): Promise<number> {
+): Promise<ScenePassResult> {
 	const categories = opts.categories ?? [];
 	const includeTiers = reviewTiers(categories);
 	let system: ChatMessage | null = null;
@@ -221,7 +247,7 @@ export async function reviewOneScene(
 		},
 		deps
 	);
-	return result.notes;
+	return { notes: result.notes, ...(result.stopped ? { stopped: result.stopped } : {}) };
 }
 
 // The world context both stages sit on. The survey judges continuity from the
@@ -239,8 +265,14 @@ function scopeIds(scope: ConsistencyScope) {
 }
 
 // What a consistency pass produced: the notes it staged, how many candidate
-// contradictions the survey raised, and whether the candidate cap cut it short.
-type ConsistencyPassResult = { notes: number; candidates: number; capped: boolean };
+// contradictions the survey raised, whether the candidate cap cut it short, and
+// whether a confirm round had to stop calling tools before it was done.
+type ConsistencyPassResult = {
+	notes: number;
+	candidates: number;
+	capped: boolean;
+	stopped?: 'context' | 'budget';
+};
 
 // Stage A over one chunk of the listing: no tools, structured output, and one
 // corrective retry when the reply does not parse. Throws when the second reply
@@ -362,6 +394,7 @@ async function runConsistencyPass(
 	const byId = new Map(opts.scenes.map((scene) => [scene.id, scene]));
 	const bodyChars = confirmBodyChars(budgetTokens);
 	let notes = 0;
+	let stopped: ConsistencyPassResult['stopped'];
 	for (const candidate of candidates.slice(0, MAX_CANDIDATES)) {
 		opts.signal?.throwIfAborted();
 		// A scene id the survey invented is dropped; a candidate that names none
@@ -397,8 +430,9 @@ async function runConsistencyPass(
 			deps
 		);
 		notes += result.notes;
+		stopped ??= result.stopped;
 	}
-	return { notes, candidates: candidates.length, capped };
+	return { notes, candidates: candidates.length, capped, ...(stopped ? { stopped } : {}) };
 }
 
 // The story's scenes in order, owner-scoped, with what both stages need: the
@@ -424,8 +458,9 @@ async function storySurveyScenes(
 
 // The cross-scene pass of a full story review: the two-stage continuity run
 // over every scene, looking only for issues that span scenes. Anchors its notes
-// like any other review note. Returns how many notes it staged. Throws on
-// gateway failure, like reviewOneScene.
+// like any other review note. Returns how many notes it staged, and why the run
+// stopped calling tools when it was cut short. Throws on gateway failure, like
+// reviewOneScene.
 export async function reviewStoryConsistency(
 	db: Database,
 	opts: {
@@ -434,9 +469,9 @@ export async function reviewStoryConsistency(
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
-): Promise<number> {
+): Promise<ScenePassResult> {
 	const surveyScenes = await storySurveyScenes(db, opts.userId, opts.storyId);
-	if (surveyScenes.length < 2) return 0;
+	if (surveyScenes.length < 2) return { notes: 0 };
 	const result = await runConsistencyPass(
 		db,
 		{
@@ -447,21 +482,112 @@ export async function reviewStoryConsistency(
 		},
 		deps
 	);
-	return result.notes;
+	return { notes: result.notes, ...(result.stopped ? { stopped: result.stopped } : {}) };
+}
+
+// Scenes whose summary is missing or out of date, by the same rule the summary
+// pass applies. Checked before a story-level review so the run only enters the
+// summary pass when there is something for it to write.
+async function staleSummaryCount(db: Database, userId: string, storyId: string): Promise<number> {
+	const rows = await db
+		.select({
+			bodyMd: scenes.bodyMd,
+			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt
+		})
+		.from(scenes)
+		.innerJoin(stories, eq(scenes.storyId, stories.id))
+		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
+	return rows.filter(
+		(row) =>
+			Boolean(row.bodyMd && row.bodyMd.trim()) &&
+			needsSummary({
+				summaryMd: row.summaryMd,
+				summaryGeneratedAt: row.summaryGeneratedAt,
+				changedSince: row.summaryGeneratedAt
+					? row.updatedAt.getTime() > row.summaryGeneratedAt.getTime()
+					: false
+			})
+	).length;
+}
+
+// A story-level review reads scene summaries (the survey stage works from them
+// alone), so it brings them up to date first. The summary pass skips fresh rows
+// internally; the count above keeps the run out of it entirely when nothing is
+// stale. A failure here is reported, not fatal: the review still runs on the
+// summaries that exist.
+async function refreshSummaries(
+	db: Database,
+	opts: { userId: string; storyId: string; signal?: AbortSignal },
+	deps: GatewayDeps
+): Promise<{ refreshed: boolean; failures: ReviewFailure[] }> {
+	try {
+		if ((await staleSummaryCount(db, opts.userId, opts.storyId)) === 0) {
+			return { refreshed: false, failures: [] };
+		}
+		const result = await summariseStory(db, opts, deps);
+		const failures: ReviewFailure[] =
+			result.failed > 0
+				? [
+						{
+							message: `${result.failed} summar${result.failed === 1 ? 'y' : 'ies'} could not be written before the review.`
+						}
+					]
+				: [];
+		return { refreshed: result.scenes + result.chapters > 0, failures };
+	} catch (err) {
+		return {
+			refreshed: false,
+			failures: [{ message: `Summaries could not be updated: ${failureMessage(err)}` }]
+		};
+	}
 }
 
 // How a standalone continuity review went: how many scenes were in scope, how
 // many notes it staged, and whether the pass ran at all (it is skipped when
 // there is nothing to compare, fewer than two scenes). candidates and capped
 // report the survey stage: how many contradictions it raised, and whether the
-// cap left some unconfirmed.
+// cap left some unconfirmed. failures names anything degraded that did not stop
+// the run (a summary that could not be written, a pass cut short).
 export type ContinuityReviewResult = {
 	scenes: number;
 	notes: number;
 	ran: boolean;
 	candidates?: number;
 	capped?: boolean;
+	failures?: ReviewFailure[];
+	summariesRefreshed?: boolean;
 };
+
+// The run state a review writes as it advances, when it was queued with a job
+// id. Progress is a convenience: a write that fails is logged and the review
+// carries on, and without a job id nothing is stored at all (the inline and
+// test callers).
+type RunWriter = { state: ReviewRunState; save: () => Promise<void> };
+
+async function openRun(db: Database, opts: { jobId?: string; userId: string }): Promise<RunWriter> {
+	let state: ReviewRunState | null = null;
+	if (opts.jobId) {
+		try {
+			state = await loadReviewRun(db, opts.jobId);
+		} catch (err) {
+			console.error('review run: reading progress failed:', err);
+		}
+	}
+	const current = state ?? emptyReviewRun();
+	return {
+		state: current,
+		async save() {
+			if (!opts.jobId) return;
+			try {
+				await saveReviewRun(db, { jobId: opts.jobId, userId: opts.userId, state: current });
+			} catch (err) {
+				console.error('review run: saving progress failed:', err);
+			}
+		}
+	};
+}
 
 // A standalone story continuity review: the consistency pass on its own, with
 // no per-scene copyedit passes before it. Reuses reviewStoryConsistency over
@@ -469,27 +595,68 @@ export type ContinuityReviewResult = {
 // fewer than two scenes (nothing spans).
 export async function reviewStoryContinuity(
 	db: Database,
-	opts: { userId: string; storyId: string; signal?: AbortSignal },
+	opts: { userId: string; storyId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<ContinuityReviewResult> {
+	const run = await openRun(db, opts);
+	const failures: ReviewFailure[] = [...run.state.failures];
+
+	// The survey stage compares scene summaries, so they are brought up to date
+	// before anything is compared.
+	run.state.phase = 'summaries';
+	await run.save();
+	const summaries = await refreshSummaries(db, opts, deps);
+	failures.push(...summaries.failures);
+	run.state.summariesRefreshed = summaries.refreshed;
+	run.state.failures = failures;
+
 	const targets = await storySurveyScenes(db, opts.userId, opts.storyId);
-	if (targets.length < 2) return { scenes: targets.length, notes: 0, ran: false };
-	const result = await runConsistencyPass(
-		db,
-		{
-			userId: opts.userId,
-			scope: { storyId: opts.storyId },
-			scenes: targets,
-			signal: opts.signal
-		},
-		deps
-	);
+	run.state.total = targets.length;
+	if (targets.length < 2) {
+		run.state.phase = 'done';
+		await run.save();
+		return {
+			scenes: targets.length,
+			notes: 0,
+			ran: false,
+			failures,
+			summariesRefreshed: summaries.refreshed
+		};
+	}
+	run.state.phase = 'consistency';
+	await run.save();
+	let result: ConsistencyPassResult;
+	try {
+		result = await runConsistencyPass(
+			db,
+			{
+				userId: opts.userId,
+				scope: { storyId: opts.storyId },
+				scenes: targets,
+				signal: opts.signal
+			},
+			deps
+		);
+	} catch (err) {
+		run.state.failed += 1;
+		run.state.failures = [...failures, { message: failureMessage(err) }];
+		run.state.phase = 'done';
+		await run.save();
+		throw err;
+	}
+	if (result.stopped) failures.push({ message: stoppedMessage(result.stopped) });
+	run.state.notes += result.notes;
+	run.state.failures = failures;
+	run.state.phase = 'done';
+	await run.save();
 	return {
 		scenes: targets.length,
 		notes: result.notes,
 		ran: true,
 		candidates: result.candidates,
-		capped: result.capped
+		capped: result.capped,
+		failures,
+		summariesRefreshed: summaries.refreshed
 	};
 }
 
@@ -501,9 +668,10 @@ export async function reviewStoryContinuity(
 // fewer than two scenes.
 export async function reviewUniverseContinuity(
 	db: Database,
-	opts: { userId: string; universeId: string; signal?: AbortSignal },
+	opts: { userId: string; universeId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<ContinuityReviewResult> {
+	const run = await openRun(db, opts);
 	// Ordered by story, then story order within it, so the survey listing groups
 	// each story's scenes together.
 	const rows = await db
@@ -524,33 +692,72 @@ export async function reviewUniverseContinuity(
 			)
 		)
 		.orderBy(asc(stories.title), asc(scenes.globalPosition));
-	if (rows.length < 2) return { scenes: rows.length, notes: 0, ran: false };
+	run.state.total = rows.length;
+	if (rows.length < 2) {
+		run.state.phase = 'done';
+		await run.save();
+		return { scenes: rows.length, notes: 0, ran: false, failures: [] };
+	}
 
-	const result = await runConsistencyPass(
-		db,
-		{
-			userId: opts.userId,
-			scope: { universeId: opts.universeId },
-			scenes: rows,
-			signal: opts.signal
-		},
-		deps
-	);
+	run.state.phase = 'consistency';
+	await run.save();
+	let result: ConsistencyPassResult;
+	try {
+		result = await runConsistencyPass(
+			db,
+			{
+				userId: opts.userId,
+				scope: { universeId: opts.universeId },
+				scenes: rows,
+				signal: opts.signal
+			},
+			deps
+		);
+	} catch (err) {
+		run.state.failed += 1;
+		run.state.failures = [{ message: failureMessage(err) }];
+		run.state.phase = 'done';
+		await run.save();
+		throw err;
+	}
+	const failures: ReviewFailure[] = result.stopped
+		? [{ message: stoppedMessage(result.stopped) }]
+		: [];
+	run.state.notes += result.notes;
+	run.state.failures = failures;
+	run.state.phase = 'done';
+	await run.save();
 	return {
 		scenes: rows.length,
 		notes: result.notes,
 		ran: true,
 		candidates: result.candidates,
-		capped: result.capped
+		capped: result.capped,
+		failures
 	};
 }
 
-export type StoryReviewResult = { reviewed: number; failed: number; notes: number };
+// How a whole-story or chapter review went: the counts, everything degraded
+// along the way (#528), whether the run was cancelled part-way, and whether it
+// had to write summaries before it could start.
+export type StoryReviewResult = {
+	reviewed: number;
+	failed: number;
+	notes: number;
+	failures: ReviewFailure[];
+	aborted?: boolean;
+	summariesRefreshed?: boolean;
+};
 
 // A whole-story or single-chapter review: every non-deleted scene in scope,
 // owner-scoped through the story. Errors on one scene are caught so a single
 // unreachable turn does not abandon the rest; the result reports how many
-// scenes were reviewed, how many failed, and how many notes were staged.
+// scenes were reviewed, how many failed and why, and how many notes were
+// staged. Cancelling through the signal stops the loop and marks the result
+// aborted, rather than counting the scenes never reached as failures.
+//
+// With a jobId the run records its progress as it goes, so the status endpoint
+// can show it and a retry of the same job skips the scenes already handled.
 export async function reviewStoryScenes(
 	db: Database,
 	opts: {
@@ -558,10 +765,26 @@ export async function reviewStoryScenes(
 		storyId: string;
 		chapterId?: string;
 		categories?: ReviewCategory[];
+		jobId?: string;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
+	const run = await openRun(db, opts);
+	const done = new Set(run.state.completed);
+	const failures: ReviewFailure[] = [...run.state.failures];
+	let reviewed = run.state.reviewed;
+	let failed = run.state.failed;
+	let notes = run.state.notes;
+
+	// Scene summaries feed both the context assembly and the cross-scene pass, so
+	// the run brings them up to date before it reviews anything.
+	run.state.phase = 'summaries';
+	await run.save();
+	const summaries = await refreshSummaries(db, opts, deps);
+	failures.push(...summaries.failures);
+	if (summaries.refreshed) run.state.summariesRefreshed = true;
+
 	const where = [
 		eq(scenes.storyId, opts.storyId),
 		eq(stories.ownerId, opts.userId),
@@ -587,12 +810,22 @@ export async function reviewStoryScenes(
 				})) ?? undefined)
 			: undefined;
 
-	let reviewed = 0;
-	let failed = 0;
-	let notes = 0;
+	run.state.phase = 'scenes';
+	run.state.total = targets.length;
+	run.state.failures = failures;
+	await run.save();
+
+	let aborted = false;
 	for (const scene of targets) {
+		if (opts.signal?.aborted) {
+			aborted = true;
+			break;
+		}
+		if (done.has(scene.id)) continue;
+		run.state.currentSceneTitle = scene.title;
+		await run.save();
 		try {
-			notes += await reviewOneScene(
+			const pass = await reviewOneScene(
 				db,
 				{
 					userId: opts.userId,
@@ -604,24 +837,70 @@ export async function reviewStoryScenes(
 				},
 				deps
 			);
+			notes += pass.notes;
 			reviewed += 1;
-		} catch {
+			if (pass.stopped) {
+				failures.push({
+					sceneId: scene.id,
+					sceneTitle: scene.title,
+					message: stoppedMessage(pass.stopped)
+				});
+			}
+		} catch (err) {
+			// A cancelled run is not a failed scene: stop where it was told to.
+			if (opts.signal?.aborted) {
+				aborted = true;
+				break;
+			}
 			failed += 1;
+			failures.push({ sceneId: scene.id, sceneTitle: scene.title, message: failureMessage(err) });
 		}
+		done.add(scene.id);
+		run.state.completed = [...done];
+		run.state.reviewed = reviewed;
+		run.state.failed = failed;
+		run.state.notes = notes;
+		run.state.failures = failures;
+		await run.save();
 	}
+	run.state.currentSceneTitle = null;
+
 	// A full review ends with one cross-scene pass: the only run that can see
 	// drift between scenes (names, timelines, idiom conventions). Pointless
 	// for a single scene, and skipped when every per-scene pass failed.
-	if (isFullReview(opts.categories ?? []) && targets.length > 1 && reviewed > 0) {
+	if (!aborted && isFullReview(opts.categories ?? []) && targets.length > 1 && reviewed > 0) {
+		run.state.phase = 'consistency';
+		await run.save();
 		try {
-			notes += await reviewStoryConsistency(
+			const pass = await reviewStoryConsistency(
 				db,
 				{ userId: opts.userId, storyId: opts.storyId, signal: opts.signal },
 				deps
 			);
-		} catch {
-			failed += 1;
+			notes += pass.notes;
+			if (pass.stopped) failures.push({ message: stoppedMessage(pass.stopped) });
+		} catch (err) {
+			if (opts.signal?.aborted) aborted = true;
+			else {
+				failed += 1;
+				failures.push({ message: `The cross-scene pass failed: ${failureMessage(err)}` });
+			}
 		}
 	}
-	return { reviewed, failed, notes };
+
+	run.state.phase = 'done';
+	run.state.reviewed = reviewed;
+	run.state.failed = failed;
+	run.state.notes = notes;
+	run.state.failures = failures;
+	if (aborted) run.state.aborted = true;
+	await run.save();
+	return {
+		reviewed,
+		failed,
+		notes,
+		failures,
+		...(aborted ? { aborted: true } : {}),
+		...(summaries.refreshed ? { summariesRefreshed: true } : {})
+	};
 }
