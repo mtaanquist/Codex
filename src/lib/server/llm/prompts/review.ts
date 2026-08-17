@@ -297,14 +297,26 @@ export function buildConfirmMessage(
 // A candidate contradiction from the survey stage.
 export type ContinuityCandidate = { sceneIds: string[]; claim: string };
 
-// The survey reply, read leniently: the adapters have no structured-output
-// mode, so the model is asked for a bare JSON array and often obliges with a
-// code fence or a sentence around it. Pull out the first array that parses and
-// keep the entries that carry both fields; null means nothing parsed, which the
-// caller retries once with a corrective turn.
-export function parseCandidates(reply: string): ContinuityCandidate[] | null {
-	const start = reply.indexOf('[');
-	if (start === -1) return null;
+// Keep the entries of a parsed array that carry both fields.
+function shapeCandidates(parsed: unknown[]): ContinuityCandidate[] {
+	return parsed.flatMap((entry) => {
+		if (!entry || typeof entry !== 'object') return [];
+		const { sceneIds, claim } = entry as { sceneIds?: unknown; claim?: unknown };
+		if (typeof claim !== 'string' || !claim.trim()) return [];
+		if (!Array.isArray(sceneIds)) return [];
+		const ids = sceneIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+		if (!ids.length) return [];
+		return [{ sceneIds: ids, claim: claim.trim() }];
+	});
+}
+
+// The longest array that parses from this '[', found by walking the closing
+// brackets from the end of the reply back: the outermost close that parses is
+// the whole array, and anything after it is prose.
+function parseArrayFrom(
+	reply: string,
+	start: number
+): { candidates: ContinuityCandidate[]; end: number } | null {
 	for (let end = reply.lastIndexOf(']'); end > start; end = reply.lastIndexOf(']', end - 1)) {
 		let parsed: unknown;
 		try {
@@ -313,17 +325,39 @@ export function parseCandidates(reply: string): ContinuityCandidate[] | null {
 			continue;
 		}
 		if (!Array.isArray(parsed)) return null;
-		return parsed.flatMap((entry) => {
-			if (!entry || typeof entry !== 'object') return [];
-			const { sceneIds, claim } = entry as { sceneIds?: unknown; claim?: unknown };
-			if (typeof claim !== 'string' || !claim.trim()) return [];
-			if (!Array.isArray(sceneIds)) return [];
-			const ids = sceneIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
-			if (!ids.length) return [];
-			return [{ sceneIds: ids, claim: claim.trim() }];
-		});
+		return { candidates: shapeCandidates(parsed), end };
 	}
 	return null;
+}
+
+// How many opening brackets are worth trying. A reply that leads with prose has
+// a handful at most; past that the reply is not the JSON array it was asked for
+// and the retry turn is the right answer.
+const MAX_ARRAY_STARTS = 20;
+
+// The survey reply, read leniently: the adapters have no structured-output
+// mode, so the model is asked for a bare JSON array and often obliges with a
+// code fence or a sentence around it. Every '[' is tried as an array start and
+// the best result wins: the most findings, earliest on a tie. Anchoring on the
+// first '[' alone was wrong twice over - a bracket in the prose ahead of the
+// JSON burned the retry, and a reply opening with a stray '[]' parsed cleanly
+// and reported no contradictions at all. An empty array is still a valid answer
+// ("nothing found"), so it wins only when nothing else parsed. Null means
+// nothing parsed, which the caller retries once with a corrective turn.
+export function parseCandidates(reply: string): ContinuityCandidate[] | null {
+	let best: ContinuityCandidate[] | null = null;
+	let starts = 0;
+	for (let start = reply.indexOf('['); start !== -1; start = reply.indexOf('[', start + 1)) {
+		if (starts >= MAX_ARRAY_STARTS) break;
+		starts += 1;
+		const found = parseArrayFrom(reply, start);
+		if (!found) continue;
+		if (!best || found.candidates.length > best.length) best = found.candidates;
+		// Brackets inside an array that already parsed are its own nested values,
+		// not competing candidates; skip past them.
+		start = found.end;
+	}
+	return best;
 }
 
 // The corrective turn after an unparseable survey reply.

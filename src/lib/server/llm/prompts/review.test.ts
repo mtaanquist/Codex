@@ -275,4 +275,39 @@ describe('parseCandidates', () => {
 	it('treats an array of the wrong shape as no candidates, not a failure', () => {
 		expect(parseCandidates('{"sceneIds": ["s1"]}')).toEqual([]);
 	});
+
+	it('skips a bracket in the prose ahead of the array', () => {
+		const reply =
+			'I checked scene [3] against the rest and found one problem.\n[{"sceneIds":["s1","s2"],"claim":"The harbour moves."}]';
+		expect(parseCandidates(reply)).toEqual([
+			{ sceneIds: ['s1', 's2'], claim: 'The harbour moves.' }
+		]);
+	});
+
+	it('prefers the real findings over a stray empty array that came first', () => {
+		const reply = '[]\nOn reflection:\n[{"sceneIds":["s1"],"claim":"Ages do not add up."}]';
+		expect(parseCandidates(reply)).toEqual([{ sceneIds: ['s1'], claim: 'Ages do not add up.' }]);
+	});
+
+	it('keeps the fullest array when several parse', () => {
+		const reply =
+			'[{"sceneIds":["s1"],"claim":"One."}]\nand also\n[{"sceneIds":["s1"],"claim":"A."},{"sceneIds":["s2"],"claim":"B."}]';
+		expect(parseCandidates(reply)).toEqual([
+			{ sceneIds: ['s1'], claim: 'A.' },
+			{ sceneIds: ['s2'], claim: 'B.' }
+		]);
+	});
+
+	it('keeps the earliest array when two hold as much', () => {
+		const reply =
+			'[{"sceneIds":["s1"],"claim":"First."}]\nor maybe\n[{"sceneIds":["s2"],"claim":"Second."}]';
+		expect(parseCandidates(reply)).toEqual([{ sceneIds: ['s1'], claim: 'First.' }]);
+	});
+
+	it('does not mistake a nested scene-id array for a second candidate array', () => {
+		const reply = 'Findings: [{"sceneIds":["s1","s2","s3"],"claim":"Names drift."}]';
+		expect(parseCandidates(reply)).toEqual([
+			{ sceneIds: ['s1', 's2', 's3'], claim: 'Names drift.' }
+		]);
+	});
 });
