@@ -438,6 +438,40 @@
 						suggests an edit, and leaves a comment, which smaller models handle far more reliably.
 					</p>
 				</div>
+				<div class="field">
+					<label for="spend_cap">Spend cap per review (USD)</label>
+					<input
+						id="spend_cap"
+						name="spendCapUsd"
+						type="number"
+						class="input"
+						min="0"
+						step="0.01"
+						value={data.assistant.spendCapUsd ?? ''}
+						placeholder="No cap"
+					/>
+					<p class="field-hint">
+						A background review stops after the next scene once it has spent this much. Leave it
+						empty for no cap. It only applies when your endpoint publishes prices for the model.
+					</p>
+				</div>
+				<div class="field">
+					<label for="spend_warn">Warn above (USD)</label>
+					<input
+						id="spend_warn"
+						name="spendWarnUsd"
+						type="number"
+						class="input"
+						min="0"
+						step="0.01"
+						value={data.assistant.spendWarnUsd ?? ''}
+						placeholder="2.00"
+					/>
+					<p class="field-hint">
+						Before a chapter or whole-story review starts, you are shown what it will send. Above
+						this figure the window asks you to confirm again.
+					</p>
+				</div>
 				<div class="settings-actions">
 					{#if form?.scope === 'assistant-test' && 'reply' in form && form.reply}
 						<FormStatus success={`Reply: ${form.reply}`} />

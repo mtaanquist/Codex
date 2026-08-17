@@ -6,6 +6,8 @@ import {
 } from '$lib/server/llm/assistant-route';
 import { queueAssistantReview } from '$lib/server/jobs';
 import { parseCategories } from '$lib/review-shape';
+import { db } from '$lib/server/db';
+import { estimateStoryReview } from '$lib/server/llm/estimate';
 
 // Queues a background Assistant review (it fans over many scenes, too long for a
 // request). The owner is notified when it finishes, and the response carries the
@@ -21,8 +23,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		chapterId?: unknown;
 		categories?: unknown;
 		mode?: unknown;
+		estimate?: unknown;
 	}>(request, locals);
 	const mode = payload.mode === 'continuity' ? 'continuity' : 'full';
+
+	// The pre-flight estimate: the same request with estimate true asks what the
+	// run would send and cost, queues nothing, and contacts no endpoint.
+	if (payload.estimate === true) {
+		const story = await requireAssistantStory(userId, payload.storyId);
+		const estimate = await estimateStoryReview(db, {
+			userId,
+			storyId: story.id,
+			chapterId: typeof payload.chapterId === 'string' ? payload.chapterId : undefined,
+			categories: parseCategories(payload.categories)
+		});
+		return new Response(JSON.stringify(estimate), {
+			headers: { 'content-type': 'application/json' }
+		});
+	}
 
 	let jobId: string | null;
 	if (mode === 'continuity' && typeof payload.universeId === 'string') {

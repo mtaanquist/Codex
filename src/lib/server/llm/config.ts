@@ -113,7 +113,23 @@ export type StoredAccountConfig = {
 	// window is what it was launched with, not what the model card claims.
 	modelContext?: ModelContextMap;
 	modelContextManual?: ModelContextMap;
+	// The most one background review run may spend before it stops at the next
+	// scene boundary, in USD. Absent means no ceiling. Only meaningful when the
+	// model has a price in modelPricing; without one a run cannot be priced, and
+	// says so rather than stopping or carrying on silently.
+	spendCapUsd?: number;
+	// What a pre-flight estimate has to reach before the confirm step turns into
+	// a warning, in USD. Absent means the default below.
+	spendWarnUsd?: number;
 };
+
+// The estimate warns above this when the writer has set no figure of their own.
+export const DEFAULT_SPEND_WARN_USD = 2;
+
+function normaliseUsd(raw: unknown): number | undefined {
+	const value = Number(raw);
+	return Number.isFinite(value) && value > 0 ? value : undefined;
+}
 
 export type ModelContextMap = Record<string, number>;
 
@@ -218,7 +234,9 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		supportsTools: normaliseCapability(raw.supportsTools),
 		modelPricing: normalisePricing(raw.modelPricing),
 		modelContext: normaliseContext(raw.modelContext),
-		modelContextManual: normaliseContext(raw.modelContextManual)
+		modelContextManual: normaliseContext(raw.modelContextManual),
+		spendCapUsd: normaliseUsd(raw.spendCapUsd),
+		spendWarnUsd: normaliseUsd(raw.spendWarnUsd)
 	};
 }
 
@@ -326,6 +344,12 @@ export type ResolvedConfig = {
 	// Context windows per model id: the discovered snapshot with the writer's own
 	// entries laid over it. A model missing here has an unknown window.
 	modelContext: ModelContextMap;
+	// Per-token prices from the last discovery, for the runs that price what they
+	// spend. Absent for an endpoint that reports no prices, and a model missing
+	// from it has no known price at all.
+	modelPricing?: ModelPricing;
+	spendCapUsd?: number;
+	spendWarnUsd?: number;
 };
 
 export type Resolved = {
@@ -355,7 +379,10 @@ export async function resolveLlmConfig(
 			toolProfile: account.toolProfile,
 			supportsStreaming: account.supportsStreaming,
 			supportsTools: account.supportsTools,
-			modelContext: { ...(account.modelContext ?? {}), ...(account.modelContextManual ?? {}) }
+			modelContext: { ...(account.modelContext ?? {}), ...(account.modelContextManual ?? {}) },
+			modelPricing: account.modelPricing,
+			spendCapUsd: account.spendCapUsd,
+			spendWarnUsd: account.spendWarnUsd
 		}
 	};
 }
@@ -395,6 +422,8 @@ export type AccountLlmView = {
 	// writer typed over it.
 	modelContext?: ModelContextMap;
 	modelContextManual?: ModelContextMap;
+	spendCapUsd?: number;
+	spendWarnUsd?: number;
 };
 
 export async function accountLlmView(db: Database, userId: string): Promise<AccountLlmView> {
@@ -415,7 +444,9 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		supportsTools: c.supportsTools,
 		modelPricing: c.modelPricing,
 		modelContext: c.modelContext,
-		modelContextManual: c.modelContextManual
+		modelContextManual: c.modelContextManual,
+		spendCapUsd: c.spendCapUsd,
+		spendWarnUsd: c.spendWarnUsd
 	};
 }
 
@@ -436,6 +467,10 @@ export type SaveAccountInput = {
 	toolProfile?: ToolProfile;
 	// The writer's own context windows; absent keeps the stored map, {} clears it.
 	modelContextManual?: ModelContextMap;
+	// The spend ceiling and the estimate's warning threshold, in USD. Absent
+	// keeps what is stored; null, zero, or anything unreadable clears it.
+	spendCapUsd?: number | null;
+	spendWarnUsd?: number | null;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 };
@@ -499,10 +534,18 @@ export async function saveAccountLlmConfig(
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})
 	};
+	// The spend fields are written as null rather than left out when they are
+	// being cleared: a jsonb merge cannot delete a key by omitting it.
+	const spend: Record<string, number | null> = {};
+	if (input.spendCapUsd !== undefined) spend.spendCapUsd = normaliseUsd(input.spendCapUsd) ?? null;
+	if (input.spendWarnUsd !== undefined) {
+		spend.spendWarnUsd = normaliseUsd(input.spendWarnUsd) ?? null;
+	}
 	// A jsonb merge, so any unknown keys (a future config field) survive.
+	const stored: Record<string, unknown> = { ...value, ...spend };
 	await db
 		.update(users)
-		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(value)}::jsonb` })
+		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })
 		.where(eq(users.id, userId));
 	return { ok: true };
 }

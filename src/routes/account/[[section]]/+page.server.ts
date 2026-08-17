@@ -203,6 +203,8 @@ async function patchAssistant(
 		tuning: TuningMap;
 		toolProfile: ToolProfile;
 		modelContextManual: ModelContextMap;
+		spendCapUsd: number | null;
+		spendWarnUsd: number | null;
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
@@ -218,6 +220,8 @@ async function patchAssistant(
 		toolCallBudget: current.toolCallBudget,
 		toolProfile: patch.toolProfile ?? current.toolProfile,
 		modelContextManual: patch.modelContextManual,
+		spendCapUsd: patch.spendCapUsd,
+		spendWarnUsd: patch.spendWarnUsd,
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
 	});
@@ -391,10 +395,18 @@ export const actions: Actions = {
 	saveAssistantEndpoint: async ({ request, locals }) => {
 		const data = await request.formData();
 		const profile = String(data.get('toolProfile') ?? '');
+		// An empty or unreadable box clears the figure (null), rather than being
+		// left out, so the writer can remove a cap they set earlier.
+		const usdField = (name: string): number | null => {
+			const value = Number(String(data.get(name) ?? '').trim());
+			return Number.isFinite(value) && value > 0 ? value : null;
+		};
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
 			apiKey: String(data.get('apiKey') ?? ''),
+			spendCapUsd: usdField('spendCapUsd'),
+			spendWarnUsd: usdField('spendWarnUsd'),
 			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
 				? (profile as ToolProfile)
 				: undefined
