@@ -200,6 +200,33 @@ describe('account config round-trip', () => {
 		});
 		expect(result.ok).toBe(false);
 	});
+
+	it('normalises a per-role temperature: clamped to 0..2, junk dropped', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: {
+				reviewer: { temperature: 0.1 },
+				chat: { temperature: 7 },
+				coauthor: { temperature: -1 },
+				// Whatever a hand-edited config holds, only a finite number lands.
+				continuation: { temperature: 'hot' } as unknown as { temperature: number }
+			}
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.tuning.reviewer).toEqual({ temperature: 0.1 });
+		expect(view.tuning.chat).toEqual({ temperature: 2 });
+		expect(view.tuning.coauthor).toEqual({ temperature: 0 });
+		expect(view.tuning.continuation).toBeUndefined();
+	});
 });
 
 describe('story override merge', () => {

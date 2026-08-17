@@ -20,13 +20,16 @@ export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
 
-// Per-role request tuning, used by the Anthropic adapter: whether to ask for
-// adaptive thinking, and an effort level. Both optional; absent means the
-// provider's defaults. Other adapters ignore the whole map.
+// Per-role request tuning: whether to ask for adaptive thinking and an effort
+// level (the Anthropic adapter), and a sampling temperature (the
+// OpenAI-compatible adapter). All optional; absent means the provider's
+// defaults, and each adapter ignores the fields it has no use for.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
-export type RoleTuning = { thinking?: boolean; effort?: EffortLevel };
+export type RoleTuning = { thinking?: boolean; effort?: EffortLevel; temperature?: number };
 export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
+
+const MAX_TEMPERATURE = 2;
 
 function normaliseTuning(raw: unknown): TuningMap {
 	const out: TuningMap = {};
@@ -35,10 +38,17 @@ function normaliseTuning(raw: unknown): TuningMap {
 			const value = (raw as Record<string, unknown>)[role];
 			if (!value || typeof value !== 'object') continue;
 			const tuning: RoleTuning = {};
-			const { thinking, effort } = value as { thinking?: unknown; effort?: unknown };
+			const { thinking, effort, temperature } = value as {
+				thinking?: unknown;
+				effort?: unknown;
+				temperature?: unknown;
+			};
 			if (thinking === true) tuning.thinking = true;
 			if (typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort)) {
 				tuning.effort = effort as EffortLevel;
+			}
+			if (typeof temperature === 'number' && Number.isFinite(temperature)) {
+				tuning.temperature = Math.min(Math.max(temperature, 0), MAX_TEMPERATURE);
 			}
 			if (Object.keys(tuning).length > 0) out[role] = tuning;
 		}

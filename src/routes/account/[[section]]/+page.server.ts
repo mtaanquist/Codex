@@ -395,10 +395,15 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const models: ModelMap = {};
 		const tuning: TuningMap = {};
+		// This form owns thinking and effort only; temperature has no field yet,
+		// so a stored value is carried through instead of being wiped.
+		const stored = (await accountLlmView(db, locals.user!.id)).tuning;
 		for (const role of ASSISTANT_ROLES) {
 			const value = String(data.get(role) ?? '').trim();
 			if (value) models[role] = value;
 			const roleTuning: TuningMap[typeof role] = {};
+			const temperature = stored[role]?.temperature;
+			if (temperature !== undefined) roleTuning.temperature = temperature;
 			if (data.get(`${role}-thinking`) === 'on') roleTuning.thinking = true;
 			const effort = String(data.get(`${role}-effort`) ?? '');
 			if ((EFFORT_LEVELS as readonly string[]).includes(effort)) {
