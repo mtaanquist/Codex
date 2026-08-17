@@ -186,6 +186,59 @@ describe('pre-flight review estimate (#548)', () => {
 		expect(estimate.estTokens).toBeGreaterThan(bare.estTokens);
 	});
 
+	it('prices the answers the run would write, not the prompt alone', async () => {
+		const storyId = await seedStory(2);
+		await saveModelPricing(db, userId, {
+			[MODEL]: { prompt: PRICE_PER_TOKEN, completion: PRICE_PER_TOKEN * 4 }
+		});
+		const estimate = await estimateStoryReview(db, { userId, storyId });
+
+		expect(estimate.estCompletionTokens).toBeGreaterThan(0);
+		expect(estimate.estCompletionCostUsd).toBeCloseTo(
+			estimate.estCompletionTokens * PRICE_PER_TOKEN * 4,
+			6
+		);
+		expect(estimate.estCostUsd).toBeCloseTo(
+			estimate.estTokens * PRICE_PER_TOKEN + (estimate.estCompletionCostUsd ?? 0),
+			6
+		);
+	});
+
+	it('draws the completion figure from history once there is enough of it', async () => {
+		const storyId = await seedStory(1);
+		const bare = await estimateStoryReview(db, { userId, storyId });
+		expect(bare.basis).toBe('static');
+		for (let i = 0; i < 6; i++) {
+			await db.insert(assistantUsage).values({
+				userId,
+				role: 'reviewer',
+				model: MODEL,
+				promptTokens: 5_000_000,
+				completionTokens: 9_000
+			});
+		}
+		const estimate = await estimateStoryReview(db, { userId, storyId });
+
+		expect(estimate.basis).toBe('history');
+		expect(estimate.estCompletionTokens).toBeGreaterThan(bare.estCompletionTokens);
+	});
+
+	it('refuses to estimate when no reviewer model is configured', async () => {
+		const storyId = await seedStory(1);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: {},
+			toolCallBudget: 8
+		});
+		await expect(estimateStoryReview(db, { userId, storyId })).rejects.toThrow(
+			/No model is configured/
+		);
+	});
+
 	it('changes nothing: no job, no usage row, no summary written', async () => {
 		const storyId = await seedStory(2);
 		await estimateStoryReview(db, { userId, storyId });
