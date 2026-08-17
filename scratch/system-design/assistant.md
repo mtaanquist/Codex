@@ -120,8 +120,19 @@ the gateway's Provider interface: the OpenAI-compatible one (custom endpoints
 and every preset except Claude; Gemini and DeepSeek ride their compatibility
 layers) and a native Anthropic adapter speaking the Messages API. The config
 carries a provider discriminator (default 'custom' for configs that predate
-it) and the gateway picks the adapter from it. Anthropic-only features
-(adaptive thinking, prompt caching) are still later work inside that adapter.
+it) and the gateway picks the adapter from it. Each adapter carries its own
+side of the wire: the Anthropic one maps the per-role tuning onto adaptive
+thinking and effort and marks the prompt cache; the OpenAI-compatible one
+sends the per-role temperature (near-greedy decoding for the review passes,
+which quote the text they edit) and drops the thinking a local reasoning
+model emits inline, in `<think>` tags or a separate `reasoning_content`
+field, so the scratchpad never reaches the transcript.
+
+Both adapters report why the model stopped. A reply cut off at the token cap
+is unusable - its text stops mid-sentence and its tool-call arguments stop
+mid-JSON, which can parse into a plausible but wrong edit - so the agent loop
+never runs tool calls from one. It retries the round with double the room and
+fails the round loudly if that is still not enough.
 
 A note we should not gloss over: a Claude Pro or Max subscription is a
 Claude.ai consumer plan, not an API credential. There is no supported path

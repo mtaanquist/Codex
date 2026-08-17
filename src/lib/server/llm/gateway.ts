@@ -39,9 +39,17 @@ export class AssistantDisabledError extends Error {
 // A ceiling so a single generation cannot hold a connection open indefinitely;
 // the tool-call budget bounds the agentic loop separately.
 const DEFAULT_MAX_TOKENS = 2048;
+// A review round emits several tool calls at once, each quoting the passage it
+// edits, so it needs more room than a chat turn before it runs into the cap.
+const REVIEWER_MAX_TOKENS = 4096;
+
 // The absolute ceiling on tool calls in one run, whatever the request asks
 // for; a cross-scene pass over a long story is the case that needs the room.
 const REQUEST_TOOL_BUDGET_CEILING = 200;
+
+function defaultMaxTokens(role: AssistantRole): number {
+	return role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
+}
 
 export type GatewayRequest = {
 	userId: string;
@@ -91,9 +99,9 @@ type Prepared = {
 	tools?: ToolSpec[];
 	toolContext?: ToolContext;
 	toolBudget: number;
-	// Thinking/effort for this role, from the account config; undefined when
-	// the role has none set.
-	tuning?: { thinking?: boolean; effort?: string };
+	// Thinking/effort/temperature for this role, from the account config;
+	// undefined when the role has none set.
+	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
 };
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
@@ -190,22 +198,33 @@ type AgentResult = {
 async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise<AgentResult> {
 	const messages = [...p.messages];
 	const surfaces: AgentResult['surfaces'] = [];
+	const roundTokens = req.maxTokens ?? defaultMaxTokens(req.role);
 	let calls = 0;
 	for (;;) {
 		const offerTools = p.tools && calls < p.toolBudget ? p.tools : undefined;
-		const response = await p.provider.respond(
-			{
-				model: p.model,
-				messages,
-				maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				tools: offerTools,
-				tuning: p.tuning
-			},
-			p.conn,
-			p.http,
-			req.signal
-		);
-		await recordUsage(db, p, req, response.usage);
+		const round = async (maxTokens: number) => {
+			const result = await p.provider.respond(
+				{ model: p.model, messages, maxTokens, tools: offerTools, tuning: p.tuning },
+				p.conn,
+				p.http,
+				req.signal
+			);
+			await recordUsage(db, p, req, result.usage);
+			return result;
+		};
+		// A reply cut off at the token cap is unusable: its text stops mid-sentence
+		// and its tool-call arguments stop mid-JSON, which either fails to parse or,
+		// worse, parses into a plausible but wrong edit. Never act on one - retry
+		// the round with more room, and give up loudly if that is still not enough.
+		let response = await round(roundTokens);
+		if (response.finishReason === 'length') {
+			response = await round(roundTokens * 2);
+			if (response.finishReason === 'length') {
+				throw new Error(
+					`The model's reply was cut off at the ${roundTokens * 2} token limit, twice in a row. Nothing was applied. Try a shorter passage, or a model that answers more briefly.`
+				);
+			}
+		}
 		if (!offerTools || response.toolCalls.length === 0) {
 			return { content: response.content, surfaces };
 		}
@@ -262,7 +281,7 @@ export async function* stream(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
 			tuning: prepared.tuning
 		},
 		prepared.conn,
@@ -297,7 +316,7 @@ export async function complete(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
 			tuning: prepared.tuning
 		},
 		prepared.conn,

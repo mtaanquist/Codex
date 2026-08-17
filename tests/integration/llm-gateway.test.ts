@@ -669,6 +669,113 @@ describe('gateway tool loop', () => {
 		expect(staged).toHaveLength(0);
 	});
 
+	it('never dispatches tool calls from a truncated round, and retries with more room', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// The first round hits the token cap mid-arguments; the retry has room and
+		// asks for a read instead, so nothing is ever staged from the cut-off edit.
+		const maxTokens: number[] = [];
+		let round = 0;
+		const truncating: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				maxTokens.push(req.maxTokens);
+				round += 1;
+				if (round === 1) {
+					return {
+						content: '',
+						finishReason: 'length',
+						toolCalls: [
+							{
+								id: 'c1',
+								name: 'suggest_edit',
+								// Truncated JSON that still parses into a plausible edit.
+								arguments: JSON.stringify({ sceneId, original: 'cat sat', replacement: 'dog' })
+							}
+						]
+					};
+				}
+				if (round === 2) {
+					return {
+						content: '',
+						finishReason: 'toolCalls',
+						toolCalls: [{ id: 'c2', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+					};
+				}
+				return { content: 'I read it first.', toolCalls: [], finishReason: 'stop' };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: truncating, http: noHttp }
+		);
+		expect(text).toBe('I read it first.');
+		// The retry doubled the room.
+		expect(maxTokens[1]).toBe(maxTokens[0] * 2);
+		// The truncated suggest_edit never ran.
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(0);
+	});
+
+	it('fails the round when the retry is truncated too', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		const alwaysTruncated: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				return {
+					content: '',
+					finishReason: 'length' as const,
+					toolCalls: [
+						{
+							id: 'c1',
+							name: 'suggest_edit',
+							arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+						}
+					]
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		await expect(
+			complete(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'reviewer',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'go' }]
+				},
+				{ provider: alwaysTruncated, http: noHttp }
+			)
+		).rejects.toThrow(/cut off/);
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(0);
+	});
+
 	it('does not offer tools without a story or universe context', async () => {
 		await configure(true);
 		const script = scriptedProvider([{ content: 'plain answer' }]);
