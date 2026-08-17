@@ -13,7 +13,7 @@ import {
 	buildSystemMessage,
 	type AssembleOptions
 } from '$lib/server/llm/context/assemble';
-import { appendChat, clearChat, type ChatScope } from '$lib/server/llm/chat-history';
+import { appendChat, clearChat, fitChatTurns, type ChatScope } from '$lib/server/llm/chat-history';
 import {
 	foldReference,
 	readReference,
@@ -100,10 +100,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The assembled world rides as a system message after the gateway's persona
 	// message; null when the scope is empty or not owned (already checked).
 	const context = await assembleContext(db, assembleOptions);
-	const modelTurns: ChatMessage[] = turns.map((turn) => ({
-		role: turn.role,
-		content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
-	}));
+	// Folding a reference grows a turn, so the transcript is fitted to its budget
+	// after the fold. Request shaping only: the stored transcript and the panel's
+	// own scrollback keep every turn.
+	const modelTurns: ChatMessage[] = fitChatTurns(
+		turns.map((turn) => ({
+			role: turn.role,
+			content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
+		}))
+	);
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), ...modelTurns]
 		: modelTurns;

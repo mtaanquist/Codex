@@ -1,6 +1,8 @@
 import { and, asc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { assistantChatMessages, type AssistantChatMeta } from '../db/schema';
+import { estimateTokens } from './context/assemble';
+import type { ChatMessage } from './providers/types';
 
 // The persisted Assistant conversation: one transcript per scope per user,
 // loaded when the surface opens and appended as turns complete. The scope is a
@@ -122,6 +124,33 @@ export async function setProposalConfirmed(
 			.where(eq(assistantChatMessages.id, row.id));
 	}
 	return matched;
+}
+
+// What the transcript may cost in a single request. MAX_TURNS above bounds
+// storage; this bounds what the model is sent, so a long conversation cannot
+// crowd out the assembled world or overflow a small context window.
+// Provisional, like the context budgets in context/assemble.ts; a per-endpoint
+// context-window setting will replace it.
+const CHAT_BUDGET_TOKENS = 8000;
+
+// Greedily keep turns newest-first until the budget is spent, then restore
+// order; the oldest turns drop, like a scrollback that scrolls off the top.
+// The newest turn is always kept even if it alone exceeds the budget, so a
+// request never arrives empty. Pure, so the drop policy is testable without a
+// database.
+export function fitChatTurns(
+	turns: ChatMessage[],
+	budgetTokens = CHAT_BUDGET_TOKENS
+): ChatMessage[] {
+	const kept: ChatMessage[] = [];
+	let used = 0;
+	for (let i = turns.length - 1; i >= 0; i--) {
+		const cost = estimateTokens(turns[i].content);
+		if (used > 0 && used + cost > budgetTokens) break;
+		kept.push(turns[i]);
+		used += cost;
+	}
+	return kept.reverse();
 }
 
 export async function clearChat(db: Database, userId: string, scope: ChatScope): Promise<void> {
