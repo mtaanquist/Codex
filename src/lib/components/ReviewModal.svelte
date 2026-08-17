@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { reviewModal, closeReviewModal } from '$lib/review-modal.svelte';
-	import { reviewSceneWithAssistant, startBackgroundReview } from '$lib/assistant-actions';
+	import {
+		reviewSceneWithAssistant,
+		startBackgroundReview,
+		type JobStartFailure
+	} from '$lib/assistant-actions';
 	import { REVIEW_CATEGORIES, type ReviewCategory, type ReviewLevel } from '$lib/review-shape';
 
 	// The review modal: pick a level (this scene, this chapter, the whole story)
@@ -50,9 +54,18 @@
 	// What the running review reports back while it works. The modal stays open
 	// on a chapter or story pass and polls the job; closing it leaves the review
 	// running, tracked by the card in the corner.
+	// The job reports 'running', 'done' and 'failed'; 'notstarted' is this
+	// component's own, set when the enqueue never produced a job to poll. The
+	// state is left open so a state added on the server still lands in the
+	// "no longer running" branch rather than reading as progress.
 	type Progress = {
-		state: 'running' | 'done' | 'failed';
+		state: string;
 		phase?: 'summaries' | 'scenes' | 'consistency' | 'done';
+		// Why the run never started, shown under the notstarted heading. refused
+		// marks a server rejection, which is what a duplicate of a review already
+		// running comes back as.
+		message?: string;
+		refused?: boolean;
 		completed?: number;
 		total?: number;
 		currentSceneTitle?: string | null;
@@ -65,26 +78,42 @@
 	};
 
 	// What the pre-flight estimate reports, and the confirm step built on it. A
-	// cost figure is present only when the model has a known price.
+	// cost figure is present only when the model has a known price. Only the
+	// fields the panel shows are declared.
+	type EstimateLine = { label: string; tokens?: number; note?: string };
 	type Estimate = {
 		scenes: number;
 		estTokens: number;
-		model: string;
-		basis: 'history' | 'static';
+		lines?: EstimateLine[];
 		estCostUsd?: number;
+		// What the model's replies are expected to cost, where the endpoint prices
+		// them; shown alongside the send figure when it is there.
+		estCompletionCostUsd?: number;
 		warnUsd: number;
 		capUsd?: number;
 		capEnforceable: boolean;
 	};
 
+	// The estimate is advisory: anything that does not carry the two figures the
+	// panel is built on is treated as no estimate at all, and the run goes ahead.
+	function isEstimate(value: unknown): value is Estimate {
+		const e = value as Estimate | null;
+		return (
+			!!e &&
+			typeof e === 'object' &&
+			typeof e.scenes === 'number' &&
+			typeof e.estTokens === 'number'
+		);
+	}
+
 	const money = (usd: number) => usd.toFixed(2);
 	const thousands = (n: number) => n.toLocaleString('en-US');
 
+	// The done phase never reaches here: the finished branch above it catches it.
 	const PHASE_LABEL: Record<string, string> = {
 		summaries: 'Updating scene summaries',
 		scenes: 'Reading the scenes',
-		consistency: 'Comparing the scenes to each other',
-		done: 'Finishing up'
+		consistency: 'Comparing the scenes to each other'
 	};
 
 	let progress = $state<Progress | null>(null);
@@ -95,11 +124,7 @@
 	const POLL_MS = 3000;
 	const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-	async function pollJob(jobId: string | null, token: number) {
-		if (!jobId) {
-			progress = { state: 'done' };
-			return;
-		}
+	async function pollJob(jobId: string, token: number) {
 		while (token === runToken) {
 			await delay(POLL_MS);
 			if (token !== runToken) return;
@@ -198,9 +223,13 @@
 				})
 			});
 			if (!response.ok) throw new Error(`estimate failed: ${response.status}`);
-			estimate = (await response.json()) as Estimate;
+			const body: unknown = await response.json();
+			if (isEstimate(body)) {
+				estimate = body;
+				estimating = false;
+				return;
+			}
 			estimating = false;
-			return;
 		} catch (err) {
 			console.warn('review estimate unavailable, starting the review anyway:', err);
 			estimating = false;
@@ -215,7 +244,20 @@
 		runToken += 1;
 		const token = runToken;
 		progress = { state: 'running' };
-		const onJobId = (jobId: string | null) => void pollJob(jobId, token);
+		// Without a job id there is nothing to poll: the run never started, so the
+		// panel says so rather than reporting a review that finished with no notes.
+		const onJobId = (jobId: string | null, failure?: JobStartFailure) => {
+			if (token !== runToken) return;
+			if (jobId) {
+				void pollJob(jobId, token);
+				return;
+			}
+			progress = {
+				state: 'notstarted',
+				message: failure?.message,
+				refused: failure?.reason === 'rejected'
+			};
+		};
 		if (level === 'chapter' && chapterId && chapter) {
 			await startBackgroundReview({
 				storyId,
@@ -273,6 +315,15 @@
 							<p class="rm-note">
 								Check the Assistant endpoint on your account page, then try again.
 							</p>
+						{:else if progress.state === 'notstarted'}
+							<p class="rm-phase">The review could not be started.</p>
+							<p class="rm-note">{progress.message ?? 'Try again in a moment.'}</p>
+							{#if progress.refused}
+								<p class="rm-note">
+									If a review of this story is already running, that one carries on. The card in the
+									bottom corner shows it.
+								</p>
+							{/if}
 						{:else if progress.capped}
 							<p class="rm-phase">
 								Stopped after {progress.reviewed ?? 0} of {progress.total ?? 0} scenes at about ${money(
@@ -292,8 +343,15 @@
 									any.
 								{/if}
 							</p>
+						{:else if progress.state !== 'running'}
+							<p class="rm-phase">The review is no longer running.</p>
+							<p class="rm-note">
+								Open the review page to see anything it left, or start the review again.
+							</p>
 						{:else}
-							<p class="rm-phase">{PHASE_LABEL[progress.phase ?? 'summaries']}...</p>
+							<p class="rm-phase">
+								{PHASE_LABEL[progress.phase ?? 'summaries'] ?? 'Working through the story'}...
+							</p>
 							{#if progress.phase === 'scenes' && progress.total}
 								<p class="rm-note">
 									Scene {Math.min((progress.completed ?? 0) + 1, progress.total)} of {progress.total}{progress.currentSceneTitle
@@ -322,9 +380,26 @@
 								estimate.estTokens
 							)} tokens to send.
 						</p>
+						{#if estimate.lines?.length}
+							<ul class="rm-lines">
+								{#each estimate.lines as line, i (i)}
+									<li>
+										<span class="rm-line-label">{line.label}</span>
+										<span class="rm-line-value"
+											>{line.tokens !== undefined
+												? `${thousands(line.tokens)} tokens`
+												: line.note}</span
+										>
+									</li>
+								{/each}
+							</ul>
+						{/if}
 						{#if estimate.estCostUsd !== undefined}
 							<p class="rm-note">
-								That is about ${money(estimate.estCostUsd)} to send; the model's replies cost extra.
+								That is about ${money(estimate.estCostUsd)} to send{estimate.estCompletionCostUsd !==
+								undefined
+									? `, plus about $${money(estimate.estCompletionCostUsd)} for the replies.`
+									: "; the model's replies cost extra."}
 							</p>
 						{:else}
 							<p class="rm-note">This model has no price on record, so the cost cannot be shown.</p>
@@ -468,6 +543,24 @@
 		margin: 0;
 		font-size: var(--text-base);
 		color: var(--text);
+	}
+	/* The estimate's line items: a quiet breakdown under the headline figure. */
+	.rm-lines {
+		margin: 10px 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: var(--text-meta);
+		color: var(--text-faint);
+	}
+	.rm-lines li {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 3px 0;
+	}
+	.rm-line-value {
+		flex: 0 1 auto;
+		text-align: right;
 	}
 	.rm-failures {
 		margin: 12px 0 0;

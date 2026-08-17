@@ -60,6 +60,21 @@ export async function reviewSceneWithAssistant(
 	}
 }
 
+// Why a job never got a job id. 'network' means the request never landed;
+// 'rejected' means the server refused to queue it (including the duplicate that
+// is coalesced into a run already going). The message is what the server said,
+// so a caller can show it rather than guessing.
+export type JobStartFailure = {
+	reason: 'network' | 'rejected';
+	status?: number;
+	message: string;
+};
+
+// Handed the queued job id so a caller can follow the job's own progress
+// alongside the activity card. A null id always comes with the reason it is
+// null, so a caller can tell "never started" from "finished with nothing".
+export type JobIdHandler = (jobId: string | null, failure?: JobStartFailure) => void;
+
 // Posts to a job endpoint and tracks the queued job to completion in the
 // activity center, flashing a failure card if the request never lands. The
 // caller supplies the endpoint, its payload, the activity labels, and the
@@ -71,9 +86,7 @@ async function launchJob(opts: {
 	failLabel: string;
 	startFallback: string;
 	track: Omit<Parameters<typeof trackJob>[0], 'jobId' | 'kind'>;
-	// Handed the queued job id (null when the enqueue coalesced or failed) so a
-	// caller can follow the job's own progress alongside the activity card.
-	onJobId?: (jobId: string | null) => void;
+	onJobId?: JobIdHandler;
 }): Promise<void> {
 	let response: Response;
 	try {
@@ -83,17 +96,20 @@ async function launchJob(opts: {
 			body: JSON.stringify(opts.payload)
 		});
 	} catch {
-		opts.onJobId?.(null);
-		flashActivity('failed', opts.failLabel, 'Check your connection and try again.');
+		const message = 'Check your connection and try again.';
+		opts.onJobId?.(null, { reason: 'network', message });
+		flashActivity('failed', opts.failLabel, message);
 		return;
 	}
 	if (!response.ok) {
-		opts.onJobId?.(null);
-		flashActivity('failed', opts.failLabel, await apiErrorMessage(response, opts.startFallback));
+		const message = await apiErrorMessage(response, opts.startFallback);
+		opts.onJobId?.(null, { reason: 'rejected', status: response.status, message });
+		flashActivity('failed', opts.failLabel, message);
 		return;
 	}
 	const { jobId } = (await response.json()) as { jobId: string | null };
-	opts.onJobId?.(jobId);
+	if (jobId) opts.onJobId?.(jobId);
+	else opts.onJobId?.(null, { reason: 'rejected', message: opts.startFallback });
 	await trackJob({ jobId, kind: opts.kind, ...opts.track });
 }
 
@@ -106,7 +122,7 @@ export async function startBackgroundReview(opts: {
 	categories: ReviewCategory[];
 	label: string;
 	reviewHref: string;
-	onJobId?: (jobId: string | null) => void;
+	onJobId?: JobIdHandler;
 }): Promise<void> {
 	await launchJob({
 		url: '/api/assistant/review-job',
