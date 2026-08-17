@@ -406,11 +406,21 @@ prose:
    injected; `keyword` entries are injected when a keyword appears in the
    current scope; `manual` entries are never auto-injected.
 
-TODO (needs a real corpus): the token budget per tier, the truncation and
-prioritisation strategy when a story outgrows the budget, and how far the
-neighbour window reaches. These are calibration decisions, not design
-decisions, and guessing them now would be the exact mistake the roadmap
-warns against.
+A run over many scenes of one story (the whole-story or chapter review) splits
+the assembly in two rather than reassembling per scene: `assembleStoryFrame`
+returns the scene-independent tiers (frame, outline, entities, notes, universe
+backbone), assembled once and rendered into the system message, and
+`assembleSceneDelta` returns the two tiers that move with the scene
+(scene-local, lore), which ride at the front of the user message. The system
+message is then byte-identical from scene to scene, so an endpoint's prompt
+prefix cache holds across the run. Each part fits its own share of the budget
+(the stable part takes the larger one).
+
+TODO (needs a real corpus): the token budget per tier, the split between the
+stable and per-scene shares, the truncation and prioritisation strategy when a
+story outgrows the budget, and how far the neighbour window reaches. These are
+calibration decisions, not design decisions, and guessing them now would be the
+exact mistake the roadmap warns against.
 
 ## Grounding
 
@@ -917,8 +927,10 @@ calls the gateway, which proxies through the egress guard.
 - `models.ts`: `discoverModels`, `listEndpointModels`, `testAccountConnection`,
   `testEndpointConnection`, `probeAccountEndpoint`, `probeEndpoint`.
 - `egress.ts`: `egressPolicy`, `saveEgressPolicy`.
-- `context/assemble.ts`: `assembleContext`, `buildSystemMessage`.
-- `gateway.ts`: `stream`, `complete` (the only entry the surfaces call),
-  `GatewayRequest`, `AssistantDisabledError`.
+- `context/assemble.ts`: `assembleContext`, `assembleStoryFrame`,
+  `assembleSceneDelta`, `buildSystemMessage`.
+- `gateway.ts`: `stream`, `complete`, `completeDetailed` (the only entries the
+  surfaces call; `completeDetailed` also reports how many review notes the run
+  staged), `GatewayRequest`, `AssistantDisabledError`.
 - `review.ts` (existing): `listSuggestions`, `listThreads`, `decideSuggestion`,
   `setThreadResolved` - now Assistant-aware (`isAssistant`).

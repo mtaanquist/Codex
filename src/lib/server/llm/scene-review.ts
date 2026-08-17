@@ -8,7 +8,13 @@ import {
 	scenes,
 	stories
 } from '../db/schema.ts';
-import { assembleContext, buildSystemMessage } from './context/assemble.ts';
+import {
+	assembleContext,
+	assembleSceneDelta,
+	assembleStoryFrame,
+	buildSystemMessage,
+	type AssembledContext
+} from './context/assemble.ts';
 import {
 	buildConsistencyMessage,
 	buildReviewMessage,
@@ -16,7 +22,7 @@ import {
 	type PriorNote
 } from './prompts/review.ts';
 import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
-import { complete, type GatewayDeps } from './gateway.ts';
+import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import type { ChatMessage } from './providers/types.ts';
 
 // Tool budgets for the exhaustive passes. A focused or full pass stages one
@@ -101,8 +107,15 @@ export async function openAssistantNotes(db: Database, sceneId: string): Promise
 	];
 }
 
-// One scene through the reviewer. Throws if the gateway fails (no endpoint,
-// unreachable, disabled), so the caller can report it.
+// One scene through the reviewer. Returns how many notes the run staged.
+// Throws if the gateway fails (no endpoint, unreachable, disabled), so the
+// caller can report it.
+//
+// storyFrame is the scene-independent context, assembled once by a multi-scene
+// caller: the system message is then identical from scene to scene, and only
+// the scene-local delta changes, in the user message. Without it the scene
+// carries the whole seven-tier assembly in its system message, which is what a
+// single inline review wants.
 export async function reviewOneScene(
 	db: Database,
 	opts: {
@@ -110,25 +123,43 @@ export async function reviewOneScene(
 		storyId: string;
 		scene: { id: string; title: string | null };
 		categories?: ReviewCategory[];
+		storyFrame?: AssembledContext;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
-): Promise<void> {
-	const context = await assembleContext(db, {
-		userId: opts.userId,
-		storyId: opts.storyId,
-		sceneId: opts.scene.id
-	});
+): Promise<number> {
+	let system: ChatMessage | null = null;
+	let scenePrefix = '';
+	let sceneTextIncluded = false;
+	if (opts.storyFrame) {
+		system = buildSystemMessage(opts.storyFrame, { tools: true });
+		const delta = await assembleSceneDelta(db, {
+			userId: opts.userId,
+			storyId: opts.storyId,
+			sceneId: opts.scene.id,
+			entityNames: opts.storyFrame.sources.entities.map((e) => e.name)
+		});
+		if (delta?.text) scenePrefix = `${delta.text}\n\n`;
+		sceneTextIncluded = delta?.includedTiers.includes('scene-local') ?? false;
+	} else {
+		const context = await assembleContext(db, {
+			userId: opts.userId,
+			storyId: opts.storyId,
+			sceneId: opts.scene.id
+		});
+		if (context) {
+			system = buildSystemMessage(context, { tools: true });
+			sceneTextIncluded = context.includedTiers.includes('scene-local');
+		}
+	}
 	const prior = await openAssistantNotes(db, opts.scene.id);
 	const categories = opts.categories ?? [];
 	const task: ChatMessage = {
 		role: 'user',
-		content: buildReviewMessage(opts.scene, prior, categories)
+		content: scenePrefix + buildReviewMessage(opts.scene, prior, categories, sceneTextIncluded)
 	};
-	const messages: ChatMessage[] = context
-		? [buildSystemMessage(context, { tools: true }), task]
-		: [task];
-	await complete(
+	const messages: ChatMessage[] = system ? [system, task] : [task];
+	const result = await completeDetailed(
 		db,
 		{
 			userId: opts.userId,
@@ -141,13 +172,15 @@ export async function reviewOneScene(
 		},
 		deps
 	);
+	return result.notes;
 }
 
 // The shared body of every consistency pass: assemble the scope's world
 // context, hand the model the consistency task, and run the gateway with tools
 // and a budget that lets it read every scene before comparing. The scope drives
 // both the assembled context and the gateway's retrieval reach (a story focus,
-// or the whole universe). Throws on gateway failure, like reviewOneScene.
+// or the whole universe). Returns how many notes it staged. Throws on gateway
+// failure, like reviewOneScene.
 async function runConsistencyPass(
 	db: Database,
 	opts: {
@@ -158,7 +191,7 @@ async function runConsistencyPass(
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
-): Promise<void> {
+): Promise<number> {
 	const context = await assembleContext(db, {
 		userId: opts.userId,
 		...('storyId' in opts.scope
@@ -169,7 +202,7 @@ async function runConsistencyPass(
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), task]
 		: [task];
-	await complete(
+	const result = await completeDetailed(
 		db,
 		{
 			userId: opts.userId,
@@ -184,11 +217,13 @@ async function runConsistencyPass(
 		},
 		deps
 	);
+	return result.notes;
 }
 
 // The cross-scene pass of a full story review: one run over every scene,
 // looking only for issues that span scenes. Anchors its notes like any other
-// review note. Throws on gateway failure, like reviewOneScene.
+// review note. Returns how many notes it staged. Throws on gateway failure,
+// like reviewOneScene.
 export async function reviewStoryConsistency(
 	db: Database,
 	opts: {
@@ -198,8 +233,8 @@ export async function reviewStoryConsistency(
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
-): Promise<void> {
-	await runConsistencyPass(
+): Promise<number> {
+	return runConsistencyPass(
 		db,
 		{
 			userId: opts.userId,
@@ -216,19 +251,6 @@ export async function reviewStoryConsistency(
 // many notes it staged, and whether the pass ran at all (it is skipped when
 // there is nothing to compare, fewer than two scenes).
 export type ContinuityReviewResult = { scenes: number; notes: number; ran: boolean };
-
-// Tallies the notes a continuity pass staged across a set of scenes, by diffing
-// the per-scene assistant-note counts around the run.
-async function countDelta(
-	db: Database,
-	sceneIds: string[],
-	run: () => Promise<void>
-): Promise<number> {
-	const before = await Promise.all(sceneIds.map((id) => countAssistantNotes(db, id)));
-	await run();
-	const after = await Promise.all(sceneIds.map((id) => countAssistantNotes(db, id)));
-	return after.reduce((sum, n, i) => sum + Math.max(0, n - before[i]), 0);
-}
 
 // A standalone story continuity review: the consistency pass on its own, with
 // no per-scene copyedit passes before it. Reuses reviewStoryConsistency over
@@ -252,15 +274,10 @@ export async function reviewStoryContinuity(
 		)
 		.orderBy(asc(scenes.globalPosition));
 	if (targets.length < 2) return { scenes: targets.length, notes: 0, ran: false };
-	const notes = await countDelta(
+	const notes = await reviewStoryConsistency(
 		db,
-		targets.map((s) => s.id),
-		() =>
-			reviewStoryConsistency(
-				db,
-				{ userId: opts.userId, storyId: opts.storyId, scenes: targets, signal: opts.signal },
-				deps
-			)
+		{ userId: opts.userId, storyId: opts.storyId, scenes: targets, signal: opts.signal },
+		deps
 	);
 	return { scenes: targets.length, notes, ran: true };
 }
@@ -309,21 +326,16 @@ export async function reviewUniverseContinuity(
 		group.scenes.push({ id: row.sceneId, title: row.sceneTitle });
 	}
 
-	const notes = await countDelta(
+	const notes = await runConsistencyPass(
 		db,
-		rows.map((r) => r.sceneId),
-		() =>
-			runConsistencyPass(
-				db,
-				{
-					userId: opts.userId,
-					scope: { universeId: opts.universeId },
-					message: buildUniverseConsistencyMessage([...byStory.values()]),
-					sceneCount: rows.length,
-					signal: opts.signal
-				},
-				deps
-			)
+		{
+			userId: opts.userId,
+			scope: { universeId: opts.universeId },
+			message: buildUniverseConsistencyMessage([...byStory.values()]),
+			sceneCount: rows.length,
+			signal: opts.signal
+		},
+		deps
 	);
 	return { scenes: rows.length, notes, ran: true };
 }
@@ -358,25 +370,33 @@ export async function reviewStoryScenes(
 		.where(and(...where))
 		.orderBy(asc(scenes.globalPosition));
 
+	// The scene-independent context, assembled once for the whole run: every
+	// scene then shares one system message, byte for byte, so an endpoint's
+	// prompt prefix cache holds across the run.
+	const storyFrame =
+		targets.length > 0
+			? ((await assembleStoryFrame(db, { userId: opts.userId, storyId: opts.storyId })) ??
+				undefined)
+			: undefined;
+
 	let reviewed = 0;
 	let failed = 0;
 	let notes = 0;
 	for (const scene of targets) {
-		const before = await countAssistantNotes(db, scene.id);
 		try {
-			await reviewOneScene(
+			notes += await reviewOneScene(
 				db,
 				{
 					userId: opts.userId,
 					storyId: opts.storyId,
 					scene,
 					categories: opts.categories,
+					storyFrame,
 					signal: opts.signal
 				},
 				deps
 			);
 			reviewed += 1;
-			notes += (await countAssistantNotes(db, scene.id)) - before;
 		} catch {
 			failed += 1;
 		}
@@ -385,15 +405,12 @@ export async function reviewStoryScenes(
 	// drift between scenes (names, timelines, idiom conventions). Pointless
 	// for a single scene, and skipped when every per-scene pass failed.
 	if (isFullReview(opts.categories ?? []) && targets.length > 1 && reviewed > 0) {
-		const counts = await Promise.all(targets.map((scene) => countAssistantNotes(db, scene.id)));
 		try {
-			await reviewStoryConsistency(
+			notes += await reviewStoryConsistency(
 				db,
 				{ userId: opts.userId, storyId: opts.storyId, scenes: targets, signal: opts.signal },
 				deps
 			);
-			const after = await Promise.all(targets.map((scene) => countAssistantNotes(db, scene.id)));
-			notes += after.reduce((sum, n, i) => sum + Math.max(0, n - counts[i]), 0);
 		} catch {
 			failed += 1;
 		}

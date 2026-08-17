@@ -126,6 +126,71 @@ export async function assembleContext(
 	return null;
 }
 
+// The tiers that do not depend on the scene in focus: the story frame, its
+// outline, the entities, the notes, and the other stories in the universe
+// (bodies stay out of the backbone; the model pulls them with get_scene).
+async function gatherStableTiers(db: Database, userId: string, scope: StoryScope) {
+	const skeleton = await storySkeleton(db, scope.storyId);
+	const entities = await inScopeEntities(db, scope.universeId, scope.storyId);
+	const notes = await scopeNotes(db, userId, scope.universeId, scope.storyId);
+	const backbone = (await universeSkeleton(db, scope.universeId)).filter(
+		(s) => s.storyId !== scope.storyId
+	);
+	return {
+		entities,
+		frame: { name: 'frame', text: renderFrame(scope) },
+		summaries: { name: 'summaries', text: renderSkeleton(skeleton) },
+		entityTier: { name: 'entities', text: renderEntities(entities) },
+		notes: { name: 'notes', text: renderNotes(notes) },
+		backbone: { name: 'universe-backbone', text: renderUniverseBackbone(backbone) }
+	};
+}
+
+// The tiers that change with the scene in focus: the scene neighbourhood and
+// the lore its text activates. entityNames feeds the same keyword matching the
+// full assembly does, without reloading the entities.
+async function gatherSceneTiers(
+	db: Database,
+	scope: StoryScope,
+	options: Pick<AssembleOptions, 'sceneId' | 'focusText' | 'precedingProse'>,
+	entityNames: string[]
+) {
+	const neighbourhood = await sceneNeighbourhood(db, scope.storyId, options.sceneId);
+	// The Write action anchors voice and continuity on the preceding scene's
+	// actual prose; ordinary turns skip it (the opt-in flag).
+	const preceding =
+		options.precedingProse && options.sceneId
+			? await precedingSceneBody(db, scope.storyId, options.sceneId)
+			: null;
+	// What a 'keyword' lore entry matches against: the writer's focus, the
+	// current scene, neighbour summaries, and the in-scope entity names.
+	const scopeText = [
+		options.focusText ?? '',
+		neighbourhood.current?.bodyMd ?? '',
+		...neighbourhood.neighbours.map((n) => n.summaryMd ?? ''),
+		...entityNames
+	].join('\n');
+	const lore = await activeLore(db, scope.universeId, scope.storyId, scopeText);
+	return {
+		neighbourhood,
+		lore,
+		sceneLocal: { name: 'scene-local', text: renderSceneLocal(neighbourhood, preceding) },
+		loreTier: { name: 'lore', text: renderLore(lore) }
+	};
+}
+
+function sceneSources(neighbourhood: {
+	current: CurrentScene | null;
+	neighbours: NeighbourScene[];
+}): { id: string; title: string | null }[] {
+	return [
+		...(neighbourhood.current
+			? [{ id: neighbourhood.current.id, title: neighbourhood.current.title }]
+			: []),
+		...neighbourhood.neighbours.map((n) => ({ id: n.id, title: n.title }))
+	];
+}
+
 async function assembleStoryContext(
 	db: Database,
 	options: AssembleOptions,
@@ -135,43 +200,25 @@ async function assembleStoryContext(
 	if (!scope) return null;
 	const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
 
-	const neighbourhood = await sceneNeighbourhood(db, scope.storyId, options.sceneId);
-	// The Write action anchors voice and continuity on the preceding scene's
-	// actual prose; ordinary turns skip it (the opt-in flag).
-	const preceding =
-		options.precedingProse && options.sceneId
-			? await precedingSceneBody(db, scope.storyId, options.sceneId)
-			: null;
-	const skeleton = await storySkeleton(db, scope.storyId);
-	const entities = await inScopeEntities(db, scope.universeId, scope.storyId);
-	const notes = await scopeNotes(db, options.userId, scope.universeId, scope.storyId);
-	// The other stories in the universe, so a focused turn can reach across for
-	// continuity; bodies stay out (the model pulls them with get_scene).
-	const backbone = (await universeSkeleton(db, scope.universeId)).filter(
-		(s) => s.storyId !== scope.storyId
+	const stable = await gatherStableTiers(db, options.userId, scope);
+	const scene = await gatherSceneTiers(
+		db,
+		scope,
+		options,
+		stable.entities.map((e) => e.name)
 	);
-
-	// What a 'keyword' lore entry matches against: the writer's focus, the
-	// current scene, neighbour summaries, and the in-scope entity names.
-	const scopeText = [
-		options.focusText ?? '',
-		neighbourhood.current?.bodyMd ?? '',
-		...neighbourhood.neighbours.map((n) => n.summaryMd ?? ''),
-		...entities.map((e) => e.name)
-	].join('\n');
-	const lore = await activeLore(db, scope.universeId, scope.storyId, scopeText);
 
 	// Tier order is the spec's: frame, scene-local, summaries, entities, lore,
 	// notes, then the low-priority universe backbone last so it drops first
 	// under budget pressure. Provisional.
 	const tiers: ContextTier[] = [
-		{ name: 'frame', text: renderFrame(scope) },
-		{ name: 'scene-local', text: renderSceneLocal(neighbourhood, preceding) },
-		{ name: 'summaries', text: renderSkeleton(skeleton) },
-		{ name: 'entities', text: renderEntities(entities) },
-		{ name: 'lore', text: renderLore(lore) },
-		{ name: 'notes', text: renderNotes(notes) },
-		{ name: 'universe-backbone', text: renderUniverseBackbone(backbone) }
+		stable.frame,
+		scene.sceneLocal,
+		stable.summaries,
+		stable.entityTier,
+		scene.loreTier,
+		stable.notes,
+		stable.backbone
 	];
 	const budgeted = selectWithinBudget(tiers, budgetTokens);
 
@@ -184,16 +231,81 @@ async function assembleStoryContext(
 		droppedTiers: budgeted.droppedTiers,
 		establishedSetting: scope.universeEstablished,
 		sources: {
-			entities: entities.map((e) => ({ id: e.id, kind: e.kind, name: e.name })),
-			scenes: [
-				...(neighbourhood.current
-					? [{ id: neighbourhood.current.id, title: neighbourhood.current.title }]
-					: []),
-				...neighbourhood.neighbours.map((n) => ({ id: n.id, title: n.title }))
-			],
-			lore: lore.map((l) => ({ id: l.id, title: l.title }))
+			entities: stable.entities.map((e) => ({ id: e.id, kind: e.kind, name: e.name })),
+			scenes: sceneSources(scene.neighbourhood),
+			lore: scene.lore.map((l) => ({ id: l.id, title: l.title }))
 		}
 	};
+}
+
+// A run over many scenes of one story splits the assembly in two: the stable
+// part below, assembled once and rendered into a system message that stays
+// byte-identical from scene to scene (so an endpoint's prompt prefix cache
+// keeps hitting), and the per-scene delta (assembleSceneDelta), which rides in
+// the user message. The stable part takes the larger share of the budget; each
+// part fits its own share, so neither re-runs the other's fit.
+const STABLE_BUDGET_SHARE = 2 / 3;
+
+function stableBudget(budgetTokens: number): number {
+	return Math.floor(budgetTokens * STABLE_BUDGET_SHARE);
+}
+
+// The scene-independent context for a story: frame, outline, entities, notes,
+// and the universe backbone last so it drops first under budget pressure.
+// Null when the story is not the user's.
+export async function assembleStoryFrame(
+	db: Database,
+	options: { userId: string; storyId: string; budgetTokens?: number }
+): Promise<AssembledContext | null> {
+	const scope = await loadStoryScope(db, options.userId, options.storyId);
+	if (!scope) return null;
+	const budgetTokens = stableBudget(options.budgetTokens ?? DEFAULT_BUDGET_TOKENS);
+
+	const stable = await gatherStableTiers(db, options.userId, scope);
+	const budgeted = selectWithinBudget(
+		[stable.frame, stable.summaries, stable.entityTier, stable.notes, stable.backbone],
+		budgetTokens
+	);
+
+	return {
+		kind: 'story',
+		text: budgeted.text,
+		estimatedTokens: budgeted.estimatedTokens,
+		budgetTokens,
+		includedTiers: budgeted.includedTiers,
+		droppedTiers: budgeted.droppedTiers,
+		establishedSetting: scope.universeEstablished,
+		sources: {
+			entities: stable.entities.map((e) => ({ id: e.id, kind: e.kind, name: e.name })),
+			scenes: [],
+			lore: []
+		}
+	};
+}
+
+// The part of a story assembly that changes with the scene in focus: the scene
+// neighbourhood and the lore its text activates, fitted to what the stable part
+// left. The caller prepends the text to its task message. Null when the story
+// is not the user's.
+export async function assembleSceneDelta(
+	db: Database,
+	options: {
+		userId: string;
+		storyId: string;
+		sceneId?: string;
+		focusText?: string;
+		precedingProse?: boolean;
+		// The in-scope entity names, from the stable part's sources, for lore
+		// keyword activation.
+		entityNames?: string[];
+		budgetTokens?: number;
+	}
+): Promise<BudgetedContext | null> {
+	const scope = await loadStoryScope(db, options.userId, options.storyId);
+	if (!scope) return null;
+	const total = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
+	const scene = await gatherSceneTiers(db, scope, options, options.entityNames ?? []);
+	return selectWithinBudget([scene.sceneLocal, scene.loreTier], total - stableBudget(total));
 }
 
 async function assembleUniverseContext(

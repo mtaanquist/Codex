@@ -9,10 +9,15 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'review-focus-test-secret';
 
-import type { ChatMessage, Provider } from '../../src/lib/server/llm/providers/types';
+import type {
+	ChatMessage,
+	Provider,
+	ProviderToolCall
+} from '../../src/lib/server/llm/providers/types';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
+const { createThread } = await import('../../src/lib/server/review');
 
 let pool: pg.Pool;
 let db: Database;
@@ -36,6 +41,22 @@ function recordingProvider(): { provider: Provider; seen: ChatMessage[][] } {
 		}
 	};
 	return { provider, seen };
+}
+
+// A provider scripted with a queue of turns, so the agent loop can stage notes.
+function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall[] }[]): Provider {
+	return {
+		async *chatStream() {
+			yield { type: 'done' };
+		},
+		async respond() {
+			const turn = turns.shift() ?? { content: '' };
+			return { content: turn.content, toolCalls: turn.toolCalls ?? [] };
+		},
+		async listModels() {
+			return [];
+		}
+	};
 }
 
 beforeAll(async () => {
@@ -96,6 +117,61 @@ const userText = (messages: ChatMessage[]) =>
 		.map((m) => m.content)
 		.join('\n');
 
+const systemText = (messages: ChatMessage[]) =>
+	messages
+		.filter((m) => m.role === 'system')
+		.map((m) => m.content)
+		.join('\n');
+
+describe('reviewStoryScenes note counts', () => {
+	it('counts the notes the run staged, and only those', async () => {
+		const storyId = await seedStory(1);
+		const [scene] = await db.select({ id: scenes.id }).from(scenes);
+		// A note already on the scene from an earlier pass; the run must not
+		// count it, only what it stages itself.
+		await createThread(db, {
+			storyId,
+			sceneId: scene.id,
+			anchor: null,
+			author: { assistant: true },
+			body: 'An older note.'
+		});
+		const provider = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{ id: 'r1', name: 'get_scene', arguments: JSON.stringify({ sceneId: scene.id }) },
+					{
+						id: 'w1',
+						name: 'leave_comment',
+						arguments: JSON.stringify({ sceneId: scene.id, comment: 'The pacing drags.' })
+					},
+					{
+						id: 'w2',
+						name: 'suggest_edit',
+						arguments: JSON.stringify({
+							sceneId: scene.id,
+							original: 'Body of scene 1.',
+							replacement: 'The body of scene one.'
+						})
+					}
+				]
+			},
+			{ content: 'Two notes left.' }
+		]);
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider });
+		expect(result.reviewed).toBe(1);
+		expect(result.notes).toBe(2);
+	});
+
+	it('reports no notes for a run that stages nothing', async () => {
+		const storyId = await seedStory(2);
+		const { provider } = recordingProvider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider });
+		expect(result.notes).toBe(0);
+	});
+});
+
 describe('reviewStoryScenes categories', () => {
 	it('an empty category set reviews each scene sparingly with no consistency run', async () => {
 		const storyId = await seedStory(2);
@@ -134,6 +210,24 @@ describe('reviewStoryScenes categories', () => {
 		expect(seen).toHaveLength(3);
 		for (const messages of seen) {
 			expect(userText(messages)).toContain('spelling and grammar pass');
+		}
+	});
+
+	it('sends one identical system message for every scene, with the scene text in the user turn', async () => {
+		const storyId = await seedStory(3);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(db, { userId, storyId }, { provider });
+		expect(seen).toHaveLength(3);
+		const systems = seen.map(systemText);
+		// The prefix a prompt cache hashes must not change between scenes.
+		expect(new Set(systems).size).toBe(1);
+		// Nothing scene-local rides in it; the scene text is in the user turn,
+		// and the reviewer is told not to fetch it again.
+		expect(systems[0]).not.toContain('Body of scene 1.');
+		for (let i = 0; i < 3; i++) {
+			const user = userText(seen[i]);
+			expect(user).toContain(`Body of scene ${i + 1}.`);
+			expect(user).toContain('Do not call get_scene');
 		}
 	});
 
