@@ -51,7 +51,7 @@ The window has two choices. First, **what to review**: this scene, this chapter,
 
 Tick more than one to check several at once, or tick all three for a full copyedit. The detailed passes leave many small notes by design - you accept or reject each one, and discarding a nitpick costs one click.
 
-A single scene is reviewed right away. A chapter or the whole story runs in the background, and a card in the bottom corner shows it working and tells you when it is ready; you are notified as well. A whole-story review also finishes with a cross-scene pass that reads the entire story in order, looking for things no single-scene pass can see: names or facts that drift between chapters, timeline arithmetic that does not add up, an idiom or spelling convention rendered differently in different places.
+A single scene is reviewed right away. A chapter or the whole story runs in the background: the window stays open and shows what the Assistant is working on, scene by scene, and lists anything it could not read. Close the window whenever you like - the review keeps going, a card in the bottom corner shows it working, and you are notified when it is ready. Before it reads the scenes, the Assistant fills in any scene summaries that are missing or out of date, so the review works from a current picture of the story. A whole-story review also finishes with a cross-scene pass that reads the entire story in order, looking for things no single-scene pass can see: names or facts that drift between chapters, timeline arithmetic that does not add up, an idiom or spelling convention rendered differently in different places.
 
 ## Working through the feedback
 

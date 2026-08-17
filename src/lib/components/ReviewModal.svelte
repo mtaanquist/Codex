@@ -47,6 +47,63 @@
 		return out;
 	});
 
+	// What the running review reports back while it works. The modal stays open
+	// on a chapter or story pass and polls the job; closing it leaves the review
+	// running, tracked by the card in the corner.
+	type Progress = {
+		state: 'running' | 'done' | 'failed';
+		phase?: 'summaries' | 'scenes' | 'consistency' | 'done';
+		completed?: number;
+		total?: number;
+		currentSceneTitle?: string | null;
+		notes?: number;
+		failures?: { sceneTitle?: string | null; message: string }[];
+	};
+
+	const PHASE_LABEL: Record<string, string> = {
+		summaries: 'Updating scene summaries',
+		scenes: 'Reading the scenes',
+		consistency: 'Comparing the scenes to each other',
+		done: 'Finishing up'
+	};
+
+	let progress = $state<Progress | null>(null);
+	// Bumped on every close and every new run, so a poll loop left over from an
+	// earlier run stops writing to the panel.
+	let runToken = 0;
+
+	const POLL_MS = 3000;
+	const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+	async function pollJob(jobId: string | null, token: number) {
+		if (!jobId) {
+			progress = { state: 'done' };
+			return;
+		}
+		while (token === runToken) {
+			await delay(POLL_MS);
+			if (token !== runToken) return;
+			try {
+				const response = await fetch(
+					`/api/assistant/job-status?kind=review&id=${encodeURIComponent(jobId)}`
+				);
+				if (!response.ok) continue;
+				const next = (await response.json()) as Progress;
+				if (token !== runToken) return;
+				progress = next;
+				if (next.state !== 'running') return;
+			} catch {
+				// A blip leaves the panel as it was; the next poll catches up.
+			}
+		}
+	}
+
+	function close() {
+		runToken += 1;
+		progress = null;
+		closeReviewModal();
+	}
+
 	let level = $state<ReviewLevel>('story');
 	// The category checkboxes. "General notes" is the sparing pass; the other
 	// three are the exhaustive categories.
@@ -67,6 +124,8 @@
 			level = requested && available.includes(requested) ? requested : (available[0] ?? 'story');
 			general = true;
 			picked = { mechanics: false, prose: false, lore: false };
+			runToken += 1;
+			progress = null;
 		}
 		lastOpen = reviewModal.open;
 	});
@@ -82,31 +141,46 @@
 	];
 
 	async function start() {
-		closeReviewModal();
 		if (level === 'scene' && sceneId) {
+			close();
 			await reviewSceneWithAssistant(
 				sceneId,
 				reviewHref,
 				categories,
 				scene?.title?.trim() ? `"${scene.title}"` : 'this scene'
 			);
-		} else if (level === 'chapter' && chapterId && chapter) {
+			return;
+		}
+		// A chapter or story pass runs in the background: the modal turns into a
+		// progress panel over it until the writer closes it.
+		runToken += 1;
+		const token = runToken;
+		progress = { state: 'running' };
+		const onJobId = (jobId: string | null) => void pollJob(jobId, token);
+		if (level === 'chapter' && chapterId && chapter) {
 			await startBackgroundReview({
 				storyId,
 				chapterId,
 				categories,
 				label: `"${chapterLabel(chapter)}"`,
-				reviewHref
+				reviewHref,
+				onJobId
 			});
 		} else {
-			await startBackgroundReview({ storyId, categories, label: 'your story', reviewHref });
+			await startBackgroundReview({
+				storyId,
+				categories,
+				label: 'your story',
+				reviewHref,
+				onJobId
+			});
 		}
 	}
 
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			event.preventDefault();
-			closeReviewModal();
+			close();
 		}
 	}
 </script>
@@ -116,7 +190,7 @@
 		class="modal-backdrop"
 		role="presentation"
 		onclick={(event) => {
-			if (event.target === event.currentTarget) closeReviewModal();
+			if (event.target === event.currentTarget) close();
 		}}
 		onkeydown={onKeydown}
 	>
@@ -133,49 +207,95 @@
 			</div>
 
 			<div class="modal-body">
-				<fieldset class="rm-group">
-					<legend>What to review</legend>
-					{#each levels as option (option.id)}
-						<label class="rm-radio">
-							<input type="radio" name="review-level" value={option.id} bind:group={level} />
-							<span>{option.label}</span>
-						</label>
-					{/each}
-				</fieldset>
-
-				<fieldset class="rm-group">
-					<legend>What to check</legend>
-					<label class="rm-check">
-						<input type="checkbox" bind:checked={general} disabled={categories.length > 0} />
-						<span>
-							General notes
-							<span class="rm-hint">a few high-value observations</span>
-						</span>
-					</label>
-					{#each CATEGORY_OPTIONS as option (option.id)}
-						<label class="rm-check">
-							<input type="checkbox" bind:checked={picked[option.id]} />
-							<span>{option.label}</span>
-						</label>
-					{/each}
-					<p class="rm-note">
-						{#if categories.length === 0}
-							The Assistant leaves a few high-value notes.
-						{:else if categories.length === REVIEW_CATEGORIES.length}
-							A full copyedit: every category, plus a cross-scene consistency pass.
+				{#if progress}
+					<div class="rm-progress">
+						{#if progress.state === 'failed'}
+							<p class="rm-phase">The review did not finish.</p>
+							<p class="rm-note">
+								Check the Assistant endpoint on your account page, then try again.
+							</p>
+						{:else if progress.state === 'done' || progress.phase === 'done'}
+							<p class="rm-phase">Review finished.</p>
+							<p class="rm-note">
+								{#if progress.notes}
+									Open the review page to read the {progress.notes} note{progress.notes === 1
+										? ''
+										: 's'} it left.
+								{:else}
+									Nothing to read yet. Notes appear on the review page when the Assistant leaves
+									any.
+								{/if}
+							</p>
 						{:else}
-							An exhaustive pass over the categories you picked.
+							<p class="rm-phase">{PHASE_LABEL[progress.phase ?? 'summaries']}...</p>
+							{#if progress.phase === 'scenes' && progress.total}
+								<p class="rm-note">
+									Scene {Math.min((progress.completed ?? 0) + 1, progress.total)} of {progress.total}{progress.currentSceneTitle
+										? `: ${progress.currentSceneTitle}`
+										: ''}
+								</p>
+							{:else}
+								<p class="rm-note">You can close this window. The review keeps running.</p>
+							{/if}
 						{/if}
-					</p>
-				</fieldset>
+						{#if progress.failures?.length}
+							<ul class="rm-failures">
+								{#each progress.failures as failure, i (i)}
+									<li>
+										{#if failure.sceneTitle}<strong>{failure.sceneTitle}:</strong>{/if}
+										{failure.message}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
+				{:else}
+					<fieldset class="rm-group">
+						<legend>What to review</legend>
+						{#each levels as option (option.id)}
+							<label class="rm-radio">
+								<input type="radio" name="review-level" value={option.id} bind:group={level} />
+								<span>{option.label}</span>
+							</label>
+						{/each}
+					</fieldset>
+
+					<fieldset class="rm-group">
+						<legend>What to check</legend>
+						<label class="rm-check">
+							<input type="checkbox" bind:checked={general} disabled={categories.length > 0} />
+							<span>
+								General notes
+								<span class="rm-hint">a few high-value observations</span>
+							</span>
+						</label>
+						{#each CATEGORY_OPTIONS as option (option.id)}
+							<label class="rm-check">
+								<input type="checkbox" bind:checked={picked[option.id]} />
+								<span>{option.label}</span>
+							</label>
+						{/each}
+						<p class="rm-note">
+							{#if categories.length === 0}
+								The Assistant leaves a few high-value notes.
+							{:else if categories.length === REVIEW_CATEGORIES.length}
+								A full copyedit: every category, plus a cross-scene consistency pass.
+							{:else}
+								An exhaustive pass over the categories you picked.
+							{/if}
+						</p>
+					</fieldset>
+				{/if}
 			</div>
 
 			<div class="modal-foot">
 				<div class="modal-foot-note"></div>
-				<button class="btn btn-sm btn-secondary" type="button" onclick={closeReviewModal}>
-					Cancel
-				</button>
-				<button class="btn btn-sm btn-primary" type="button" onclick={start}>Start review</button>
+				{#if progress}
+					<button class="btn btn-sm btn-primary" type="button" onclick={close}>Close</button>
+				{:else}
+					<button class="btn btn-sm btn-secondary" type="button" onclick={close}>Cancel</button>
+					<button class="btn btn-sm btn-primary" type="button" onclick={start}>Start review</button>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -221,5 +341,22 @@
 		margin: 8px 0 0;
 		font-size: var(--text-meta);
 		color: var(--text-faint);
+	}
+	.rm-progress {
+		padding: 4px 0;
+	}
+	.rm-phase {
+		margin: 0;
+		font-size: var(--text-base);
+		color: var(--text);
+	}
+	.rm-failures {
+		margin: 12px 0 0;
+		padding-left: 18px;
+		font-size: var(--text-meta);
+		color: var(--text-faint);
+	}
+	.rm-failures li {
+		margin-bottom: 4px;
 	}
 </style>

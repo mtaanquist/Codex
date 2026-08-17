@@ -71,6 +71,9 @@ async function launchJob(opts: {
 	failLabel: string;
 	startFallback: string;
 	track: Omit<Parameters<typeof trackJob>[0], 'jobId' | 'kind'>;
+	// Handed the queued job id (null when the enqueue coalesced or failed) so a
+	// caller can follow the job's own progress alongside the activity card.
+	onJobId?: (jobId: string | null) => void;
 }): Promise<void> {
 	let response: Response;
 	try {
@@ -80,14 +83,17 @@ async function launchJob(opts: {
 			body: JSON.stringify(opts.payload)
 		});
 	} catch {
+		opts.onJobId?.(null);
 		flashActivity('failed', opts.failLabel, 'Check your connection and try again.');
 		return;
 	}
 	if (!response.ok) {
+		opts.onJobId?.(null);
 		flashActivity('failed', opts.failLabel, await apiErrorMessage(response, opts.startFallback));
 		return;
 	}
 	const { jobId } = (await response.json()) as { jobId: string | null };
+	opts.onJobId?.(jobId);
 	await trackJob({ jobId, kind: opts.kind, ...opts.track });
 }
 
@@ -100,11 +106,13 @@ export async function startBackgroundReview(opts: {
 	categories: ReviewCategory[];
 	label: string;
 	reviewHref: string;
+	onJobId?: (jobId: string | null) => void;
 }): Promise<void> {
 	await launchJob({
 		url: '/api/assistant/review-job',
 		payload: { storyId: opts.storyId, chapterId: opts.chapterId, categories: opts.categories },
 		kind: 'review',
+		onJobId: opts.onJobId,
 		failLabel: `Could not review ${opts.label}`,
 		startFallback: 'Could not start the review.',
 		track: {

@@ -670,6 +670,17 @@ maintenance). Expensive derived artifacts (a character's arc summary) cache on
 the entity with a staleness watermark, mirroring `mentions_indexed_at`, and
 the reconcile-sweep pattern used for stale mentions applies directly.
 
+A review job writes its progress to `assistant_review_runs` (one row per
+pg-boss job id, a jsonb state: phase, scenes completed, current scene, counts,
+and the failure list). The job-status endpoint reads it while the job runs, so
+the review window can show where the pass is; a retry of the same job after a
+worker restart reads it too and skips the scenes already handled. The
+`assistant-review` enqueue holds one unfinished job per scope, so a duplicate
+request cannot start a second pass over the same scenes. Before it reviews
+anything, a story-level pass refreshes scene summaries that are missing or
+stale (the `assistant-summaries` logic, called directly), since both the
+context assembly and the cross-scene pass read them.
+
 ### Cross-cutting
 
 - Gate: every surface checks configured-and-enabled (see "Gating and
