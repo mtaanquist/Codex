@@ -27,7 +27,7 @@ import type {
 
 const { saveAccountLlmConfig, saveModelContext } = await import('../../src/lib/server/llm/config');
 const { listSuggestions, decideSuggestion } = await import('../../src/lib/server/review');
-const { complete, stream, AssistantDisabledError } =
+const { complete, completeDetailed, stream, AssistantDisabledError } =
 	await import('../../src/lib/server/llm/gateway');
 
 let pool: pg.Pool;
@@ -1078,5 +1078,132 @@ describe('provider selection', () => {
 		const text = await complete(db, { userId, role: 'chat', messages: [] }, { http });
 		expect(text).toBe('hello');
 		expect(calledUrl).toBe('https://api.example.com/v1/chat/completions');
+	});
+});
+
+// A long run appends every tool result to the conversation, so a small window
+// fills up mid-loop. The guard withdraws the tools before the next request
+// would overflow the endpoint.
+describe('gateway context guard', () => {
+	const noHttp: HttpRequest = async () => {
+		throw new Error('the injected provider should not call the transport');
+	};
+
+	// A provider that keeps asking for the same scene for as long as tools are
+	// offered, and answers plainly once they are gone.
+	function greedyReader(sceneId: string): {
+		provider: Provider;
+		offered: string[][];
+		seen: ChatMessage[][];
+	} {
+		const offered: string[][] = [];
+		const seen: ChatMessage[][] = [];
+		let calls = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				offered.push((req.tools ?? []).map((tool) => tool.name));
+				seen.push(req.messages.map((m) => ({ ...m })));
+				return req.tools?.length
+					? {
+							content: '',
+							toolCalls: [
+								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
+							]
+						}
+					: { content: 'wrapping up', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, offered, seen };
+	}
+
+	it('withdraws tools and nudges the model when the conversation nears the window', async () => {
+		await configure(true);
+		// A 4K window: one full scene read (capped at 8000 characters, about 2000
+		// tokens) plus the next round's output allowance crosses the margin.
+		await saveModelContext(db, userId, { 'chat-model': 4096 });
+		const { storyId, sceneId } = await seedStoryScene('x'.repeat(40_000));
+		const script = greedyReader(sceneId);
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read everything' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(result.content).toBe('wrapping up');
+		expect(result.stopped).toBe('context');
+		// The first round had tools, the second did not, and it carried the nudge.
+		expect(script.offered).toHaveLength(2);
+		expect(script.offered[0].length).toBeGreaterThan(0);
+		expect(script.offered[1]).toEqual([]);
+		expect(script.seen[1].at(-1)?.content).toMatch(/context window is nearly full/i);
+	});
+
+	it('does not guard when the window is unknown, and reports a budget stop', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 3
+		});
+		// No stored context for the model, so nothing bounds the conversation but
+		// the tool-call budget.
+		const { storyId, sceneId } = await seedStoryScene('x'.repeat(40_000));
+		const script = greedyReader(sceneId);
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read everything' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(result.content).toBe('wrapping up');
+		expect(result.stopped).toBe('budget');
+		// Three tool rounds (the budget) plus the tools-withdrawn answer, with no
+		// context nudge among them.
+		expect(script.offered).toHaveLength(4);
+		expect(script.offered[2].length).toBeGreaterThan(0);
+		expect(script.offered[3]).toEqual([]);
+		expect(script.seen[3].some((m) => m.content.includes('context window is nearly full'))).toBe(
+			false
+		);
+	});
+
+	it('leaves a run that finishes on its own unmarked', async () => {
+		await configure(true);
+		await saveModelContext(db, userId, { 'chat-model': 128_000 });
+		const { storyId } = await seedStoryScene('A short scene.');
+		const script = scriptedProvider([{ content: 'done reading' }]);
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'hi' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(result).toMatchObject({ content: 'done reading' });
+		expect(result.stopped).toBeUndefined();
 	});
 });

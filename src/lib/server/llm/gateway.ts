@@ -1,6 +1,7 @@
 import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
 import { modelContextWindow, pickModel, resolveLlmConfig, type AssistantRole } from './config.ts';
+import { estimateTokens } from './context/assemble.ts';
 import { egressHttpRequest, egressPolicy } from './egress.ts';
 import { providerFor } from './providers/index.ts';
 import { buildPersonaPrompt } from './prompts/persona.ts';
@@ -56,6 +57,26 @@ const MINIMAL_PROFILE_MIN_BUDGET = 2;
 
 function defaultMaxTokens(role: AssistantRole): number {
 	return role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
+}
+
+// Every message costs more on the wire than its text: a role, the framing, and
+// for a tool turn its call id. Provisional flat allowance, not measured.
+const MESSAGE_OVERHEAD_TOKENS = 8;
+// The share of a known context window the agent loop leaves free. The estimate
+// is chars/4, which runs short on non-English prose, so the margin absorbs the
+// skew as well as whatever the endpoint's own framing adds.
+const CONTEXT_SAFETY_MARGIN = 0.15;
+// Sent when the context guard fires, so the round that follows knows why its
+// tools went away.
+const CONTEXT_NUDGE =
+	'The context window is nearly full, so no more tools are available. Conclude now with what you already have.';
+
+function messageTokens(message: ChatMessage): number {
+	return estimateTokens(message.content) + MESSAGE_OVERHEAD_TOKENS;
+}
+
+function conversationTokens(messages: ChatMessage[]): number {
+	return messages.reduce((sum, message) => sum + messageTokens(message), 0);
 }
 
 export type GatewayRequest = {
@@ -213,20 +234,51 @@ type AgentResult = {
 	surfaces: Extract<StreamEvent, { type: 'proposal' }>[];
 	// Review notes the run staged, counted as the tool calls resolve.
 	notes: number;
+	// Why the run had to stop calling tools, when it did: the tool-call budget
+	// ran out, or the conversation neared the model's context window. Unset when
+	// the model finished on its own.
+	stopped?: 'context' | 'budget';
 };
 
 // The agent loop: ask the model, run any tool calls it requests (read tools
 // fetch, write tools stage), feed the results back, and repeat until it answers
 // or the tool-call budget is spent. Once the budget is reached, tools are
-// withdrawn so the next turn must answer, bounding the loop.
+// withdrawn so the next turn must answer, bounding the loop. The same happens
+// when the conversation nears the model's context window, since every tool
+// result appended to it brings the whole run closer to overflowing.
 async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise<AgentResult> {
 	const messages = [...p.messages];
 	const surfaces: AgentResult['surfaces'] = [];
 	const roundTokens = req.maxTokens ?? defaultMaxTokens(req.role);
+	// Room the conversation may take up before tools are withdrawn; unknown
+	// window means no guard, which is the behaviour every endpoint had before
+	// windows were tracked.
+	const usableWindow = p.contextWindow
+		? Math.floor(p.contextWindow * (1 - CONTEXT_SAFETY_MARGIN))
+		: undefined;
+	let estimated = conversationTokens(messages);
 	let calls = 0;
 	let notes = 0;
+	let stopped: AgentResult['stopped'];
+	const push = (message: ChatMessage) => {
+		messages.push(message);
+		estimated += messageTokens(message);
+	};
 	for (;;) {
-		const offerTools = p.tools && calls < p.toolBudget ? p.tools : undefined;
+		const outOfContext = usableWindow !== undefined && estimated + roundTokens > usableWindow;
+		const offerTools = p.tools && calls < p.toolBudget && !outOfContext ? p.tools : undefined;
+		if (p.tools && !offerTools && !stopped) {
+			stopped = outOfContext ? 'context' : 'budget';
+			if (outOfContext) {
+				logEvent('info', 'assistant.context-guard', {
+					userId: req.userId,
+					model: p.model,
+					estimated,
+					window: p.contextWindow
+				});
+				push({ role: 'user', content: CONTEXT_NUDGE });
+			}
+		}
 		const round = async (maxTokens: number) => {
 			const result = await p.provider.respond(
 				{ model: p.model, messages, maxTokens, tools: offerTools, tuning: p.tuning },
@@ -251,10 +303,10 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			}
 		}
 		if (!offerTools || response.toolCalls.length === 0) {
-			return { content: response.content, surfaces, notes };
+			return { content: response.content, surfaces, notes, stopped };
 		}
 
-		messages.push({
+		push({
 			role: 'assistant',
 			content: response.content,
 			toolCalls: response.toolCalls,
@@ -275,7 +327,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				tool: call.name,
 				staged: outcome.staged
 			});
-			messages.push({ role: 'tool', content: outcome.result, toolCallId: call.id });
+			push({ role: 'tool', content: outcome.result, toolCallId: call.id });
 		}
 	}
 }
@@ -326,7 +378,13 @@ export async function* stream(
 // What a buffered run produced. Most callers want the text only (complete);
 // the review runs also need how many notes it staged, which the agent loop
 // already sees as the tool calls resolve.
-export type CompletionResult = { content: string; notes: number };
+export type CompletionResult = {
+	content: string;
+	notes: number;
+	// Set when the agent loop had to withdraw its tools before the model was
+	// done: 'budget' for the tool-call ceiling, 'context' for the window guard.
+	stopped?: 'context' | 'budget';
+};
 
 export async function complete(
 	db: Database,
@@ -351,8 +409,8 @@ export async function completeDetailed(
 	// Buffered callers have no stream to carry staged surfaces; the proposals
 	// surface only on the streaming chat path.
 	if (prepared.tools) {
-		const { content, notes } = await runAgent(db, prepared, req);
-		return { content, notes };
+		const { content, notes, stopped } = await runAgent(db, prepared, req);
+		return { content, notes, stopped };
 	}
 	const response = await prepared.provider.respond(
 		{
