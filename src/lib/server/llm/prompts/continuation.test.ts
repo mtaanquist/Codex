@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildContinuationMessage, continuationTail } from './continuation';
+import { buildContinuationMessage, continuationTail, TAIL_BUDGET_TOKENS } from './continuation';
+
+// The bounds below follow the budget rather than restating it, so recalibrating
+// the budget does not fail these tests for the wrong reason.
+const MARKER = '[...] ';
+const TAIL_CHARS = TAIL_BUDGET_TOKENS * 4;
 
 describe('buildContinuationMessage', () => {
 	it('asks for a bare continuation and includes the preceding prose', () => {
@@ -23,7 +28,7 @@ describe('buildContinuationMessage', () => {
 			'---'
 		]);
 		expect(lines[5]).toMatch(/^\[\.\.\.\] /);
-		expect(lines[5].length).toBeLessThan(6100);
+		expect(lines[5].length).toBeLessThanOrEqual(TAIL_CHARS + MARKER.length);
 	});
 });
 
@@ -36,11 +41,11 @@ describe('continuationTail', () => {
 	it('cuts long prose to the budget and marks the cut', () => {
 		const before = 'a'.repeat(500) + ' ' + 'the quick brown fox. '.repeat(2000);
 		const tail = continuationTail(before);
-		expect(tail.startsWith('[...] ')).toBe(true);
+		expect(tail.startsWith(MARKER)).toBe(true);
 		expect(tail).not.toContain('a'.repeat(500));
-		// About 1500 tokens of prose, plus the marker.
-		expect(tail.length).toBeLessThanOrEqual(6006);
-		expect(before.endsWith(tail.slice('[...] '.length))).toBe(true);
+		// The budget's worth of prose, plus the marker.
+		expect(tail.length).toBeLessThanOrEqual(TAIL_CHARS + MARKER.length);
+		expect(before.endsWith(tail.slice(MARKER.length))).toBe(true);
 	});
 
 	it('does not open mid-word', () => {
@@ -48,15 +53,16 @@ describe('continuationTail', () => {
 		// one of them.
 		const before = 'Halden ' + 'unmistakable '.repeat(2000);
 		const tail = continuationTail(before);
-		const firstWord = tail.slice('[...] '.length).split(/\s/)[0];
+		const firstWord = tail.slice(MARKER.length).split(/\s/)[0];
 		expect(firstWord).toBe('unmistakable');
 	});
 
 	it('keeps a whole word when the cut lands on a boundary', () => {
-		// 6000 characters of prose after a 4-char lead-in, so the cut falls exactly
-		// on the space before 'lantern'.
-		const before = 'The lantern' + ' lantern'.repeat(749) + ' lantern';
+		// A four-character word divides the budget exactly, so with one word more
+		// than the budget holds the cut falls on the space before a whole word.
+		const words = TAIL_CHARS / ' abc'.length;
+		const before = 'The' + ' abc'.repeat(words + 1);
 		const tail = continuationTail(before);
-		expect(tail).toBe('[...] ' + 'lantern' + ' lantern'.repeat(749));
+		expect(tail).toBe(MARKER + 'abc' + ' abc'.repeat(words - 1));
 	});
 });

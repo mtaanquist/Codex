@@ -39,8 +39,10 @@ export function estimateTokens(text: string): number {
 	return Math.ceil(text.length / 4);
 }
 
-// Provisional. Calibrate against a corpus before trusting it.
-const DEFAULT_BUDGET_TOKENS = 6000;
+// Provisional. Calibrate against a corpus before trusting it. Exported as the
+// one place the figure lives: the survey fallback in scene-review.ts keeps its
+// own copy of 6000 and should take this instead.
+export const DEFAULT_BUDGET_TOKENS = 6000;
 
 export type ContextTier = { name: string; text: string };
 
@@ -470,6 +472,16 @@ export function buildSystemMessage(
 const RECAP_BUDGET_TOKENS = 8000;
 const RECAP_BODY_EXCERPT_CHARS = 1500;
 
+// The head of a body, cut to a character budget and marked where it was cut, for
+// the places that stand a scene's opening in for a summary it does not have yet.
+// The survey listing in prompts/review.ts builds the same excerpt from its own
+// constant and should take this instead.
+export function bodyExcerpt(body: string, chars = RECAP_BODY_EXCERPT_CHARS): string {
+	const trimmed = body.trim();
+	if (trimmed.length <= chars) return trimmed;
+	return trimmed.slice(0, chars).trimEnd() + ' [...]';
+}
+
 function recapSceneBlock(scene: RecapScene): string {
 	const heading = `### ${scene.title?.trim() || 'Untitled'}`;
 	const summary = scene.summaryMd?.trim();
@@ -477,8 +489,7 @@ function recapSceneBlock(scene: RecapScene): string {
 	let content: string;
 	if (summary) content = summary;
 	else if (!body) content = '(empty)';
-	else if (body.length <= RECAP_BODY_EXCERPT_CHARS) content = body;
-	else content = body.slice(0, RECAP_BODY_EXCERPT_CHARS).trimEnd() + ' [...]';
+	else content = bodyExcerpt(body);
 	return `${heading}\n${content}`;
 }
 

@@ -8,7 +8,8 @@ import { estimateTokens } from '../context/assemble.ts';
 // Provisional: a per-endpoint context-window setting will replace this. A short
 // tail keeps prefill small, which is what makes the turnaround quick on a local
 // model.
-const TAIL_BUDGET_TOKENS = 1500;
+// Exported so the unit test can derive its bounds instead of restating them.
+export const TAIL_BUDGET_TOKENS = 1500;
 
 // The tail of the prose before the cursor, trimmed to the budget. Marks the cut
 // the way a body excerpt does, and skips a partial first word so the prompt does
