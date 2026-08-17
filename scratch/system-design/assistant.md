@@ -899,6 +899,27 @@ calls the gateway, which proxies through the egress guard.
 - [to build] Entry points (left-sidebar "Review this scene/chapter", story
   settings "Review this story", palette command). Whole-story review is a
   background worker job (see below).
+- [built] The cross-scene continuity pass (the tail of a full review, and the
+  standalone story and universe continuity jobs) runs in two stages instead of
+  one whole-story turn. Stage A (survey) sends the scene summaries in story
+  order, with a body excerpt where a scene has no summary yet, on a lean context
+  (the frame and the entities), offers no tools, and asks for candidate
+  contradictions as a JSON array of `{ sceneIds, claim }`. The adapters have no
+  structured-output mode, so the reply is parsed leniently (the first JSON array
+  in it, fence or prose around it tolerated) with one corrective retry before
+  the pass fails. A listing that outgrows its budget (half the reviewer model's
+  context window, the provisional 6000 tokens where the window is unknown) is
+  split into sequential chunks, each surveyed on its own. Stage B (confirm)
+  takes each candidate in turn, up to a cap of 24, with the full text of the
+  scenes it names fetched server-side (bodies capped to fit) and only
+  `leave_comment` and `suggest_edit` offered; a note is staged only if the
+  contradiction is real, and a scene id the survey invented is dropped. This
+  replaces the single pass that put the whole story in one context and read
+  every scene through `get_scene`, which overflowed a small window silently and
+  ran into the gateway's 200-call ceiling on a long story. A pass that finds
+  nothing now stages nothing (the old design had the model leave an "everything
+  holds together" comment on the first scene); the job's notification already
+  reports that it found no continuity issues.
 
 ### Background jobs - sequencing steps 4 and 7
 
