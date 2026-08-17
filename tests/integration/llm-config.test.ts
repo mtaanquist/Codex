@@ -293,6 +293,32 @@ describe('account config round-trip', () => {
 		expect(view.tuning.coauthor).toEqual({ temperature: 0 });
 		expect(view.tuning.continuation).toBeUndefined();
 	});
+
+	it('stores both settings of per-role thinking, and drops junk', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: {
+				reviewer: { thinking: true },
+				continuation: { thinking: false },
+				coauthor: { thinking: 'no' as unknown as boolean },
+				chat: { thinking: false, temperature: 0.4 }
+			}
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.tuning.reviewer).toEqual({ thinking: true });
+		expect(view.tuning.continuation).toEqual({ thinking: false });
+		expect(view.tuning.coauthor).toBeUndefined();
+		expect(view.tuning.chat).toEqual({ thinking: false, temperature: 0.4 });
+	});
 });
 
 describe('story override merge', () => {

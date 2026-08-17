@@ -64,6 +64,13 @@ function serialiseMessages(messages: ChatMessage[]): unknown[] {
 	});
 }
 
+// Ask the endpoint to skip a reasoning model's thinking pass entirely, rather
+// than generating it and having us strip it. There is no standard field for
+// this: llama.cpp (and llama-server behind it) forwards chat_template_kwargs
+// into the model's chat template, where Qwen3 and the R1 distills read
+// enable_thinking. Another server's spelling belongs here, alongside it.
+const SUPPRESS_THINKING = { chat_template_kwargs: { enable_thinking: false } };
+
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	return JSON.stringify({
 		model: req.model,
@@ -85,6 +92,7 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		// Sampling temperature for this role, when the account config sets one;
 		// otherwise the endpoint's own default applies.
 		...(typeof req.tuning?.temperature === 'number' ? { temperature: req.tuning.temperature } : {}),
+		...(req.tuning?.thinking === false ? SUPPRESS_THINKING : {}),
 		stream,
 		// Ask streaming responses to report token usage in a final frame (widely
 		// supported and ignored by endpoints that predate it).

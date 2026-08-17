@@ -327,6 +327,30 @@ describe('openaiProvider.respond', () => {
 		expect(bodies[1]).not.toHaveProperty('temperature');
 	});
 
+	it('suppresses thinking only when the role turns it off', async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16, tuning: { thinking: false } },
+			conn,
+			http
+		);
+		await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16, tuning: { thinking: true } },
+			conn,
+			http
+		);
+		await openaiProvider.respond({ model: 'm', messages: [], maxTokens: 16 }, conn, http);
+		expect(bodies[0].chat_template_kwargs).toEqual({ enable_thinking: false });
+		expect(bodies[1]).not.toHaveProperty('chat_template_kwargs');
+		expect(bodies[2]).not.toHaveProperty('chat_template_kwargs');
+		// Anything but an explicit off leaves the request exactly as it was.
+		expect(bodies[1]).toEqual(bodies[2]);
+	});
+
 	it('throws on a non-2xx status', async () => {
 		const http: HttpRequest = async () => jsonResponse(500, { error: 'boom' });
 		await expect(

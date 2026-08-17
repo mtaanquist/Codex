@@ -71,7 +71,8 @@ export type CompletionRequest = {
 	// Per-role request tuning from the account config. The Anthropic adapter
 	// maps thinking to `thinking: {type: "adaptive"}` (omitted when off; an
 	// explicit "disabled" is rejected by some models) and effort to
-	// `output_config.effort`; the OpenAI-compatible adapter sends temperature.
+	// `output_config.effort`; the OpenAI-compatible adapter sends temperature,
+	// and on thinking === false asks the endpoint to skip the thinking pass.
 	// Each adapter ignores the fields it has no use for.
 	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
 };

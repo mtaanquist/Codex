@@ -24,6 +24,11 @@ export type ModelMap = Partial<Record<AssistantRole, string>>;
 // level (the Anthropic adapter), and a sampling temperature (the
 // OpenAI-compatible adapter). All optional; absent means the provider's
 // defaults, and each adapter ignores the fields it has no use for.
+//
+// thinking has three states, and both explicit ones are stored: true asks
+// Anthropic for adaptive thinking, false asks an OpenAI-compatible endpoint to
+// suppress a reasoning model's thinking pass (the Anthropic adapter treats
+// false the same as absent), and absent leaves the endpoint's default alone.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 export type RoleTuning = { thinking?: boolean; effort?: EffortLevel; temperature?: number };
@@ -43,7 +48,7 @@ function normaliseTuning(raw: unknown): TuningMap {
 				effort?: unknown;
 				temperature?: unknown;
 			};
-			if (thinking === true) tuning.thinking = true;
+			if (thinking === true || thinking === false) tuning.thinking = thinking;
 			if (typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort)) {
 				tuning.effort = effort as EffortLevel;
 			}
