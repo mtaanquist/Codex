@@ -14,6 +14,19 @@ describe('buildReviewMessage', () => {
 		expect(message).toContain('leave_comment');
 	});
 
+	it('tells the reviewer to read the scene when its text is not in the message', () => {
+		const message = buildReviewMessage({ id: 's1', title: null });
+		expect(message).toContain('Read it in full with get_scene');
+		expect(message).not.toContain('Do not call get_scene');
+	});
+
+	it('forbids a re-read when the scene text rides in the message', () => {
+		const message = buildReviewMessage({ id: 's1', title: null }, [], [], true);
+		expect(message).toContain("The scene's full text is already in this message.");
+		expect(message).toContain('Do not call get_scene');
+		expect(message).not.toContain('Read it in full with get_scene');
+	});
+
 	it('falls back to a generic label for a blank or null title', () => {
 		expect(buildReviewMessage({ id: 's1', title: null })).toContain('"this scene"');
 		expect(buildReviewMessage({ id: 's1', title: '   ' })).toContain('"this scene"');

@@ -85,16 +85,23 @@ function focusInstruction(categories: ReviewCategory[]): string {
 	].join('\n');
 }
 
+// sceneTextIncluded says whether the caller put the scene's prose in the
+// request already (the scene-local tier survived the budget). A weak model
+// re-reads the scene it has been handed unless it is told plainly not to, so
+// the instruction is definitive either way, never a hedge.
 export function buildReviewMessage(
 	scene: { id: string; title: string | null },
 	prior: PriorNote[] = [],
-	categories: ReviewCategory[] = []
+	categories: ReviewCategory[] = [],
+	sceneTextIncluded = false
 ): string {
 	const title = (scene.title ?? '').trim() || 'this scene';
 	const sparing = categories.length === 0;
 	const lines = [
 		`Review the scene "${title}" (id: ${scene.id}).`,
-		'Read it in full with get_scene if you do not already have the text, then leave your feedback through your tools, anchored to the scene:',
+		sceneTextIncluded
+			? "The scene's full text is already in this message. Do not call get_scene for it. Leave your feedback through your tools, anchored to the scene:"
+			: 'Read it in full with get_scene, then leave your feedback through your tools, anchored to the scene:',
 		'- leave_comment for an observation about continuity, characterisation, pacing, or clarity; quote the passage you mean.',
 		"- suggest_edit for a concrete line edit: replace an exact passage with an improved version, keeping the change minimal and faithful to the author's voice.",
 		sparing
