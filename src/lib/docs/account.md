@@ -71,8 +71,10 @@ contacts a model on its own.
   which smaller models handle far more reliably.
 - **Spend cap per review**: the most one background review may spend before it
   stops. It checks between scenes, so it never stops half way through one, and it
-  tells you how far it got and what it spent. Raise the cap or start the same
-  review again to carry on from where it stopped. Leave the box empty for no cap.
+  tells you how far it got and what it spent. To carry on, either raise the cap
+  and run it again, or run the same review again as it is: a run over the same
+  scope (the same chapter, or the same whole story) skips the scenes the stopped
+  run already read and starts from a fresh budget. Leave the box empty for no cap.
   This needs your endpoint to publish prices for the model; without a price the
   review says the cap could not be applied rather than stopping or ignoring it.
 - **Warn above**: before a chapter or whole-story review starts, the review window
@@ -103,7 +105,9 @@ contacts a model on its own.
   the cost of more tokens and a slower reply. Off tells the endpoint to skip that
   step, which is what you want for Continuation, Co-author, and Background work,
   where waiting is worse than a slightly plainer answer. Default leaves your
-  endpoint to do whatever it already does.
+  endpoint to do whatever it already does. On the Claude provider, Off does the
+  same thing as Default: Claude models decide for themselves whether to think, so
+  the setting only ever turns thinking on.
 - **Temperature**: on any endpoint other than Claude, each role has a temperature
   box, from 0 to 2. Lower keeps the model close to the most likely wording, which
   is what you want for the Reviewer (around 0.2) and for Background work, where
