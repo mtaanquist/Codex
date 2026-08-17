@@ -1207,3 +1207,176 @@ describe('gateway context guard', () => {
 		expect(result.stopped).toBeUndefined();
 	});
 });
+
+// A local endpoint reloading a model answers one request with a 500 and the
+// next one fine; the round should not die on the blip.
+describe('gateway request retries', () => {
+	const noHttp: HttpRequest = async () => {
+		throw new Error('the injected provider should not call the transport');
+	};
+	// Injected so the backoff does not slow the suite down.
+	const noSleep = async () => {};
+
+	// Fails the first attempt with the given error, then answers.
+	function flakyProvider(
+		err: Error,
+		content: string
+	): { provider: Provider; attempts: () => number } {
+		let attempts = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				if (attempts === 1) throw err;
+				return { content, toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, attempts: () => attempts };
+	}
+
+	it('retries a 5xx on the plain completion path', async () => {
+		await configure(true);
+		const flaky = flakyProvider(
+			new Error('Endpoint returned 503: model loading'),
+			'second time lucky'
+		);
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [{ role: 'user', content: 'hi' }] },
+			{ provider: flaky.provider, http: noHttp, sleep: noSleep }
+		);
+		expect(text).toBe('second time lucky');
+		expect(flaky.attempts()).toBe(2);
+	});
+
+	it('retries a 429', async () => {
+		await configure(true);
+		const flaky = flakyProvider(new Error('Endpoint returned 429: slow down'), 'after the wait');
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider: flaky.provider, http: noHttp, sleep: noSleep }
+		);
+		expect(text).toBe('after the wait');
+		expect(flaky.attempts()).toBe(2);
+	});
+
+	it("dispatches a retried round's tools exactly once", async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// The request that carries the edit fails once at the transport, then
+		// succeeds. The retry re-sends the request only, so the staged edit lands
+		// a single time.
+		let attempts = 0;
+		let answered = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				if (attempts === 1) throw new Error('fetch failed');
+				answered += 1;
+				return answered === 1
+					? {
+							content: '',
+							toolCalls: [
+								{
+									id: 'c1',
+									name: 'suggest_edit',
+									arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+								}
+							]
+						}
+					: { content: 'staged it', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'edit it' }]
+			},
+			{ provider, http: noHttp, sleep: noSleep }
+		);
+		expect(text).toBe('staged it');
+		expect(attempts).toBe(3);
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(1);
+	});
+
+	it('gives up after two retries and surfaces the failure', async () => {
+		await configure(true);
+		let attempts = 0;
+		const alwaysDown: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				throw new Error('Endpoint returned 500: upstream error');
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: alwaysDown, http: noHttp, sleep: noSleep }
+			)
+		).rejects.toThrow(/500/);
+		expect(attempts).toBe(3);
+	});
+
+	it('never retries a bad request, an abort, or an aborted signal', async () => {
+		await configure(true);
+		async function attemptsFor(err: Error, signal?: AbortSignal): Promise<number> {
+			let attempts = 0;
+			const provider: Provider = {
+				async *chatStream() {
+					yield { type: 'done' };
+				},
+				async respond() {
+					attempts += 1;
+					throw err;
+				},
+				async listModels() {
+					return [];
+				}
+			};
+			await expect(
+				complete(
+					db,
+					{ userId, role: 'chat', messages: [], signal },
+					{ provider, http: noHttp, sleep: noSleep }
+				)
+			).rejects.toThrow();
+			return attempts;
+		}
+		expect(await attemptsFor(new Error('Endpoint returned 400: bad request'))).toBe(1);
+		expect(await attemptsFor(new Error('Endpoint returned 401: no key'))).toBe(1);
+		const aborted = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+		expect(await attemptsFor(aborted)).toBe(1);
+		// A transport error that would normally be retried, but the caller has
+		// walked away.
+		const controller = new AbortController();
+		controller.abort();
+		expect(await attemptsFor(new Error('fetch failed'), controller.signal)).toBe(1);
+	});
+});

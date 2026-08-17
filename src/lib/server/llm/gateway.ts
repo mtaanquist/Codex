@@ -2,7 +2,7 @@ import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
 import { modelContextWindow, pickModel, resolveLlmConfig, type AssistantRole } from './config.ts';
 import { estimateTokens } from './context/assemble.ts';
-import { egressHttpRequest, egressPolicy } from './egress.ts';
+import { EgressDeniedError, egressHttpRequest, egressPolicy } from './egress.ts';
 import { providerFor } from './providers/index.ts';
 import { buildPersonaPrompt } from './prompts/persona.ts';
 import { recordAssistantUsage } from './usage.ts';
@@ -16,9 +16,11 @@ import {
 import { MINIMAL_TOOL_NAMES, toolSpecs } from './tools/registry.ts';
 import type {
 	ChatMessage,
+	CompletionRequest,
 	Connection,
 	HttpRequest,
 	Provider,
+	ProviderResponse,
 	StreamEvent,
 	ToolSpec
 } from './providers/types.ts';
@@ -110,7 +112,58 @@ export type GatewayRequest = {
 export type GatewayDeps = {
 	provider?: Provider;
 	http?: HttpRequest;
+	// Waits out the backoff between request retries; tests pass a no-op so the
+	// suite does not sleep.
+	sleep?: (ms: number) => Promise<void>;
 };
+
+// A local endpoint reloading a model, or a blip on the way to a hosted one,
+// fails one request and is fine on the next. Two short retries cover that
+// without keeping a caller waiting when the endpoint is really down.
+const RETRY_DELAYS_MS = [250, 1000];
+
+// Transient means "the same request might work in a moment": a thrown
+// transport error (socket reset, DNS, connection refused), or a 429/5xx the
+// adapters report as `Endpoint returned <status>: ...`. A 4xx other than 429 is
+// the request's own fault, an egress denial is policy, and an abort was asked
+// for; none of those improve on a second try.
+function isTransientFailure(err: unknown): boolean {
+	if (err instanceof EgressDeniedError) return false;
+	if (!(err instanceof Error)) return false;
+	if (err.name === 'AbortError') return false;
+	const reported = /^Endpoint returned (\d{3})/.exec(err.message);
+	if (reported) {
+		const status = Number(reported[1]);
+		return status === 429 || (status >= 500 && status < 600);
+	}
+	return true;
+}
+
+// One provider request, retried on a transient failure. This wraps the REQUEST
+// only: tool dispatch happens after a response is in hand, so a retry can never
+// re-run a write tool.
+async function respondWithRetry(
+	p: Prepared,
+	req: GatewayRequest,
+	request: CompletionRequest
+): Promise<ProviderResponse> {
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			return await p.provider.respond(request, p.conn, p.http, req.signal);
+		} catch (err) {
+			if (attempt >= RETRY_DELAYS_MS.length || req.signal?.aborted || !isTransientFailure(err)) {
+				throw err;
+			}
+			logEvent('warn', 'assistant.retry', {
+				userId: req.userId,
+				model: p.model,
+				attempt: attempt + 1,
+				error: err instanceof Error ? err.message : 'request failed'
+			});
+			await p.sleep(RETRY_DELAYS_MS[attempt]);
+		}
+	}
+}
 
 type Prepared = {
 	conn: Connection;
@@ -129,7 +182,10 @@ type Prepared = {
 	// The context window of this turn's model, in tokens, where it is known;
 	// carried for the callers that size what they send.
 	contextWindow?: number;
+	sleep: (ms: number) => Promise<void>;
 };
+
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
 	const resolved = await resolveLlmConfig(db, req.userId, req.storyId);
@@ -205,7 +261,8 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				? Math.max(MINIMAL_PROFILE_MIN_BUDGET, Math.floor(budget / MINIMAL_PROFILE_BUDGET_DIVISOR))
 				: budget,
 		tuning: resolved.config.tuning[req.role],
-		contextWindow
+		contextWindow,
+		sleep: deps.sleep ?? realSleep
 	};
 }
 
@@ -280,12 +337,13 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			}
 		}
 		const round = async (maxTokens: number) => {
-			const result = await p.provider.respond(
-				{ model: p.model, messages, maxTokens, tools: offerTools, tuning: p.tuning },
-				p.conn,
-				p.http,
-				req.signal
-			);
+			const result = await respondWithRetry(p, req, {
+				model: p.model,
+				messages,
+				maxTokens,
+				tools: offerTools,
+				tuning: p.tuning
+			});
 			await recordUsage(db, p, req, result.usage);
 			return result;
 		};
@@ -412,17 +470,12 @@ export async function completeDetailed(
 		const { content, notes, stopped } = await runAgent(db, prepared, req);
 		return { content, notes, stopped };
 	}
-	const response = await prepared.provider.respond(
-		{
-			model: prepared.model,
-			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
-			tuning: prepared.tuning
-		},
-		prepared.conn,
-		prepared.http,
-		req.signal
-	);
+	const response = await respondWithRetry(prepared, req, {
+		model: prepared.model,
+		messages: prepared.messages,
+		maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
+		tuning: prepared.tuning
+	});
 	await recordUsage(db, prepared, req, response.usage);
 	return { content: response.content, notes: 0 };
 }
