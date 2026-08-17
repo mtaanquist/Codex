@@ -1262,6 +1262,10 @@ export type ReviewRunState = {
 	summariesRefreshed?: boolean;
 	// Set when the run was cancelled part-way rather than finishing.
 	aborted?: boolean;
+	// Set when the run stopped because it had spent the account's ceiling, with
+	// what it had spent in USD. A retry of the same job resumes from here.
+	capped?: boolean;
+	spentUsd?: number;
 };
 
 // The progress of one queued review, keyed by its pg-boss job id: what the

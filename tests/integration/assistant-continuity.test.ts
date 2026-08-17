@@ -210,7 +210,7 @@ describe('reviewStoryContinuity', () => {
 		const result = await reviewStoryContinuity(db, { userId, storyId }, { provider });
 		expect(result.ran).toBe(true);
 		expect(result.candidates).toBe(2);
-		expect(result.capped).toBe(false);
+		expect(result.candidatesCapped).toBe(false);
 		expect(result.notes).toBe(1);
 
 		// Survey, confirm one (two rounds around the tool call), confirm two.

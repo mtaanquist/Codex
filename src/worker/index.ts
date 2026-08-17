@@ -238,6 +238,9 @@ await boss.work<{
 				} else {
 					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} across "${universe.name}".`;
 				}
+				if (result.capped) {
+					title = `The continuity pass on "${universe.name}" stopped at about $${(result.spentUsd ?? 0).toFixed(2)}. Raise the cap in settings or run the review again to continue.`;
+				}
 				const problem = firstFailure(result.failures);
 				if (problem) title += ` ${problem}`;
 			} catch (err) {
@@ -285,6 +288,9 @@ await boss.work<{
 					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
 				}
 				if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
+				if (result.capped) {
+					title = `The continuity pass on "${story.title}" stopped at about $${(result.spentUsd ?? 0).toFixed(2)}. Raise the cap in settings or run the review again to continue.`;
+				}
 				const problem = firstFailure(result.failures);
 				if (problem) title += ` ${problem}`;
 			} catch (err) {
@@ -308,7 +314,9 @@ await boss.work<{
 		});
 		const problem = firstFailure(result.failures);
 		let title: string;
-		if (result.aborted) {
+		if (result.capped) {
+			title = `The review of "${story.title}" stopped after ${result.reviewed} of ${result.total} scenes at about $${(result.spentUsd ?? 0).toFixed(2)}. Raise the cap in settings or run the review again to continue.`;
+		} else if (result.aborted) {
 			title = `The review of "${story.title}" was stopped before it finished.`;
 		} else if (result.reviewed === 0 && result.failed > 0) {
 			title = `The Assistant could not review "${story.title}": ${problem}`;

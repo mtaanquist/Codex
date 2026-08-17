@@ -69,6 +69,16 @@ contacts a model on its own.
   own machine: it is then offered only the three it needs most (read a scene,
   suggest an edit, leave a comment), and it stops sooner instead of retrying,
   which smaller models handle far more reliably.
+- **Spend cap per review**: the most one background review may spend before it
+  stops. It checks between scenes, so it never stops half way through one, and it
+  tells you how far it got and what it spent. Raise the cap or start the same
+  review again to carry on from where it stopped. Leave the box empty for no cap.
+  This needs your endpoint to publish prices for the model; without a price the
+  review says the cap could not be applied rather than stopping or ignoring it.
+- **Warn above**: before a chapter or whole-story review starts, the review window
+  shows what it will send and, where a price is known, what that costs. Above this
+  figure it asks you to confirm again. Leave the box empty for the default of
+  2.00.
 - **Models per role**: pick which model handles each kind of help. Select Discover
   models to fill the lists from your endpoint, then choose one per role. The roles
   are Rubber duck (the side panel), Co-author (passages you can insert),

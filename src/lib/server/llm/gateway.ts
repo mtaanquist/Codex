@@ -22,8 +22,19 @@ import type {
 	Provider,
 	ProviderResponse,
 	StreamEvent,
+	TokenUsage,
 	ToolSpec
 } from './providers/types.ts';
+
+// Adds one request's reported counts to a running total, so a caller can price
+// a whole agentic turn. Undefined stays undefined until something is reported.
+function addUsage(total: TokenUsage | undefined, next?: TokenUsage): TokenUsage | undefined {
+	if (!next) return total;
+	return {
+		promptTokens: (total?.promptTokens ?? 0) + next.promptTokens,
+		completionTokens: (total?.completionTokens ?? 0) + next.completionTokens
+	};
+}
 
 // The gateway is the one public entry the rest of the app calls. It resolves
 // config, enforces the egress policy, picks the model and provider, runs the
@@ -295,6 +306,9 @@ type AgentResult = {
 	surfaces: Extract<StreamEvent, { type: 'proposal' }>[];
 	// Review notes the run staged, counted as the tool calls resolve.
 	notes: number;
+	// The token counts of every request this turn made, summed; the rounds of an
+	// agentic turn all land here. Absent when the endpoint reported none.
+	usage?: TokenUsage;
 	// Why the run had to stop calling tools, when it did: the tool-call budget
 	// ran out, or the conversation neared the model's context window. Unset when
 	// the model finished on its own.
@@ -320,6 +334,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 	let estimated = conversationTokens(messages);
 	let calls = 0;
 	let notes = 0;
+	let usage: TokenUsage | undefined;
 	let stopped: AgentResult['stopped'];
 	const push = (message: ChatMessage) => {
 		messages.push(message);
@@ -349,6 +364,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				tuning: p.tuning
 			});
 			await recordUsage(db, p, req, messages, result.usage);
+			usage = addUsage(usage, result.usage);
 			return result;
 		};
 		// A reply cut off at the token cap is unusable: its text stops mid-sentence
@@ -365,7 +381,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			}
 		}
 		if (!offerTools || response.toolCalls.length === 0) {
-			return { content: response.content, surfaces, notes, stopped };
+			return { content: response.content, surfaces, notes, usage, stopped };
 		}
 
 		push({
@@ -446,6 +462,11 @@ export type CompletionResult = {
 	// Set when the agent loop had to withdraw its tools before the model was
 	// done: 'budget' for the tool-call ceiling, 'context' for the window guard.
 	stopped?: 'context' | 'budget';
+	// Which model answered, and the token counts of every request this run made,
+	// summed. Together they let a caller price what the run cost (see spend.ts);
+	// usage is absent when the endpoint reported no counts.
+	model: string;
+	usage?: TokenUsage;
 };
 
 export async function complete(
@@ -471,8 +492,8 @@ export async function completeDetailed(
 	// Buffered callers have no stream to carry staged surfaces; the proposals
 	// surface only on the streaming chat path.
 	if (prepared.tools) {
-		const { content, notes, stopped } = await runAgent(db, prepared, req);
-		return { content, notes, stopped };
+		const { content, notes, usage, stopped } = await runAgent(db, prepared, req);
+		return { content, notes, usage, stopped, model: prepared.model };
 	}
 	const response = await respondWithRetry(prepared, req, {
 		model: prepared.model,
@@ -481,5 +502,5 @@ export async function completeDetailed(
 		tuning: prepared.tuning
 	});
 	await recordUsage(db, prepared, req, prepared.messages, response.usage);
-	return { content: response.content, notes: 0 };
+	return { content: response.content, notes: 0, usage: response.usage, model: prepared.model };
 }

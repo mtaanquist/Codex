@@ -30,6 +30,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		notes: run.notes,
 		failures: run.failures,
 		summariesRefreshed: run.summariesRefreshed ?? false,
-		aborted: run.aborted ?? false
+		aborted: run.aborted ?? false,
+		capped: run.capped ?? false,
+		spentUsd: run.spentUsd ?? null
 	});
 };

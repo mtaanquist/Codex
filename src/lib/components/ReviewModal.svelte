@@ -56,9 +56,29 @@
 		completed?: number;
 		total?: number;
 		currentSceneTitle?: string | null;
+		reviewed?: number;
 		notes?: number;
 		failures?: { sceneTitle?: string | null; message: string }[];
+		// The run stopped because it reached the account's spend cap.
+		capped?: boolean;
+		spentUsd?: number | null;
 	};
+
+	// What the pre-flight estimate reports, and the confirm step built on it. A
+	// cost figure is present only when the model has a known price.
+	type Estimate = {
+		scenes: number;
+		estTokens: number;
+		model: string;
+		basis: 'history' | 'static';
+		estCostUsd?: number;
+		warnUsd: number;
+		capUsd?: number;
+		capEnforceable: boolean;
+	};
+
+	const money = (usd: number) => usd.toFixed(2);
+	const thousands = (n: number) => n.toLocaleString('en-US');
 
 	const PHASE_LABEL: Record<string, string> = {
 		summaries: 'Updating scene summaries',
@@ -98,9 +118,19 @@
 		}
 	}
 
+	// The confirm step: null until an estimate comes back, then the panel that
+	// says what the run would send before anything is queued.
+	let estimate = $state<Estimate | null>(null);
+	let estimating = $state(false);
+	const warned = $derived(
+		estimate?.estCostUsd !== undefined && estimate.estCostUsd > estimate.warnUsd
+	);
+
 	function close() {
 		runToken += 1;
 		progress = null;
+		estimate = null;
+		estimating = false;
 		closeReviewModal();
 	}
 
@@ -126,6 +156,8 @@
 			picked = { mechanics: false, prose: false, lore: false };
 			runToken += 1;
 			progress = null;
+			estimate = null;
+			estimating = false;
 		}
 		lastOpen = reviewModal.open;
 	});
@@ -140,6 +172,8 @@
 		{ id: 'lore', label: 'Entities and lore' }
 	];
 
+	// Asks what the run would send before queueing it. An estimate that fails
+	// never blocks the review: the run starts as it always did.
 	async function start() {
 		if (level === 'scene' && sceneId) {
 			close();
@@ -151,8 +185,33 @@
 			);
 			return;
 		}
+		estimating = true;
+		try {
+			const response = await fetch('/api/assistant/review-job', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					storyId,
+					chapterId: level === 'chapter' ? chapterId : undefined,
+					categories,
+					estimate: true
+				})
+			});
+			if (!response.ok) throw new Error(`estimate failed: ${response.status}`);
+			estimate = (await response.json()) as Estimate;
+			estimating = false;
+			return;
+		} catch (err) {
+			console.warn('review estimate unavailable, starting the review anyway:', err);
+			estimating = false;
+		}
+		await run();
+	}
+
+	async function run() {
 		// A chapter or story pass runs in the background: the modal turns into a
 		// progress panel over it until the writer closes it.
+		estimate = null;
 		runToken += 1;
 		const token = runToken;
 		progress = { state: 'running' };
@@ -214,6 +273,13 @@
 							<p class="rm-note">
 								Check the Assistant endpoint on your account page, then try again.
 							</p>
+						{:else if progress.capped}
+							<p class="rm-phase">
+								Stopped after {progress.reviewed ?? 0} of {progress.total ?? 0} scenes at about ${money(
+									progress.spentUsd ?? 0
+								)}.
+							</p>
+							<p class="rm-note">Raise the cap in settings or run the review again to continue.</p>
 						{:else if progress.state === 'done' || progress.phase === 'done'}
 							<p class="rm-phase">Review finished.</p>
 							<p class="rm-note">
@@ -247,6 +313,33 @@
 									</li>
 								{/each}
 							</ul>
+						{/if}
+					</div>
+				{:else if estimate}
+					<div class="rm-confirm" class:rm-warn={warned}>
+						<p class="rm-phase">
+							{estimate.scenes} scene{estimate.scenes === 1 ? '' : 's'} to review, about {thousands(
+								estimate.estTokens
+							)} tokens to send.
+						</p>
+						{#if estimate.estCostUsd !== undefined}
+							<p class="rm-note">
+								That is about ${money(estimate.estCostUsd)} to send; the model's replies cost extra.
+							</p>
+						{:else}
+							<p class="rm-note">This model has no price on record, so the cost cannot be shown.</p>
+						{/if}
+						{#if estimate.capUsd !== undefined && !estimate.capEnforceable}
+							<p class="rm-note">
+								Your spend cap of ${money(estimate.capUsd)} cannot be applied to a model with no known
+								price.
+							</p>
+						{/if}
+						{#if warned}
+							<p class="rm-note">
+								That is more than your warning limit of ${money(estimate.warnUsd)}. Review a chapter
+								at a time to spend less.
+							</p>
 						{/if}
 					</div>
 				{:else}
@@ -292,9 +385,23 @@
 				<div class="modal-foot-note"></div>
 				{#if progress}
 					<button class="btn btn-sm btn-primary" type="button" onclick={close}>Close</button>
+				{:else if estimate}
+					<button class="btn btn-sm btn-secondary" type="button" onclick={() => (estimate = null)}
+						>Back</button
+					>
+					<button class="btn btn-sm btn-primary" type="button" onclick={run}>
+						{warned ? 'Start anyway' : 'Start review'}
+					</button>
 				{:else}
 					<button class="btn btn-sm btn-secondary" type="button" onclick={close}>Cancel</button>
-					<button class="btn btn-sm btn-primary" type="button" onclick={start}>Start review</button>
+					<button
+						class="btn btn-sm btn-primary"
+						type="button"
+						onclick={start}
+						disabled={estimating}
+					>
+						{estimating ? 'Checking...' : 'Start review'}
+					</button>
 				{/if}
 			</div>
 		</div>
@@ -342,8 +449,20 @@
 		font-size: var(--text-meta);
 		color: var(--text-faint);
 	}
-	.rm-progress {
+	.rm-progress,
+	.rm-confirm {
 		padding: 4px 0;
+	}
+	/* Above the warning threshold the confirm step is deliberately louder, so an
+	   expensive run is not started by reflex. */
+	.rm-confirm.rm-warn {
+		padding: 12px 14px;
+		border: 1px solid var(--danger, #b4402f);
+		border-radius: var(--radius-sm, 4px);
+		background: color-mix(in srgb, var(--danger, #b4402f) 8%, transparent);
+	}
+	.rm-confirm.rm-warn .rm-phase {
+		font-weight: 600;
 	}
 	.rm-phase {
 		margin: 0;

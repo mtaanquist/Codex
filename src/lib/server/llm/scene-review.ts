@@ -33,6 +33,7 @@ import {
 import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig } from './config.ts';
+import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
 import { logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
 
@@ -50,7 +51,7 @@ const FOCUSED_PASS_BUDGET = 64;
 // anything, so it keeps the full stack.
 const LEAN_REVIEW_TIERS = ['frame', 'summaries', 'scene-local'] as const;
 
-function reviewTiers(categories: ReviewCategory[]): readonly string[] | undefined {
+export function reviewTiers(categories: ReviewCategory[]): readonly string[] | undefined {
 	if (categories.length === 0 || categories.includes('lore')) return undefined;
 	return LEAN_REVIEW_TIERS;
 }
@@ -76,7 +77,7 @@ const CONFIRM_TOOL_BUDGET = 6;
 // Only the two note-staging tools are offered; nothing else has a job here.
 const CONFIRM_TOOL_NAMES = ['leave_comment', 'suggest_edit'];
 
-function surveyBudgetTokens(contextWindow: number | undefined): number {
+export function surveyBudgetTokens(contextWindow: number | undefined): number {
 	if (!contextWindow) return SURVEY_FALLBACK_TOKENS;
 	return Math.max(1000, Math.floor(contextWindow * SURVEY_WINDOW_SHARE));
 }
@@ -159,7 +160,12 @@ export async function openAssistantNotes(db: Database, sceneId: string): Promise
 
 // What one pass produced: the notes it staged, and why it had to stop calling
 // tools when it did not finish on its own.
-export type ScenePassResult = { notes: number; stopped?: 'context' | 'budget' };
+export type ScenePassResult = {
+	notes: number;
+	stopped?: 'context' | 'budget';
+	// Set when the run's spend ceiling stopped the pass part-way.
+	spendCapped?: boolean;
+};
 
 // The text a caught error contributes to a failure list. Long provider messages
 // are cut so a notification title stays readable.
@@ -196,6 +202,8 @@ export async function reviewOneScene(
 		scene: { id: string; title: string | null };
 		categories?: ReviewCategory[];
 		storyFrame?: AssembledContext;
+		// Accumulates what this pass spends, for a run with a ceiling.
+		meter?: SpendMeter;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
@@ -247,6 +255,7 @@ export async function reviewOneScene(
 		},
 		deps
 	);
+	opts.meter?.record(result.model, result.usage);
 	return { notes: result.notes, ...(result.stopped ? { stopped: result.stopped } : {}) };
 }
 
@@ -272,6 +281,9 @@ type ConsistencyPassResult = {
 	candidates: number;
 	capped: boolean;
 	stopped?: 'context' | 'budget';
+	// Set when the run's spend ceiling was reached and the remaining candidates
+	// were left unconfirmed.
+	spendCapped?: boolean;
 };
 
 // Stage A over one chunk of the listing: no tools, structured output, and one
@@ -286,6 +298,7 @@ async function surveyChunk(
 		system: ChatMessage | null;
 		scenes: SurveyScene[];
 		chunk?: { index: number; total: number };
+		meter?: SpendMeter;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps
@@ -305,6 +318,7 @@ async function surveyChunk(
 		signal: opts.signal
 	};
 	const first = await completeDetailed(db, { ...request, messages }, deps);
+	opts.meter?.record(first.model, first.usage);
 	const parsed = parseCandidates(first.content);
 	if (parsed) return parsed;
 	const retry = await completeDetailed(
@@ -319,6 +333,7 @@ async function surveyChunk(
 		},
 		deps
 	);
+	opts.meter?.record(retry.model, retry.usage);
 	const reparsed = parseCandidates(retry.content);
 	if (reparsed) return reparsed;
 	throw new Error(
@@ -338,6 +353,7 @@ async function runConsistencyPass(
 		userId: string;
 		scope: ConsistencyScope;
 		scenes: SurveyScene[];
+		meter?: SpendMeter;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
@@ -374,6 +390,7 @@ async function runConsistencyPass(
 					system,
 					scenes: chunk,
 					...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {}),
+					meter: opts.meter,
 					signal: opts.signal
 				},
 				deps
@@ -395,8 +412,14 @@ async function runConsistencyPass(
 	const bodyChars = confirmBodyChars(budgetTokens);
 	let notes = 0;
 	let stopped: ConsistencyPassResult['stopped'];
+	let spendCapped = false;
 	for (const candidate of candidates.slice(0, MAX_CANDIDATES)) {
 		opts.signal?.throwIfAborted();
+		// Between candidates is the boundary where stopping stages nothing partial.
+		if (opts.meter?.capReached) {
+			spendCapped = true;
+			break;
+		}
 		// A scene id the survey invented is dropped; a candidate that names none
 		// we know is skipped entirely.
 		const involved = [...new Set(candidate.sceneIds)]
@@ -429,10 +452,17 @@ async function runConsistencyPass(
 			},
 			deps
 		);
+		opts.meter?.record(result.model, result.usage);
 		notes += result.notes;
 		stopped ??= result.stopped;
 	}
-	return { notes, candidates: candidates.length, capped, ...(stopped ? { stopped } : {}) };
+	return {
+		notes,
+		candidates: candidates.length,
+		capped,
+		...(stopped ? { stopped } : {}),
+		...(spendCapped ? { spendCapped: true } : {})
+	};
 }
 
 // The story's scenes in order, owner-scoped, with what both stages need: the
@@ -466,6 +496,7 @@ export async function reviewStoryConsistency(
 	opts: {
 		userId: string;
 		storyId: string;
+		meter?: SpendMeter;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
@@ -478,11 +509,16 @@ export async function reviewStoryConsistency(
 			userId: opts.userId,
 			scope: { storyId: opts.storyId },
 			scenes: surveyScenes,
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	return { notes: result.notes, ...(result.stopped ? { stopped: result.stopped } : {}) };
+	return {
+		notes: result.notes,
+		...(result.stopped ? { stopped: result.stopped } : {}),
+		...(result.spendCapped ? { spendCapped: true } : {})
+	};
 }
 
 // Scenes whose summary is missing or out of date, by the same rule the summary
@@ -519,7 +555,7 @@ async function staleSummaryCount(db: Database, userId: string, storyId: string):
 // summaries that exist.
 async function refreshSummaries(
 	db: Database,
-	opts: { userId: string; storyId: string; signal?: AbortSignal },
+	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
 	deps: GatewayDeps
 ): Promise<{ refreshed: boolean; failures: ReviewFailure[] }> {
 	try {
@@ -546,18 +582,22 @@ async function refreshSummaries(
 
 // How a standalone continuity review went: how many scenes were in scope, how
 // many notes it staged, and whether the pass ran at all (it is skipped when
-// there is nothing to compare, fewer than two scenes). candidates and capped
-// report the survey stage: how many contradictions it raised, and whether the
-// cap left some unconfirmed. failures names anything degraded that did not stop
-// the run (a summary that could not be written, a pass cut short).
+// there is nothing to compare, fewer than two scenes). candidates and
+// candidatesCapped report the survey stage: how many contradictions it raised,
+// and whether the candidate cap left some unconfirmed. failures names anything
+// degraded that did not stop the run (a summary that could not be written, a
+// pass cut short).
 export type ContinuityReviewResult = {
 	scenes: number;
 	notes: number;
 	ran: boolean;
 	candidates?: number;
-	capped?: boolean;
+	candidatesCapped?: boolean;
 	failures?: ReviewFailure[];
 	summariesRefreshed?: boolean;
+	// Set when the run stopped because it had spent the account's ceiling.
+	capped?: boolean;
+	spentUsd?: number;
 };
 
 // The run state a review writes as it advances, when it was queued with a job
@@ -600,12 +640,18 @@ export async function reviewStoryContinuity(
 ): Promise<ContinuityReviewResult> {
 	const run = await openRun(db, opts);
 	const failures: ReviewFailure[] = [...run.state.failures];
+	run.state.capped = false;
+	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
+	const meter = new SpendMeter({
+		pricing: resolved.config.modelPricing,
+		capUsd: resolved.config.spendCapUsd
+	});
 
 	// The survey stage compares scene summaries, so they are brought up to date
 	// before anything is compared.
 	run.state.phase = 'summaries';
 	await run.save();
-	const summaries = await refreshSummaries(db, opts, deps);
+	const summaries = await refreshSummaries(db, { ...opts, meter }, deps);
 	failures.push(...summaries.failures);
 	run.state.summariesRefreshed = summaries.refreshed;
 	run.state.failures = failures;
@@ -633,6 +679,7 @@ export async function reviewStoryContinuity(
 				userId: opts.userId,
 				scope: { storyId: opts.storyId },
 				scenes: targets,
+				meter,
 				signal: opts.signal
 			},
 			deps
@@ -645,18 +692,24 @@ export async function reviewStoryContinuity(
 		throw err;
 	}
 	if (result.stopped) failures.push({ message: stoppedMessage(result.stopped) });
+	if (meter.notApplied) failures.push({ message: CAP_NOT_APPLIED_MESSAGE });
 	run.state.notes += result.notes;
 	run.state.failures = failures;
 	run.state.phase = 'done';
+	if (result.spendCapped) {
+		run.state.capped = true;
+		run.state.spentUsd = meter.spentUsd;
+	}
 	await run.save();
 	return {
 		scenes: targets.length,
 		notes: result.notes,
 		ran: true,
 		candidates: result.candidates,
-		capped: result.capped,
+		candidatesCapped: result.capped,
 		failures,
-		summariesRefreshed: summaries.refreshed
+		summariesRefreshed: summaries.refreshed,
+		...(result.spendCapped ? { capped: true, spentUsd: meter.spentUsd } : {})
 	};
 }
 
@@ -672,6 +725,12 @@ export async function reviewUniverseContinuity(
 	deps: GatewayDeps = {}
 ): Promise<ContinuityReviewResult> {
 	const run = await openRun(db, opts);
+	run.state.capped = false;
+	const resolved = await resolveLlmConfig(db, opts.userId);
+	const meter = new SpendMeter({
+		pricing: resolved.config.modelPricing,
+		capUsd: resolved.config.spendCapUsd
+	});
 	// Ordered by story, then story order within it, so the survey listing groups
 	// each story's scenes together.
 	const rows = await db
@@ -709,6 +768,7 @@ export async function reviewUniverseContinuity(
 				userId: opts.userId,
 				scope: { universeId: opts.universeId },
 				scenes: rows,
+				meter,
 				signal: opts.signal
 			},
 			deps
@@ -723,17 +783,23 @@ export async function reviewUniverseContinuity(
 	const failures: ReviewFailure[] = result.stopped
 		? [{ message: stoppedMessage(result.stopped) }]
 		: [];
+	if (meter.notApplied) failures.push({ message: CAP_NOT_APPLIED_MESSAGE });
 	run.state.notes += result.notes;
 	run.state.failures = failures;
 	run.state.phase = 'done';
+	if (result.spendCapped) {
+		run.state.capped = true;
+		run.state.spentUsd = meter.spentUsd;
+	}
 	await run.save();
 	return {
 		scenes: rows.length,
 		notes: result.notes,
 		ran: true,
 		candidates: result.candidates,
-		capped: result.capped,
-		failures
+		candidatesCapped: result.capped,
+		failures,
+		...(result.spendCapped ? { capped: true, spentUsd: meter.spentUsd } : {})
 	};
 }
 
@@ -747,6 +813,13 @@ export type StoryReviewResult = {
 	failures: ReviewFailure[];
 	aborted?: boolean;
 	summariesRefreshed?: boolean;
+	// How many scenes were in scope, so a report can say "N of M".
+	total: number;
+	// Set when the run stopped at a scene boundary because it had spent the
+	// account's ceiling; a distinct outcome from a failure or a cancellation.
+	// spentUsd is what it had spent when it stopped.
+	capped?: boolean;
+	spentUsd?: number;
 };
 
 // A whole-story or single-chapter review: every non-deleted scene in scope,
@@ -776,12 +849,24 @@ export async function reviewStoryScenes(
 	let reviewed = run.state.reviewed;
 	let failed = run.state.failed;
 	let notes = run.state.notes;
+	// A retry of a capped run is a fresh attempt at the rest of the story: it
+	// resumes through the completed-scene skip and gets the whole ceiling again.
+	run.state.capped = false;
+
+	// The ceiling is shared across every phase of the run (summaries, the scene
+	// passes, the cross-scene pass), so one review cannot spend it several times
+	// over.
+	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
+	const meter = new SpendMeter({
+		pricing: resolved.config.modelPricing,
+		capUsd: resolved.config.spendCapUsd
+	});
 
 	// Scene summaries feed both the context assembly and the cross-scene pass, so
 	// the run brings them up to date before it reviews anything.
 	run.state.phase = 'summaries';
 	await run.save();
-	const summaries = await refreshSummaries(db, opts, deps);
+	const summaries = await refreshSummaries(db, { ...opts, meter }, deps);
 	failures.push(...summaries.failures);
 	if (summaries.refreshed) run.state.summariesRefreshed = true;
 
@@ -816,9 +901,15 @@ export async function reviewStoryScenes(
 	await run.save();
 
 	let aborted = false;
+	let capped = false;
 	for (const scene of targets) {
 		if (opts.signal?.aborted) {
 			aborted = true;
+			break;
+		}
+		// Checked between scenes, so a stop never leaves a scene half reviewed.
+		if (meter.capReached) {
+			capped = true;
 			break;
 		}
 		if (done.has(scene.id)) continue;
@@ -833,6 +924,7 @@ export async function reviewStoryScenes(
 					scene,
 					categories: opts.categories,
 					storyFrame,
+					meter,
 					signal: opts.signal
 				},
 				deps
@@ -868,16 +960,24 @@ export async function reviewStoryScenes(
 	// A full review ends with one cross-scene pass: the only run that can see
 	// drift between scenes (names, timelines, idiom conventions). Pointless
 	// for a single scene, and skipped when every per-scene pass failed.
-	if (!aborted && isFullReview(opts.categories ?? []) && targets.length > 1 && reviewed > 0) {
+	if (
+		!aborted &&
+		!capped &&
+		!meter.capReached &&
+		isFullReview(opts.categories ?? []) &&
+		targets.length > 1 &&
+		reviewed > 0
+	) {
 		run.state.phase = 'consistency';
 		await run.save();
 		try {
 			const pass = await reviewStoryConsistency(
 				db,
-				{ userId: opts.userId, storyId: opts.storyId, signal: opts.signal },
+				{ userId: opts.userId, storyId: opts.storyId, meter, signal: opts.signal },
 				deps
 			);
 			notes += pass.notes;
+			if (pass.spendCapped) capped = true;
 			if (pass.stopped) failures.push({ message: stoppedMessage(pass.stopped) });
 		} catch (err) {
 			if (opts.signal?.aborted) aborted = true;
@@ -888,19 +988,28 @@ export async function reviewStoryScenes(
 		}
 	}
 
+	// A ceiling that could not be priced is reported rather than quietly ignored.
+	if (meter.notApplied) failures.push({ message: CAP_NOT_APPLIED_MESSAGE });
+
 	run.state.phase = 'done';
 	run.state.reviewed = reviewed;
 	run.state.failed = failed;
 	run.state.notes = notes;
 	run.state.failures = failures;
 	if (aborted) run.state.aborted = true;
+	if (capped) {
+		run.state.capped = true;
+		run.state.spentUsd = meter.spentUsd;
+	}
 	await run.save();
 	return {
 		reviewed,
 		failed,
 		notes,
 		failures,
+		total: targets.length,
 		...(aborted ? { aborted: true } : {}),
+		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(summaries.refreshed ? { summariesRefreshed: true } : {})
 	};
 }

@@ -10,9 +10,13 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'assistant-spend-test-secret';
 
+import type { ChatMessage, Provider } from '../../src/lib/server/llm/providers/types';
+
 const { accountLlmView, saveAccountLlmConfig, saveModelPricing } =
 	await import('../../src/lib/server/llm/config');
+const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
 const { estimateStoryReview } = await import('../../src/lib/server/llm/estimate');
+const { loadReviewRun } = await import('../../src/lib/server/review-runs');
 
 let pool: pg.Pool;
 let db: Database;
@@ -20,7 +24,33 @@ let userId: string;
 let universeId: string;
 
 const MODEL = 'review-model';
+// A round number so the arithmetic in the cap tests is obvious: every request
+// reports 1000 prompt tokens, priced at $0.001 each, so one scene costs $1.
+const PROMPT_TOKENS = 1000;
 const PRICE_PER_TOKEN = 0.001;
+
+function provider(): { provider: Provider; seen: ChatMessage[][] } {
+	const seen: ChatMessage[][] = [];
+	return {
+		seen,
+		provider: {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				seen.push(req.messages);
+				return {
+					content: 'no notes',
+					toolCalls: [],
+					usage: { promptTokens: PROMPT_TOKENS, completionTokens: 0 }
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		}
+	};
+}
 
 async function configure(opts: { spendCapUsd?: number | null; spendWarnUsd?: number | null } = {}) {
 	await saveAccountLlmConfig(db, userId, {
@@ -168,5 +198,122 @@ describe('pre-flight review estimate (#548)', () => {
 			.where(eq(scenes.storyId, storyId))
 			.orderBy(asc(scenes.globalPosition));
 		expect(rows.map((r) => r.summaryMd)).toEqual(['Summary of scene 1.', 'Summary of scene 2.']);
+	});
+});
+
+describe('per-run spend cap (#549)', () => {
+	it('stops at a scene boundary once the cap is spent', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: p });
+
+		// One dollar a scene: the third scene is never started.
+		expect(result.reviewed).toBe(2);
+		expect(result.total).toBe(3);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(2, 6);
+	});
+
+	it('is its own outcome, not a failure or a cancellation', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: p });
+
+		expect(result.failed).toBe(0);
+		expect(result.failures).toHaveLength(0);
+		expect(result.aborted).toBeUndefined();
+	});
+
+	it('records the stop on the run so the modal and a retry can see it', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const { provider: p } = provider();
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-1' }, { provider: p });
+
+		const run = await loadReviewRun(db, 'cap-1');
+		expect(run?.capped).toBe(true);
+		expect(run?.spentUsd).toBeCloseTo(2, 6);
+		expect(run?.completed).toHaveLength(2);
+	});
+
+	it('running the same review again continues where it stopped', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const first = provider();
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-2' }, { provider: first.provider });
+
+		await configure({ spendCapUsd: 10 });
+		const second = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-2' },
+			{ provider: second.provider }
+		);
+
+		// Only the scene the first attempt never reached is sent again.
+		expect(second.seen).toHaveLength(1);
+		expect(second.seen[0].map((m) => m.content).join('\n')).toContain('Review the scene "Scene 3"');
+		expect(result.reviewed).toBe(3);
+		expect(result.capped).toBeUndefined();
+	});
+
+	it('says so when the model has no price, rather than skipping the cap in silence', async () => {
+		const storyId = await seedStory(2);
+		await configure({ spendCapUsd: 0.5 });
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: p });
+
+		expect(result.capped).toBeUndefined();
+		expect(result.reviewed).toBe(2);
+		expect(result.failures.map((f) => f.message)).toContain(
+			'A spend cap is set but the model has no known price, so it was not applied.'
+		);
+	});
+
+	it('spends one ceiling across the summary phase and the scene passes', async () => {
+		const storyId = await seedStory(3);
+		// No summaries at all, so the run must write them before it reviews.
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.storyId, storyId));
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: p });
+
+		// The summary phase spends the ceiling first, so no scene is reviewed.
+		expect(result.reviewed).toBe(0);
+		expect(result.capped).toBe(true);
+	});
+});
+
+describe('spend settings normalisation (#549)', () => {
+	it('keeps positive figures and drops anything else', async () => {
+		await configure({ spendCapUsd: 3.5, spendWarnUsd: 0.75 });
+		let view = await accountLlmView(db, userId);
+		expect(view.spendCapUsd).toBe(3.5);
+		expect(view.spendWarnUsd).toBe(0.75);
+
+		await configure({ spendCapUsd: null, spendWarnUsd: null });
+		view = await accountLlmView(db, userId);
+		expect(view.spendCapUsd).toBeUndefined();
+		expect(view.spendWarnUsd).toBeUndefined();
+	});
+
+	it('rejects a stored figure that is not a positive number', async () => {
+		await db
+			.update(users)
+			.set({
+				llmConfig: sql`${users.llmConfig} || '{"spendCapUsd": -2, "spendWarnUsd": "lots"}'::jsonb`
+			})
+			.where(eq(users.id, userId));
+		const view = await accountLlmView(db, userId);
+
+		expect(view.spendCapUsd).toBeUndefined();
+		expect(view.spendWarnUsd).toBeUndefined();
 	});
 });

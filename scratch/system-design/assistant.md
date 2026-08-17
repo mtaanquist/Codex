@@ -224,10 +224,25 @@ Transport to the browser is Server-Sent Events, which fits the
 token-at-a-time shape and needs no new dependency.
 
 Cost and runaway protection: the writer pays their own provider, so Codex
-does not meter spend, but an agentic tool loop on a slow endpoint can still
-run away. The gateway enforces a per-turn tool-call budget and a token
-ceiling, and the streaming endpoint is covered by the existing per-user
+does not meter interactive spend, but an agentic tool loop on a slow endpoint
+can still run away. The gateway enforces a per-turn tool-call budget and a
+token ceiling, and the streaming endpoint is covered by the existing per-user
 write/rate limiter.
+
+Background review runs, which fan over many scenes unattended, do meter
+themselves. Two account settings sit in `users.llm_config`: `spendWarnUsd`
+(the pre-flight confirm step turns into a warning above it, default 2) and
+`spendCapUsd` (the run stops at the next scene boundary once it has spent
+that much, staging nothing partial; a retry resumes through the existing
+completed-scene skip). Both are priced from the `modelPricing` snapshot the
+last model discovery wrote. A cost figure is only ever shown or enforced when
+the resolved model actually has a price there: with no price the pre-flight
+estimate reports tokens alone, and a set cap is reported as not applied
+rather than guessed at or skipped in silence. The estimate itself
+(`llm/estimate.ts`) assembles the same frame and per-scene deltas the run
+would send, counts them, and scales by an agentic multiplier drawn from this
+account's own `assistant_usage` rows for the model where there are enough of
+them, or a stated static 2.5 where there are not.
 
 The tool-call budget is a writer-set value in `users.llm_config`, not a
 fixed number Codex chooses. The point of bring-your-own-endpoint is that the
