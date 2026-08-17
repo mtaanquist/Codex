@@ -281,6 +281,64 @@ describe('threads and comments', () => {
 	});
 });
 
+describe('assistant comments', () => {
+	async function assistantComment(anchor: { start: number; end: number } | null, body: string) {
+		return await createThread(db, { storyId, sceneId, anchor, author: { assistant: true }, body });
+	}
+
+	it('drops a repeat of an identical open comment', async () => {
+		const start = BODY.indexOf('brown');
+		const anchor = { start, end: start + 'brown fox'.length };
+		expect(await assistantComment(anchor, 'The fox changes colour later.')).toMatchObject({
+			ok: true
+		});
+		const repeat = await assistantComment(anchor, 'The fox changes colour later.');
+		expect(repeat).toMatchObject({ ok: false });
+		expect((repeat as { reason: string }).reason).toMatch(/already left/);
+		expect(await listThreads(db, storyId, reanchorRange)).toHaveLength(1);
+
+		// Whole-scene comments dedupe against each other, not against anchored ones.
+		expect(await assistantComment(null, 'The fox changes colour later.')).toMatchObject({
+			ok: true
+		});
+		expect(await assistantComment(null, 'The fox changes colour later.')).toMatchObject({
+			ok: false
+		});
+	});
+
+	it('still opens a thread for a different anchor, a different body, or after resolution', async () => {
+		const start = BODY.indexOf('brown');
+		const anchor = { start, end: start + 'brown fox'.length };
+		const first = await assistantComment(anchor, 'The fox changes colour later.');
+		if (!first.ok) throw new Error('thread not created');
+		expect(await assistantComment(anchor, 'And the dog is never named.')).toMatchObject({
+			ok: true
+		});
+		const lazy = BODY.indexOf('lazy');
+		expect(
+			await assistantComment({ start: lazy, end: lazy + 4 }, 'The fox changes colour later.')
+		).toMatchObject({ ok: true });
+		await setThreadResolved(db, authorId, first.threadId, true);
+		expect(await assistantComment(anchor, 'The fox changes colour later.')).toMatchObject({
+			ok: true
+		});
+	});
+
+	it('does not dedupe the human paths', async () => {
+		const { id } = await invite();
+		const robin = await guest(id);
+		for (const author of [{ userId: authorId }, { reviewerId: robin.id }] as const) {
+			expect(
+				await createThread(db, { storyId, sceneId, anchor: null, author, body: 'Same note.' })
+			).toMatchObject({ ok: true });
+			expect(
+				await createThread(db, { storyId, sceneId, anchor: null, author, body: 'Same note.' })
+			).toMatchObject({ ok: true });
+		}
+		expect(await listThreads(db, storyId, reanchorRange)).toHaveLength(4);
+	});
+});
+
 describe('deleteComment (retract your own)', () => {
 	it('a reviewer retracts their own reply, leaving the root and others', async () => {
 		const { id } = await invite();

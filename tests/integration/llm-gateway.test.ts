@@ -446,6 +446,47 @@ describe('gateway tool loop', () => {
 		expect(after.bodyMd).toBe('The dog sat on the mat.');
 	});
 
+	it('suggest_edit tolerates reshaped quotes and refuses a repeat of itself', async () => {
+		await configure(true);
+		const body = 'She said "run", and the dog\'s ears  went flat.';
+		const { storyId, sceneId } = await seedStoryScene(body);
+		// The quote comes back with curly quotes and a collapsed whitespace run,
+		// as a small local model tends to echo it.
+		const original = `She said \u201crun\u201d, and the dog\u2019s ears went flat.`;
+		const call = {
+			id: 'c1',
+			name: 'suggest_edit',
+			arguments: JSON.stringify({ sceneId, original, replacement: 'She said nothing.' })
+		};
+		const script = scriptedProvider([
+			{ content: '', toolCalls: [call] },
+			{ content: '', toolCalls: [{ ...call, id: 'c2' }] },
+			{ content: 'Staged.' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'edit it' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(and(eq(reviewSuggestions.storyId, storyId), eq(reviewSuggestions.assistant, true)));
+		expect(staged).toHaveLength(1);
+		// The staged range indexes the real body, curly quotes and all.
+		expect(body.slice(staged[0].rangeStart, staged[0].rangeEnd)).toBe(body);
+		// The repeat came back as a tool result saying it was already staged.
+		const repeatResult = script.seen[2].filter((m) => m.role === 'tool').at(-1);
+		expect(repeatResult?.content).toContain('already staged');
+	});
+
 	it('propose_scene_split stages nothing and surfaces a proposal frame on the stream', async () => {
 		await configure(true);
 		const body = 'The first half ends here.\n\nThe second half starts here.';
