@@ -150,7 +150,8 @@ this. They exist now and are inert (`{}`) in v1.
 
 - `users.llm_config` holds the per-account configuration: the master `enabled`
   toggle (the kill switch), endpoint URL, API key, a model-per-role mapping
-  (continuation, co-author, editor, reviewer, chat), and a tool-call budget
+  (continuation, co-author, reviewer, utility, chat; utility covers the
+  background work - summaries, entity extraction, recaps), and a tool-call budget
   (the maximum tool calls the Assistant may make in one turn). The key is
   encrypted at rest using the existing AES-256-GCM helper in `crypto.ts`
   (keyed from `APP_SECRET`, already used for the SMTP password and the TOTP

@@ -45,7 +45,7 @@ async function generate(
 		{
 			userId: opts.userId,
 			storyId: opts.storyId,
-			role: 'chat',
+			role: 'utility',
 			enableTools: false,
 			messages,
 			maxTokens: MAX_SUMMARY_TOKENS,

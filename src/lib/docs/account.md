@@ -70,8 +70,12 @@ contacts a model on its own.
   suggest an edit, leave a comment), and it stops sooner instead of retrying,
   which smaller models handle far more reliably.
 - **Models per role**: pick which model handles each kind of help. Select Discover
-  models to fill the lists from your endpoint, then choose one per role. Roles
-  with no model chosen fall back to the endpoint's default. A single story can
+  models to fill the lists from your endpoint, then choose one per role. The roles
+  are Rubber duck (the side panel), Co-author (passages you can insert),
+  Continuation (inline suggestions), Reviewer (suggested edits on a draft), and
+  Background work (scene and chapter summaries, suggested entity details, and the
+  story recap). Roles with no model chosen fall back to the model you picked for
+  Rubber duck, or to the endpoint's default. A single story can
   override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million

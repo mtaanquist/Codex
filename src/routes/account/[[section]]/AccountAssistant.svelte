@@ -33,6 +33,11 @@
 			id: 'reviewer',
 			name: 'Reviewer',
 			hint: 'Reads a draft and leaves suggested edits in your name.'
+		},
+		{
+			id: 'utility',
+			name: 'Background work',
+			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.'
 		}
 	] as const;
 

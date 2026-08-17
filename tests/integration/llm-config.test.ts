@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -14,6 +15,7 @@ const {
 	accountLlmView,
 	assistantLayout,
 	modelContextWindow,
+	pickModel,
 	resolveLlmConfig,
 	saveAccountLlmConfig,
 	saveModelContext,
@@ -318,6 +320,31 @@ describe('account config round-trip', () => {
 		expect(view.tuning.continuation).toEqual({ thinking: false });
 		expect(view.tuning.coauthor).toBeUndefined();
 		expect(view.tuning.chat).toEqual({ thinking: false, temperature: 0.4 });
+	});
+
+	it('leaves a config saved before the utility role existed working as it did', async () => {
+		// Written the way it sat on disk then: four roles, no utility anywhere.
+		await db
+			.update(users)
+			.set({
+				llmConfig: {
+					enabled: true,
+					endpoint: 'https://api.example.com/v1',
+					models: { chat: 'chat-model', reviewer: 'reviewer-model' },
+					tuning: { reviewer: { effort: 'high' } },
+					toolCallBudget: 8
+				}
+			})
+			.where(eq(users.id, userId));
+
+		const view = await accountLlmView(db, userId);
+		expect(view.models).toEqual({ chat: 'chat-model', reviewer: 'reviewer-model' });
+		expect(view.tuning).toEqual({ reviewer: { effort: 'high' } });
+
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(pickModel(config, 'utility')).toBe('chat-model');
+		expect(pickModel(config, 'chat')).toBe('chat-model');
+		expect(pickModel(config, 'reviewer')).toBe('reviewer-model');
 	});
 });
 

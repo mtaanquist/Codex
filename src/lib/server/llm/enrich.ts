@@ -103,7 +103,7 @@ export async function enrichEntity(
 		{
 			userId: opts.userId,
 			storyId: opts.storyId,
-			role: 'chat',
+			role: 'utility',
 			enableTools: false,
 			messages,
 			maxTokens: MAX_ENRICH_TOKENS,

@@ -62,6 +62,20 @@ describe('modelContextWindow', () => {
 	});
 });
 
+describe('the utility role', () => {
+	it('runs on the chat model when a config predating the role has none of its own', () => {
+		const config = resolved({ models: { chat: 'small', reviewer: 'large' } });
+		expect(pickModel(config, 'utility')).toBe('small');
+	});
+
+	it('runs on its own model once one is set, leaving the other roles alone', () => {
+		const config = resolved({ models: { chat: 'small', utility: 'tiny' } });
+		expect(pickModel(config, 'utility')).toBe('tiny');
+		expect(pickModel(config, 'chat')).toBe('small');
+		expect(pickModel(config, 'continuation')).toBe('small');
+	});
+});
+
 describe('assistantGate', () => {
 	it('is dark everywhere when no endpoint is configured', () => {
 		expect(assistantGate(account())).toEqual({

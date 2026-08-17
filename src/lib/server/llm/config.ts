@@ -15,7 +15,11 @@ import { normaliseProviderId, providerPreset, type ProviderId } from './provider
 // different model. A per-story override never lights the Assistant up when the
 // account master is off; account-off is dark everywhere.
 
-export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'reviewer', 'chat'] as const;
+// 'utility' covers the background work the writer never prompts directly:
+// summary maintenance, entity extraction, and the recap. It was added after the
+// other four, so an older config has no utility model; pickModel's fallback
+// keeps those accounts on the chat model, exactly as before.
+export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'reviewer', 'utility', 'chat'] as const;
 export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
