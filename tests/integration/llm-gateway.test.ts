@@ -25,9 +25,9 @@ import type {
 	StreamEvent
 } from '../../src/lib/server/llm/providers/types';
 
-const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
+const { saveAccountLlmConfig, saveModelContext } = await import('../../src/lib/server/llm/config');
 const { listSuggestions, decideSuggestion } = await import('../../src/lib/server/review');
-const { complete, stream, AssistantDisabledError } =
+const { complete, completeDetailed, stream, AssistantDisabledError } =
 	await import('../../src/lib/server/llm/gateway');
 
 let pool: pg.Pool;
@@ -41,9 +41,11 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 	provider: Provider;
 	count: () => number;
 	seen: ChatMessage[][];
+	offered: string[][];
 } {
 	let calls = 0;
 	const seen: ChatMessage[][] = [];
+	const offered: string[][] = [];
 	const provider: Provider = {
 		async *chatStream() {
 			yield { type: 'done' };
@@ -51,6 +53,7 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 		async respond(req) {
 			calls += 1;
 			seen.push(req.messages);
+			offered.push((req.tools ?? []).map((tool) => tool.name));
 			const turn = turns.shift() ?? { content: '' };
 			return { content: turn.content, toolCalls: turn.toolCalls ?? [] };
 		},
@@ -58,7 +61,7 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 			return [];
 		}
 	};
-	return { provider, count: () => calls, seen };
+	return { provider, count: () => calls, seen, offered };
 }
 
 // A provider that records the request and emits canned events, so the gateway's
@@ -350,6 +353,58 @@ describe('gateway tool loop', () => {
 		expect(toolMessage2?.content).toContain('truncated: showing the first 200000 of 250000');
 	});
 
+	it('a known context window caps get_scene at about a quarter of it', async () => {
+		await configure(true);
+		// A 4K-token window: a quarter of it is about 4000 characters, under the
+		// 8000 character floor, so the floor applies.
+		await saveModelContext(db, userId, { 'chat-model': 4096 });
+		const body = 'x'.repeat(20_000);
+		const { storyId, sceneId } = await seedStoryScene(body);
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'ok' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read it' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(script.seen[1].find((m) => m.role === 'tool')?.content).toContain(
+			'truncated: showing the first 8000 of 20000'
+		);
+
+		// A 32K window leaves room for 32000 characters, so the same scene is whole.
+		await saveModelContext(db, userId, { 'chat-model': 32768 });
+		const script2 = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'ok' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read it' }]
+			},
+			{ provider: script2.provider, http: noHttp }
+		);
+		expect(script2.seen[1].find((m) => m.role === 'tool')?.content).not.toContain('truncated');
+	});
+
 	it('list_scenes returns the chapter and scene skeleton with ids', async () => {
 		await configure(true);
 		const { storyId, sceneId } = await seedStoryScene('A quiet opening.');
@@ -444,6 +499,47 @@ describe('gateway tool loop', () => {
 			.from(scenes)
 			.where(eq(scenes.id, sceneId));
 		expect(after.bodyMd).toBe('The dog sat on the mat.');
+	});
+
+	it('suggest_edit tolerates reshaped quotes and refuses a repeat of itself', async () => {
+		await configure(true);
+		const body = 'She said "run", and the dog\'s ears  went flat.';
+		const { storyId, sceneId } = await seedStoryScene(body);
+		// The quote comes back with curly quotes and a collapsed whitespace run,
+		// as a small local model tends to echo it.
+		const original = `She said \u201crun\u201d, and the dog\u2019s ears went flat.`;
+		const call = {
+			id: 'c1',
+			name: 'suggest_edit',
+			arguments: JSON.stringify({ sceneId, original, replacement: 'She said nothing.' })
+		};
+		const script = scriptedProvider([
+			{ content: '', toolCalls: [call] },
+			{ content: '', toolCalls: [{ ...call, id: 'c2' }] },
+			{ content: 'Staged.' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'edit it' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(and(eq(reviewSuggestions.storyId, storyId), eq(reviewSuggestions.assistant, true)));
+		expect(staged).toHaveLength(1);
+		// The staged range indexes the real body, curly quotes and all.
+		expect(body.slice(staged[0].rangeStart, staged[0].rangeEnd)).toBe(body);
+		// The repeat came back as a tool result saying it was already staged.
+		const repeatResult = script.seen[2].filter((m) => m.role === 'tool').at(-1);
+		expect(repeatResult?.content).toContain('already staged');
 	});
 
 	it('propose_scene_split stages nothing and surfaces a proposal frame on the stream', async () => {
@@ -550,21 +646,24 @@ describe('gateway tool loop', () => {
 		const { storyId, sceneId } = await seedStoryScene('Body.');
 		// A provider that always asks for another tool; the budget must stop it.
 		let calls = 0;
+		const choices: (string | undefined)[] = [];
+		const toolCounts: number[] = [];
 		const alwaysTool: Provider = {
 			async *chatStream() {
 				yield { type: 'done' };
 			},
 			async respond(req) {
 				calls += 1;
-				const hasTools = (req.tools?.length ?? 0) > 0;
-				return hasTools
-					? {
+				choices.push(req.toolChoice);
+				toolCounts.push(req.tools?.length ?? 0);
+				return req.toolChoice === 'none'
+					? { content: 'forced answer', toolCalls: [] }
+					: {
 							content: '',
 							toolCalls: [
 								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
 							]
-						}
-					: { content: 'forced answer', toolCalls: [] };
+						};
 			},
 			async listModels() {
 				return [];
@@ -582,8 +681,156 @@ describe('gateway tool loop', () => {
 			{ provider: alwaysTool, http: noHttp }
 		);
 		expect(text).toBe('forced answer');
-		// Two tool rounds (budget) plus the final tools-withdrawn answer.
+		// Two tool rounds (budget) plus the concluding answer.
 		expect(calls).toBe(3);
+		// The tools are declared on every round, the history depends on them; only
+		// the choice changes on the last one.
+		expect(toolCounts.every((count) => count > 0)).toBe(true);
+		expect(choices).toEqual([undefined, undefined, 'none']);
+	});
+
+	it('never drops the tools mid-conversation, and dispatches nothing on the concluding round', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 1
+		});
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		let calls = 0;
+		const requests: { tools: number; choice?: string }[] = [];
+		// A non-compliant endpoint: it emits a write tool call even under
+		// tool_choice none. Nothing may be staged from it.
+		const defiant: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				requests.push({ tools: req.tools?.length ?? 0, choice: req.toolChoice });
+				return {
+					content: calls === 1 ? '' : 'concluded',
+					toolCalls: [
+						{
+							id: `c${calls}`,
+							name: 'suggest_edit',
+							arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+						}
+					]
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: defiant, http: noHttp }
+		);
+
+		expect(calls).toBe(2);
+		expect(result.content).toBe('concluded');
+		expect(result.stopped).toBe('budget');
+		expect(requests[0]).toMatchObject({ choice: undefined });
+		expect(requests[1]).toMatchObject({ choice: 'none' });
+		expect(requests[0].tools).toBeGreaterThan(0);
+		expect(requests[1].tools).toBe(requests[0].tools);
+		// One edit staged by the budgeted round; the concluding round's call was
+		// ignored rather than dispatched.
+		const staged = await db
+			.select({ id: reviewSuggestions.id })
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.sceneId, sceneId));
+		expect(staged).toHaveLength(1);
+	});
+
+	it('the minimal tool profile offers three tools and halves the budget', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8,
+			toolProfile: 'minimal'
+		});
+		const { storyId, sceneId } = await seedStoryScene('Body.');
+		let calls = 0;
+		const seenTools: string[][] = [];
+		const alwaysTool: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				seenTools.push((req.tools ?? []).map((tool) => tool.name));
+				return req.toolChoice === 'none'
+					? { content: 'forced answer', toolCalls: [] }
+					: {
+							content: '',
+							toolCalls: [
+								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
+							]
+						};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: alwaysTool, http: noHttp }
+		);
+		expect(seenTools[0]).toEqual(['get_scene', 'suggest_edit', 'leave_comment']);
+		expect(text).toBe('forced answer');
+		// Budget 8 halved to 4: four tool rounds plus the concluding answer.
+		expect(calls).toBe(5);
+	});
+
+	it('a surface naming its own tools is unaffected by the minimal profile', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8,
+			toolProfile: 'minimal'
+		});
+		const { storyId } = await seedStoryScene('Body.');
+		const script = scriptedProvider([{ content: 'ok' }]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				toolNames: ['reply_in_thread', 'update_suggestion'],
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(script.offered[0]).toEqual(['reply_in_thread', 'update_suggestion']);
 	});
 
 	it('refuses a tool call the turn did not offer and stages nothing', async () => {
@@ -621,6 +868,154 @@ describe('gateway tool loop', () => {
 		const toolMessage = script.seen[1].find((m) => m.role === 'tool');
 		expect(toolMessage?.content).toContain('not available in this turn');
 		// Nothing was staged.
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(0);
+	});
+
+	it('never dispatches tool calls from a truncated round, and retries with more room', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// The first round hits the token cap mid-arguments; the retry has room and
+		// asks for a read instead, so nothing is ever staged from the cut-off edit.
+		const maxTokens: number[] = [];
+		let round = 0;
+		const truncating: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				maxTokens.push(req.maxTokens);
+				round += 1;
+				if (round === 1) {
+					return {
+						content: '',
+						finishReason: 'length',
+						toolCalls: [
+							{
+								id: 'c1',
+								name: 'suggest_edit',
+								// Truncated JSON that still parses into a plausible edit.
+								arguments: JSON.stringify({ sceneId, original: 'cat sat', replacement: 'dog' })
+							}
+						]
+					};
+				}
+				if (round === 2) {
+					return {
+						content: '',
+						finishReason: 'toolCalls',
+						toolCalls: [{ id: 'c2', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+					};
+				}
+				return { content: 'I read it first.', toolCalls: [], finishReason: 'stop' };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: truncating, http: noHttp }
+		);
+		expect(text).toBe('I read it first.');
+		// The retry doubled the room.
+		expect(maxTokens[1]).toBe(maxTokens[0] * 2);
+		// The truncated suggest_edit never ran.
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(0);
+	});
+
+	it('caps the truncation retry at the room left in a known window', async () => {
+		await configure(true);
+		// A small window: doubling the reviewer's 4096-token round would ask for
+		// more output than the window has left once the prompt is in it.
+		await saveModelContext(db, userId, { 'chat-model': 8192 });
+		const { storyId } = await seedStoryScene('The cat sat on the mat.');
+		const maxTokens: number[] = [];
+		const truncating: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				maxTokens.push(req.maxTokens);
+				return maxTokens.length === 1
+					? { content: '', finishReason: 'length' as const, toolCalls: [] }
+					: { content: 'shorter this time', toolCalls: [], finishReason: 'stop' as const };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				maxTokens: 4096,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: truncating, http: noHttp }
+		);
+		expect(text).toBe('shorter this time');
+		expect(maxTokens[0]).toBe(4096);
+		// Doubling would be 8192, more than the 85 percent usable window; the
+		// retry asks for what is actually left instead.
+		expect(maxTokens[1]).toBeGreaterThanOrEqual(4096);
+		expect(maxTokens[1]).toBeLessThan(8192);
+	});
+
+	it('fails the round when the retry is truncated too', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		const alwaysTruncated: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				return {
+					content: '',
+					finishReason: 'length' as const,
+					toolCalls: [
+						{
+							id: 'c1',
+							name: 'suggest_edit',
+							arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+						}
+					]
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		await expect(
+			complete(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'reviewer',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'go' }]
+				},
+				{ provider: alwaysTruncated, http: noHttp }
+			)
+		).rejects.toThrow(/cut off/);
 		const staged = await db
 			.select()
 			.from(reviewSuggestions)
@@ -796,5 +1191,376 @@ describe('provider selection', () => {
 		const text = await complete(db, { userId, role: 'chat', messages: [] }, { http });
 		expect(text).toBe('hello');
 		expect(calledUrl).toBe('https://api.example.com/v1/chat/completions');
+	});
+});
+
+// A long run appends every tool result to the conversation, so a small window
+// fills up mid-loop. The guard withdraws the tools before the next request
+// would overflow the endpoint.
+describe('gateway context guard', () => {
+	const noHttp: HttpRequest = async () => {
+		throw new Error('the injected provider should not call the transport');
+	};
+
+	// A provider that keeps asking for the same scene for as long as tools are
+	// offered, and answers plainly once they are gone.
+	function greedyReader(sceneId: string): {
+		provider: Provider;
+		offered: string[][];
+		choices: (string | undefined)[];
+		seen: ChatMessage[][];
+	} {
+		const offered: string[][] = [];
+		const choices: (string | undefined)[] = [];
+		const seen: ChatMessage[][] = [];
+		let calls = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				offered.push((req.tools ?? []).map((tool) => tool.name));
+				choices.push(req.toolChoice);
+				seen.push(req.messages.map((m) => ({ ...m })));
+				return req.toolChoice === 'none'
+					? { content: 'wrapping up', toolCalls: [] }
+					: {
+							content: '',
+							toolCalls: [
+								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
+							]
+						};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, offered, choices, seen };
+	}
+
+	it('withdraws tools and nudges the model when the conversation nears the window', async () => {
+		await configure(true);
+		// A 4K window: one full scene read (capped at 8000 characters, about 2000
+		// tokens) plus the next round's output allowance crosses the margin.
+		await saveModelContext(db, userId, { 'chat-model': 4096 });
+		const { storyId, sceneId } = await seedStoryScene('x'.repeat(40_000));
+		const script = greedyReader(sceneId);
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read everything' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(result.content).toBe('wrapping up');
+		expect(result.stopped).toBe('context');
+		// Both rounds declare the tools (the history holds tool turns that need
+		// them); the second forbids calling them and carries the nudge.
+		expect(script.offered).toHaveLength(2);
+		expect(script.offered[0].length).toBeGreaterThan(0);
+		expect(script.offered[1]).toEqual(script.offered[0]);
+		expect(script.choices).toEqual([undefined, 'none']);
+		expect(script.seen[1].at(-1)?.content).toMatch(/context window is nearly full/i);
+	});
+
+	it('counts a tool call arguments towards the window, not just its text', async () => {
+		await configure(true);
+		await saveModelContext(db, userId, { 'chat-model': 8192 });
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// Every round stages a long passage. The assistant turns carry almost no
+		// content; the weight is entirely in the tool-call arguments, which go back
+		// on the wire every round.
+		const passage = 'x'.repeat(6000);
+		let calls = 0;
+		const choices: (string | undefined)[] = [];
+		const stager: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				choices.push(req.toolChoice);
+				return req.toolChoice === 'none'
+					? { content: 'out of room', toolCalls: [] }
+					: {
+							content: '',
+							toolCalls: [
+								{
+									id: `c${calls}`,
+									name: 'leave_comment',
+									arguments: JSON.stringify({ sceneId, quote: 'cat', comment: passage })
+								}
+							]
+						};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'annotate' }]
+			},
+			{ provider: stager, http: noHttp }
+		);
+
+		expect(result.stopped).toBe('context');
+		expect(result.content).toBe('out of room');
+		// Two staged comments at 1500 tokens of arguments each fill the usable
+		// window; without counting them the loop would have run the full budget.
+		expect(calls).toBeLessThan(8);
+		expect(choices.at(-1)).toBe('none');
+	});
+
+	it('does not guard when the window is unknown, and reports a budget stop', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 3
+		});
+		// No stored context for the model, so nothing bounds the conversation but
+		// the tool-call budget.
+		const { storyId, sceneId } = await seedStoryScene('x'.repeat(40_000));
+		const script = greedyReader(sceneId);
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read everything' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(result.content).toBe('wrapping up');
+		expect(result.stopped).toBe('budget');
+		// Three tool rounds (the budget) plus the concluding answer, with no
+		// context nudge among them.
+		expect(script.offered).toHaveLength(4);
+		expect(script.offered[2].length).toBeGreaterThan(0);
+		expect(script.offered[3]).toEqual(script.offered[0]);
+		expect(script.choices).toEqual([undefined, undefined, undefined, 'none']);
+		expect(script.seen[3].some((m) => m.content.includes('context window is nearly full'))).toBe(
+			false
+		);
+	});
+
+	it('leaves a run that finishes on its own unmarked', async () => {
+		await configure(true);
+		await saveModelContext(db, userId, { 'chat-model': 128_000 });
+		const { storyId } = await seedStoryScene('A short scene.');
+		const script = scriptedProvider([{ content: 'done reading' }]);
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'hi' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(result).toMatchObject({ content: 'done reading' });
+		expect(result.stopped).toBeUndefined();
+	});
+});
+
+// A local endpoint reloading a model answers one request with a 500 and the
+// next one fine; the round should not die on the blip.
+describe('gateway request retries', () => {
+	const noHttp: HttpRequest = async () => {
+		throw new Error('the injected provider should not call the transport');
+	};
+	// Injected so the backoff does not slow the suite down.
+	const noSleep = async () => {};
+
+	// Fails the first attempt with the given error, then answers.
+	function flakyProvider(
+		err: Error,
+		content: string
+	): { provider: Provider; attempts: () => number } {
+		let attempts = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				if (attempts === 1) throw err;
+				return { content, toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, attempts: () => attempts };
+	}
+
+	it('retries a 5xx on the plain completion path', async () => {
+		await configure(true);
+		const flaky = flakyProvider(
+			new Error('Endpoint returned 503: model loading'),
+			'second time lucky'
+		);
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [{ role: 'user', content: 'hi' }] },
+			{ provider: flaky.provider, http: noHttp, sleep: noSleep }
+		);
+		expect(text).toBe('second time lucky');
+		expect(flaky.attempts()).toBe(2);
+	});
+
+	it('retries a 429', async () => {
+		await configure(true);
+		const flaky = flakyProvider(new Error('Endpoint returned 429: slow down'), 'after the wait');
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider: flaky.provider, http: noHttp, sleep: noSleep }
+		);
+		expect(text).toBe('after the wait');
+		expect(flaky.attempts()).toBe(2);
+	});
+
+	it("dispatches a retried round's tools exactly once", async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// The request that carries the edit fails once at the transport, then
+		// succeeds. The retry re-sends the request only, so the staged edit lands
+		// a single time.
+		let attempts = 0;
+		let answered = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				if (attempts === 1) throw new Error('fetch failed');
+				answered += 1;
+				return answered === 1
+					? {
+							content: '',
+							toolCalls: [
+								{
+									id: 'c1',
+									name: 'suggest_edit',
+									arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+								}
+							]
+						}
+					: { content: 'staged it', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'edit it' }]
+			},
+			{ provider, http: noHttp, sleep: noSleep }
+		);
+		expect(text).toBe('staged it');
+		expect(attempts).toBe(3);
+		const staged = await db
+			.select()
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId));
+		expect(staged).toHaveLength(1);
+	});
+
+	it('gives up after two retries and surfaces the failure', async () => {
+		await configure(true);
+		let attempts = 0;
+		const alwaysDown: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				throw new Error('Endpoint returned 500: upstream error');
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: alwaysDown, http: noHttp, sleep: noSleep }
+			)
+		).rejects.toThrow(/500/);
+		expect(attempts).toBe(3);
+	});
+
+	it('never retries a bad request, an abort, or an aborted signal', async () => {
+		await configure(true);
+		async function attemptsFor(err: Error, signal?: AbortSignal): Promise<number> {
+			let attempts = 0;
+			const provider: Provider = {
+				async *chatStream() {
+					yield { type: 'done' };
+				},
+				async respond() {
+					attempts += 1;
+					throw err;
+				},
+				async listModels() {
+					return [];
+				}
+			};
+			await expect(
+				complete(
+					db,
+					{ userId, role: 'chat', messages: [], signal },
+					{ provider, http: noHttp, sleep: noSleep }
+				)
+			).rejects.toThrow();
+			return attempts;
+		}
+		expect(await attemptsFor(new Error('Endpoint returned 400: bad request'))).toBe(1);
+		expect(await attemptsFor(new Error('Endpoint returned 401: no key'))).toBe(1);
+		const aborted = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+		expect(await attemptsFor(aborted)).toBe(1);
+		// A 200 with a body that is not JSON: the adapter's JSON.parse throws a
+		// SyntaxError. The endpoint will produce the same broken body on a retry,
+		// and it bills for every attempt.
+		let syntaxError: Error = new Error('unreachable');
+		try {
+			JSON.parse('<html>gateway timeout</html>');
+		} catch (err) {
+			syntaxError = err as Error;
+		}
+		expect(syntaxError).toBeInstanceOf(SyntaxError);
+		expect(await attemptsFor(syntaxError)).toBe(1);
+		// A transport error that would normally be retried, but the caller has
+		// walked away.
+		const controller = new AbortController();
+		controller.abort();
+		expect(await attemptsFor(new Error('fetch failed'), controller.signal)).toBe(1);
 	});
 });

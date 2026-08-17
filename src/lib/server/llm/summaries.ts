@@ -1,8 +1,9 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
-import { complete, type GatewayDeps } from './gateway.ts';
+import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
+import type { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
@@ -15,7 +16,14 @@ import type { ChatMessage } from './providers/types.ts';
 
 const MAX_SUMMARY_TOKENS = 200;
 
-export type SummaryResult = { scenes: number; chapters: number; failed: number };
+export type SummaryResult = {
+	scenes: number;
+	chapters: number;
+	failed: number;
+	// Set when a run's spend ceiling was reached and the rest of the pass was
+	// left for a later run.
+	capped?: boolean;
+};
 
 function blank(value: string | null): boolean {
 	return !value || !value.trim();
@@ -36,16 +44,22 @@ export function needsSummary(opts: {
 
 async function generate(
 	db: Database,
-	opts: { userId: string; storyId: string; content: string; signal?: AbortSignal },
+	opts: {
+		userId: string;
+		storyId: string;
+		content: string;
+		meter?: SpendMeter;
+		signal?: AbortSignal;
+	},
 	deps: GatewayDeps
 ): Promise<string> {
 	const messages: ChatMessage[] = [{ role: 'user', content: opts.content }];
-	const text = await complete(
+	const result = await completeDetailed(
 		db,
 		{
 			userId: opts.userId,
 			storyId: opts.storyId,
-			role: 'chat',
+			role: 'utility',
 			enableTools: false,
 			messages,
 			maxTokens: MAX_SUMMARY_TOKENS,
@@ -53,7 +67,8 @@ async function generate(
 		},
 		deps
 	);
-	return text.trim();
+	opts.meter?.record(result.model, result.usage);
+	return result.content.trim();
 }
 
 // Draft and refresh the summaries for a whole story's scenes, then its chapters
@@ -63,13 +78,14 @@ async function generate(
 // and how many failed.
 export async function summariseStory(
 	db: Database,
-	opts: { userId: string; storyId: string; signal?: AbortSignal },
+	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<SummaryResult> {
-	const { userId, storyId, signal } = opts;
+	const { userId, storyId, meter, signal } = opts;
 	let written = 0;
 	let chaptersWritten = 0;
 	let failed = 0;
+	let capped = false;
 	// Chapters whose scenes changed this run, so their summary is now stale even
 	// if the chapter row itself was not edited.
 	const touchedChapters = new Set<string>();
@@ -90,6 +106,11 @@ export async function summariseStory(
 		.orderBy(asc(scenes.globalPosition));
 
 	for (const scene of sceneRows) {
+		// Between summaries is the boundary where stopping leaves nothing partial.
+		if (meter?.capReached) {
+			capped = true;
+			break;
+		}
 		if (blank(scene.bodyMd)) continue;
 		const changedSince = scene.summaryGeneratedAt
 			? scene.updatedAt.getTime() > scene.summaryGeneratedAt.getTime()
@@ -110,6 +131,7 @@ export async function summariseStory(
 					userId,
 					storyId,
 					content: buildSceneSummaryMessage(scene.title, scene.bodyMd),
+					meter,
 					signal
 				},
 				deps
@@ -143,6 +165,10 @@ export async function summariseStory(
 		.orderBy(asc(chapters.position));
 
 	for (const chapter of chapterRows) {
+		if (meter?.capReached) {
+			capped = true;
+			break;
+		}
 		const sceneSummaries = await db
 			.select({ summaryMd: scenes.summaryMd })
 			.from(scenes)
@@ -174,6 +200,7 @@ export async function summariseStory(
 					userId,
 					storyId,
 					content: buildChapterSummaryMessage(chapter.title, summaries),
+					meter,
 					signal
 				},
 				deps
@@ -190,5 +217,10 @@ export async function summariseStory(
 		}
 	}
 
-	return { scenes: written, chapters: chaptersWritten, failed };
+	return {
+		scenes: written,
+		chapters: chaptersWritten,
+		failed,
+		...(capped ? { capped: true } : {})
+	};
 }

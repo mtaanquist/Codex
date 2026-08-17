@@ -36,8 +36,11 @@ import {
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE
+	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_JOB_EXPIRY_SECONDS
 } from './queues.ts';
+import { reviewScopeKey } from './review-runs.ts';
+import type { ReviewRunState } from './db/schema.ts';
 
 let starting: Promise<PgBoss> | null = null;
 
@@ -190,14 +193,24 @@ export async function queueUserExport(exportId: string): Promise<boolean> {
 	}
 }
 
+// An Assistant run talks to a model for as long as the story is big, so the
+// 15-minute default expiry would hand the job out again mid-run. The generous
+// expiry is what keeps one run from executing twice; the retry limit is stated
+// rather than left to the default so a run whose worker died is still picked up
+// again once the expiry passes.
+const ASSISTANT_SEND_OPTIONS = {
+	expireInSeconds: ASSISTANT_JOB_EXPIRY_SECONDS,
+	retryLimit: 2
+} as const;
+
 // Queues a background Assistant review. Three shapes share the queue: a
 // whole-story or single-chapter copyedit (storyId, the default 'full' mode), a
 // standalone story continuity pass (storyId, mode 'continuity'), and a
 // universe-wide continuity pass (universeId, mode 'continuity'). The singleton
-// key coalesces repeat requests over the same scope so a writer cannot pile up
-// duplicate passes while one is already running. Returns the job id so the
-// caller can poll it to completion, or null if the enqueue failed (or coalesced
-// into a pending job).
+// key holds one unfinished job per scope, so a second request while a pass is
+// queued or running is dropped rather than starting a duplicate run over the
+// same scenes. Returns the job id so the caller can poll it to completion, or
+// null if the enqueue failed (or coalesced into a job already in flight).
 export async function queueAssistantReview(input: {
 	userId: string;
 	storyId?: string;
@@ -208,19 +221,17 @@ export async function queueAssistantReview(input: {
 	// mode, which runs the consistency pass alone.
 	categories: ReviewCategory[];
 	mode?: 'full' | 'continuity';
-}): Promise<string | null> {
+}): Promise<string | 'coalesced' | null> {
 	try {
 		const boss = await getBoss();
-		const target = input.universeId
-			? `universe:${input.universeId}`
-			: input.chapterId
-				? `${input.storyId}:${input.chapterId}`
-				: `${input.storyId}`;
-		const scope = `${input.mode ?? 'full'}:${target}`;
-		return await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
-			singletonKey: scope,
-			singletonSeconds: 30
+		const jobId = await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
+			singletonKey: reviewScopeKey(input),
+			...ASSISTANT_SEND_OPTIONS
 		});
+		// pg-boss returns null when the singleton key coalesced this request into
+		// a review that is already queued or running; the endpoint tells the
+		// writer that, rather than reporting a failure.
+		return jobId ?? 'coalesced';
 	} catch (error) {
 		console.error('queueing assistant review failed:', error);
 		return null;
@@ -238,7 +249,8 @@ export async function queueAssistantSummaries(input: {
 		const boss = await getBoss();
 		return await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
 			singletonKey: input.storyId,
-			singletonSeconds: 30
+			singletonSeconds: 30,
+			...ASSISTANT_SEND_OPTIONS
 		});
 	} catch (error) {
 		console.error('queueing assistant summaries failed:', error);
@@ -250,6 +262,19 @@ export async function queueAssistantSummaries(input: {
 // pg-boss archives a job once it settles, so a job it can no longer find by id
 // is treated as done rather than lost.
 export type AssistantJobState = 'running' | 'done' | 'failed';
+
+// What the status endpoint reports for a review, which knows more than the
+// queue does: a job pg-boss has forgotten while its recorded progress is still
+// mid-run was dropped (a worker that died, a job that expired), so it is
+// reported as stale rather than presented as a review that finished.
+export type ReviewJobState = AssistantJobState | 'stale';
+
+export function reviewJobState(
+	state: AssistantJobState,
+	phase: ReviewRunState['phase']
+): ReviewJobState {
+	return state === 'done' && phase !== 'done' ? 'stale' : state;
+}
 
 export async function getAssistantJobState(
 	kind: 'review' | 'summaries',

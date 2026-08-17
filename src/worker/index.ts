@@ -9,6 +9,7 @@ import {
 	MIGRATE_ASSETS_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE,
 	PURGE_ACCOUNTS_QUEUE,
+	PURGE_REVIEW_RUNS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
@@ -51,12 +52,15 @@ import {
 	s3AssetStore
 } from '../lib/server/assets.ts';
 import {
+	failureMessage,
 	reviewStoryScenes,
 	reviewStoryContinuity,
 	reviewUniverseContinuity
 } from '../lib/server/llm/scene-review.ts';
+import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
+import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { eq } from 'drizzle-orm';
 
@@ -92,6 +96,7 @@ await boss.createQueue(EMAIL_QUEUE);
 await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
+await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
@@ -182,6 +187,19 @@ await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 	}
 });
 
+// The first distinct thing that went wrong in a run, for the notification
+// title. The whole list rides on the job status the review modal polls.
+function firstFailure(failures: ReviewFailure[] | undefined): string {
+	return [...new Set((failures ?? []).map((failure) => failure.message))][0] ?? '';
+}
+
+// What a run that stopped early still left behind, for the notification that
+// says it stopped.
+function staged(notes: number): string {
+	if (notes === 0) return '';
+	return `, with ${notes} note${notes === 1 ? '' : 's'} left`;
+}
+
 // Whole-story or single-chapter Assistant review: fan over the scenes in scope,
 // stage the Assistant's notes through the review tools, then tell the owner it
 // is ready (or that the endpoint could not be reached). Matches the inline
@@ -218,7 +236,11 @@ await boss.work<{
 			const href = `/universes/${universe.slug}/plan`;
 			let title: string;
 			try {
-				const result = await reviewUniverseContinuity(db, { userId, universeId });
+				const result = await reviewUniverseContinuity(db, {
+					userId,
+					universeId,
+					jobId: job.id
+				});
 				if (!result.ran) {
 					title = `There was nothing to compare for continuity in "${universe.name}".`;
 				} else if (result.notes === 0) {
@@ -226,8 +248,13 @@ await boss.work<{
 				} else {
 					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} across "${universe.name}".`;
 				}
-			} catch {
-				title = `The Assistant could not run the continuity pass on "${universe.name}". Check the endpoint in your settings.`;
+				if (result.capped) {
+					title = `The continuity pass on "${universe.name}" stopped at about $${(result.spentUsd ?? 0).toFixed(2)}${staged(result.notes)}. Raise the cap in settings or run the review again to continue.`;
+				}
+				const problem = firstFailure(result.failures);
+				if (problem) title += ` ${problem}`;
+			} catch (err) {
+				title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
 			}
 			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
 				title,
@@ -262,16 +289,23 @@ await boss.work<{
 		if (mode === 'continuity') {
 			let title: string;
 			try {
-				const result = await reviewStoryContinuity(db, { userId, storyId });
-				if (!result.ran) {
+				const result = await reviewStoryContinuity(db, { userId, storyId, jobId: job.id });
+				// The capped wording replaces the outcome line, so it is built before
+				// the suffixes rather than over the top of them.
+				if (result.capped) {
+					title = `The continuity pass on "${story.title}" stopped at about $${(result.spentUsd ?? 0).toFixed(2)}${staged(result.notes)}. Raise the cap in settings or run the review again to continue.`;
+				} else if (!result.ran) {
 					title = `"${story.title}" needs at least two scenes for a continuity pass.`;
 				} else if (result.notes === 0) {
 					title = `The Assistant found no continuity issues in "${story.title}".`;
 				} else {
 					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
 				}
-			} catch {
-				title = `The Assistant could not run the continuity pass on "${story.title}". Check the endpoint in your settings.`;
+				if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
+				const problem = firstFailure(result.failures);
+				if (problem) title += ` ${problem}`;
+			} catch (err) {
+				title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
 			}
 			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
 				title,
@@ -282,23 +316,47 @@ await boss.work<{
 			continue;
 		}
 
-		const result = await reviewStoryScenes(db, { userId, storyId, chapterId, categories });
+		// Like both continuity branches: an error that escapes the review must
+		// still reach the writer, or the job fails with nothing said.
 		let title: string;
-		if (result.reviewed === 0 && result.failed > 0) {
-			title = `The Assistant could not review "${story.title}". Check the endpoint in your settings.`;
-		} else if (result.notes === 0) {
-			title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
-		} else {
-			title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
+		let done: string;
+		try {
+			const result = await reviewStoryScenes(db, {
+				userId,
+				storyId,
+				chapterId,
+				categories,
+				jobId: job.id
+			});
+			const problem = firstFailure(result.failures);
+			if (result.capped) {
+				title = `The review of "${story.title}" stopped after ${result.reviewed} of ${result.total} scenes at about $${(result.spentUsd ?? 0).toFixed(2)}. Raise the cap in settings or run the review again to continue.`;
+			} else if (result.aborted) {
+				title = `The review of "${story.title}" was stopped before it finished.`;
+			} else if (result.reviewed === 0 && result.failed > 0) {
+				title = `The Assistant could not review "${story.title}": ${problem}`;
+			} else if (result.notes === 0) {
+				title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
+			} else {
+				title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
+			}
+			if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
+			if (result.failed > 0 && result.reviewed > 0) {
+				title += ` ${result.failed} scene${result.failed === 1 ? '' : 's'} failed: ${problem}`;
+			} else if (result.failed === 0 && problem) {
+				title += ` ${problem}`;
+			}
+			done = `${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`;
+		} catch (err) {
+			title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
+			done = 'failed';
 		}
 		const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
 			title,
 			href
 		});
 		await queueDigests(digestUsers);
-		console.log(
-			`assistant review: story ${storyId} - ${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`
-		);
+		console.log(`assistant review: story ${storyId} - ${done}`);
 	}
 });
 
@@ -435,11 +493,22 @@ await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
 	}
 });
 
+// The recorded progress of a review is disposable: it serves the status
+// endpoint while a run is in flight and a resume shortly after, and nothing is
+// lost when it goes. Old rows are swept so the table does not grow for good.
+await boss.work(PURGE_REVIEW_RUNS_QUEUE, async () => {
+	const deleted = await purgeReviewRuns(db);
+	if (deleted > 0) console.log(`purge: ${deleted} review run row(s) deleted`);
+});
+
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
 
 // And the universe trash sweep, offset from the account one.
 await boss.schedule(PURGE_UNIVERSES_QUEUE, '45 * * * *', {}, { tz: 'UTC' });
+
+// Old review progress goes once a day; nothing is time critical about it.
+await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
 
 // Sweep for stale mention indexes every five minutes, so a dropped rebuild
 // self-heals within minutes instead of waiting for the next save.

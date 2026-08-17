@@ -6,6 +6,9 @@ import {
 } from '$lib/server/llm/assistant-route';
 import { queueAssistantReview } from '$lib/server/jobs';
 import { parseCategories } from '$lib/review-shape';
+import { db } from '$lib/server/db';
+import { estimateStoryReview } from '$lib/server/llm/estimate';
+import { AssistantDisabledError } from '$lib/server/llm/gateway';
 
 // Queues a background Assistant review (it fans over many scenes, too long for a
 // request). The owner is notified when it finishes, and the response carries the
@@ -21,10 +24,39 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		chapterId?: unknown;
 		categories?: unknown;
 		mode?: unknown;
+		estimate?: unknown;
 	}>(request, locals);
 	const mode = payload.mode === 'continuity' ? 'continuity' : 'full';
 
-	let jobId: string | null;
+	// The pre-flight estimate: the same request with estimate true asks what the
+	// run would send and cost, queues nothing, and contacts no endpoint. It sizes
+	// the per-scene copyedit pass only, so the continuity mode and the
+	// whole-universe scope are refused here rather than answered with a figure
+	// for something else.
+	if (payload.estimate === true) {
+		if (mode === 'continuity' || typeof payload.universeId === 'string') {
+			error(400, 'An estimate is not available for this review type.');
+		}
+		const story = await requireAssistantStory(userId, payload.storyId);
+		try {
+			const estimate = await estimateStoryReview(db, {
+				userId,
+				storyId: story.id,
+				chapterId: typeof payload.chapterId === 'string' ? payload.chapterId : undefined,
+				categories: parseCategories(payload.categories)
+			});
+			return new Response(JSON.stringify(estimate), {
+				headers: { 'content-type': 'application/json' }
+			});
+		} catch (err) {
+			// No reviewer model configured: the run itself would refuse the same way,
+			// so say that instead of returning an estimate with an empty model.
+			if (err instanceof AssistantDisabledError) error(400, err.message);
+			throw err;
+		}
+	}
+
+	let jobId: string | 'coalesced' | null;
 	if (mode === 'continuity' && typeof payload.universeId === 'string') {
 		const universe = await requireAssistantUniverse(userId, payload.universeId);
 		jobId = await queueAssistantReview({
@@ -46,6 +78,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const categories = parseCategories(payload.categories);
 		const story = await requireAssistantStory(userId, payload.storyId);
 		jobId = await queueAssistantReview({ userId, storyId: story.id, chapterId, categories });
+	}
+	if (jobId === 'coalesced') {
+		error(
+			409,
+			'A review of this scope is already queued or running. It carries on; this request started nothing new.'
+		);
 	}
 	if (!jobId) error(503, 'Could not start the review. Try again in a moment.');
 

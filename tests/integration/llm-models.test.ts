@@ -93,6 +93,22 @@ describe('discoverModels', () => {
 		expect((await accountLlmView(db, userId)).modelPricing).toBeUndefined();
 	});
 
+	it('snapshots reported context windows and clears them when a discovery has none', async () => {
+		const withContext: Provider = {
+			...stub,
+			async listModels() {
+				return [{ id: 'big', contextLength: 200000 }, { id: 'unknown' }];
+			}
+		};
+		await configure('https://openrouter.ai/api/v1', {});
+		await discoverModels(db, userId, { provider: withContext, http: noHttp });
+		const { accountLlmView } = await import('../../src/lib/server/llm/config');
+		expect((await accountLlmView(db, userId)).modelContext).toEqual({ big: 200000 });
+		// An endpoint that reports no windows clears the snapshot.
+		await discoverModels(db, userId, { provider: stub, http: noHttp });
+		expect((await accountLlmView(db, userId)).modelContext).toBeUndefined();
+	});
+
 	it('asks for an endpoint when none is configured', async () => {
 		await configure('', {});
 		const result = await discoverModels(db, userId, { provider: stub, http: noHttp });

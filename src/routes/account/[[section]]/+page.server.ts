@@ -39,8 +39,11 @@ import {
 	type EffortLevel,
 	type TuningMap,
 	saveAccountLlmConfig,
+	type ModelContextMap,
 	type ModelMap,
-	type SaveResult
+	type SaveResult,
+	TOOL_PROFILES,
+	type ToolProfile
 } from '$lib/server/llm/config';
 import { discoverModels, testAccountConnection } from '$lib/server/llm/models';
 import {
@@ -198,6 +201,10 @@ async function patchAssistant(
 		apiKey: string;
 		models: ModelMap;
 		tuning: TuningMap;
+		toolProfile: ToolProfile;
+		modelContextManual: ModelContextMap;
+		spendCapUsd: number | null;
+		spendWarnUsd: number | null;
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
@@ -211,6 +218,10 @@ async function patchAssistant(
 		models: patch.models ?? current.models,
 		tuning: patch.tuning ?? current.tuning,
 		toolCallBudget: current.toolCallBudget,
+		toolProfile: patch.toolProfile ?? current.toolProfile,
+		modelContextManual: patch.modelContextManual,
+		spendCapUsd: patch.spendCapUsd,
+		spendWarnUsd: patch.spendWarnUsd,
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
 	});
@@ -383,10 +394,34 @@ export const actions: Actions = {
 	},
 	saveAssistantEndpoint: async ({ request, locals }) => {
 		const data = await request.formData();
+		const profile = String(data.get('toolProfile') ?? '');
+		// An empty box clears the figure (null), rather than being left out, so the
+		// writer can remove a cap they set earlier. Anything that is not a
+		// non-negative number is refused instead of silently clearing it.
+		const usdField = (name: string): number | null | 'invalid' => {
+			const raw = String(data.get(name) ?? '').trim();
+			if (!raw) return null;
+			const value = Number(raw);
+			if (!Number.isFinite(value) || value < 0) return 'invalid';
+			return value > 0 ? value : null;
+		};
+		const spendCapUsd = usdField('spendCapUsd');
+		const spendWarnUsd = usdField('spendWarnUsd');
+		if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
+			return fail(400, {
+				scope: 'assistant-endpoint',
+				message: 'Enter an amount in dollars, or leave it blank.'
+			});
+		}
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
-			apiKey: String(data.get('apiKey') ?? '')
+			apiKey: String(data.get('apiKey') ?? ''),
+			spendCapUsd,
+			spendWarnUsd,
+			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
+				? (profile as ToolProfile)
+				: undefined
 		});
 		if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
 		return { scope: 'assistant-endpoint', saved: true };
@@ -395,18 +430,63 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const models: ModelMap = {};
 		const tuning: TuningMap = {};
+		// The form shows the controls the provider can act on: effort for Claude,
+		// temperature for an OpenAI-compatible endpoint. A control the form did not
+		// show is not part of this save, so its stored value is carried through
+		// instead of being wiped (the blank-api-key pattern).
+		const storedView = await accountLlmView(db, locals.user!.id);
+		const stored = storedView.tuning;
 		for (const role of ASSISTANT_ROLES) {
 			const value = String(data.get(role) ?? '').trim();
 			if (value) models[role] = value;
 			const roleTuning: TuningMap[typeof role] = {};
-			if (data.get(`${role}-thinking`) === 'on') roleTuning.thinking = true;
-			const effort = String(data.get(`${role}-effort`) ?? '');
-			if ((EFFORT_LEVELS as readonly string[]).includes(effort)) {
-				roleTuning.effort = effort as EffortLevel;
+
+			if (data.has(`${role}-thinking`)) {
+				const thinking = String(data.get(`${role}-thinking`));
+				if (thinking === 'on') roleTuning.thinking = true;
+				else if (thinking === 'off') roleTuning.thinking = false;
+			} else if (stored[role]?.thinking !== undefined) {
+				roleTuning.thinking = stored[role].thinking;
 			}
+
+			if (data.has(`${role}-effort`)) {
+				const effort = String(data.get(`${role}-effort`));
+				if ((EFFORT_LEVELS as readonly string[]).includes(effort)) {
+					roleTuning.effort = effort as EffortLevel;
+				}
+			} else if (stored[role]?.effort !== undefined) {
+				roleTuning.effort = stored[role].effort;
+			}
+
+			if (data.has(`${role}-temperature`)) {
+				// Blank clears it; the config clamps whatever number lands to 0..2.
+				const raw = String(data.get(`${role}-temperature`)).trim();
+				const temperature = Number(raw);
+				if (raw && Number.isFinite(temperature)) roleTuning.temperature = temperature;
+			} else if (stored[role]?.temperature !== undefined) {
+				roleTuning.temperature = stored[role].temperature;
+			}
+
 			if (Object.keys(roleTuning).length > 0) tuning[role] = roleTuning;
 		}
-		const result = await patchAssistant(locals.user!.id, { models, tuning });
+		// A context field per model shown on the form (context-<model id>); a blank
+		// one drops the writer's entry, so the discovered value applies again. The
+		// form only renders the models currently assigned to a role, so the save
+		// starts from what is stored and touches only the models it rendered: an
+		// entry for a model that was not on the form survives.
+		const modelContextManual: ModelContextMap = { ...storedView.modelContextManual };
+		for (const [field, value] of data.entries()) {
+			if (!field.startsWith('context-')) continue;
+			const model = field.slice('context-'.length);
+			const tokens = Number(String(value).trim());
+			if (Number.isFinite(tokens) && tokens > 0) modelContextManual[model] = Math.floor(tokens);
+			else delete modelContextManual[model];
+		}
+		const result = await patchAssistant(locals.user!.id, {
+			models,
+			tuning,
+			modelContextManual
+		});
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
 		return { scope: 'assistant-models', saved: true };
 	},

@@ -266,6 +266,41 @@ async function assistantDisplayName(db: Database, storyId: string): Promise<stri
 	return normaliseAssistantName(raw.assistantName) || 'Assistant';
 }
 
+// Whether the Assistant already has an open comment saying exactly this, in
+// the same place. A weak model repeats a tool call within a run and across
+// runs; the repeat is dropped instead of stacking identical cards on the
+// author's review. Only the Assistant's own writes are deduped, and only while
+// the thread is unresolved, so an author who wants the same note twice still
+// gets it and a resolved note can be raised again.
+async function assistantThreadExists(
+	db: Database,
+	sceneId: string,
+	anchor: { start: number; end: number } | null,
+	body: string
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+		.where(
+			and(
+				eq(reviewThreads.sceneId, sceneId),
+				isNull(reviewThreads.suggestionId),
+				isNull(reviewThreads.resolvedAt),
+				anchor
+					? and(
+							eq(reviewThreads.anchorStart, anchor.start),
+							eq(reviewThreads.anchorEnd, anchor.end)
+						)
+					: and(isNull(reviewThreads.anchorStart), isNull(reviewThreads.anchorEnd)),
+				eq(reviewComments.assistant, true),
+				eq(reviewComments.bodyMd, body)
+			)
+		)
+		.limit(1);
+	return Boolean(row);
+}
+
 // Opens a thread with its first comment. A null anchor is a whole-scene
 // comment; a range must be a real selection inside the current text.
 export async function createThread(
@@ -297,6 +332,16 @@ export async function createThread(
 			input.anchor.start >= input.anchor.end)
 	) {
 		return { ok: false, reason: 'That selection no longer matches the text.' };
+	}
+
+	if ('assistant' in input.author) {
+		const duplicate = await assistantThreadExists(db, input.sceneId, input.anchor, body);
+		if (duplicate) {
+			return {
+				ok: false,
+				reason: 'You have already left this comment on this scene; do not repeat it.'
+			};
+		}
 	}
 
 	const threadId = await db.transaction(async (tx) => {
@@ -589,6 +634,34 @@ export async function createSuggestion(
 	}
 	if (scene.bodyMd.slice(start, end) === input.replacement) {
 		return { ok: false, reason: 'That suggestion changes nothing.' };
+	}
+
+	// The Assistant repeating itself stages nothing new (see
+	// assistantThreadExists). The range is compared as stored, against whichever
+	// base revision the earlier suggestion pinned: a repeat inside one review
+	// pass is measured on the same unchanged body, and once the body moves the
+	// offsets are a different proposal anyway.
+	if ('assistant' in input.author) {
+		const [duplicate] = await db
+			.select({ id: reviewSuggestions.id })
+			.from(reviewSuggestions)
+			.where(
+				and(
+					eq(reviewSuggestions.sceneId, input.sceneId),
+					eq(reviewSuggestions.assistant, true),
+					eq(reviewSuggestions.status, 'pending'),
+					eq(reviewSuggestions.rangeStart, start),
+					eq(reviewSuggestions.rangeEnd, end),
+					eq(reviewSuggestions.replacement, input.replacement)
+				)
+			)
+			.limit(1);
+		if (duplicate) {
+			return {
+				ok: false,
+				reason: 'You have already staged this exact edit on this scene; do not repeat it.'
+			};
+		}
 	}
 
 	const [row] = await db.transaction(async (tx) => {

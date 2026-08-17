@@ -15,18 +15,30 @@ import { normaliseProviderId, providerPreset, type ProviderId } from './provider
 // different model. A per-story override never lights the Assistant up when the
 // account master is off; account-off is dark everywhere.
 
-export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'reviewer', 'chat'] as const;
+// 'utility' covers the background work the writer never prompts directly:
+// summary maintenance, entity extraction, and the recap. It was added after the
+// other four, so an older config has no utility model; pickModel's fallback
+// keeps those accounts on the chat model, exactly as before.
+export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'reviewer', 'utility', 'chat'] as const;
 export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
 
-// Per-role request tuning, used by the Anthropic adapter: whether to ask for
-// adaptive thinking, and an effort level. Both optional; absent means the
-// provider's defaults. Other adapters ignore the whole map.
+// Per-role request tuning: whether to ask for adaptive thinking and an effort
+// level (the Anthropic adapter), and a sampling temperature (the
+// OpenAI-compatible adapter). All optional; absent means the provider's
+// defaults, and each adapter ignores the fields it has no use for.
+//
+// thinking has three states, and both explicit ones are stored: true asks
+// Anthropic for adaptive thinking, false asks an OpenAI-compatible endpoint to
+// suppress a reasoning model's thinking pass (the Anthropic adapter treats
+// false the same as absent), and absent leaves the endpoint's default alone.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
-export type RoleTuning = { thinking?: boolean; effort?: EffortLevel };
+export type RoleTuning = { thinking?: boolean; effort?: EffortLevel; temperature?: number };
 export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
+
+const MAX_TEMPERATURE = 2;
 
 function normaliseTuning(raw: unknown): TuningMap {
 	const out: TuningMap = {};
@@ -35,15 +47,32 @@ function normaliseTuning(raw: unknown): TuningMap {
 			const value = (raw as Record<string, unknown>)[role];
 			if (!value || typeof value !== 'object') continue;
 			const tuning: RoleTuning = {};
-			const { thinking, effort } = value as { thinking?: unknown; effort?: unknown };
-			if (thinking === true) tuning.thinking = true;
+			const { thinking, effort, temperature } = value as {
+				thinking?: unknown;
+				effort?: unknown;
+				temperature?: unknown;
+			};
+			if (thinking === true || thinking === false) tuning.thinking = thinking;
 			if (typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort)) {
 				tuning.effort = effort as EffortLevel;
+			}
+			if (typeof temperature === 'number' && Number.isFinite(temperature)) {
+				tuning.temperature = Math.min(Math.max(temperature, 0), MAX_TEMPERATURE);
 			}
 			if (Object.keys(tuning).length > 0) out[role] = tuning;
 		}
 	}
 	return out;
+}
+
+// How many tools the Assistant is offered on a tool-enabled turn. 'full' offers
+// the whole default catalogue; 'minimal' offers the three that matter most, for
+// endpoints running a smaller local model that handles many tool schemas badly.
+export const TOOL_PROFILES = ['full', 'minimal'] as const;
+export type ToolProfile = (typeof TOOL_PROFILES)[number];
+
+function normaliseToolProfile(raw: unknown): ToolProfile {
+	return raw === 'minimal' ? 'minimal' : 'full';
 }
 
 // Stored in users.llm_config. The key is encrypted at rest (see crypto.ts), the
@@ -68,6 +97,8 @@ export type StoredAccountConfig = {
 	// The most tool calls the Assistant may make in one turn (tools are a later
 	// surface; the value is carried now so the config shape is stable).
 	toolCallBudget: number;
+	// Which tools a tool-enabled turn offers (see TOOL_PROFILES).
+	toolProfile: ToolProfile;
 	// Capabilities detected by the "test connection" probe and stored with the
 	// config; set by hand for an endpoint that cannot stream or call tools.
 	supportsStreaming?: boolean;
@@ -76,7 +107,31 @@ export type StoredAccountConfig = {
 	// endpoints that report them (OpenRouter). Used to estimate costs on the
 	// usage log; absent for endpoints that report no prices.
 	modelPricing?: ModelPricing;
+	// Context windows in tokens, per model id. modelContext is the snapshot from
+	// the last discovery, replaced whenever discovery runs; modelContextManual is
+	// what the writer typed and always wins, because a local server's operative
+	// window is what it was launched with, not what the model card claims.
+	modelContext?: ModelContextMap;
+	modelContextManual?: ModelContextMap;
+	// The most one background review run may spend before it stops at the next
+	// scene boundary, in USD. Absent means no ceiling. Only meaningful when the
+	// model has a price in modelPricing; without one a run cannot be priced, and
+	// says so rather than stopping or carrying on silently.
+	spendCapUsd?: number;
+	// What a pre-flight estimate has to reach before the confirm step turns into
+	// a warning, in USD. Absent means the default below.
+	spendWarnUsd?: number;
 };
+
+// The estimate warns above this when the writer has set no figure of their own.
+export const DEFAULT_SPEND_WARN_USD = 2;
+
+function normaliseUsd(raw: unknown): number | undefined {
+	const value = Number(raw);
+	return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+export type ModelContextMap = Record<string, number>;
 
 export type ModelPricing = Record<string, { prompt: number; completion: number }>;
 
@@ -104,6 +159,32 @@ export async function saveModelPricing(
 		.update(users)
 		.set({
 			llmConfig: sql`${users.llmConfig} || ${JSON.stringify({ modelPricing: pricing })}::jsonb`
+		})
+		.where(eq(users.id, userId));
+}
+
+function normaliseContext(raw: unknown): ModelContextMap | undefined {
+	if (!raw || typeof raw !== 'object') return undefined;
+	const out: ModelContextMap = {};
+	for (const [model, value] of Object.entries(raw as Record<string, unknown>)) {
+		const tokens = Number(value);
+		if (Number.isFinite(tokens) && tokens > 0) out[model] = Math.floor(tokens);
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// Snapshot the context windows a model discovery reported, replacing the
+// previous snapshot. The writer's own entries live in a separate map and are
+// not touched here, so a rediscovery never overwrites them.
+export async function saveModelContext(
+	db: Database,
+	userId: string,
+	context: ModelContextMap
+): Promise<void> {
+	await db
+		.update(users)
+		.set({
+			llmConfig: sql`${users.llmConfig} || ${JSON.stringify({ modelContext: context })}::jsonb`
 		})
 		.where(eq(users.id, userId));
 }
@@ -148,9 +229,14 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		models: normaliseModels(raw.models),
 		tuning: normaliseTuning(raw.tuning),
 		toolCallBudget: normaliseBudget(raw.toolCallBudget),
+		toolProfile: normaliseToolProfile(raw.toolProfile),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
 		supportsTools: normaliseCapability(raw.supportsTools),
-		modelPricing: normalisePricing(raw.modelPricing)
+		modelPricing: normalisePricing(raw.modelPricing),
+		modelContext: normaliseContext(raw.modelContext),
+		modelContextManual: normaliseContext(raw.modelContextManual),
+		spendCapUsd: normaliseUsd(raw.spendCapUsd),
+		spendWarnUsd: normaliseUsd(raw.spendWarnUsd)
 	};
 }
 
@@ -252,8 +338,18 @@ export type ResolvedConfig = {
 	models: ModelMap;
 	tuning: TuningMap;
 	toolCallBudget: number;
+	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
+	// Context windows per model id: the discovered snapshot with the writer's own
+	// entries laid over it. A model missing here has an unknown window.
+	modelContext: ModelContextMap;
+	// Per-token prices from the last discovery, for the runs that price what they
+	// spend. Absent for an endpoint that reports no prices, and a model missing
+	// from it has no known price at all.
+	modelPricing?: ModelPricing;
+	spendCapUsd?: number;
+	spendWarnUsd?: number;
 };
 
 export type Resolved = {
@@ -280,10 +376,29 @@ export async function resolveLlmConfig(
 			models: { ...account.models, ...(override?.models ?? {}) },
 			tuning: account.tuning,
 			toolCallBudget: account.toolCallBudget,
+			toolProfile: account.toolProfile,
 			supportsStreaming: account.supportsStreaming,
-			supportsTools: account.supportsTools
+			supportsTools: account.supportsTools,
+			modelContext: { ...(account.modelContext ?? {}), ...(account.modelContextManual ?? {}) },
+			modelPricing: account.modelPricing,
+			spendCapUsd: account.spendCapUsd,
+			spendWarnUsd: account.spendWarnUsd
 		}
 	};
+}
+
+// The model a role runs on: its own, else the chat model, else whatever is set.
+export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
+	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
+}
+
+// The context window of the model this role runs on, in tokens; undefined when
+// neither discovery nor the writer has supplied one.
+export function modelContextWindow(
+	config: ResolvedConfig,
+	role: AssistantRole
+): number | undefined {
+	return config.modelContext[pickModel(config, role)];
 }
 
 // A key-free view for the account settings page and the layout gate (deferred
@@ -299,9 +414,16 @@ export type AccountLlmView = {
 	models: ModelMap;
 	tuning: TuningMap;
 	toolCallBudget: number;
+	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 	modelPricing?: ModelPricing;
+	// Kept apart for the settings screen: what discovery found, and what the
+	// writer typed over it.
+	modelContext?: ModelContextMap;
+	modelContextManual?: ModelContextMap;
+	spendCapUsd?: number;
+	spendWarnUsd?: number;
 };
 
 export async function accountLlmView(db: Database, userId: string): Promise<AccountLlmView> {
@@ -317,9 +439,14 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		models: c.models,
 		tuning: c.tuning,
 		toolCallBudget: c.toolCallBudget,
+		toolProfile: c.toolProfile,
 		supportsStreaming: c.supportsStreaming,
 		supportsTools: c.supportsTools,
-		modelPricing: c.modelPricing
+		modelPricing: c.modelPricing,
+		modelContext: c.modelContext,
+		modelContextManual: c.modelContextManual,
+		spendCapUsd: c.spendCapUsd,
+		spendWarnUsd: c.spendWarnUsd
 	};
 }
 
@@ -336,6 +463,14 @@ export type SaveAccountInput = {
 	models: ModelMap;
 	tuning?: TuningMap;
 	toolCallBudget: number;
+	// Absent keeps the stored profile (the partial-save pattern).
+	toolProfile?: ToolProfile;
+	// The writer's own context windows; absent keeps the stored map, {} clears it.
+	modelContextManual?: ModelContextMap;
+	// The spend ceiling and the estimate's warning threshold, in USD. Absent
+	// keeps what is stored; null, zero, or anything unreadable clears it.
+	spendCapUsd?: number | null;
+	spendWarnUsd?: number | null;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 };
@@ -389,13 +524,28 @@ export async function saveAccountLlmConfig(
 		// blank-api-key pattern); pass {} to clear it.
 		tuning: input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning),
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
+		toolProfile:
+			input.toolProfile === undefined
+				? existing.toolProfile
+				: normaliseToolProfile(input.toolProfile),
+		...(input.modelContextManual === undefined
+			? {}
+			: { modelContextManual: normaliseContext(input.modelContextManual) ?? {} }),
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})
 	};
+	// The spend fields are written as null rather than left out when they are
+	// being cleared: a jsonb merge cannot delete a key by omitting it.
+	const spend: Record<string, number | null> = {};
+	if (input.spendCapUsd !== undefined) spend.spendCapUsd = normaliseUsd(input.spendCapUsd) ?? null;
+	if (input.spendWarnUsd !== undefined) {
+		spend.spendWarnUsd = normaliseUsd(input.spendWarnUsd) ?? null;
+	}
 	// A jsonb merge, so any unknown keys (a future config field) survive.
+	const stored: Record<string, unknown> = { ...value, ...spend };
 	await db
 		.update(users)
-		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(value)}::jsonb` })
+		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })
 		.where(eq(users.id, userId));
 	return { ok: true };
 }

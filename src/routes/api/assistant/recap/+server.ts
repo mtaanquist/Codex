@@ -48,7 +48,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		request,
 		userId,
 		scope: { storyId: story.id },
-		role: 'chat',
+		role: 'utility',
 		enableTools: false,
 		messages,
 		errorMessage: 'The Assistant could not put together a recap.'

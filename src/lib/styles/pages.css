@@ -916,8 +916,16 @@
 	font-size: 12.5px;
 	white-space: nowrap;
 }
-.role-row-tuning .select {
+.role-row-tuning .select,
+.role-row-tuning .input {
 	flex: 1;
+	min-width: 0;
+}
+.role-row .input {
+	height: 34px;
+	padding-top: 0;
+	padding-bottom: 0;
+	font-size: 13px;
 }
 
 /* revision timeline */

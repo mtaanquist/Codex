@@ -169,6 +169,60 @@ describe('createSuggestion', () => {
 	});
 });
 
+describe('assistant suggestions', () => {
+	async function assistantSuggest(range: { start: number; end: number }, replacement: string) {
+		return await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { assistant: true },
+			range,
+			replacement
+		});
+	}
+
+	it('drops a repeat of an identical pending suggestion', async () => {
+		const start = BODY.indexOf('brown fox');
+		const range = { start, end: start + 'brown fox'.length };
+		expect(await assistantSuggest(range, 'red vixen')).toMatchObject({ ok: true });
+		const repeat = await assistantSuggest(range, 'red vixen');
+		expect(repeat).toMatchObject({ ok: false });
+		expect((repeat as { reason: string }).reason).toMatch(/already staged/);
+		expect(await listSuggestions(db, storyId)).toHaveLength(1);
+	});
+
+	it('still stages a different range or replacement, and a repeat after a decision', async () => {
+		const start = BODY.indexOf('brown fox');
+		const range = { start, end: start + 'brown fox'.length };
+		const first = (await assistantSuggest(range, 'red vixen')) as { suggestionId: string };
+		expect(await assistantSuggest(range, 'grey wolf')).toMatchObject({ ok: true });
+		const lazy = BODY.indexOf('lazy');
+		expect(await assistantSuggest({ start: lazy, end: lazy + 4 }, 'red vixen')).toMatchObject({
+			ok: true
+		});
+		// Once the author has decided the first one, the Assistant may propose it
+		// again against the text as it now stands.
+		await decideSuggestion(db, authorId, first.suggestionId, false);
+		expect(await assistantSuggest(range, 'red vixen')).toMatchObject({ ok: true });
+	});
+
+	it('does not dedupe the human paths', async () => {
+		const start = BODY.indexOf('brown fox');
+		const range = { start, end: start + 'brown fox'.length };
+		expect(await suggest(range, 'red vixen')).toMatchObject({ ok: true });
+		expect(await suggest(range, 'red vixen')).toMatchObject({ ok: true });
+		expect(
+			await createSuggestion(db, {
+				storyId,
+				sceneId,
+				author: { userId: authorId },
+				range,
+				replacement: 'red vixen'
+			})
+		).toMatchObject({ ok: true });
+		expect(await listSuggestions(db, storyId)).toHaveLength(3);
+	});
+});
+
 describe('decideSuggestion', () => {
 	it('accept applies the replacement, records a revision, and is final', async () => {
 		const start = BODY.indexOf('brown fox');

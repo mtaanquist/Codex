@@ -101,6 +101,62 @@ describe('openaiProvider.chatStream', () => {
 		]);
 	});
 
+	it('carries the reported finish reason on the done frame', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"content":"Hi"}}]}\n',
+			'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n',
+			'data: [DONE]\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'Hi' },
+			{ type: 'done', finishReason: 'length' }
+		]);
+	});
+
+	it('strips a think block that spans several chunks', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"content":"<thi"}}]}\n',
+			'data: {"choices":[{"delta":{"content":"nk>weighing it up"}}]}\n',
+			'data: {"choices":[{"delta":{"content":" some more</thi"}}]}\n',
+			'data: {"choices":[{"delta":{"content":"nk>The answer."}}]}\n',
+			'data: [DONE]\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([{ type: 'token', text: 'The answer.' }, { type: 'done' }]);
+	});
+
+	it('emits nothing from a think block the stream never closes', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"content":"Before. <think>still musing"}}]}\n',
+			'data: [DONE]\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([{ type: 'token', text: 'Before. ' }, { type: 'done' }]);
+	});
+
+	it('ignores reasoning_content deltas', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"reasoning_content":"the model deliberating"}}]}\n',
+			'data: {"choices":[{"delta":{"content":"The answer."}}]}\n',
+			'data: [DONE]\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([{ type: 'token', text: 'The answer.' }, { type: 'done' }]);
+	});
+
 	it('emits an error event when the transport throws', async () => {
 		const http: HttpRequest = async () => {
 			throw new Error('connection refused');
@@ -172,11 +228,185 @@ describe('openaiProvider.respond', () => {
 			http
 		);
 		expect((sentBody.tools as unknown[])?.length).toBe(1);
+		expect(sentBody.tool_choice).toBe('auto');
 		expect((sentBody.messages as { role: string }[])[1]).toMatchObject({
 			role: 'tool',
 			tool_call_id: 'c1',
 			content: 'result'
 		});
+	});
+
+	it('keeps the tools and sends tool_choice none on a concluding round', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{
+				model: 'm',
+				maxTokens: 16,
+				messages: [{ role: 'user', content: 'hi' }],
+				tools: [{ name: 'get_scene', description: 'd', parameters: { type: 'object' } }],
+				toolChoice: 'none'
+			},
+			conn,
+			http
+		);
+		expect((sentBody.tools as unknown[])?.length).toBe(1);
+		expect(sentBody.tool_choice).toBe('none');
+	});
+
+	it('reports the cached share of the prompt when the endpoint details it', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [{ message: { content: 'ok' } }],
+				usage: {
+					prompt_tokens: 1000,
+					completion_tokens: 20,
+					prompt_tokens_details: { cached_tokens: 800 }
+				}
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', maxTokens: 16, messages: [] },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({
+			promptTokens: 1000,
+			completionTokens: 20,
+			cachedPromptTokens: 800
+		});
+	});
+
+	it('omits the cached share when the endpoint reports none', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [{ message: { content: 'ok' } }],
+				usage: { prompt_tokens: 10, completion_tokens: 2 }
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', maxTokens: 16, messages: [] },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 2 });
+	});
+
+	it('reports the finish reason, normalised', async () => {
+		const seen: (string | undefined)[] = [];
+		for (const reason of ['stop', 'length', 'tool_calls', 'content_filter', undefined]) {
+			const http: HttpRequest = async () =>
+				jsonResponse(200, {
+					choices: [{ message: { content: 'x' }, ...(reason ? { finish_reason: reason } : {}) }]
+				});
+			const result = await openaiProvider.respond(
+				{ model: 'm', messages: [], maxTokens: 16 },
+				conn,
+				http
+			);
+			seen.push(result.finishReason);
+		}
+		expect(seen).toEqual(['stop', 'length', 'toolCalls', 'other', undefined]);
+	});
+
+	it('flags a truncated tool call so the caller can refuse to run it', async () => {
+		// The arguments stopped mid-JSON when the reply hit the token cap.
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [
+					{
+						message: {
+							content: '',
+							tool_calls: [
+								{
+									id: 'c1',
+									type: 'function',
+									function: { name: 'suggest_edit', arguments: '{"sceneId":"s1","original":"the ' }
+								}
+							]
+						},
+						finish_reason: 'length'
+					}
+				]
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.finishReason).toBe('length');
+		expect(result.toolCalls).toHaveLength(1);
+	});
+
+	it('strips an inline think block from the content', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [
+					{ message: { content: '<think>The writer wants brevity.</think>The bell tolls.' } }
+				]
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.content).toBe('The bell tolls.');
+	});
+
+	it('ignores a separate reasoning_content field', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [
+					{ message: { content: 'The bell tolls.', reasoning_content: 'Deliberating at length.' } }
+				]
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.content).toBe('The bell tolls.');
+	});
+
+	it('sends the tuned temperature, and none when unset', async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16, tuning: { temperature: 0 } },
+			conn,
+			http
+		);
+		await openaiProvider.respond({ model: 'm', messages: [], maxTokens: 16 }, conn, http);
+		expect(bodies[0].temperature).toBe(0);
+		expect(bodies[1]).not.toHaveProperty('temperature');
+	});
+
+	it('suppresses thinking only when the role turns it off', async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16, tuning: { thinking: false } },
+			conn,
+			http
+		);
+		await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16, tuning: { thinking: true } },
+			conn,
+			http
+		);
+		await openaiProvider.respond({ model: 'm', messages: [], maxTokens: 16 }, conn, http);
+		expect(bodies[0].chat_template_kwargs).toEqual({ enable_thinking: false });
+		expect(bodies[1]).not.toHaveProperty('chat_template_kwargs');
+		expect(bodies[2]).not.toHaveProperty('chat_template_kwargs');
+		// Anything but an explicit off leaves the request exactly as it was.
+		expect(bodies[1]).toEqual(bodies[2]);
 	});
 
 	it('throws on a non-2xx status', async () => {
@@ -274,6 +504,25 @@ describe('openaiProvider.listModels', () => {
 			{ id: 'free' },
 			{ id: 'paid', pricing: { prompt: 0.000003, completion: 0.000015 } },
 			{ id: 'unpriced' }
+		]);
+	});
+
+	it('carries the reported context window through, ignoring a missing or zero one', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				data: [
+					{ id: 'big', context_length: 200000 },
+					{ id: 'none' },
+					{ id: 'zero', context_length: 0 },
+					{ id: 'string-valued', context_length: '32768' }
+				]
+			});
+		const models = await openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: '' }, http);
+		expect(models).toEqual([
+			{ id: 'big', contextLength: 200000 },
+			{ id: 'none' },
+			{ id: 'string-valued', contextLength: 32768 },
+			{ id: 'zero' }
 		]);
 	});
 

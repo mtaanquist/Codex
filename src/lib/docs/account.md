@@ -63,23 +63,66 @@ contacts a model on its own.
     yourself, such as a local Ollama server (for example
     `http://localhost:11434/v1`). Local endpoints usually need no key, and your
     text never leaves your machine.
+- **Tools offered**: while it works, the Assistant can read scenes from your
+  stories and hand back suggested edits and comments. Leave this on All tools for
+  a large hosted model. Pick Fewer tools if your model is small or runs on your
+  own machine: it is then offered only the three it needs most (read a scene,
+  suggest an edit, leave a comment), and it stops sooner instead of retrying,
+  which smaller models handle far more reliably.
+- **Spend cap per review**: the most one background review may spend before it
+  stops. It checks between scenes, so it never stops half way through one, and it
+  tells you how far it got and what it spent. To carry on, either raise the cap
+  and run it again, or run the same review again as it is: a run over the same
+  scope (the same chapter, or the same whole story) skips the scenes the stopped
+  run already read and starts from a fresh budget. Leave the box empty for no cap.
+  This needs your endpoint to publish prices for the model; without a price the
+  review says the cap could not be applied rather than stopping or ignoring it.
+- **Warn above**: before a chapter or whole-story review starts, the review window
+  shows what it will send and, where a price is known, what that costs. Above this
+  figure it asks you to confirm again. Leave the box empty for the default of
+  2.00.
 - **Models per role**: pick which model handles each kind of help. Select Discover
-  models to fill the lists from your endpoint, then choose one per role. Roles
-  with no model chosen fall back to the endpoint's default. A single story can
+  models to fill the lists from your endpoint, then choose one per role. The roles
+  are Rubber duck (the side panel), Co-author (passages you can insert),
+  Continuation (inline suggestions), Reviewer (suggested edits on a draft), and
+  Background work (scene and chapter summaries, suggested entity details, and the
+  story recap). Roles with no model chosen fall back to the model you picked for
+  Rubber duck, or to the endpoint's default. A single story can
   override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
   tokens sent and received.
-- **Thinking and effort (Claude only)**: with the Claude provider, each role also
-  has a Thinking box and an effort list. Thinking lets the model reason before it
-  answers: noticeably better reviews and feedback, at the cost of more tokens and
-  a slower reply. Effort sets how hard the model works on each request, from low
-  (fast and cheap) to max (thorough and expensive); leave it unset to use the
-  model's default. A good starting point: thinking on with high effort for the
-  reviewer, everything unset for continuation so suggestions stay fast. Not every
-  model accepts every level ("xhigh" needs a recent Opus model, and small models
-  may reject effort entirely); if a request starts failing after a change here,
-  clear the effort for that role.
+- **Context window**: how much text a model can take in one request, counted in
+  tokens. Each model you have picked for a role gets a box under the role list.
+  Discover models fills the number in when your endpoint reports one, and the
+  number shows next to the model in the lists. Type your own number to override
+  it; what you type is kept the next time you discover models. Empty the box to
+  go back to the reported value. If you run the model yourself, enter the size
+  you started the server with (llama.cpp calls this the context size), not the
+  largest the model could handle: that setting is what actually applies.
+- **Thinking**: each role has a Thinking list with three settings. On asks the
+  model to reason before it answers: noticeably better reviews and feedback, at
+  the cost of more tokens and a slower reply. Off tells the endpoint to skip that
+  step, which is what you want for Continuation, Co-author, and Background work,
+  where waiting is worse than a slightly plainer answer. Default leaves your
+  endpoint to do whatever it already does. On the Claude provider, Off does the
+  same thing as Default: Claude models decide for themselves whether to think, so
+  the setting only ever turns thinking on.
+- **Temperature**: on any endpoint other than Claude, each role has a temperature
+  box, from 0 to 2. Lower keeps the model close to the most likely wording, which
+  is what you want for the Reviewer (around 0.2) and for Background work, where
+  the answer should stick to the text. Higher lets it wander, which can suit the
+  Co-author. Leave the box empty to use your endpoint's own setting. The Claude
+  API is driven by the thinking and effort settings instead, so no temperature box
+  shows there.
+- **Effort (Claude only)**: with the Claude provider, each role also has an effort
+  list. Effort sets how hard the model works on each request, from low (fast and
+  cheap) to max (thorough and expensive); leave it unset to use the model's
+  default. A good starting point: thinking on with high effort for the reviewer,
+  everything unset for continuation so suggestions stay fast. Not every model
+  accepts every level ("xhigh" needs a recent Opus model, and small models may
+  reject effort entirely); if a request starts failing after a change here, clear
+  the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
   are known, an estimated cost shows too. With the Claude provider, repeated
@@ -90,6 +133,33 @@ contacts a model on its own.
   itself is never stored in this log.
 
 Your words are sent only to the endpoint you set here.
+
+### Which model to pick for each role
+
+The roles want different things, so a single model for all five is rarely the
+best you can do. Each role in the list shows a short suggestion; here is the
+longer version.
+
+Continuation, Co-author, and Background work want speed above all. Continuation
+runs while you type, and a suggestion that arrives after you have written the
+next line is worthless. Background work runs summaries, entity details, and
+recaps in bulk. Hosted, Claude Haiku is the cheap fast choice. On your own
+machine, look for a mixture-of-experts instruct model such as Qwen3 30B A3B
+(search for "MoE instruct GGUF"). A mixture-of-experts model holds many
+parameters but uses only a small slice of them per word, so it answers far
+faster than its size suggests, as long as it fits in memory. Turn thinking off
+for all three.
+
+The Reviewer wants the strongest model you can run, since it reads a whole draft
+and has to be right about what it quotes. Hosted, Claude Sonnet. On your own
+machine, a dense 32B instruct model such as Qwen3 32B (search for "32B instruct
+GGUF"). Dense means every parameter is used for every word: slower than a
+mixture-of-experts model of the same size, but steadier at close reading. Set a
+low temperature so it quotes your text faithfully instead of paraphrasing it;
+thinking is worth turning on here if you can afford the wait.
+
+Rubber duck is the one role with no technical requirement. Pick whichever model
+you enjoy talking to.
 
 ## Display
 
