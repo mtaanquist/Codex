@@ -15,8 +15,9 @@ import { complete } from '$lib/server/llm/gateway';
 // when the writer accepts.
 
 const MAX_CONTINUATION_TOKENS = 400;
-// The prompt builder only uses the tail of the prose; refuse a pathological
-// payload rather than carrying it through the request.
+// A transport sanity cap, not the prompt bound: the prompt builder trims the
+// prose to its own token budget, and this only keeps a pathological payload from
+// being read into memory whole.
 const MAX_TEXT_BEFORE_CHARS = 50_000;
 
 export const POST: RequestHandler = async ({ request, locals }) => {
