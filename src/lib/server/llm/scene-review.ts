@@ -10,7 +10,13 @@ import {
 	type ReviewFailure,
 	type ReviewRunState
 } from '../db/schema.ts';
-import { emptyReviewRun, loadReviewRun, saveReviewRun } from '../review-runs.ts';
+import {
+	adoptCappedRun,
+	emptyReviewRun,
+	loadReviewRun,
+	reviewScopeKey,
+	saveReviewRun
+} from '../review-runs.ts';
 import { needsSummary, summariseStory } from './summaries.ts';
 import {
 	assembleContext,
@@ -379,8 +385,15 @@ async function runConsistencyPass(
 
 	const chunks = splitSurveyChunks(opts.scenes, budgetTokens);
 	const candidates: ContinuityCandidate[] = [];
+	let spendCapped = false;
 	for (const [i, chunk] of chunks.entries()) {
 		opts.signal?.throwIfAborted();
+		// Between chunks, like between candidates below: the survey has staged
+		// nothing yet, so stopping here loses only the chunks not yet listed.
+		if (opts.meter?.capReached) {
+			spendCapped = true;
+			break;
+		}
 		candidates.push(
 			...(await surveyChunk(
 				db,
@@ -412,7 +425,6 @@ async function runConsistencyPass(
 	const bodyChars = confirmBodyChars(budgetTokens);
 	let notes = 0;
 	let stopped: ConsistencyPassResult['stopped'];
-	let spendCapped = false;
 	for (const candidate of candidates.slice(0, MAX_CANDIDATES)) {
 		opts.signal?.throwIfAborted();
 		// Between candidates is the boundary where stopping stages nothing partial.
@@ -557,10 +569,10 @@ async function refreshSummaries(
 	db: Database,
 	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
 	deps: GatewayDeps
-): Promise<{ refreshed: boolean; failures: ReviewFailure[] }> {
+): Promise<{ refreshed: boolean; failures: ReviewFailure[]; capped: boolean }> {
 	try {
 		if ((await staleSummaryCount(db, opts.userId, opts.storyId)) === 0) {
-			return { refreshed: false, failures: [] };
+			return { refreshed: false, failures: [], capped: false };
 		}
 		const result = await summariseStory(db, opts, deps);
 		const failures: ReviewFailure[] =
@@ -571,14 +583,26 @@ async function refreshSummaries(
 						}
 					]
 				: [];
-		return { refreshed: result.scenes + result.chapters > 0, failures };
+		// The ceiling is shared with the rest of the run, so a summary phase that
+		// spends it stops the review before it starts. Said plainly here, or the
+		// run reports a stop with nothing to explain it.
+		if (result.capped) failures.push({ message: SUMMARIES_CAPPED_MESSAGE });
+		return {
+			refreshed: result.scenes + result.chapters > 0,
+			failures,
+			capped: result.capped ?? false
+		};
 	} catch (err) {
 		return {
 			refreshed: false,
-			failures: [{ message: `Summaries could not be updated: ${failureMessage(err)}` }]
+			failures: [{ message: `Summaries could not be updated: ${failureMessage(err)}` }],
+			capped: false
 		};
 	}
 }
+
+export const SUMMARIES_CAPPED_MESSAGE =
+	'The spend cap was reached while the summaries were being brought up to date.';
 
 // How a standalone continuity review went: how many scenes were in scope, how
 // many notes it staged, and whether the pass ran at all (it is skipped when
@@ -606,16 +630,30 @@ export type ContinuityReviewResult = {
 // test callers).
 type RunWriter = { state: ReviewRunState; save: () => Promise<void> };
 
-async function openRun(db: Database, opts: { jobId?: string; userId: string }): Promise<RunWriter> {
+async function openRun(
+	db: Database,
+	opts: { jobId?: string; userId: string; scope: string }
+): Promise<RunWriter> {
 	let state: ReviewRunState | null = null;
 	if (opts.jobId) {
 		try {
 			state = await loadReviewRun(db, opts.jobId);
+			// A capped run completes its job, so the writer's "run the review again
+			// to continue" arrives as a new job with no row of its own. The capped
+			// run over the same scope is adopted under the new id, so the scenes it
+			// already reviewed are not reviewed (and billed) a second time.
+			state ??= await adoptCappedRun(db, { userId: opts.userId, scope: opts.scope });
 		} catch (err) {
 			console.error('review run: reading progress failed:', err);
 		}
 	}
 	const current = state ?? emptyReviewRun();
+	current.scope = opts.scope;
+	// A resumed run is a fresh attempt with the whole ceiling again, so the
+	// earlier attempt's stop flags and spend do not carry into it.
+	current.capped = false;
+	current.aborted = false;
+	current.spentUsd = 0;
 	return {
 		state: current,
 		async save() {
@@ -638,9 +676,13 @@ export async function reviewStoryContinuity(
 	opts: { userId: string; storyId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<ContinuityReviewResult> {
-	const run = await openRun(db, opts);
-	const failures: ReviewFailure[] = [...run.state.failures];
-	run.state.capped = false;
+	const run = await openRun(db, {
+		...opts,
+		scope: reviewScopeKey({ storyId: opts.storyId, mode: 'continuity' })
+	});
+	// Fresh per attempt: the pass re-runs from the start every time, so a retry
+	// after a crash must not report the crash the earlier attempt hit.
+	const failures: ReviewFailure[] = [];
 	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
 	const meter = new SpendMeter({
 		pricing: resolved.config.modelPricing,
@@ -667,6 +709,24 @@ export async function reviewStoryContinuity(
 			ran: false,
 			failures,
 			summariesRefreshed: summaries.refreshed
+		};
+	}
+	// The summary phase shares the ceiling, so it can spend it before the pass
+	// starts. Reported as a capped run rather than as a pass that found nothing.
+	if (summaries.capped || meter.capReached) {
+		run.state.phase = 'done';
+		run.state.failures = failures;
+		run.state.capped = true;
+		run.state.spentUsd = meter.spentUsd;
+		await run.save();
+		return {
+			scenes: targets.length,
+			notes: 0,
+			ran: false,
+			failures,
+			summariesRefreshed: summaries.refreshed,
+			capped: true,
+			spentUsd: meter.spentUsd
 		};
 	}
 	run.state.phase = 'consistency';
@@ -724,8 +784,10 @@ export async function reviewUniverseContinuity(
 	opts: { userId: string; universeId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<ContinuityReviewResult> {
-	const run = await openRun(db, opts);
-	run.state.capped = false;
+	const run = await openRun(db, {
+		...opts,
+		scope: reviewScopeKey({ universeId: opts.universeId, mode: 'continuity' })
+	});
 	const resolved = await resolveLlmConfig(db, opts.userId);
 	const meter = new SpendMeter({
 		pricing: resolved.config.modelPricing,
@@ -843,15 +905,15 @@ export async function reviewStoryScenes(
 	},
 	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
-	const run = await openRun(db, opts);
+	const run = await openRun(db, {
+		...opts,
+		scope: reviewScopeKey({ storyId: opts.storyId, chapterId: opts.chapterId })
+	});
 	const done = new Set(run.state.completed);
 	const failures: ReviewFailure[] = [...run.state.failures];
 	let reviewed = run.state.reviewed;
 	let failed = run.state.failed;
 	let notes = run.state.notes;
-	// A retry of a capped run is a fresh attempt at the rest of the story: it
-	// resumes through the completed-scene skip and gets the whole ceiling again.
-	run.state.capped = false;
 
 	// The ceiling is shared across every phase of the run (summaries, the scene
 	// passes, the cross-scene pass), so one review cannot spend it several times
@@ -867,7 +929,13 @@ export async function reviewStoryScenes(
 	run.state.phase = 'summaries';
 	await run.save();
 	const summaries = await refreshSummaries(db, { ...opts, meter }, deps);
-	failures.push(...summaries.failures);
+	// The summary phase runs again on every attempt, so a message the earlier
+	// attempt already recorded is not listed twice.
+	for (const failure of summaries.failures) {
+		if (!failures.some((seen) => seen.message === failure.message && !seen.sceneId)) {
+			failures.push(failure);
+		}
+	}
 	if (summaries.refreshed) run.state.summariesRefreshed = true;
 
 	const where = [
@@ -901,7 +969,10 @@ export async function reviewStoryScenes(
 	await run.save();
 
 	let aborted = false;
-	let capped = false;
+	// A summary phase that spent the ceiling stops the run here: the scene loop
+	// would break on its first check anyway, and this way the outcome is capped
+	// rather than a review that reports nothing.
+	let capped = summaries.capped;
 	for (const scene of targets) {
 		if (opts.signal?.aborted) {
 			aborted = true;

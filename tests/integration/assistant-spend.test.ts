@@ -316,6 +316,71 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.capped).toBeUndefined();
 	});
 
+	it('continues under a new job id, the way the writer starts it again', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const first = provider();
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-3' }, { provider: first.provider });
+
+		// The capped job completed, so the button mints a fresh job id; the run it
+		// stopped part-way is picked up by its scope rather than re-billed.
+		await configure({ spendCapUsd: 10 });
+		const second = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-4' },
+			{ provider: second.provider }
+		);
+
+		expect(second.seen).toHaveLength(1);
+		expect(second.seen[0].map((m) => m.content).join('\n')).toContain('Review the scene "Scene 3"');
+		expect(result.reviewed).toBe(3);
+		expect(result.capped).toBeUndefined();
+		// The new run starts with the whole ceiling again, not the old spend.
+		const run = await loadReviewRun(db, 'cap-4');
+		expect(run?.capped).toBe(false);
+		expect(run?.spentUsd).toBe(0);
+	});
+
+	it('does not adopt a run that finished inside its ceiling', async () => {
+		const storyId = await seedStory(2);
+		await priceModel();
+		await configure({ spendCapUsd: 10 });
+		const first = provider();
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'done-1' }, { provider: first.provider });
+
+		const second = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'done-2' },
+			{ provider: second.provider }
+		);
+
+		// A fresh full review really reviews the story again.
+		expect(second.seen).toHaveLength(2);
+		expect(result.reviewed).toBe(2);
+	});
+
+	it('does not adopt a capped run over a different scope', async () => {
+		const other = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId: other, jobId: 'cap-5' }, provider());
+
+		const storyId = await seedStory(2);
+		await configure({ spendCapUsd: 10 });
+		const second = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-6' },
+			{ provider: second.provider }
+		);
+
+		expect(result.reviewed).toBe(2);
+		expect(second.seen).toHaveLength(2);
+	});
+
 	it('says so when the model has no price, rather than skipping the cap in silence', async () => {
 		const storyId = await seedStory(2);
 		await configure({ spendCapUsd: 0.5 });

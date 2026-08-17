@@ -23,7 +23,7 @@ import type {
 	ProviderToolCall
 } from '../../src/lib/server/llm/providers/types';
 
-const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
+const { saveAccountLlmConfig, saveModelPricing } = await import('../../src/lib/server/llm/config');
 const { reviewStoryContinuity, reviewUniverseContinuity } =
 	await import('../../src/lib/server/llm/scene-review');
 
@@ -378,5 +378,77 @@ describe('reviewUniverseContinuity', () => {
 		const comments = await db.select({ assistant: reviewComments.assistant }).from(reviewComments);
 		expect(comments).toHaveLength(1);
 		expect(comments[0].assistant).toBe(true);
+	});
+});
+
+describe('the continuity pass and the spend cap', () => {
+	const MODEL = 'review-model';
+	const PROMPT_TOKENS = 1000;
+	const PRICE_PER_TOKEN = 0.001;
+
+	// Every turn reports the same usage, so one request costs $1.
+	function meteredProvider(): { provider: Provider; seen: ChatMessage[][] } {
+		const seen: ChatMessage[][] = [];
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				seen.push(req.messages);
+				return {
+					content: '[]',
+					toolCalls: [],
+					usage: { promptTokens: PROMPT_TOKENS, completionTokens: 0 }
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, seen };
+	}
+
+	async function configureCap(opts: {
+		spendCapUsd?: number;
+		modelContextManual?: Record<string, number>;
+	}) {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			...opts
+		});
+		await saveModelPricing(db, userId, { [MODEL]: { prompt: PRICE_PER_TOKEN, completion: 0 } });
+	}
+
+	it('reports a cap spent on the summaries rather than a pass that found nothing', async () => {
+		const storyId = await seedStory('S', ['One', 'Two', 'Three']);
+		// No summaries, so the run must write them before it can compare anything.
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.storyId, storyId));
+		await configureCap({ spendCapUsd: 0.5 });
+		const { provider, seen } = meteredProvider();
+		const result = await reviewStoryContinuity(db, { userId, storyId }, { provider });
+
+		expect(result.capped).toBe(true);
+		expect(result.ran).toBe(false);
+		expect(result.spentUsd).toBeCloseTo(1, 6);
+		// The first summary spent the ceiling, so no survey was ever asked for.
+		expect(seen).toHaveLength(1);
+		expect(result.failures?.some((f) => f.message.includes('spend cap'))).toBe(true);
+	});
+
+	it('stops the survey between chunks once the cap is spent', async () => {
+		const storyId = await seedStory('S', ['One', 'Two', 'Three', 'Four'], 1, 'x'.repeat(1400));
+		await configureCap({ spendCapUsd: 0.5, modelContextManual: { [MODEL]: 2000 } });
+		const { provider, seen } = meteredProvider();
+		const result = await reviewStoryContinuity(db, { userId, storyId }, { provider });
+
+		// The listing needs more than one chunk, but the first spends the ceiling.
+		expect(seen).toHaveLength(1);
+		expect(result.capped).toBe(true);
 	});
 });

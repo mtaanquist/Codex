@@ -14,7 +14,7 @@ import type { ChatMessage, Provider } from '../../src/lib/server/llm/providers/t
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
-const { loadReviewRun, saveReviewRun, emptyReviewRun } =
+const { loadReviewRun, saveReviewRun, emptyReviewRun, purgeReviewRuns } =
 	await import('../../src/lib/server/review-runs');
 
 let pool: pg.Pool;
@@ -257,5 +257,63 @@ describe('summary maintenance before a review (#541)', () => {
 
 		expect(result.reviewed).toBe(1);
 		expect(result.failures.some((f) => f.message.includes('summar'))).toBe(true);
+	});
+});
+
+describe('run rows are disposable', () => {
+	it('sweeps progress older than the retention window and keeps the rest', async () => {
+		await saveReviewRun(db, { jobId: 'old-1', userId, state: emptyReviewRun() });
+		await saveReviewRun(db, { jobId: 'new-1', userId, state: emptyReviewRun() });
+		await pool.query(
+			"update assistant_review_runs set updated_at = now() - interval '31 days' where job_id = 'old-1'"
+		);
+
+		expect(await purgeReviewRuns(db)).toBe(1);
+		expect(await loadReviewRun(db, 'old-1')).toBeNull();
+		expect(await loadReviewRun(db, 'new-1')).not.toBeNull();
+	});
+});
+
+describe('resuming a run', () => {
+	it('clears the stop flags of the earlier attempt', async () => {
+		const storyId = await seedStory(1);
+		await saveReviewRun(db, {
+			jobId: 'resume-1',
+			userId,
+			state: { ...emptyReviewRun(), aborted: true, capped: true, spentUsd: 4 }
+		});
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'resume-1' },
+			{ provider: p }
+		);
+
+		expect(result.aborted).toBeUndefined();
+		expect(result.capped).toBeUndefined();
+		const run = await loadReviewRun(db, 'resume-1');
+		expect(run?.aborted).toBe(false);
+		expect(run?.capped).toBe(false);
+		expect(run?.spentUsd).toBe(0);
+	});
+
+	it('does not list the summary failure of the earlier attempt twice', async () => {
+		const storyId = await seedStory(1, { summaries: false });
+		const failing = provider((messages) => {
+			if (asked(messages).includes('Summarise')) throw new Error('Summary turn failed.');
+		});
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'twice-1' },
+			{ provider: failing.provider }
+		);
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'twice-1' },
+			{ provider: failing.provider }
+		);
+
+		const summaryFailures = result.failures.filter((f) => f.message.includes('summar'));
+		expect(summaryFailures).toHaveLength(1);
 	});
 });
