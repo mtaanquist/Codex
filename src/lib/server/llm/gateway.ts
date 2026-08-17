@@ -9,7 +9,8 @@ import {
 	dispatchToolCall,
 	ownedStoryUniverse,
 	ownsUniverse,
-	type ToolContext
+	type ToolContext,
+	type ToolOutcome
 } from './tools/dispatch.ts';
 import { toolSpecs } from './tools/registry.ts';
 import type {
@@ -189,6 +190,8 @@ function recordUsage(
 type AgentResult = {
 	content: string;
 	surfaces: Extract<StreamEvent, { type: 'proposal' }>[];
+	// Review notes the run staged, counted as the tool calls resolve.
+	notes: number;
 };
 
 // The agent loop: ask the model, run any tool calls it requests (read tools
@@ -200,6 +203,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 	const surfaces: AgentResult['surfaces'] = [];
 	const roundTokens = req.maxTokens ?? defaultMaxTokens(req.role);
 	let calls = 0;
+	let notes = 0;
 	for (;;) {
 		const offerTools = p.tools && calls < p.toolBudget ? p.tools : undefined;
 		const round = async (maxTokens: number) => {
@@ -226,7 +230,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			}
 		}
 		if (!offerTools || response.toolCalls.length === 0) {
-			return { content: response.content, surfaces };
+			return { content: response.content, surfaces, notes };
 		}
 
 		messages.push({
@@ -237,11 +241,12 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		});
 		for (const call of response.toolCalls) {
 			calls += 1;
-			const outcome =
+			const outcome: ToolOutcome =
 				calls > p.toolBudget
 					? { result: 'Tool-call budget reached; answer with what you have.', staged: false }
 					: await dispatchToolCall(p.toolContext!, call);
-			if ('surface' in outcome && outcome.surface) {
+			if (outcome.note) notes += 1;
+			if (outcome.surface) {
 				surfaces.push({ type: 'proposal', proposal: outcome.surface.proposal });
 			}
 			logEvent('info', 'assistant.tool', {
@@ -297,11 +302,24 @@ export async function* stream(
 	await recordUsage(db, prepared, req, usage);
 }
 
+// What a buffered run produced. Most callers want the text only (complete);
+// the review runs also need how many notes it staged, which the agent loop
+// already sees as the tool calls resolve.
+export type CompletionResult = { content: string; notes: number };
+
 export async function complete(
 	db: Database,
 	req: GatewayRequest,
 	deps: GatewayDeps = {}
 ): Promise<string> {
+	return (await completeDetailed(db, req, deps)).content;
+}
+
+export async function completeDetailed(
+	db: Database,
+	req: GatewayRequest,
+	deps: GatewayDeps = {}
+): Promise<CompletionResult> {
 	const prepared = await prepare(db, req, deps);
 	logEvent('info', 'assistant.complete', {
 		userId: req.userId,
@@ -311,7 +329,10 @@ export async function complete(
 	});
 	// Buffered callers have no stream to carry staged surfaces; the proposals
 	// surface only on the streaming chat path.
-	if (prepared.tools) return (await runAgent(db, prepared, req)).content;
+	if (prepared.tools) {
+		const { content, notes } = await runAgent(db, prepared, req);
+		return { content, notes };
+	}
 	const response = await prepared.provider.respond(
 		{
 			model: prepared.model,
@@ -324,5 +345,5 @@ export async function complete(
 		req.signal
 	);
 	await recordUsage(db, prepared, req, response.usage);
-	return response.content;
+	return { content: response.content, notes: 0 };
 }

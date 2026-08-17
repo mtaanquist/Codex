@@ -48,6 +48,10 @@ export type ToolOutcome = {
 	result: string;
 	// True when the call staged a human-approved change.
 	staged: boolean;
+	// True when what it staged is a review note on a scene (a suggested edit or
+	// a comment). The review runs tally these from the agent loop rather than
+	// counting rows before and after.
+	note?: boolean;
 	// A staged action the surface should show alongside the reply (a proposal
 	// card with a confirm button); the gateway forwards it on the stream.
 	surface?: { type: 'proposal'; proposal: SplitProposal };
@@ -303,7 +307,8 @@ async function suggestEdit(
 	if (!result.ok) return { result: result.reason, staged: false };
 	return {
 		result: `Staged a suggested edit (id ${result.suggestionId}). The author will accept or reject it; nothing has changed yet.`,
-		staged: true
+		staged: true,
+		note: true
 	};
 }
 
@@ -351,7 +356,7 @@ async function replyInThread(ctx: ToolContext, comment: string): Promise<ToolOut
 		body: comment
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
-	return { result: 'Your reply was posted to the thread.', staged: true };
+	return { result: 'Your reply was posted to the thread.', staged: true, note: true };
 }
 
 // The scoped revision: amends the Assistant's own pending suggestion fixed by
@@ -397,5 +402,5 @@ async function leaveComment(
 		body: input.comment
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
-	return { result: 'Staged a review comment for the author.', staged: true };
+	return { result: 'Staged a review comment for the author.', staged: true, note: true };
 }
