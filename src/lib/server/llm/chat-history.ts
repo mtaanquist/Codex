@@ -150,7 +150,12 @@ export function fitChatTurns(
 		kept.push(turns[i]);
 		used += cost;
 	}
-	return kept.reverse();
+	kept.reverse();
+	// Dropping the oldest turns can leave the transcript starting on an assistant
+	// reply, which the Anthropic API rejects outright; the reply also reads as
+	// an answer to a question no longer there. Both go with it.
+	while (kept.length > 1 && kept[0].role === 'assistant') kept.shift();
+	return kept;
 }
 
 export async function clearChat(db: Database, userId: string, scope: ChatScope): Promise<void> {
