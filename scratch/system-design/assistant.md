@@ -810,7 +810,11 @@ calls the gateway, which proxies through the egress guard.
 ### Account Assistant settings (configure + enable)
 
 - [built] Read: `accountLlmView` (never exposes the key; has `hasKey`,
-  `assistantName`, `persona`, `models`, `toolCallBudget`, capability flags).
+  `assistantName`, `persona`, `models`, `toolCallBudget`, `toolProfile`,
+  capability flags, `modelPricing`, and the context windows: `modelContext` (the
+  discovery snapshot) and `modelContextManual` (what the writer entered, which
+  wins). `modelContextWindow(config, role)` resolves the window for a role's
+  model, or undefined when unknown.
 - [built] Save: `saveAccountLlmConfig(db, userId, input)` (blank `apiKey` keeps
   the stored one; validates the endpoint). Persona presets: `PERSONAS`,
   `Persona`, `MAX_ASSISTANT_NAME` (`llm/prompts/persona.ts`) for the tone
@@ -912,6 +916,14 @@ calls the gateway, which proxies through the egress guard.
   `llm/tools/`. The gateway loop dispatches them, capped by the account
   `toolCallBudget`. The frontend only renders the staged results (the
   `isAssistant` suggestions/comments).
+- [built] The account `toolProfile` shapes the default set: `minimal` offers only
+  `get_scene`, `suggest_edit`, and `leave_comment` and halves the budget, for
+  endpoints running a smaller local model. A surface that names its own tools
+  (the scoped review-reply turn) is unaffected.
+- [built] `get_scene` sizes its result against the role model's context window
+  when one is known (about a quarter of it, floor 8000 characters, the 200K
+  ceiling unchanged). Sizing the assembled world context against the window is
+  still to build.
 - [to build] Structural write tools (create scene from a template, create an
   entity, set a quick detail, split a scene) need a preview-and-confirm artifact
   that does not exist yet; they are deliberately deferred. Add them as new tools

@@ -39,6 +39,7 @@ import {
 	type EffortLevel,
 	type TuningMap,
 	saveAccountLlmConfig,
+	type ModelContextMap,
 	type ModelMap,
 	type SaveResult,
 	TOOL_PROFILES,
@@ -201,6 +202,7 @@ async function patchAssistant(
 		models: ModelMap;
 		tuning: TuningMap;
 		toolProfile: ToolProfile;
+		modelContextManual: ModelContextMap;
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
@@ -215,6 +217,7 @@ async function patchAssistant(
 		tuning: patch.tuning ?? current.tuning,
 		toolCallBudget: current.toolCallBudget,
 		toolProfile: patch.toolProfile ?? current.toolProfile,
+		modelContextManual: patch.modelContextManual,
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
 	});
@@ -419,7 +422,21 @@ export const actions: Actions = {
 			}
 			if (Object.keys(roleTuning).length > 0) tuning[role] = roleTuning;
 		}
-		const result = await patchAssistant(locals.user!.id, { models, tuning });
+		// A context field per model shown on the form (context-<model id>); a blank
+		// one drops the writer's entry, so the discovered value applies again.
+		const modelContextManual: ModelContextMap = {};
+		for (const [field, value] of data.entries()) {
+			if (!field.startsWith('context-')) continue;
+			const tokens = Number(String(value).trim());
+			if (Number.isFinite(tokens) && tokens > 0) {
+				modelContextManual[field.slice('context-'.length)] = Math.floor(tokens);
+			}
+		}
+		const result = await patchAssistant(locals.user!.id, {
+			models,
+			tuning,
+			modelContextManual
+		});
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
 		return { scope: 'assistant-models', saved: true };
 	},

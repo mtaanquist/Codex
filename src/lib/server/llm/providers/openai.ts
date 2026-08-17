@@ -316,13 +316,21 @@ export const openaiProvider: Provider = {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
 		const json = JSON.parse(text) as {
-			data?: { id?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }[];
+			data?: {
+				id?: unknown;
+				pricing?: { prompt?: unknown; completion?: unknown };
+				context_length?: unknown;
+			}[];
 		};
 		const items = Array.isArray(json.data) ? json.data : [];
 		const byId = new Map<string, ModelInfo>();
 		for (const item of items) {
 			if (typeof item.id !== 'string' || byId.has(item.id)) continue;
-			byId.set(item.id, { id: item.id, ...parsePricing(item.pricing) });
+			byId.set(item.id, {
+				id: item.id,
+				...parsePricing(item.pricing),
+				...parseContextLength(item.context_length)
+			});
 		}
 		return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 	}
@@ -343,4 +351,13 @@ function parsePricing(
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return {};
 	if (prompt === 0 && completion === 0) return {};
 	return { pricing: { prompt, completion } };
+}
+
+// OpenRouter's /models reports the model's context window as context_length;
+// most other OpenAI-compatible lists omit it, and a local server reports its
+// own launch setting at best, so an absent value stays unset.
+function parseContextLength(raw: unknown): Pick<ModelInfo, 'contextLength'> {
+	const tokens = Number(raw);
+	if (!Number.isFinite(tokens) || tokens <= 0) return {};
+	return { contextLength: Math.floor(tokens) };
 }

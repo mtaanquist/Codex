@@ -13,8 +13,10 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'llm-config-test-secret';
 const {
 	accountLlmView,
 	assistantLayout,
+	modelContextWindow,
 	resolveLlmConfig,
 	saveAccountLlmConfig,
+	saveModelContext,
 	saveStoryLlmOverride
 } = await import('../../src/lib/server/llm/config');
 const { egressPolicy, saveEgressPolicy } = await import('../../src/lib/server/llm/egress');
@@ -140,6 +142,44 @@ describe('account config round-trip', () => {
 		// An unknown value falls back to full.
 		await saveAccountLlmConfig(db, userId, { ...base, toolProfile: 'chatty' as never });
 		expect((await accountLlmView(db, userId)).toolProfile).toBe('full');
+	});
+
+	it('a manual context window wins over the discovered one and survives rediscovery', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'big', reviewer: 'small' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		await saveModelContext(db, userId, { big: 200000, small: 32768 });
+		expect((await resolveLlmConfig(db, userId)).config.modelContext).toEqual({
+			big: 200000,
+			small: 32768
+		});
+
+		// The writer corrects the small model: the server was launched with 8K.
+		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: { small: 8192 } });
+		expect(modelContextWindow((await resolveLlmConfig(db, userId)).config, 'reviewer')).toBe(8192);
+
+		// A rediscovery replaces the discovered snapshot and leaves the entry alone.
+		await saveModelContext(db, userId, { big: 200000, small: 32768 });
+		const view = await accountLlmView(db, userId);
+		expect(view.modelContext).toEqual({ big: 200000, small: 32768 });
+		expect(view.modelContextManual).toEqual({ small: 8192 });
+		expect(modelContextWindow((await resolveLlmConfig(db, userId)).config, 'reviewer')).toBe(8192);
+
+		// Clearing the entry hands the model back to the discovered value.
+		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: {} });
+		expect(modelContextWindow((await resolveLlmConfig(db, userId)).config, 'reviewer')).toBe(32768);
+
+		// A partial save from another form keeps whatever is stored.
+		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: { small: 8192 } });
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).modelContextManual).toEqual({ small: 8192 });
 	});
 
 	it('a preset owns its endpoint: the submitted URL is ignored', async () => {

@@ -156,9 +156,11 @@ export interface Provider {
 	listModels(conn: Connection, http: HttpRequest, signal?: AbortSignal): Promise<ModelInfo[]>;
 }
 
-// A discovered model: the id, plus per-token USD pricing where the endpoint
-// reports it (OpenRouter does; plain OpenAI-style lists do not).
+// A discovered model: the id, plus per-token USD pricing and the context window
+// in tokens where the endpoint reports them (OpenRouter does; plain
+// OpenAI-style lists do not).
 export type ModelInfo = {
 	id: string;
 	pricing?: { prompt: number; completion: number };
+	contextLength?: number;
 };

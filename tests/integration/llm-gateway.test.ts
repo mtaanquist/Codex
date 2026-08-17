@@ -25,7 +25,7 @@ import type {
 	StreamEvent
 } from '../../src/lib/server/llm/providers/types';
 
-const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
+const { saveAccountLlmConfig, saveModelContext } = await import('../../src/lib/server/llm/config');
 const { listSuggestions, decideSuggestion } = await import('../../src/lib/server/review');
 const { complete, stream, AssistantDisabledError } =
 	await import('../../src/lib/server/llm/gateway');
@@ -351,6 +351,58 @@ describe('gateway tool loop', () => {
 		);
 		const toolMessage2 = script2.seen[1].find((m) => m.role === 'tool');
 		expect(toolMessage2?.content).toContain('truncated: showing the first 200000 of 250000');
+	});
+
+	it('a known context window caps get_scene at about a quarter of it', async () => {
+		await configure(true);
+		// A 4K-token window: a quarter of it is about 4000 characters, under the
+		// 8000 character floor, so the floor applies.
+		await saveModelContext(db, userId, { 'chat-model': 4096 });
+		const body = 'x'.repeat(20_000);
+		const { storyId, sceneId } = await seedStoryScene(body);
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'ok' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read it' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(script.seen[1].find((m) => m.role === 'tool')?.content).toContain(
+			'truncated: showing the first 8000 of 20000'
+		);
+
+		// A 32K window leaves room for 32000 characters, so the same scene is whole.
+		await saveModelContext(db, userId, { 'chat-model': 32768 });
+		const script2 = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'ok' }
+		]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'read it' }]
+			},
+			{ provider: script2.provider, http: noHttp }
+		);
+		expect(script2.seen[1].find((m) => m.role === 'tool')?.content).not.toContain('truncated');
 	});
 
 	it('list_scenes returns the chapter and scene skeleton with ids', async () => {

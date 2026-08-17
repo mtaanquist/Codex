@@ -1,6 +1,6 @@
 import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
-import { resolveLlmConfig, type AssistantRole, type ResolvedConfig } from './config.ts';
+import { modelContextWindow, pickModel, resolveLlmConfig, type AssistantRole } from './config.ts';
 import { egressHttpRequest, egressPolicy } from './egress.ts';
 import { providerFor } from './providers/index.ts';
 import { buildPersonaPrompt } from './prompts/persona.ts';
@@ -91,10 +91,6 @@ export type GatewayDeps = {
 	http?: HttpRequest;
 };
 
-export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
-	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
-}
-
 type Prepared = {
 	conn: Connection;
 	model: string;
@@ -109,6 +105,9 @@ type Prepared = {
 	// Thinking/effort/temperature for this role, from the account config;
 	// undefined when the role has none set.
 	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
+	// The context window of this turn's model, in tokens, where it is known;
+	// carried for the callers that size what they send.
+	contextWindow?: number;
 };
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
@@ -127,6 +126,10 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		role: 'system',
 		content: buildPersonaPrompt(resolved.config.assistantName, resolved.config.persona)
 	};
+
+	// The window of the model this role runs on, where one is known; the tools
+	// size their results against it and later callers can size what they send.
+	const contextWindow = modelContextWindow(resolved.config, req.role);
 
 	// Tools are offered only with a universe context the user owns and an
 	// endpoint that can call them; otherwise the turn is a plain completion. The
@@ -157,7 +160,8 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				universeId,
 				storyId: req.storyId,
 				scope: req.toolScope,
-				allowedTools: tools.map((tool) => tool.name)
+				allowedTools: tools.map((tool) => tool.name),
+				contextWindow
 			};
 		}
 	}
@@ -179,7 +183,8 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 			resolved.config.toolProfile === 'minimal'
 				? Math.max(MINIMAL_PROFILE_MIN_BUDGET, Math.floor(budget / MINIMAL_PROFILE_BUDGET_DIVISOR))
 				: budget,
-		tuning: resolved.config.tuning[req.role]
+		tuning: resolved.config.tuning[req.role],
+		contextWindow
 	};
 }
 

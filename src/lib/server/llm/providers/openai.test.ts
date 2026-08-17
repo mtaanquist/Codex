@@ -425,6 +425,25 @@ describe('openaiProvider.listModels', () => {
 		]);
 	});
 
+	it('carries the reported context window through, ignoring a missing or zero one', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				data: [
+					{ id: 'big', context_length: 200000 },
+					{ id: 'none' },
+					{ id: 'zero', context_length: 0 },
+					{ id: 'string-valued', context_length: '32768' }
+				]
+			});
+		const models = await openaiProvider.listModels({ endpoint: 'http://h/v1', apiKey: '' }, http);
+		expect(models).toEqual([
+			{ id: 'big', contextLength: 200000 },
+			{ id: 'none' },
+			{ id: 'string-valued', contextLength: 32768 },
+			{ id: 'zero' }
+		]);
+	});
+
 	it('derives the models path from a full completions endpoint', async () => {
 		let calledUrl = '';
 		const http: HttpRequest = async (url) => {

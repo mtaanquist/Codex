@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { assistantGate, type StoredAccountConfig, type StoredStoryOverride } from './config';
+import {
+	assistantGate,
+	modelContextWindow,
+	pickModel,
+	type ResolvedConfig,
+	type StoredAccountConfig,
+	type StoredStoryOverride
+} from './config';
 
 function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfig {
 	return {
@@ -16,6 +23,44 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		...partial
 	};
 }
+
+function resolved(partial: Partial<ResolvedConfig> = {}): ResolvedConfig {
+	return {
+		assistantName: '',
+		persona: 'balanced',
+		provider: 'custom',
+		endpoint: 'http://local/v1',
+		apiKey: '',
+		models: {},
+		tuning: {},
+		toolCallBudget: 8,
+		toolProfile: 'full',
+		modelContext: {},
+		...partial
+	};
+}
+
+describe('modelContextWindow', () => {
+	it('returns the window of the model the role runs on', () => {
+		const config = resolved({
+			models: { chat: 'small', reviewer: 'large' },
+			modelContext: { small: 8192, large: 200000 }
+		});
+		expect(modelContextWindow(config, 'reviewer')).toBe(200000);
+		expect(modelContextWindow(config, 'chat')).toBe(8192);
+	});
+
+	it('follows the role fallback to the chat model', () => {
+		const config = resolved({ models: { chat: 'small' }, modelContext: { small: 8192 } });
+		expect(pickModel(config, 'continuation')).toBe('small');
+		expect(modelContextWindow(config, 'continuation')).toBe(8192);
+	});
+
+	it('is undefined when the model has no known window, or no model at all', () => {
+		expect(modelContextWindow(resolved({ models: { chat: 'mystery' } }), 'chat')).toBeUndefined();
+		expect(modelContextWindow(resolved(), 'chat')).toBeUndefined();
+	});
+});
 
 describe('assistantGate', () => {
 	it('is dark everywhere when no endpoint is configured', () => {

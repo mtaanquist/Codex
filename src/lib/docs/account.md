@@ -76,6 +76,14 @@ contacts a model on its own.
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
   tokens sent and received.
+- **Context window**: how much text a model can take in one request, counted in
+  tokens. Each model you have picked for a role gets a box under the role list.
+  Discover models fills the number in when your endpoint reports one, and the
+  number shows next to the model in the lists. Type your own number to override
+  it; what you type is kept the next time you discover models. Empty the box to
+  go back to the reported value. If you run the model yourself, enter the size
+  you started the server with (llama.cpp calls this the context size), not the
+  largest the model could handle: that setting is what actually applies.
 - **Thinking and effort (Claude only)**: with the Claude provider, each role also
   has a Thinking box and an effort list. Thinking lets the model reason before it
   answers: noticeably better reviews and feedback, at the cost of more tokens and

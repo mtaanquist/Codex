@@ -40,7 +40,11 @@
 	// any model already chosen, so a saved pick always shows even before a refresh.
 	// A filter box narrows large catalogues (OpenRouter lists hundreds); saved
 	// picks always stay in the list so a save never silently drops one.
-	type DiscoveredModel = { id: string; pricing?: { prompt: number; completion: number } };
+	type DiscoveredModel = {
+		id: string;
+		pricing?: { prompt: number; completion: number };
+		contextLength?: number;
+	};
 	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
 
 	// Per-role thinking/effort, shown for the Claude provider only (mirrors
@@ -76,10 +80,34 @@
 		const value = perToken * 1_000_000;
 		return `$${value >= 100 ? value.toFixed(0) : value.toFixed(2)}`;
 	}
+	// Context windows: what the endpoint reported at the last discovery (or the
+	// one just run), with anything typed here laid over it.
+	const discoveredContext = $derived({
+		...(data.assistant.modelContext ?? {}),
+		...Object.fromEntries(
+			discoveredModels.filter((m) => m.contextLength).map((m) => [m.id, m.contextLength!])
+		)
+	} as Record<string, number>);
+	const manualContext = $derived(
+		(data.assistant.modelContextManual ?? {}) as Record<string, number>
+	);
+	function contextWindow(id: string): number | undefined {
+		return manualContext[id] ?? discoveredContext[id];
+	}
+	// The models with a context field: whatever is picked for a role right now.
+	const chosenModels = $derived([
+		...new Set(Object.values(savedModels).filter((m): m is string => !!m))
+	]);
 	function modelLabel(id: string): string {
 		const price = modelPricing[id];
-		if (!price) return id;
-		return `${id} (${perMillion(price.prompt)} in / ${perMillion(price.completion)} out per 1M tokens)`;
+		const tokens = contextWindow(id);
+		const parts = [
+			price
+				? `${perMillion(price.prompt)} in / ${perMillion(price.completion)} out per 1M tokens`
+				: '',
+			tokens ? `${tokens.toLocaleString()} token context` : ''
+		].filter(Boolean);
+		return parts.length > 0 ? `${id} (${parts.join(', ')})` : id;
 	}
 	function usageCost(model: string, promptTokens: number | null, completionTokens: number | null) {
 		const price = modelPricing[model];
@@ -486,6 +514,45 @@
 						tokens. Effort sets how hard it works; leave both unset for the model's defaults. Older
 						or lighter models may not accept every level - if a request fails, clear the effort
 						here. "xhigh" needs a recent Opus model.
+					</p>
+				{/if}
+				{#if chosenModels.length > 0}
+					<div class="role-table">
+						{#each chosenModels as model (model)}
+							<div class="role-row">
+								<div class="role-row-label">
+									<div class="role-row-name">{model}</div>
+									<div class="role-row-hint">
+										{#if discoveredContext[model]}
+											Your endpoint reports {discoveredContext[model].toLocaleString()} tokens.
+										{:else}
+											Your endpoint does not report a context window.
+										{/if}
+									</div>
+								</div>
+								<div class="role-row-controls">
+									<input
+										class="input"
+										type="number"
+										min="1"
+										step="1"
+										name="context-{model}"
+										aria-label="{model} context window in tokens"
+										value={manualContext[model] ?? ''}
+										placeholder={discoveredContext[model]
+											? String(discoveredContext[model])
+											: 'Context window in tokens'}
+									/>
+								</div>
+							</div>
+						{/each}
+					</div>
+					<p class="field-hint">
+						The context window is how much text a model can take in one request, counted in tokens.
+						Type a number to set it yourself; what you type is kept when you discover models again.
+						Leave a box empty to use what your endpoint reports. If you run the model yourself,
+						enter the size you started the server with, which is often smaller than the model can
+						handle.
 					</p>
 				{/if}
 				{#if Object.keys(modelPricing).length > 0}

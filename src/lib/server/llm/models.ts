@@ -1,10 +1,16 @@
 import type { Database } from '../auth';
-import { resolveLlmConfig, saveModelPricing, type ModelPricing } from './config';
+import {
+	pickModel,
+	resolveLlmConfig,
+	saveModelContext,
+	saveModelPricing,
+	type ModelContextMap,
+	type ModelPricing
+} from './config';
 import { egressHttpRequest, egressPolicy } from './egress';
 import { providerFor } from './providers';
 import type { ProviderId } from './providers/presets';
 import type { Connection, HttpRequest, ModelInfo, Provider } from './providers/types';
-import { pickModel } from './gateway';
 
 // Endpoint setup helpers, all through the same egress guard as completions, for
 // the account Assistant settings (UI deferred):
@@ -54,14 +60,19 @@ export async function discoverModels(
 		config.provider,
 		deps
 	);
-	// Snapshot any reported prices so the usage log can estimate costs; an
-	// endpoint without prices clears the previous snapshot.
+	// Snapshot any reported prices so the usage log can estimate costs, and any
+	// reported context windows so the Assistant can size what it sends; an
+	// endpoint that reports neither clears the previous snapshots. A window the
+	// writer entered by hand lives in a separate map and survives this.
 	if (result.ok) {
 		const pricing: ModelPricing = {};
+		const context: ModelContextMap = {};
 		for (const model of result.models) {
 			if (model.pricing) pricing[model.id] = model.pricing;
+			if (model.contextLength) context[model.id] = model.contextLength;
 		}
 		await saveModelPricing(db, userId, pricing);
+		await saveModelContext(db, userId, context);
 	}
 	return result;
 }

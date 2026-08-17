@@ -98,7 +98,15 @@ export type StoredAccountConfig = {
 	// endpoints that report them (OpenRouter). Used to estimate costs on the
 	// usage log; absent for endpoints that report no prices.
 	modelPricing?: ModelPricing;
+	// Context windows in tokens, per model id. modelContext is the snapshot from
+	// the last discovery, replaced whenever discovery runs; modelContextManual is
+	// what the writer typed and always wins, because a local server's operative
+	// window is what it was launched with, not what the model card claims.
+	modelContext?: ModelContextMap;
+	modelContextManual?: ModelContextMap;
 };
+
+export type ModelContextMap = Record<string, number>;
 
 export type ModelPricing = Record<string, { prompt: number; completion: number }>;
 
@@ -126,6 +134,32 @@ export async function saveModelPricing(
 		.update(users)
 		.set({
 			llmConfig: sql`${users.llmConfig} || ${JSON.stringify({ modelPricing: pricing })}::jsonb`
+		})
+		.where(eq(users.id, userId));
+}
+
+function normaliseContext(raw: unknown): ModelContextMap | undefined {
+	if (!raw || typeof raw !== 'object') return undefined;
+	const out: ModelContextMap = {};
+	for (const [model, value] of Object.entries(raw as Record<string, unknown>)) {
+		const tokens = Number(value);
+		if (Number.isFinite(tokens) && tokens > 0) out[model] = Math.floor(tokens);
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// Snapshot the context windows a model discovery reported, replacing the
+// previous snapshot. The writer's own entries live in a separate map and are
+// not touched here, so a rediscovery never overwrites them.
+export async function saveModelContext(
+	db: Database,
+	userId: string,
+	context: ModelContextMap
+): Promise<void> {
+	await db
+		.update(users)
+		.set({
+			llmConfig: sql`${users.llmConfig} || ${JSON.stringify({ modelContext: context })}::jsonb`
 		})
 		.where(eq(users.id, userId));
 }
@@ -173,7 +207,9 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		toolProfile: normaliseToolProfile(raw.toolProfile),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
 		supportsTools: normaliseCapability(raw.supportsTools),
-		modelPricing: normalisePricing(raw.modelPricing)
+		modelPricing: normalisePricing(raw.modelPricing),
+		modelContext: normaliseContext(raw.modelContext),
+		modelContextManual: normaliseContext(raw.modelContextManual)
 	};
 }
 
@@ -278,6 +314,9 @@ export type ResolvedConfig = {
 	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
+	// Context windows per model id: the discovered snapshot with the writer's own
+	// entries laid over it. A model missing here has an unknown window.
+	modelContext: ModelContextMap;
 };
 
 export type Resolved = {
@@ -306,9 +345,24 @@ export async function resolveLlmConfig(
 			toolCallBudget: account.toolCallBudget,
 			toolProfile: account.toolProfile,
 			supportsStreaming: account.supportsStreaming,
-			supportsTools: account.supportsTools
+			supportsTools: account.supportsTools,
+			modelContext: { ...(account.modelContext ?? {}), ...(account.modelContextManual ?? {}) }
 		}
 	};
+}
+
+// The model a role runs on: its own, else the chat model, else whatever is set.
+export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
+	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
+}
+
+// The context window of the model this role runs on, in tokens; undefined when
+// neither discovery nor the writer has supplied one.
+export function modelContextWindow(
+	config: ResolvedConfig,
+	role: AssistantRole
+): number | undefined {
+	return config.modelContext[pickModel(config, role)];
 }
 
 // A key-free view for the account settings page and the layout gate (deferred
@@ -328,6 +382,10 @@ export type AccountLlmView = {
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 	modelPricing?: ModelPricing;
+	// Kept apart for the settings screen: what discovery found, and what the
+	// writer typed over it.
+	modelContext?: ModelContextMap;
+	modelContextManual?: ModelContextMap;
 };
 
 export async function accountLlmView(db: Database, userId: string): Promise<AccountLlmView> {
@@ -346,7 +404,9 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		toolProfile: c.toolProfile,
 		supportsStreaming: c.supportsStreaming,
 		supportsTools: c.supportsTools,
-		modelPricing: c.modelPricing
+		modelPricing: c.modelPricing,
+		modelContext: c.modelContext,
+		modelContextManual: c.modelContextManual
 	};
 }
 
@@ -365,6 +425,8 @@ export type SaveAccountInput = {
 	toolCallBudget: number;
 	// Absent keeps the stored profile (the partial-save pattern).
 	toolProfile?: ToolProfile;
+	// The writer's own context windows; absent keeps the stored map, {} clears it.
+	modelContextManual?: ModelContextMap;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 };
@@ -422,6 +484,9 @@ export async function saveAccountLlmConfig(
 			input.toolProfile === undefined
 				? existing.toolProfile
 				: normaliseToolProfile(input.toolProfile),
+		...(input.modelContextManual === undefined
+			? {}
+			: { modelContextManual: normaliseContext(input.modelContextManual) ?? {} }),
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})
 	};

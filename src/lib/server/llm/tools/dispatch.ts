@@ -41,6 +41,9 @@ export type ToolContext = {
 	// the prompt-level restriction ("do not leave new comments elsewhere") must
 	// hold even when the model ignores it or answers a cached tool schema.
 	allowedTools?: string[];
+	// The turn's model context window in tokens, when known; it bounds how much
+	// of a scene get_scene may return (see sceneBodyCap).
+	contextWindow?: number;
 };
 
 export type ToolOutcome = {
@@ -62,7 +65,20 @@ export type ToolOutcome = {
 // review of the wrong text. The cap only guards against pathological bodies
 // (a pasted data dump); prompt caching keeps the cost of big results down.
 const MAX_SCENE_BODY = 200_000;
+// With a known context window, one scene may take about a quarter of it, so the
+// world context, the conversation, and the answer still fit. Tokens convert to
+// characters at the usual rough four-to-one. The floor keeps a small window from
+// clipping a scene to uselessness.
+const CHARS_PER_TOKEN = 4;
+const SCENE_BODY_WINDOW_SHARE = 0.25;
+const MIN_SCENE_BODY = 8_000;
 const MAX_APPEARANCES = 20;
+
+function sceneBodyCap(contextWindow?: number): number {
+	if (!contextWindow) return MAX_SCENE_BODY;
+	const share = Math.floor(contextWindow * SCENE_BODY_WINDOW_SHARE * CHARS_PER_TOKEN);
+	return Math.min(MAX_SCENE_BODY, Math.max(MIN_SCENE_BODY, share));
+}
 
 // The universe a story belongs to, but only if the user owns the story. The
 // gateway derives the tool reach from the focus story when no universe is
@@ -220,9 +236,10 @@ async function listScenes(ctx: ToolContext): Promise<string> {
 async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {
 	const scene = await loadScene(ctx, sceneId);
 	if (!scene) return 'No scene with that id in this story.';
+	const cap = sceneBodyCap(ctx.contextWindow);
 	const body =
-		scene.bodyMd.length > MAX_SCENE_BODY
-			? `${scene.bodyMd.slice(0, MAX_SCENE_BODY)}\n...(truncated: showing the first ${MAX_SCENE_BODY} of ${scene.bodyMd.length} characters)`
+		scene.bodyMd.length > cap
+			? `${scene.bodyMd.slice(0, cap)}\n...(truncated: showing the first ${cap} of ${scene.bodyMd.length} characters)`
 			: scene.bodyMd;
 	return JSON.stringify({
 		id: scene.id,
