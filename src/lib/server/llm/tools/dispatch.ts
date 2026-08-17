@@ -10,6 +10,7 @@ import {
 	updateAssistantSuggestion
 } from '../../review.ts';
 import { locateSplitBefore } from '$lib/scene-split-locate';
+import { locateQuote } from '$lib/quote-locate';
 import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
 import type { ProviderToolCall, SplitProposal } from '../providers/types.ts';
 import { findTool } from './registry.ts';
@@ -278,14 +279,15 @@ async function suggestEdit(
 	if (!input.original) return { result: 'Provide the exact text to replace.', staged: false };
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
-	const first = scene.bodyMd.indexOf(input.original);
-	if (first === -1) {
-		return { result: 'That exact passage was not found in the scene.', staged: false };
-	}
-	if (scene.bodyMd.indexOf(input.original, first + 1) !== -1) {
+	// Tolerates a quote echoed back with the quotes or whitespace reshaped, but
+	// the staged range still indexes the scene's real text (see locateQuote).
+	const found = locateQuote(scene.bodyMd, input.original);
+	if (!found.ok) {
 		return {
 			result:
-				'That passage appears more than once; include more surrounding text to make it unique.',
+				found.reason === 'ambiguous'
+					? 'That passage appears more than once; include more surrounding text to make it unique.'
+					: 'That exact passage was not found in the scene.',
 			staged: false
 		};
 	}
@@ -295,7 +297,7 @@ async function suggestEdit(
 		storyId: scene.storyId,
 		sceneId: input.sceneId,
 		author: { assistant: true },
-		range: { start: first, end: first + input.original.length },
+		range: { start: found.start, end: found.end },
 		replacement: input.replacement
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
@@ -379,10 +381,12 @@ async function leaveComment(
 	if (!input.comment.trim()) return { result: 'Provide the comment text.', staged: false };
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
+	// An anchor the same tolerant locate finds; a quote that matches nothing (or
+	// several places) still leaves a whole-scene comment rather than failing.
 	let anchor: { start: number; end: number } | null = null;
 	if (input.quote) {
-		const at = scene.bodyMd.indexOf(input.quote);
-		if (at !== -1) anchor = { start: at, end: at + input.quote.length };
+		const found = locateQuote(scene.bodyMd, input.quote);
+		if (found.ok) anchor = { start: found.start, end: found.end };
 	}
 	const result = await createThread(ctx.db, {
 		// The loaded scene's own story (see suggestEdit), not ctx.storyId.
