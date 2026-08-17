@@ -10,8 +10,18 @@ vi.mock('$lib/server/account', async (importActual) => ({
 
 // The models form saves through the config module; stubbing it captures what
 // the action would store, and lets a test stand a stored config up by hand.
-const storedConfig = { tuning: {} as Record<string, unknown>, models: {} };
-const savedInputs: { tuning?: Record<string, unknown>; models?: Record<string, string> }[] = [];
+const storedConfig = {
+	tuning: {} as Record<string, unknown>,
+	models: {},
+	modelContextManual: {} as Record<string, number>
+};
+const savedInputs: {
+	tuning?: Record<string, unknown>;
+	models?: Record<string, string>;
+	modelContextManual?: Record<string, number>;
+	spendCapUsd?: number | null;
+	spendWarnUsd?: number | null;
+}[] = [];
 vi.mock('$lib/server/llm/config', async (importActual) => ({
 	...(await importActual<typeof import('$lib/server/llm/config')>()),
 	accountLlmView: vi.fn(async () => ({
@@ -25,7 +35,8 @@ vi.mock('$lib/server/llm/config', async (importActual) => ({
 		models: storedConfig.models,
 		tuning: storedConfig.tuning,
 		toolCallBudget: 8,
-		toolProfile: 'full'
+		toolProfile: 'full',
+		modelContextManual: storedConfig.modelContextManual
 	})),
 	saveAccountLlmConfig: vi.fn(async (_db: unknown, _userId: string, input: unknown) => {
 		savedInputs.push(input as (typeof savedInputs)[number]);
@@ -54,6 +65,7 @@ describe('saveAssistantModels tuning', () => {
 		savedInputs.length = 0;
 		storedConfig.tuning = {};
 		storedConfig.models = {};
+		storedConfig.modelContextManual = {};
 	});
 
 	it('stores the three thinking states and a temperature per role', async () => {
@@ -95,6 +107,85 @@ describe('saveAssistantModels tuning', () => {
 		await saveModels({ utility: 'small-model', 'utility-thinking': 'off' });
 		expect(savedInputs[0].models).toEqual({ utility: 'small-model' });
 		expect(lastTuning().utility).toEqual({ thinking: false });
+	});
+});
+
+describe('saveAssistantModels context windows', () => {
+	beforeEach(() => {
+		savedInputs.length = 0;
+		storedConfig.tuning = {};
+		storedConfig.models = {};
+		storedConfig.modelContextManual = {};
+	});
+
+	function lastContext(): Record<string, number> {
+		return savedInputs[savedInputs.length - 1].modelContextManual ?? {};
+	}
+
+	it('stores a number typed into a rendered box', async () => {
+		await saveModels({ reviewer: 'big-model', 'context-big-model': '32768' });
+		expect(lastContext()).toEqual({ 'big-model': 32768 });
+	});
+
+	it('clears the entry when the writer empties a rendered box', async () => {
+		storedConfig.modelContextManual = { 'big-model': 32768 };
+		await saveModels({ reviewer: 'big-model', 'context-big-model': '' });
+		expect(lastContext()['big-model']).toBeUndefined();
+	});
+
+	it('keeps entries for models the form did not render', async () => {
+		// The form only renders a box for the models currently picked for a role,
+		// so a save from a form showing one model must not wipe the other's entry.
+		storedConfig.modelContextManual = { 'big-model': 32768, 'small-model': 8192 };
+		await saveModels({ reviewer: 'big-model', 'context-big-model': '65536' });
+		expect(lastContext()).toEqual({ 'big-model': 65536, 'small-model': 8192 });
+	});
+});
+
+function saveEndpoint(fields: Record<string, string>) {
+	const form = new FormData();
+	form.set('provider', 'custom');
+	form.set('endpoint', 'http://local/v1');
+	for (const [key, value] of Object.entries(fields)) form.set(key, value);
+	const call = actions.saveAssistantEndpoint as (event: unknown) => Promise<unknown>;
+	return call({
+		request: { formData: async () => form },
+		locals: { user: { id: 'spend-test-user' } }
+	});
+}
+
+describe('saveAssistantEndpoint spend fields', () => {
+	beforeEach(() => {
+		savedInputs.length = 0;
+	});
+
+	it('stores the amounts typed into the boxes', async () => {
+		await saveEndpoint({ spendCapUsd: '5', spendWarnUsd: '1.50' });
+		expect(savedInputs[0].spendCapUsd).toBe(5);
+		expect(savedInputs[0].spendWarnUsd).toBe(1.5);
+	});
+
+	it('clears a figure the writer emptied', async () => {
+		await saveEndpoint({ spendCapUsd: '', spendWarnUsd: '' });
+		expect(savedInputs[0].spendCapUsd).toBeNull();
+		expect(savedInputs[0].spendWarnUsd).toBeNull();
+	});
+
+	it('refuses junk rather than clearing the figure in silence', async () => {
+		const result = (await saveEndpoint({ spendCapUsd: 'abc' })) as {
+			status?: number;
+			data?: { scope?: string; message?: string };
+		};
+		expect(result.status).toBe(400);
+		expect(result.data?.scope).toBe('assistant-endpoint');
+		expect(result.data?.message).toBe('Enter an amount in dollars, or leave it blank.');
+		expect(savedInputs).toHaveLength(0);
+	});
+
+	it('refuses a negative amount', async () => {
+		const result = (await saveEndpoint({ spendWarnUsd: '-5' })) as { status?: number };
+		expect(result.status).toBe(400);
+		expect(savedInputs).toHaveLength(0);
 	});
 });
 

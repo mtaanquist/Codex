@@ -395,18 +395,30 @@ export const actions: Actions = {
 	saveAssistantEndpoint: async ({ request, locals }) => {
 		const data = await request.formData();
 		const profile = String(data.get('toolProfile') ?? '');
-		// An empty or unreadable box clears the figure (null), rather than being
-		// left out, so the writer can remove a cap they set earlier.
-		const usdField = (name: string): number | null => {
-			const value = Number(String(data.get(name) ?? '').trim());
-			return Number.isFinite(value) && value > 0 ? value : null;
+		// An empty box clears the figure (null), rather than being left out, so the
+		// writer can remove a cap they set earlier. Anything that is not a
+		// non-negative number is refused instead of silently clearing it.
+		const usdField = (name: string): number | null | 'invalid' => {
+			const raw = String(data.get(name) ?? '').trim();
+			if (!raw) return null;
+			const value = Number(raw);
+			if (!Number.isFinite(value) || value < 0) return 'invalid';
+			return value > 0 ? value : null;
 		};
+		const spendCapUsd = usdField('spendCapUsd');
+		const spendWarnUsd = usdField('spendWarnUsd');
+		if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
+			return fail(400, {
+				scope: 'assistant-endpoint',
+				message: 'Enter an amount in dollars, or leave it blank.'
+			});
+		}
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
 			apiKey: String(data.get('apiKey') ?? ''),
-			spendCapUsd: usdField('spendCapUsd'),
-			spendWarnUsd: usdField('spendWarnUsd'),
+			spendCapUsd,
+			spendWarnUsd,
 			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
 				? (profile as ToolProfile)
 				: undefined
@@ -422,7 +434,8 @@ export const actions: Actions = {
 		// temperature for an OpenAI-compatible endpoint. A control the form did not
 		// show is not part of this save, so its stored value is carried through
 		// instead of being wiped (the blank-api-key pattern).
-		const stored = (await accountLlmView(db, locals.user!.id)).tuning;
+		const storedView = await accountLlmView(db, locals.user!.id);
+		const stored = storedView.tuning;
 		for (const role of ASSISTANT_ROLES) {
 			const value = String(data.get(role) ?? '').trim();
 			if (value) models[role] = value;
@@ -457,14 +470,17 @@ export const actions: Actions = {
 			if (Object.keys(roleTuning).length > 0) tuning[role] = roleTuning;
 		}
 		// A context field per model shown on the form (context-<model id>); a blank
-		// one drops the writer's entry, so the discovered value applies again.
-		const modelContextManual: ModelContextMap = {};
+		// one drops the writer's entry, so the discovered value applies again. The
+		// form only renders the models currently assigned to a role, so the save
+		// starts from what is stored and touches only the models it rendered: an
+		// entry for a model that was not on the form survives.
+		const modelContextManual: ModelContextMap = { ...storedView.modelContextManual };
 		for (const [field, value] of data.entries()) {
 			if (!field.startsWith('context-')) continue;
+			const model = field.slice('context-'.length);
 			const tokens = Number(String(value).trim());
-			if (Number.isFinite(tokens) && tokens > 0) {
-				modelContextManual[field.slice('context-'.length)] = Math.floor(tokens);
-			}
+			if (Number.isFinite(tokens) && tokens > 0) modelContextManual[model] = Math.floor(tokens);
+			else delete modelContextManual[model];
 		}
 		const result = await patchAssistant(locals.user!.id, {
 			models,
