@@ -368,6 +368,20 @@ describe('includeTiers (the reduced tier sets)', () => {
 		expect(delta!.text).not.toContain('The Aether'); // no keyword lore
 	});
 
+	it('keeps the frame and the entities for a review-thread reply', async () => {
+		const frame = await assembleStoryFrame(db, {
+			userId: ownerId,
+			storyId,
+			includeTiers: ['frame', 'entities']
+		});
+		expect(frame!.includedTiers).toEqual(['frame', 'entities']);
+		expect(frame!.text).toContain('The Tide Below');
+		expect(frame!.text).toContain('A brave knight.');
+		expect(frame!.text).not.toContain('A calm walk south.'); // no outline
+		expect(frame!.text).not.toContain('Creation Myth');
+		expect(frame!.text).not.toContain('The bell tolls a betrayal.');
+	});
+
 	it('assembles every tier when no set is named', async () => {
 		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
 		expect(context!.includedTiers).toContain('entities');

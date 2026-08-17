@@ -9,7 +9,7 @@ import {
 	requireAssistantGate,
 	throwAssistantError
 } from '$lib/server/llm/assistant-route';
-import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
+import { assembleStoryFrame, buildSystemMessage } from '$lib/server/llm/context/assemble';
 import { buildReviewReplyMessage, excerptAround } from '$lib/server/llm/prompts/review-reply';
 import { complete } from '$lib/server/llm/gateway';
 import { addComment, listSuggestions, listThreads } from '$lib/server/review';
@@ -86,10 +86,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					: null
 		})
 	};
-	const context = await assembleContext(db, {
+	// A thread reply argues about one passage, and the passage is already in the
+	// task message as an excerpt: it needs the story and world it belongs to
+	// (the frame, which also carries the style notes the note was judged
+	// against) and the characters and places it may name, not the outline, the
+	// lore, the notes, or the other stories. Anything else it needs it can read
+	// with the retrieval tools.
+	const context = await assembleStoryFrame(db, {
 		userId,
 		storyId: story.id,
-		sceneId: thread.sceneId
+		includeTiers: ['frame', 'entities']
 	});
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), task]
