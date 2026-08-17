@@ -273,6 +273,7 @@ function recordUsage(
 	db: Database,
 	p: Prepared,
 	req: GatewayRequest,
+	messages: ChatMessage[],
 	usage?: { promptTokens: number; completionTokens: number }
 ): Promise<void> {
 	return recordAssistantUsage(db, {
@@ -280,7 +281,10 @@ function recordUsage(
 		storyId: req.storyId,
 		role: req.role,
 		model: p.model,
-		usage
+		usage,
+		// Only worth the pass over the messages when there is a reported count to
+		// compare it against (see ./usage).
+		estimatedPromptTokens: usage?.promptTokens ? conversationTokens(messages) : undefined
 	});
 }
 
@@ -344,7 +348,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				tools: offerTools,
 				tuning: p.tuning
 			});
-			await recordUsage(db, p, req, result.usage);
+			await recordUsage(db, p, req, messages, result.usage);
 			return result;
 		};
 		// A reply cut off at the token cap is unusable: its text stops mid-sentence
@@ -430,7 +434,7 @@ export async function* stream(
 		}
 		yield event;
 	}
-	await recordUsage(db, prepared, req, usage);
+	await recordUsage(db, prepared, req, prepared.messages, usage);
 }
 
 // What a buffered run produced. Most callers want the text only (complete);
@@ -476,6 +480,6 @@ export async function completeDetailed(
 		maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
 		tuning: prepared.tuning
 	});
-	await recordUsage(db, prepared, req, response.usage);
+	await recordUsage(db, prepared, req, prepared.messages, response.usage);
 	return { content: response.content, notes: 0 };
 }

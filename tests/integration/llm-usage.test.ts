@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -131,6 +131,97 @@ describe('gateway usage recording', () => {
 		const summary = await recentAssistantUsage(db, userId);
 		expect(summary.recent[0]).toMatchObject({ promptTokens: null, completionTokens: null });
 		expect(summary.totals.requests).toBe(1);
+	});
+});
+
+// Structured logs are the only output here; the tests read them off stdout.
+function captureLogs(): { lines: () => Record<string, unknown>[]; restore: () => void } {
+	const captured: Record<string, unknown>[] = [];
+	const spy = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+		if (typeof line === 'string' && line.startsWith('{')) {
+			captured.push(JSON.parse(line) as Record<string, unknown>);
+		}
+	});
+	return { lines: () => captured, restore: () => spy.mockRestore() };
+}
+
+describe('estimate-vs-actual token accounting', () => {
+	it('logs the estimate against the endpoint report for a turn that had one', async () => {
+		await configure();
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				return {
+					content: 'ok',
+					toolCalls: [],
+					usage: { promptTokens: 100, completionTokens: 20 }
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const logs = captureLogs();
+		try {
+			await complete(
+				db,
+				{ userId, role: 'chat', messages: [{ role: 'user', content: 'hello there' }] },
+				{ provider, http: noHttp }
+			);
+		} finally {
+			logs.restore();
+		}
+		const line = logs.lines().find((l) => l.event === 'assistant.usage.estimate');
+		expect(line).toBeDefined();
+		expect(line).toMatchObject({ model: 'chat-model', actual: 100 });
+		// The persona prompt alone puts the estimate well above zero, and the
+		// logged ratio is the two counts divided.
+		const estimated = line!.estimated as number;
+		expect(estimated).toBeGreaterThan(0);
+		expect(line!.ratio).toBe(Math.round((estimated / 100) * 100) / 100);
+		// The row itself is unchanged: no estimate column, phase one is logs only.
+		const summary = await recentAssistantUsage(db, userId);
+		expect(summary.recent[0]).toMatchObject({ promptTokens: 100, completionTokens: 20 });
+	});
+
+	it('logs nothing when the endpoint reported no prompt tokens', async () => {
+		const logs = captureLogs();
+		try {
+			await recordAssistantUsage(db, { userId, role: 'chat', model: 'm', usage: undefined });
+			await recordAssistantUsage(db, {
+				userId,
+				role: 'chat',
+				model: 'm',
+				usage: { promptTokens: 0, completionTokens: 4 },
+				estimatedPromptTokens: 40
+			});
+		} finally {
+			logs.restore();
+		}
+		expect(logs.lines().some((l) => l.event === 'assistant.usage.estimate')).toBe(false);
+	});
+
+	it('reports the ratio of estimate to report', async () => {
+		const logs = captureLogs();
+		try {
+			await recordAssistantUsage(db, {
+				userId,
+				role: 'chat',
+				model: 'm',
+				usage: { promptTokens: 500, completionTokens: 10 },
+				estimatedPromptTokens: 425
+			});
+		} finally {
+			logs.restore();
+		}
+		expect(logs.lines().find((l) => l.event === 'assistant.usage.estimate')).toMatchObject({
+			model: 'm',
+			estimated: 425,
+			actual: 500,
+			ratio: 0.85
+		});
 	});
 });
 
