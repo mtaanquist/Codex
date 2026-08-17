@@ -56,8 +56,15 @@ export type ProviderResponse = {
 };
 
 export type TokenUsage = {
+	// The whole prompt the endpoint billed for, cache reads included.
 	promptTokens: number;
 	completionTokens: number;
+	// The part of promptTokens the endpoint served from its prompt cache, where
+	// it reports one. Always a subset of promptTokens, never an extra amount on
+	// top: both adapters fold their cache counters into promptTokens and then
+	// report the cached share here. Cache reads bill far cheaper than fresh
+	// prompt tokens (see spend.ts).
+	cachedPromptTokens?: number;
 };
 
 export type CompletionRequest = {
@@ -68,6 +75,13 @@ export type CompletionRequest = {
 	maxTokens: number;
 	// Tools the model may call this turn; omitted for a plain completion.
 	tools?: ToolSpec[];
+	// Forbid tool calls for this one round while still declaring the tools. The
+	// agent loop sets it on the concluding round: a history holding tool_use and
+	// tool_result turns is only valid alongside the tool definitions, so the
+	// tools cannot simply be dropped, and keeping them also keeps the cached
+	// prompt prefix stable. Unset means the model chooses (the adapters send
+	// their "auto" spelling).
+	toolChoice?: 'none';
 	// Per-role request tuning from the account config. The Anthropic adapter
 	// maps thinking to `thinking: {type: "adaptive"}` (omitted when off; an
 	// explicit "disabled" is rejected by some models) and effort to

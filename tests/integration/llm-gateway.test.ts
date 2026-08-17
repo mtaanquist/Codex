@@ -646,21 +646,24 @@ describe('gateway tool loop', () => {
 		const { storyId, sceneId } = await seedStoryScene('Body.');
 		// A provider that always asks for another tool; the budget must stop it.
 		let calls = 0;
+		const choices: (string | undefined)[] = [];
+		const toolCounts: number[] = [];
 		const alwaysTool: Provider = {
 			async *chatStream() {
 				yield { type: 'done' };
 			},
 			async respond(req) {
 				calls += 1;
-				const hasTools = (req.tools?.length ?? 0) > 0;
-				return hasTools
-					? {
+				choices.push(req.toolChoice);
+				toolCounts.push(req.tools?.length ?? 0);
+				return req.toolChoice === 'none'
+					? { content: 'forced answer', toolCalls: [] }
+					: {
 							content: '',
 							toolCalls: [
 								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
 							]
-						}
-					: { content: 'forced answer', toolCalls: [] };
+						};
 			},
 			async listModels() {
 				return [];
@@ -678,8 +681,77 @@ describe('gateway tool loop', () => {
 			{ provider: alwaysTool, http: noHttp }
 		);
 		expect(text).toBe('forced answer');
-		// Two tool rounds (budget) plus the final tools-withdrawn answer.
+		// Two tool rounds (budget) plus the concluding answer.
 		expect(calls).toBe(3);
+		// The tools are declared on every round, the history depends on them; only
+		// the choice changes on the last one.
+		expect(toolCounts.every((count) => count > 0)).toBe(true);
+		expect(choices).toEqual([undefined, undefined, 'none']);
+	});
+
+	it('never drops the tools mid-conversation, and dispatches nothing on the concluding round', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 1
+		});
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		let calls = 0;
+		const requests: { tools: number; choice?: string }[] = [];
+		// A non-compliant endpoint: it emits a write tool call even under
+		// tool_choice none. Nothing may be staged from it.
+		const defiant: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				requests.push({ tools: req.tools?.length ?? 0, choice: req.toolChoice });
+				return {
+					content: calls === 1 ? '' : 'concluded',
+					toolCalls: [
+						{
+							id: `c${calls}`,
+							name: 'suggest_edit',
+							arguments: JSON.stringify({ sceneId, original: 'cat', replacement: 'dog' })
+						}
+					]
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: defiant, http: noHttp }
+		);
+
+		expect(calls).toBe(2);
+		expect(result.content).toBe('concluded');
+		expect(result.stopped).toBe('budget');
+		expect(requests[0]).toMatchObject({ choice: undefined });
+		expect(requests[1]).toMatchObject({ choice: 'none' });
+		expect(requests[0].tools).toBeGreaterThan(0);
+		expect(requests[1].tools).toBe(requests[0].tools);
+		// One edit staged by the budgeted round; the concluding round's call was
+		// ignored rather than dispatched.
+		const staged = await db
+			.select({ id: reviewSuggestions.id })
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.sceneId, sceneId));
+		expect(staged).toHaveLength(1);
 	});
 
 	it('the minimal tool profile offers three tools and halves the budget', async () => {
@@ -703,14 +775,14 @@ describe('gateway tool loop', () => {
 			async respond(req) {
 				calls += 1;
 				seenTools.push((req.tools ?? []).map((tool) => tool.name));
-				return req.tools?.length
-					? {
+				return req.toolChoice === 'none'
+					? { content: 'forced answer', toolCalls: [] }
+					: {
 							content: '',
 							toolCalls: [
 								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
 							]
-						}
-					: { content: 'forced answer', toolCalls: [] };
+						};
 			},
 			async listModels() {
 				return [];
@@ -729,7 +801,7 @@ describe('gateway tool loop', () => {
 		);
 		expect(seenTools[0]).toEqual(['get_scene', 'suggest_edit', 'leave_comment']);
 		expect(text).toBe('forced answer');
-		// Budget 8 halved to 4: four tool rounds plus the tools-withdrawn answer.
+		// Budget 8 halved to 4: four tool rounds plus the concluding answer.
 		expect(calls).toBe(5);
 	});
 
@@ -864,6 +936,47 @@ describe('gateway tool loop', () => {
 			.from(reviewSuggestions)
 			.where(eq(reviewSuggestions.storyId, storyId));
 		expect(staged).toHaveLength(0);
+	});
+
+	it('caps the truncation retry at the room left in a known window', async () => {
+		await configure(true);
+		// A small window: doubling the reviewer's 4096-token round would ask for
+		// more output than the window has left once the prompt is in it.
+		await saveModelContext(db, userId, { 'chat-model': 8192 });
+		const { storyId } = await seedStoryScene('The cat sat on the mat.');
+		const maxTokens: number[] = [];
+		const truncating: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				maxTokens.push(req.maxTokens);
+				return maxTokens.length === 1
+					? { content: '', finishReason: 'length' as const, toolCalls: [] }
+					: { content: 'shorter this time', toolCalls: [], finishReason: 'stop' as const };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'reviewer',
+				enableTools: true,
+				maxTokens: 4096,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: truncating, http: noHttp }
+		);
+		expect(text).toBe('shorter this time');
+		expect(maxTokens[0]).toBe(4096);
+		// Doubling would be 8192, more than the 85 percent usable window; the
+		// retry asks for what is actually left instead.
+		expect(maxTokens[1]).toBeGreaterThanOrEqual(4096);
+		expect(maxTokens[1]).toBeLessThan(8192);
 	});
 
 	it('fails the round when the retry is truncated too', async () => {
@@ -1094,9 +1207,11 @@ describe('gateway context guard', () => {
 	function greedyReader(sceneId: string): {
 		provider: Provider;
 		offered: string[][];
+		choices: (string | undefined)[];
 		seen: ChatMessage[][];
 	} {
 		const offered: string[][] = [];
+		const choices: (string | undefined)[] = [];
 		const seen: ChatMessage[][] = [];
 		let calls = 0;
 		const provider: Provider = {
@@ -1106,21 +1221,22 @@ describe('gateway context guard', () => {
 			async respond(req) {
 				calls += 1;
 				offered.push((req.tools ?? []).map((tool) => tool.name));
+				choices.push(req.toolChoice);
 				seen.push(req.messages.map((m) => ({ ...m })));
-				return req.tools?.length
-					? {
+				return req.toolChoice === 'none'
+					? { content: 'wrapping up', toolCalls: [] }
+					: {
 							content: '',
 							toolCalls: [
 								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
 							]
-						}
-					: { content: 'wrapping up', toolCalls: [] };
+						};
 			},
 			async listModels() {
 				return [];
 			}
 		};
-		return { provider, offered, seen };
+		return { provider, offered, choices, seen };
 	}
 
 	it('withdraws tools and nudges the model when the conversation nears the window', async () => {
@@ -1143,11 +1259,67 @@ describe('gateway context guard', () => {
 		);
 		expect(result.content).toBe('wrapping up');
 		expect(result.stopped).toBe('context');
-		// The first round had tools, the second did not, and it carried the nudge.
+		// Both rounds declare the tools (the history holds tool turns that need
+		// them); the second forbids calling them and carries the nudge.
 		expect(script.offered).toHaveLength(2);
 		expect(script.offered[0].length).toBeGreaterThan(0);
-		expect(script.offered[1]).toEqual([]);
+		expect(script.offered[1]).toEqual(script.offered[0]);
+		expect(script.choices).toEqual([undefined, 'none']);
 		expect(script.seen[1].at(-1)?.content).toMatch(/context window is nearly full/i);
+	});
+
+	it('counts a tool call arguments towards the window, not just its text', async () => {
+		await configure(true);
+		await saveModelContext(db, userId, { 'chat-model': 8192 });
+		const { storyId, sceneId } = await seedStoryScene('The cat sat on the mat.');
+		// Every round stages a long passage. The assistant turns carry almost no
+		// content; the weight is entirely in the tool-call arguments, which go back
+		// on the wire every round.
+		const passage = 'x'.repeat(6000);
+		let calls = 0;
+		const choices: (string | undefined)[] = [];
+		const stager: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				choices.push(req.toolChoice);
+				return req.toolChoice === 'none'
+					? { content: 'out of room', toolCalls: [] }
+					: {
+							content: '',
+							toolCalls: [
+								{
+									id: `c${calls}`,
+									name: 'leave_comment',
+									arguments: JSON.stringify({ sceneId, quote: 'cat', comment: passage })
+								}
+							]
+						};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const result = await completeDetailed(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'annotate' }]
+			},
+			{ provider: stager, http: noHttp }
+		);
+
+		expect(result.stopped).toBe('context');
+		expect(result.content).toBe('out of room');
+		// Two staged comments at 1500 tokens of arguments each fill the usable
+		// window; without counting them the loop would have run the full budget.
+		expect(calls).toBeLessThan(8);
+		expect(choices.at(-1)).toBe('none');
 	});
 
 	it('does not guard when the window is unknown, and reports a budget stop', async () => {
@@ -1177,11 +1349,12 @@ describe('gateway context guard', () => {
 		);
 		expect(result.content).toBe('wrapping up');
 		expect(result.stopped).toBe('budget');
-		// Three tool rounds (the budget) plus the tools-withdrawn answer, with no
+		// Three tool rounds (the budget) plus the concluding answer, with no
 		// context nudge among them.
 		expect(script.offered).toHaveLength(4);
 		expect(script.offered[2].length).toBeGreaterThan(0);
-		expect(script.offered[3]).toEqual([]);
+		expect(script.offered[3]).toEqual(script.offered[0]);
+		expect(script.choices).toEqual([undefined, undefined, undefined, 'none']);
 		expect(script.seen[3].some((m) => m.content.includes('context window is nearly full'))).toBe(
 			false
 		);
@@ -1373,6 +1546,17 @@ describe('gateway request retries', () => {
 		expect(await attemptsFor(new Error('Endpoint returned 401: no key'))).toBe(1);
 		const aborted = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
 		expect(await attemptsFor(aborted)).toBe(1);
+		// A 200 with a body that is not JSON: the adapter's JSON.parse throws a
+		// SyntaxError. The endpoint will produce the same broken body on a retry,
+		// and it bills for every attempt.
+		let syntaxError: Error = new Error('unreachable');
+		try {
+			JSON.parse('<html>gateway timeout</html>');
+		} catch (err) {
+			syntaxError = err as Error;
+		}
+		expect(syntaxError).toBeInstanceOf(SyntaxError);
+		expect(await attemptsFor(syntaxError)).toBe(1);
 		// A transport error that would normally be retried, but the caller has
 		// walked away.
 		const controller = new AbortController();

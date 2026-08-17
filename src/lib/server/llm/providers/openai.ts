@@ -86,7 +86,7 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 							parameters: tool.parameters
 						}
 					})),
-					tool_choice: 'auto'
+					tool_choice: req.toolChoice === 'none' ? 'none' : 'auto'
 				}
 			: {}),
 		// Sampling temperature for this role, when the account config sets one;
@@ -100,13 +100,27 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 	});
 }
 
-// Both response shapes report usage as prompt_tokens/completion_tokens.
+// Both response shapes report usage as prompt_tokens/completion_tokens. Where
+// the endpoint also reports prompt_tokens_details.cached_tokens (OpenAI and the
+// gateways that mirror it), that count is already part of prompt_tokens; it is
+// carried through as the cached share so the cost can price it cheaper.
 function parseUsage(raw: unknown): TokenUsage | undefined {
-	const usage = raw as { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;
+	const usage = raw as
+		| {
+				prompt_tokens?: unknown;
+				completion_tokens?: unknown;
+				prompt_tokens_details?: { cached_tokens?: unknown };
+		  }
+		| undefined;
 	const prompt = Number(usage?.prompt_tokens);
 	const completion = Number(usage?.completion_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
-	return { promptTokens: prompt, completionTokens: completion };
+	const cached = Number(usage?.prompt_tokens_details?.cached_tokens);
+	return {
+		promptTokens: prompt,
+		completionTokens: completion,
+		...(Number.isFinite(cached) && cached > 0 ? { cachedPromptTokens: cached } : {})
+	};
 }
 
 function parseFinishReason(raw: unknown): FinishReason | undefined {

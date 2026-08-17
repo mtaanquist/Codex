@@ -228,11 +228,69 @@ describe('openaiProvider.respond', () => {
 			http
 		);
 		expect((sentBody.tools as unknown[])?.length).toBe(1);
+		expect(sentBody.tool_choice).toBe('auto');
 		expect((sentBody.messages as { role: string }[])[1]).toMatchObject({
 			role: 'tool',
 			tool_call_id: 'c1',
 			content: 'result'
 		});
+	});
+
+	it('keeps the tools and sends tool_choice none on a concluding round', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{
+				model: 'm',
+				maxTokens: 16,
+				messages: [{ role: 'user', content: 'hi' }],
+				tools: [{ name: 'get_scene', description: 'd', parameters: { type: 'object' } }],
+				toolChoice: 'none'
+			},
+			conn,
+			http
+		);
+		expect((sentBody.tools as unknown[])?.length).toBe(1);
+		expect(sentBody.tool_choice).toBe('none');
+	});
+
+	it('reports the cached share of the prompt when the endpoint details it', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [{ message: { content: 'ok' } }],
+				usage: {
+					prompt_tokens: 1000,
+					completion_tokens: 20,
+					prompt_tokens_details: { cached_tokens: 800 }
+				}
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', maxTokens: 16, messages: [] },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({
+			promptTokens: 1000,
+			completionTokens: 20,
+			cachedPromptTokens: 800
+		});
+	});
+
+	it('omits the cached share when the endpoint reports none', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [{ message: { content: 'ok' } }],
+				usage: { prompt_tokens: 10, completion_tokens: 2 }
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', maxTokens: 16, messages: [] },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 2 });
 	});
 
 	it('reports the finish reason, normalised', async () => {

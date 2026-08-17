@@ -142,7 +142,7 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 						description: tool.description,
 						input_schema: tool.parameters
 					})),
-					tool_choice: { type: 'auto' }
+					tool_choice: { type: req.toolChoice === 'none' ? 'none' : 'auto' }
 				}
 			: {}),
 		stream
@@ -209,8 +209,13 @@ function truncate(text: string, max = 300): string {
 
 // With caching on, input_tokens is only the uncached remainder; the prompt's
 // real size is the sum with the cache reads and writes. The usage log stores
-// that sum (cached tokens bill cheaper, so cost estimates err high, which is
-// the safe direction for an estimate).
+// that sum, and the cache-read share rides alongside it as cachedPromptTokens so
+// the cost can price those tokens at the cheaper cache rate.
+function cacheRead(usage: { cache_read_input_tokens?: unknown }): number {
+	const read = Number(usage.cache_read_input_tokens);
+	return Number.isFinite(read) && read > 0 ? read : 0;
+}
+
 function promptTotal(usage: {
 	input_tokens?: unknown;
 	cache_creation_input_tokens?: unknown;
@@ -236,7 +241,12 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	const prompt = promptTotal(usage);
 	const completion = Number(usage.output_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
-	return { promptTokens: prompt, completionTokens: completion };
+	const cached = cacheRead(usage);
+	return {
+		promptTokens: prompt,
+		completionTokens: completion,
+		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+	};
 }
 
 // Parse an Anthropic streaming response: "data: {json}" frames whose JSON
@@ -248,6 +258,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let promptTokens: number | undefined;
+	let cachedPromptTokens = 0;
 	let completionTokens: number | undefined;
 	let finishReason: FinishReason | undefined;
 	for await (const chunk of body) {
@@ -281,6 +292,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			if (frame.type === 'message_start') {
 				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
 				if (Number.isFinite(input)) promptTokens = input;
+				if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
 				continue;
 			}
 			if (frame.type === 'message_delta') {
@@ -299,7 +311,11 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 				if (promptTokens !== undefined || completionTokens !== undefined) {
 					yield {
 						type: 'usage',
-						usage: { promptTokens: promptTokens ?? 0, completionTokens: completionTokens ?? 0 }
+						usage: {
+							promptTokens: promptTokens ?? 0,
+							completionTokens: completionTokens ?? 0,
+							...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
+						}
 					};
 				}
 				yield { type: 'done', ...(finishReason ? { finishReason } : {}) };

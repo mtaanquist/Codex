@@ -233,6 +233,43 @@ describe('anthropicProvider.respond', () => {
 		]);
 	});
 
+	it('keeps the tools and sends tool_choice none on a concluding round', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'done' }] });
+		};
+		await anthropicProvider.respond(
+			{
+				model: 'claude-x',
+				maxTokens: 16,
+				messages: [{ role: 'user', content: 'hi' }],
+				tools: [{ name: 'get_scene', description: 'd', parameters: { type: 'object' } }],
+				toolChoice: 'none'
+			},
+			conn,
+			http
+		);
+		expect(sentBody.tools).toEqual([
+			{ name: 'get_scene', description: 'd', input_schema: { type: 'object' } }
+		]);
+		expect(sentBody.tool_choice).toEqual({ type: 'none' });
+	});
+
+	it('omits the cached share when nothing was read from cache', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [{ type: 'text', text: 'ok' }],
+				usage: { input_tokens: 100, output_tokens: 20 }
+			});
+		const result = await anthropicProvider.respond(
+			{ model: 'claude-x', maxTokens: 16, messages: [] },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 20 });
+	});
+
 	it('round-trips tool turns, merging adjacent tool results into one user turn', async () => {
 		let sentBody: Record<string, unknown> = {};
 		const http: HttpRequest = async (_url, init) => {
@@ -315,7 +352,11 @@ describe('anthropicProvider.respond', () => {
 			conn,
 			http
 		);
-		expect(result.usage).toEqual({ promptTokens: 1000, completionTokens: 3 });
+		expect(result.usage).toEqual({
+			promptTokens: 1000,
+			completionTokens: 3,
+			cachedPromptTokens: 888
+		});
 	});
 
 	it('throws on a non-2xx status', async () => {

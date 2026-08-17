@@ -30,9 +30,11 @@ import type {
 // a whole agentic turn. Undefined stays undefined until something is reported.
 function addUsage(total: TokenUsage | undefined, next?: TokenUsage): TokenUsage | undefined {
 	if (!next) return total;
+	const cached = (total?.cachedPromptTokens ?? 0) + (next.cachedPromptTokens ?? 0);
 	return {
 		promptTokens: (total?.promptTokens ?? 0) + next.promptTokens,
-		completionTokens: (total?.completionTokens ?? 0) + next.completionTokens
+		completionTokens: (total?.completionTokens ?? 0) + next.completionTokens,
+		...(cached > 0 ? { cachedPromptTokens: cached } : {})
 	};
 }
 
@@ -79,13 +81,21 @@ const MESSAGE_OVERHEAD_TOKENS = 8;
 // is chars/4, which runs short on non-English prose, so the margin absorbs the
 // skew as well as whatever the endpoint's own framing adds.
 const CONTEXT_SAFETY_MARGIN = 0.15;
-// Sent when the context guard fires, so the round that follows knows why its
-// tools went away.
+// Sent when the context guard fires, so the round that follows knows why it can
+// no longer call tools.
 const CONTEXT_NUDGE =
 	'The context window is nearly full, so no more tools are available. Conclude now with what you already have.';
 
+// An assistant turn that called tools carries far more than its text: the call
+// name and the whole arguments JSON go back on the wire every round, and a
+// staged suggest_edit holds an entire passage in its arguments. Counting content
+// alone let a run of edit-heavy rounds sail past the context guard.
 function messageTokens(message: ChatMessage): number {
-	return estimateTokens(message.content) + MESSAGE_OVERHEAD_TOKENS;
+	let tokens = estimateTokens(message.content) + MESSAGE_OVERHEAD_TOKENS;
+	for (const call of message.toolCalls ?? []) {
+		tokens += estimateTokens(call.name) + estimateTokens(call.arguments);
+	}
+	return tokens;
 }
 
 function conversationTokens(messages: ChatMessage[]): number {
@@ -142,6 +152,9 @@ function isTransientFailure(err: unknown): boolean {
 	if (err instanceof EgressDeniedError) return false;
 	if (!(err instanceof Error)) return false;
 	if (err.name === 'AbortError') return false;
+	// A 200 whose body is not JSON fails the same way every time; retrying it
+	// only bills the endpoint twice for the same broken reply.
+	if (err instanceof SyntaxError) return false;
 	const reported = /^Endpoint returned (\d{3})/.exec(err.message);
 	if (reported) {
 		const status = Number(reported[1]);
@@ -311,16 +324,17 @@ type AgentResult = {
 	usage?: TokenUsage;
 	// Why the run had to stop calling tools, when it did: the tool-call budget
 	// ran out, or the conversation neared the model's context window. Unset when
-	// the model finished on its own.
+	// the model finished on its own. Set on the concluding round.
 	stopped?: 'context' | 'budget';
 };
 
 // The agent loop: ask the model, run any tool calls it requests (read tools
 // fetch, write tools stage), feed the results back, and repeat until it answers
-// or the tool-call budget is spent. Once the budget is reached, tools are
-// withdrawn so the next turn must answer, bounding the loop. The same happens
-// when the conversation nears the model's context window, since every tool
-// result appended to it brings the whole run closer to overflowing.
+// or the tool-call budget is spent. Once the budget is reached, one concluding
+// round runs with tool calls forbidden, so the model must answer; that bounds
+// the loop. The same happens when the conversation nears the model's context
+// window, since every tool result appended to it brings the whole run closer to
+// overflowing.
 async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise<AgentResult> {
 	const messages = [...p.messages];
 	const surfaces: AgentResult['surfaces'] = [];
@@ -342,8 +356,13 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 	};
 	for (;;) {
 		const outOfContext = usableWindow !== undefined && estimated + roundTokens > usableWindow;
-		const offerTools = p.tools && calls < p.toolBudget && !outOfContext ? p.tools : undefined;
-		if (p.tools && !offerTools && !stopped) {
+		// The concluding round: the loop is over, so the model must answer with
+		// what it has. The tools stay in the request - a history holding tool_use
+		// and tool_result turns is only valid alongside the definitions that
+		// produced them, and dropping them would also break the cached prefix -
+		// and tool_choice none is what actually forbids another call.
+		const concluding = Boolean(p.tools) && (calls >= p.toolBudget || outOfContext);
+		if (concluding && !stopped) {
 			stopped = outOfContext ? 'context' : 'budget';
 			if (outOfContext) {
 				logEvent('info', 'assistant.context-guard', {
@@ -360,7 +379,8 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				model: p.model,
 				messages,
 				maxTokens,
-				tools: offerTools,
+				tools: p.tools,
+				...(concluding ? { toolChoice: 'none' as const } : {}),
 				tuning: p.tuning
 			});
 			await recordUsage(db, p, req, messages, result.usage);
@@ -371,16 +391,26 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		// and its tool-call arguments stop mid-JSON, which either fails to parse or,
 		// worse, parses into a plausible but wrong edit. Never act on one - retry
 		// the round with more room, and give up loudly if that is still not enough.
+		// Where the window is known, the extra room is capped at what is actually
+		// left in it, so the retry cannot ask for a reply the model has no room to
+		// write.
+		const retryTokens =
+			usableWindow !== undefined
+				? Math.max(roundTokens, Math.min(roundTokens * 2, usableWindow - estimated))
+				: roundTokens * 2;
 		let response = await round(roundTokens);
 		if (response.finishReason === 'length') {
-			response = await round(roundTokens * 2);
+			response = await round(retryTokens);
 			if (response.finishReason === 'length') {
 				throw new Error(
-					`The model's reply was cut off at the ${roundTokens * 2} token limit, twice in a row. Nothing was applied. Try a shorter passage, or a model that answers more briefly.`
+					`The model's reply was cut off at the ${retryTokens} token limit, twice in a row. Nothing was applied. Try a shorter passage, or a model that answers more briefly.`
 				);
 			}
 		}
-		if (!offerTools || response.toolCalls.length === 0) {
+		// A concluding round's answer is final. Some endpoints emit tool calls even
+		// under tool_choice none; dispatching them would restart a loop that has
+		// already been stopped, so they are ignored.
+		if (!p.tools || concluding || response.toolCalls.length === 0) {
 			return { content: response.content, surfaces, notes, usage, stopped };
 		}
 
