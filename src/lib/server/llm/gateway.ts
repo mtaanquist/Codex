@@ -12,7 +12,7 @@ import {
 	type ToolContext,
 	type ToolOutcome
 } from './tools/dispatch.ts';
-import { toolSpecs } from './tools/registry.ts';
+import { MINIMAL_TOOL_NAMES, toolSpecs } from './tools/registry.ts';
 import type {
 	ChatMessage,
 	Connection,
@@ -47,6 +47,12 @@ const REVIEWER_MAX_TOKENS = 4096;
 // The absolute ceiling on tool calls in one run, whatever the request asks
 // for; a cross-scene pass over a long story is the case that needs the room.
 const REQUEST_TOOL_BUDGET_CEILING = 200;
+// The minimal tool profile halves the budget: a weaker model that keeps calling
+// tools is usually looping on malformed calls rather than making progress, so
+// it is pushed to answer sooner. Never below two, so it can read a scene and
+// then act on it.
+const MINIMAL_PROFILE_BUDGET_DIVISOR = 2;
+const MINIMAL_PROFILE_MIN_BUDGET = 2;
 
 function defaultMaxTokens(role: AssistantRole): number {
 	return role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
@@ -139,7 +145,12 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 			universeId = (await ownedStoryUniverse(db, req.userId, req.storyId)) ?? undefined;
 		}
 		if (universeId) {
-			tools = toolSpecs(req.toolNames);
+			// A surface that names its own tools (the scoped review-reply turn) is
+			// left alone; the profile only shapes the default set.
+			tools = toolSpecs(
+				req.toolNames ??
+					(resolved.config.toolProfile === 'minimal' ? MINIMAL_TOOL_NAMES : undefined)
+			);
 			toolContext = {
 				db,
 				userId: req.userId,
@@ -151,6 +162,11 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		}
 	}
 
+	const budget = Math.min(
+		Math.max(req.toolBudget ?? 0, resolved.config.toolCallBudget),
+		REQUEST_TOOL_BUDGET_CEILING
+	);
+
 	return {
 		conn: { endpoint: resolved.config.endpoint, apiKey: resolved.config.apiKey },
 		model,
@@ -159,10 +175,10 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		provider: deps.provider ?? providerFor(resolved.config.provider),
 		tools,
 		toolContext,
-		toolBudget: Math.min(
-			Math.max(req.toolBudget ?? 0, resolved.config.toolCallBudget),
-			REQUEST_TOOL_BUDGET_CEILING
-		),
+		toolBudget:
+			resolved.config.toolProfile === 'minimal'
+				? Math.max(MINIMAL_PROFILE_MIN_BUDGET, Math.floor(budget / MINIMAL_PROFILE_BUDGET_DIVISOR))
+				: budget,
 		tuning: resolved.config.tuning[req.role]
 	};
 }

@@ -56,6 +56,16 @@ function normaliseTuning(raw: unknown): TuningMap {
 	return out;
 }
 
+// How many tools the Assistant is offered on a tool-enabled turn. 'full' offers
+// the whole default catalogue; 'minimal' offers the three that matter most, for
+// endpoints running a smaller local model that handles many tool schemas badly.
+export const TOOL_PROFILES = ['full', 'minimal'] as const;
+export type ToolProfile = (typeof TOOL_PROFILES)[number];
+
+function normaliseToolProfile(raw: unknown): ToolProfile {
+	return raw === 'minimal' ? 'minimal' : 'full';
+}
+
 // Stored in users.llm_config. The key is encrypted at rest (see crypto.ts), the
 // same way the SMTP password is.
 export type StoredAccountConfig = {
@@ -78,6 +88,8 @@ export type StoredAccountConfig = {
 	// The most tool calls the Assistant may make in one turn (tools are a later
 	// surface; the value is carried now so the config shape is stable).
 	toolCallBudget: number;
+	// Which tools a tool-enabled turn offers (see TOOL_PROFILES).
+	toolProfile: ToolProfile;
 	// Capabilities detected by the "test connection" probe and stored with the
 	// config; set by hand for an endpoint that cannot stream or call tools.
 	supportsStreaming?: boolean;
@@ -158,6 +170,7 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		models: normaliseModels(raw.models),
 		tuning: normaliseTuning(raw.tuning),
 		toolCallBudget: normaliseBudget(raw.toolCallBudget),
+		toolProfile: normaliseToolProfile(raw.toolProfile),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
 		supportsTools: normaliseCapability(raw.supportsTools),
 		modelPricing: normalisePricing(raw.modelPricing)
@@ -262,6 +275,7 @@ export type ResolvedConfig = {
 	models: ModelMap;
 	tuning: TuningMap;
 	toolCallBudget: number;
+	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 };
@@ -290,6 +304,7 @@ export async function resolveLlmConfig(
 			models: { ...account.models, ...(override?.models ?? {}) },
 			tuning: account.tuning,
 			toolCallBudget: account.toolCallBudget,
+			toolProfile: account.toolProfile,
 			supportsStreaming: account.supportsStreaming,
 			supportsTools: account.supportsTools
 		}
@@ -309,6 +324,7 @@ export type AccountLlmView = {
 	models: ModelMap;
 	tuning: TuningMap;
 	toolCallBudget: number;
+	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 	modelPricing?: ModelPricing;
@@ -327,6 +343,7 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		models: c.models,
 		tuning: c.tuning,
 		toolCallBudget: c.toolCallBudget,
+		toolProfile: c.toolProfile,
 		supportsStreaming: c.supportsStreaming,
 		supportsTools: c.supportsTools,
 		modelPricing: c.modelPricing
@@ -346,6 +363,8 @@ export type SaveAccountInput = {
 	models: ModelMap;
 	tuning?: TuningMap;
 	toolCallBudget: number;
+	// Absent keeps the stored profile (the partial-save pattern).
+	toolProfile?: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
 };
@@ -399,6 +418,10 @@ export async function saveAccountLlmConfig(
 		// blank-api-key pattern); pass {} to clear it.
 		tuning: input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning),
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
+		toolProfile:
+			input.toolProfile === undefined
+				? existing.toolProfile
+				: normaliseToolProfile(input.toolProfile),
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})
 	};

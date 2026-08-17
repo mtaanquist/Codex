@@ -40,7 +40,9 @@ import {
 	type TuningMap,
 	saveAccountLlmConfig,
 	type ModelMap,
-	type SaveResult
+	type SaveResult,
+	TOOL_PROFILES,
+	type ToolProfile
 } from '$lib/server/llm/config';
 import { discoverModels, testAccountConnection } from '$lib/server/llm/models';
 import {
@@ -198,6 +200,7 @@ async function patchAssistant(
 		apiKey: string;
 		models: ModelMap;
 		tuning: TuningMap;
+		toolProfile: ToolProfile;
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
@@ -211,6 +214,7 @@ async function patchAssistant(
 		models: patch.models ?? current.models,
 		tuning: patch.tuning ?? current.tuning,
 		toolCallBudget: current.toolCallBudget,
+		toolProfile: patch.toolProfile ?? current.toolProfile,
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
 	});
@@ -383,10 +387,14 @@ export const actions: Actions = {
 	},
 	saveAssistantEndpoint: async ({ request, locals }) => {
 		const data = await request.formData();
+		const profile = String(data.get('toolProfile') ?? '');
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
-			apiKey: String(data.get('apiKey') ?? '')
+			apiKey: String(data.get('apiKey') ?? ''),
+			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
+				? (profile as ToolProfile)
+				: undefined
 		});
 		if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
 		return { scope: 'assistant-endpoint', saved: true };

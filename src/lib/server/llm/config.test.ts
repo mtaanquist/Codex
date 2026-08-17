@@ -12,6 +12,7 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		models: {},
 		tuning: {},
 		toolCallBudget: 8,
+		toolProfile: 'full',
 		...partial
 	};
 }

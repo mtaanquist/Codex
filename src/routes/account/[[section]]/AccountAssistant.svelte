@@ -371,6 +371,22 @@
 						Leave blank to keep your saved key. Not every endpoint needs one.
 					</p>
 				</div>
+				<div class="field">
+					<label for="tool_profile">Tools offered</label>
+					<select id="tool_profile" name="toolProfile" class="select">
+						<option value="full" selected={data.assistant.toolProfile !== 'minimal'}
+							>All tools</option
+						>
+						<option value="minimal" selected={data.assistant.toolProfile === 'minimal'}
+							>Fewer tools</option
+						>
+					</select>
+					<p class="field-hint">
+						The assistant can look things up in your work and hand suggestions back. Pick Fewer
+						tools if your model is small or runs on your own machine: it then only reads a scene,
+						suggests an edit, and leaves a comment, which smaller models handle far more reliably.
+					</p>
+				</div>
 				<div class="settings-actions">
 					{#if form?.scope === 'assistant-test' && 'reply' in form && form.reply}
 						<FormStatus success={`Reply: ${form.reply}`} />

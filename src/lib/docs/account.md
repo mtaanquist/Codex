@@ -63,6 +63,12 @@ contacts a model on its own.
     yourself, such as a local Ollama server (for example
     `http://localhost:11434/v1`). Local endpoints usually need no key, and your
     text never leaves your machine.
+- **Tools offered**: while it works, the Assistant can read scenes from your
+  stories and hand back suggested edits and comments. Leave this on All tools for
+  a large hosted model. Pick Fewer tools if your model is small or runs on your
+  own machine: it is then offered only the three it needs most (read a scene,
+  suggest an edit, leave a comment), and it stops sooner instead of retrying,
+  which smaller models handle far more reliably.
 - **Models per role**: pick which model handles each kind of help. Select Discover
   models to fill the lists from your endpoint, then choose one per role. Roles
   with no model chosen fall back to the endpoint's default. A single story can

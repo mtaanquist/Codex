@@ -41,9 +41,11 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 	provider: Provider;
 	count: () => number;
 	seen: ChatMessage[][];
+	offered: string[][];
 } {
 	let calls = 0;
 	const seen: ChatMessage[][] = [];
+	const offered: string[][] = [];
 	const provider: Provider = {
 		async *chatStream() {
 			yield { type: 'done' };
@@ -51,6 +53,7 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 		async respond(req) {
 			calls += 1;
 			seen.push(req.messages);
+			offered.push((req.tools ?? []).map((tool) => tool.name));
 			const turn = turns.shift() ?? { content: '' };
 			return { content: turn.content, toolCalls: turn.toolCalls ?? [] };
 		},
@@ -58,7 +61,7 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 			return [];
 		}
 	};
-	return { provider, count: () => calls, seen };
+	return { provider, count: () => calls, seen, offered };
 }
 
 // A provider that records the request and emits canned events, so the gateway's
@@ -625,6 +628,85 @@ describe('gateway tool loop', () => {
 		expect(text).toBe('forced answer');
 		// Two tool rounds (budget) plus the final tools-withdrawn answer.
 		expect(calls).toBe(3);
+	});
+
+	it('the minimal tool profile offers three tools and halves the budget', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8,
+			toolProfile: 'minimal'
+		});
+		const { storyId, sceneId } = await seedStoryScene('Body.');
+		let calls = 0;
+		const seenTools: string[][] = [];
+		const alwaysTool: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				calls += 1;
+				seenTools.push((req.tools ?? []).map((tool) => tool.name));
+				return req.tools?.length
+					? {
+							content: '',
+							toolCalls: [
+								{ id: `c${calls}`, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }
+							]
+						}
+					: { content: 'forced answer', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const text = await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: alwaysTool, http: noHttp }
+		);
+		expect(seenTools[0]).toEqual(['get_scene', 'suggest_edit', 'leave_comment']);
+		expect(text).toBe('forced answer');
+		// Budget 8 halved to 4: four tool rounds plus the tools-withdrawn answer.
+		expect(calls).toBe(5);
+	});
+
+	it('a surface naming its own tools is unaffected by the minimal profile', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 8,
+			toolProfile: 'minimal'
+		});
+		const { storyId } = await seedStoryScene('Body.');
+		const script = scriptedProvider([{ content: 'ok' }]);
+		await complete(
+			db,
+			{
+				userId,
+				storyId,
+				role: 'chat',
+				enableTools: true,
+				toolNames: ['reply_in_thread', 'update_suggestion'],
+				messages: [{ role: 'user', content: 'go' }]
+			},
+			{ provider: script.provider, http: noHttp }
+		);
+		expect(script.offered[0]).toEqual(['reply_in_thread', 'update_suggestion']);
 	});
 
 	it('refuses a tool call the turn did not offer and stages nothing', async () => {

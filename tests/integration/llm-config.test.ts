@@ -116,6 +116,32 @@ describe('account config round-trip', () => {
 		expect((await resolveLlmConfig(db, userId)).config.provider).toBe('custom');
 	});
 
+	it('defaults the tool profile to full, saves a minimal one, and keeps it when omitted', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: {},
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('full');
+
+		await saveAccountLlmConfig(db, userId, { ...base, toolProfile: 'minimal' });
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('minimal');
+		expect((await resolveLlmConfig(db, userId)).config.toolProfile).toBe('minimal');
+
+		// Another form's partial save leaves the profile alone.
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('minimal');
+
+		// An unknown value falls back to full.
+		await saveAccountLlmConfig(db, userId, { ...base, toolProfile: 'chatty' as never });
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('full');
+	});
+
 	it('a preset owns its endpoint: the submitted URL is ignored', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,
