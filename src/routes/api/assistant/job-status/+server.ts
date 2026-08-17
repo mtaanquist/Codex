@@ -1,6 +1,6 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { getAssistantJobState } from '$lib/server/jobs';
+import { getAssistantJobState, reviewJobState } from '$lib/server/jobs';
 import { loadReviewRun } from '$lib/server/review-runs';
 
 // Where the activity center and the review modal poll a queued Assistant job
@@ -20,7 +20,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const run = await loadReviewRun(db, id, locals.user.id);
 	if (!run) return json({ state });
 	return json({
-		state,
+		state: reviewJobState(state, run.phase),
 		phase: run.phase,
 		completed: run.completed.length,
 		total: run.total,
