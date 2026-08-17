@@ -332,6 +332,50 @@ describe('assembleStoryFrame and assembleSceneDelta (the hoisted split)', () => 
 	});
 });
 
+describe('includeTiers (the reduced tier sets)', () => {
+	// The lean review set: a pass that checks no lore needs the frame (it carries
+	// the style notes), the outline, and the scene itself.
+	const LEAN = ['frame', 'summaries', 'scene-local'];
+
+	it('assembles only the named tiers on the full path', async () => {
+		const context = await assembleContext(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			includeTiers: LEAN
+		});
+		expect(context!.includedTiers).toEqual(['frame', 'scene-local', 'summaries']);
+		expect(context!.droppedTiers).toEqual([]);
+		expect(context!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+		expect(context!.text).toContain('A calm walk south.'); // the outline
+		expect(context!.text).not.toContain('A brave knight.'); // no entities
+		expect(context!.text).not.toContain('Creation Myth'); // no lore
+		expect(context!.text).not.toContain('The bell tolls a betrayal.'); // no notes
+	});
+
+	it('narrows the frame and the delta to the same named set', async () => {
+		const frame = await assembleStoryFrame(db, { userId: ownerId, storyId, includeTiers: LEAN });
+		expect(frame!.includedTiers).toEqual(['frame', 'summaries']);
+		expect(frame!.text).not.toContain('A brave knight.');
+		const delta = await assembleSceneDelta(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			includeTiers: LEAN
+		});
+		expect(delta!.includedTiers).toEqual(['scene-local']);
+		expect(delta!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+		expect(delta!.text).not.toContain('The Aether'); // no keyword lore
+	});
+
+	it('assembles every tier when no set is named', async () => {
+		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.includedTiers).toContain('entities');
+		expect(context!.includedTiers).toContain('lore');
+		expect(context!.includedTiers).toContain('notes');
+	});
+});
+
 describe('assembleContext precedingProse (the Write action anchor)', () => {
 	it('carries the preceding scene prose when the flag is on and a scene precedes', async () => {
 		// scene2 ("The Quiet Road") is empty and follows scene1 ("The Gate").

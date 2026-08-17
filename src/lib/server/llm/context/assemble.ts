@@ -111,7 +111,21 @@ export type AssembleOptions = {
 	// default so ordinary chat turns are not inflated.
 	precedingProse?: boolean;
 	budgetTokens?: number;
+	// An allow-list of tier names: only these are gathered and rendered. Left
+	// out, every tier of the path is assembled. A surface that does not need the
+	// world (a review pass that checks no lore, a review-thread reply) names the
+	// few tiers it wants; assembly only filters by name, the caller decides.
+	includeTiers?: readonly string[];
 };
+
+function tierWanted(includeTiers: readonly string[] | undefined, name: string): boolean {
+	return !includeTiers || includeTiers.includes(name);
+}
+
+function keepTiers(tiers: ContextTier[], includeTiers?: readonly string[]): ContextTier[] {
+	if (!includeTiers) return tiers;
+	return tiers.filter((tier) => includeTiers.includes(tier.name));
+}
 
 // The one entry: gather every tier, render, and fit to budget. Branches on the
 // scope - a story focus (the Write/Review/story-Plan path) or the whole
@@ -129,13 +143,27 @@ export async function assembleContext(
 // The tiers that do not depend on the scene in focus: the story frame, its
 // outline, the entities, the notes, and the other stories in the universe
 // (bodies stay out of the backbone; the model pulls them with get_scene).
-async function gatherStableTiers(db: Database, userId: string, scope: StoryScope) {
-	const skeleton = await storySkeleton(db, scope.storyId);
-	const entities = await inScopeEntities(db, scope.universeId, scope.storyId);
-	const notes = await scopeNotes(db, userId, scope.universeId, scope.storyId);
-	const backbone = (await universeSkeleton(db, scope.universeId)).filter(
-		(s) => s.storyId !== scope.storyId
-	);
+// A tier left out of includeTiers is not queried at all. The entities are
+// loaded for the lore tier too, since their names drive keyword activation.
+async function gatherStableTiers(
+	db: Database,
+	userId: string,
+	scope: StoryScope,
+	includeTiers?: readonly string[]
+) {
+	const skeleton = tierWanted(includeTiers, 'summaries')
+		? await storySkeleton(db, scope.storyId)
+		: { chapters: [], orphans: [] };
+	const entities =
+		tierWanted(includeTiers, 'entities') || tierWanted(includeTiers, 'lore')
+			? await inScopeEntities(db, scope.universeId, scope.storyId)
+			: [];
+	const notes = tierWanted(includeTiers, 'notes')
+		? await scopeNotes(db, userId, scope.universeId, scope.storyId)
+		: [];
+	const backbone = tierWanted(includeTiers, 'universe-backbone')
+		? (await universeSkeleton(db, scope.universeId)).filter((s) => s.storyId !== scope.storyId)
+		: [];
 	return {
 		entities,
 		frame: { name: 'frame', text: renderFrame(scope) },
@@ -152,7 +180,7 @@ async function gatherStableTiers(db: Database, userId: string, scope: StoryScope
 async function gatherSceneTiers(
 	db: Database,
 	scope: StoryScope,
-	options: Pick<AssembleOptions, 'sceneId' | 'focusText' | 'precedingProse'>,
+	options: Pick<AssembleOptions, 'sceneId' | 'focusText' | 'precedingProse' | 'includeTiers'>,
 	entityNames: string[]
 ) {
 	const neighbourhood = await sceneNeighbourhood(db, scope.storyId, options.sceneId);
@@ -170,7 +198,9 @@ async function gatherSceneTiers(
 		...neighbourhood.neighbours.map((n) => n.summaryMd ?? ''),
 		...entityNames
 	].join('\n');
-	const lore = await activeLore(db, scope.universeId, scope.storyId, scopeText);
+	const lore = tierWanted(options.includeTiers, 'lore')
+		? await activeLore(db, scope.universeId, scope.storyId, scopeText)
+		: [];
 	return {
 		neighbourhood,
 		lore,
@@ -200,7 +230,7 @@ async function assembleStoryContext(
 	if (!scope) return null;
 	const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
 
-	const stable = await gatherStableTiers(db, options.userId, scope);
+	const stable = await gatherStableTiers(db, options.userId, scope, options.includeTiers);
 	const scene = await gatherSceneTiers(
 		db,
 		scope,
@@ -220,7 +250,7 @@ async function assembleStoryContext(
 		stable.notes,
 		stable.backbone
 	];
-	const budgeted = selectWithinBudget(tiers, budgetTokens);
+	const budgeted = selectWithinBudget(keepTiers(tiers, options.includeTiers), budgetTokens);
 
 	return {
 		kind: 'story',
@@ -252,18 +282,27 @@ function stableBudget(budgetTokens: number): number {
 
 // The scene-independent context for a story: frame, outline, entities, notes,
 // and the universe backbone last so it drops first under budget pressure.
-// Null when the story is not the user's.
+// includeTiers narrows that set (see AssembleOptions). Null when the story is
+// not the user's.
 export async function assembleStoryFrame(
 	db: Database,
-	options: { userId: string; storyId: string; budgetTokens?: number }
+	options: {
+		userId: string;
+		storyId: string;
+		budgetTokens?: number;
+		includeTiers?: readonly string[];
+	}
 ): Promise<AssembledContext | null> {
 	const scope = await loadStoryScope(db, options.userId, options.storyId);
 	if (!scope) return null;
 	const budgetTokens = stableBudget(options.budgetTokens ?? DEFAULT_BUDGET_TOKENS);
 
-	const stable = await gatherStableTiers(db, options.userId, scope);
+	const stable = await gatherStableTiers(db, options.userId, scope, options.includeTiers);
 	const budgeted = selectWithinBudget(
-		[stable.frame, stable.summaries, stable.entityTier, stable.notes, stable.backbone],
+		keepTiers(
+			[stable.frame, stable.summaries, stable.entityTier, stable.notes, stable.backbone],
+			options.includeTiers
+		),
 		budgetTokens
 	);
 
@@ -299,13 +338,17 @@ export async function assembleSceneDelta(
 		// keyword activation.
 		entityNames?: string[];
 		budgetTokens?: number;
+		includeTiers?: readonly string[];
 	}
 ): Promise<BudgetedContext | null> {
 	const scope = await loadStoryScope(db, options.userId, options.storyId);
 	if (!scope) return null;
 	const total = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
 	const scene = await gatherSceneTiers(db, scope, options, options.entityNames ?? []);
-	return selectWithinBudget([scene.sceneLocal, scene.loreTier], total - stableBudget(total));
+	return selectWithinBudget(
+		keepTiers([scene.sceneLocal, scene.loreTier], options.includeTiers),
+		total - stableBudget(total)
+	);
 }
 
 async function assembleUniverseContext(
@@ -333,7 +376,7 @@ async function assembleUniverseContext(
 		{ name: 'lore', text: renderLore(lore) },
 		{ name: 'notes', text: renderNotes(notes) }
 	];
-	const budgeted = selectWithinBudget(tiers, budgetTokens);
+	const budgeted = selectWithinBudget(keepTiers(tiers, options.includeTiers), budgetTokens);
 
 	return {
 		kind: 'universe',

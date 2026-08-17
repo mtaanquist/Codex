@@ -416,6 +416,13 @@ message is then byte-identical from scene to scene, so an endpoint's prompt
 prefix cache holds across the run. Each part fits its own share of the budget
 (the stable part takes the larger one).
 
+A surface can also name the tiers it wants (`includeTiers` on all three
+assembly entries): tiers left out are neither queried nor rendered. A review
+pass whose categories do not include `lore` ships only the frame, the outline,
+and the scene itself, since entities, lore, notes, and the universe backbone
+only matter to the lore category; the sparing pass (no categories) keeps the
+full stack.
+
 TODO (needs a real corpus): the token budget per tier, the split between the
 stable and per-scene shares, the truncation and prioritisation strategy when a
 story outgrows the budget, and how far the neighbour window reaches. These are

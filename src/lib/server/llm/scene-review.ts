@@ -31,6 +31,18 @@ import type { ChatMessage } from './providers/types.ts';
 // scene before it can compare anything. The gateway clamps both to its own
 // ceiling.
 const FOCUSED_PASS_BUDGET = 64;
+
+// The world tiers (entities, lore, notes, the universe backbone) only matter to
+// the lore category. A pass that checks spelling or prose alone is judged on the
+// scene text and the style notes in the frame, so it ships the lean set instead
+// and saves the rest of the prefill. The sparing pass (no categories) can raise
+// anything, so it keeps the full stack.
+const LEAN_REVIEW_TIERS = ['frame', 'summaries', 'scene-local'] as const;
+
+function reviewTiers(categories: ReviewCategory[]): readonly string[] | undefined {
+	if (categories.length === 0 || categories.includes('lore')) return undefined;
+	return LEAN_REVIEW_TIERS;
+}
 function consistencyBudget(sceneCount: number): number {
 	return sceneCount * 2 + 24;
 }
@@ -128,6 +140,8 @@ export async function reviewOneScene(
 	},
 	deps: GatewayDeps = {}
 ): Promise<number> {
+	const categories = opts.categories ?? [];
+	const includeTiers = reviewTiers(categories);
 	let system: ChatMessage | null = null;
 	let scenePrefix = '';
 	let sceneTextIncluded = false;
@@ -137,7 +151,8 @@ export async function reviewOneScene(
 			userId: opts.userId,
 			storyId: opts.storyId,
 			sceneId: opts.scene.id,
-			entityNames: opts.storyFrame.sources.entities.map((e) => e.name)
+			entityNames: opts.storyFrame.sources.entities.map((e) => e.name),
+			includeTiers
 		});
 		if (delta?.text) scenePrefix = `${delta.text}\n\n`;
 		sceneTextIncluded = delta?.includedTiers.includes('scene-local') ?? false;
@@ -145,7 +160,8 @@ export async function reviewOneScene(
 		const context = await assembleContext(db, {
 			userId: opts.userId,
 			storyId: opts.storyId,
-			sceneId: opts.scene.id
+			sceneId: opts.scene.id,
+			includeTiers
 		});
 		if (context) {
 			system = buildSystemMessage(context, { tools: true });
@@ -153,7 +169,6 @@ export async function reviewOneScene(
 		}
 	}
 	const prior = await openAssistantNotes(db, opts.scene.id);
-	const categories = opts.categories ?? [];
 	const task: ChatMessage = {
 		role: 'user',
 		content: scenePrefix + buildReviewMessage(opts.scene, prior, categories, sceneTextIncluded)
@@ -375,8 +390,11 @@ export async function reviewStoryScenes(
 	// prompt prefix cache holds across the run.
 	const storyFrame =
 		targets.length > 0
-			? ((await assembleStoryFrame(db, { userId: opts.userId, storyId: opts.storyId })) ??
-				undefined)
+			? ((await assembleStoryFrame(db, {
+					userId: opts.userId,
+					storyId: opts.storyId,
+					includeTiers: reviewTiers(opts.categories ?? [])
+				})) ?? undefined)
 			: undefined;
 
 	let reviewed = 0;

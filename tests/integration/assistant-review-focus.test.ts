@@ -3,7 +3,15 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	entityCategories,
+	loreEntries,
+	notes,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -80,6 +88,26 @@ beforeEach(async () => {
 		.values({ ownerId: userId, name: 'U' })
 		.returning({ id: universes.id });
 	universeId = universe.id;
+	// World material, so a pass that ships the world tiers can be told apart
+	// from one that does not.
+	const [category] = await db
+		.insert(entityCategories)
+		.values({ universeId, ownerId: userId, name: 'Lore', color: '#888', sortOrder: 0 })
+		.returning({ id: entityCategories.id });
+	await db.insert(loreEntries).values({
+		universeId,
+		ownerId: userId,
+		categoryId: category.id,
+		title: 'Creation Myth',
+		summaryMd: 'How the kingdom drowned.',
+		activationMode: 'always'
+	});
+	await db.insert(notes).values({
+		ownerId: userId,
+		universeId,
+		title: 'Plot',
+		bodyMd: 'The bell tolls a betrayal.'
+	});
 	await saveAccountLlmConfig(db, userId, {
 		enabled: true,
 		assistantName: '',
@@ -229,6 +257,57 @@ describe('reviewStoryScenes categories', () => {
 			expect(user).toContain(`Body of scene ${i + 1}.`);
 			expect(user).toContain('Do not call get_scene');
 		}
+	});
+
+	it('leaves the world out of a mechanics-only pass', async () => {
+		const storyId = await seedStory(2);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(db, { userId, storyId, categories: ['mechanics'] }, { provider });
+		for (const messages of seen) {
+			const whole = systemText(messages) + userText(messages);
+			expect(whole).not.toContain('Creation Myth');
+			expect(whole).not.toContain('The bell tolls a betrayal.');
+		}
+		// The frame stays: it carries the story, the world, and the style notes.
+		expect(systemText(seen[0])).toContain('# Story: S');
+		// The scene itself still rides in the user turn.
+		expect(userText(seen[0])).toContain('Body of scene 1.');
+	});
+
+	it('leaves the world out of a prose and mechanics pass', async () => {
+		const storyId = await seedStory(1);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: ['prose', 'mechanics'] },
+			{ provider }
+		);
+		const whole = systemText(seen[0]) + userText(seen[0]);
+		expect(whole).not.toContain('Creation Myth');
+		expect(whole).not.toContain('The bell tolls a betrayal.');
+	});
+
+	it('keeps the world for a pass that checks lore', async () => {
+		const storyId = await seedStory(1);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(db, { userId, storyId, categories: ['lore'] }, { provider });
+		expect(systemText(seen[0])).toContain('The bell tolls a betrayal.');
+		expect(userText(seen[0])).toContain('Creation Myth');
+	});
+
+	it('keeps the world for the sparing pass with no categories', async () => {
+		const storyId = await seedStory(1);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(db, { userId, storyId }, { provider });
+		expect(systemText(seen[0])).toContain('The bell tolls a betrayal.');
+		expect(userText(seen[0])).toContain('Creation Myth');
+	});
+
+	it('sends one identical system message across a run with categories set', async () => {
+		const storyId = await seedStory(3);
+		const { provider, seen } = recordingProvider();
+		await reviewStoryScenes(db, { userId, storyId, categories: ['mechanics'] }, { provider });
+		expect(new Set(seen.map(systemText)).size).toBe(1);
 	});
 
 	it('skips the consistency pass for a single-scene story', async () => {
