@@ -2,6 +2,7 @@ import type {
 	ChatMessage,
 	CompletionRequest,
 	Connection,
+	FinishReason,
 	ModelInfo,
 	ProviderToolCall,
 	Provider,
@@ -191,6 +192,16 @@ function parseContent(raw: unknown): {
 	};
 }
 
+// The Messages API reports stop_reason; max_tokens is its name for a reply cut
+// off at the token cap.
+function parseStopReason(raw: unknown): FinishReason | undefined {
+	if (typeof raw !== 'string' || !raw) return undefined;
+	if (raw === 'end_turn' || raw === 'stop_sequence') return 'stop';
+	if (raw === 'max_tokens') return 'length';
+	if (raw === 'tool_use') return 'toolCalls';
+	return 'other';
+}
+
 function truncate(text: string, max = 300): string {
 	const clean = text.replace(/\s+/g, ' ').trim();
 	return clean.length > max ? `${clean.slice(0, max)}...` : clean;
@@ -238,6 +249,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 	let buffer = '';
 	let promptTokens: number | undefined;
 	let completionTokens: number | undefined;
+	let finishReason: FinishReason | undefined;
 	for await (const chunk of body) {
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
@@ -255,7 +267,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			}
 			const frame = json as {
 				type?: unknown;
-				delta?: { type?: unknown; text?: unknown };
+				delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
 				message?: {
 					usage?: {
 						input_tokens?: unknown;
@@ -274,6 +286,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			if (frame.type === 'message_delta') {
 				const output = Number(frame.usage?.output_tokens);
 				if (Number.isFinite(output)) completionTokens = output;
+				finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
 				continue;
 			}
 			if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
@@ -289,7 +302,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 						usage: { promptTokens: promptTokens ?? 0, completionTokens: completionTokens ?? 0 }
 					};
 				}
-				yield { type: 'done' };
+				yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
 				return;
 			}
 			if (frame.type === 'error') {
@@ -302,7 +315,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 		}
 	}
 	// The stream ended without an explicit message_stop; close it out anyway.
-	yield { type: 'done' };
+	yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
 }
 
 export const anthropicProvider: Provider = {
@@ -340,8 +353,13 @@ export const anthropicProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
-		const json = JSON.parse(text) as { content?: unknown; usage?: unknown };
-		return { ...parseContent(json?.content), usage: parseUsage(json?.usage) };
+		const json = JSON.parse(text) as { content?: unknown; usage?: unknown; stop_reason?: unknown };
+		const finishReason = parseStopReason(json?.stop_reason);
+		return {
+			...parseContent(json?.content),
+			usage: parseUsage(json?.usage),
+			...(finishReason ? { finishReason } : {})
+		};
 	},
 
 	async listModels(conn, http, signal) {

@@ -39,6 +39,38 @@ async function drain(stream: AsyncIterable<StreamEvent>): Promise<StreamEvent[]>
 }
 
 describe('anthropicProvider.respond', () => {
+	it('normalises stop_reason onto the neutral finish reason', async () => {
+		const seen: (string | undefined)[] = [];
+		for (const reason of ['end_turn', 'max_tokens', 'tool_use', 'refusal', undefined]) {
+			const http: HttpRequest = async () =>
+				jsonResponse(200, {
+					content: [{ type: 'text', text: 'x' }],
+					...(reason ? { stop_reason: reason } : {})
+				});
+			const result = await anthropicProvider.respond(
+				{ model: 'claude-x', messages: [], maxTokens: 16 },
+				conn,
+				http
+			);
+			seen.push(result.finishReason);
+		}
+		expect(seen).toEqual(['stop', 'length', 'toolCalls', 'other', undefined]);
+	});
+
+	it('ignores a tuned temperature', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'ok' }] });
+		};
+		await anthropicProvider.respond(
+			{ model: 'claude-x', messages: [], maxTokens: 16, tuning: { temperature: 0.1 } },
+			conn,
+			http
+		);
+		expect(sentBody).not.toHaveProperty('temperature');
+	});
+
 	it('sends the Anthropic headers and hoists system messages', async () => {
 		let calledUrl = '';
 		let headers: Record<string, string> = {};
@@ -328,6 +360,22 @@ describe('anthropicProvider.chatStream', () => {
 			{ type: 'token', text: 'lo' },
 			{ type: 'usage', usage: { promptTokens: 9, completionTokens: 2 } },
 			{ type: 'done' }
+		]);
+	});
+
+	it('carries a max_tokens stop reason on the done frame as length', async () => {
+		const frames = [
+			'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}\n',
+			'data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}\n',
+			'data: {"type":"message_stop"}\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			anthropicProvider.chatStream({ model: 'claude-x', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'Hi' },
+			{ type: 'done', finishReason: 'length' }
 		]);
 	});
 

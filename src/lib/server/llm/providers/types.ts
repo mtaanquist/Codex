@@ -35,6 +35,12 @@ export type ProviderToolCall = {
 	arguments: string;
 };
 
+// Why the model stopped generating, normalised across adapters. 'length' is
+// the one the gateway acts on: the reply hit the token cap, so its text and
+// any tool-call arguments may be cut off mid-token. Anything an adapter does
+// not recognise maps to 'other'; undefined means the endpoint reported none.
+export type FinishReason = 'stop' | 'length' | 'toolCalls' | 'other';
+
 // A single non-streaming turn: either final content, or a set of tool calls to
 // run before the model can continue (or both, though most endpoints pick one).
 export type ProviderResponse = {
@@ -42,6 +48,7 @@ export type ProviderResponse = {
 	toolCalls: ProviderToolCall[];
 	// Token counts the endpoint reported for this request, when it did.
 	usage?: TokenUsage;
+	finishReason?: FinishReason;
 	// Adapter-private content blocks to echo back on the next turn; see
 	// ChatMessage.raw. Set only when the response carries blocks (thinking)
 	// that a reconstructed turn would lose.
@@ -64,8 +71,9 @@ export type CompletionRequest = {
 	// Per-role request tuning from the account config. The Anthropic adapter
 	// maps thinking to `thinking: {type: "adaptive"}` (omitted when off; an
 	// explicit "disabled" is rejected by some models) and effort to
-	// `output_config.effort`. Other adapters ignore it.
-	tuning?: { thinking?: boolean; effort?: string };
+	// `output_config.effort`; the OpenAI-compatible adapter sends temperature.
+	// Each adapter ignores the fields it has no use for.
+	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
 };
 
 // A scene-split the Assistant proposed through its tool: where the new scene
@@ -88,7 +96,9 @@ export type StreamEvent =
 	// The gateway consumes this frame for the usage log; it never reaches a
 	// client.
 	| { type: 'usage'; usage: TokenUsage }
-	| { type: 'done' }
+	// finishReason rides the terminator when the endpoint reported one; clients
+	// ignore it, the server side reads it to spot a truncated reply.
+	| { type: 'done'; finishReason?: FinishReason }
 	| { type: 'error'; message: string };
 
 // Where to reach the endpoint and how to authenticate. The key is decrypted by
