@@ -128,6 +128,17 @@ which quote the text they edit) and drops the thinking a local reasoning
 model emits inline, in `<think>` tags or a separate `reasoning_content`
 field, so the scratchpad never reaches the transcript.
 
+The Claude provider can also run a web search itself, off unless the account
+turns it on and then only on a universe flagged as an established published
+setting: canon is the thing a search settles that the writer's own notes
+cannot. The adapter attaches Anthropic's `web_search` server tool (the dated
+2026 variant on the models that carry it, the original elsewhere, capped at
+five searches a turn); the search runs on Anthropic's servers and the answer
+returns as ordinary content, so Codex's tool loop never touches a raw web
+result and the only outbound traffic from the server is still the request to
+the configured endpoint. No other provider offers it, and a Codex-side search
+tool (which would change both of those things) remains deferred.
+
 Codex cannot keep up with how every OpenAI-compatible server spells its own
 switches, so the config carries an escape hatch: an `extraParams` object,
 account-wide and per role (the role's laid over the account's, key by key),

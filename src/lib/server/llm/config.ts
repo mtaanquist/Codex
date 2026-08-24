@@ -153,6 +153,12 @@ export type StoredAccountConfig = {
 	// Extra request fields for every role, merged into the body the
 	// OpenAI-compatible adapter sends. A role's own extras lay over these.
 	extraParams?: ExtraParams;
+	// Let the provider run its own web search (the Claude API's server-side
+	// tool). Off unless the writer turns it on, and even then only on a universe
+	// marked as an established published setting, where canon is the thing a
+	// search can settle. The search runs on the provider's servers, so it adds
+	// no outbound traffic of Codex's own.
+	webSearch: boolean;
 	// The most tool calls the Assistant may make in one turn (tools are a later
 	// surface; the value is carried now so the config shape is stable).
 	toolCallBudget: number;
@@ -288,6 +294,7 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		models: normaliseModels(raw.models),
 		tuning: normaliseTuning(raw.tuning),
 		extraParams: normaliseExtraParams(raw.extraParams),
+		webSearch: raw.webSearch === true,
 		toolCallBudget: normaliseBudget(raw.toolCallBudget),
 		toolProfile: normaliseToolProfile(raw.toolProfile),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
@@ -398,6 +405,7 @@ export type ResolvedConfig = {
 	models: ModelMap;
 	tuning: TuningMap;
 	extraParams?: ExtraParams;
+	webSearch: boolean;
 	toolCallBudget: number;
 	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
@@ -437,6 +445,7 @@ export async function resolveLlmConfig(
 			models: { ...account.models, ...(override?.models ?? {}) },
 			tuning: account.tuning,
 			extraParams: account.extraParams,
+			webSearch: account.webSearch,
 			toolCallBudget: account.toolCallBudget,
 			toolProfile: account.toolProfile,
 			supportsStreaming: account.supportsStreaming,
@@ -496,6 +505,7 @@ export type AccountLlmView = {
 	models: ModelMap;
 	tuning: TuningMap;
 	extraParams?: ExtraParams;
+	webSearch: boolean;
 	toolCallBudget: number;
 	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
@@ -522,6 +532,7 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		models: c.models,
 		tuning: c.tuning,
 		extraParams: c.extraParams,
+		webSearch: c.webSearch,
 		toolCallBudget: c.toolCallBudget,
 		toolProfile: c.toolProfile,
 		supportsStreaming: c.supportsStreaming,
@@ -549,6 +560,8 @@ export type SaveAccountInput = {
 	// Account-wide extra request fields; absent keeps what is stored, {} clears
 	// it (the modelContextManual pattern).
 	extraParams?: ExtraParams;
+	// Absent keeps the stored setting (the partial-save pattern).
+	webSearch?: boolean;
 	toolCallBudget: number;
 	// Absent keeps the stored profile (the partial-save pattern).
 	toolProfile?: ToolProfile;
@@ -630,6 +643,7 @@ export async function saveAccountLlmConfig(
 		...(input.extraParams === undefined
 			? {}
 			: { extraParams: normaliseExtraParams(input.extraParams) ?? {} }),
+		webSearch: input.webSearch === undefined ? existing.webSearch : input.webSearch === true,
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
 		toolProfile:
 			input.toolProfile === undefined

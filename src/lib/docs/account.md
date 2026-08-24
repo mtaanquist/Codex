@@ -119,6 +119,14 @@ contacts a model on its own.
   per role. Raise it for a role whose answers get cut off mid-sentence, or lower
   it to keep a model brief. Leave the box empty to use the length Codex asks for,
   which suits most setups.
+- **Let the assistant search the web (Claude only)**: off unless you turn it on.
+  With it on, Claude may look things up while it works, but only in a universe
+  you have marked as an established setting, where checking your draft against a
+  published world's canon is the point. The search runs on Anthropic's servers,
+  not yours, and the results come back as part of Claude's answer; Codex itself
+  still only ever talks to the endpoint you configured. Anthropic bills you for
+  the searches. See [writing in an established setting](/docs/established-settings)
+  for what this helps with and what it does not.
 - **Extra request settings**: some endpoints take settings Codex has no box for,
   and each server spells them its own way. The box under Endpoint holds JSON that
   is sent with every request, for example `{"top_p": 0.9}`. Each role has a box of

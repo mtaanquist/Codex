@@ -72,6 +72,7 @@ let captured: {
 	maxTokens?: number;
 	tuning?: { thinking?: boolean; effort?: string };
 	extraParams?: Record<string, unknown>;
+	webSearch?: boolean;
 } | null = null;
 const stubProvider: Provider = {
 	async *chatStream(req) {
@@ -80,7 +81,8 @@ const stubProvider: Provider = {
 			messages: req.messages,
 			maxTokens: req.maxTokens,
 			tuning: req.tuning,
-			extraParams: req.extraParams
+			extraParams: req.extraParams,
+			webSearch: req.webSearch
 		};
 		yield { type: 'token', text: `[${req.model}]` };
 		yield { type: 'done' };
@@ -91,7 +93,8 @@ const stubProvider: Provider = {
 			messages: req.messages,
 			maxTokens: req.maxTokens,
 			tuning: req.tuning,
-			extraParams: req.extraParams
+			extraParams: req.extraParams,
+			webSearch: req.webSearch
 		};
 		return { content: `done:${req.model}`, toolCalls: [] };
 	},
@@ -234,6 +237,73 @@ describe('gateway gating', () => {
 		expect(captured?.extraParams).toEqual({ top_p: 0.9 });
 		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
 		expect(captured?.extraParams).toEqual({ top_p: 0.4, min_p: 0.05 });
+	});
+
+	it('offers the provider web search only on an established universe, when opted in', async () => {
+		const anthropic = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			provider: 'anthropic' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk-ant',
+			models: { chat: 'claude-opus-5' },
+			toolCallBudget: 8
+		};
+		const [ordinary] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Mine' })
+			.returning({ id: universes.id });
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+
+		// Opted in: the established universe gets it, the writer's own does not.
+		await saveAccountLlmConfig(db, userId, { ...anthropic, webSearch: true });
+		await complete(
+			db,
+			{ userId, universeId: established.id, role: 'chat', messages: [] },
+			stubDeps
+		);
+		expect(captured?.webSearch).toBe(true);
+		await complete(db, { userId, universeId: ordinary.id, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(false);
+		// No universe at all means nothing to check canon against.
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(false);
+
+		// Opted out: never, not even there.
+		await saveAccountLlmConfig(db, userId, { ...anthropic, webSearch: false });
+		await complete(
+			db,
+			{ userId, universeId: established.id, role: 'chat', messages: [] },
+			stubDeps
+		);
+		expect(captured?.webSearch).toBe(false);
+	});
+
+	it('never offers web search on an OpenAI-compatible endpoint', async () => {
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			webSearch: true,
+			toolCallBudget: 8
+		});
+		await complete(
+			db,
+			{ userId, universeId: established.id, role: 'chat', messages: [] },
+			stubDeps
+		);
+		expect(captured?.webSearch).toBe(false);
 	});
 
 	it('sends no extra parameters when none are configured', async () => {

@@ -6,8 +6,11 @@ import {
 	resolveLlmConfig,
 	roleExtraParams,
 	roleMaxTokens,
-	type AssistantRole
+	type AssistantRole,
+	type ResolvedConfig
 } from './config.ts';
+import { loadStoryScope, loadUniverseScope } from './context/sources.ts';
+import { adapterKind } from './providers/presets.ts';
 import { estimateTokens } from './context/assemble.ts';
 import { EgressDeniedError, egressHttpRequest, egressPolicy } from './egress.ts';
 import { providerFor } from './providers/index.ts';
@@ -213,6 +216,8 @@ type Prepared = {
 	// Extra request fields for this role, account-wide merged with the role's
 	// own; undefined when the writer has set none.
 	extraParams?: Record<string, unknown>;
+	// Offer the provider's own web search this turn (see webSearchAllowed).
+	webSearch?: boolean;
 	// The reply length for this turn: what the writer set for this role, else
 	// what the surface asked for, else the role's default.
 	maxTokens: number;
@@ -223,6 +228,30 @@ type Prepared = {
 };
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Whether the provider's own web search may be offered this turn: the account
+// opted in, the provider is one that runs the search itself, and this turn's
+// universe is an established published setting. That last condition is the
+// point of the feature - checking a draft against a canon somebody else
+// published - and it keeps a search off every turn about a world the writer
+// invented, where there is nothing to look up. The scope loaders check
+// ownership, so a universe the user does not own answers false.
+async function webSearchAllowed(
+	db: Database,
+	config: ResolvedConfig,
+	req: GatewayRequest
+): Promise<boolean> {
+	if (!config.webSearch || adapterKind(config.provider) !== 'anthropic') return false;
+	if (req.universeId) {
+		const scope = await loadUniverseScope(db, req.userId, req.universeId);
+		return scope?.universeEstablished === true;
+	}
+	if (req.storyId) {
+		const scope = await loadStoryScope(db, req.userId, req.storyId);
+		return scope?.universeEstablished === true;
+	}
+	return false;
+}
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
 	const resolved = await resolveLlmConfig(db, req.userId, req.storyId);
@@ -299,6 +328,7 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				: budget,
 		tuning: resolved.config.tuning[req.role],
 		extraParams: roleExtraParams(resolved.config, req.role),
+		webSearch: await webSearchAllowed(db, resolved.config, req),
 		// A figure the writer set for the role wins over the surface's own: a
 		// local model that answers in 300 tokens or one that needs 8000 is theirs
 		// to know, and the surfaces cannot.
@@ -401,7 +431,8 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				tools: p.tools,
 				...(concluding ? { toolChoice: 'none' as const } : {}),
 				tuning: p.tuning,
-				extraParams: p.extraParams
+				extraParams: p.extraParams,
+				webSearch: p.webSearch
 			});
 			await recordUsage(db, p, req, messages, result.usage);
 			usage = addUsage(usage, result.usage);
@@ -489,7 +520,8 @@ export async function* stream(
 			messages: prepared.messages,
 			maxTokens: prepared.maxTokens,
 			tuning: prepared.tuning,
-			extraParams: prepared.extraParams
+			extraParams: prepared.extraParams,
+			webSearch: prepared.webSearch
 		},
 		prepared.conn,
 		prepared.http,
@@ -551,7 +583,8 @@ export async function completeDetailed(
 		messages: prepared.messages,
 		maxTokens: prepared.maxTokens,
 		tuning: prepared.tuning,
-		extraParams: prepared.extraParams
+		extraParams: prepared.extraParams,
+		webSearch: prepared.webSearch
 	});
 	await recordUsage(db, prepared, req, prepared.messages, response.usage);
 	return { content: response.content, notes: 0, usage: response.usage, model: prepared.model };

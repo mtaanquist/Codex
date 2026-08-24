@@ -221,6 +221,7 @@ async function patchAssistant(
 		models: ModelMap;
 		tuning: TuningMap;
 		extraParams: ExtraParams;
+		webSearch: boolean;
 		toolProfile: ToolProfile;
 		modelContextManual: ModelContextMap;
 		spendCapUsd: number | null;
@@ -238,6 +239,7 @@ async function patchAssistant(
 		models: patch.models ?? current.models,
 		tuning: patch.tuning ?? current.tuning,
 		extraParams: patch.extraParams,
+		webSearch: patch.webSearch,
 		toolCallBudget: current.toolCallBudget,
 		toolProfile: patch.toolProfile ?? current.toolProfile,
 		modelContextManual: patch.modelContextManual,
@@ -442,11 +444,15 @@ export const actions: Actions = {
 		if (extraParams === 'invalid') {
 			return fail(400, { scope: 'assistant-endpoint', message: PARAMS_MESSAGE });
 		}
+		// An unchecked box sends nothing at all, so the hidden marker is what
+		// separates "turned off" from "this form never showed the box".
+		const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
 			apiKey: String(data.get('apiKey') ?? ''),
 			extraParams,
+			webSearch,
 			spendCapUsd,
 			spendWarnUsd,
 			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)

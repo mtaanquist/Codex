@@ -398,6 +398,30 @@ describe('account config round-trip', () => {
 		expect(roleExtraParams(hand.config, 'chat')).toEqual({ top_p: 0.9 });
 	});
 
+	it('stores the web-search opt-in, off by default and kept by a partial save', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			provider: 'anthropic' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: '',
+			models: { chat: 'claude-opus-5' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).webSearch).toBe(false);
+
+		await saveAccountLlmConfig(db, userId, { ...base, webSearch: true });
+		expect((await accountLlmView(db, userId)).webSearch).toBe(true);
+		// A save from another form does not carry the box, and must not clear it.
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).webSearch).toBe(true);
+
+		await saveAccountLlmConfig(db, userId, { ...base, webSearch: false });
+		expect((await accountLlmView(db, userId)).webSearch).toBe(false);
+	});
+
 	it('normalises a per-role reply length: a whole positive number or nothing', async () => {
 		const base = {
 			enabled: true,

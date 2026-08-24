@@ -89,6 +89,11 @@ export type CompletionRequest = {
 	// and on thinking === false asks the endpoint to skip the thinking pass.
 	// Each adapter ignores the fields it has no use for.
 	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
+	// Offer the provider's own server-side web search this turn. The Anthropic
+	// adapter attaches its web_search tool; other adapters ignore it. The gateway
+	// sets it only for an account that opted in, on a universe marked as an
+	// established published setting.
+	webSearch?: boolean;
 	// Extra body fields from the account config, for whatever the writer's server
 	// needs that Codex has no field of its own for. The OpenAI-compatible adapter
 	// merges them into the request; the Anthropic adapter ignores them. The

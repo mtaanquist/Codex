@@ -38,6 +38,90 @@ async function drain(stream: AsyncIterable<StreamEvent>): Promise<StreamEvent[]>
 	return out;
 }
 
+describe('anthropicProvider web search', () => {
+	async function bodyFor(req: Parameters<typeof anthropicProvider.respond>[0]) {
+		let sent: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sent = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'ok' }] });
+		};
+		await anthropicProvider.respond(req, conn, http);
+		return sent;
+	}
+
+	it('attaches the server tool only when the turn asks for it', async () => {
+		const withSearch = await bodyFor({
+			model: 'claude-opus-5',
+			messages: [],
+			maxTokens: 16,
+			webSearch: true
+		});
+		expect(withSearch.tools).toEqual([
+			{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }
+		]);
+		expect(withSearch.tool_choice).toEqual({ type: 'auto' });
+
+		const without = await bodyFor({ model: 'claude-opus-5', messages: [], maxTokens: 16 });
+		expect(without).not.toHaveProperty('tools');
+		expect(without).not.toHaveProperty('tool_choice');
+	});
+
+	it('falls back to the original tool on a model without the filtering one', async () => {
+		const body = await bodyFor({
+			model: 'claude-3-5-haiku-20241022',
+			messages: [],
+			maxTokens: 16,
+			webSearch: true
+		});
+		expect(body.tools).toEqual([{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]);
+	});
+
+	it("sits alongside Codex's own tools, and a concluding round forbids both", async () => {
+		const body = await bodyFor({
+			model: 'claude-opus-5',
+			messages: [],
+			maxTokens: 16,
+			webSearch: true,
+			toolChoice: 'none',
+			tools: [{ name: 'get_scene', description: 'Read a scene', parameters: { type: 'object' } }]
+		});
+		expect(body.tools).toEqual([
+			{ name: 'get_scene', description: 'Read a scene', input_schema: { type: 'object' } },
+			{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }
+		]);
+		expect(body.tool_choice).toEqual({ type: 'none' });
+	});
+
+	it('reads the answer past the search blocks the server adds', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [
+					{
+						type: 'server_tool_use',
+						id: 'srv1',
+						name: 'web_search',
+						input: { query: 'Waterdeep' }
+					},
+					{
+						type: 'web_search_tool_result',
+						tool_use_id: 'srv1',
+						content: [{ type: 'web_search_result', title: 'Waterdeep', url: 'http://x' }]
+					},
+					{ type: 'text', text: 'Canon puts it on the Sword Coast.' }
+				]
+			});
+		const result = await anthropicProvider.respond(
+			{ model: 'claude-opus-5', messages: [], maxTokens: 16, webSearch: true },
+			conn,
+			http
+		);
+		// The search is the provider's business: only the prose comes back, and
+		// nothing here is mistaken for a tool call Codex has to run.
+		expect(result.content).toBe('Canon puts it on the Sword Coast.');
+		expect(result.toolCalls).toEqual([]);
+	});
+});
+
 describe('anthropicProvider.respond', () => {
 	it('normalises stop_reason onto the neutral finish reason', async () => {
 		const seen: (string | undefined)[] = [];

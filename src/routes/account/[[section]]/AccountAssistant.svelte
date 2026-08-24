@@ -435,6 +435,23 @@
 						Leave blank to keep your saved key. Not every endpoint needs one.
 					</p>
 				</div>
+				{#if selectedProvider === 'anthropic'}
+					<div class="field">
+						<!-- An unchecked box sends nothing, which is indistinguishable from a
+						     save that never showed it; this marker says the box was on the form. -->
+						<input type="hidden" name="webSearchShown" value="1" />
+						<label class="check-row">
+							<input type="checkbox" name="webSearch" checked={data.assistant.webSearch} />
+							Let the assistant search the web
+						</label>
+						<p class="field-hint">
+							Claude can look things up while it works, on Anthropic's servers rather than yours. It
+							only does so in a universe you have marked as an established setting, where it may
+							need to check your draft against a published world's canon. Searches are part of what
+							Anthropic bills you for.
+						</p>
+					</div>
+				{/if}
 				{#if extraParamsShown}
 					<div class="field">
 						<label for="extra_params">Extra request settings</label>

@@ -13,10 +13,22 @@ expects (an Unsloth or vLLM reasoning switch where the llama.cpp
 `chat_template_kwargs` spelling does not fit, sampler settings Codex has no
 field for) without Codex hardcoding each dialect. The fields the adapter owns
 are refused on save and stripped on read. Plus a per-role reply length
-(`maxTokens`), which overrides what the surface asks for. Still open on #550:
-phase 0 (a help article on canon-as-lore for established settings), phase 1b
-(Anthropic's `web_search` server tool on opt-in), and phase 2 (a Codex-side
-search tool, gated behind its own egress design review).
+(`maxTokens`), which overrides what the surface asks for, and content-part
+answers read correctly now (a server running its own tools replies in parts,
+which both parsers used to drop).
+
+Phase 0 in the same branch: a new help article, `established-settings.md`, on
+writing in a published world - mark the universe established, then put the
+canon you actually want checked into lore, where it becomes the ordinary
+continuity check on any endpoint. Phase 1b too: an account opt-in that attaches
+Anthropic's `web_search` server tool, only on the Claude provider and only on
+an established universe, capped at five searches a turn.
+
+Still open on #550: phase 2 (a Codex-side `search_web` tool against a
+configurable search API), which the issue gates behind its own egress and
+injection design review and a demand signal from phase 1. It needs decisions
+first: which search API, where its key lives, and how a searched turn is
+quarantined from the write tools.
 
 Low-context LLM pass (2026-08-17, author-scoped): make the Assistant work
 well against local OpenAI-compatible endpoints with 32-64K context windows,
