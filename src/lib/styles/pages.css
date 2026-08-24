@@ -908,9 +908,14 @@
 }
 .role-row-tuning {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 10px;
 	font-size: 12.5px;
+}
+.role-row-tuning .input,
+.role-row-tuning .select {
+	flex-basis: 140px;
 }
 .role-row-tuning .check-row {
 	font-size: 12.5px;

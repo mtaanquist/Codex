@@ -68,7 +68,14 @@
 	const savedTuning = $derived(
 		data.assistant.tuning as Record<
 			string,
-			{ thinking?: boolean; effort?: string; temperature?: number } | undefined
+			| {
+					thinking?: boolean;
+					effort?: string;
+					temperature?: number;
+					maxTokens?: number;
+					extraParams?: Record<string, unknown>;
+			  }
+			| undefined
 		>
 	);
 	// The thinking select is three-state: on, off, or the endpoint's default.
@@ -162,6 +169,16 @@
 	// svelte-ignore state_referenced_locally
 	let selectedProvider = $state(data.assistant.provider);
 	const activePreset = $derived(data.providers.find((p) => p.id === selectedProvider));
+	// Which provider the form is showing, from the live select rather than the
+	// saved value, so every provider-specific control appears and disappears
+	// together while a change is still saving.
+	const anthropicShown = $derived(selectedProvider === 'anthropic');
+	// Extra request settings only reach an OpenAI-compatible endpoint; the Claude
+	// provider has its own controls and ignores them, so the boxes stay hidden.
+	const extraParamsShown = $derived(!anthropicShown);
+	function paramsText(params: Record<string, unknown> | undefined): string {
+		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';
+	}
 </script>
 
 <div class="admin-head">
@@ -422,6 +439,44 @@
 						Leave blank to keep your saved key. Not every endpoint needs one.
 					</p>
 				</div>
+				{#if anthropicShown}
+					<div class="field">
+						<!-- An unchecked box sends nothing, which is indistinguishable from a
+						     save that never showed it; this marker says the box was on the form. -->
+						<input type="hidden" name="webSearchShown" value="1" />
+						<label class="check-row">
+							<input type="checkbox" name="webSearch" checked={data.assistant.webSearch} />
+							Let the assistant search the web
+						</label>
+						<p class="field-hint">
+							Claude can look things up while it works, on Anthropic's servers rather than yours. It
+							only does so in a universe you have marked as an established setting, where it may
+							need to check your draft against a published world's canon. Searches are part of what
+							Anthropic bills you for.
+						</p>
+					</div>
+				{/if}
+				{#if extraParamsShown}
+					<div class="field">
+						<label for="extra_params">Extra request settings</label>
+						<input
+							id="extra_params"
+							name="extraParams"
+							type="text"
+							class="input"
+							spellcheck="false"
+							autocomplete="off"
+							value={paramsText(data.assistant.extraParams)}
+							placeholder={'{"top_p": 0.9}'}
+						/>
+						<p class="field-hint">
+							Anything else your endpoint expects, written as JSON and sent with every request. Use
+							this for settings Codex has no box for, such as a switch your server needs to turn
+							reasoning off, or sampler settings of your own. Check your server's documentation for
+							what it accepts. Leave it empty if you are not sure.
+						</p>
+					</div>
+				{/if}
 				<div class="field">
 					<label for="tool_profile">Tools offered</label>
 					<select id="tool_profile" name="toolProfile" class="select">
@@ -551,7 +606,7 @@
 										<option value="on">Thinking on</option>
 										<option value="off">Thinking off</option>
 									</select>
-									{#if data.assistant.provider === 'anthropic'}
+									{#if anthropicShown}
 										<select class="select" name="{role.id}-effort" aria-label="{role.name} effort">
 											<option value="" selected={!savedTuning[role.id]?.effort}
 												>Default effort</option
@@ -575,6 +630,28 @@
 											placeholder="Temperature"
 										/>
 									{/if}
+									<input
+										class="input"
+										type="number"
+										min="1"
+										step="1"
+										name="{role.id}-maxTokens"
+										aria-label="{role.name} longest reply in tokens"
+										value={savedTuning[role.id]?.maxTokens ?? ''}
+										placeholder="Longest reply"
+									/>
+									{#if extraParamsShown}
+										<input
+											class="input"
+											type="text"
+											spellcheck="false"
+											autocomplete="off"
+											name="{role.id}-extraParams"
+											aria-label="{role.name} extra request settings"
+											value={paramsText(savedTuning[role.id]?.extraParams)}
+											placeholder="Extra settings"
+										/>
+									{/if}
 								</div>
 							</div>
 						</div>
@@ -585,7 +662,7 @@
 					Pick Thinking off for the roles that need to be quick, or leave it on default to use
 					whatever your endpoint does already.
 				</p>
-				{#if data.assistant.provider === 'anthropic'}
+				{#if anthropicShown}
 					<p class="field-hint">
 						Effort sets how hard the model works on each request; leave it unset for the model's
 						default. Older or lighter models may not accept every level - if a request fails, clear
@@ -596,6 +673,18 @@
 						Temperature sets how freely the model varies its wording, from 0 to 2. Lower is more
 						precise and repeatable, higher is more surprising; the reviewer works best low, around
 						0.2. Leave a box empty to use your endpoint's own setting.
+					</p>
+				{/if}
+				<p class="field-hint">
+					Longest reply is the most a model may write in one go, counted in tokens. Raise it for a
+					role that gets cut off mid-sentence, lower it to keep a model brief. Leave a box empty to
+					use what Codex asks for.
+				</p>
+				{#if extraParamsShown}
+					<p class="field-hint">
+						Extra settings are JSON sent with this role's requests only, laid over the ones set on
+						your endpoint above. Use it when one role needs something different, such as a switch
+						that turns reasoning off for the reviewer.
 					</p>
 				{/if}
 				{#if chosenModels.length > 0}

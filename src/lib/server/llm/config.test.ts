@@ -18,6 +18,7 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		apiKeyEnc: null,
 		models: {},
 		tuning: {},
+		webSearch: false,
 		toolCallBudget: 8,
 		toolProfile: 'full',
 		...partial
@@ -33,6 +34,7 @@ function resolved(partial: Partial<ResolvedConfig> = {}): ResolvedConfig {
 		apiKey: '',
 		models: {},
 		tuning: {},
+		webSearch: false,
 		toolCallBudget: 8,
 		toolProfile: 'full',
 		modelContext: {},
