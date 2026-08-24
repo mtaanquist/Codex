@@ -4,6 +4,7 @@ import { stories, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
+import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are
@@ -25,9 +26,10 @@ export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 export type ModelMap = Partial<Record<AssistantRole, string>>;
 
 // Per-role request tuning: whether to ask for adaptive thinking and an effort
-// level (the Anthropic adapter), and a sampling temperature (the
-// OpenAI-compatible adapter). All optional; absent means the provider's
-// defaults, and each adapter ignores the fields it has no use for.
+// level (the Anthropic adapter), a sampling temperature and extra request
+// fields (the OpenAI-compatible adapter), and the longest reply the role may
+// ask for (both). All optional; absent means the provider's defaults, and each
+// adapter ignores the fields it has no use for.
 //
 // thinking has three states, and both explicit ones are stored: true asks
 // Anthropic for adaptive thinking, false asks an OpenAI-compatible endpoint to
@@ -35,10 +37,43 @@ export type ModelMap = Partial<Record<AssistantRole, string>>;
 // false the same as absent), and absent leaves the endpoint's default alone.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
-export type RoleTuning = { thinking?: boolean; effort?: EffortLevel; temperature?: number };
+export type RoleTuning = {
+	thinking?: boolean;
+	effort?: EffortLevel;
+	temperature?: number;
+	maxTokens?: number;
+	extraParams?: ExtraParams;
+};
 export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
 
+// Extra fields merged into the request body the OpenAI-compatible adapter
+// sends, exactly as the writer typed them. Every server spells its own
+// switches differently (llama.cpp reads chat_template_kwargs, another stack
+// wants a flag of its own, a third takes sampler settings Codex has no field
+// for), and hardcoding those dialects is a losing game: this is the escape
+// hatch instead. Stored config only, never client input at request time.
+export type ExtraParams = Record<string, unknown>;
+
+// The fields an adapter owns, which a stored parameter may never rewrite, live
+// with the adapters (./providers/reserved) because they are wire-format
+// knowledge. Re-exported here so callers of the config keep one import.
+export { RESERVED_PARAM_KEYS, reservedParamKeys };
+
+function normaliseExtraParams(raw: unknown): ExtraParams | undefined {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+	const out: ExtraParams = {};
+	for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+		if (!key.trim() || (RESERVED_PARAM_KEYS as readonly string[]).includes(key)) continue;
+		if (value === undefined) continue;
+		out[key] = value;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
 const MAX_TEMPERATURE = 2;
+// A ceiling on the reply length a writer may ask for, well above any model's
+// output limit; it only stops a typo from asking for millions of tokens.
+const MAX_REPLY_TOKENS = 65_536;
 
 function normaliseTuning(raw: unknown): TuningMap {
 	const out: TuningMap = {};
@@ -47,10 +82,12 @@ function normaliseTuning(raw: unknown): TuningMap {
 			const value = (raw as Record<string, unknown>)[role];
 			if (!value || typeof value !== 'object') continue;
 			const tuning: RoleTuning = {};
-			const { thinking, effort, temperature } = value as {
+			const { thinking, effort, temperature, maxTokens, extraParams } = value as {
 				thinking?: unknown;
 				effort?: unknown;
 				temperature?: unknown;
+				maxTokens?: unknown;
+				extraParams?: unknown;
 			};
 			if (thinking === true || thinking === false) tuning.thinking = thinking;
 			if (typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort)) {
@@ -59,6 +96,11 @@ function normaliseTuning(raw: unknown): TuningMap {
 			if (typeof temperature === 'number' && Number.isFinite(temperature)) {
 				tuning.temperature = Math.min(Math.max(temperature, 0), MAX_TEMPERATURE);
 			}
+			if (typeof maxTokens === 'number' && Number.isFinite(maxTokens) && maxTokens >= 1) {
+				tuning.maxTokens = Math.min(Math.floor(maxTokens), MAX_REPLY_TOKENS);
+			}
+			const extras = normaliseExtraParams(extraParams);
+			if (extras) tuning.extraParams = extras;
 			if (Object.keys(tuning).length > 0) out[role] = tuning;
 		}
 	}
@@ -92,8 +134,18 @@ export type StoredAccountConfig = {
 	endpoint: string;
 	apiKeyEnc: string | null;
 	models: ModelMap;
-	// Per-role thinking and effort, consumed by the Anthropic adapter only.
+	// Per-role thinking, effort, temperature, reply length and extra parameters;
+	// each adapter reads the ones it can act on.
 	tuning: TuningMap;
+	// Extra request fields for every role, merged into the body the
+	// OpenAI-compatible adapter sends. A role's own extras lay over these.
+	extraParams?: ExtraParams;
+	// Let the provider run its own web search (the Claude API's server-side
+	// tool). Off unless the writer turns it on, and even then only on a universe
+	// marked as an established published setting, where canon is the thing a
+	// search can settle. The search runs on the provider's servers, so it adds
+	// no outbound traffic of Codex's own.
+	webSearch: boolean;
 	// The most tool calls the Assistant may make in one turn (tools are a later
 	// surface; the value is carried now so the config shape is stable).
 	toolCallBudget: number;
@@ -228,6 +280,8 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		apiKeyEnc: typeof raw.apiKeyEnc === 'string' && raw.apiKeyEnc ? raw.apiKeyEnc : null,
 		models: normaliseModels(raw.models),
 		tuning: normaliseTuning(raw.tuning),
+		extraParams: normaliseExtraParams(raw.extraParams),
+		webSearch: raw.webSearch === true,
 		toolCallBudget: normaliseBudget(raw.toolCallBudget),
 		toolProfile: normaliseToolProfile(raw.toolProfile),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
@@ -337,6 +391,8 @@ export type ResolvedConfig = {
 	apiKey: string;
 	models: ModelMap;
 	tuning: TuningMap;
+	extraParams?: ExtraParams;
+	webSearch: boolean;
 	toolCallBudget: number;
 	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
@@ -375,6 +431,8 @@ export async function resolveLlmConfig(
 			apiKey: account.apiKeyEnc ? decryptSecret(account.apiKeyEnc) : '',
 			models: { ...account.models, ...(override?.models ?? {}) },
 			tuning: account.tuning,
+			extraParams: account.extraParams,
+			webSearch: account.webSearch,
 			toolCallBudget: account.toolCallBudget,
 			toolProfile: account.toolProfile,
 			supportsStreaming: account.supportsStreaming,
@@ -401,6 +459,26 @@ export function modelContextWindow(
 	return config.modelContext[pickModel(config, role)];
 }
 
+// The extra request fields for a role: the account-wide object with the role's
+// own laid over it, key by key, so a role can add to or replace a single
+// parameter without restating the rest. Undefined when neither is set, which is
+// what keeps a request byte-identical to one from before this existed.
+export function roleExtraParams(
+	config: ResolvedConfig,
+	role: AssistantRole
+): ExtraParams | undefined {
+	const account = config.extraParams;
+	const own = config.tuning[role]?.extraParams;
+	if (!account && !own) return undefined;
+	return { ...account, ...own };
+}
+
+// The reply length the writer set for this role, in tokens; undefined leaves
+// the surface's own figure in place.
+export function roleMaxTokens(config: ResolvedConfig, role: AssistantRole): number | undefined {
+	return config.tuning[role]?.maxTokens;
+}
+
 // A key-free view for the account settings page and the layout gate (deferred
 // frontend); never exposes the key, only whether one is set.
 export type AccountLlmView = {
@@ -413,6 +491,8 @@ export type AccountLlmView = {
 	hasKey: boolean;
 	models: ModelMap;
 	tuning: TuningMap;
+	extraParams?: ExtraParams;
+	webSearch: boolean;
 	toolCallBudget: number;
 	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
@@ -438,6 +518,8 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		hasKey: c.apiKeyEnc !== null,
 		models: c.models,
 		tuning: c.tuning,
+		extraParams: c.extraParams,
+		webSearch: c.webSearch,
 		toolCallBudget: c.toolCallBudget,
 		toolProfile: c.toolProfile,
 		supportsStreaming: c.supportsStreaming,
@@ -462,6 +544,11 @@ export type SaveAccountInput = {
 	apiKey: string;
 	models: ModelMap;
 	tuning?: TuningMap;
+	// Account-wide extra request fields; absent keeps what is stored, {} clears
+	// it (the modelContextManual pattern).
+	extraParams?: ExtraParams;
+	// Absent keeps the stored setting (the partial-save pattern).
+	webSearch?: boolean;
 	toolCallBudget: number;
 	// Absent keeps the stored profile (the partial-save pattern).
 	toolProfile?: ToolProfile;
@@ -499,6 +586,23 @@ export async function saveAccountLlmConfig(
 		}
 	}
 
+	// A parameter that would rewrite a field the adapter owns is refused rather
+	// than dropped, so the writer finds out why it did not take effect.
+	const reserved = new Set<string>();
+	for (const extras of [
+		input.extraParams,
+		...ASSISTANT_ROLES.map((role) => input.tuning?.[role]?.extraParams)
+	]) {
+		if (extras) for (const key of reservedParamKeys(extras)) reserved.add(key);
+	}
+	if (reserved.size > 0) {
+		const names = [...reserved].sort().join(', ');
+		return {
+			ok: false,
+			reason: `Codex sets ${names} itself. Remove ${reserved.size === 1 ? 'it' : 'them'} from your extra settings.`
+		};
+	}
+
 	const existing = await accountLlmConfig(db, userId);
 	let apiKeyEnc = existing.apiKeyEnc;
 	if (input.apiKey) {
@@ -523,6 +627,10 @@ export async function saveAccountLlmConfig(
 		// Absent means "not part of this form", keeping the stored map (the
 		// blank-api-key pattern); pass {} to clear it.
 		tuning: input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning),
+		...(input.extraParams === undefined
+			? {}
+			: { extraParams: normaliseExtraParams(input.extraParams) ?? {} }),
+		webSearch: input.webSearch === undefined ? existing.webSearch : input.webSearch === true,
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
 		toolProfile:
 			input.toolProfile === undefined

@@ -1,6 +1,18 @@
 import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
-import { modelContextWindow, pickModel, resolveLlmConfig, type AssistantRole } from './config.ts';
+import {
+	modelContextWindow,
+	pickModel,
+	resolveLlmConfig,
+	roleExtraParams,
+	roleMaxTokens,
+	type AssistantRole,
+	type EffortLevel,
+	type ResolvedConfig,
+	type RoleTuning
+} from './config.ts';
+import { loadStoryScope, loadUniverseScope } from './context/sources.ts';
+import { adapterKind } from './providers/presets.ts';
 import { estimateTokens } from './context/assemble.ts';
 import { EgressDeniedError, egressHttpRequest, egressPolicy } from './egress.ts';
 import { providerFor } from './providers/index.ts';
@@ -201,8 +213,19 @@ type Prepared = {
 	toolContext?: ToolContext;
 	toolBudget: number;
 	// Thinking/effort/temperature for this role, from the account config;
-	// undefined when the role has none set.
-	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
+	// undefined when the role has none set. Only the fields an adapter reads are
+	// carried: the role's reply length and extra parameters are resolved into
+	// maxTokens and extraParams below, and must not ride along here as a second
+	// copy that a future spread could put on the wire.
+	tuning?: { thinking?: boolean; effort?: EffortLevel; temperature?: number };
+	// Extra request fields for this role, account-wide merged with the role's
+	// own; undefined when the writer has set none.
+	extraParams?: Record<string, unknown>;
+	// Offer the provider's own web search this turn (see webSearchAllowed).
+	webSearch?: boolean;
+	// The reply length for this turn: what the writer set for this role, else
+	// what the surface asked for, else the role's default.
+	maxTokens: number;
 	// The context window of this turn's model, in tokens, where it is known;
 	// carried for the callers that size what they send.
 	contextWindow?: number;
@@ -210,6 +233,53 @@ type Prepared = {
 };
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// The tuning an adapter acts on, without the fields the gateway resolves for
+// itself. Undefined when the role sets none of them, which is what keeps a
+// request identical to one from an account that never tuned anything.
+function roleRequestTuning(
+	tuning: RoleTuning | undefined
+): { thinking?: boolean; effort?: EffortLevel; temperature?: number } | undefined {
+	if (!tuning) return undefined;
+	const out: { thinking?: boolean; effort?: EffortLevel; temperature?: number } = {};
+	if (tuning.thinking !== undefined) out.thinking = tuning.thinking;
+	if (tuning.effort !== undefined) out.effort = tuning.effort;
+	if (tuning.temperature !== undefined) out.temperature = tuning.temperature;
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// The roles that may search: the two where the writer is asking a question and
+// waiting for a considered answer. Continuation is ghost text, where a search
+// round trip would stall the keystroke it is racing; co-author is drafting
+// prose, not checking facts; and utility is background work over every scene in
+// a story, where a search per scene would be a bill nobody asked for.
+const WEB_SEARCH_ROLES: readonly AssistantRole[] = ['reviewer', 'chat'];
+
+// Whether the provider's own web search may be offered this turn: the account
+// opted in, the provider is one that runs the search itself, the role is one
+// where a search is worth waiting for, and this turn's universe is an
+// established published setting. That last condition is the point of the
+// feature - checking a draft against a canon somebody else published - and it
+// keeps a search off every turn about a world the writer invented, where there
+// is nothing to look up. The scope loaders check ownership, so a universe the
+// user does not own answers false.
+async function webSearchAllowed(
+	db: Database,
+	config: ResolvedConfig,
+	req: GatewayRequest
+): Promise<boolean> {
+	if (!config.webSearch || adapterKind(config.provider) !== 'anthropic') return false;
+	if (!WEB_SEARCH_ROLES.includes(req.role)) return false;
+	if (req.universeId) {
+		const scope = await loadUniverseScope(db, req.userId, req.universeId);
+		return scope?.universeEstablished === true;
+	}
+	if (req.storyId) {
+		const scope = await loadStoryScope(db, req.userId, req.storyId);
+		return scope?.universeEstablished === true;
+	}
+	return false;
+}
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
 	const resolved = await resolveLlmConfig(db, req.userId, req.storyId);
@@ -284,7 +354,14 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 			resolved.config.toolProfile === 'minimal'
 				? Math.max(MINIMAL_PROFILE_MIN_BUDGET, Math.floor(budget / MINIMAL_PROFILE_BUDGET_DIVISOR))
 				: budget,
-		tuning: resolved.config.tuning[req.role],
+		tuning: roleRequestTuning(resolved.config.tuning[req.role]),
+		extraParams: roleExtraParams(resolved.config, req.role),
+		webSearch: await webSearchAllowed(db, resolved.config, req),
+		// A figure the writer set for the role wins over the surface's own: a
+		// local model that answers in 300 tokens or one that needs 8000 is theirs
+		// to know, and the surfaces cannot.
+		maxTokens:
+			roleMaxTokens(resolved.config, req.role) ?? req.maxTokens ?? defaultMaxTokens(req.role),
 		contextWindow,
 		sleep: deps.sleep ?? realSleep
 	};
@@ -338,7 +415,7 @@ type AgentResult = {
 async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise<AgentResult> {
 	const messages = [...p.messages];
 	const surfaces: AgentResult['surfaces'] = [];
-	const roundTokens = req.maxTokens ?? defaultMaxTokens(req.role);
+	const roundTokens = p.maxTokens;
 	// Room the conversation may take up before tools are withdrawn; unknown
 	// window means no guard, which is the behaviour every endpoint had before
 	// windows were tracked.
@@ -381,7 +458,9 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				maxTokens,
 				tools: p.tools,
 				...(concluding ? { toolChoice: 'none' as const } : {}),
-				tuning: p.tuning
+				tuning: p.tuning,
+				extraParams: p.extraParams,
+				webSearch: p.webSearch
 			});
 			await recordUsage(db, p, req, messages, result.usage);
 			usage = addUsage(usage, result.usage);
@@ -467,8 +546,10 @@ export async function* stream(
 		{
 			model: prepared.model,
 			messages: prepared.messages,
-			maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
-			tuning: prepared.tuning
+			maxTokens: prepared.maxTokens,
+			tuning: prepared.tuning,
+			extraParams: prepared.extraParams,
+			webSearch: prepared.webSearch
 		},
 		prepared.conn,
 		prepared.http,
@@ -528,8 +609,10 @@ export async function completeDetailed(
 	const response = await respondWithRetry(prepared, req, {
 		model: prepared.model,
 		messages: prepared.messages,
-		maxTokens: req.maxTokens ?? defaultMaxTokens(req.role),
-		tuning: prepared.tuning
+		maxTokens: prepared.maxTokens,
+		tuning: prepared.tuning,
+		extraParams: prepared.extraParams,
+		webSearch: prepared.webSearch
 	});
 	await recordUsage(db, prepared, req, prepared.messages, response.usage);
 	return { content: response.content, notes: 0, usage: response.usage, model: prepared.model };

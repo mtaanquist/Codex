@@ -148,6 +148,30 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 		'http://ollama.local:11434/v1'
 	);
 
+	// Extra request settings ride with the endpoint: what is typed comes back as
+	// stored JSON, and a blank box clears it again.
+	const extras = page.getByLabel('Extra request settings', { exact: true });
+	const extrasSaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantEndpoint') && response.request().method() === 'POST'
+	);
+	await extras.fill('{"top_p": 0.9}');
+	await extras.blur();
+	await extrasSaved;
+	await page.reload();
+	await expect(page.getByLabel('Extra request settings', { exact: true })).toHaveValue(
+		'{"top_p":0.9}'
+	);
+	const extrasCleared = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantEndpoint') && response.request().method() === 'POST'
+	);
+	await page.getByLabel('Extra request settings', { exact: true }).fill('');
+	await page.getByLabel('Extra request settings', { exact: true }).blur();
+	await extrasCleared;
+	await page.reload();
+	await expect(page.getByLabel('Extra request settings', { exact: true })).toHaveValue('');
+
 	// Turn it back off so repeated runs start from the known default.
 	await killToggle.click();
 	await expect(status).toHaveText('Assistant off');

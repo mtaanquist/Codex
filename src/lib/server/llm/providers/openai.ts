@@ -1,3 +1,4 @@
+import { withoutReservedParams } from './reserved.ts';
 import type {
 	ChatMessage,
 	CompletionRequest,
@@ -93,6 +94,12 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		// otherwise the endpoint's own default applies.
 		...(typeof req.tuning?.temperature === 'number' ? { temperature: req.tuning.temperature } : {}),
 		...(req.tuning?.thinking === false ? SUPPRESS_THINKING : {}),
+		// The writer's own parameters go last of the tunable fields, so a server
+		// whose switch is spelled differently can be told exactly what to send,
+		// overriding the guess above. The fields this adapter owns are stripped
+		// out first: the config refuses them too, but the request the parser has
+		// to read should not depend on that having worked.
+		...(withoutReservedParams(req.extraParams) ?? {}),
 		stream,
 		// Ask streaming responses to report token usage in a final frame (widely
 		// supported and ignored by endpoints that predate it).
@@ -121,6 +128,21 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 		completionTokens: completion,
 		...(Number.isFinite(cached) && cached > 0 ? { cachedPromptTokens: cached } : {})
 	};
+}
+
+// The text of a message or a delta. Most endpoints send a plain string, but a
+// server that ran tools of its own (a web search, say) often answers in content
+// parts instead, with citation or annotation parts sitting beside the text.
+// Anything that is not text is dropped rather than rendered.
+function contentText(raw: unknown): string {
+	if (typeof raw === 'string') return raw;
+	if (!Array.isArray(raw)) return '';
+	return raw
+		.map((part) => {
+			const text = (part as { text?: unknown })?.text;
+			return typeof text === 'string' ? text : '';
+		})
+		.join('');
 }
 
 function parseFinishReason(raw: unknown): FinishReason | undefined {
@@ -256,8 +278,8 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			const choice = (
 				json as { choices?: { delta?: { content?: unknown }; finish_reason?: unknown }[] }
 			)?.choices?.[0];
-			const delta = choice?.delta?.content;
-			if (typeof delta === 'string' && delta.length > 0) {
+			const delta = contentText(choice?.delta?.content);
+			if (delta.length > 0) {
 				const text = think.push(delta);
 				if (text) yield { type: 'token', text };
 			}
@@ -320,7 +342,7 @@ export const openaiProvider: Provider = {
 		return {
 			// A reasoning model's thinking arrives either inline in tags or in a
 			// separate reasoning_content field; neither belongs in the answer.
-			content: typeof message.content === 'string' ? stripThinking(message.content) : '',
+			content: stripThinking(contentText(message.content)),
 			toolCalls: parseToolCalls(message.tool_calls),
 			usage: parseUsage(json?.usage),
 			...(finishReason ? { finishReason } : {})

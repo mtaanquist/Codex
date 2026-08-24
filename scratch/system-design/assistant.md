@@ -128,6 +128,36 @@ which quote the text they edit) and drops the thinking a local reasoning
 model emits inline, in `<think>` tags or a separate `reasoning_content`
 field, so the scratchpad never reaches the transcript.
 
+The Claude provider can also run a web search itself, off unless the account
+turns it on and then only on a universe flagged as an established published
+setting: canon is the thing a search settles that the writer's own notes
+cannot. The adapter attaches Anthropic's `web_search` server tool (the dated
+2026 variant on the models that carry it, the original elsewhere, capped at
+five searches a turn); the search runs on Anthropic's servers and the answer
+returns as ordinary content, so Codex's tool loop never touches a raw web
+result and the only outbound traffic from the server is still the request to
+the configured endpoint. No other provider has an equivalent Codex can declare,
+but an OpenAI-compatible endpoint with a search switch of its own reaches the
+same place through `extraParams` below.
+
+A Codex-side search tool is not a deferred item: it is ruled out. Holding a
+search key, calling a search API, and feeding raw web text into a loop that
+holds `suggest_edit` would give up all three properties above, and asking the
+endpoint to search covers the use case without any of it.
+
+Codex cannot keep up with how every OpenAI-compatible server spells its own
+switches, so the config carries an escape hatch: an `extraParams` object,
+account-wide and per role (the role's laid over the account's, key by key),
+merged into the body the OpenAI-compatible adapter sends. The writer pastes
+whatever their server documents - a flag that turns reasoning off where the
+llama.cpp `chat_template_kwargs` spelling does not fit, sampler settings
+Codex has no field for. It is stored config only, never client input at
+request time, and the fields the adapter owns (model, messages, max_tokens,
+tools, tool_choice, stream, stream_options) are refused on save and stripped
+on read, so nothing stored can break the wire contract the response parser
+depends on. Reply length is configurable the same way, as a per-role
+`maxTokens` that overrides what the surface asks for.
+
 Both adapters report why the model stopped. A reply cut off at the token cap
 is unusable - its text stops mid-sentence and its tool-call arguments stop
 mid-JSON, which can parse into a plausible but wrong edit - so the agent loop
@@ -151,8 +181,10 @@ this. They exist now and are inert (`{}`) in v1.
 - `users.llm_config` holds the per-account configuration: the master `enabled`
   toggle (the kill switch), endpoint URL, API key, a model-per-role mapping
   (continuation, co-author, reviewer, utility, chat; utility covers the
-  background work - summaries, entity extraction, recaps), and a tool-call budget
-  (the maximum tool calls the Assistant may make in one turn). The key is
+  background work - summaries, entity extraction, recaps), a tool-call budget
+  (the maximum tool calls the Assistant may make in one turn), the per-role
+  tuning map (thinking, effort, temperature, reply length, extra request
+  parameters), and the account-wide extra request parameters. The key is
   encrypted at rest using the existing AES-256-GCM helper in `crypto.ts`
   (keyed from `APP_SECRET`, already used for the SMTP password and the TOTP
   secret), stored as an encrypted string inside the jsonb the same way the

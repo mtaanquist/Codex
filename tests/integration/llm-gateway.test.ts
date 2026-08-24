@@ -69,16 +69,33 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 let captured: {
 	model: string;
 	messages: ChatMessage[];
+	maxTokens?: number;
 	tuning?: { thinking?: boolean; effort?: string };
+	extraParams?: Record<string, unknown>;
+	webSearch?: boolean;
 } | null = null;
 const stubProvider: Provider = {
 	async *chatStream(req) {
-		captured = { model: req.model, messages: req.messages, tuning: req.tuning };
+		captured = {
+			model: req.model,
+			messages: req.messages,
+			maxTokens: req.maxTokens,
+			tuning: req.tuning,
+			extraParams: req.extraParams,
+			webSearch: req.webSearch
+		};
 		yield { type: 'token', text: `[${req.model}]` };
 		yield { type: 'done' };
 	},
 	async respond(req) {
-		captured = { model: req.model, messages: req.messages, tuning: req.tuning };
+		captured = {
+			model: req.model,
+			messages: req.messages,
+			maxTokens: req.maxTokens,
+			tuning: req.tuning,
+			extraParams: req.extraParams,
+			webSearch: req.webSearch
+		};
 		return { content: `done:${req.model}`, toolCalls: [] };
 	},
 	async listModels() {
@@ -201,6 +218,185 @@ describe('gateway gating', () => {
 		await saveAccountLlmConfig(db, userId, { ...base, tuning: {} });
 		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
 		expect(captured?.tuning).toBeUndefined();
+	});
+
+	it('sends the extra parameters for the role, account ones under its own', async () => {
+		await configure(true);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			extraParams: { top_p: 0.9 },
+			tuning: { reviewer: { extraParams: { top_p: 0.4, min_p: 0.05 } } },
+			toolCallBudget: 8
+		});
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.extraParams).toEqual({ top_p: 0.9 });
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.extraParams).toEqual({ top_p: 0.4, min_p: 0.05 });
+	});
+
+	it('offers the provider web search only on an established universe, when opted in', async () => {
+		const anthropic = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			provider: 'anthropic' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk-ant',
+			models: { chat: 'claude-opus-5' },
+			toolCallBudget: 8
+		};
+		const [ordinary] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Mine' })
+			.returning({ id: universes.id });
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+
+		// Opted in: the established universe gets it, the writer's own does not.
+		await saveAccountLlmConfig(db, userId, { ...anthropic, webSearch: true });
+		await complete(
+			db,
+			{ userId, universeId: established.id, role: 'chat', messages: [] },
+			stubDeps
+		);
+		expect(captured?.webSearch).toBe(true);
+		await complete(db, { userId, universeId: ordinary.id, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(false);
+		// No universe at all means nothing to check canon against.
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(false);
+
+		// Opted out: never, not even there.
+		await saveAccountLlmConfig(db, userId, { ...anthropic, webSearch: false });
+		await complete(
+			db,
+			{ userId, universeId: established.id, role: 'chat', messages: [] },
+			stubDeps
+		);
+		expect(captured?.webSearch).toBe(false);
+	});
+
+	it('offers web search through a story, the way every real surface asks', async () => {
+		// The surfaces pass storyId and no universeId, so this is the branch that
+		// actually ships; the universeId one above is the Plan surface's.
+		const anthropic = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			provider: 'anthropic' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk-ant',
+			models: { chat: 'claude-opus-5' },
+			webSearch: true,
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, anthropic);
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+		const [inCanon] = await db
+			.insert(stories)
+			.values({ universeId: established.id, ownerId: userId, title: 'S' })
+			.returning({ id: stories.id });
+		// universeId is the one seeded per test, which is not established.
+		const [ownWorld] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: userId, title: 'T' })
+			.returning({ id: stories.id });
+
+		await complete(db, { userId, storyId: inCanon.id, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(true);
+		await complete(db, { userId, storyId: ownWorld.id, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(false);
+	});
+
+	it('keeps web search off the roles that must not wait for one', async () => {
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'anthropic',
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk-ant',
+			models: { chat: 'claude-opus-5' },
+			webSearch: true,
+			toolCallBudget: 8
+		});
+		// Ghost text is racing a keystroke, drafting is not fact-checking, and
+		// background work runs over every scene: a search on any of those is a
+		// delay and a bill nobody asked for.
+		for (const role of ['continuation', 'coauthor', 'utility'] as const) {
+			await complete(db, { userId, universeId: established.id, role, messages: [] }, stubDeps);
+			expect(captured?.webSearch).toBe(false);
+		}
+		// The two that may: the writer asked and is waiting for the answer.
+		for (const role of ['reviewer', 'chat'] as const) {
+			await complete(db, { userId, universeId: established.id, role, messages: [] }, stubDeps);
+			expect(captured?.webSearch).toBe(true);
+		}
+	});
+
+	it('never offers web search on an OpenAI-compatible endpoint', async () => {
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			webSearch: true,
+			toolCallBudget: 8
+		});
+		await complete(
+			db,
+			{ userId, universeId: established.id, role: 'chat', messages: [] },
+			stubDeps
+		);
+		expect(captured?.webSearch).toBe(false);
+	});
+
+	it('sends no extra parameters when none are configured', async () => {
+		await configure(true);
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.extraParams).toBeUndefined();
+	});
+
+	it("lets a role's reply length override what the surface asked for", async () => {
+		await configure(true);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			tuning: { chat: { maxTokens: 300 } },
+			toolCallBudget: 8
+		});
+		await complete(db, { userId, role: 'chat', maxTokens: 2048, messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(300);
+		// A role with none set keeps the surface's figure, and its default
+		// otherwise.
+		await complete(db, { userId, role: 'reviewer', maxTokens: 900, messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(900);
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(4096);
 	});
 
 	it('falls back to the chat model when a role has none set', async () => {

@@ -123,9 +123,41 @@ function markLastBlock(messages: { role: string; content: unknown }[]): void {
 	}
 }
 
+// Anthropic's own web search: the request declares the tool, the search runs on
+// their servers, and the answer arrives as ordinary content. Nothing about it
+// reaches Codex's tool loop, and the only outbound traffic from this machine is
+// still the request to the endpoint.
+//
+// The dated 2026 tool filters results as it goes and needs a recent model;
+// every other model gets the original, which is also the only one Vertex
+// carries. A model this pattern does not recognise gets the original too, so a
+// name released after this was written fails safe rather than with a 400.
+const WEB_SEARCH_FILTERING = /claude-(opus-(5|4-8|4-7|4-6)|sonnet-(5|4-6))/;
+// A ceiling on searches per turn, so a canon check cannot run up a bill.
+const WEB_SEARCH_MAX_USES = 5;
+
+function webSearchTool(model: string): Record<string, unknown> {
+	return {
+		type: WEB_SEARCH_FILTERING.test(model) ? 'web_search_20260209' : 'web_search_20250305',
+		name: 'web_search',
+		max_uses: WEB_SEARCH_MAX_USES
+	};
+}
+
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	const { system, messages } = serialiseMessages(req.messages);
 	markLastBlock(messages as { role: string; content: unknown }[]);
+	// The writer's own tools and, when the turn asked for it, the server-side
+	// search alongside them. A concluding round forbids calls with tool_choice
+	// none, which stops the search too: that round is for answering.
+	const tools: Record<string, unknown>[] = [
+		...(req.tools ?? []).map((tool) => ({
+			name: tool.name,
+			description: tool.description,
+			input_schema: tool.parameters
+		})),
+		...(req.webSearch ? [webSearchTool(req.model)] : [])
+	];
 	return JSON.stringify({
 		model: req.model,
 		max_tokens: req.maxTokens,
@@ -135,13 +167,9 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		...(req.tuning?.effort ? { output_config: { effort: req.tuning.effort } } : {}),
 		...(system ? { system: [{ type: 'text', text: system, cache_control: CACHE }] } : {}),
 		messages,
-		...(req.tools?.length
+		...(tools.length
 			? {
-					tools: req.tools.map((tool) => ({
-						name: tool.name,
-						description: tool.description,
-						input_schema: tool.parameters
-					})),
+					tools,
 					tool_choice: { type: req.toolChoice === 'none' ? 'none' : 'auto' }
 				}
 			: {}),
