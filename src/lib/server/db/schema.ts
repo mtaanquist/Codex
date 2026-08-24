@@ -1236,6 +1236,57 @@ export const assistantUsage = pgTable(
 	(table) => [index('assistant_usage_user_idx').on(table.userId, table.createdAt)]
 );
 
+// One degraded outcome in a review run: a scene whose pass threw, a scene the
+// gateway had to cut short, or the summary phase falling over. The scene fields
+// are unset for a failure that belongs to the run rather than a scene.
+export type ReviewFailure = {
+	sceneId?: string;
+	sceneTitle?: string | null;
+	message: string;
+};
+
+// How far a background review has got, written as it advances so the modal can
+// show progress and a retry after a worker restart can pick up where it left
+// off. completed holds the scene ids already handled (reviewed or failed), so
+// the retry skips them.
+export type ReviewRunState = {
+	phase: 'summaries' | 'scenes' | 'consistency' | 'done';
+	// What the run was over (mode and target, see reviewScopeKey), so a later
+	// run over the same scope can carry on from a capped one.
+	scope?: string;
+	total: number;
+	completed: string[];
+	currentSceneTitle?: string | null;
+	reviewed: number;
+	failed: number;
+	notes: number;
+	failures: ReviewFailure[];
+	// Set when the run had to generate summaries before reviewing.
+	summariesRefreshed?: boolean;
+	// Set when the run was cancelled part-way rather than finishing.
+	aborted?: boolean;
+	// Set when the run stopped because it had spent the account's ceiling, with
+	// what it had spent in USD. A retry of the same job resumes from here.
+	capped?: boolean;
+	spentUsd?: number;
+};
+
+// The progress of one queued review, keyed by its pg-boss job id: what the
+// status endpoint reads while the job runs, and what a retry of the same job
+// reads to resume. Rows are disposable, so a purge that drops them only costs a
+// repeated pass.
+export const assistantReviewRuns = pgTable('assistant_review_runs', {
+	jobId: text('job_id').primaryKey(),
+	userId: uuid('user_id')
+		.references(() => users.id, { onDelete: 'cascade' })
+		.notNull(),
+	state: jsonb('state').$type<ReviewRunState>().notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
 // What rides beside a chat turn's text; mirrors the panel's card data. A
 // confirmed split proposal records what it created, so the card stays
 // decided across reloads and the revert knows which scenes to merge back.

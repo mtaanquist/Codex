@@ -35,6 +35,12 @@ export type ProviderToolCall = {
 	arguments: string;
 };
 
+// Why the model stopped generating, normalised across adapters. 'length' is
+// the one the gateway acts on: the reply hit the token cap, so its text and
+// any tool-call arguments may be cut off mid-token. Anything an adapter does
+// not recognise maps to 'other'; undefined means the endpoint reported none.
+export type FinishReason = 'stop' | 'length' | 'toolCalls' | 'other';
+
 // A single non-streaming turn: either final content, or a set of tool calls to
 // run before the model can continue (or both, though most endpoints pick one).
 export type ProviderResponse = {
@@ -42,6 +48,7 @@ export type ProviderResponse = {
 	toolCalls: ProviderToolCall[];
 	// Token counts the endpoint reported for this request, when it did.
 	usage?: TokenUsage;
+	finishReason?: FinishReason;
 	// Adapter-private content blocks to echo back on the next turn; see
 	// ChatMessage.raw. Set only when the response carries blocks (thinking)
 	// that a reconstructed turn would lose.
@@ -49,8 +56,15 @@ export type ProviderResponse = {
 };
 
 export type TokenUsage = {
+	// The whole prompt the endpoint billed for, cache reads included.
 	promptTokens: number;
 	completionTokens: number;
+	// The part of promptTokens the endpoint served from its prompt cache, where
+	// it reports one. Always a subset of promptTokens, never an extra amount on
+	// top: both adapters fold their cache counters into promptTokens and then
+	// report the cached share here. Cache reads bill far cheaper than fresh
+	// prompt tokens (see spend.ts).
+	cachedPromptTokens?: number;
 };
 
 export type CompletionRequest = {
@@ -61,11 +75,31 @@ export type CompletionRequest = {
 	maxTokens: number;
 	// Tools the model may call this turn; omitted for a plain completion.
 	tools?: ToolSpec[];
+	// Forbid tool calls for this one round while still declaring the tools. The
+	// agent loop sets it on the concluding round: a history holding tool_use and
+	// tool_result turns is only valid alongside the tool definitions, so the
+	// tools cannot simply be dropped, and keeping them also keeps the cached
+	// prompt prefix stable. Unset means the model chooses (the adapters send
+	// their "auto" spelling).
+	toolChoice?: 'none';
 	// Per-role request tuning from the account config. The Anthropic adapter
 	// maps thinking to `thinking: {type: "adaptive"}` (omitted when off; an
 	// explicit "disabled" is rejected by some models) and effort to
-	// `output_config.effort`. Other adapters ignore it.
-	tuning?: { thinking?: boolean; effort?: string };
+	// `output_config.effort`; the OpenAI-compatible adapter sends temperature,
+	// and on thinking === false asks the endpoint to skip the thinking pass.
+	// Each adapter ignores the fields it has no use for.
+	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
+	// Offer the provider's own server-side web search this turn. The Anthropic
+	// adapter attaches its web_search tool; other adapters ignore it. The gateway
+	// sets it only for an account that opted in, on a universe marked as an
+	// established published setting.
+	webSearch?: boolean;
+	// Extra body fields from the account config, for whatever the writer's server
+	// needs that Codex has no field of its own for. The OpenAI-compatible adapter
+	// merges them into the request; the Anthropic adapter ignores them. The
+	// config layer has already removed anything that would rewrite a field the
+	// adapter owns (see RESERVED_PARAM_KEYS in ../config).
+	extraParams?: Record<string, unknown>;
 };
 
 // A scene-split the Assistant proposed through its tool: where the new scene
@@ -88,7 +122,9 @@ export type StreamEvent =
 	// The gateway consumes this frame for the usage log; it never reaches a
 	// client.
 	| { type: 'usage'; usage: TokenUsage }
-	| { type: 'done' }
+	// finishReason rides the terminator when the endpoint reported one; clients
+	// ignore it, the server side reads it to spot a truncated reply.
+	| { type: 'done'; finishReason?: FinishReason }
 	| { type: 'error'; message: string };
 
 // Where to reach the endpoint and how to authenticate. The key is decrypted by
@@ -146,9 +182,11 @@ export interface Provider {
 	listModels(conn: Connection, http: HttpRequest, signal?: AbortSignal): Promise<ModelInfo[]>;
 }
 
-// A discovered model: the id, plus per-token USD pricing where the endpoint
-// reports it (OpenRouter does; plain OpenAI-style lists do not).
+// A discovered model: the id, plus per-token USD pricing and the context window
+// in tokens where the endpoint reports them (OpenRouter does; plain
+// OpenAI-style lists do not).
 export type ModelInfo = {
 	id: string;
 	pricing?: { prompt: number; completion: number };
+	contextLength?: number;
 };

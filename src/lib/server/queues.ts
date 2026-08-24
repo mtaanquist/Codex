@@ -20,6 +20,18 @@ export const PURGE_UNIVERSES_QUEUE = 'purge-universes';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
 export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
 export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
+// Sweeps the recorded progress of long-finished Assistant runs (see
+// review-runs.ts); the rows are disposable, so nothing is lost with them.
+export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
+
+// pg-boss expires an active job after 15 minutes by default and hands it to a
+// worker again, so a long Assistant run would be started a second time while
+// the first is still going: the same scenes billed twice, and two executions
+// writing the same run state. A story review is minutes per scene on local
+// hardware, so these jobs are given six hours instead. The queue's retry
+// policy still applies, so a run whose worker genuinely died is retried once
+// the expiry passes (and resumes through the recorded progress).
+export const ASSISTANT_JOB_EXPIRY_SECONDS = 6 * 60 * 60;
 
 // How long a notification digest waits before sending, so a busy thread
 // lands as one email instead of one per comment. Lives here (not jobs.ts,

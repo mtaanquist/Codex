@@ -2,6 +2,7 @@ import type {
 	ChatMessage,
 	CompletionRequest,
 	Connection,
+	FinishReason,
 	ModelInfo,
 	ProviderToolCall,
 	Provider,
@@ -122,9 +123,41 @@ function markLastBlock(messages: { role: string; content: unknown }[]): void {
 	}
 }
 
+// Anthropic's own web search: the request declares the tool, the search runs on
+// their servers, and the answer arrives as ordinary content. Nothing about it
+// reaches Codex's tool loop, and the only outbound traffic from this machine is
+// still the request to the endpoint.
+//
+// The dated 2026 tool filters results as it goes and needs a recent model;
+// every other model gets the original, which is also the only one Vertex
+// carries. A model this pattern does not recognise gets the original too, so a
+// name released after this was written fails safe rather than with a 400.
+const WEB_SEARCH_FILTERING = /claude-(opus-(5|4-8|4-7|4-6)|sonnet-(5|4-6))/;
+// A ceiling on searches per turn, so a canon check cannot run up a bill.
+const WEB_SEARCH_MAX_USES = 5;
+
+function webSearchTool(model: string): Record<string, unknown> {
+	return {
+		type: WEB_SEARCH_FILTERING.test(model) ? 'web_search_20260209' : 'web_search_20250305',
+		name: 'web_search',
+		max_uses: WEB_SEARCH_MAX_USES
+	};
+}
+
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	const { system, messages } = serialiseMessages(req.messages);
 	markLastBlock(messages as { role: string; content: unknown }[]);
+	// The writer's own tools and, when the turn asked for it, the server-side
+	// search alongside them. A concluding round forbids calls with tool_choice
+	// none, which stops the search too: that round is for answering.
+	const tools: Record<string, unknown>[] = [
+		...(req.tools ?? []).map((tool) => ({
+			name: tool.name,
+			description: tool.description,
+			input_schema: tool.parameters
+		})),
+		...(req.webSearch ? [webSearchTool(req.model)] : [])
+	];
 	return JSON.stringify({
 		model: req.model,
 		max_tokens: req.maxTokens,
@@ -134,14 +167,10 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		...(req.tuning?.effort ? { output_config: { effort: req.tuning.effort } } : {}),
 		...(system ? { system: [{ type: 'text', text: system, cache_control: CACHE }] } : {}),
 		messages,
-		...(req.tools?.length
+		...(tools.length
 			? {
-					tools: req.tools.map((tool) => ({
-						name: tool.name,
-						description: tool.description,
-						input_schema: tool.parameters
-					})),
-					tool_choice: { type: 'auto' }
+					tools,
+					tool_choice: { type: req.toolChoice === 'none' ? 'none' : 'auto' }
 				}
 			: {}),
 		stream
@@ -191,6 +220,16 @@ function parseContent(raw: unknown): {
 	};
 }
 
+// The Messages API reports stop_reason; max_tokens is its name for a reply cut
+// off at the token cap.
+function parseStopReason(raw: unknown): FinishReason | undefined {
+	if (typeof raw !== 'string' || !raw) return undefined;
+	if (raw === 'end_turn' || raw === 'stop_sequence') return 'stop';
+	if (raw === 'max_tokens') return 'length';
+	if (raw === 'tool_use') return 'toolCalls';
+	return 'other';
+}
+
 function truncate(text: string, max = 300): string {
 	const clean = text.replace(/\s+/g, ' ').trim();
 	return clean.length > max ? `${clean.slice(0, max)}...` : clean;
@@ -198,8 +237,13 @@ function truncate(text: string, max = 300): string {
 
 // With caching on, input_tokens is only the uncached remainder; the prompt's
 // real size is the sum with the cache reads and writes. The usage log stores
-// that sum (cached tokens bill cheaper, so cost estimates err high, which is
-// the safe direction for an estimate).
+// that sum, and the cache-read share rides alongside it as cachedPromptTokens so
+// the cost can price those tokens at the cheaper cache rate.
+function cacheRead(usage: { cache_read_input_tokens?: unknown }): number {
+	const read = Number(usage.cache_read_input_tokens);
+	return Number.isFinite(read) && read > 0 ? read : 0;
+}
+
 function promptTotal(usage: {
 	input_tokens?: unknown;
 	cache_creation_input_tokens?: unknown;
@@ -225,7 +269,12 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	const prompt = promptTotal(usage);
 	const completion = Number(usage.output_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
-	return { promptTokens: prompt, completionTokens: completion };
+	const cached = cacheRead(usage);
+	return {
+		promptTokens: prompt,
+		completionTokens: completion,
+		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+	};
 }
 
 // Parse an Anthropic streaming response: "data: {json}" frames whose JSON
@@ -237,7 +286,9 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let promptTokens: number | undefined;
+	let cachedPromptTokens = 0;
 	let completionTokens: number | undefined;
+	let finishReason: FinishReason | undefined;
 	for await (const chunk of body) {
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
@@ -255,7 +306,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			}
 			const frame = json as {
 				type?: unknown;
-				delta?: { type?: unknown; text?: unknown };
+				delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
 				message?: {
 					usage?: {
 						input_tokens?: unknown;
@@ -269,11 +320,13 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			if (frame.type === 'message_start') {
 				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
 				if (Number.isFinite(input)) promptTokens = input;
+				if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
 				continue;
 			}
 			if (frame.type === 'message_delta') {
 				const output = Number(frame.usage?.output_tokens);
 				if (Number.isFinite(output)) completionTokens = output;
+				finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
 				continue;
 			}
 			if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
@@ -286,10 +339,14 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 				if (promptTokens !== undefined || completionTokens !== undefined) {
 					yield {
 						type: 'usage',
-						usage: { promptTokens: promptTokens ?? 0, completionTokens: completionTokens ?? 0 }
+						usage: {
+							promptTokens: promptTokens ?? 0,
+							completionTokens: completionTokens ?? 0,
+							...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
+						}
 					};
 				}
-				yield { type: 'done' };
+				yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
 				return;
 			}
 			if (frame.type === 'error') {
@@ -302,7 +359,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 		}
 	}
 	// The stream ended without an explicit message_stop; close it out anyway.
-	yield { type: 'done' };
+	yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
 }
 
 export const anthropicProvider: Provider = {
@@ -340,8 +397,13 @@ export const anthropicProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
-		const json = JSON.parse(text) as { content?: unknown; usage?: unknown };
-		return { ...parseContent(json?.content), usage: parseUsage(json?.usage) };
+		const json = JSON.parse(text) as { content?: unknown; usage?: unknown; stop_reason?: unknown };
+		const finishReason = parseStopReason(json?.stop_reason);
+		return {
+			...parseContent(json?.content),
+			usage: parseUsage(json?.usage),
+			...(finishReason ? { finishReason } : {})
+		};
 	},
 
 	async listModels(conn, http, signal) {

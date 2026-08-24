@@ -119,6 +119,12 @@ export const TOOLS: ToolDef[] = [
 	}
 ];
 
+// The reduced-capability set, for an endpoint running a smaller local model:
+// one way to read a scene and the two ways to hand something back to the
+// author. Everything else (the skeleton, entity lookups, search, splits) is
+// dropped, so fewer schemas ride on each round.
+export const MINIMAL_TOOL_NAMES = ['get_scene', 'suggest_edit', 'leave_comment'];
+
 // The specs offered to the model: the default set leaves the scoped tools
 // out; a surface that needs them names them explicitly.
 export function toolSpecs(names?: string[]): ToolSpec[] {

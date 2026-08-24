@@ -38,7 +38,134 @@ async function drain(stream: AsyncIterable<StreamEvent>): Promise<StreamEvent[]>
 	return out;
 }
 
+describe('anthropicProvider web search', () => {
+	async function bodyFor(req: Parameters<typeof anthropicProvider.respond>[0]) {
+		let sent: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sent = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'ok' }] });
+		};
+		await anthropicProvider.respond(req, conn, http);
+		return sent;
+	}
+
+	it('attaches the server tool only when the turn asks for it', async () => {
+		const withSearch = await bodyFor({
+			model: 'claude-opus-5',
+			messages: [],
+			maxTokens: 16,
+			webSearch: true
+		});
+		expect(withSearch.tools).toEqual([
+			{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }
+		]);
+		expect(withSearch.tool_choice).toEqual({ type: 'auto' });
+
+		const without = await bodyFor({ model: 'claude-opus-5', messages: [], maxTokens: 16 });
+		expect(without).not.toHaveProperty('tools');
+		expect(without).not.toHaveProperty('tool_choice');
+	});
+
+	it('falls back to the original tool on a model without the filtering one', async () => {
+		const body = await bodyFor({
+			model: 'claude-3-5-haiku-20241022',
+			messages: [],
+			maxTokens: 16,
+			webSearch: true
+		});
+		expect(body.tools).toEqual([{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]);
+	});
+
+	it("sits alongside Codex's own tools, and a concluding round forbids both", async () => {
+		const body = await bodyFor({
+			model: 'claude-opus-5',
+			messages: [],
+			maxTokens: 16,
+			webSearch: true,
+			toolChoice: 'none',
+			tools: [{ name: 'get_scene', description: 'Read a scene', parameters: { type: 'object' } }]
+		});
+		expect(body.tools).toEqual([
+			{ name: 'get_scene', description: 'Read a scene', input_schema: { type: 'object' } },
+			{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }
+		]);
+		expect(body.tool_choice).toEqual({ type: 'none' });
+	});
+
+	it('ignores the OpenAI-compatible extra parameters entirely', async () => {
+		const body = await bodyFor({
+			model: 'claude-opus-5',
+			messages: [],
+			maxTokens: 16,
+			extraParams: { top_p: 0.9, chat_template_kwargs: { enable_thinking: false } }
+		});
+		expect(body).not.toHaveProperty('top_p');
+		expect(body).not.toHaveProperty('chat_template_kwargs');
+	});
+
+	it('reads the answer past the search blocks the server adds', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [
+					{
+						type: 'server_tool_use',
+						id: 'srv1',
+						name: 'web_search',
+						input: { query: 'Waterdeep' }
+					},
+					{
+						type: 'web_search_tool_result',
+						tool_use_id: 'srv1',
+						content: [{ type: 'web_search_result', title: 'Waterdeep', url: 'http://x' }]
+					},
+					{ type: 'text', text: 'Canon puts it on the Sword Coast.' }
+				]
+			});
+		const result = await anthropicProvider.respond(
+			{ model: 'claude-opus-5', messages: [], maxTokens: 16, webSearch: true },
+			conn,
+			http
+		);
+		// The search is the provider's business: only the prose comes back, and
+		// nothing here is mistaken for a tool call Codex has to run.
+		expect(result.content).toBe('Canon puts it on the Sword Coast.');
+		expect(result.toolCalls).toEqual([]);
+	});
+});
+
 describe('anthropicProvider.respond', () => {
+	it('normalises stop_reason onto the neutral finish reason', async () => {
+		const seen: (string | undefined)[] = [];
+		for (const reason of ['end_turn', 'max_tokens', 'tool_use', 'refusal', undefined]) {
+			const http: HttpRequest = async () =>
+				jsonResponse(200, {
+					content: [{ type: 'text', text: 'x' }],
+					...(reason ? { stop_reason: reason } : {})
+				});
+			const result = await anthropicProvider.respond(
+				{ model: 'claude-x', messages: [], maxTokens: 16 },
+				conn,
+				http
+			);
+			seen.push(result.finishReason);
+		}
+		expect(seen).toEqual(['stop', 'length', 'toolCalls', 'other', undefined]);
+	});
+
+	it('ignores a tuned temperature', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'ok' }] });
+		};
+		await anthropicProvider.respond(
+			{ model: 'claude-x', messages: [], maxTokens: 16, tuning: { temperature: 0.1 } },
+			conn,
+			http
+		);
+		expect(sentBody).not.toHaveProperty('temperature');
+	});
+
 	it('sends the Anthropic headers and hoists system messages', async () => {
 		let calledUrl = '';
 		let headers: Record<string, string> = {};
@@ -201,6 +328,43 @@ describe('anthropicProvider.respond', () => {
 		]);
 	});
 
+	it('keeps the tools and sends tool_choice none on a concluding round', async () => {
+		let sentBody: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sentBody = JSON.parse(init.body ?? '{}');
+			return jsonResponse(200, { content: [{ type: 'text', text: 'done' }] });
+		};
+		await anthropicProvider.respond(
+			{
+				model: 'claude-x',
+				maxTokens: 16,
+				messages: [{ role: 'user', content: 'hi' }],
+				tools: [{ name: 'get_scene', description: 'd', parameters: { type: 'object' } }],
+				toolChoice: 'none'
+			},
+			conn,
+			http
+		);
+		expect(sentBody.tools).toEqual([
+			{ name: 'get_scene', description: 'd', input_schema: { type: 'object' } }
+		]);
+		expect(sentBody.tool_choice).toEqual({ type: 'none' });
+	});
+
+	it('omits the cached share when nothing was read from cache', async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [{ type: 'text', text: 'ok' }],
+				usage: { input_tokens: 100, output_tokens: 20 }
+			});
+		const result = await anthropicProvider.respond(
+			{ model: 'claude-x', maxTokens: 16, messages: [] },
+			conn,
+			http
+		);
+		expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 20 });
+	});
+
 	it('round-trips tool turns, merging adjacent tool results into one user turn', async () => {
 		let sentBody: Record<string, unknown> = {};
 		const http: HttpRequest = async (_url, init) => {
@@ -283,7 +447,11 @@ describe('anthropicProvider.respond', () => {
 			conn,
 			http
 		);
-		expect(result.usage).toEqual({ promptTokens: 1000, completionTokens: 3 });
+		expect(result.usage).toEqual({
+			promptTokens: 1000,
+			completionTokens: 3,
+			cachedPromptTokens: 888
+		});
 	});
 
 	it('throws on a non-2xx status', async () => {
@@ -328,6 +496,22 @@ describe('anthropicProvider.chatStream', () => {
 			{ type: 'token', text: 'lo' },
 			{ type: 'usage', usage: { promptTokens: 9, completionTokens: 2 } },
 			{ type: 'done' }
+		]);
+	});
+
+	it('carries a max_tokens stop reason on the done frame as length', async () => {
+		const frames = [
+			'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}\n',
+			'data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}\n',
+			'data: {"type":"message_stop"}\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			anthropicProvider.chatStream({ model: 'claude-x', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'Hi' },
+			{ type: 'done', finishReason: 'length' }
 		]);
 	});
 

@@ -10,6 +10,7 @@ import {
 	updateAssistantSuggestion
 } from '../../review.ts';
 import { locateSplitBefore } from '$lib/scene-split-locate';
+import { locateQuote } from '$lib/quote-locate';
 import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
 import type { ProviderToolCall, SplitProposal } from '../providers/types.ts';
 import { findTool } from './registry.ts';
@@ -40,6 +41,9 @@ export type ToolContext = {
 	// the prompt-level restriction ("do not leave new comments elsewhere") must
 	// hold even when the model ignores it or answers a cached tool schema.
 	allowedTools?: string[];
+	// The turn's model context window in tokens, when known; it bounds how much
+	// of a scene get_scene may return (see sceneBodyCap).
+	contextWindow?: number;
 };
 
 export type ToolOutcome = {
@@ -47,6 +51,10 @@ export type ToolOutcome = {
 	result: string;
 	// True when the call staged a human-approved change.
 	staged: boolean;
+	// True when what it staged is a review note on a scene (a suggested edit or
+	// a comment). The review runs tally these from the agent loop rather than
+	// counting rows before and after.
+	note?: boolean;
 	// A staged action the surface should show alongside the reply (a proposal
 	// card with a confirm button); the gateway forwards it on the stream.
 	surface?: { type: 'proposal'; proposal: SplitProposal };
@@ -57,7 +65,20 @@ export type ToolOutcome = {
 // review of the wrong text. The cap only guards against pathological bodies
 // (a pasted data dump); prompt caching keeps the cost of big results down.
 const MAX_SCENE_BODY = 200_000;
+// With a known context window, one scene may take about a quarter of it, so the
+// world context, the conversation, and the answer still fit. Tokens convert to
+// characters at the usual rough four-to-one. The floor keeps a small window from
+// clipping a scene to uselessness.
+const CHARS_PER_TOKEN = 4;
+const SCENE_BODY_WINDOW_SHARE = 0.25;
+const MIN_SCENE_BODY = 8_000;
 const MAX_APPEARANCES = 20;
+
+function sceneBodyCap(contextWindow?: number): number {
+	if (!contextWindow) return MAX_SCENE_BODY;
+	const share = Math.floor(contextWindow * SCENE_BODY_WINDOW_SHARE * CHARS_PER_TOKEN);
+	return Math.min(MAX_SCENE_BODY, Math.max(MIN_SCENE_BODY, share));
+}
 
 // The universe a story belongs to, but only if the user owns the story. The
 // gateway derives the tool reach from the focus story when no universe is
@@ -215,9 +236,10 @@ async function listScenes(ctx: ToolContext): Promise<string> {
 async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {
 	const scene = await loadScene(ctx, sceneId);
 	if (!scene) return 'No scene with that id in this story.';
+	const cap = sceneBodyCap(ctx.contextWindow);
 	const body =
-		scene.bodyMd.length > MAX_SCENE_BODY
-			? `${scene.bodyMd.slice(0, MAX_SCENE_BODY)}\n...(truncated: showing the first ${MAX_SCENE_BODY} of ${scene.bodyMd.length} characters)`
+		scene.bodyMd.length > cap
+			? `${scene.bodyMd.slice(0, cap)}\n...(truncated: showing the first ${cap} of ${scene.bodyMd.length} characters)`
 			: scene.bodyMd;
 	return JSON.stringify({
 		id: scene.id,
@@ -278,14 +300,15 @@ async function suggestEdit(
 	if (!input.original) return { result: 'Provide the exact text to replace.', staged: false };
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
-	const first = scene.bodyMd.indexOf(input.original);
-	if (first === -1) {
-		return { result: 'That exact passage was not found in the scene.', staged: false };
-	}
-	if (scene.bodyMd.indexOf(input.original, first + 1) !== -1) {
+	// Tolerates a quote echoed back with the quotes or whitespace reshaped, but
+	// the staged range still indexes the scene's real text (see locateQuote).
+	const found = locateQuote(scene.bodyMd, input.original);
+	if (!found.ok) {
 		return {
 			result:
-				'That passage appears more than once; include more surrounding text to make it unique.',
+				found.reason === 'ambiguous'
+					? 'That passage appears more than once; include more surrounding text to make it unique.'
+					: 'That exact passage was not found in the scene.',
 			staged: false
 		};
 	}
@@ -295,13 +318,14 @@ async function suggestEdit(
 		storyId: scene.storyId,
 		sceneId: input.sceneId,
 		author: { assistant: true },
-		range: { start: first, end: first + input.original.length },
+		range: { start: found.start, end: found.end },
 		replacement: input.replacement
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
 	return {
 		result: `Staged a suggested edit (id ${result.suggestionId}). The author will accept or reject it; nothing has changed yet.`,
-		staged: true
+		staged: true,
+		note: true
 	};
 }
 
@@ -349,7 +373,7 @@ async function replyInThread(ctx: ToolContext, comment: string): Promise<ToolOut
 		body: comment
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
-	return { result: 'Your reply was posted to the thread.', staged: true };
+	return { result: 'Your reply was posted to the thread.', staged: true, note: true };
 }
 
 // The scoped revision: amends the Assistant's own pending suggestion fixed by
@@ -379,10 +403,12 @@ async function leaveComment(
 	if (!input.comment.trim()) return { result: 'Provide the comment text.', staged: false };
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
+	// An anchor the same tolerant locate finds; a quote that matches nothing (or
+	// several places) still leaves a whole-scene comment rather than failing.
 	let anchor: { start: number; end: number } | null = null;
 	if (input.quote) {
-		const at = scene.bodyMd.indexOf(input.quote);
-		if (at !== -1) anchor = { start: at, end: at + input.quote.length };
+		const found = locateQuote(scene.bodyMd, input.quote);
+		if (found.ok) anchor = { start: found.start, end: found.end };
 	}
 	const result = await createThread(ctx.db, {
 		// The loaded scene's own story (see suggestEdit), not ctx.storyId.
@@ -393,5 +419,5 @@ async function leaveComment(
 		body: input.comment
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
-	return { result: 'Staged a review comment for the author.', staged: true };
+	return { result: 'Staged a review comment for the author.', staged: true, note: true };
 }

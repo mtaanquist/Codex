@@ -8,6 +8,7 @@ describe('docTopics', () => {
 			'getting-started',
 			'editor',
 			'planning',
+			'established-settings',
 			'publishing',
 			'reviewing',
 			'account',

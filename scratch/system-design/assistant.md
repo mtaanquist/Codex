@@ -120,8 +120,49 @@ the gateway's Provider interface: the OpenAI-compatible one (custom endpoints
 and every preset except Claude; Gemini and DeepSeek ride their compatibility
 layers) and a native Anthropic adapter speaking the Messages API. The config
 carries a provider discriminator (default 'custom' for configs that predate
-it) and the gateway picks the adapter from it. Anthropic-only features
-(adaptive thinking, prompt caching) are still later work inside that adapter.
+it) and the gateway picks the adapter from it. Each adapter carries its own
+side of the wire: the Anthropic one maps the per-role tuning onto adaptive
+thinking and effort and marks the prompt cache; the OpenAI-compatible one
+sends the per-role temperature (near-greedy decoding for the review passes,
+which quote the text they edit) and drops the thinking a local reasoning
+model emits inline, in `<think>` tags or a separate `reasoning_content`
+field, so the scratchpad never reaches the transcript.
+
+The Claude provider can also run a web search itself, off unless the account
+turns it on and then only on a universe flagged as an established published
+setting: canon is the thing a search settles that the writer's own notes
+cannot. The adapter attaches Anthropic's `web_search` server tool (the dated
+2026 variant on the models that carry it, the original elsewhere, capped at
+five searches a turn); the search runs on Anthropic's servers and the answer
+returns as ordinary content, so Codex's tool loop never touches a raw web
+result and the only outbound traffic from the server is still the request to
+the configured endpoint. No other provider has an equivalent Codex can declare,
+but an OpenAI-compatible endpoint with a search switch of its own reaches the
+same place through `extraParams` below.
+
+A Codex-side search tool is not a deferred item: it is ruled out. Holding a
+search key, calling a search API, and feeding raw web text into a loop that
+holds `suggest_edit` would give up all three properties above, and asking the
+endpoint to search covers the use case without any of it.
+
+Codex cannot keep up with how every OpenAI-compatible server spells its own
+switches, so the config carries an escape hatch: an `extraParams` object,
+account-wide and per role (the role's laid over the account's, key by key),
+merged into the body the OpenAI-compatible adapter sends. The writer pastes
+whatever their server documents - a flag that turns reasoning off where the
+llama.cpp `chat_template_kwargs` spelling does not fit, sampler settings
+Codex has no field for. It is stored config only, never client input at
+request time, and the fields the adapter owns (model, messages, max_tokens,
+tools, tool_choice, stream, stream_options) are refused on save and stripped
+on read, so nothing stored can break the wire contract the response parser
+depends on. Reply length is configurable the same way, as a per-role
+`maxTokens` that overrides what the surface asks for.
+
+Both adapters report why the model stopped. A reply cut off at the token cap
+is unusable - its text stops mid-sentence and its tool-call arguments stop
+mid-JSON, which can parse into a plausible but wrong edit - so the agent loop
+never runs tool calls from one. It retries the round with double the room and
+fails the round loudly if that is still not enough.
 
 A note we should not gloss over: a Claude Pro or Max subscription is a
 Claude.ai consumer plan, not an API credential. There is no supported path
@@ -139,8 +180,11 @@ this. They exist now and are inert (`{}`) in v1.
 
 - `users.llm_config` holds the per-account configuration: the master `enabled`
   toggle (the kill switch), endpoint URL, API key, a model-per-role mapping
-  (continuation, co-author, editor, reviewer, chat), and a tool-call budget
-  (the maximum tool calls the Assistant may make in one turn). The key is
+  (continuation, co-author, reviewer, utility, chat; utility covers the
+  background work - summaries, entity extraction, recaps), a tool-call budget
+  (the maximum tool calls the Assistant may make in one turn), the per-role
+  tuning map (thinking, effort, temperature, reply length, extra request
+  parameters), and the account-wide extra request parameters. The key is
   encrypted at rest using the existing AES-256-GCM helper in `crypto.ts`
   (keyed from `APP_SECRET`, already used for the SMTP password and the TOTP
   secret), stored as an encrypted string inside the jsonb the same way the
@@ -212,10 +256,25 @@ Transport to the browser is Server-Sent Events, which fits the
 token-at-a-time shape and needs no new dependency.
 
 Cost and runaway protection: the writer pays their own provider, so Codex
-does not meter spend, but an agentic tool loop on a slow endpoint can still
-run away. The gateway enforces a per-turn tool-call budget and a token
-ceiling, and the streaming endpoint is covered by the existing per-user
+does not meter interactive spend, but an agentic tool loop on a slow endpoint
+can still run away. The gateway enforces a per-turn tool-call budget and a
+token ceiling, and the streaming endpoint is covered by the existing per-user
 write/rate limiter.
+
+Background review runs, which fan over many scenes unattended, do meter
+themselves. Two account settings sit in `users.llm_config`: `spendWarnUsd`
+(the pre-flight confirm step turns into a warning above it, default 2) and
+`spendCapUsd` (the run stops at the next scene boundary once it has spent
+that much, staging nothing partial; a retry resumes through the existing
+completed-scene skip). Both are priced from the `modelPricing` snapshot the
+last model discovery wrote. A cost figure is only ever shown or enforced when
+the resolved model actually has a price there: with no price the pre-flight
+estimate reports tokens alone, and a set cap is reported as not applied
+rather than guessed at or skipped in silence. The estimate itself
+(`llm/estimate.ts`) assembles the same frame and per-scene deltas the run
+would send, counts them, and scales by an agentic multiplier drawn from this
+account's own `assistant_usage` rows for the model where there are enough of
+them, or a stated static 2.5 where there are not.
 
 The tool-call budget is a writer-set value in `users.llm_config`, not a
 fixed number Codex chooses. The point of bring-your-own-endpoint is that the
@@ -395,11 +454,29 @@ prose:
    injected; `keyword` entries are injected when a keyword appears in the
    current scope; `manual` entries are never auto-injected.
 
-TODO (needs a real corpus): the token budget per tier, the truncation and
-prioritisation strategy when a story outgrows the budget, and how far the
-neighbour window reaches. These are calibration decisions, not design
-decisions, and guessing them now would be the exact mistake the roadmap
-warns against.
+A run over many scenes of one story (the whole-story or chapter review) splits
+the assembly in two rather than reassembling per scene: `assembleStoryFrame`
+returns the scene-independent tiers (frame, outline, entities, notes, universe
+backbone), assembled once and rendered into the system message, and
+`assembleSceneDelta` returns the two tiers that move with the scene
+(scene-local, lore), which ride at the front of the user message. The system
+message is then byte-identical from scene to scene, so an endpoint's prompt
+prefix cache holds across the run. Each part fits its own share of the budget
+(the stable part takes the larger one).
+
+A surface can also name the tiers it wants (`includeTiers` on all three
+assembly entries): tiers left out are neither queried nor rendered. A review
+pass whose categories do not include `lore` ships only the frame, the outline,
+and the scene itself, since entities, lore, notes, and the universe backbone
+only matter to the lore category; the sparing pass (no categories) keeps the
+full stack. A review-thread reply carries the frame and the entities, since the
+passage under discussion is already excerpted into its task message.
+
+TODO (needs a real corpus): the token budget per tier, the split between the
+stable and per-scene shares, the truncation and prioritisation strategy when a
+story outgrows the budget, and how far the neighbour window reaches. These are
+calibration decisions, not design decisions, and guessing them now would be the
+exact mistake the roadmap warns against.
 
 ## Grounding
 
@@ -640,6 +717,25 @@ maintenance). Expensive derived artifacts (a character's arc summary) cache on
 the entity with a staleness watermark, mirroring `mentions_indexed_at`, and
 the reconcile-sweep pattern used for stale mentions applies directly.
 
+A review job writes its progress to `assistant_review_runs` (one row per
+pg-boss job id, a jsonb state: phase, scenes completed, current scene, counts,
+and the failure list). The job-status endpoint reads it while the job runs, so
+the review window can show where the pass is; a retry of the same job after a
+worker restart reads it too and skips the scenes already handled. The state
+also records the scope the run was over (the same key the queue holds one
+unfinished job per), so a run that stopped at the spend cap is picked up by the
+next run over that scope even though it arrives with a new job id; only a
+capped run is adopted, and it starts again with the whole ceiling. The rows are
+disposable, and a daily worker sweep drops those older than 30 days. The
+`assistant-review` enqueue holds one unfinished job per scope, so a duplicate
+request cannot start a second pass over the same scenes, and both Assistant
+queues send with an expiry of hours rather than the pg-boss default of 15
+minutes, which would hand a long run to a second worker while the first is
+still going. Before it reviews
+anything, a story-level pass refreshes scene summaries that are missing or
+stale (the `assistant-summaries` logic, called directly), since both the
+context assembly and the cross-scene pass read them.
+
 ### Cross-cutting
 
 - Gate: every surface checks configured-and-enabled (see "Gating and
@@ -781,7 +877,11 @@ calls the gateway, which proxies through the egress guard.
 ### Account Assistant settings (configure + enable)
 
 - [built] Read: `accountLlmView` (never exposes the key; has `hasKey`,
-  `assistantName`, `persona`, `models`, `toolCallBudget`, capability flags).
+  `assistantName`, `persona`, `models`, `toolCallBudget`, `toolProfile`,
+  capability flags, `modelPricing`, and the context windows: `modelContext` (the
+  discovery snapshot) and `modelContextManual` (what the writer entered, which
+  wins). `modelContextWindow(config, role)` resolves the window for a role's
+  model, or undefined when unknown.
 - [built] Save: `saveAccountLlmConfig(db, userId, input)` (blank `apiKey` keeps
   the stored one; validates the endpoint). Persona presets: `PERSONAS`,
   `Persona`, `MAX_ASSISTANT_NAME` (`llm/prompts/persona.ts`) for the tone
@@ -866,6 +966,27 @@ calls the gateway, which proxies through the egress guard.
 - [to build] Entry points (left-sidebar "Review this scene/chapter", story
   settings "Review this story", palette command). Whole-story review is a
   background worker job (see below).
+- [built] The cross-scene continuity pass (the tail of a full review, and the
+  standalone story and universe continuity jobs) runs in two stages instead of
+  one whole-story turn. Stage A (survey) sends the scene summaries in story
+  order, with a body excerpt where a scene has no summary yet, on a lean context
+  (the frame and the entities), offers no tools, and asks for candidate
+  contradictions as a JSON array of `{ sceneIds, claim }`. The adapters have no
+  structured-output mode, so the reply is parsed leniently (the first JSON array
+  in it, fence or prose around it tolerated) with one corrective retry before
+  the pass fails. A listing that outgrows its budget (half the reviewer model's
+  context window, the provisional 6000 tokens where the window is unknown) is
+  split into sequential chunks, each surveyed on its own. Stage B (confirm)
+  takes each candidate in turn, up to a cap of 24, with the full text of the
+  scenes it names fetched server-side (bodies capped to fit) and only
+  `leave_comment` and `suggest_edit` offered; a note is staged only if the
+  contradiction is real, and a scene id the survey invented is dropped. This
+  replaces the single pass that put the whole story in one context and read
+  every scene through `get_scene`, which overflowed a small window silently and
+  ran into the gateway's 200-call ceiling on a long story. A pass that finds
+  nothing now stages nothing (the old design had the model leave an "everything
+  holds together" comment on the first scene); the job's notification already
+  reports that it found no continuity issues.
 
 ### Background jobs - sequencing steps 4 and 7
 
@@ -883,6 +1004,14 @@ calls the gateway, which proxies through the egress guard.
   `llm/tools/`. The gateway loop dispatches them, capped by the account
   `toolCallBudget`. The frontend only renders the staged results (the
   `isAssistant` suggestions/comments).
+- [built] The account `toolProfile` shapes the default set: `minimal` offers only
+  `get_scene`, `suggest_edit`, and `leave_comment` and halves the budget, for
+  endpoints running a smaller local model. A surface that names its own tools
+  (the scoped review-reply turn) is unaffected.
+- [built] `get_scene` sizes its result against the role model's context window
+  when one is known (about a quarter of it, floor 8000 characters, the 200K
+  ceiling unchanged). Sizing the assembled world context against the window is
+  still to build.
 - [to build] Structural write tools (create scene from a template, create an
   entity, set a quick detail, split a scene) need a preview-and-confirm artifact
   that does not exist yet; they are deliberately deferred. Add them as new tools
@@ -906,8 +1035,10 @@ calls the gateway, which proxies through the egress guard.
 - `models.ts`: `discoverModels`, `listEndpointModels`, `testAccountConnection`,
   `testEndpointConnection`, `probeAccountEndpoint`, `probeEndpoint`.
 - `egress.ts`: `egressPolicy`, `saveEgressPolicy`.
-- `context/assemble.ts`: `assembleContext`, `buildSystemMessage`.
-- `gateway.ts`: `stream`, `complete` (the only entry the surfaces call),
-  `GatewayRequest`, `AssistantDisabledError`.
+- `context/assemble.ts`: `assembleContext`, `assembleStoryFrame`,
+  `assembleSceneDelta`, `buildSystemMessage`.
+- `gateway.ts`: `stream`, `complete`, `completeDetailed` (the only entries the
+  surfaces call; `completeDetailed` also reports how many review notes the run
+  staged), `GatewayRequest`, `AssistantDisabledError`.
 - `review.ts` (existing): `listSuggestions`, `listThreads`, `decideSuggestion`,
   `setThreadResolved` - now Assistant-aware (`isAssistant`).

@@ -73,7 +73,9 @@ export function assistantSseResponse(options: {
 	// or a universe (universe-Plan). Drives both the gateway's tool reach and
 	// where the reply is persisted.
 	scope: ChatScope;
-	role: 'chat';
+	// Conversational turns run as 'chat'; the recap runs as 'utility'. Both land
+	// in the same stored conversation.
+	role: 'chat' | 'utility';
 	enableTools: boolean;
 	messages: ChatMessage[];
 	errorMessage: string;

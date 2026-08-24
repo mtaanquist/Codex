@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { assistantGate, type StoredAccountConfig, type StoredStoryOverride } from './config';
+import {
+	assistantGate,
+	modelContextWindow,
+	pickModel,
+	type ResolvedConfig,
+	type StoredAccountConfig,
+	type StoredStoryOverride
+} from './config';
 
 function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfig {
 	return {
@@ -11,10 +18,65 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		apiKeyEnc: null,
 		models: {},
 		tuning: {},
+		webSearch: false,
 		toolCallBudget: 8,
+		toolProfile: 'full',
 		...partial
 	};
 }
+
+function resolved(partial: Partial<ResolvedConfig> = {}): ResolvedConfig {
+	return {
+		assistantName: '',
+		persona: 'balanced',
+		provider: 'custom',
+		endpoint: 'http://local/v1',
+		apiKey: '',
+		models: {},
+		tuning: {},
+		webSearch: false,
+		toolCallBudget: 8,
+		toolProfile: 'full',
+		modelContext: {},
+		...partial
+	};
+}
+
+describe('modelContextWindow', () => {
+	it('returns the window of the model the role runs on', () => {
+		const config = resolved({
+			models: { chat: 'small', reviewer: 'large' },
+			modelContext: { small: 8192, large: 200000 }
+		});
+		expect(modelContextWindow(config, 'reviewer')).toBe(200000);
+		expect(modelContextWindow(config, 'chat')).toBe(8192);
+	});
+
+	it('follows the role fallback to the chat model', () => {
+		const config = resolved({ models: { chat: 'small' }, modelContext: { small: 8192 } });
+		expect(pickModel(config, 'continuation')).toBe('small');
+		expect(modelContextWindow(config, 'continuation')).toBe(8192);
+	});
+
+	it('is undefined when the model has no known window, or no model at all', () => {
+		expect(modelContextWindow(resolved({ models: { chat: 'mystery' } }), 'chat')).toBeUndefined();
+		expect(modelContextWindow(resolved(), 'chat')).toBeUndefined();
+	});
+});
+
+describe('the utility role', () => {
+	it('runs on the chat model when a config predating the role has none of its own', () => {
+		const config = resolved({ models: { chat: 'small', reviewer: 'large' } });
+		expect(pickModel(config, 'utility')).toBe('small');
+	});
+
+	it('runs on its own model once one is set, leaving the other roles alone', () => {
+		const config = resolved({ models: { chat: 'small', utility: 'tiny' } });
+		expect(pickModel(config, 'utility')).toBe('tiny');
+		expect(pickModel(config, 'chat')).toBe('small');
+		expect(pickModel(config, 'continuation')).toBe('small');
+	});
+});
 
 describe('assistantGate', () => {
 	it('is dark everywhere when no endpoint is configured', () => {

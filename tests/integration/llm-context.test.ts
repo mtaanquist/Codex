@@ -20,7 +20,7 @@ import {
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
-const { assembleContext, assembleRecapContext } =
+const { assembleContext, assembleRecapContext, assembleSceneDelta, assembleStoryFrame } =
 	await import('../../src/lib/server/llm/context/assemble');
 
 let pool: pg.Pool;
@@ -259,6 +259,134 @@ describe('assembleContext', () => {
 		expect(context!.includedTiers).toEqual(['frame']);
 		expect(context!.droppedTiers.length).toBeGreaterThan(0);
 		expect(context!.text).not.toContain('Alice met Bram');
+	});
+});
+
+describe('assembleStoryFrame and assembleSceneDelta (the hoisted split)', () => {
+	it('returns null for a story the user does not own', async () => {
+		expect(await assembleStoryFrame(db, { userId: strangerId, storyId })).toBeNull();
+		expect(
+			await assembleSceneDelta(db, { userId: strangerId, storyId, sceneId: scene1Id })
+		).toBeNull();
+	});
+
+	it('keeps the stable tiers in the frame and nothing scene-local', async () => {
+		const frame = await assembleStoryFrame(db, { userId: ownerId, storyId });
+		expect(frame!.includedTiers).not.toContain('scene-local');
+		expect(frame!.includedTiers).not.toContain('lore');
+		expect(frame!.text).toContain('The Tide Below');
+		expect(frame!.text).toContain('Alice'); // the entity tier
+		expect(frame!.text).toContain('The bell tolls a betrayal.'); // the notes tier
+		expect(frame!.text).not.toContain('Alice met Bram by the Aether gate at dawn.');
+		expect(frame!.sources.entities.map((e) => e.name)).toContain('Alice');
+	});
+
+	it('is byte-identical whichever scene the run is on', async () => {
+		const first = await assembleStoryFrame(db, { userId: ownerId, storyId });
+		const second = await assembleStoryFrame(db, { userId: ownerId, storyId });
+		expect(first!.text).toBe(second!.text);
+	});
+
+	it('drops the universe backbone first under budget pressure', async () => {
+		const [second] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'The Salt Crown', brief: 'A regent drowns.' })
+			.returning({ id: stories.id });
+		await db.insert(scenes).values({
+			storyId: second.id,
+			globalPosition: 1,
+			title: 'Coronation',
+			bodyMd: 'Salt water filled the throne room.'
+		});
+		const frame = await assembleStoryFrame(db, { userId: ownerId, storyId, budgetTokens: 1 });
+		expect(frame!.includedTiers).toEqual(['frame']);
+		expect(frame!.droppedTiers).toContain('universe-backbone');
+	});
+
+	it('carries the scene body and the lore its text activates in the delta', async () => {
+		const frame = await assembleStoryFrame(db, { userId: ownerId, storyId });
+		const delta = await assembleSceneDelta(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			entityNames: frame!.sources.entities.map((e) => e.name)
+		});
+		expect(delta!.includedTiers).toContain('scene-local');
+		expect(delta!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+		expect(delta!.text).toContain('The Aether'); // keyword lore, activated by the body
+		expect(delta!.text).not.toContain('The Forbidden Name'); // manual lore stays out
+		// The stable tiers are the frame's job, not the delta's.
+		expect(delta!.text).not.toContain('The Tide Below');
+		expect(delta!.text).not.toContain('The bell tolls a betrayal.');
+	});
+
+	it('keeps the scene body even when it alone exceeds the delta budget', async () => {
+		const delta = await assembleSceneDelta(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			budgetTokens: 1
+		});
+		expect(delta!.includedTiers).toEqual(['scene-local']);
+		expect(delta!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+	});
+});
+
+describe('includeTiers (the reduced tier sets)', () => {
+	// The lean review set: a pass that checks no lore needs the frame (it carries
+	// the style notes), the outline, and the scene itself.
+	const LEAN = ['frame', 'summaries', 'scene-local'];
+
+	it('assembles only the named tiers on the full path', async () => {
+		const context = await assembleContext(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			includeTiers: LEAN
+		});
+		expect(context!.includedTiers).toEqual(['frame', 'scene-local', 'summaries']);
+		expect(context!.droppedTiers).toEqual([]);
+		expect(context!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+		expect(context!.text).toContain('A calm walk south.'); // the outline
+		expect(context!.text).not.toContain('A brave knight.'); // no entities
+		expect(context!.text).not.toContain('Creation Myth'); // no lore
+		expect(context!.text).not.toContain('The bell tolls a betrayal.'); // no notes
+	});
+
+	it('narrows the frame and the delta to the same named set', async () => {
+		const frame = await assembleStoryFrame(db, { userId: ownerId, storyId, includeTiers: LEAN });
+		expect(frame!.includedTiers).toEqual(['frame', 'summaries']);
+		expect(frame!.text).not.toContain('A brave knight.');
+		const delta = await assembleSceneDelta(db, {
+			userId: ownerId,
+			storyId,
+			sceneId: scene1Id,
+			includeTiers: LEAN
+		});
+		expect(delta!.includedTiers).toEqual(['scene-local']);
+		expect(delta!.text).toContain('Alice met Bram by the Aether gate at dawn.');
+		expect(delta!.text).not.toContain('The Aether'); // no keyword lore
+	});
+
+	it('keeps the frame and the entities for a review-thread reply', async () => {
+		const frame = await assembleStoryFrame(db, {
+			userId: ownerId,
+			storyId,
+			includeTiers: ['frame', 'entities']
+		});
+		expect(frame!.includedTiers).toEqual(['frame', 'entities']);
+		expect(frame!.text).toContain('The Tide Below');
+		expect(frame!.text).toContain('A brave knight.');
+		expect(frame!.text).not.toContain('A calm walk south.'); // no outline
+		expect(frame!.text).not.toContain('Creation Myth');
+		expect(frame!.text).not.toContain('The bell tolls a betrayal.');
+	});
+
+	it('assembles every tier when no set is named', async () => {
+		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.includedTiers).toContain('entities');
+		expect(context!.includedTiers).toContain('lore');
+		expect(context!.includedTiers).toContain('notes');
 	});
 });
 

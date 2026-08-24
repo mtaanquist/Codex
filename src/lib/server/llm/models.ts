@@ -1,10 +1,17 @@
 import type { Database } from '../auth';
-import { resolveLlmConfig, saveModelPricing, type ModelPricing } from './config';
+import {
+	pickModel,
+	resolveLlmConfig,
+	roleExtraParams,
+	saveModelContext,
+	saveModelPricing,
+	type ModelContextMap,
+	type ModelPricing
+} from './config';
 import { egressHttpRequest, egressPolicy } from './egress';
 import { providerFor } from './providers';
 import type { ProviderId } from './providers/presets';
 import type { Connection, HttpRequest, ModelInfo, Provider } from './providers/types';
-import { pickModel } from './gateway';
 
 // Endpoint setup helpers, all through the same egress guard as completions, for
 // the account Assistant settings (UI deferred):
@@ -54,14 +61,19 @@ export async function discoverModels(
 		config.provider,
 		deps
 	);
-	// Snapshot any reported prices so the usage log can estimate costs; an
-	// endpoint without prices clears the previous snapshot.
+	// Snapshot any reported prices so the usage log can estimate costs, and any
+	// reported context windows so the Assistant can size what it sends; an
+	// endpoint that reports neither clears the previous snapshots. A window the
+	// writer entered by hand lives in a separate map and survives this.
 	if (result.ok) {
 		const pricing: ModelPricing = {};
+		const context: ModelContextMap = {};
 		for (const model of result.models) {
 			if (model.pricing) pricing[model.id] = model.pricing;
+			if (model.contextLength) context[model.id] = model.contextLength;
 		}
 		await saveModelPricing(db, userId, pricing);
+		await saveModelContext(db, userId, context);
 	}
 	return result;
 }
@@ -75,7 +87,12 @@ export async function testEndpointConnection(
 	conn: Connection,
 	model: string,
 	providerId: ProviderId = 'custom',
-	deps: DiscoveryDeps = {}
+	deps: DiscoveryDeps = {},
+	// The extra request parameters ride along, so a test says whether the endpoint
+	// accepts them rather than leaving it to the first real request. The caller
+	// passes what a chat turn would send: the account's, with the chat role's own
+	// laid over them.
+	extraParams?: Record<string, unknown>
 ): Promise<TestConnectionResult> {
 	if (!conn.endpoint.trim()) return { ok: false, reason: 'Configure an endpoint first.' };
 	if (!model.trim()) return { ok: false, reason: 'Choose a model to test.' };
@@ -93,7 +110,8 @@ export async function testEndpointConnection(
 						content: 'This is a connection test. Reply in one short, friendly sentence.'
 					},
 					{ role: 'user', content: 'Are you receiving this?' }
-				]
+				],
+				...(extraParams ? { extraParams } : {})
 			},
 			conn,
 			http
@@ -123,6 +141,7 @@ export async function testAccountConnection(
 		{ endpoint: config.endpoint, apiKey: config.apiKey },
 		chosen,
 		config.provider,
-		deps
+		deps,
+		roleExtraParams(config, 'chat')
 	);
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -13,8 +14,13 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'llm-config-test-secret';
 const {
 	accountLlmView,
 	assistantLayout,
+	modelContextWindow,
+	pickModel,
 	resolveLlmConfig,
+	roleExtraParams,
+	roleMaxTokens,
 	saveAccountLlmConfig,
+	saveModelContext,
 	saveStoryLlmOverride
 } = await import('../../src/lib/server/llm/config');
 const { egressPolicy, saveEgressPolicy } = await import('../../src/lib/server/llm/egress');
@@ -116,6 +122,70 @@ describe('account config round-trip', () => {
 		expect((await resolveLlmConfig(db, userId)).config.provider).toBe('custom');
 	});
 
+	it('defaults the tool profile to full, saves a minimal one, and keeps it when omitted', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: {},
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('full');
+
+		await saveAccountLlmConfig(db, userId, { ...base, toolProfile: 'minimal' });
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('minimal');
+		expect((await resolveLlmConfig(db, userId)).config.toolProfile).toBe('minimal');
+
+		// Another form's partial save leaves the profile alone.
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('minimal');
+
+		// An unknown value falls back to full.
+		await saveAccountLlmConfig(db, userId, { ...base, toolProfile: 'chatty' as never });
+		expect((await accountLlmView(db, userId)).toolProfile).toBe('full');
+	});
+
+	it('a manual context window wins over the discovered one and survives rediscovery', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'big', reviewer: 'small' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		await saveModelContext(db, userId, { big: 200000, small: 32768 });
+		expect((await resolveLlmConfig(db, userId)).config.modelContext).toEqual({
+			big: 200000,
+			small: 32768
+		});
+
+		// The writer corrects the small model: the server was launched with 8K.
+		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: { small: 8192 } });
+		expect(modelContextWindow((await resolveLlmConfig(db, userId)).config, 'reviewer')).toBe(8192);
+
+		// A rediscovery replaces the discovered snapshot and leaves the entry alone.
+		await saveModelContext(db, userId, { big: 200000, small: 32768 });
+		const view = await accountLlmView(db, userId);
+		expect(view.modelContext).toEqual({ big: 200000, small: 32768 });
+		expect(view.modelContextManual).toEqual({ small: 8192 });
+		expect(modelContextWindow((await resolveLlmConfig(db, userId)).config, 'reviewer')).toBe(8192);
+
+		// Clearing the entry hands the model back to the discovered value.
+		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: {} });
+		expect(modelContextWindow((await resolveLlmConfig(db, userId)).config, 'reviewer')).toBe(32768);
+
+		// A partial save from another form keeps whatever is stored.
+		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: { small: 8192 } });
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).modelContextManual).toEqual({ small: 8192 });
+	});
+
 	it('a preset owns its endpoint: the submitted URL is ignored', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,
@@ -199,6 +269,225 @@ describe('account config round-trip', () => {
 			toolCallBudget: 8
 		});
 		expect(result.ok).toBe(false);
+	});
+
+	it('normalises a per-role temperature: clamped to 0..2, junk dropped', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: {
+				reviewer: { temperature: 0.1 },
+				chat: { temperature: 7 },
+				coauthor: { temperature: -1 },
+				// Whatever a hand-edited config holds, only a finite number lands.
+				continuation: { temperature: 'hot' } as unknown as { temperature: number }
+			}
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.tuning.reviewer).toEqual({ temperature: 0.1 });
+		expect(view.tuning.chat).toEqual({ temperature: 2 });
+		expect(view.tuning.coauthor).toEqual({ temperature: 0 });
+		expect(view.tuning.continuation).toBeUndefined();
+	});
+
+	it('stores both settings of per-role thinking, and drops junk', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: {
+				reviewer: { thinking: true },
+				continuation: { thinking: false },
+				coauthor: { thinking: 'no' as unknown as boolean },
+				chat: { thinking: false, temperature: 0.4 }
+			}
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.tuning.reviewer).toEqual({ thinking: true });
+		expect(view.tuning.continuation).toEqual({ thinking: false });
+		expect(view.tuning.coauthor).toBeUndefined();
+		expect(view.tuning.chat).toEqual({ thinking: false, temperature: 0.4 });
+	});
+
+	it('stores extra request parameters, and lays a role own over the account ones', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			extraParams: { top_p: 0.9, chat_template_kwargs: { enable_thinking: true } },
+			tuning: { reviewer: { extraParams: { chat_template_kwargs: { enable_thinking: false } } } }
+		});
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(config, 'chat')).toEqual({
+			top_p: 0.9,
+			chat_template_kwargs: { enable_thinking: true }
+		});
+		// The role replaces the account's value for the key it names, and keeps
+		// the rest.
+		expect(roleExtraParams(config, 'reviewer')).toEqual({
+			top_p: 0.9,
+			chat_template_kwargs: { enable_thinking: false }
+		});
+
+		// A blank box clears them; a role with nothing set has none at all.
+		await saveAccountLlmConfig(db, userId, { ...base, extraParams: {}, tuning: {} });
+		const cleared = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(cleared.config, 'chat')).toBeUndefined();
+	});
+
+	it('refuses extra parameters that would rewrite a field the adapter owns', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		const account = await saveAccountLlmConfig(db, userId, {
+			...base,
+			extraParams: { stream: false, top_p: 0.9 }
+		});
+		expect(account.ok).toBe(false);
+		const role = await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: { chat: { extraParams: { messages: [] } } }
+		});
+		expect(role.ok).toBe(false);
+		// Neither save landed, so nothing reaches a request.
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(config, 'chat')).toBeUndefined();
+
+		// A config hand-edited past the save path still cannot carry one through.
+		await db
+			.update(users)
+			.set({
+				llmConfig: {
+					enabled: true,
+					endpoint: 'https://api.example.com/v1',
+					models: { chat: 'm' },
+					extraParams: { stream: false, top_p: 0.9 },
+					toolCallBudget: 8
+				}
+			})
+			.where(eq(users.id, userId));
+		const hand = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(hand.config, 'chat')).toEqual({ top_p: 0.9 });
+
+		// The same holds one level down, where a role carries its own object.
+		await db
+			.update(users)
+			.set({
+				llmConfig: {
+					enabled: true,
+					endpoint: 'https://api.example.com/v1',
+					models: { chat: 'm' },
+					tuning: { reviewer: { extraParams: { tools: [], min_p: 0.05 } } },
+					toolCallBudget: 8
+				}
+			})
+			.where(eq(users.id, userId));
+		const role2 = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(role2.config, 'reviewer')).toEqual({ min_p: 0.05 });
+	});
+
+	it('stores the web-search opt-in, off by default and kept by a partial save', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			provider: 'anthropic' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: '',
+			models: { chat: 'claude-opus-5' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).webSearch).toBe(false);
+
+		await saveAccountLlmConfig(db, userId, { ...base, webSearch: true });
+		expect((await accountLlmView(db, userId)).webSearch).toBe(true);
+		// A save from another form does not carry the box, and must not clear it.
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).webSearch).toBe(true);
+
+		await saveAccountLlmConfig(db, userId, { ...base, webSearch: false });
+		expect((await accountLlmView(db, userId)).webSearch).toBe(false);
+	});
+
+	it('normalises a per-role reply length: a whole positive number or nothing', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: {
+				reviewer: { maxTokens: 8000 },
+				chat: { maxTokens: 512.7 },
+				coauthor: { maxTokens: 0 },
+				continuation: { maxTokens: 10_000_000 }
+			}
+		});
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(roleMaxTokens(config, 'reviewer')).toBe(8000);
+		expect(roleMaxTokens(config, 'chat')).toBe(512);
+		expect(roleMaxTokens(config, 'coauthor')).toBeUndefined();
+		expect(roleMaxTokens(config, 'continuation')).toBe(65_536);
+		expect(roleMaxTokens(config, 'utility')).toBeUndefined();
+	});
+
+	it('leaves a config saved before the utility role existed working as it did', async () => {
+		// Written the way it sat on disk then: four roles, no utility anywhere.
+		await db
+			.update(users)
+			.set({
+				llmConfig: {
+					enabled: true,
+					endpoint: 'https://api.example.com/v1',
+					models: { chat: 'chat-model', reviewer: 'reviewer-model' },
+					tuning: { reviewer: { effort: 'high' } },
+					toolCallBudget: 8
+				}
+			})
+			.where(eq(users.id, userId));
+
+		const view = await accountLlmView(db, userId);
+		expect(view.models).toEqual({ chat: 'chat-model', reviewer: 'reviewer-model' });
+		expect(view.tuning).toEqual({ reviewer: { effort: 'high' } });
+
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(pickModel(config, 'utility')).toBe('chat-model');
+		expect(pickModel(config, 'chat')).toBe('chat-model');
+		expect(pickModel(config, 'reviewer')).toBe('reviewer-model');
 	});
 });
 

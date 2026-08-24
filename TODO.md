@@ -5,6 +5,54 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Per-endpoint request settings (2026-08-24, issue #550 phase 1, branch
+`claude/llm-assistant-work-paths-puxtka`): an `extraParams` JSON object on the
+account config, and a second one per role laid over it, merged into every
+OpenAI-compatible request body so a writer can send whatever their server
+expects (an Unsloth or vLLM reasoning switch where the llama.cpp
+`chat_template_kwargs` spelling does not fit, sampler settings Codex has no
+field for) without Codex hardcoding each dialect. The fields the adapter owns
+are refused on save and stripped on read. Plus a per-role reply length
+(`maxTokens`), which overrides what the surface asks for, and content-part
+answers read correctly now (a server running its own tools replies in parts,
+which both parsers used to drop).
+
+Phase 0 in the same branch: a new help article, `established-settings.md`, on
+writing in a published world - mark the universe established, then put the
+canon you actually want checked into lore, where it becomes the ordinary
+continuity check on any endpoint. Phase 1b too: an account opt-in that attaches
+Anthropic's `web_search` server tool, only on the Claude provider and only on
+an established universe, capped at five searches a turn.
+
+Phase 2 of #550, a Codex-side `search_web` tool against a search API Codex
+holds a key for, is dropped rather than deferred (owner decision, 2026-08-24).
+Telling the endpoint to search covers the use case: Anthropic's server tool
+above, or a search switch pasted into `extraParams` on any OpenAI-compatible
+endpoint that has one. Both keep the search on the provider's servers, leave
+the only outbound destination the configured endpoint, and keep raw web
+results out of the tool loop. Codex operating a search client would give up
+all three, so it is not a "later" item.
+
+Low-context LLM pass (2026-08-17, author-scoped): make the Assistant work
+well against local OpenAI-compatible endpoints with 32-64K context windows,
+and guard cost against usage-billed APIs. All 27 issues (#526-#552) on one
+staging branch `claude/llm-low-context-optimization-2t2ccu`, squash-merged to
+develop as a single PR. Highlights: stable review context hoisted out of the
+per-scene loop for prompt-cache reuse; two-stage (survey/confirm) continuity
+pass replacing the read-every-scene design; per-model context windows
+(discovered and manual) driving get_scene caps and an agent-loop overflow
+guard; finish_reason and reasoning-model handling, per-role temperature and
+thinking suppression; tolerant quote matching and server-side note dedupe;
+resumable review jobs with progress, per-scene failure reasons, and a
+summaries-first phase; pre-flight token/cost estimate with a warning
+threshold and a per-run spend cap; a utility role for summaries, extraction,
+and recap; per-role model guidance in settings and help. Audited post-PR by
+four independent review passes (state machine, LLM semantics, data layer,
+conventions); the confirmed findings were fixed on the same branch, the
+largest being job expiry against double execution, capped-run resume by
+scope adoption, and keeping tools offered (tool_choice none) on concluding
+rounds.
+
 UX pass (2026-07-30, author-scoped after the design pass; steers taken up
 front: book-cover library grid, Notes to the right rail only, invites as an
 admin-set allowance of single-use codes, all designed in-repo). One branch per

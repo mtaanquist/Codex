@@ -12,27 +12,41 @@
 	const assistantOff = $derived(!data.assistant.enabled);
 
 	// Per-role model rows. The ids match the Assistant roles the gateway resolves
-	// a model for; the copy is presentational.
+	// a model for; the copy is presentational. Model names live here and in the
+	// help article, and nowhere else, so there are two places to refresh.
+	const FAST_SUGGESTION =
+		'Wants a fast model: hosted, Claude Haiku; on your own machine, a mixture-of-experts instruct model such as Qwen3 30B A3B (search for MoE instruct GGUF). Turn thinking off.';
 	const ROLE_META = [
 		{
 			id: 'chat',
 			name: 'Rubber duck',
-			hint: 'Conversational side panel. Best with a smart, chatty model.'
+			hint: 'Conversational side panel. Best with a smart, chatty model.',
+			suggestion: 'Any model you like talking to.'
 		},
 		{
 			id: 'coauthor',
 			name: 'Co-author',
-			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.'
+			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.',
+			suggestion: FAST_SUGGESTION
 		},
 		{
 			id: 'continuation',
 			name: 'Continuation',
-			hint: 'Inline ghost-text suggestions. Fast and light is what matters.'
+			hint: 'Inline ghost-text suggestions. Fast and light is what matters.',
+			suggestion: FAST_SUGGESTION
 		},
 		{
 			id: 'reviewer',
 			name: 'Reviewer',
-			hint: 'Reads a draft and leaves suggested edits in your name.'
+			hint: 'Reads a draft and leaves suggested edits in your name.',
+			suggestion:
+				'Wants the strongest model you can run: hosted, Claude Sonnet; on your own machine, a dense 32B instruct model such as Qwen3 32B (search for 32B instruct GGUF). Set a low temperature; thinking is optional.'
+		},
+		{
+			id: 'utility',
+			name: 'Background work',
+			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.',
+			suggestion: 'Use the same fast models as Continuation, with thinking off.'
 		}
 	] as const;
 
@@ -40,15 +54,35 @@
 	// any model already chosen, so a saved pick always shows even before a refresh.
 	// A filter box narrows large catalogues (OpenRouter lists hundreds); saved
 	// picks always stay in the list so a save never silently drops one.
-	type DiscoveredModel = { id: string; pricing?: { prompt: number; completion: number } };
+	type DiscoveredModel = {
+		id: string;
+		pricing?: { prompt: number; completion: number };
+		contextLength?: number;
+	};
 	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
 
-	// Per-role thinking/effort, shown for the Claude provider only (mirrors
-	// EFFORT_LEVELS in $lib/server/llm/config, which cannot be imported here).
+	// Per-role tuning. Thinking and temperature apply to every provider; the
+	// effort levels are the Claude provider's own (mirrors EFFORT_LEVELS in
+	// $lib/server/llm/config, which cannot be imported here).
 	const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 	const savedTuning = $derived(
-		data.assistant.tuning as Record<string, { thinking?: boolean; effort?: string } | undefined>
+		data.assistant.tuning as Record<
+			string,
+			| {
+					thinking?: boolean;
+					effort?: string;
+					temperature?: number;
+					maxTokens?: number;
+					extraParams?: Record<string, unknown>;
+			  }
+			| undefined
+		>
 	);
+	// The thinking select is three-state: on, off, or the endpoint's default.
+	function thinkingValue(role: string): string {
+		const thinking = savedTuning[role]?.thinking;
+		return thinking === true ? 'on' : thinking === false ? 'off' : '';
+	}
 	// A discovery result must outlive the action data that carried it: with
 	// role picks saving on change, the next save would otherwise wipe the list
 	// after the first pick.
@@ -76,10 +110,34 @@
 		const value = perToken * 1_000_000;
 		return `$${value >= 100 ? value.toFixed(0) : value.toFixed(2)}`;
 	}
+	// Context windows: what the endpoint reported at the last discovery (or the
+	// one just run), with anything typed here laid over it.
+	const discoveredContext = $derived({
+		...(data.assistant.modelContext ?? {}),
+		...Object.fromEntries(
+			discoveredModels.filter((m) => m.contextLength).map((m) => [m.id, m.contextLength!])
+		)
+	} as Record<string, number>);
+	const manualContext = $derived(
+		(data.assistant.modelContextManual ?? {}) as Record<string, number>
+	);
+	function contextWindow(id: string): number | undefined {
+		return manualContext[id] ?? discoveredContext[id];
+	}
+	// The models with a context field: whatever is picked for a role right now.
+	const chosenModels = $derived([
+		...new Set(Object.values(savedModels).filter((m): m is string => !!m))
+	]);
 	function modelLabel(id: string): string {
 		const price = modelPricing[id];
-		if (!price) return id;
-		return `${id} (${perMillion(price.prompt)} in / ${perMillion(price.completion)} out per 1M tokens)`;
+		const tokens = contextWindow(id);
+		const parts = [
+			price
+				? `${perMillion(price.prompt)} in / ${perMillion(price.completion)} out per 1M tokens`
+				: '',
+			tokens ? `${tokens.toLocaleString()} token context` : ''
+		].filter(Boolean);
+		return parts.length > 0 ? `${id} (${parts.join(', ')})` : id;
 	}
 	function usageCost(model: string, promptTokens: number | null, completionTokens: number | null) {
 		const price = modelPricing[model];
@@ -111,6 +169,16 @@
 	// svelte-ignore state_referenced_locally
 	let selectedProvider = $state(data.assistant.provider);
 	const activePreset = $derived(data.providers.find((p) => p.id === selectedProvider));
+	// Which provider the form is showing, from the live select rather than the
+	// saved value, so every provider-specific control appears and disappears
+	// together while a change is still saving.
+	const anthropicShown = $derived(selectedProvider === 'anthropic');
+	// Extra request settings only reach an OpenAI-compatible endpoint; the Claude
+	// provider has its own controls and ignores them, so the boxes stay hidden.
+	const extraParamsShown = $derived(!anthropicShown);
+	function paramsText(params: Record<string, unknown> | undefined): string {
+		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';
+	}
 </script>
 
 <div class="admin-head">
@@ -371,6 +439,94 @@
 						Leave blank to keep your saved key. Not every endpoint needs one.
 					</p>
 				</div>
+				{#if anthropicShown}
+					<div class="field">
+						<!-- An unchecked box sends nothing, which is indistinguishable from a
+						     save that never showed it; this marker says the box was on the form. -->
+						<input type="hidden" name="webSearchShown" value="1" />
+						<label class="check-row">
+							<input type="checkbox" name="webSearch" checked={data.assistant.webSearch} />
+							Let the assistant search the web
+						</label>
+						<p class="field-hint">
+							Claude can look things up while it works, on Anthropic's servers rather than yours. It
+							only does so in a universe you have marked as an established setting, where it may
+							need to check your draft against a published world's canon. Searches are part of what
+							Anthropic bills you for.
+						</p>
+					</div>
+				{/if}
+				{#if extraParamsShown}
+					<div class="field">
+						<label for="extra_params">Extra request settings</label>
+						<input
+							id="extra_params"
+							name="extraParams"
+							type="text"
+							class="input"
+							spellcheck="false"
+							autocomplete="off"
+							value={paramsText(data.assistant.extraParams)}
+							placeholder={'{"top_p": 0.9}'}
+						/>
+						<p class="field-hint">
+							Anything else your endpoint expects, written as JSON and sent with every request. Use
+							this for settings Codex has no box for, such as a switch your server needs to turn
+							reasoning off, or sampler settings of your own. Check your server's documentation for
+							what it accepts. Leave it empty if you are not sure.
+						</p>
+					</div>
+				{/if}
+				<div class="field">
+					<label for="tool_profile">Tools offered</label>
+					<select id="tool_profile" name="toolProfile" class="select">
+						<option value="full" selected={data.assistant.toolProfile !== 'minimal'}
+							>All tools</option
+						>
+						<option value="minimal" selected={data.assistant.toolProfile === 'minimal'}
+							>Fewer tools</option
+						>
+					</select>
+					<p class="field-hint">
+						The assistant can look things up in your work and hand suggestions back. Pick Fewer
+						tools if your model is small or runs on your own machine: it then only reads a scene,
+						suggests an edit, and leaves a comment, which smaller models handle far more reliably.
+					</p>
+				</div>
+				<div class="field">
+					<label for="spend_cap">Spend cap per review (USD)</label>
+					<input
+						id="spend_cap"
+						name="spendCapUsd"
+						type="number"
+						class="input"
+						min="0"
+						step="0.01"
+						value={data.assistant.spendCapUsd ?? ''}
+						placeholder="No cap"
+					/>
+					<p class="field-hint">
+						A background review stops after the next scene once it has spent this much. Leave it
+						empty for no cap. It only applies when your endpoint publishes prices for the model.
+					</p>
+				</div>
+				<div class="field">
+					<label for="spend_warn">Warn above (USD)</label>
+					<input
+						id="spend_warn"
+						name="spendWarnUsd"
+						type="number"
+						class="input"
+						min="0"
+						step="0.01"
+						value={data.assistant.spendWarnUsd ?? ''}
+						placeholder="2.00"
+					/>
+					<p class="field-hint">
+						Before a chapter or whole-story review starts, you are shown what it will send. Above
+						this figure the window asks you to confirm again.
+					</p>
+				</div>
 				<div class="settings-actions">
 					{#if form?.scope === 'assistant-test' && 'reply' in form && form.reply}
 						<FormStatus success={`Reply: ${form.reply}`} />
@@ -428,6 +584,7 @@
 							<div class="role-row-label">
 								<div class="role-row-name">{role.name}</div>
 								<div class="role-row-hint">{role.hint}</div>
+								<div class="role-row-hint">{role.suggestion}</div>
 							</div>
 							<div class="role-row-controls">
 								<select class="select" name={role.id}>
@@ -438,16 +595,18 @@
 										>
 									{/each}
 								</select>
-								{#if data.assistant.provider === 'anthropic'}
-									<div class="role-row-tuning">
-										<label class="check-row">
-											<input
-												type="checkbox"
-												name="{role.id}-thinking"
-												checked={Boolean(savedTuning[role.id]?.thinking)}
-											/>
-											Thinking
-										</label>
+								<div class="role-row-tuning">
+									<select
+										class="select"
+										name="{role.id}-thinking"
+										aria-label="{role.name} thinking"
+										value={thinkingValue(role.id)}
+									>
+										<option value="">Thinking: default</option>
+										<option value="on">Thinking on</option>
+										<option value="off">Thinking off</option>
+									</select>
+									{#if anthropicShown}
 										<select class="select" name="{role.id}-effort" aria-label="{role.name} effort">
 											<option value="" selected={!savedTuning[role.id]?.effort}
 												>Default effort</option
@@ -458,18 +617,113 @@
 												>
 											{/each}
 										</select>
-									</div>
-								{/if}
+									{:else}
+										<input
+											class="input"
+											type="number"
+											min="0"
+											max="2"
+											step="0.1"
+											name="{role.id}-temperature"
+											aria-label="{role.name} temperature"
+											value={savedTuning[role.id]?.temperature ?? ''}
+											placeholder="Temperature"
+										/>
+									{/if}
+									<input
+										class="input"
+										type="number"
+										min="1"
+										step="1"
+										name="{role.id}-maxTokens"
+										aria-label="{role.name} longest reply in tokens"
+										value={savedTuning[role.id]?.maxTokens ?? ''}
+										placeholder="Longest reply"
+									/>
+									{#if extraParamsShown}
+										<input
+											class="input"
+											type="text"
+											spellcheck="false"
+											autocomplete="off"
+											name="{role.id}-extraParams"
+											aria-label="{role.name} extra request settings"
+											value={paramsText(savedTuning[role.id]?.extraParams)}
+											placeholder="Extra settings"
+										/>
+									{/if}
+								</div>
 							</div>
 						</div>
 					{/each}
 				</div>
-				{#if data.assistant.provider === 'anthropic'}
+				<p class="field-hint">
+					Thinking lets the model reason before it answers: better feedback, slower and more tokens.
+					Pick Thinking off for the roles that need to be quick, or leave it on default to use
+					whatever your endpoint does already.
+				</p>
+				{#if anthropicShown}
 					<p class="field-hint">
-						Thinking lets the model reason before answering: better feedback, slower and more
-						tokens. Effort sets how hard it works; leave both unset for the model's defaults. Older
-						or lighter models may not accept every level - if a request fails, clear the effort
-						here. "xhigh" needs a recent Opus model.
+						Effort sets how hard the model works on each request; leave it unset for the model's
+						default. Older or lighter models may not accept every level - if a request fails, clear
+						the effort here. "xhigh" needs a recent Opus model.
+					</p>
+				{:else}
+					<p class="field-hint">
+						Temperature sets how freely the model varies its wording, from 0 to 2. Lower is more
+						precise and repeatable, higher is more surprising; the reviewer works best low, around
+						0.2. Leave a box empty to use your endpoint's own setting.
+					</p>
+				{/if}
+				<p class="field-hint">
+					Longest reply is the most a model may write in one go, counted in tokens. Raise it for a
+					role that gets cut off mid-sentence, lower it to keep a model brief. Leave a box empty to
+					use what Codex asks for.
+				</p>
+				{#if extraParamsShown}
+					<p class="field-hint">
+						Extra settings are JSON sent with this role's requests only, laid over the ones set on
+						your endpoint above. Use it when one role needs something different, such as a switch
+						that turns reasoning off for the reviewer.
+					</p>
+				{/if}
+				{#if chosenModels.length > 0}
+					<div class="role-table">
+						{#each chosenModels as model (model)}
+							<div class="role-row">
+								<div class="role-row-label">
+									<div class="role-row-name">{model}</div>
+									<div class="role-row-hint">
+										{#if discoveredContext[model]}
+											Your endpoint reports {discoveredContext[model].toLocaleString()} tokens.
+										{:else}
+											Your endpoint does not report a context window.
+										{/if}
+									</div>
+								</div>
+								<div class="role-row-controls">
+									<input
+										class="input"
+										type="number"
+										min="1"
+										step="1"
+										name="context-{model}"
+										aria-label="{model} context window in tokens"
+										value={manualContext[model] ?? ''}
+										placeholder={discoveredContext[model]
+											? String(discoveredContext[model])
+											: 'Context window in tokens'}
+									/>
+								</div>
+							</div>
+						{/each}
+					</div>
+					<p class="field-hint">
+						The context window is how much text a model can take in one request, counted in tokens.
+						Type a number to set it yourself; what you type is kept when you discover models again.
+						Leave a box empty to use what your endpoint reports. If you run the model yourself,
+						enter the size you started the server with, which is often smaller than the model can
+						handle.
 					</p>
 				{/if}
 				{#if Object.keys(modelPricing).length > 0}

@@ -1,4 +1,7 @@
-import MarkdownIt from 'markdown-it';
+// markdown-it 15 ships its own typings, where the default export is a callable
+// value rather than a class, so the instance type comes from the named type
+// export beside it.
+import MarkdownIt, { type MarkdownIt as MarkdownItInstance } from 'markdown-it';
 import { UUID_BODY } from './slug.ts';
 import { alignmentOf } from './alignment.ts';
 import { indentMargin, indentOf } from './indent.ts';
@@ -7,7 +10,7 @@ import { indentMargin, indentOf } from './indent.ts';
 // styled with a forced break in print and PDF, an inert empty element
 // everywhere else. The marker survives in the markdown itself, so exports
 // round-trip it as plain text.
-function pageBreaks(md: MarkdownIt) {
+function pageBreaks(md: MarkdownItInstance) {
 	md.core.ruler.push('codex_page_break', (state) => {
 		const tokens = state.tokens;
 		for (let index = 0; index < tokens.length - 2; index++) {
@@ -28,7 +31,7 @@ function pageBreaks(md: MarkdownIt) {
 // A paragraph starting with \center, \right, or \justify renders with that
 // text alignment; the marker is stripped from the text. Runs before inline
 // parsing so the marker never reaches the rendered output.
-function alignments(md: MarkdownIt) {
+function alignments(md: MarkdownItInstance) {
 	md.core.ruler.before('inline', 'codex_alignment', (state) => {
 		const tokens = state.tokens;
 		for (let index = 0; index < tokens.length - 1; index++) {
@@ -45,7 +48,7 @@ function alignments(md: MarkdownIt) {
 // that many levels; the marker is stripped and the indent rides as an inline
 // left margin, so it renders on every surface with no per-surface CSS. Runs
 // after alignment so an aligned paragraph can also indent.
-function indents(md: MarkdownIt) {
+function indents(md: MarkdownItInstance) {
 	md.core.ruler.before('inline', 'codex_indent', (state) => {
 		const tokens = state.tokens;
 		for (let index = 0; index < tokens.length - 1; index++) {

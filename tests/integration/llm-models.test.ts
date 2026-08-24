@@ -93,6 +93,22 @@ describe('discoverModels', () => {
 		expect((await accountLlmView(db, userId)).modelPricing).toBeUndefined();
 	});
 
+	it('snapshots reported context windows and clears them when a discovery has none', async () => {
+		const withContext: Provider = {
+			...stub,
+			async listModels() {
+				return [{ id: 'big', contextLength: 200000 }, { id: 'unknown' }];
+			}
+		};
+		await configure('https://openrouter.ai/api/v1', {});
+		await discoverModels(db, userId, { provider: withContext, http: noHttp });
+		const { accountLlmView } = await import('../../src/lib/server/llm/config');
+		expect((await accountLlmView(db, userId)).modelContext).toEqual({ big: 200000 });
+		// An endpoint that reports no windows clears the snapshot.
+		await discoverModels(db, userId, { provider: stub, http: noHttp });
+		expect((await accountLlmView(db, userId)).modelContext).toBeUndefined();
+	});
+
 	it('asks for an endpoint when none is configured', async () => {
 		await configure('', {});
 		const result = await discoverModels(db, userId, { provider: stub, http: noHttp });
@@ -129,6 +145,29 @@ describe('testAccountConnection', () => {
 		};
 		await testAccountConnection(db, userId, 'gemma2', { provider: capturing, http: noHttp });
 		expect(askedModel).toBe('gemma2');
+	});
+
+	it("sends the account's extra request parameters, so the test covers them", async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: false,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'llama3.1:8b' },
+			extraParams: { top_p: 0.9 },
+			toolCallBudget: 8
+		});
+		let sent: Record<string, unknown> | undefined;
+		const capturing: Provider = {
+			...stub,
+			async respond(req) {
+				sent = req.extraParams;
+				return { content: 'ok', toolCalls: [] };
+			}
+		};
+		await testAccountConnection(db, userId, undefined, { provider: capturing, http: noHttp });
+		expect(sent).toEqual({ top_p: 0.9 });
 	});
 
 	it('asks for a model when none is configured or given', async () => {

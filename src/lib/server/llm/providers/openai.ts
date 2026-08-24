@@ -1,7 +1,9 @@
+import { withoutReservedParams } from './reserved.ts';
 import type {
 	ChatMessage,
 	CompletionRequest,
 	Connection,
+	FinishReason,
 	ModelInfo,
 	ProviderToolCall,
 	Provider,
@@ -63,6 +65,13 @@ function serialiseMessages(messages: ChatMessage[]): unknown[] {
 	});
 }
 
+// Ask the endpoint to skip a reasoning model's thinking pass entirely, rather
+// than generating it and having us strip it. There is no standard field for
+// this: llama.cpp (and llama-server behind it) forwards chat_template_kwargs
+// into the model's chat template, where Qwen3 and the R1 distills read
+// enable_thinking. Another server's spelling belongs here, alongside it.
+const SUPPRESS_THINKING = { chat_template_kwargs: { enable_thinking: false } };
+
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	return JSON.stringify({
 		model: req.model,
@@ -78,9 +87,19 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 							parameters: tool.parameters
 						}
 					})),
-					tool_choice: 'auto'
+					tool_choice: req.toolChoice === 'none' ? 'none' : 'auto'
 				}
 			: {}),
+		// Sampling temperature for this role, when the account config sets one;
+		// otherwise the endpoint's own default applies.
+		...(typeof req.tuning?.temperature === 'number' ? { temperature: req.tuning.temperature } : {}),
+		...(req.tuning?.thinking === false ? SUPPRESS_THINKING : {}),
+		// The writer's own parameters go last of the tunable fields, so a server
+		// whose switch is spelled differently can be told exactly what to send,
+		// overriding the guess above. The fields this adapter owns are stripped
+		// out first: the config refuses them too, but the request the parser has
+		// to read should not depend on that having worked.
+		...(withoutReservedParams(req.extraParams) ?? {}),
 		stream,
 		// Ask streaming responses to report token usage in a final frame (widely
 		// supported and ignored by endpoints that predate it).
@@ -88,13 +107,115 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 	});
 }
 
-// Both response shapes report usage as prompt_tokens/completion_tokens.
+// Both response shapes report usage as prompt_tokens/completion_tokens. Where
+// the endpoint also reports prompt_tokens_details.cached_tokens (OpenAI and the
+// gateways that mirror it), that count is already part of prompt_tokens; it is
+// carried through as the cached share so the cost can price it cheaper.
 function parseUsage(raw: unknown): TokenUsage | undefined {
-	const usage = raw as { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;
+	const usage = raw as
+		| {
+				prompt_tokens?: unknown;
+				completion_tokens?: unknown;
+				prompt_tokens_details?: { cached_tokens?: unknown };
+		  }
+		| undefined;
 	const prompt = Number(usage?.prompt_tokens);
 	const completion = Number(usage?.completion_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
-	return { promptTokens: prompt, completionTokens: completion };
+	const cached = Number(usage?.prompt_tokens_details?.cached_tokens);
+	return {
+		promptTokens: prompt,
+		completionTokens: completion,
+		...(Number.isFinite(cached) && cached > 0 ? { cachedPromptTokens: cached } : {})
+	};
+}
+
+// The text of a message or a delta. Most endpoints send a plain string, but a
+// server that ran tools of its own (a web search, say) often answers in content
+// parts instead, with citation or annotation parts sitting beside the text.
+// Anything that is not text is dropped rather than rendered.
+function contentText(raw: unknown): string {
+	if (typeof raw === 'string') return raw;
+	if (!Array.isArray(raw)) return '';
+	return raw
+		.map((part) => {
+			const text = (part as { text?: unknown })?.text;
+			return typeof text === 'string' ? text : '';
+		})
+		.join('');
+}
+
+function parseFinishReason(raw: unknown): FinishReason | undefined {
+	if (typeof raw !== 'string' || !raw) return undefined;
+	if (raw === 'stop') return 'stop';
+	if (raw === 'length') return 'length';
+	// 'function_call' is the pre-tools spelling some endpoints still send.
+	if (raw === 'tool_calls' || raw === 'function_call') return 'toolCalls';
+	return 'other';
+}
+
+const THINK_OPEN = '<think>';
+const THINK_CLOSE = '</think>';
+
+// How many trailing characters of text are the start of tag, so a tag split
+// across two stream chunks is held back rather than emitted as text.
+function partialTagLength(text: string, tag: string): number {
+	const most = Math.min(text.length, tag.length - 1);
+	for (let length = most; length > 0; length--) {
+		if (tag.startsWith(text.slice(text.length - length))) return length;
+	}
+	return 0;
+}
+
+// Drops <think>...</think> blocks, which the local reasoning models (Qwen3,
+// the DeepSeek-R1 distills) emit inline in the content. Stateful so the
+// streaming path can feed it one delta at a time: text inside a block, and any
+// text that might still turn out to be a tag, is held back until it resolves.
+// An unclosed block at the end of a stream emits nothing.
+function thinkFilter() {
+	let held = '';
+	let inside = false;
+	return {
+		push(text: string): string {
+			held += text;
+			let out = '';
+			for (;;) {
+				if (inside) {
+					const close = held.indexOf(THINK_CLOSE);
+					if (close === -1) {
+						held = held.slice(held.length - partialTagLength(held, THINK_CLOSE));
+						return out;
+					}
+					held = held.slice(close + THINK_CLOSE.length);
+					inside = false;
+					continue;
+				}
+				const open = held.indexOf(THINK_OPEN);
+				if (open === -1) {
+					const partial = partialTagLength(held, THINK_OPEN);
+					out += held.slice(0, held.length - partial);
+					held = held.slice(held.length - partial);
+					return out;
+				}
+				out += held.slice(0, open);
+				held = held.slice(open + THINK_OPEN.length);
+				inside = true;
+			}
+		},
+		// Whatever is still held: a partial open tag that never completed is
+		// literal text, an unclosed block is dropped.
+		flush(): string {
+			const rest = inside ? '' : held;
+			held = '';
+			inside = false;
+			return rest;
+		}
+	};
+}
+
+function stripThinking(text: string): string {
+	const filter = thinkFilter();
+	return filter.push(text) + filter.flush();
 }
 
 function parseToolCalls(raw: unknown): ProviderToolCall[] {
@@ -121,10 +242,18 @@ function truncate(text: string, max = 300): string {
 }
 
 // Parse an OpenAI streaming response: newline-delimited "data: {json}" frames,
-// terminated by "data: [DONE]". Content arrives as choices[0].delta.content.
+// terminated by "data: [DONE]". Content arrives as choices[0].delta.content;
+// a reasoning model's separate choices[0].delta.reasoning_content is thinking,
+// not answer, so it is never read.
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
 	const decoder = new TextDecoder();
+	const think = thinkFilter();
+	let finishReason: FinishReason | undefined;
 	let buffer = '';
+	const done = (): StreamEvent => ({
+		type: 'done',
+		...(finishReason ? { finishReason } : {})
+	});
 	for await (const chunk of body) {
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
@@ -134,7 +263,9 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			if (!line.startsWith('data:')) continue;
 			const data = line.slice(5).trim();
 			if (data === '[DONE]') {
-				yield { type: 'done' };
+				const tail = think.flush();
+				if (tail) yield { type: 'token', text: tail };
+				yield done();
 				return;
 			}
 			if (!data) continue;
@@ -144,17 +275,23 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			} catch {
 				continue;
 			}
-			const delta = (json as { choices?: { delta?: { content?: unknown } }[] })?.choices?.[0]?.delta
-				?.content;
-			if (typeof delta === 'string' && delta.length > 0) {
-				yield { type: 'token', text: delta };
+			const choice = (
+				json as { choices?: { delta?: { content?: unknown }; finish_reason?: unknown }[] }
+			)?.choices?.[0];
+			const delta = contentText(choice?.delta?.content);
+			if (delta.length > 0) {
+				const text = think.push(delta);
+				if (text) yield { type: 'token', text };
 			}
+			finishReason = parseFinishReason(choice?.finish_reason) ?? finishReason;
 			const usage = parseUsage((json as { usage?: unknown })?.usage);
 			if (usage) yield { type: 'usage', usage };
 		}
 	}
 	// The stream ended without an explicit [DONE]; close it out anyway.
-	yield { type: 'done' };
+	const tail = think.flush();
+	if (tail) yield { type: 'token', text: tail };
+	yield done();
 }
 
 export const openaiProvider: Provider = {
@@ -193,14 +330,22 @@ export const openaiProvider: Provider = {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
 		const json = JSON.parse(text) as {
-			choices?: { message?: { content?: unknown; tool_calls?: unknown } }[];
+			choices?: {
+				message?: { content?: unknown; tool_calls?: unknown };
+				finish_reason?: unknown;
+			}[];
 			usage?: unknown;
 		};
-		const message = json?.choices?.[0]?.message ?? {};
+		const choice = json?.choices?.[0];
+		const message = choice?.message ?? {};
+		const finishReason = parseFinishReason(choice?.finish_reason);
 		return {
-			content: typeof message.content === 'string' ? message.content : '',
+			// A reasoning model's thinking arrives either inline in tags or in a
+			// separate reasoning_content field; neither belongs in the answer.
+			content: stripThinking(contentText(message.content)),
 			toolCalls: parseToolCalls(message.tool_calls),
-			usage: parseUsage(json?.usage)
+			usage: parseUsage(json?.usage),
+			...(finishReason ? { finishReason } : {})
 		};
 	},
 
@@ -215,13 +360,21 @@ export const openaiProvider: Provider = {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
 		const json = JSON.parse(text) as {
-			data?: { id?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }[];
+			data?: {
+				id?: unknown;
+				pricing?: { prompt?: unknown; completion?: unknown };
+				context_length?: unknown;
+			}[];
 		};
 		const items = Array.isArray(json.data) ? json.data : [];
 		const byId = new Map<string, ModelInfo>();
 		for (const item of items) {
 			if (typeof item.id !== 'string' || byId.has(item.id)) continue;
-			byId.set(item.id, { id: item.id, ...parsePricing(item.pricing) });
+			byId.set(item.id, {
+				id: item.id,
+				...parsePricing(item.pricing),
+				...parseContextLength(item.context_length)
+			});
 		}
 		return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 	}
@@ -242,4 +395,13 @@ function parsePricing(
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return {};
 	if (prompt === 0 && completion === 0) return {};
 	return { pricing: { prompt, completion } };
+}
+
+// OpenRouter's /models reports the model's context window as context_length;
+// most other OpenAI-compatible lists omit it, and a local server reports its
+// own launch setting at best, so an absent value stays unset.
+function parseContextLength(raw: unknown): Pick<ModelInfo, 'contextLength'> {
+	const tokens = Number(raw);
+	if (!Number.isFinite(tokens) || tokens <= 0) return {};
+	return { contextLength: Math.floor(tokens) };
 }

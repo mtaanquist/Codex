@@ -15,11 +15,33 @@ export type UsageEntry = {
 	role: string;
 	model: string;
 	usage?: TokenUsage;
+	// The gateway's own chars/4 estimate for the request it just sent, when it
+	// computed one. Logged against the endpoint's report, never stored.
+	estimatedPromptTokens?: number;
 };
+
+// Observability for the token estimate the budgets are built on. The estimate
+// is chars/4, which skews with non-English prose and with heavy markup, and
+// budgets (context assembly, the agent loop's context guard) are increasingly
+// load-bearing. Logging estimate against the endpoint's own count is phase one:
+// once the ratios are observed per endpoint, a correction factor can be applied
+// where estimateTokens feeds those budgets.
+function logEstimateAccuracy(entry: UsageEntry): void {
+	const actual = entry.usage?.promptTokens;
+	const estimated = entry.estimatedPromptTokens;
+	if (!actual || estimated === undefined) return;
+	logEvent('info', 'assistant.usage.estimate', {
+		model: entry.model,
+		estimated,
+		actual,
+		ratio: Math.round((estimated / actual) * 100) / 100
+	});
+}
 
 // Recording must never break a generation; a failed insert is logged and
 // dropped.
 export async function recordAssistantUsage(db: Database, entry: UsageEntry): Promise<void> {
+	logEstimateAccuracy(entry);
 	try {
 		await db.insert(assistantUsage).values({
 			userId: entry.userId,
