@@ -24,11 +24,14 @@ continuity check on any endpoint. Phase 1b too: an account opt-in that attaches
 Anthropic's `web_search` server tool, only on the Claude provider and only on
 an established universe, capped at five searches a turn.
 
-Still open on #550: phase 2 (a Codex-side `search_web` tool against a
-configurable search API), which the issue gates behind its own egress and
-injection design review and a demand signal from phase 1. It needs decisions
-first: which search API, where its key lives, and how a searched turn is
-quarantined from the write tools.
+Phase 2 of #550, a Codex-side `search_web` tool against a search API Codex
+holds a key for, is dropped rather than deferred (owner decision, 2026-08-24).
+Telling the endpoint to search covers the use case: Anthropic's server tool
+above, or a search switch pasted into `extraParams` on any OpenAI-compatible
+endpoint that has one. Both keep the search on the provider's servers, leave
+the only outbound destination the configured endpoint, and keep raw web
+results out of the tool loop. Codex operating a search client would give up
+all three, so it is not a "later" item.
 
 Low-context LLM pass (2026-08-17, author-scoped): make the Assistant work
 well against local OpenAI-compatible endpoints with 32-64K context windows,

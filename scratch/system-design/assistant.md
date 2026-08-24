@@ -136,8 +136,14 @@ cannot. The adapter attaches Anthropic's `web_search` server tool (the dated
 five searches a turn); the search runs on Anthropic's servers and the answer
 returns as ordinary content, so Codex's tool loop never touches a raw web
 result and the only outbound traffic from the server is still the request to
-the configured endpoint. No other provider offers it, and a Codex-side search
-tool (which would change both of those things) remains deferred.
+the configured endpoint. No other provider has an equivalent Codex can declare,
+but an OpenAI-compatible endpoint with a search switch of its own reaches the
+same place through `extraParams` below.
+
+A Codex-side search tool is not a deferred item: it is ruled out. Holding a
+search key, calling a search API, and feeding raw web text into a loop that
+holds `suggest_edit` would give up all three properties above, and asking the
+endpoint to search covers the use case without any of it.
 
 Codex cannot keep up with how every OpenAI-compatible server spells its own
 switches, so the config carries an escape hatch: an `extraParams` object,
