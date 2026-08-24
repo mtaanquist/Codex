@@ -92,6 +92,17 @@ describe('anthropicProvider web search', () => {
 		expect(body.tool_choice).toEqual({ type: 'none' });
 	});
 
+	it('ignores the OpenAI-compatible extra parameters entirely', async () => {
+		const body = await bodyFor({
+			model: 'claude-opus-5',
+			messages: [],
+			maxTokens: 16,
+			extraParams: { top_p: 0.9, chat_template_kwargs: { enable_thinking: false } }
+		});
+		expect(body).not.toHaveProperty('top_p');
+		expect(body).not.toHaveProperty('chat_template_kwargs');
+	});
+
 	it('reads the answer past the search blocks the server adds', async () => {
 		const http: HttpRequest = async () =>
 			jsonResponse(200, {

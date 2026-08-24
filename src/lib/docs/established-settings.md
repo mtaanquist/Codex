@@ -33,9 +33,9 @@ This is why the two parts work together. The switch tells the Assistant the worl
 
 ## Letting Claude look things up
 
-On the Claude provider there is one more option, off unless you turn it on: "Let the assistant search the web", on your account's Assistant page. With it on, Claude may search while it reviews a universe you have marked as an established setting, so it can check a detail rather than rely on what it happens to remember.
+On the Claude provider there is one more option, off unless you turn it on: "Let the assistant search the web", on your account's Assistant page. With it on, Claude may search when it reviews your work or answers you in the side panel, in a universe you have marked as an established setting, so it can check a detail rather than rely on what it happens to remember. It never searches while writing inline suggestions or drafting a passage, where waiting on a search would be worse than the answer is worth, nor during background work.
 
-The search runs on Anthropic's servers and comes back as part of Claude's answer, and Anthropic bills you for it. It is worth turning on when your setting is well documented online and you are tired of the model half-remembering it. It is not a substitute for lore: a search finds what the web says, while your lore says what is true in your version, and only one of those is authoritative for your story.
+The search runs on Anthropic's servers and comes back as part of Claude's answer, and Anthropic bills you for it, separately from the tokens. Each request may make up to five searches, and a review of a whole story is many requests, so leave this off if you are watching costs closely: a spend cap counts tokens and cannot see searches. It is worth turning on when your setting is well documented online and you are tired of the model half-remembering it. It is not a substitute for lore: a search finds what the web says, while your lore says what is true in your version, and only one of those is authoritative for your story.
 
 Every other endpoint ignores this setting.
 

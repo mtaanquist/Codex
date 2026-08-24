@@ -88,8 +88,10 @@ export async function testEndpointConnection(
 	model: string,
 	providerId: ProviderId = 'custom',
 	deps: DiscoveryDeps = {},
-	// The account's extra request parameters ride along, so a test says whether
-	// the endpoint accepts them rather than leaving it to the first real request.
+	// The extra request parameters ride along, so a test says whether the endpoint
+	// accepts them rather than leaving it to the first real request. The caller
+	// passes what a chat turn would send: the account's, with the chat role's own
+	// laid over them.
 	extraParams?: Record<string, unknown>
 ): Promise<TestConnectionResult> {
 	if (!conn.endpoint.trim()) return { ok: false, reason: 'Configure an endpoint first.' };

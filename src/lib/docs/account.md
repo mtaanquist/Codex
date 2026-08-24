@@ -120,9 +120,10 @@ contacts a model on its own.
   it to keep a model brief. Leave the box empty to use the length Codex asks for,
   which suits most setups.
 - **Let the assistant search the web (Claude only)**: off unless you turn it on.
-  With it on, Claude may look things up while it works, but only in a universe
-  you have marked as an established setting, where checking your draft against a
-  published world's canon is the point. The search runs on Anthropic's servers,
+  With it on, Claude may look things up when it reviews your work or answers you
+  in the side panel, and only in a universe you have marked as an established
+  setting, where checking your draft against a published world's canon is the
+  point. Inline suggestions, drafting, and background work never search. The search runs on Anthropic's servers,
   not yours, and the results come back as part of Claude's answer; Codex itself
   still only ever talks to the endpoint you configured. Anthropic bills you for
   the searches. See [writing in an established setting](/docs/established-settings)
@@ -133,8 +134,9 @@ contacts a model on its own.
   its own too, laid over the endpoint one, for when a single role needs something
   different, such as a switch that turns reasoning off for the Reviewer. Check
   your server's documentation for what it accepts, and leave both empty if you are
-  not sure: nothing here is needed for a normal setup. Test connection sends the
-  endpoint ones too, so you can check your server accepts them. Codex sets the model,
+  not sure: nothing here is needed for a normal setup. Test connection sends what
+  a Rubber duck request would send, so it checks the endpoint settings and that
+  role's own together. Codex sets the model,
   messages, tools, reply length, and streaming itself, so those cannot be
   overridden. This does not show on the Claude provider, which is driven by the
   thinking and effort settings instead.

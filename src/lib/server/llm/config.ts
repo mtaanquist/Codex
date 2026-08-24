@@ -4,6 +4,7 @@ import { stories, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
+import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are
@@ -53,24 +54,10 @@ export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
 // hatch instead. Stored config only, never client input at request time.
 export type ExtraParams = Record<string, unknown>;
 
-// The request fields the adapter owns. A stored parameter may never rewrite
-// them: they carry the model, the conversation, the tool definitions, and the
-// streaming contract the response parser depends on.
-export const RESERVED_PARAM_KEYS = [
-	'model',
-	'messages',
-	'max_tokens',
-	'tools',
-	'tool_choice',
-	'stream',
-	'stream_options'
-] as const;
-
-// Which of a writer's parameters name a reserved field, so a save can say so
-// rather than dropping them silently.
-export function reservedParamKeys(raw: ExtraParams): string[] {
-	return Object.keys(raw).filter((key) => (RESERVED_PARAM_KEYS as readonly string[]).includes(key));
-}
+// The fields an adapter owns, which a stored parameter may never rewrite, live
+// with the adapters (./providers/reserved) because they are wire-format
+// knowledge. Re-exported here so callers of the config keep one import.
+export { RESERVED_PARAM_KEYS, reservedParamKeys };
 
 function normaliseExtraParams(raw: unknown): ExtraParams | undefined {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;

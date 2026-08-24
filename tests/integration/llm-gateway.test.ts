@@ -283,6 +283,71 @@ describe('gateway gating', () => {
 		expect(captured?.webSearch).toBe(false);
 	});
 
+	it('offers web search through a story, the way every real surface asks', async () => {
+		// The surfaces pass storyId and no universeId, so this is the branch that
+		// actually ships; the universeId one above is the Plan surface's.
+		const anthropic = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			provider: 'anthropic' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk-ant',
+			models: { chat: 'claude-opus-5' },
+			webSearch: true,
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, anthropic);
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+		const [inCanon] = await db
+			.insert(stories)
+			.values({ universeId: established.id, ownerId: userId, title: 'S' })
+			.returning({ id: stories.id });
+		// universeId is the one seeded per test, which is not established.
+		const [ownWorld] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: userId, title: 'T' })
+			.returning({ id: stories.id });
+
+		await complete(db, { userId, storyId: inCanon.id, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(true);
+		await complete(db, { userId, storyId: ownWorld.id, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.webSearch).toBe(false);
+	});
+
+	it('keeps web search off the roles that must not wait for one', async () => {
+		const [established] = await db
+			.insert(universes)
+			.values({ ownerId: userId, name: 'Faerun', establishedSetting: true })
+			.returning({ id: universes.id });
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'anthropic',
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk-ant',
+			models: { chat: 'claude-opus-5' },
+			webSearch: true,
+			toolCallBudget: 8
+		});
+		// Ghost text is racing a keystroke, drafting is not fact-checking, and
+		// background work runs over every scene: a search on any of those is a
+		// delay and a bill nobody asked for.
+		for (const role of ['continuation', 'coauthor', 'utility'] as const) {
+			await complete(db, { userId, universeId: established.id, role, messages: [] }, stubDeps);
+			expect(captured?.webSearch).toBe(false);
+		}
+		// The two that may: the writer asked and is waiting for the answer.
+		for (const role of ['reviewer', 'chat'] as const) {
+			await complete(db, { userId, universeId: established.id, role, messages: [] }, stubDeps);
+			expect(captured?.webSearch).toBe(true);
+		}
+	});
+
 	it('never offers web search on an OpenAI-compatible endpoint', async () => {
 		const [established] = await db
 			.insert(universes)

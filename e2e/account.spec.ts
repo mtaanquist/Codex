@@ -169,6 +169,8 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await page.getByLabel('Extra request settings', { exact: true }).fill('');
 	await page.getByLabel('Extra request settings', { exact: true }).blur();
 	await extrasCleared;
+	await page.reload();
+	await expect(page.getByLabel('Extra request settings', { exact: true })).toHaveValue('');
 
 	// Turn it back off so repeated runs start from the known default.
 	await killToggle.click();

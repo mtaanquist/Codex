@@ -396,6 +396,22 @@ describe('account config round-trip', () => {
 			.where(eq(users.id, userId));
 		const hand = await resolveLlmConfig(db, userId);
 		expect(roleExtraParams(hand.config, 'chat')).toEqual({ top_p: 0.9 });
+
+		// The same holds one level down, where a role carries its own object.
+		await db
+			.update(users)
+			.set({
+				llmConfig: {
+					enabled: true,
+					endpoint: 'https://api.example.com/v1',
+					models: { chat: 'm' },
+					tuning: { reviewer: { extraParams: { tools: [], min_p: 0.05 } } },
+					toolCallBudget: 8
+				}
+			})
+			.where(eq(users.id, userId));
+		const role2 = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(role2.config, 'reviewer')).toEqual({ min_p: 0.05 });
 	});
 
 	it('stores the web-search opt-in, off by default and kept by a partial save', async () => {

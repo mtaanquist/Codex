@@ -169,9 +169,13 @@
 	// svelte-ignore state_referenced_locally
 	let selectedProvider = $state(data.assistant.provider);
 	const activePreset = $derived(data.providers.find((p) => p.id === selectedProvider));
+	// Which provider the form is showing, from the live select rather than the
+	// saved value, so every provider-specific control appears and disappears
+	// together while a change is still saving.
+	const anthropicShown = $derived(selectedProvider === 'anthropic');
 	// Extra request settings only reach an OpenAI-compatible endpoint; the Claude
 	// provider has its own controls and ignores them, so the boxes stay hidden.
-	const extraParamsShown = $derived(selectedProvider !== 'anthropic');
+	const extraParamsShown = $derived(!anthropicShown);
 	function paramsText(params: Record<string, unknown> | undefined): string {
 		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';
 	}
@@ -435,7 +439,7 @@
 						Leave blank to keep your saved key. Not every endpoint needs one.
 					</p>
 				</div>
-				{#if selectedProvider === 'anthropic'}
+				{#if anthropicShown}
 					<div class="field">
 						<!-- An unchecked box sends nothing, which is indistinguishable from a
 						     save that never showed it; this marker says the box was on the form. -->
@@ -602,7 +606,7 @@
 										<option value="on">Thinking on</option>
 										<option value="off">Thinking off</option>
 									</select>
-									{#if data.assistant.provider === 'anthropic'}
+									{#if anthropicShown}
 										<select class="select" name="{role.id}-effort" aria-label="{role.name} effort">
 											<option value="" selected={!savedTuning[role.id]?.effort}
 												>Default effort</option
@@ -658,7 +662,7 @@
 					Pick Thinking off for the roles that need to be quick, or leave it on default to use
 					whatever your endpoint does already.
 				</p>
-				{#if data.assistant.provider === 'anthropic'}
+				{#if anthropicShown}
 					<p class="field-hint">
 						Effort sets how hard the model works on each request; leave it unset for the model's
 						default. Older or lighter models may not accept every level - if a request fails, clear

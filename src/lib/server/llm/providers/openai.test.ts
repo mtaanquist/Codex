@@ -502,6 +502,42 @@ describe('openaiProvider.respond', () => {
 		expect(bodies[0].stream).toBe(false);
 	});
 
+	it('strips the fields the adapter owns, on the path with no streaming to protect', async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		// The config refuses these on save and strips them on read, so this is the
+		// second lock rather than the only one.
+		await openaiProvider.respond(
+			{
+				model: 'm',
+				messages: [{ role: 'user', content: 'hi' }],
+				maxTokens: 16,
+				extraParams: {
+					model: 'somebody-elses-model',
+					messages: [],
+					max_tokens: 999_999,
+					tool_choice: 'required',
+					stream: true,
+					stream_options: null,
+					top_p: 0.9
+				}
+			},
+			conn,
+			http
+		);
+		expect(bodies[0].model).toBe('m');
+		expect(bodies[0].max_tokens).toBe(16);
+		expect(bodies[0].messages).toEqual([{ role: 'user', content: 'hi' }]);
+		expect(bodies[0].stream).toBe(false);
+		expect(bodies[0]).not.toHaveProperty('stream_options');
+		expect(bodies[0]).not.toHaveProperty('tool_choice');
+		// What is not reserved still goes out.
+		expect(bodies[0].top_p).toBe(0.9);
+	});
+
 	it("lets an extra parameter replace Codex's own thinking suppression", async () => {
 		const bodies: Record<string, unknown>[] = [];
 		const http: HttpRequest = async (_url, init) => {

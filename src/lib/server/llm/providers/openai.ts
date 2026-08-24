@@ -1,3 +1,4 @@
+import { withoutReservedParams } from './reserved.ts';
 import type {
 	ChatMessage,
 	CompletionRequest,
@@ -95,9 +96,10 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		...(req.tuning?.thinking === false ? SUPPRESS_THINKING : {}),
 		// The writer's own parameters go last of the tunable fields, so a server
 		// whose switch is spelled differently can be told exactly what to send,
-		// overriding the guess above. The streaming fields follow and stay ours:
-		// the response parser depends on them.
-		...(req.extraParams ?? {}),
+		// overriding the guess above. The fields this adapter owns are stripped
+		// out first: the config refuses them too, but the request the parser has
+		// to read should not depend on that having worked.
+		...(withoutReservedParams(req.extraParams) ?? {}),
 		stream,
 		// Ask streaming responses to report token usage in a final frame (widely
 		// supported and ignored by endpoints that predate it).
