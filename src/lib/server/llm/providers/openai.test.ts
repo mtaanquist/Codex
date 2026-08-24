@@ -157,6 +157,23 @@ describe('openaiProvider.chatStream', () => {
 		expect(events).toEqual([{ type: 'token', text: 'The answer.' }, { type: 'done' }]);
 	});
 
+	it('reads deltas that arrive as content parts', async () => {
+		const frames = [
+			'data: {"choices":[{"delta":{"content":[{"type":"text","text":"Half a "}]}}]}\n',
+			'data: {"choices":[{"delta":{"content":[{"type":"url_citation","url":"http://x"},{"type":"text","text":"sentence."}]}}]}\n',
+			'data: [DONE]\n'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			openaiProvider.chatStream({ model: 'm', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'Half a ' },
+			{ type: 'token', text: 'sentence.' },
+			{ type: 'done' }
+		]);
+	});
+
 	it('keeps the streaming fields whatever the extra parameters say', async () => {
 		const bodies: Record<string, unknown>[] = [];
 		const http: HttpRequest = async (_url, init) => {
@@ -431,6 +448,32 @@ describe('openaiProvider.respond', () => {
 		expect(bodies[2]).not.toHaveProperty('chat_template_kwargs');
 		// Anything but an explicit off leaves the request exactly as it was.
 		expect(bodies[1]).toEqual(bodies[2]);
+	});
+
+	it('reads an answer returned as content parts, ignoring the parts that are not text', async () => {
+		// What a server that ran its own web search sends back: the answer in
+		// parts, with citations alongside.
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				choices: [
+					{
+						message: {
+							content: [
+								{ type: 'text', text: 'Waterdeep sits on the Sword Coast' },
+								{ type: 'url_citation', url: 'https://example.com/canon' },
+								{ type: 'text', text: ', north of the Trade Way.' }
+							],
+							annotations: [{ type: 'url_citation', url: 'https://example.com/canon' }]
+						}
+					}
+				]
+			});
+		const result = await openaiProvider.respond(
+			{ model: 'm', messages: [], maxTokens: 16 },
+			conn,
+			http
+		);
+		expect(result.content).toBe('Waterdeep sits on the Sword Coast, north of the Trade Way.');
 	});
 
 	it('merges the extra parameters into the request, and sends none when unset', async () => {
