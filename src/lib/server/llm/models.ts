@@ -2,6 +2,7 @@ import type { Database } from '../auth';
 import {
 	pickModel,
 	resolveLlmConfig,
+	roleExtraParams,
 	saveModelContext,
 	saveModelPricing,
 	type ModelContextMap,
@@ -86,7 +87,10 @@ export async function testEndpointConnection(
 	conn: Connection,
 	model: string,
 	providerId: ProviderId = 'custom',
-	deps: DiscoveryDeps = {}
+	deps: DiscoveryDeps = {},
+	// The account's extra request parameters ride along, so a test says whether
+	// the endpoint accepts them rather than leaving it to the first real request.
+	extraParams?: Record<string, unknown>
 ): Promise<TestConnectionResult> {
 	if (!conn.endpoint.trim()) return { ok: false, reason: 'Configure an endpoint first.' };
 	if (!model.trim()) return { ok: false, reason: 'Choose a model to test.' };
@@ -104,7 +108,8 @@ export async function testEndpointConnection(
 						content: 'This is a connection test. Reply in one short, friendly sentence.'
 					},
 					{ role: 'user', content: 'Are you receiving this?' }
-				]
+				],
+				...(extraParams ? { extraParams } : {})
 			},
 			conn,
 			http
@@ -134,6 +139,7 @@ export async function testAccountConnection(
 		{ endpoint: config.endpoint, apiKey: config.apiKey },
 		chosen,
 		config.provider,
-		deps
+		deps,
+		roleExtraParams(config, 'chat')
 	);
 }

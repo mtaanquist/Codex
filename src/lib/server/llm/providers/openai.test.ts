@@ -157,6 +157,30 @@ describe('openaiProvider.chatStream', () => {
 		expect(events).toEqual([{ type: 'token', text: 'The answer.' }, { type: 'done' }]);
 	});
 
+	it('keeps the streaming fields whatever the extra parameters say', async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return sseResponse(['data: [DONE]\n']);
+		};
+		// The config layer strips these, so this is the belt to that braces: even
+		// handed one, the adapter still asks for the stream it knows how to read.
+		await drain(
+			openaiProvider.chatStream(
+				{
+					model: 'm',
+					messages: [],
+					maxTokens: 16,
+					extraParams: { stream: false, stream_options: null }
+				},
+				conn,
+				http
+			)
+		);
+		expect(bodies[0].stream).toBe(true);
+		expect(bodies[0].stream_options).toEqual({ include_usage: true });
+	});
+
 	it('emits an error event when the transport throws', async () => {
 		const http: HttpRequest = async () => {
 			throw new Error('connection refused');
@@ -407,6 +431,54 @@ describe('openaiProvider.respond', () => {
 		expect(bodies[2]).not.toHaveProperty('chat_template_kwargs');
 		// Anything but an explicit off leaves the request exactly as it was.
 		expect(bodies[1]).toEqual(bodies[2]);
+	});
+
+	it('merges the extra parameters into the request, and sends none when unset', async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{
+				model: 'm',
+				messages: [],
+				maxTokens: 16,
+				extraParams: { top_p: 0.9, reasoning: { enabled: false } }
+			},
+			conn,
+			http
+		);
+		await openaiProvider.respond({ model: 'm', messages: [], maxTokens: 16 }, conn, http);
+		expect(bodies[0].top_p).toBe(0.9);
+		expect(bodies[0].reasoning).toEqual({ enabled: false });
+		expect(bodies[1]).not.toHaveProperty('top_p');
+		// The request is otherwise the one it always was.
+		expect(bodies[0].model).toBe('m');
+		expect(bodies[0].max_tokens).toBe(16);
+		expect(bodies[0].stream).toBe(false);
+	});
+
+	it("lets an extra parameter replace Codex's own thinking suppression", async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const http: HttpRequest = async (_url, init) => {
+			bodies.push(JSON.parse(init.body ?? '{}'));
+			return jsonResponse(200, { choices: [{ message: { content: 'ok' } }] });
+		};
+		await openaiProvider.respond(
+			{
+				model: 'm',
+				messages: [],
+				maxTokens: 16,
+				tuning: { thinking: false },
+				extraParams: { chat_template_kwargs: { thinking: false } }
+			},
+			conn,
+			http
+		);
+		// A server that spells the switch its own way gets what the writer typed,
+		// not the llama.cpp guess.
+		expect(bodies[0].chat_template_kwargs).toEqual({ thinking: false });
 	});
 
 	it('throws on a non-2xx status', async () => {

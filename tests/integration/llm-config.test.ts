@@ -17,6 +17,8 @@ const {
 	modelContextWindow,
 	pickModel,
 	resolveLlmConfig,
+	roleExtraParams,
+	roleMaxTokens,
 	saveAccountLlmConfig,
 	saveModelContext,
 	saveStoryLlmOverride
@@ -320,6 +322,107 @@ describe('account config round-trip', () => {
 		expect(view.tuning.continuation).toEqual({ thinking: false });
 		expect(view.tuning.coauthor).toBeUndefined();
 		expect(view.tuning.chat).toEqual({ thinking: false, temperature: 0.4 });
+	});
+
+	it('stores extra request parameters, and lays a role own over the account ones', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			extraParams: { top_p: 0.9, chat_template_kwargs: { enable_thinking: true } },
+			tuning: { reviewer: { extraParams: { chat_template_kwargs: { enable_thinking: false } } } }
+		});
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(config, 'chat')).toEqual({
+			top_p: 0.9,
+			chat_template_kwargs: { enable_thinking: true }
+		});
+		// The role replaces the account's value for the key it names, and keeps
+		// the rest.
+		expect(roleExtraParams(config, 'reviewer')).toEqual({
+			top_p: 0.9,
+			chat_template_kwargs: { enable_thinking: false }
+		});
+
+		// A blank box clears them; a role with nothing set has none at all.
+		await saveAccountLlmConfig(db, userId, { ...base, extraParams: {}, tuning: {} });
+		const cleared = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(cleared.config, 'chat')).toBeUndefined();
+	});
+
+	it('refuses extra parameters that would rewrite a field the adapter owns', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		const account = await saveAccountLlmConfig(db, userId, {
+			...base,
+			extraParams: { stream: false, top_p: 0.9 }
+		});
+		expect(account.ok).toBe(false);
+		const role = await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: { chat: { extraParams: { messages: [] } } }
+		});
+		expect(role.ok).toBe(false);
+		// Neither save landed, so nothing reaches a request.
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(config, 'chat')).toBeUndefined();
+
+		// A config hand-edited past the save path still cannot carry one through.
+		await db
+			.update(users)
+			.set({
+				llmConfig: {
+					enabled: true,
+					endpoint: 'https://api.example.com/v1',
+					models: { chat: 'm' },
+					extraParams: { stream: false, top_p: 0.9 },
+					toolCallBudget: 8
+				}
+			})
+			.where(eq(users.id, userId));
+		const hand = await resolveLlmConfig(db, userId);
+		expect(roleExtraParams(hand.config, 'chat')).toEqual({ top_p: 0.9 });
+	});
+
+	it('normalises a per-role reply length: a whole positive number or nothing', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: {
+				reviewer: { maxTokens: 8000 },
+				chat: { maxTokens: 512.7 },
+				coauthor: { maxTokens: 0 },
+				continuation: { maxTokens: 10_000_000 }
+			}
+		});
+		const { config } = await resolveLlmConfig(db, userId);
+		expect(roleMaxTokens(config, 'reviewer')).toBe(8000);
+		expect(roleMaxTokens(config, 'chat')).toBe(512);
+		expect(roleMaxTokens(config, 'coauthor')).toBeUndefined();
+		expect(roleMaxTokens(config, 'continuation')).toBe(65_536);
+		expect(roleMaxTokens(config, 'utility')).toBeUndefined();
 	});
 
 	it('leaves a config saved before the utility role existed working as it did', async () => {

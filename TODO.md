@@ -5,6 +5,19 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Per-endpoint request settings (2026-08-24, issue #550 phase 1, branch
+`claude/llm-assistant-work-paths-puxtka`): an `extraParams` JSON object on the
+account config, and a second one per role laid over it, merged into every
+OpenAI-compatible request body so a writer can send whatever their server
+expects (an Unsloth or vLLM reasoning switch where the llama.cpp
+`chat_template_kwargs` spelling does not fit, sampler settings Codex has no
+field for) without Codex hardcoding each dialect. The fields the adapter owns
+are refused on save and stripped on read. Plus a per-role reply length
+(`maxTokens`), which overrides what the surface asks for. Still open on #550:
+phase 0 (a help article on canon-as-lore for established settings), phase 1b
+(Anthropic's `web_search` server tool on opt-in), and phase 2 (a Codex-side
+search tool, gated behind its own egress design review).
+
 Low-context LLM pass (2026-08-17, author-scoped): make the Assistant work
 well against local OpenAI-compatible endpoints with 32-64K context windows,
 and guard cost against usage-billed APIs. All 27 issues (#526-#552) on one

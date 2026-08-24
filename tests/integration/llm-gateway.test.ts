@@ -69,16 +69,30 @@ function scriptedProvider(turns: { content: string; toolCalls?: ProviderToolCall
 let captured: {
 	model: string;
 	messages: ChatMessage[];
+	maxTokens?: number;
 	tuning?: { thinking?: boolean; effort?: string };
+	extraParams?: Record<string, unknown>;
 } | null = null;
 const stubProvider: Provider = {
 	async *chatStream(req) {
-		captured = { model: req.model, messages: req.messages, tuning: req.tuning };
+		captured = {
+			model: req.model,
+			messages: req.messages,
+			maxTokens: req.maxTokens,
+			tuning: req.tuning,
+			extraParams: req.extraParams
+		};
 		yield { type: 'token', text: `[${req.model}]` };
 		yield { type: 'done' };
 	},
 	async respond(req) {
-		captured = { model: req.model, messages: req.messages, tuning: req.tuning };
+		captured = {
+			model: req.model,
+			messages: req.messages,
+			maxTokens: req.maxTokens,
+			tuning: req.tuning,
+			extraParams: req.extraParams
+		};
 		return { content: `done:${req.model}`, toolCalls: [] };
 	},
 	async listModels() {
@@ -201,6 +215,53 @@ describe('gateway gating', () => {
 		await saveAccountLlmConfig(db, userId, { ...base, tuning: {} });
 		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
 		expect(captured?.tuning).toBeUndefined();
+	});
+
+	it('sends the extra parameters for the role, account ones under its own', async () => {
+		await configure(true);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			extraParams: { top_p: 0.9 },
+			tuning: { reviewer: { extraParams: { top_p: 0.4, min_p: 0.05 } } },
+			toolCallBudget: 8
+		});
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.extraParams).toEqual({ top_p: 0.9 });
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.extraParams).toEqual({ top_p: 0.4, min_p: 0.05 });
+	});
+
+	it('sends no extra parameters when none are configured', async () => {
+		await configure(true);
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.extraParams).toBeUndefined();
+	});
+
+	it("lets a role's reply length override what the surface asked for", async () => {
+		await configure(true);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			tuning: { chat: { maxTokens: 300 } },
+			toolCallBudget: 8
+		});
+		await complete(db, { userId, role: 'chat', maxTokens: 2048, messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(300);
+		// A role with none set keeps the surface's figure, and its default
+		// otherwise.
+		await complete(db, { userId, role: 'reviewer', maxTokens: 900, messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(900);
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(4096);
 	});
 
 	it('falls back to the chat model when a role has none set', async () => {

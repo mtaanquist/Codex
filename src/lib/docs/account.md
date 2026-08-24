@@ -115,6 +115,21 @@ contacts a model on its own.
   Co-author. Leave the box empty to use your endpoint's own setting. The Claude
   API is driven by the thinking and effort settings instead, so no temperature box
   shows there.
+- **Longest reply**: the most a model may write in one go, counted in tokens, set
+  per role. Raise it for a role whose answers get cut off mid-sentence, or lower
+  it to keep a model brief. Leave the box empty to use the length Codex asks for,
+  which suits most setups.
+- **Extra request settings**: some endpoints take settings Codex has no box for,
+  and each server spells them its own way. The box under Endpoint holds JSON that
+  is sent with every request, for example `{"top_p": 0.9}`. Each role has a box of
+  its own too, laid over the endpoint one, for when a single role needs something
+  different, such as a switch that turns reasoning off for the Reviewer. Check
+  your server's documentation for what it accepts, and leave both empty if you are
+  not sure: nothing here is needed for a normal setup. Test connection sends the
+  endpoint ones too, so you can check your server accepts them. Codex sets the model,
+  messages, tools, reply length, and streaming itself, so those cannot be
+  overridden. This does not show on the Claude provider, which is driven by the
+  thinking and effort settings instead.
 - **Effort (Claude only)**: with the Claude provider, each role also has an effort
   list. Effort sets how hard the model works on each request, from low (fast and
   cheap) to max (thorough and expensive); leave it unset to use the model's

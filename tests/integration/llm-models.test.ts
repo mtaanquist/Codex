@@ -147,6 +147,29 @@ describe('testAccountConnection', () => {
 		expect(askedModel).toBe('gemma2');
 	});
 
+	it("sends the account's extra request parameters, so the test covers them", async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: false,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'llama3.1:8b' },
+			extraParams: { top_p: 0.9 },
+			toolCallBudget: 8
+		});
+		let sent: Record<string, unknown> | undefined;
+		const capturing: Provider = {
+			...stub,
+			async respond(req) {
+				sent = req.extraParams;
+				return { content: 'ok', toolCalls: [] };
+			}
+		};
+		await testAccountConnection(db, userId, undefined, { provider: capturing, http: noHttp });
+		expect(sent).toEqual({ top_p: 0.9 });
+	});
+
 	it('asks for a model when none is configured or given', async () => {
 		await configure('https://api.example.com/v1', {});
 		const result = await testAccountConnection(db, userId, undefined, {

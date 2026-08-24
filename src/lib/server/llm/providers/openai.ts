@@ -93,6 +93,11 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		// otherwise the endpoint's own default applies.
 		...(typeof req.tuning?.temperature === 'number' ? { temperature: req.tuning.temperature } : {}),
 		...(req.tuning?.thinking === false ? SUPPRESS_THINKING : {}),
+		// The writer's own parameters go last of the tunable fields, so a server
+		// whose switch is spelled differently can be told exactly what to send,
+		// overriding the guess above. The streaming fields follow and stay ours:
+		// the response parser depends on them.
+		...(req.extraParams ?? {}),
 		stream,
 		// Ask streaming responses to report token usage in a final frame (widely
 		// supported and ignored by endpoints that predate it).

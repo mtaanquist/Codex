@@ -89,6 +89,12 @@ export type CompletionRequest = {
 	// and on thinking === false asks the endpoint to skip the thinking pass.
 	// Each adapter ignores the fields it has no use for.
 	tuning?: { thinking?: boolean; effort?: string; temperature?: number };
+	// Extra body fields from the account config, for whatever the writer's server
+	// needs that Codex has no field of its own for. The OpenAI-compatible adapter
+	// merges them into the request; the Anthropic adapter ignores them. The
+	// config layer has already removed anything that would rewrite a field the
+	// adapter owns (see RESERVED_PARAM_KEYS in ../config).
+	extraParams?: Record<string, unknown>;
 };
 
 // A scene-split the Assistant proposed through its tool: where the new scene

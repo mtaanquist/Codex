@@ -37,6 +37,7 @@ import {
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
 	type EffortLevel,
+	type ExtraParams,
 	type TuningMap,
 	saveAccountLlmConfig,
 	type ModelContextMap,
@@ -186,6 +187,24 @@ async function userInviteAllowance(dbc: typeof db, userId: string): Promise<numb
 	return row?.allowance ?? 0;
 }
 
+// An extra-parameters box holds a JSON object, or nothing at all: a blank box
+// clears what is stored, and anything unreadable is refused rather than saved
+// as a setting that would never take effect.
+function paramsField(raw: string): ExtraParams | 'invalid' {
+	const text = raw.trim();
+	if (!text) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return 'invalid';
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'invalid';
+	return parsed as ExtraParams;
+}
+
+const PARAMS_MESSAGE = 'Extra settings must be a JSON object, like {"top_p": 0.9}.';
+
 // The Assistant section saves in pieces (identity, endpoint, models, the kill
 // switch), each its own button. saveAccountLlmConfig replaces the whole config
 // from its input, so a partial save first reads the current view and overlays
@@ -201,6 +220,7 @@ async function patchAssistant(
 		apiKey: string;
 		models: ModelMap;
 		tuning: TuningMap;
+		extraParams: ExtraParams;
 		toolProfile: ToolProfile;
 		modelContextManual: ModelContextMap;
 		spendCapUsd: number | null;
@@ -217,6 +237,7 @@ async function patchAssistant(
 		apiKey: patch.apiKey ?? '',
 		models: patch.models ?? current.models,
 		tuning: patch.tuning ?? current.tuning,
+		extraParams: patch.extraParams,
 		toolCallBudget: current.toolCallBudget,
 		toolProfile: patch.toolProfile ?? current.toolProfile,
 		modelContextManual: patch.modelContextManual,
@@ -413,10 +434,19 @@ export const actions: Actions = {
 				message: 'Enter an amount in dollars, or leave it blank.'
 			});
 		}
+		// The box is only rendered for an OpenAI-compatible endpoint; a save that
+		// did not carry it leaves the stored object alone.
+		const extraParams = data.has('extraParams')
+			? paramsField(String(data.get('extraParams')))
+			: undefined;
+		if (extraParams === 'invalid') {
+			return fail(400, { scope: 'assistant-endpoint', message: PARAMS_MESSAGE });
+		}
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
 			endpoint: String(data.get('endpoint') ?? ''),
 			apiKey: String(data.get('apiKey') ?? ''),
+			extraParams,
 			spendCapUsd,
 			spendWarnUsd,
 			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
@@ -465,6 +495,25 @@ export const actions: Actions = {
 				if (raw && Number.isFinite(temperature)) roleTuning.temperature = temperature;
 			} else if (stored[role]?.temperature !== undefined) {
 				roleTuning.temperature = stored[role].temperature;
+			}
+
+			if (data.has(`${role}-maxTokens`)) {
+				// Blank clears it, so the role goes back to what the surface asks for.
+				const raw = String(data.get(`${role}-maxTokens`)).trim();
+				const maxTokens = Number(raw);
+				if (raw && Number.isFinite(maxTokens) && maxTokens >= 1) roleTuning.maxTokens = maxTokens;
+			} else if (stored[role]?.maxTokens !== undefined) {
+				roleTuning.maxTokens = stored[role].maxTokens;
+			}
+
+			if (data.has(`${role}-extraParams`)) {
+				const extras = paramsField(String(data.get(`${role}-extraParams`)));
+				if (extras === 'invalid') {
+					return fail(400, { scope: 'assistant-models', message: PARAMS_MESSAGE });
+				}
+				if (Object.keys(extras).length > 0) roleTuning.extraParams = extras;
+			} else if (stored[role]?.extraParams !== undefined) {
+				roleTuning.extraParams = stored[role].extraParams;
 			}
 
 			if (Object.keys(roleTuning).length > 0) tuning[role] = roleTuning;
