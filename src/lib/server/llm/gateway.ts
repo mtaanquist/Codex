@@ -1,5 +1,6 @@
 import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
+import { defaultMaxTokens } from '../../assistant-tuning.ts';
 import {
 	modelContextWindow,
 	pickModel,
@@ -65,13 +66,6 @@ export class AssistantDisabledError extends Error {
 	}
 }
 
-// A ceiling so a single generation cannot hold a connection open indefinitely;
-// the tool-call budget bounds the agentic loop separately.
-const DEFAULT_MAX_TOKENS = 2048;
-// A review round emits several tool calls at once, each quoting the passage it
-// edits, so it needs more room than a chat turn before it runs into the cap.
-const REVIEWER_MAX_TOKENS = 4096;
-
 // The absolute ceiling on tool calls in one run, whatever the request asks
 // for; a cross-scene pass over a long story is the case that needs the room.
 const REQUEST_TOOL_BUDGET_CEILING = 200;
@@ -81,10 +75,6 @@ const REQUEST_TOOL_BUDGET_CEILING = 200;
 // then act on it.
 const MINIMAL_PROFILE_BUDGET_DIVISOR = 2;
 const MINIMAL_PROFILE_MIN_BUDGET = 2;
-
-function defaultMaxTokens(role: AssistantRole): number {
-	return role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
-}
 
 // Every message costs more on the wire than its text: a role, the framing, and
 // for a tool turn its call id. Provisional flat allowance, not measured.

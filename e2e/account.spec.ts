@@ -177,6 +177,73 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await expect(status).toHaveText('Assistant off');
 });
 
+// Third in this file for the reason the second is second: it mutates the same
+// shared account Assistant state.
+test('assistant role tuning: the modal holds its changes until it closes', async ({ page }) => {
+	await gotoReady(page, '/account/assistant');
+	const killToggle = page.locator('label.toggle-xl');
+	const status = page.locator('.ks-status');
+	await expect(status).toBeVisible();
+	if ((await status.textContent())?.trim() === 'Assistant off') await killToggle.click();
+	await expect(status).toHaveText('Assistant on');
+
+	// Temperature and extra settings are the OpenAI-compatible controls; the
+	// Claude provider shows effort in their place.
+	await page.getByLabel('Provider', { exact: true }).selectOption('custom');
+	await expect(page.getByRole('status')).toContainText('Saved');
+
+	// The row says what the role is tuned to without opening anything.
+	const row = page.locator('.role-row').filter({ hasText: 'Rubber duck' });
+	const summary = row.locator('.role-row-summary');
+	await expect(summary).toHaveText('Defaults');
+
+	await page.getByRole('button', { name: 'Tune Rubber duck' }).click();
+	const modal = page.getByRole('dialog', { name: 'Tune Rubber duck' });
+	const slider = modal.getByLabel('Temperature slider');
+	const box = modal.getByLabel('Temperature', { exact: true });
+
+	// The slider is inert until the value comes off the endpoint default, which
+	// seeds it; the box then takes a figure the slider's own step cannot land on.
+	await expect(slider).toBeDisabled();
+	await modal.getByRole('checkbox', { name: 'Use the endpoint default' }).uncheck();
+	await expect(slider).toBeEnabled();
+	await expect(box).toHaveValue('1');
+	await box.fill('0.35');
+	await modal.getByLabel('Thinking', { exact: true }).selectOption('off');
+
+	// Still nothing saved: the summary behind the modal has not moved.
+	await expect(summary).toHaveText('Defaults');
+
+	const tuningSaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantModels') && response.request().method() === 'POST'
+	);
+	await modal.getByRole('button', { name: 'Done' }).click();
+	await tuningSaved;
+	await expect(modal).toBeHidden();
+	await page.reload();
+	await expect(row.locator('.role-row-summary')).toHaveText('Thinking off, Temperature 0.35');
+
+	// Handing both settings back clears them, so the row reads as untouched again.
+	await page.getByRole('button', { name: 'Tune Rubber duck' }).click();
+	const reopened = page.getByRole('dialog', { name: 'Tune Rubber duck' });
+	await expect(reopened.getByLabel('Temperature', { exact: true })).toHaveValue('0.35');
+	await reopened.getByRole('checkbox', { name: 'Use the endpoint default' }).check();
+	await reopened.getByLabel('Thinking', { exact: true }).selectOption('');
+	const tuningCleared = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantModels') && response.request().method() === 'POST'
+	);
+	await reopened.getByRole('button', { name: 'Done' }).click();
+	await tuningCleared;
+	await page.reload();
+	await expect(row.locator('.role-row-summary')).toHaveText('Defaults');
+
+	// Leave the Assistant as the other tests in this file expect to find it.
+	await killToggle.click();
+	await expect(status).toHaveText('Assistant off');
+});
+
 // Lives in this file (not its own spec) so it never runs concurrently with the
 // kill-switch test above: both mutate the shared account Assistant state, and
 // tests within one file run serially.

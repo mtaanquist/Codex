@@ -4,6 +4,7 @@
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { pluralSuffix } from '$lib/format';
 	import FormStatus from '$lib/components/FormStatus.svelte';
+	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -61,10 +62,9 @@
 	};
 	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
 
-	// Per-role tuning. Thinking and temperature apply to every provider; the
-	// effort levels are the Claude provider's own (mirrors EFFORT_LEVELS in
-	// $lib/server/llm/config, which cannot be imported here).
-	const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+	// Per-role tuning. Every control for it lives in the modal, which the row's
+	// Tune button opens; the row carries a summary so the table still says what
+	// each role is set to without opening anything.
 	const savedTuning = $derived(
 		data.assistant.tuning as Record<
 			string,
@@ -78,10 +78,40 @@
 			| undefined
 		>
 	);
-	// The thinking select is three-state: on, off, or the endpoint's default.
-	function thinkingValue(role: string): string {
-		const thinking = savedTuning[role]?.thinking;
-		return thinking === true ? 'on' : thinking === false ? 'off' : '';
+	// What the row shows next to its Tune button: only the settings this
+	// provider reads, so it matches what the modal offers. Values stored for the
+	// other provider stay untouched and unlisted.
+	function tuningSummary(role: string): string {
+		const tuning = savedTuning[role];
+		if (!tuning) return 'Defaults';
+		const parts: string[] = [];
+		if (tuning.thinking === true) parts.push('Thinking on');
+		if (tuning.thinking === false) parts.push('Thinking off');
+		if (anthropicShown) {
+			if (tuning.effort) parts.push(`Effort ${tuning.effort}`);
+		} else if (tuning.temperature !== undefined) {
+			parts.push(`Temperature ${tuning.temperature}`);
+		}
+		if (tuning.maxTokens) parts.push(`${tuning.maxTokens.toLocaleString()} tokens`);
+		if (extraParamsShown && tuning.extraParams) parts.push('Extra settings');
+		return parts.length > 0 ? parts.join(', ') : 'Defaults';
+	}
+
+	// The role whose tuning modal is open, and the button that opened it, so
+	// focus goes back where it came from. Closing saves: the modal holds its
+	// changes back rather than firing one save per slider step.
+	let tuningRole = $state<(typeof ROLE_META)[number] | null>(null);
+	let tuningOpener: HTMLButtonElement | null = null;
+	let modelsForm = $state<HTMLFormElement>();
+	function openTuning(role: (typeof ROLE_META)[number], event: MouseEvent) {
+		tuningOpener = event.currentTarget as HTMLButtonElement;
+		tuningRole = role;
+	}
+	function closeTuning() {
+		modelsForm?.requestSubmit();
+		tuningRole = null;
+		tuningOpener?.focus();
+		tuningOpener = null;
 	}
 	// A discovery result must outlive the action data that carried it: with
 	// role picks saving on change, the next save would otherwise wipe the list
@@ -559,6 +589,7 @@
 			<form
 				method="POST"
 				action="?/saveAssistantModels"
+				bind:this={modelsForm}
 				use:enhance={autosaveSubmit}
 				onchange={autosubmitForm}
 			>
@@ -584,7 +615,6 @@
 							<div class="role-row-label">
 								<div class="role-row-name">{role.name}</div>
 								<div class="role-row-hint">{role.hint}</div>
-								<div class="role-row-hint">{role.suggestion}</div>
 							</div>
 							<div class="role-row-controls">
 								<select class="select" name={role.id}>
@@ -595,97 +625,39 @@
 										>
 									{/each}
 								</select>
-								<div class="role-row-tuning">
-									<select
-										class="select"
-										name="{role.id}-thinking"
-										aria-label="{role.name} thinking"
-										value={thinkingValue(role.id)}
+								<div class="role-row-tune">
+									<span class="role-row-summary" title={tuningSummary(role.id)}
+										>{tuningSummary(role.id)}</span
 									>
-										<option value="">Thinking: default</option>
-										<option value="on">Thinking on</option>
-										<option value="off">Thinking off</option>
-									</select>
-									{#if anthropicShown}
-										<select class="select" name="{role.id}-effort" aria-label="{role.name} effort">
-											<option value="" selected={!savedTuning[role.id]?.effort}
-												>Default effort</option
-											>
-											{#each EFFORT_OPTIONS as level (level)}
-												<option value={level} selected={savedTuning[role.id]?.effort === level}
-													>Effort: {level}</option
-												>
-											{/each}
-										</select>
-									{:else}
-										<input
-											class="input"
-											type="number"
-											min="0"
-											max="2"
-											step="0.1"
-											name="{role.id}-temperature"
-											aria-label="{role.name} temperature"
-											value={savedTuning[role.id]?.temperature ?? ''}
-											placeholder="Temperature"
-										/>
-									{/if}
-									<input
-										class="input"
-										type="number"
-										min="1"
-										step="1"
-										name="{role.id}-maxTokens"
-										aria-label="{role.name} longest reply in tokens"
-										value={savedTuning[role.id]?.maxTokens ?? ''}
-										placeholder="Longest reply"
-									/>
-									{#if extraParamsShown}
-										<input
-											class="input"
-											type="text"
-											spellcheck="false"
-											autocomplete="off"
-											name="{role.id}-extraParams"
-											aria-label="{role.name} extra request settings"
-											value={paramsText(savedTuning[role.id]?.extraParams)}
-											placeholder="Extra settings"
-										/>
-									{/if}
+									<button
+										type="button"
+										class="btn btn-ghost btn-sm"
+										aria-label="Tune {role.name}"
+										onclick={(event) => openTuning(role, event)}>Tune</button
+									>
 								</div>
 							</div>
 						</div>
 					{/each}
 				</div>
 				<p class="field-hint">
-					Thinking lets the model reason before it answers: better feedback, slower and more tokens.
-					Pick Thinking off for the roles that need to be quick, or leave it on default to use
-					whatever your endpoint does already.
+					Pick a model for each role, or leave it on the endpoint default. Tune opens that role's
+					thinking, temperature, and reply length.
 				</p>
-				{#if anthropicShown}
-					<p class="field-hint">
-						Effort sets how hard the model works on each request; leave it unset for the model's
-						default. Older or lighter models may not accept every level - if a request fails, clear
-						the effort here. "xhigh" needs a recent Opus model.
-					</p>
-				{:else}
-					<p class="field-hint">
-						Temperature sets how freely the model varies its wording, from 0 to 2. Lower is more
-						precise and repeatable, higher is more surprising; the reviewer works best low, around
-						0.2. Leave a box empty to use your endpoint's own setting.
-					</p>
-				{/if}
-				<p class="field-hint">
-					Longest reply is the most a model may write in one go, counted in tokens. Raise it for a
-					role that gets cut off mid-sentence, lower it to keep a model brief. Leave a box empty to
-					use what Codex asks for.
-				</p>
-				{#if extraParamsShown}
-					<p class="field-hint">
-						Extra settings are JSON sent with this role's requests only, laid over the ones set on
-						your endpoint above. Use it when one role needs something different, such as a switch
-						that turns reasoning off for the reviewer.
-					</p>
+				{#if tuningRole}
+					<!-- Rendered inside the form so its fields save with the table. Only the
+					     open role's fields are on the form, so the others keep what is stored. -->
+					{#key tuningRole.id}
+						<RoleTuningModal
+							role={tuningRole}
+							saved={savedTuning[tuningRole.id] ?? {}}
+							anthropic={anthropicShown}
+							contextWindow={savedModels[tuningRole.id]
+								? contextWindow(savedModels[tuningRole.id]!)
+								: undefined}
+							onClose={closeTuning}
+						/>
+					{/key}
 				{/if}
 				{#if chosenModels.length > 0}
 					<div class="role-table">

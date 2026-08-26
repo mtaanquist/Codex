@@ -906,25 +906,23 @@
 	flex-direction: column;
 	gap: 6px;
 }
-.role-row-tuning {
+/* Under the model select: what this role is tuned to, and the button that
+   opens the tuning modal. The summary is here so the table still says what is
+   set without opening five modals to find out. */
+.role-row-tune {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: center;
-	gap: 10px;
-	font-size: 12.5px;
+	justify-content: space-between;
+	gap: var(--space-2);
 }
-.role-row-tuning .input,
-.role-row-tuning .select {
-	flex-basis: 140px;
-}
-.role-row-tuning .check-row {
-	font-size: 12.5px;
-	white-space: nowrap;
-}
-.role-row-tuning .select,
-.role-row-tuning .input {
+.role-row-summary {
 	flex: 1;
 	min-width: 0;
+	font-size: var(--text-meta);
+	color: var(--text-faint);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .role-row .input {
 	height: 34px;

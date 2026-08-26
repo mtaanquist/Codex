@@ -5,6 +5,21 @@ per line; details live in the roadmap. Cross off as things merge to develop.
 
 ## Open
 
+Assistant settings, per-role tuning (2026-08-26, author-scoped, branch
+`claude/llm-assistant-work-paths-puxtka`): the five tuning controls added with
+the work below had been crammed into the role table's 280px column, where the
+browser truncated their placeholder labels to "Te" and "Lo" and their
+explanations sat six paragraphs below the boxes they described. Each role's row
+now carries the model select, a summary of what the role is tuned to, and a
+Tune button opening `RoleTuningModal`, where every control has a real label and
+its own hint. Temperature and reply length gained a `.slider` primitive paired
+with a number box (the slider steps in 0.05 and 128; the box still takes any
+figure) and a "use the default" checkbox, because a range input cannot express
+an unset value. The modal holds its changes and the page saves once on close,
+whichever way it is closed. `$lib/assistant-tuning` now holds the roles, the
+effort levels, and the value bounds, so the settings page and the server config
+stop spelling them separately.
+
 Per-endpoint request settings (2026-08-24, issue #550 phase 1, branch
 `claude/llm-assistant-work-paths-puxtka`): an `extraParams` JSON object on the
 account config, and a second one per role laid over it, merged into every
