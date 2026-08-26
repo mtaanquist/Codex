@@ -18,7 +18,7 @@ Companion documents: `design.md` (product intent and page semantics),
 Use tokens for every colour, radius, and font. Wrap every page in one of the
 four shells. Build controls from the canonical primitives below (`.btn`,
 `.icon-btn`, `.field`/`.input`, `.popover`/`.menu-item`, `.seg`, `.badge`,
-`.chip`, `.pill`, `.modal-panel`, `.empty-state`, `Icon.svelte`). Check all
+`.chip`, `.pill`, `.slider`, `.modal-panel`, `.empty-state`, `Icon.svelte`). Check all
 three themes. Do not invent a new button skin, menu system, modal, or empty
 state; the consolidation that removed the previous crop is described at the
 end of this sheet.
@@ -308,9 +308,21 @@ primitive's own class too, but do not copy the pattern.
 
 - Wrapper: `.field` with a `<label>`, optional `.field-hint`, laid out with
   `.field-grid` when two-up. Action row: `.settings-actions`.
-- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`.
-  The focus ring (accent border plus `--accent-soft` glow) comes from the
-  shared rule; never redefine it.
+- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
+  `.slider`. The focus ring (accent border plus `--accent-soft` glow) comes
+  from the shared rule; never redefine it.
+- `.slider` (`primitives.css`) is a range input for a bounded value that is
+  judged rather than typed exactly: a temperature, a reply length. It is
+  always paired with a number field carrying the same value, so an exact
+  figure stays enterable and the slider never becomes the only way in. A
+  value that can also be unset ("use the endpoint default") needs a checkbox
+  saying so; a range input cannot express an empty value on its own.
+- A settings group with more controls than its row can label is a modal, not
+  a denser row. The Assistant's per-role tuning went that way: the row keeps
+  the model select and a summary of what is set, and `RoleTuningModal` holds
+  the rest with room for each control's own `.field-hint`. Placeholder text
+  is not a label, and a control whose label is truncated to "Te" is the
+  signal to move.
 - Inline result messages: the `FormStatus.svelte` component. The older
   `.form-error`/`.form-saved` classes remain in some routes; do not spread
   them further.
@@ -347,6 +359,13 @@ The behaviour is the component's, not the CSS's: Esc closes, focus is
 trapped in the panel and returned to the opener, and a backdrop click
 closes only when nothing is unsaved. `CommandPalette` and `ReviewModal` are
 the two reference uses. Help is not one of them: it is a page, not a modal.
+
+A modal that edits fields belonging to a form on the page behind it renders
+inside that form, so its controls submit with it (`RoleTuningModal`). Where
+the page saves on change, the modal does not: a slider passes through dozens
+of values on the way to the one you want. It holds its changes back and the
+page submits once on close, whichever way the modal was closed, so nothing is
+lost to Escape.
 
 ### Badges, chips, pills
 
@@ -696,5 +715,6 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
 `ExportPanel`, `AssistantPanel`, `CoauthorPanel`,
-`ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `EntityEditor`,
+`ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `RoleTuningModal`,
+`EntityEditor`,
 `EntityCard`, `RelationshipWeb`, `SceneBoard`, `StoryBoard`.

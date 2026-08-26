@@ -91,7 +91,9 @@ contacts a model on its own.
   override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
-  tokens sent and received.
+  tokens sent and received. Next to each role, Tune opens a window holding the
+  rest of that role's settings, with the line beside the button saying what is
+  set. The window saves when you close it.
 - **Context window**: how much text a model can take in one request, counted in
   tokens. Each model you have picked for a role gets a box under the role list.
   Discover models fills the number in when your endpoint reports one, and the
@@ -100,7 +102,7 @@ contacts a model on its own.
   go back to the reported value. If you run the model yourself, enter the size
   you started the server with (llama.cpp calls this the context size), not the
   largest the model could handle: that setting is what actually applies.
-- **Thinking**: each role has a Thinking list with three settings. On asks the
+- **Thinking**: in a role's Tune window, a Thinking list with three settings. On asks the
   model to reason before it answers: noticeably better reviews and feedback, at
   the cost of more tokens and a slower reply. Off tells the endpoint to skip that
   step, which is what you want for Continuation, Co-author, and Background work,
@@ -108,17 +110,19 @@ contacts a model on its own.
   endpoint to do whatever it already does. On the Claude provider, Off does the
   same thing as Default: Claude models decide for themselves whether to think, so
   the setting only ever turns thinking on.
-- **Temperature**: on any endpoint other than Claude, each role has a temperature
-  box, from 0 to 2. Lower keeps the model close to the most likely wording, which
-  is what you want for the Reviewer (around 0.2) and for Background work, where
-  the answer should stick to the text. Higher lets it wander, which can suit the
-  Co-author. Leave the box empty to use your endpoint's own setting. The Claude
-  API is driven by the thinking and effort settings instead, so no temperature box
-  shows there.
+- **Temperature**: on any endpoint other than Claude, a role's Tune window has a
+  temperature slider running from 0 to 2, with a box beside it for an exact
+  figure. Lower keeps the model close to the most likely wording, which is what
+  you want for the Reviewer (around 0.2) and for Background work, where the
+  answer should stick to the text. Higher lets it wander, which can suit the
+  Co-author. Tick "Use the endpoint default" to hand the setting back to your
+  endpoint. The Claude API is driven by the thinking and effort settings instead,
+  so no temperature slider shows there.
 - **Longest reply**: the most a model may write in one go, counted in tokens, set
-  per role. Raise it for a role whose answers get cut off mid-sentence, or lower
-  it to keep a model brief. Leave the box empty to use the length Codex asks for,
-  which suits most setups.
+  in a role's Tune window with a slider and a box. Raise it for a role whose
+  answers get cut off mid-sentence, or lower it to keep a model brief. The slider
+  stops at the model's context window where that is known. Tick "Use the Codex
+  default" to go back to the length Codex asks for, which suits most setups.
 - **Let the assistant search the web (Claude only)**: off unless you turn it on.
   With it on, Claude may look things up when it reviews your work or answers you
   in the side panel, and only in a universe you have marked as an established
@@ -130,9 +134,10 @@ contacts a model on its own.
   for what this helps with and what it does not.
 - **Extra request settings**: some endpoints take settings Codex has no box for,
   and each server spells them its own way. The box under Endpoint holds JSON that
-  is sent with every request, for example `{"top_p": 0.9}`. Each role has a box of
-  its own too, laid over the endpoint one, for when a single role needs something
-  different, such as a switch that turns reasoning off for the Reviewer. Check
+  is sent with every request, for example `{"top_p": 0.9}`. Each role's Tune
+  window has a box of its own too, laid over the endpoint one, for when a single
+  role needs something different, such as a switch that turns reasoning off for
+  the Reviewer. Check
   your server's documentation for what it accepts, and leave both empty if you are
   not sure: nothing here is needed for a normal setup. Test connection sends what
   a Rubber duck request would send, so it checks the endpoint settings and that
@@ -140,8 +145,8 @@ contacts a model on its own.
   messages, tools, reply length, and streaming itself, so those cannot be
   overridden. This does not show on the Claude provider, which is driven by the
   thinking and effort settings instead.
-- **Effort (Claude only)**: with the Claude provider, each role also has an effort
-  list. Effort sets how hard the model works on each request, from low (fast and
+- **Effort (Claude only)**: with the Claude provider, a role's Tune window also
+  has an effort list. Effort sets how hard the model works on each request, from low (fast and
   cheap) to max (thorough and expensive); leave it unset to use the model's
   default. A good starting point: thinking on with high effort for the reviewer,
   everything unset for continuation so suggestions stay fast. Not every model
@@ -162,7 +167,7 @@ Your words are sent only to the endpoint you set here.
 ### Which model to pick for each role
 
 The roles want different things, so a single model for all five is rarely the
-best you can do. Each role in the list shows a short suggestion; here is the
+best you can do. Each role's Tune window shows a short suggestion; here is the
 longer version.
 
 Continuation, Co-author, and Background work want speed above all. Continuation
