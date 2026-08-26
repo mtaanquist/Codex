@@ -5,6 +5,17 @@ import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
+import {
+	ASSISTANT_ROLES,
+	EFFORT_LEVELS,
+	MAX_REPLY_TOKENS,
+	MAX_TEMPERATURE,
+	type AssistantRole,
+	type EffortLevel,
+	type ExtraParams,
+	type RoleTuning,
+	type TuningMap
+} from '../../assistant-tuning.ts';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are
@@ -16,43 +27,15 @@ import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts'
 // different model. A per-story override never lights the Assistant up when the
 // account master is off; account-off is dark everywhere.
 
-// 'utility' covers the background work the writer never prompts directly:
-// summary maintenance, entity extraction, and the recap. It was added after the
-// other four, so an older config has no utility model; pickModel's fallback
-// keeps those accounts on the chat model, exactly as before.
-export const ASSISTANT_ROLES = ['continuation', 'coauthor', 'reviewer', 'utility', 'chat'] as const;
-export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
+// The roles, the effort levels, and the bounds on each tuning value live in
+// $lib/assistant-tuning, which the settings page can import too; re-exported
+// here so server callers keep one import. 'utility' was added after the other
+// four, so an older config has no utility model; pickModel's fallback keeps
+// those accounts on the chat model, exactly as before.
+export { ASSISTANT_ROLES, EFFORT_LEVELS };
+export type { AssistantRole, EffortLevel, ExtraParams, RoleTuning, TuningMap };
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
-
-// Per-role request tuning: whether to ask for adaptive thinking and an effort
-// level (the Anthropic adapter), a sampling temperature and extra request
-// fields (the OpenAI-compatible adapter), and the longest reply the role may
-// ask for (both). All optional; absent means the provider's defaults, and each
-// adapter ignores the fields it has no use for.
-//
-// thinking has three states, and both explicit ones are stored: true asks
-// Anthropic for adaptive thinking, false asks an OpenAI-compatible endpoint to
-// suppress a reasoning model's thinking pass (the Anthropic adapter treats
-// false the same as absent), and absent leaves the endpoint's default alone.
-export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-export type EffortLevel = (typeof EFFORT_LEVELS)[number];
-export type RoleTuning = {
-	thinking?: boolean;
-	effort?: EffortLevel;
-	temperature?: number;
-	maxTokens?: number;
-	extraParams?: ExtraParams;
-};
-export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
-
-// Extra fields merged into the request body the OpenAI-compatible adapter
-// sends, exactly as the writer typed them. Every server spells its own
-// switches differently (llama.cpp reads chat_template_kwargs, another stack
-// wants a flag of its own, a third takes sampler settings Codex has no field
-// for), and hardcoding those dialects is a losing game: this is the escape
-// hatch instead. Stored config only, never client input at request time.
-export type ExtraParams = Record<string, unknown>;
 
 // The fields an adapter owns, which a stored parameter may never rewrite, live
 // with the adapters (./providers/reserved) because they are wire-format
@@ -69,11 +52,6 @@ function normaliseExtraParams(raw: unknown): ExtraParams | undefined {
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
 }
-
-const MAX_TEMPERATURE = 2;
-// A ceiling on the reply length a writer may ask for, well above any model's
-// output limit; it only stops a typo from asking for millions of tokens.
-const MAX_REPLY_TOKENS = 65_536;
 
 function normaliseTuning(raw: unknown): TuningMap {
 	const out: TuningMap = {};
