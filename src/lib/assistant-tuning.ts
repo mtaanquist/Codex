@@ -13,6 +13,32 @@ export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
+// Extra fields merged into the request body the OpenAI-compatible adapter
+// sends, exactly as the writer typed them. Every server spells its own
+// switches differently, and hardcoding those dialects is a losing game: this
+// is the escape hatch instead. Stored config only, never client input at
+// request time.
+export type ExtraParams = Record<string, unknown>;
+
+// Per-role request tuning: whether to ask for adaptive thinking and an effort
+// level (the Anthropic adapter), a sampling temperature and extra request
+// fields (the OpenAI-compatible adapter), and the longest reply the role may
+// ask for (both). All optional; absent means the provider's defaults, and each
+// adapter ignores the fields it has no use for.
+//
+// thinking has three states, and both explicit ones are stored: true asks
+// Anthropic for adaptive thinking, false asks an OpenAI-compatible endpoint to
+// suppress a reasoning model's thinking pass (the Anthropic adapter treats
+// false the same as absent), and absent leaves the endpoint's default alone.
+export type RoleTuning = {
+	thinking?: boolean;
+	effort?: EffortLevel;
+	temperature?: number;
+	maxTokens?: number;
+	extraParams?: ExtraParams;
+};
+export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
+
 // Temperature runs 0 to 2 on an OpenAI-compatible endpoint. The step is what
 // the settings slider moves by: a tenth is too coarse to land on the values
 // writers actually want (0.85, 0.95).

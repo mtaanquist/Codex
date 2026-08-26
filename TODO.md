@@ -16,9 +16,12 @@ its own hint. Temperature and reply length gained a `.slider` primitive paired
 with a number box (the slider steps in 0.05 and 128; the box still takes any
 figure) and a "use the default" checkbox, because a range input cannot express
 an unset value. The modal holds its changes and the page saves once on close,
-whichever way it is closed. `$lib/assistant-tuning` now holds the roles, the
-effort levels, and the value bounds, so the settings page and the server config
-stop spelling them separately.
+whichever way it is closed, and only when something was actually touched; a
+figure outside its bounds, or extra settings that are not JSON, hold the panel
+open rather than closing over a value the save would discard. `$lib/assistant-tuning` now holds the roles, the
+effort levels, the value bounds, and `RoleTuning` itself, so the settings page
+and the server config stop spelling them separately (the page had a hand-copied
+copy of the tuning shape, and the modal would have been a third).
 
 Per-endpoint request settings (2026-08-24, issue #550 phase 1, branch
 `claude/llm-assistant-work-paths-puxtka`): an `extraParams` JSON object on the

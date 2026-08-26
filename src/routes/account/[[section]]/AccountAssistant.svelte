@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { pluralSuffix } from '$lib/format';
+	import type { AssistantRole } from '$lib/assistant-tuning';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -60,28 +61,16 @@
 		pricing?: { prompt: number; completion: number };
 		contextLength?: number;
 	};
-	const savedModels = $derived(data.assistant.models as Record<string, string | undefined>);
+	const savedModels = $derived(data.assistant.models);
 
 	// Per-role tuning. Every control for it lives in the modal, which the row's
 	// Tune button opens; the row carries a summary so the table still says what
 	// each role is set to without opening anything.
-	const savedTuning = $derived(
-		data.assistant.tuning as Record<
-			string,
-			| {
-					thinking?: boolean;
-					effort?: string;
-					temperature?: number;
-					maxTokens?: number;
-					extraParams?: Record<string, unknown>;
-			  }
-			| undefined
-		>
-	);
+	const savedTuning = $derived(data.assistant.tuning);
 	// What the row shows next to its Tune button: only the settings this
 	// provider reads, so it matches what the modal offers. Values stored for the
 	// other provider stay untouched and unlisted.
-	function tuningSummary(role: string): string {
+	function tuningSummary(role: AssistantRole): string {
 		const tuning = savedTuning[role];
 		if (!tuning) return 'Defaults';
 		const parts: string[] = [];
@@ -98,8 +87,9 @@
 	}
 
 	// The role whose tuning modal is open, and the button that opened it, so
-	// focus goes back where it came from. Closing saves: the modal holds its
-	// changes back rather than firing one save per slider step.
+	// focus goes back where it came from. Closing saves what the modal held
+	// back, but only when something in it was actually touched: opening a role
+	// to read what it is set to should not write the config.
 	let tuningRole = $state<(typeof ROLE_META)[number] | null>(null);
 	let tuningOpener: HTMLButtonElement | null = null;
 	let modelsForm = $state<HTMLFormElement>();
@@ -107,8 +97,10 @@
 		tuningOpener = event.currentTarget as HTMLButtonElement;
 		tuningRole = role;
 	}
-	function closeTuning() {
-		modelsForm?.requestSubmit();
+	function closeTuning(changed: boolean) {
+		// While the modal is open its fields are the only tuning on the form, so
+		// this save touches that one role; the rest carry through untouched.
+		if (changed) modelsForm?.requestSubmit();
 		tuningRole = null;
 		tuningOpener?.focus();
 		tuningOpener = null;

@@ -197,6 +197,19 @@ test('assistant role tuning: the modal holds its changes until it closes', async
 	const summary = row.locator('.role-row-summary');
 	await expect(summary).toHaveText('Defaults');
 
+	// Opening a role to read what it is set to and closing again writes nothing:
+	// a save here would report a change that never happened.
+	await page.getByRole('button', { name: 'Tune Rubber duck' }).click();
+	let posted = false;
+	const countPosts = (request: import('@playwright/test').Request) => {
+		if (request.url().includes('saveAssistantModels')) posted = true;
+	};
+	page.on('request', countPosts);
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog', { name: 'Tune Rubber duck' })).toBeHidden();
+	expect(posted).toBe(false);
+	page.off('request', countPosts);
+
 	await page.getByRole('button', { name: 'Tune Rubber duck' }).click();
 	const modal = page.getByRole('dialog', { name: 'Tune Rubber duck' });
 	const slider = modal.getByLabel('Temperature slider');
@@ -213,6 +226,13 @@ test('assistant role tuning: the modal holds its changes until it closes', async
 
 	// Still nothing saved: the summary behind the modal has not moved.
 	await expect(summary).toHaveText('Defaults');
+
+	// A figure the server would clamp away holds the modal open rather than
+	// closing over it, so the browser can point at the field.
+	await box.fill('7');
+	await modal.getByRole('button', { name: 'Done' }).click();
+	await expect(modal).toBeVisible();
+	await box.fill('0.35');
 
 	const tuningSaved = page.waitForResponse(
 		(response) =>

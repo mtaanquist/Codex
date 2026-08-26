@@ -5,7 +5,8 @@
 		MAX_TEMPERATURE,
 		TEMPERATURE_STEP,
 		defaultMaxTokens,
-		type AssistantRole
+		type AssistantRole,
+		type RoleTuning
 	} from '$lib/assistant-tuning';
 
 	// Everything one Assistant role can be tuned to, with room for each control
@@ -15,18 +16,10 @@
 	//
 	// The page saves on change, but this modal does not: a slider passes through
 	// dozens of values on the way to the one you want, and each would be a save.
-	// Changes inside the panel are held back (the change handler on the panel
-	// stops them reaching the form) and the whole form is submitted once, by the
-	// page, when the modal closes. Every way out closes the same way, so an edit
-	// is never lost to Escape.
-
-	type Tuning = {
-		thinking?: boolean;
-		effort?: string;
-		temperature?: number;
-		maxTokens?: number;
-		extraParams?: Record<string, unknown>;
-	};
+	// Changes inside the panel are held back (the handlers on the panel stop
+	// them reaching the form) and the whole form is submitted once, by the page,
+	// when the modal closes. Every way out closes the same way, so an edit is
+	// never lost to Escape.
 
 	let {
 		role,
@@ -36,14 +29,16 @@
 		onClose
 	}: {
 		role: { id: AssistantRole; name: string; hint: string; suggestion: string };
-		saved: Tuning;
+		saved: RoleTuning;
 		// Claude reads effort and ignores temperature and extra settings; every
 		// other endpoint is the other way round. Show only what will be read.
 		anthropic: boolean;
 		// The chosen model's context window, when the endpoint reported one or
 		// the writer typed one: it bounds the reply-length slider.
 		contextWindow: number | undefined;
-		onClose: () => void;
+		// True when something in the panel was touched, so a look-and-close does
+		// not write the config or report a save that changed nothing.
+		onClose: (changed: boolean) => void;
 	} = $props();
 
 	// A fresh modal per open, so the saved values are a starting point rather
@@ -72,10 +67,35 @@
 	let panelEl = $state<HTMLDivElement>();
 	$effect(() => panelEl?.focus());
 
+	let changed = $state(false);
+	let extraEl = $state<HTMLTextAreaElement>();
+
+	// A number outside its bounds, or extra settings that are not JSON, would be
+	// thrown away by a save that closed over them, so closing stops and the
+	// browser points at the field instead. The server still owns the rules; this
+	// only catches what it would reject after the panel had gone.
+	function requestClose() {
+		if (extraEl) {
+			let problem = '';
+			try {
+				if (extraEl.value.trim()) JSON.parse(extraEl.value);
+			} catch {
+				problem = 'Extra settings must be JSON, for example {"top_p": 0.9}.';
+			}
+			extraEl.setCustomValidity(problem);
+		}
+		const invalid = panelEl?.querySelector<HTMLInputElement | HTMLTextAreaElement>(':invalid');
+		if (invalid) {
+			invalid.reportValidity();
+			return;
+		}
+		onClose(changed);
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			event.preventDefault();
-			onClose();
+			requestClose();
 		}
 	}
 </script>
@@ -84,7 +104,7 @@
 	class="modal-backdrop"
 	role="presentation"
 	onclick={(event) => {
-		if (event.target === event.currentTarget) onClose();
+		if (event.target === event.currentTarget) requestClose();
 	}}
 	onkeydown={onKeydown}
 >
@@ -95,7 +115,11 @@
 		role="dialog"
 		aria-modal="true"
 		aria-label="Tune {role.name}"
-		onchange={(event) => event.stopPropagation()}
+		onchange={(event) => {
+			event.stopPropagation();
+			changed = true;
+		}}
+		oninput={() => (changed = true)}
 	>
 		<div class="modal-head">
 			<div class="modal-head-main">
@@ -235,6 +259,7 @@
 				<div class="field">
 					<label for="tune-extra">Extra settings</label>
 					<textarea
+						bind:this={extraEl}
 						id="tune-extra"
 						class="textarea json-field"
 						name="{role.id}-extraParams"
@@ -257,7 +282,7 @@
 
 		<div class="modal-foot">
 			<div class="modal-foot-note">Saved when you close this.</div>
-			<button class="btn btn-sm btn-primary" type="button" onclick={onClose}>Done</button>
+			<button class="btn btn-sm btn-primary" type="button" onclick={requestClose}>Done</button>
 		</div>
 	</div>
 </div>

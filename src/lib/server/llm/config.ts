@@ -11,7 +11,10 @@ import {
 	MAX_REPLY_TOKENS,
 	MAX_TEMPERATURE,
 	type AssistantRole,
-	type EffortLevel
+	type EffortLevel,
+	type ExtraParams,
+	type RoleTuning,
+	type TuningMap
 } from '../../assistant-tuning.ts';
 
 // The Assistant's per-account and per-story configuration. The reserved
@@ -30,36 +33,9 @@ import {
 // four, so an older config has no utility model; pickModel's fallback keeps
 // those accounts on the chat model, exactly as before.
 export { ASSISTANT_ROLES, EFFORT_LEVELS };
-export type { AssistantRole, EffortLevel };
+export type { AssistantRole, EffortLevel, ExtraParams, RoleTuning, TuningMap };
 
 export type ModelMap = Partial<Record<AssistantRole, string>>;
-
-// Per-role request tuning: whether to ask for adaptive thinking and an effort
-// level (the Anthropic adapter), a sampling temperature and extra request
-// fields (the OpenAI-compatible adapter), and the longest reply the role may
-// ask for (both). All optional; absent means the provider's defaults, and each
-// adapter ignores the fields it has no use for.
-//
-// thinking has three states, and both explicit ones are stored: true asks
-// Anthropic for adaptive thinking, false asks an OpenAI-compatible endpoint to
-// suppress a reasoning model's thinking pass (the Anthropic adapter treats
-// false the same as absent), and absent leaves the endpoint's default alone.
-export type RoleTuning = {
-	thinking?: boolean;
-	effort?: EffortLevel;
-	temperature?: number;
-	maxTokens?: number;
-	extraParams?: ExtraParams;
-};
-export type TuningMap = Partial<Record<AssistantRole, RoleTuning>>;
-
-// Extra fields merged into the request body the OpenAI-compatible adapter
-// sends, exactly as the writer typed them. Every server spells its own
-// switches differently (llama.cpp reads chat_template_kwargs, another stack
-// wants a flag of its own, a third takes sampler settings Codex has no field
-// for), and hardcoding those dialects is a losing game: this is the escape
-// hatch instead. Stored config only, never client input at request time.
-export type ExtraParams = Record<string, unknown>;
 
 // The fields an adapter owns, which a stored parameter may never rewrite, live
 // with the adapters (./providers/reserved) because they are wire-format
