@@ -1,10 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { sceneMarkers, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	revisions,
+	sceneMarkers,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import {
 	createMarker,
 	deleteMarker,
@@ -13,6 +20,8 @@ import {
 	setMarkerResolved,
 	updateMarkerAnchors
 } from '../../src/lib/server/markers';
+import { saveSceneBody } from '../../src/lib/server/scene-save';
+import { recordRevision, restoreRevision } from '../../src/lib/server/revisions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -30,7 +39,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
-	await pool.query('truncate table scene_markers, scenes, stories, universes, users cascade');
+	await pool.query(
+		'truncate table scene_markers, revisions, scenes, stories, universes, users cascade'
+	);
 
 	const [owner] = await db
 		.insert(users)
@@ -189,5 +200,73 @@ describe('resolve and anchors', () => {
 		if (!created.ok) throw new Error('setup failed');
 		expect(await deleteMarker(db, strangerId, created.id)).toBe(false);
 		expect(await deleteMarker(db, ownerId, created.id)).toBe(true);
+	});
+});
+
+// Body rewrites that do not come from the Write editor carry no anchors;
+// the stored ones must follow the text rather than keep their old offsets.
+describe('anchors follow body rewrites outside the Write editor', () => {
+	const TEXT = 'The bridge creaks. Alice pays the toll. She rides on.';
+
+	async function markedScene(phrase: string) {
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 10, bodyMd: TEXT })
+			.returning();
+		const start = TEXT.indexOf(phrase);
+		const marker = await createMarker(db, ownerId, scene.id, start, start + phrase.length);
+		if (!marker.ok) throw new Error('setup failed');
+		return { sceneId: scene.id, markerId: marker.id };
+	}
+
+	async function anchors(markerId: string) {
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, markerId));
+		return [row.anchorStart, row.anchorEnd];
+	}
+
+	function quote(body: string, range: (number | null)[]) {
+		return body.slice(range[0]!, range[1]!);
+	}
+
+	it('a save without markers maps them through the edit', async () => {
+		const { sceneId: id, markerId } = await markedScene('pays the toll');
+		const edited = 'A new opening line.\n\n' + TEXT;
+		const result = await saveSceneBody(db, id, {
+			title: null,
+			bodyMd: edited,
+			anchors: null,
+			baseHashes: null,
+			overwrite: false
+		});
+		expect(result.ok).toBe(true);
+		expect(quote(edited, await anchors(markerId))).toBe('pays the toll');
+	});
+
+	it('a save without markers drops the anchor when its text is gone', async () => {
+		const { sceneId: id, markerId } = await markedScene('pays the toll');
+		await saveSceneBody(db, id, {
+			title: null,
+			bodyMd: 'The bridge creaks. She rides on.',
+			anchors: null,
+			baseHashes: null,
+			overwrite: false
+		});
+		expect(await anchors(markerId)).toEqual([null, null]);
+	});
+
+	it('restoring a revision maps anchors onto the restored text', async () => {
+		const { sceneId: id, markerId } = await markedScene('She rides on');
+		const older = 'Long before: ' + TEXT;
+		await recordRevision(db, 'scene', id, older, 'checkpoint');
+		const [revision] = await db
+			.select({ id: revisions.id })
+			.from(revisions)
+			.where(and(eq(revisions.entityType, 'scene'), eq(revisions.entityId, id)))
+			.orderBy(desc(revisions.createdAt))
+			.limit(1);
+		expect(await restoreRevision(db, ownerId, revision.id, 'scene', id)).toMatchObject({
+			ok: true
+		});
+		expect(quote(older, await anchors(markerId))).toBe('She rides on');
 	});
 });
