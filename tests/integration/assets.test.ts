@@ -11,6 +11,7 @@ import {
 	createAsset,
 	deleteAsset,
 	objectDeletionGraceDays,
+	ObjectNotFoundError,
 	openAsset,
 	scheduleObjectDeletions,
 	setUserAvatar,
@@ -44,7 +45,7 @@ function memoryStore() {
 		},
 		async get(key) {
 			const object = objects.get(key);
-			if (!object) throw new Error(`missing: ${key}`);
+			if (!object) throw new ObjectNotFoundError(key);
 			return Readable.from(object.body);
 		},
 		async remove(key) {
@@ -109,6 +110,20 @@ describe('createAsset', () => {
 		// Another user can neither open nor delete it.
 		expect(await openAsset(db, store, strangerId, result.id)).toBeNull();
 		expect(await deleteAsset(db, strangerId, result.id)).toBe(false);
+	});
+
+	it('opens to null when the row exists but its object is gone from the bucket', async () => {
+		const { store, objects } = memoryStore();
+		const result = await createAsset(db, store, config, ownerId, {
+			universeId,
+			kind: 'inline',
+			filename: 'lost.png',
+			contentType: 'image/png',
+			bytes: PNG
+		});
+		if (!result.ok) throw new Error('upload failed');
+		objects.clear();
+		expect(await openAsset(db, store, ownerId, result.id)).toBeNull();
 	});
 
 	it('rejects unsupported types, empty files, oversize files, and foreign universes', async () => {
