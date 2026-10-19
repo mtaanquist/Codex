@@ -9,6 +9,9 @@ import { characters, loreEntries, places, scenes, stories, universes } from './d
 export type { SearchResult } from '$lib/wire-types';
 
 const PER_TYPE = 5;
+// Shorter queries match most prose and cannot use a trigram index, so the
+// palette's first keystrokes search names only.
+const MIN_PASSAGE_QUERY = 3;
 
 // % and _ are wildcards inside ILIKE patterns; a literal search means
 // escaping them.
@@ -91,28 +94,37 @@ export async function searchAll(
 			// Matches inside the prose itself, shown as a snippet around the first
 			// hit. The pattern escapes ILIKE wildcards, so the match is a literal
 			// substring and strpos on the lowercased text always finds it.
-			db
-				.select({
-					id: scenes.id,
-					title: scenes.title,
-					storySlug: stories.slug,
-					storyTitle: stories.title,
-					snippet: sql<string>`substr(${scenes.bodyMd}, greatest(strpos(lower(${scenes.bodyMd}), lower(${trimmed})) - 40, 1), ${trimmed.length + 80})`
-				})
-				.from(scenes)
-				.innerJoin(stories, eq(scenes.storyId, stories.id))
-				.innerJoin(universes, eq(stories.universeId, universes.id))
-				.where(
-					and(
-						eq(stories.ownerId, userId),
-						ilike(scenes.bodyMd, like),
-						isNull(scenes.deletedAt),
-						isNull(universes.deletedAt),
-						inUniverse
-					)
-				)
-				.orderBy(asc(stories.title), asc(scenes.globalPosition))
-				.limit(PER_TYPE),
+			trimmed.length < MIN_PASSAGE_QUERY
+				? []
+				: db
+						.select({
+							id: scenes.id,
+							title: scenes.title,
+							storySlug: stories.slug,
+							storyTitle: stories.title,
+							snippet: sql<string>`substr(${scenes.bodyMd}, greatest(strpos(lower(${scenes.bodyMd}), lower(${trimmed})) - 40, 1), ${trimmed.length + 80})`
+						})
+						.from(scenes)
+						.innerJoin(stories, eq(scenes.storyId, stories.id))
+						.where(
+							and(
+								// The user's story ids are gathered first (an ARRAY initplan),
+								// so the planner reaches scenes through scenes_story_idx and
+								// only scans this user's prose, rather than starting from the
+								// instance-wide trigram index.
+								sql`${scenes.storyId} = any(array(${db
+									.select({ id: stories.id })
+									.from(stories)
+									.innerJoin(universes, eq(stories.universeId, universes.id))
+									.where(
+										and(eq(stories.ownerId, userId), isNull(universes.deletedAt), inUniverse)
+									)}))`,
+								ilike(scenes.bodyMd, like),
+								isNull(scenes.deletedAt)
+							)
+						)
+						.orderBy(asc(stories.title), asc(scenes.globalPosition))
+						.limit(PER_TYPE),
 			db
 				.select({
 					id: characters.id,

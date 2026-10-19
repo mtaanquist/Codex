@@ -284,7 +284,7 @@ export const scenes = pgTable(
 	},
 	(table) => [
 		index('scenes_characters_present_gin').using('gin', table.charactersPresent),
-		// Trigram index behind the palette's body-text search; migration 0037
+		// Trigram index for substring matches on prose; migration 0037
 		// creates the pg_trgm extension it needs.
 		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops')),
 		// Every story open, scene list, and mention sweep filters on story_id.
