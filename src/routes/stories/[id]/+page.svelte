@@ -261,15 +261,20 @@
 
 	async function mergeSelectedScenes() {
 		rowMenu = null;
+		// The merge reads the stored text, so pending saves land first.
+		for (const id of mergeSelection) {
+			const editor = data.selectedScene?.id === id ? sceneEditor : docEditors[id];
+			await editor?.flushSave();
+		}
 		const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
 		if (!result.ok) {
 			alert(result.message);
 			return;
 		}
 		mergeSelection.clear();
-		editorNonce++;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		editorNonce++;
 	}
 
 	// Copies a scene in full directly after itself; useful for keeping a
@@ -358,9 +363,9 @@
 		]);
 		if (!result.ok) return result.message;
 		persistProposalState(data.story.id, proposal, null);
-		editorNonce++;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		editorNonce++;
 		return null;
 	}
 

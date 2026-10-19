@@ -21,8 +21,10 @@ export type SceneSaver = {
 	// Keep the editor's text over the newer server version on the next save.
 	keepMine: (serverBodyMd: string) => void;
 	// The server's text changed by this editor's own hand (an accepted
-	// suggestion), and the editor applied the same change locally.
-	rebase: (bodyMd: string) => void;
+	// suggestion applied to fromHash), and the editor applied the same change
+	// locally. Ignored when fromHash is not a text this editor saved, so a
+	// change from another window still reports as a conflict.
+	rebase: (bodyMd: string, fromHash: string) => void;
 };
 
 // The server accepts at most four fingerprints: the base plus the most recent
@@ -93,10 +95,13 @@ export function createSceneSaver(
 			overwrite = true;
 			onConflict(null);
 		},
-		rebase(bodyMd) {
+		rebase(bodyMd, fromHash) {
+			if (fromHash !== base && !pending.includes(fromHash)) return;
 			generation++;
 			base = textHash(bodyMd);
 			pending = [];
+			// A refusal caused by the accept itself is settled too.
+			onConflict(null);
 		}
 	};
 }

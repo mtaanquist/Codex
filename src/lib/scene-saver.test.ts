@@ -92,13 +92,19 @@ describe('createSceneSaver', () => {
 		expect(seen).toEqual([null]);
 	});
 
-	it('rebases onto an accepted suggestion without a conflict notice', async () => {
+	it('rebases onto an accepted suggestion made on the text it saved', async () => {
 		const sent = mockFetch([ok]);
-		const seen: unknown[] = [];
-		const saver = createSceneSaver('s', 'a', (c) => seen.push(c));
-		saver.rebase('a, accepted');
+		const saver = createSceneSaver('s', 'a', () => {});
+		saver.rebase('a, accepted', textHash('a'));
 		await saver.save(save('a, accepted, typed'));
 		expect(sent[0].baseHashes).toEqual([textHash('a, accepted')]);
-		expect(seen).toEqual([]);
+	});
+
+	it('does not rebase when the accept was applied to text from another window', async () => {
+		const sent = mockFetch([ok]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		saver.rebase('elsewhere, accepted', textHash('elsewhere'));
+		await saver.save(save('a, accepted'));
+		expect(sent[0].baseHashes).toEqual([textHash('a')]);
 	});
 });

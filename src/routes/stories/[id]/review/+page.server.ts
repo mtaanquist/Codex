@@ -225,7 +225,7 @@ export const actions: Actions = {
 		if (result.sceneId) await queueSceneMentions(result.sceneId);
 		// The editor rebases its save check onto this text, so the accepted
 		// change does not read as an edit from another window.
-		return { done: true, bodyMd: result.bodyMd };
+		return { done: true, bodyMd: result.bodyMd, baseHash: result.baseHash };
 	},
 	rejectSuggestion: async ({ params, request, locals }) => {
 		await ownedStory(params.id, locals.user!.id);

@@ -165,10 +165,14 @@
 	// unsaved edits from before the accept) would silently overwrite the
 	// accepted text. Applied one at a time in the server's order, so a later
 	// anchor maps through an earlier application the same way it did there.
-	// bodyMd is the scene text the server saved with the accepted change. When
-	// the same change lands here, the next save builds on that text; when it
-	// cannot be placed, the save check reports the difference instead.
-	export function applyAccepted(ids: string[], bodyMd: string | null = null) {
+	// accepted is the scene text the server saved with the change, and the
+	// fingerprint of the text it was applied to. When that was the text this
+	// editor last saved and the same change lands here, the next save builds on
+	// the new text; otherwise the save check reports the difference.
+	export function applyAccepted(
+		ids: string[],
+		accepted: { bodyMd: string; baseHash: string } | null = null
+	) {
 		if (!view || !handle) return;
 		let applied = true;
 		for (const id of ids) {
@@ -183,7 +187,7 @@
 				effects: removeReviewMarks.of([id])
 			});
 		}
-		if (applied && bodyMd !== null) saver.rebase(bodyMd);
+		if (applied && accepted) saver.rebase(accepted.bodyMd, accepted.baseHash);
 	}
 
 	function rebuildMarks() {

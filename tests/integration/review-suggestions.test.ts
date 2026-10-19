@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { textHash } from '../../src/lib/text-hash';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, desc, eq } from 'drizzle-orm';
@@ -14,6 +15,7 @@ import {
 } from '../../src/lib/server/db/schema';
 import { deleteStory } from '../../src/lib/server/story-delete';
 import { recordRevision } from '../../src/lib/server/revisions';
+import { saveSceneBody } from '../../src/lib/server/scene-save';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -236,7 +238,8 @@ describe('decideSuggestion', () => {
 		expect(result).toMatchObject({
 			ok: true,
 			sceneId,
-			bodyMd: BODY.replace('brown fox', 'red vixen')
+			bodyMd: BODY.replace('brown fox', 'red vixen'),
+			baseHash: textHash(BODY)
 		});
 		expect(await sceneBody()).toBe(BODY.replace('brown fox', 'red vixen'));
 
@@ -377,5 +380,21 @@ describe('lifecycle', () => {
 		await suggest({ start, end: start + 5 }, 'swift');
 		expect(await deleteStory(db, storyId, authorId)).toBe(true);
 		expect(await listSuggestions(db, storyId)).toEqual([]);
+	});
+
+	it('does not deadlock against autosaves of the same scene', async () => {
+		const start = BODY.indexOf('quick');
+		const runs = Array.from({ length: 8 }, (_, i) => [
+			saveSceneBody(db, sceneId, {
+				title: null,
+				bodyMd: `${BODY} ${i}`,
+				anchors: null,
+				baseHashes: null,
+				overwrite: false
+			}),
+			suggest({ start, end: start + 5 }, `swift ${i}`)
+		]).flat();
+		const results = await Promise.allSettled(runs);
+		expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
 	});
 });
