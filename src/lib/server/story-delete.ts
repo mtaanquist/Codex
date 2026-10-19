@@ -104,11 +104,8 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		await tx.delete(revisions).where(inArray(revisions.entityId, revisableIds));
 	}
 
-	// Scenes reference chapters, so scenes first.
-	await tx.delete(scenes).where(eq(scenes.storyId, storyId));
-	await tx.delete(chapters).where(eq(chapters.storyId, storyId));
-
-	// Freeform story notes and their polymorphic revisions.
+	// Freeform story notes and their polymorphic revisions. A note can point at
+	// a scene, so notes go before scenes.
 	const noteRows = await tx.select({ id: notes.id }).from(notes).where(eq(notes.storyId, storyId));
 	if (noteRows.length > 0) {
 		await tx.delete(revisions).where(
@@ -122,6 +119,10 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		);
 		await tx.delete(notes).where(eq(notes.storyId, storyId));
 	}
+
+	// Scenes reference chapters, so scenes first.
+	await tx.delete(scenes).where(eq(scenes.storyId, storyId));
+	await tx.delete(chapters).where(eq(chapters.storyId, storyId));
 
 	await tx.delete(characterStoryNotes).where(eq(characterStoryNotes.storyId, storyId));
 	await tx.delete(loreStoryNotes).where(eq(loreStoryNotes.storyId, storyId));

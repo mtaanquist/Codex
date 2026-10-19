@@ -13,6 +13,7 @@ import {
 	entityMentions,
 	entityRelationships,
 	loreEntries,
+	notes,
 	placeStoryMemberships,
 	places,
 	publicationAssets,
@@ -96,6 +97,10 @@ beforeAll(async () => {
 		.insert(sceneMarkers)
 		.values({ sceneId: scene.id, ownerId, anchorStart: 0, anchorEnd: 5 });
 	await db.insert(revisions).values({ entityType: 'scene', entityId: scene.id, bodyMd: 'Alice.' });
+	// A note pinned to the scene; notes.scene_id has no ON DELETE action.
+	await db
+		.insert(notes)
+		.values({ ownerId, universeId, storyId, sceneId: scene.id, title: 'Scene note' });
 	await db.insert(entityMentions).values({
 		sourceType: 'scene',
 		sourceId: scene.id,
@@ -171,6 +176,7 @@ describe('deleteStory', () => {
 		expect(await db.select().from(stories).where(eq(stories.id, storyId))).toHaveLength(0);
 		expect(await db.select().from(chapters).where(eq(chapters.storyId, storyId))).toHaveLength(0);
 		expect(await db.select().from(scenes).where(eq(scenes.storyId, storyId))).toHaveLength(0);
+		expect(await db.select().from(notes).where(eq(notes.storyId, storyId))).toHaveLength(0);
 		expect(
 			await db.select().from(publications).where(eq(publications.storyId, storyId))
 		).toHaveLength(0);
