@@ -58,7 +58,7 @@
 		// Called with the applied suggestion ids the moment the server confirms
 		// an accept, before the page data reloads, so the author's live editor
 		// can apply the changes at once.
-		onAccepted?: ((ids: string[]) => void) | null;
+		onAccepted?: ((ids: string[], bodyMd: string | null) => void) | null;
 		// Set when the Assistant answers replies in its threads (author page,
 		// Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;

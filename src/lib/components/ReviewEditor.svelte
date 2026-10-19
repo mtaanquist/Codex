@@ -165,18 +165,25 @@
 	// unsaved edits from before the accept) would silently overwrite the
 	// accepted text. Applied one at a time in the server's order, so a later
 	// anchor maps through an earlier application the same way it did there.
-	export function applyAccepted(ids: string[]) {
+	// bodyMd is the scene text the server saved with the accepted change. When
+	// the same change lands here, the next save builds on that text; when it
+	// cannot be placed, the save check reports the difference instead.
+	export function applyAccepted(ids: string[], bodyMd: string | null = null) {
 		if (!view || !handle) return;
+		let applied = true;
 		for (const id of ids) {
 			const suggestion = suggestions.find((s) => s.id === id);
-			if (!suggestion || suggestion.status !== 'pending') continue;
-			const a = handle.anchorOf(view, id);
-			if (!a) continue;
+			const a = suggestion?.status === 'pending' ? handle.anchorOf(view, id) : null;
+			if (!suggestion || !a) {
+				applied = false;
+				continue;
+			}
 			view.dispatch({
 				changes: { from: a.start, to: a.end, insert: suggestion.replacement },
 				effects: removeReviewMarks.of([id])
 			});
 		}
+		if (applied && bodyMd !== null) saver.rebase(bodyMd);
 	}
 
 	function rebuildMarks() {

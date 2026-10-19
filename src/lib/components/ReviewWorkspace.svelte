@@ -535,7 +535,9 @@
 						{composer}
 						onCloseComposer={() => (composer = null)}
 						onStartSceneComment={startSceneComment}
-						onAccepted={role === 'author' ? (ids) => editorRef?.applyAccepted(ids) : null}
+						onAccepted={role === 'author'
+							? (ids, bodyMd) => editorRef?.applyAccepted(ids, bodyMd)
+							: null}
 						assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
 						onAssistantReply={assistantSurfaces ? assistantReply : null}
 					/>

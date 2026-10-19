@@ -232,7 +232,12 @@ describe('decideSuggestion', () => {
 		)) as { ok: true; suggestionId: string };
 
 		const result = await decideSuggestion(db, authorId, suggestionId, true);
-		expect(result).toMatchObject({ ok: true, sceneId });
+		// The editor rebases its save check onto the returned text.
+		expect(result).toMatchObject({
+			ok: true,
+			sceneId,
+			bodyMd: BODY.replace('brown fox', 'red vixen')
+		});
 		expect(await sceneBody()).toBe(BODY.replace('brown fox', 'red vixen'));
 
 		const [latest] = await db

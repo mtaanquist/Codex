@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { updateMarkerAnchors } from './markers';
@@ -21,23 +21,25 @@ export type SceneSave = {
 
 export type SceneSaveResult =
 	| { ok: true; wordCount: number }
-	| { ok: false; conflict: { bodyMd: string; title: string | null } };
+	| { ok: false; conflict: { bodyMd: string; title: string | null } }
+	| { ok: false; missing: true };
 
 // The autosave write for one scene. The check, the update and the revision
-// share one transaction under the scene's revision lock, so two tabs cannot
-// interleave and History always ends on the stored text.
+// share one transaction under the scene's row lock, so two tabs cannot
+// interleave and History always ends on the stored text. The row lock comes
+// before recordRevision's advisory lock, the same order split and merge use.
 export async function saveSceneBody(
 	db: Database,
 	sceneId: string,
 	save: SceneSave
 ): Promise<SceneSaveResult> {
 	return await db.transaction(async (tx) => {
-		await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`scene:${sceneId}`}))`);
 		const [current] = await tx
 			.select({ bodyMd: scenes.bodyMd, title: scenes.title })
 			.from(scenes)
 			.where(eq(scenes.id, sceneId))
 			.for('update');
+		if (!current) return { ok: false as const, missing: true as const };
 		if (save.baseHashes && !save.baseHashes.includes(textHash(current.bodyMd))) {
 			if (current.bodyMd !== save.bodyMd) {
 				return { ok: false as const, conflict: current };

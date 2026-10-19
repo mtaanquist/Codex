@@ -860,7 +860,9 @@ export async function decideSuggestion(
 	userId: string,
 	suggestionId: string,
 	accept: boolean
-): Promise<{ ok: true; sceneId: string | null } | { ok: false; reason: string }> {
+): Promise<
+	{ ok: true; sceneId: string | null; bodyMd: string | null } | { ok: false; reason: string }
+> {
 	const [row] = await db
 		.select({
 			suggestion: reviewSuggestions,
@@ -885,7 +887,7 @@ export async function decideSuggestion(
 			.update(reviewSuggestions)
 			.set({ status: 'rejected', decidedByUserId: userId, decidedAt: sql`now()` })
 			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
-		return { ok: true, sceneId: null };
+		return { ok: true, sceneId: null, bodyMd: null };
 	}
 
 	// The body is read, re-anchored, and written inside one transaction with
@@ -939,7 +941,7 @@ export async function decideSuggestion(
 		}
 	);
 	if (!applied.ok) return applied;
-	return { ok: true, sceneId: row.scene.id };
+	return { ok: true, sceneId: row.scene.id, bodyMd: applied.newBody };
 }
 
 // Retracts a comment the viewer authored. A reply is removed on its own; the

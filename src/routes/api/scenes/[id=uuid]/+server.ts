@@ -67,6 +67,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		baseHashes,
 		overwrite: payload.overwrite === true
 	});
+	if (!result.ok && 'missing' in result) error(404, 'Scene not found');
 	if (!result.ok) {
 		// The scene changed somewhere else since this editor last saw it; the
 		// editor offers to load that version or keep its own.

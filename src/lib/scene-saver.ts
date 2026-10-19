@@ -20,7 +20,14 @@ export type SceneSaver = {
 	adopt: (bodyMd: string) => void;
 	// Keep the editor's text over the newer server version on the next save.
 	keepMine: (serverBodyMd: string) => void;
+	// The server's text changed by this editor's own hand (an accepted
+	// suggestion), and the editor applied the same change locally.
+	rebase: (bodyMd: string) => void;
 };
+
+// The server accepts at most four fingerprints: the base plus the most recent
+// unsettled attempts.
+const MAX_PENDING = 3;
 
 export function createSceneSaver(
 	sceneId: string,
@@ -28,54 +35,68 @@ export function createSceneSaver(
 	onConflict: (conflict: SceneConflict | null) => void
 ): SceneSaver {
 	let base = textHash(initialBodyMd);
-	// The fingerprint of a save still on its way. The close-tab save can race
-	// it, so that one is accepted against either text.
-	let inFlight: string | null = null;
+	// Fingerprints of saves whose outcome is unknown: still on their way, or
+	// lost to a network error after the server may have applied them.
+	let pending: string[] = [];
 	let overwrite = false;
+	// Bumped whenever the editor settles a conflict or rebases, so a refusal
+	// for an older save does not bring the notice back.
+	let generation = 0;
+
+	function settle(hash: string) {
+		pending = pending.filter((h) => h !== hash);
+	}
 
 	return {
 		async save({ keepalive, title, bodyMd, markers }) {
 			const hash = textHash(bodyMd);
-			const baseHashes = inFlight ? [base, inFlight] : [base];
+			const baseHashes = [base, ...pending];
 			const sendOverwrite = overwrite;
-			if (!keepalive) inFlight = hash;
-			let response: Response;
-			try {
-				response = await fetch(`/api/scenes/${sceneId}`, {
-					method: 'PUT',
-					headers: { 'content-type': 'application/json' },
-					keepalive,
-					body: JSON.stringify({
-						title,
-						bodyMd,
-						markers,
-						baseHashes,
-						overwrite: sendOverwrite || undefined
-					})
-				});
-			} finally {
-				if (!keepalive) inFlight = null;
-			}
+			const started = generation;
+			pending = [...pending, hash].slice(-MAX_PENDING);
+			// A network error leaves the hash pending: the server may have saved it.
+			const response = await fetch(`/api/scenes/${sceneId}`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				keepalive,
+				body: JSON.stringify({
+					title,
+					bodyMd,
+					markers,
+					baseHashes,
+					overwrite: sendOverwrite || undefined
+				})
+			});
+			settle(hash);
 			if (response.status === 409) {
 				const conflict = (await response.json()) as SceneConflict;
-				onConflict({ bodyMd: conflict.bodyMd, title: conflict.title });
+				if (started === generation) onConflict({ bodyMd: conflict.bodyMd, title: conflict.title });
 				throw new Error('the scene changed somewhere else');
 			}
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
-			if (!keepalive) {
+			if (started === generation) {
 				base = hash;
 				overwrite = false;
 			}
 		},
 		adopt(bodyMd) {
+			generation++;
 			base = textHash(bodyMd);
+			pending = [];
 			overwrite = false;
 			onConflict(null);
 		},
 		keepMine(serverBodyMd) {
+			generation++;
 			base = textHash(serverBodyMd);
+			pending = [];
 			overwrite = true;
 			onConflict(null);
+		},
+		rebase(bodyMd) {
+			generation++;
+			base = textHash(bodyMd);
+			pending = [];
 		}
 	};
 }

@@ -138,6 +138,11 @@ describe('saveSceneBody', () => {
 		expect(result).toMatchObject({ ok: true });
 	});
 
+	it('reports a scene that is gone', async () => {
+		const result = await saveSceneBody(db, crypto.randomUUID(), save({}));
+		expect(result).toEqual({ ok: false, missing: true });
+	});
+
 	it('skips the check for a save without fingerprints', async () => {
 		await saveSceneBody(db, sceneId, save({ bodyMd: 'Elsewhere.' }));
 		const result = await saveSceneBody(db, sceneId, save({ bodyMd: 'Old tab.', baseHashes: null }));
