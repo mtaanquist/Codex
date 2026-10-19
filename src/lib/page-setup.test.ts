@@ -207,6 +207,20 @@ describe('pageCss', () => {
 		expect(css).toContain('\\3c /style>x');
 	});
 
+	it('keeps CR and form feed in a scene break or custom font from closing the CSS string', () => {
+		for (const breaker of ['\r', '\f', '\n']) {
+			const css = pageCss({
+				...DEFAULT_PAGE_SETUP,
+				sceneBreak: `x${breaker}} body { background: url(http://169.254.169.254/) } .a {`,
+				font: 'custom',
+				fontCustom: `F${breaker}} body { background: url(http://rustfs:9000/) } .b {`
+			});
+			expect(css).not.toMatch(/[\r\f\n]} body/);
+			expect(css).toContain("content: 'x } body");
+			expect(css).toContain("font-family: 'F } body");
+		}
+	});
+
 	it('omits the page rule for the PDF renderer', () => {
 		expect(pageCss(DEFAULT_PAGE_SETUP, { includePageRule: false })).not.toContain('@page');
 	});
