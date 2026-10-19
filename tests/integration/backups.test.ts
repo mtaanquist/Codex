@@ -233,12 +233,35 @@ describe('pg_dump round trip', () => {
 				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(1);
 
 				// A dump from before the fix restored without the table while the
-				// ledger listed it; the repair migration brings it back.
+				// ledger listed it; the repair migration brings it back. Replay the
+				// ledger up to the repair migration only, from a copy of the
+				// migrations folder cut off there, so later migrations (which are
+				// not idempotent) are not run a second time.
 				await restoredPool.query('drop table backup_runs');
-				await restoredPool.query(
-					'delete from drizzle.__drizzle_migrations where created_at = (select max(created_at) from drizzle.__drizzle_migrations)'
+				const { mkdtemp, mkdir, readFile, copyFile } = await import('node:fs/promises');
+				const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8')) as {
+					entries: { tag: string; when: number }[];
+				};
+				const repairAt = journal.entries.findIndex(
+					(entry) => entry.tag === '0068_restore-backup-runs'
 				);
-				await migrate(restored, { migrationsFolder: 'drizzle' });
+				expect(repairAt).toBeGreaterThan(-1);
+				const upToRepair = journal.entries.slice(0, repairAt + 1);
+				const cutFolder = await mkdtemp(`${process.env.TMPDIR ?? '/tmp'}/codex-migrations-`);
+				await mkdir(`${cutFolder}/meta`);
+				await writeFile(
+					`${cutFolder}/meta/_journal.json`,
+					JSON.stringify({ ...journal, entries: upToRepair })
+				);
+				for (const entry of upToRepair) {
+					await copyFile(`drizzle/${entry.tag}.sql`, `${cutFolder}/${entry.tag}.sql`);
+				}
+				await restoredPool.query(
+					'delete from drizzle.__drizzle_migrations where created_at >= $1',
+					[journal.entries[repairAt].when]
+				);
+				await migrate(restored, { migrationsFolder: cutFolder });
+				await rm(cutFolder, { recursive: true, force: true });
 				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(0);
 
 				// Restoring over a database with a newer schema leaves nothing of
