@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, eq } from 'drizzle-orm';
@@ -43,6 +43,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table publication_assets, publications, scene_markers, revisions, entity_mentions, entity_relationships, character_story_memberships, place_story_memberships, character_story_notes, place_story_notes, lore_story_notes, scenes, chapters, characters, places, lore_entries, entity_categories, stories, universes, users cascade'
 	);

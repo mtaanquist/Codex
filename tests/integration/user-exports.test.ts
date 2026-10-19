@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -63,6 +63,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 
 	const [owner] = await db
@@ -312,8 +315,15 @@ describe('pruneOwnerExports', () => {
 
 describe('listUserExports', () => {
 	it("lists the owner's exports for a scope, newest first", async () => {
+		const older = await build('story', 'zip', storyId);
+		await db
+			.update(userExports)
+			.set({ createdAt: new Date(Date.now() - 60_000) })
+			.where(eq(userExports.id, older.id));
+		const newer = await build('story', 'epub', storyId);
+		await build('account', 'zip');
 		const list = await listUserExports(db, ownerId, { scope: 'story', targetId: storyId });
-		expect(list.length).toBeGreaterThan(0);
+		expect(list.map((row) => row.id)).toEqual([newer.id, older.id]);
 		expect(list.every((row) => row.scope === 'story' && row.targetId === storyId)).toBe(true);
 	});
 });

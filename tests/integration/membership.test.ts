@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -37,6 +37,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table character_story_memberships, place_story_memberships, entity_mentions, scenes, places, characters, stories, universes, users cascade'
 	);
@@ -91,6 +94,11 @@ afterAll(async () => {
 	await pool.end();
 });
 
+async function declareMembers() {
+	await declareMembership(db, ownerId, 'character', memberOnlyId, storyId);
+	await declareMembership(db, ownerId, 'place', placeId, storyId);
+}
+
 describe('declareMembership and removeMembership', () => {
 	it('declares idempotently and validates ownership and scope', async () => {
 		expect(await declareMembership(db, ownerId, 'character', memberOnlyId, storyId)).toMatchObject({
@@ -129,6 +137,7 @@ describe('declareMembership and removeMembership', () => {
 
 describe('storyEntityLists', () => {
 	it('lists members and mentioned entities, not the rest', async () => {
+		await declareMembers();
 		const lists = await storyEntityLists(db, universeId, storyId);
 		expect(lists.characters.map((row) => row.name).sort()).toEqual([
 			'Member only',
@@ -141,6 +150,7 @@ describe('storyEntityLists', () => {
 
 describe('membershipStatus', () => {
 	it('reports both signals independently', async () => {
+		await declareMembers();
 		expect(await membershipStatus(db, 'character', memberOnlyId, storyId)).toEqual({
 			member: true,
 			mentioned: false

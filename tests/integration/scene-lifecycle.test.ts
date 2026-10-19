@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, asc, eq, isNull } from 'drizzle-orm';
@@ -69,6 +69,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table entity_mentions, scene_markers, revisions, scenes, chapters, characters, stories, universes, users cascade'
 	);
@@ -135,11 +138,13 @@ describe('trashScene', () => {
 	});
 
 	it('guards ownership and double deletion', async () => {
+		await trashScene(db, ownerId, s1);
 		expect(await trashScene(db, strangerId, s2)).toBe(false);
 		expect(await trashScene(db, ownerId, s1)).toBe(false);
 	});
 
 	it('keeps the scene order valid without the trashed scene', async () => {
+		await trashScene(db, ownerId, s1);
 		const result = await applySceneOrder(db, storyId, {
 			chapters: [
 				{ id: chapterA, sceneIds: [s2] },
@@ -151,6 +156,7 @@ describe('trashScene', () => {
 	});
 
 	it('a rebuild queued before the deletion cannot bring mentions back', async () => {
+		await trashScene(db, ownerId, s1);
 		const result = await rebuildSceneMentions(db, s1);
 		expect(result).toEqual({ ok: true, count: 0 });
 		expect(await mentionRows(s1)).toHaveLength(0);
@@ -159,6 +165,7 @@ describe('trashScene', () => {
 
 describe('restoreScene', () => {
 	it('returns the scene to its chapter at the end of the story order', async () => {
+		await trashScene(db, ownerId, s1);
 		expect(await restoreScene(db, ownerId, s1)).toBe(true);
 		const live = await liveScenes();
 		expect(live.map((row) => row.id)).toEqual([s2, s3, s1]);
@@ -187,6 +194,7 @@ describe('destroyScene', () => {
 	});
 
 	it('removes the scene and everything it owns', async () => {
+		await trashScene(db, ownerId, s1);
 		await db.insert(sceneMarkers).values({ sceneId: s1, ownerId, kind: 'todo' });
 		await recordRevision(db, 'scene', s1, 'Aldric walks in.');
 		const [note] = await db
@@ -208,10 +216,9 @@ describe('destroyScene', () => {
 });
 
 describe('create', () => {
-	// Its own story, so appending chapters and scenes does not disturb the
-	// shared fixture the ordering tests above rely on.
+	// A story of its own with no chapters or scenes yet.
 	let createStory: string;
-	beforeAll(async () => {
+	beforeEach(async () => {
 		const [story] = await db
 			.insert(stories)
 			.values({ universeId, ownerId, title: 'Blank' })
@@ -282,21 +289,22 @@ describe('chapters', () => {
 
 	it('moves chapters and treats the ends as no-ops', async () => {
 		const [c] = await db.insert(chapters).values({ storyId, position: 3, title: 'C' }).returning();
+		const order = async () =>
+			(
+				await db
+					.select({ id: chapters.id })
+					.from(chapters)
+					.where(eq(chapters.storyId, storyId))
+					.orderBy(asc(chapters.position))
+			).map((row) => row.id);
 		expect(await moveChapter(db, ownerId, c.id, 'up')).toBe(true);
-		let list = await db
-			.select({ id: chapters.id })
-			.from(chapters)
-			.where(eq(chapters.storyId, storyId))
-			.orderBy(asc(chapters.position));
-		expect(list.map((row) => row.id)).toEqual([c.id, chapterB]);
+		expect(await order()).toEqual([chapterA, c.id, chapterB]);
 		expect(await moveChapter(db, ownerId, c.id, 'up')).toBe(true);
-		list = await db
-			.select({ id: chapters.id })
-			.from(chapters)
-			.where(eq(chapters.storyId, storyId))
-			.orderBy(asc(chapters.position));
-		expect(list.map((row) => row.id)).toEqual([c.id, chapterB]);
-		await db.delete(chapters).where(eq(chapters.id, c.id));
+		expect(await order()).toEqual([c.id, chapterA, chapterB]);
+		expect(await moveChapter(db, ownerId, c.id, 'up')).toBe(true);
+		expect(await order()).toEqual([c.id, chapterA, chapterB]);
+		expect(await moveChapter(db, ownerId, chapterB, 'down')).toBe(true);
+		expect(await order()).toEqual([c.id, chapterA, chapterB]);
 	});
 
 	it('deleting a chapter unfiles its scenes and renumbers the rest', async () => {
@@ -317,7 +325,10 @@ describe('chapters', () => {
 			.from(chapters)
 			.where(eq(chapters.storyId, storyId))
 			.orderBy(asc(chapters.position));
-		expect(rest).toEqual([{ id: c.id, position: 1 }]);
+		expect(rest).toEqual([
+			{ id: chapterA, position: 1 },
+			{ id: c.id, position: 2 }
+		]);
 		expect(await deleteChapter(db, strangerId, c.id)).toBe(false);
 	});
 });

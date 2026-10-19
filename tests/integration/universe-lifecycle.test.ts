@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
@@ -108,6 +108,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 
 	const [owner] = await db
@@ -231,6 +234,7 @@ describe('trash and restore', () => {
 	});
 
 	it('by-id lookups, Assistant scopes, and guest review stop resolving too', async () => {
+		await trashUniverse(db, ownerId, universeId);
 		expect(await ownedScene(db, ownerId, sceneId)).toBeNull();
 		expect(await ownedEntityBody(db, ownerId, 'scene', sceneId)).toBeNull();
 		expect(await ownedEntityBody(db, ownerId, 'character', characterId)).toBeNull();
@@ -245,6 +249,7 @@ describe('trash and restore', () => {
 	});
 
 	it('refuses writes and reads by id inside the trashed universe', async () => {
+		await trashUniverse(db, ownerId, universeId);
 		const refusals: [string, () => Promise<unknown>][] = [
 			['createChapter', () => createChapter(db, ownerId, storyId)],
 			['createScene', () => createScene(db, ownerId, storyId)],
@@ -323,6 +328,7 @@ describe('trash and restore', () => {
 	});
 
 	it('is not due for the purge until the window elapses', async () => {
+		await trashUniverse(db, ownerId, universeId);
 		expect(await listUniversesDueForPurge(db)).toEqual([]);
 		await db
 			.update(universes)
@@ -332,6 +338,7 @@ describe('trash and restore', () => {
 	});
 
 	it('restore brings everything back whole', async () => {
+		await trashUniverse(db, ownerId, universeId);
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(true);
 		expect((await ownedUniverse('closing-time', ownerId, db)).id).toBe(universeId);
 		expect((await ownedStory('last-orders', ownerId, db)).story.id).toBe(storyId);
@@ -356,7 +363,7 @@ describe('trash and restore', () => {
 
 describe('universeAssetKeys', () => {
 	it('includes uploaded images and the editions stored export files', async () => {
-		const [asset] = await db
+		await db
 			.insert(assets)
 			.values({
 				ownerId,
@@ -384,11 +391,6 @@ describe('universeAssetKeys', () => {
 		const keys = await universeAssetKeys(db, universeId);
 		expect(keys).toContain('img-key');
 		expect(keys).toContain('epub-key');
-
-		// Leave the universe as the later destroy test expects it.
-		await db.delete(exportArtifacts).where(eq(exportArtifacts.publicationId, pub.id));
-		await db.delete(publications).where(eq(publications.id, pub.id));
-		await db.delete(assets).where(eq(assets.id, asset.id));
 	});
 });
 

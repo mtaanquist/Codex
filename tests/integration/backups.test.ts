@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Readable } from 'node:stream';
@@ -60,6 +60,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table backup_runs');
 });
 
@@ -114,7 +117,16 @@ describe('runBackup', () => {
 
 	it('skips the upload when nothing changed, and resumes when it does', async () => {
 		const { store, objects } = memoryStore();
+		await runBackup(db, 'manual', {
+			config,
+			store,
+			databaseUrl: TEST_DATABASE_URL,
+			dumpCommand: ['printf', 'fake-dump-bytes'],
+			hashCommand: (scratch) => ['cat', scratch],
+			now: new Date('2026-06-04T12:00:00Z')
+		});
 		const sizeBefore = objects.size;
+		expect(sizeBefore).toBe(1);
 		const again = await runBackup(db, 'scheduled', {
 			config,
 			store,

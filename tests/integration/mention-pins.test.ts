@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
@@ -45,6 +45,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table mention_pins, entity_mentions, character_story_memberships, place_story_memberships, scenes, chapters, places, characters, stories, universes, users cascade'
 	);
@@ -100,6 +103,7 @@ describe('shared-name attribution in the index', () => {
 	});
 
 	it('a pin overrides the member rule', async () => {
+		await db.insert(placeStoryMemberships).values({ placeId: willPlaceId, storyId });
 		const result = await setMentionPin(db, ownerId, storyId, 'Will', 'character', willCharacterId);
 		expect(result).toMatchObject({ ok: true });
 		await rebuildSceneMentions(db, sceneId);
@@ -107,6 +111,8 @@ describe('shared-name attribution in the index', () => {
 	});
 
 	it('clearing the pin falls back to the member rule', async () => {
+		await db.insert(placeStoryMemberships).values({ placeId: willPlaceId, storyId });
+		await setMentionPin(db, ownerId, storyId, 'Will', 'character', willCharacterId);
 		expect(await clearMentionPin(db, ownerId, storyId, 'Will')).toBe(true);
 		expect(await listMentionPins(db, storyId)).toEqual(new Map());
 		await rebuildSceneMentions(db, sceneId);

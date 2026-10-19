@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, desc, eq } from 'drizzle-orm';
@@ -39,6 +39,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table scene_markers, revisions, scenes, stories, universes, users cascade'
 	);
@@ -92,6 +95,8 @@ describe('createMarker', () => {
 
 describe('listStoryTodos', () => {
 	it('lists markers and TODO: lines in scene order', async () => {
+		await createMarker(db, ownerId, sceneId, 0, 5);
+		await createMarker(db, ownerId, sceneId, 6, 9999, 'check this');
 		const todos = await listStoryTodos(db, storyId);
 		// Two markers plus one text TODO.
 		expect(todos).toHaveLength(3);
@@ -138,18 +143,14 @@ describe('listStoryTodos', () => {
 			{ sceneId: quiet.id, sceneTitle: 'Quiet', markerId: noted.id, text: 'tighten' }
 		]);
 		expect(todos.filter((todo) => todo.sceneId === midLine.id)).toEqual([]);
-
-		await deleteMarker(db, ownerId, plain.id);
-		await deleteMarker(db, ownerId, noted.id);
-		await db.delete(scenes).where(eq(scenes.id, quiet.id));
-		await db.delete(scenes).where(eq(scenes.id, marked.id));
-		await db.delete(scenes).where(eq(scenes.id, midLine.id));
 	});
 });
 
 describe('resolve and anchors', () => {
 	it('checking off hides a marker from the lists; unchecking brings it back', async () => {
-		const [marker] = await listSceneMarkers(db, sceneId);
+		const created = await createMarker(db, ownerId, sceneId, 0, 5);
+		if (!created.ok) throw new Error('setup failed');
+		const marker = { id: created.id };
 		expect(await setMarkerResolved(db, strangerId, marker.id, true)).toBe(false);
 		expect(await setMarkerResolved(db, ownerId, marker.id, true)).toBe(true);
 		expect((await listSceneMarkers(db, sceneId)).map((m) => m.id)).not.toContain(marker.id);
@@ -158,7 +159,9 @@ describe('resolve and anchors', () => {
 	});
 
 	it('moves anchors and ignores ids from other scenes', async () => {
-		const [marker] = await listSceneMarkers(db, sceneId);
+		const created = await createMarker(db, ownerId, sceneId, 0, 5);
+		if (!created.ok) throw new Error('setup failed');
+		const marker = { id: created.id };
 		const [otherScene] = await db
 			.insert(scenes)
 			.values({ storyId, globalPosition: 2, bodyMd: 'Elsewhere.' })
