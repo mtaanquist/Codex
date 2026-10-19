@@ -19,7 +19,7 @@
 	--accent-contrast: #ffffff;
 	--danger-contrast: #ffffff;
 	/* Text and icons on any other solid colour tile: universe and story
-	   colours, author colours, swatches, the brand mark, the toggle knob. */
+	   colours, author colours, swatches, the toggle knob. */
 	--on-color: #ffffff;
 	/* A QR code stays dark-on-white in every theme so phones can scan it. */
 	--qr-bg: #ffffff;
