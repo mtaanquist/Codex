@@ -8,6 +8,7 @@ import {
 	setEntityBadgeImage
 } from '$lib/server/entity-badge';
 import { rateLimitUploads } from '$lib/server/write-guard';
+import { readJson } from '$lib/server/validation';
 
 // The entity badge: PUT sets a palette colour (null clears it), POST uploads
 // an image, DELETE removes the image. Owner-scoped inside the helpers, which
@@ -31,8 +32,7 @@ function refuse(reason: string): never {
 }
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
-	const body = (await request.json().catch(() => null)) as { color?: unknown } | null;
-	const color = body?.color;
+	const { color } = await readJson<{ color?: unknown }>(request);
 	if (color !== null && typeof color !== 'string')
 		error(400, 'Pick one of the colours in the menu.');
 	const result = await setEntityBadgeColor(db, locals.user!.id, params.id, color);
