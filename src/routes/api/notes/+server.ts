@@ -8,6 +8,7 @@ import { createSceneNote, createStoryNote, saveNote } from '$lib/server/notes';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { checkProseLength, readJson } from '$lib/server/validation';
 import { isUuid } from '$lib/slug';
+import { inLiveUniverse } from '$lib/server/universe-scope';
 
 // The quick-note jot: creates a story note (attached to a scene when one is
 // named) and saves its text in one request, so the writer never has to leave
@@ -29,7 +30,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const [story] = await db
 		.select({ id: stories.id, universeId: stories.universeId, slug: stories.slug })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, locals.user!.id)));
+		.where(
+			and(
+				eq(stories.id, storyId),
+				eq(stories.ownerId, locals.user!.id),
+				inLiveUniverse(stories.universeId)
+			)
+		);
 	if (!story) error(404, 'Story not found');
 	let sceneId: string | null = null;
 	if (payload.sceneId !== undefined && payload.sceneId !== null) {

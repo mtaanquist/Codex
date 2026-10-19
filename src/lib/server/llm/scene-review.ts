@@ -43,6 +43,7 @@ import { modelContextWindow, resolveLlmConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
 import { logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { inLiveUniverse } from '../universe-scope.ts';
 
 // Tool budgets for the exhaustive passes. A focused or full pass stages one
 // tool call per note plus the scene read, so the account's conservative
@@ -494,7 +495,14 @@ async function storySurveyScenes(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)))
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId),
+				isNull(scenes.deletedAt)
+			)
+		)
 		.orderBy(asc(scenes.globalPosition));
 }
 
@@ -546,7 +554,14 @@ async function staleSummaryCount(db: Database, userId: string, storyId: string):
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId),
+				isNull(scenes.deletedAt)
+			)
+		);
 	return rows.filter(
 		(row) =>
 			Boolean(row.bodyMd && row.bodyMd.trim()) &&
@@ -810,6 +825,7 @@ export async function reviewUniverseContinuity(
 			and(
 				eq(stories.universeId, opts.universeId),
 				eq(stories.ownerId, opts.userId),
+				inLiveUniverse(stories.universeId),
 				isNull(scenes.deletedAt)
 			)
 		)
@@ -943,6 +959,7 @@ export async function reviewStoryScenes(
 	const where = [
 		eq(scenes.storyId, opts.storyId),
 		eq(stories.ownerId, opts.userId),
+		inLiveUniverse(stories.universeId),
 		isNull(scenes.deletedAt)
 	];
 	if (opts.chapterId) where.push(eq(scenes.chapterId, opts.chapterId));
