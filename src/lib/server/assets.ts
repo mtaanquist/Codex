@@ -20,7 +20,7 @@ import {
 	type SaveS3Result,
 	type StoredS3
 } from './settings.ts';
-import type { ActionFailure } from './action-result';
+import type { ActionFailure } from './action-result.ts';
 
 // Uploaded images live in an S3-compatible bucket, separate from the backups
 // bucket, which holds database dumps only. Deleting an image removes its row
