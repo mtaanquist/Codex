@@ -161,11 +161,18 @@ export async function purgeAccount(
 
 	// Only sweep the bucket if the account was actually purged (not cancelled
 	// out from under us between reading the keys and the locked re-check).
+	// Removed at once rather than deferred: this is the owner's erasure. A
+	// failure is logged so the operator can remove the object by hand.
 	if (purged && store) {
-		for (const asset of assetRows) await store.remove(asset.storageKey).catch(() => {});
-		for (const artifact of artifactRows) await store.remove(artifact.storageKey).catch(() => {});
-		for (const userExport of userExportRows) {
-			if (userExport.storageKey) await store.remove(userExport.storageKey).catch(() => {});
+		const keys = [
+			...assetRows.map((row) => row.storageKey),
+			...artifactRows.map((row) => row.storageKey),
+			...userExportRows.flatMap((row) => (row.storageKey ? [row.storageKey] : []))
+		];
+		for (const key of keys) {
+			await store.remove(key).catch((error) => {
+				console.error(`purge: removing object ${key} failed:`, error);
+			});
 		}
 	}
 }
