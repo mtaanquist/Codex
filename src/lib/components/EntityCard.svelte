@@ -104,38 +104,10 @@
 		height: 100%;
 		min-height: 0;
 	}
-	.inspector-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 10px 14px;
-		border-bottom: 1px solid var(--border);
-	}
-	.back-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		border: 0;
-		background: none;
-		color: var(--text-muted);
-		font-size: 13px;
-		font-weight: 600;
-		padding: 5px 8px;
-		border-radius: 7px;
-	}
+	/* The head, back button and kind label are global (theme.css), shared with
+	   the review composer. */
 	.back-btn :global(svg) {
 		transform: rotate(180deg);
-	}
-	.back-btn:hover {
-		background: var(--bg-hover);
-		color: var(--text);
-	}
-	.inspector-kind {
-		font-size: 10.5px;
-		font-weight: 650;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--text-faint);
 	}
 	.inspector-scroll {
 		flex: 1;
