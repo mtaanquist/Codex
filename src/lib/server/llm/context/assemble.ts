@@ -1,5 +1,6 @@
 import type { Database } from '../../auth.ts';
 import type { ChatMessage } from '../providers/types.ts';
+import { DEFAULT_BUDGET_TOKENS } from './budgets.ts';
 import {
 	activeLore,
 	inScopeEntities,
@@ -38,11 +39,6 @@ import {
 export function estimateTokens(text: string): number {
 	return Math.ceil(text.length / 4);
 }
-
-// Provisional. Calibrate against a corpus before trusting it. Exported as the
-// one place the figure lives: the survey fallback in scene-review.ts keeps its
-// own copy of 6000 and should take this instead.
-export const DEFAULT_BUDGET_TOKENS = 6000;
 
 export type ContextTier = { name: string; text: string };
 

@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { assistantChatMessages, type AssistantChatMeta } from '../db/schema';
 import { estimateTokens } from './context/assemble';
+import { CHAT_BUDGET_TOKENS } from './context/budgets';
 import type { ChatMessage } from './providers/types';
 
 // The persisted Assistant conversation: one transcript per scope per user,
@@ -126,13 +127,9 @@ export async function setProposalConfirmed(
 	return matched;
 }
 
-// What the transcript may cost in a single request. MAX_TURNS above bounds
-// storage; this bounds what the model is sent, so a long conversation cannot
-// crowd out the assembled world or overflow a small context window.
-// Provisional, like the context budgets in context/assemble.ts; a per-endpoint
-// context-window setting will replace it.
-const CHAT_BUDGET_TOKENS = 8000;
-
+// MAX_TURNS above bounds storage; the budget (chatBudgetTokens in
+// context/budgets.ts) bounds what the model is sent, so a long conversation
+// cannot crowd out the assembled world or overflow a small context window.
 // Greedily keep turns newest-first until the budget is spent, then restore
 // order; the oldest turns drop, like a scrollback that scrolls off the top.
 // The newest turn is always kept even if it alone exceeds the budget, so a

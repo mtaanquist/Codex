@@ -6,6 +6,8 @@ import {
 	throwAssistantError
 } from '$lib/server/llm/assistant-route';
 import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
+import { contextBudgetTokens } from '$lib/server/llm/context/budgets';
+import { modelContextWindow, resolveLlmConfig } from '$lib/server/llm/config';
 import { buildCoauthorMessage, readCoauthorReference } from '$lib/server/llm/prompts/coauthor';
 import { complete } from '$lib/server/llm/gateway';
 import type { ChatMessage } from '$lib/server/llm/providers/types';
@@ -34,11 +36,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// precedingProse anchors voice and continuity on the previous scene's prose,
 	// the missing piece when the writer drafts into an empty or short scene.
+	const resolved = await resolveLlmConfig(db, userId, story.id);
 	const context = await assembleContext(db, {
 		userId,
 		storyId: story.id,
 		sceneId,
-		precedingProse: true
+		precedingProse: true,
+		budgetTokens: contextBudgetTokens(modelContextWindow(resolved.config, 'coauthor'))
 	});
 	const task: ChatMessage = { role: 'user', content: buildCoauthorMessage(instruction, reference) };
 	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];

@@ -472,6 +472,13 @@ only matter to the lore category; the sparing pass (no categories) keeps the
 full stack. A review-thread reply carries the frame and the entities, since the
 passage under discussion is already excerpted into its task message.
 
+The world context budget, and the side panel's transcript budget, are shares
+of the resolved model's context window (`context/budgets.ts`), each capped by a
+ceiling chosen for cost, since every chat turn resends both. With no known
+window they fall back to fixed defaults sized for small local models. The
+review passes keep the fixed world budget, since their per-scene cost and the
+up-front estimate both depend on it.
+
 TODO (needs a real corpus): the token budget per tier, the split between the
 stable and per-scene shares, the truncation and prioritisation strategy when a
 story outgrows the budget, and how far the neighbour window reaches. These are
