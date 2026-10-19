@@ -90,23 +90,27 @@ export const users = pgTable('users', {
 
 // Server-side session rows so sessions can be listed and revoked; the cookie
 // carries the session id.
-export const sessions = pgTable('sessions', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	// The cookie carries a random token; only its hash is stored, so a read-only
-	// database exposure cannot be replayed as a live session. The id stays an
-	// internal, non-secret key for listing and revoking sessions.
-	tokenHash: text('token_hash').notNull().unique(),
-	userId: uuid('user_id')
-		.references(() => users.id)
-		.notNull(),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
-	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-	// Set on sign-out or 'log out everywhere'.
-	revokedAt: timestamp('revoked_at', { withTimezone: true }),
-	userAgent: text('user_agent'),
-	ip: inet('ip')
-});
+export const sessions = pgTable(
+	'sessions',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		// The cookie carries a random token; only its hash is stored, so a read-only
+		// database exposure cannot be replayed as a live session. The id stays an
+		// internal, non-secret key for listing and revoking sessions.
+		tokenHash: text('token_hash').notNull().unique(),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		// Set on sign-out or 'log out everywhere'.
+		revokedAt: timestamp('revoked_at', { withTimezone: true }),
+		userAgent: text('user_agent'),
+		ip: inet('ip')
+	},
+	(table) => [index('sessions_user_idx').on(table.userId)]
+);
 
 export const universes = pgTable(
 	'universes',
@@ -295,6 +299,7 @@ export const scenes = pgTable(
 		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops')),
 		// Every story open, scene list, and mention sweep filters on story_id.
 		index('scenes_story_idx').on(table.storyId),
+		index('scenes_chapter_idx').on(table.chapterId),
 		// The reconcile sweep's per-scene half: only scenes behind their own
 		// body, so the index stays small however many scenes the instance holds.
 		index('scenes_mentions_stale_idx')
@@ -575,7 +580,11 @@ export const characterStoryMemberships = pgTable(
 			.notNull(),
 		declaredAt: timestamp('declared_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(table) => [primaryKey({ columns: [table.characterId, table.storyId] })]
+	// The key leads with the character; the story index serves per-story lookups.
+	(table) => [
+		primaryKey({ columns: [table.characterId, table.storyId] }),
+		index('character_story_memberships_story_idx').on(table.storyId)
+	]
 );
 
 export const placeStoryMemberships = pgTable(
@@ -589,7 +598,10 @@ export const placeStoryMemberships = pgTable(
 			.notNull(),
 		declaredAt: timestamp('declared_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(table) => [primaryKey({ columns: [table.placeId, table.storyId] })]
+	(table) => [
+		primaryKey({ columns: [table.placeId, table.storyId] }),
+		index('place_story_memberships_story_idx').on(table.storyId)
+	]
 );
 
 // The vocabulary of declared relations. A seed migration provides the
@@ -728,7 +740,9 @@ export const notes = pgTable(
 	},
 	(table) => [
 		index('notes_universe_idx').on(table.universeId),
-		index('notes_story_idx').on(table.storyId)
+		index('notes_story_idx').on(table.storyId),
+		index('notes_scene_idx').on(table.sceneId),
+		index('notes_owner_idx').on(table.ownerId)
 	]
 );
 
@@ -1106,7 +1120,10 @@ export const reviewThreads = pgTable(
 	},
 	(table) => [
 		index('review_threads_scene_idx').on(table.sceneId),
-		index('review_threads_story_idx').on(table.storyId)
+		index('review_threads_story_idx').on(table.storyId),
+		// Autosave looks threads up by base revision, and every revision delete
+		// checks this foreign key.
+		index('review_threads_base_revision_idx').on(table.baseRevisionId)
 	]
 );
 
@@ -1172,7 +1189,8 @@ export const reviewSuggestions = pgTable(
 	},
 	(table) => [
 		index('review_suggestions_scene_idx').on(table.sceneId),
-		index('review_suggestions_story_idx').on(table.storyId)
+		index('review_suggestions_story_idx').on(table.storyId),
+		index('review_suggestions_base_revision_idx').on(table.baseRevisionId)
 	]
 );
 
