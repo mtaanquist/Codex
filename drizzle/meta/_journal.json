@@ -512,6 +512,13 @@
 			"when": 1792437781392,
 			"tag": "0072_foreign-key-indexes",
 			"breakpoints": true
+		},
+		{
+			"idx": 73,
+			"version": "7",
+			"when": 1792438442230,
+			"tag": "0073_story-trash",
+			"breakpoints": true
 		}
 	]
 }

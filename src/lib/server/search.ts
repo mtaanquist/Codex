@@ -64,6 +64,7 @@ export async function searchAll(
 					and(
 						eq(stories.ownerId, userId),
 						ilike(stories.title, like),
+						isNull(stories.deletedAt),
 						isNull(universes.deletedAt),
 						inUniverse
 					)
@@ -85,6 +86,7 @@ export async function searchAll(
 						eq(stories.ownerId, userId),
 						ilike(scenes.title, like),
 						isNull(scenes.deletedAt),
+						isNull(stories.deletedAt),
 						isNull(universes.deletedAt),
 						inUniverse
 					)
@@ -117,7 +119,12 @@ export async function searchAll(
 									.from(stories)
 									.innerJoin(universes, eq(stories.universeId, universes.id))
 									.where(
-										and(eq(stories.ownerId, userId), isNull(universes.deletedAt), inUniverse)
+										and(
+											eq(stories.ownerId, userId),
+											isNull(stories.deletedAt),
+											isNull(universes.deletedAt),
+											inUniverse
+										)
 									)}))`,
 								ilike(scenes.bodyMd, like),
 								isNull(scenes.deletedAt)

@@ -137,16 +137,21 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 }
 
 // Deletes a story the user owns, in one transaction. Without this a story with
-// any content cannot be deleted at all (the FKs are ON DELETE NO ACTION). The
-// stored export files of the story's editions, whose rows cascade away with
-// the publications, are queued for the deferred object sweep.
+// any content cannot be deleted at all (the FKs are ON DELETE NO ACTION).
 export async function deleteStory(db: Database, storyId: string, userId: string): Promise<boolean> {
 	const [story] = await db
 		.select({ id: stories.id })
 		.from(stories)
 		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
 	if (!story) return false;
+	await purgeStory(db, story.id);
+	return true;
+}
 
+// Hard-deletes a story with no owner check, for the trash purge. The stored
+// export files of the story's editions, whose rows cascade away with the
+// publications, are queued for the deferred object sweep.
+export async function purgeStory(db: Database, storyId: string): Promise<void> {
 	await db.transaction(async (tx) => {
 		// Capture the edition export keys before the rows cascade away.
 		const artifactRows = await tx
@@ -160,5 +165,4 @@ export async function deleteStory(db: Database, storyId: string, userId: string)
 			artifactRows.map((row) => row.storageKey)
 		);
 	});
-	return true;
 }

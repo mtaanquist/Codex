@@ -14,7 +14,7 @@ import {
 	users
 } from './db/schema.ts';
 import { hashToken } from './tokens.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { storyIsLive } from './universe-scope.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import { recordRevision } from './revisions.ts';
 import { remapMarkerAnchors } from './markers.ts';
@@ -121,9 +121,7 @@ export async function invitationByToken(db: Database, token: string) {
 		})
 		.from(reviewInvitations)
 		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
-		.where(
-			and(eq(reviewInvitations.tokenHash, hashToken(token)), inLiveUniverse(stories.universeId))
-		);
+		.where(and(eq(reviewInvitations.tokenHash, hashToken(token)), storyIsLive()));
 	if (!row) return { status: 'unknown' as const };
 	if (row.invitation.revokedAt) return { status: 'revoked' as const };
 	if (row.invitation.expiresAt && row.invitation.expiresAt < new Date()) {
@@ -205,7 +203,7 @@ export async function reviewerAccess(db: Database, reviewerId: string, storyId: 
 			and(
 				eq(reviewers.id, reviewerId),
 				eq(reviewInvitations.storyId, storyId),
-				inLiveUniverse(stories.universeId),
+				storyIsLive(),
 				isNull(reviewInvitations.revokedAt),
 				or(isNull(reviewInvitations.expiresAt), gt(reviewInvitations.expiresAt, sql`now()`))
 			)
@@ -481,7 +479,7 @@ export async function setThreadResolved(
 					db
 						.select({ id: stories.id })
 						.from(stories)
-						.where(and(eq(stories.ownerId, userId), inLiveUniverse(stories.universeId)))
+						.where(and(eq(stories.ownerId, userId), storyIsLive()))
 				)
 			)
 		)
@@ -917,7 +915,7 @@ export async function decideSuggestion(
 			and(
 				eq(reviewSuggestions.id, suggestionId),
 				eq(reviewSuggestions.storyId, storyId),
-				inLiveUniverse(stories.universeId)
+				storyIsLive()
 			)
 		);
 	if (!row || row.ownerId !== userId) {
@@ -1014,11 +1012,7 @@ export async function deleteComment(
 		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
 		.innerJoin(stories, eq(reviewThreads.storyId, stories.id))
 		.where(
-			and(
-				eq(reviewComments.id, commentId),
-				eq(reviewThreads.storyId, storyId),
-				inLiveUniverse(stories.universeId)
-			)
+			and(eq(reviewComments.id, commentId), eq(reviewThreads.storyId, storyId), storyIsLive())
 		);
 	const target = found?.comment;
 	if (!target) return { ok: false, reason: 'That comment does not exist.' };
@@ -1070,7 +1064,7 @@ export async function deleteSuggestion(
 			and(
 				eq(reviewSuggestions.id, suggestionId),
 				eq(reviewSuggestions.storyId, storyId),
-				inLiveUniverse(stories.universeId)
+				storyIsLive()
 			)
 		);
 	const row = found?.suggestion;

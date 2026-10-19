@@ -43,6 +43,8 @@ import {
 } from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
 import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
+import { listStoriesDueForPurge } from '../lib/server/story-lifecycle.ts';
+import { purgeStory } from '../lib/server/story-delete.ts';
 import {
 	assetMigrationSource,
 	clearAssetMigrationSource,
@@ -509,7 +511,8 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 	}
 });
 
-// Trashed universes past their restore window go for good.
+// Trashed universes and stories past their restore window go for good.
+// Universes first: their purge takes every story inside, trashed or not.
 await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
 	for (const universeId of await listUniversesDueForPurge(db)) {
 		try {
@@ -517,6 +520,14 @@ await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
 			console.log(`purge: universe ${universeId} deleted`);
 		} catch (error) {
 			console.error(`purge: universe ${universeId} failed`, error);
+		}
+	}
+	for (const storyId of await listStoriesDueForPurge(db)) {
+		try {
+			await purgeStory(db, storyId);
+			console.log(`purge: story ${storyId} deleted`);
+		} catch (error) {
+			console.error(`purge: story ${storyId} failed`, error);
 		}
 	}
 });
