@@ -63,6 +63,7 @@ import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
+import { shouldNotifyWriter } from './job-guard.ts';
 import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
@@ -202,24 +203,46 @@ function staged(notes: number): string {
 }
 
 // Assistant jobs run several at once, but one per writer (the job's group),
-// so one writer's slow or hung endpoint does not hold up anyone else.
+// so one writer's slow or hung endpoint does not hold up anyone else. The
+// metadata carries the start time and retry count shouldNotifyWriter reads.
 const ASSISTANT_WORK_OPTIONS = {
 	localConcurrency: ASSISTANT_JOB_CONCURRENCY,
-	localGroupConcurrency: 1
+	localGroupConcurrency: 1,
+	includeMetadata: true as const
 };
+
+// Tells the writer how an Assistant run went, unless pg-boss is going to run
+// the job again (see job-guard.ts), so one run is one notice.
+async function notifyWriter(
+	queue: string,
+	job: Parameters<typeof shouldNotifyWriter>[2],
+	userId: string,
+	kind: Parameters<typeof insertNotifications>[2],
+	payload: Parameters<typeof insertNotifications>[3]
+): Promise<void> {
+	if (!(await shouldNotifyWriter(boss, queue, job))) {
+		console.warn(`${queue}: job ${job.id} is being retried, notice left to the retry`);
+		return;
+	}
+	await queueDigests(await insertNotifications(db, [userId], kind, payload));
+}
 
 // Whole-story or single-chapter Assistant review: fan over the scenes in scope,
 // stage the Assistant's notes through the review tools, then tell the owner it
 // is ready (or that the endpoint could not be reached). Matches the inline
 // single-scene endpoint, just unattended and over many scenes.
-await boss.work<{
-	userId: string;
-	storyId?: string;
-	universeId?: string;
-	chapterId?: string;
-	categories?: ReviewCategory[];
-	mode?: 'full' | 'continuity';
-}>(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, async (jobs) => {
+await boss.work<
+	{
+		userId: string;
+		storyId?: string;
+		universeId?: string;
+		chapterId?: string;
+		categories?: ReviewCategory[];
+		mode?: 'full' | 'continuity';
+	},
+	unknown,
+	typeof ASSISTANT_WORK_OPTIONS
+>(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, async (jobs) => {
 	for (const job of jobs) {
 		const { userId, storyId, universeId, chapterId, categories, mode } = job.data;
 
@@ -265,11 +288,7 @@ await boss.work<{
 			} catch (err) {
 				title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
 			}
-			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
-				title,
-				href
-			});
-			await queueDigests(digestUsers);
+			await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', { title, href });
 			console.log(`assistant continuity: universe ${universeId} done`);
 			continue;
 		}
@@ -321,11 +340,7 @@ await boss.work<{
 			} catch (err) {
 				title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
 			}
-			const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
-				title,
-				href
-			});
-			await queueDigests(digestUsers);
+			await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', { title, href });
 			console.log(`assistant continuity: story ${storyId} done`);
 			continue;
 		}
@@ -366,11 +381,7 @@ await boss.work<{
 			title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
 			done = 'failed';
 		}
-		const digestUsers = await insertNotifications(db, [userId], 'assistant_review', {
-			title,
-			href
-		});
-		await queueDigests(digestUsers);
+		await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', { title, href });
 		console.log(`assistant review: story ${storyId} - ${done}`);
 	}
 });
@@ -379,7 +390,7 @@ await boss.work<{
 // summaries (the metadata that feeds recap and context). Owner re-checked at run
 // time; the writer is notified when it is done. Like the review job, the gateway
 // is called directly with no HTTP hop.
-await boss.work<{ userId: string; storyId: string }>(
+await boss.work<{ userId: string; storyId: string }, unknown, typeof ASSISTANT_WORK_OPTIONS>(
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_WORK_OPTIONS,
 	async (jobs) => {
@@ -408,11 +419,10 @@ await boss.work<{ userId: string; storyId: string }>(
 			} else {
 				title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
 			}
-			const digestUsers = await insertNotifications(db, [userId], 'assistant_summaries', {
+			await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
 				title,
 				href
 			});
-			await queueDigests(digestUsers);
 			console.log(
 				`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
 			);

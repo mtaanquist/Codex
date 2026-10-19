@@ -67,7 +67,7 @@ A pending suggestion's card also takes replies, so you can talk a proposed edit 
 
 When the Assistant is set up and a note came from it, replying on that note makes the Assistant answer you right there. Ask it why it suggested something, or ask for a different wording: it can revise its own pending suggestion, and the card updates with the new proposal. It never decides anything - accepting or rejecting stays yours - and it only ever responds to you, never to your reviewers.
 
-Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text, and a suggestion can no longer be accepted, only rejected.
+Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text. A suggestion can be accepted only while its passage is exactly as it was when suggested: once you change any of those words, it can only be rejected.
 
 ## Hearing about activity
 
