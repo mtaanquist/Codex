@@ -3,7 +3,7 @@ name: Release
 # Tags a released version on main and publishes the GitHub release. Exists so
 # a remote session that can merge release PRs but cannot push tags can finish
 # the release flow; run it after the release PR has landed on main and CI has
-# passed on the merge commit. The tag is pushed with the workflow token, which
+# passed on the merge commit, which it checks before tagging. The tag is pushed with the workflow token, which
 # GitHub deliberately keeps from triggering the tag-push image build, so this
 # dispatches the image workflow itself at the new tag.
 on:
@@ -13,8 +13,9 @@ on:
         description: 'Version to tag, X.Y.Z; must match package.json at the commit'
         required: true
       sha:
-        description: 'Full SHA of the commit on main to tag (the release PR merge commit)'
-        required: true
+        description: 'Full SHA of the commit on main to tag; left empty, the head of main when the run starts'
+        required: false
+        default: ''
       notes:
         description: 'Release notes; left empty, GitHub generates them'
         required: false
@@ -33,10 +34,20 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      # Resolved once, so every later step checks and tags the same commit
+      # even if main moves during the run.
+      - name: Resolve the commit to tag
+        id: commit
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          sha="${INPUT_SHA:-$(git rev-parse HEAD)}"
+          echo "Tagging $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Verify the commit and version
         env:
           VERSION: ${{ inputs.version }}
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ steps.commit.outputs.sha }}
         run: |
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Version must be X.Y.Z, got $VERSION"
@@ -62,7 +73,7 @@ jobs:
       - name: Verify CI passed on the commit
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ steps.commit.outputs.sha }}
         run: |
           # Newest CI run for the push of this commit to main; a re-run
           # updates the same run, so its conclusion is the current verdict.
@@ -77,7 +88,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ steps.commit.outputs.sha }}
           NOTES: ${{ inputs.notes }}
         run: |
           tag="v$VERSION"
