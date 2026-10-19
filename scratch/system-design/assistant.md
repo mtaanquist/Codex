@@ -864,14 +864,11 @@ Not a contract, but the natural order, foundations first:
 8. Deferred refinements: chat persistence and browsing. (The native Claude
    adapter and provider presets have since shipped; see "Configuration".)
 
-## Frontend wiring map (backend on develop; account settings surface on PR #325)
+## Frontend wiring map
 
-A note for the frontend agent. The server-only plumbing is built and tested
-under `src/lib/server/llm/`, and the first surface (the account Assistant
-settings page) is built; the rest of the surfaces (SSE endpoints, the other
-form actions, Svelte UI, worker jobs) are not. This maps each feature to what
-it should call. Status markers: [built] server-side helper exists and is
-tested, or the surface is built; [to build] the frontend agent creates it.
+Written as the hand-off for the frontend work; it now records where each
+surface landed. Status markers: [built] the helper or surface exists and is
+tested; [to build] not built yet (only the deferred items below).
 
 Everything that touches the key or the endpoint is server-only. The browser
 never calls the model endpoint; a SvelteKit `+server.ts` (SSE) or a form action
@@ -882,7 +879,7 @@ calls the gateway, which proxies through the egress guard.
 - [built] `accountLlmView(db, userId)` and `resolveLlmConfig(db, userId, storyId?)`
   (`llm/config.ts`). The gate is `assistantGate(...)` -> `{ configured,
   accountEnabled, tabEnabled, surfacesEnabled }`.
-- [to build] Feed the gate into the layout load (the way asset-backed features
+- [built] Feed the gate into the layout load (the way asset-backed features
   hide when no bucket is set), so the Assistant tab, editor menu items, and
   continuation render only when allowed. Rule: tab needs `tabEnabled`; in-editor
   and in-menu surfaces need `surfacesEnabled`; nothing renders when not
@@ -930,7 +927,7 @@ calls the gateway, which proxies through the egress guard.
 
 - [built] `egressPolicy(db)` / `saveEgressPolicy(db, { policy, allowlist })`
   (`llm/egress.ts`); policy is `block-private | allowlist | open`.
-- [to build] An admin panel section (policy select + host allowlist). No help
+- [built] An admin panel section (policy select + host allowlist). No help
   article needed (admin panel).
 
 ### Per-story override (the Assistant tab's mute)
@@ -938,11 +935,11 @@ calls the gateway, which proxies through the egress guard.
 - [built] `saveStoryLlmOverride(db, storyId, { enabled?: false | null, models? })`
   - `enabled: false` mutes this story, `null` clears the override (back to the
   account default). A story can only subtract.
-- [to build] The mute control on the Assistant tab.
+- [built] The mute control on the Assistant tab.
 
 ### Chat (the Assistant tab) - sequencing step 2
 
-- [to build] `POST /api/assistant/chat` as an SSE `+server.ts`. It should:
+- [built] `POST /api/assistant/chat` as an SSE `+server.ts`. It should:
   1. assemble context: `assembleContext(db, { userId, storyId, sceneId?, focusText? })`
      (`llm/context/assemble.ts`), then `buildSystemMessage(context)`;
   2. call `stream(db, { userId, storyId, sceneId?, role: 'chat', enableTools: true,
@@ -957,11 +954,11 @@ calls the gateway, which proxies through the egress guard.
 
 ### Inline (editor) - sequencing step 5
 
-- [to build] `POST /api/assistant/continuation` and `/api/assistant/coauthor`
+- [built] `POST /api/assistant/continuation` and `/api/assistant/coauthor`
   SSE endpoints. Continuation: `stream(..., role: 'continuation', enableTools:
   false)`, no context needed beyond the current text the client sends. Co-author:
   build context with `assembleContext` first, `role: 'coauthor'`.
-- [to build] The CodeMirror ghost-text extension (its own compartment, distinct
+- [built] The CodeMirror ghost-text extension (its own compartment, distinct
   from entity autocomplete) and the co-author side panel (insert / edit /
   reject).
 
@@ -977,7 +974,7 @@ calls the gateway, which proxies through the egress guard.
   live from the assistant's name. Accept/reject is the unchanged
   `decideSuggestion` / `setThreadResolved`. The existing author-review screen
   already renders these.
-- [to build] Entry points (left-sidebar "Review this scene/chapter", story
+- [built] Entry points (left-sidebar "Review this scene/chapter", story
   settings "Review this story", palette command). Whole-story review is a
   background worker job (see below).
 - [built] The cross-scene continuity pass (the tail of a full review, and the
@@ -1004,12 +1001,11 @@ calls the gateway, which proxies through the egress guard.
 
 ### Background jobs - sequencing steps 4 and 7
 
-- [to build] New pg-boss queues `assistant-review`, `assistant-enrich`,
-  `assistant-summaries` (add names to `queues.ts`, enqueue helpers to `jobs.ts`,
-  handlers in `src/worker/index.ts`). The handlers call the gateway directly
-  (`complete`/`stream`, no HTTP hop) and write through the same review/entity
-  helpers. Completion/failure rides the existing notifications matrix (a new
-  kind). None of this is built.
+- [built] pg-boss queues `assistant-review` and `assistant-summaries` (names in
+  `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/index.ts`).
+  The handlers call the gateway directly (`complete`/`stream`, no HTTP hop) and
+  write through the same review/entity helpers. Entity enrichment runs inline
+  through `/api/assistant/enrich` rather than a queue.
 
 ### Tool use and structural actions - sequencing step 6
 
@@ -1037,9 +1033,10 @@ calls the gateway, which proxies through the egress guard.
 
 ### Help and exports
 
-- [to build] A writer-facing help article under `src/lib/docs/` (configuring an
-  endpoint, the kill switch and what it sends, the three surfaces, accepting
-  suggestions), per the CLAUDE.md rule. The admin egress panel needs none.
+- [built] Writer-facing help (configuring an endpoint, the kill switch and what
+  it sends, the three surfaces, accepting suggestions), spread across the
+  existing articles in `src/lib/docs/` (`account.md`, `editor.md`,
+  `planning.md`, `reviewing.md`) rather than one Assistant article. The admin egress panel needs none.
 - [built] No new trapped content: accepted suggestions land in prose/entities,
   which already export; ephemeral chat and derived artifacts do not ride the
   export.
