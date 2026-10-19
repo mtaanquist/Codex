@@ -159,7 +159,9 @@ export const actions: Actions = {
 		if (resolved.status !== 'ok' || !access) {
 			return fail(403, { message: 'This link no longer works.' });
 		}
-		if (!access.invitation.canSuggest) {
+		// The link in the URL decides, as it does for the page: the cookie may
+		// come from an earlier invitation to the same story.
+		if (!resolved.invitation.canSuggest) {
 			return fail(403, { message: 'This review link is for comments only.' });
 		}
 		if (!rateLimit(`review:${access.reviewer.id}`, COMMENT_LIMIT, COMMENT_WINDOW_MS).allowed) {
