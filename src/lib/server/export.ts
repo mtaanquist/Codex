@@ -1,6 +1,6 @@
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
-import { and, asc, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	assets,
@@ -58,7 +58,7 @@ export type AssetLoader = (ids: string[]) => Promise<ExportAsset[]>;
 // export bundles every referenced image plus the in-memory zip, so without a
 // cap a large library can exhaust the worker. Past it, the remaining images are
 // left unbundled (their links stay as app paths) rather than risking an OOM.
-const MAX_EXPORT_ASSET_BYTES = 500 * 1024 * 1024;
+const MAX_EXPORT_ASSET_BYTES = 256 * 1024 * 1024;
 
 // The default loader reads from the configured bucket; absent
 // configuration it returns nothing and links stay as app paths. Scoped to
@@ -79,19 +79,21 @@ export function bucketAssetLoader(
 			if (!config) return [];
 			store = s3AssetStore(config);
 		}
+		const rows = await db
+			.select({ id: assets.id, storageKey: assets.storageKey, contentType: assets.contentType })
+			.from(assets)
+			.where(and(inArray(assets.id, ids), eq(assets.ownerId, ownerId)));
+		const byId = new Map(rows.map((row) => [row.id, row]));
 		const loaded: ExportAsset[] = [];
 		let total = 0;
 		let skipped = 0;
 		for (const id of ids) {
+			const row = byId.get(id);
+			if (!row) continue;
 			if (total >= MAX_EXPORT_ASSET_BYTES) {
 				skipped++;
 				continue;
 			}
-			const [row] = await db
-				.select()
-				.from(assets)
-				.where(and(eq(assets.id, id), eq(assets.ownerId, ownerId)));
-			if (!row) continue;
 			const chunks: Buffer[] = [];
 			for await (const chunk of await store.get(row.storageKey)) {
 				chunks.push(Buffer.from(chunk));
@@ -105,6 +107,25 @@ export function bucketAssetLoader(
 		}
 		return loaded;
 	};
+}
+
+// Wraps a loader so each asset is fetched at most once, for a run that builds
+// several files from the same content (an edition's zip, EPUB and PDF).
+export function cachedAssetLoader(load: AssetLoader): AssetLoader {
+	const cache = new Map<string, ExportAsset | null>();
+	return async (ids) => {
+		const missing = ids.filter((id) => !cache.has(id));
+		if (missing.length > 0) {
+			const loaded = new Map((await load(missing)).map((asset) => [asset.id, asset]));
+			for (const id of missing) cache.set(id, loaded.get(id) ?? null);
+		}
+		return ids.map((id) => cache.get(id)).filter((asset): asset is ExportAsset => !!asset);
+	};
+}
+
+// A Buffer view over built bytes, for the object store, without copying them.
+export function asBuffer(bytes: Uint8Array): Buffer {
+	return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
 export type ExportStory = {

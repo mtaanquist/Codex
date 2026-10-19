@@ -18,6 +18,7 @@ import {
 import type { AssetObjectStore } from '../../src/lib/server/assets';
 import {
 	exportForDownload,
+	failStaleExports,
 	listUserExports,
 	pruneOwnerExports,
 	requestExport,
@@ -192,6 +193,43 @@ describe('runUserExport', () => {
 		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
 		expect(row.status).toBe('failed');
 		expect(row.error).toBeTruthy();
+	});
+});
+
+describe('runUserExport without storage', () => {
+	it('marks the row failed instead of leaving it pending', async () => {
+		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const id = (requested as { ok: true; id: string }).id;
+		const ran = await runUserExport(db, id, null);
+		expect(ran).toMatchObject({ ok: false });
+		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
+		expect(row.status).toBe('failed');
+		expect(row.error).toBeTruthy();
+	});
+});
+
+describe('failStaleExports', () => {
+	// A worker killed mid-build (out of memory) never reaches the catch that
+	// marks the row failed, so a row left pending for hours is swept.
+	it('fails exports pending for too long and leaves fresh ones alone', async () => {
+		const stale = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const fresh = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const staleId = (stale as { ok: true; id: string }).id;
+		const freshId = (fresh as { ok: true; id: string }).id;
+		await db
+			.update(userExports)
+			.set({ createdAt: new Date(Date.now() - 3 * 3_600_000) })
+			.where(eq(userExports.id, staleId));
+
+		// Listing the exports is what the owner sees, so it sweeps first.
+		const list = await listUserExports(db, ownerId, { scope: 'account' });
+		expect(list.find((row) => row.id === staleId)?.status).toBe('failed');
+		expect(list.find((row) => row.id === freshId)?.status).toBe('pending');
+
+		// A late run of the stale job does not resurrect it.
+		const ran = await runUserExport(db, staleId, memoryStore().store);
+		expect(ran).toMatchObject({ ok: false });
+		expect(await failStaleExports(db)).toBe(0);
 	});
 });
 

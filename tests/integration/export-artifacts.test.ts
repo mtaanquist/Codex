@@ -106,6 +106,26 @@ afterAll(async () => {
 });
 
 describe('generateEditionArtifacts', () => {
+	it('loads each image once for all three formats', async () => {
+		const imageId = '11111111-1111-4111-8111-111111111111';
+		await db
+			.update(scenes)
+			.set({ bodyMd: `The gate opened.\n\n![map](/assets/${imageId})` })
+			.where(eq(scenes.storyId, storyId));
+		const publicationId = await publish();
+		const requested: string[] = [];
+		const { store } = memoryStore();
+		const result = await generateEditionArtifacts(db, publicationId, {
+			...deps(store),
+			loadAssets: async (ids) => {
+				requested.push(...ids);
+				return ids.map((id) => ({ id, contentType: 'image/png', bytes: new Uint8Array([1]) }));
+			}
+		});
+		expect(result).toMatchObject({ ok: true, failed: [] });
+		expect(requested).toEqual([imageId]);
+	});
+
 	it('stores all three formats with deterministic keys', async () => {
 		const publicationId = await publish();
 		const { objects, store } = memoryStore();

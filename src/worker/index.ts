@@ -169,17 +169,13 @@ await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
 await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const config = await effectiveAssetConfig(db);
-		if (!config) {
-			console.warn(`export: ${job.data.exportId} skipped, asset storage not configured`);
-			continue;
-		}
-		const store = s3AssetStore(config);
+		const store = config ? s3AssetStore(config) : null;
 		const result = await runUserExport(db, job.data.exportId, store);
 		if (!result.ok) {
 			console.warn(`export: ${job.data.exportId} failed (${result.reason})`);
 			continue;
 		}
-		await pruneOwnerExports(db, store, result.ownerId);
+		if (store) await pruneOwnerExports(db, store, result.ownerId);
 		const digestUsers = await insertNotifications(db, [result.ownerId], 'export_ready', {
 			title: 'Your export is ready to download.',
 			href: `/exports/${job.data.exportId}`
