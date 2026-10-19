@@ -283,8 +283,12 @@ time are not restored; the worker simply carries on with new ones.
 Uploaded images live in the asset bucket, not the database, and **the backups
 do not copy them**. Deleting or replacing an image removes its database row at
 once, but the worker only removes the stored file once it is older than the
-oldest kept backup (`BACKUP_KEEP_DAYS` plus one day; one day when backups are
-off). Restoring any kept dump therefore still finds every image it points at.
+oldest kept backup: one day longer than `BACKUP_KEEP_DAYS` or
+`BACKUP_KEEP_RECENT_HOURS`, whichever reaches further back, or one day when
+backups are off. Restoring any kept dump therefore still finds every image it
+points at. If you switch backups off later, the dumps already in the bucket
+stay there but the wait drops to one day, so images deleted after that are
+missing if you restore one of those older dumps.
 If the asset bucket itself is lost, though, the images are gone: turn on
 versioning or replication for that bucket at your storage provider, or copy it
 somewhere else on a schedule. The bundled RustFS bucket lives in a Docker

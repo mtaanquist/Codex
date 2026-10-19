@@ -291,8 +291,26 @@ describe('sweepDeletedObjects', () => {
 	});
 
 	it('waits one day past the backup retention, or one day without backups', () => {
-		expect(objectDeletionGraceDays({ keepDays: 30 })).toBe(31);
+		expect(objectDeletionGraceDays({ keepDays: 30, keepRecentHours: 48 })).toBe(31);
+		// The hourly window can outlast the daily one.
+		expect(objectDeletionGraceDays({ keepDays: 3, keepRecentHours: 168 })).toBe(8);
 		expect(objectDeletionGraceDays(null)).toBe(1);
+	});
+
+	it('works through a backlog larger than one batch', async () => {
+		await db.delete(pendingObjectDeletions);
+		const { store } = memoryStore();
+		const keys = Array.from({ length: 2500 }, (_, i) => `bulk-${String(i).padStart(5, '0')}`);
+		await scheduleObjectDeletions(db, keys);
+		await db
+			.update(pendingObjectDeletions)
+			.set({ deletedAt: new Date(Date.now() - 40 * 86_400_000) });
+		expect(await sweepDeletedObjects(db, store, 31)).toEqual({
+			removed: 2500,
+			kept: 0,
+			failed: 0
+		});
+		expect(await pendingKeys()).toEqual([]);
 	});
 });
 
