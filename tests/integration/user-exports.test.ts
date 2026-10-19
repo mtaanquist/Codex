@@ -129,7 +129,7 @@ async function build(
 }
 
 describe('requestExport', () => {
-	it('refuses a story that is not the owner’s', async () => {
+	it("refuses a story that is not the owner's", async () => {
 		const result = await requestExport(db, otherId, {
 			scope: 'story',
 			targetId: storyId,
@@ -311,7 +311,7 @@ describe('pruneOwnerExports', () => {
 });
 
 describe('listUserExports', () => {
-	it('lists the owner’s exports for a scope, newest first', async () => {
+	it("lists the owner's exports for a scope, newest first", async () => {
 		const list = await listUserExports(db, ownerId, { scope: 'story', targetId: storyId });
 		expect(list.length).toBeGreaterThan(0);
 		expect(list.every((row) => row.scope === 'story' && row.targetId === storyId)).toBe(true);

@@ -11,6 +11,7 @@ import {
 } from '$lib/server/notes';
 import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
 import { isUuid } from '$lib/slug';
+import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -48,7 +49,7 @@ export const actions: Actions = {
 	setPinned: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		const data = await request.formData();
-		const noteId = String(data.get('noteId') ?? '');
+		const noteId = formText(data, 'noteId');
 		const pinned = data.get('pinned') === 'true';
 		if (!isUuid(noteId) || !(await setNotePinned(db, noteId, locals.user!.id, pinned))) {
 			return fail(400, { scope: 'note', message: 'Could not update that note.' });
@@ -57,7 +58,7 @@ export const actions: Actions = {
 	},
 	deleteNote: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
-		const noteId = String((await request.formData()).get('noteId') ?? '');
+		const noteId = formText(await request.formData(), 'noteId');
 		if (!isUuid(noteId) || !(await deleteNote(db, noteId, locals.user!.id))) {
 			return fail(400, { scope: 'note', message: 'Could not delete that note.' });
 		}

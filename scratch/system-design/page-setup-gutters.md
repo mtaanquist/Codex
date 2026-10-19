@@ -1,6 +1,8 @@
 # Page setup: gutters / binding margins
 
-Status: feasibility verified by spike. No code yet.
+Status: shipped. Gutters are a page-setup option (`none`, `narrow`, `wide`) in
+`src/lib/page-setup.ts`; the inner margin alternates by page side in the print
+CSS and the in-app preview. The note below is the design that produced it.
 
 ## The ask
 

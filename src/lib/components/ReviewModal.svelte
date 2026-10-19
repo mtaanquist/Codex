@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatNumber } from '$lib/format';
 	import { reviewModal, closeReviewModal } from '$lib/review-modal.svelte';
 	import {
 		reviewSceneWithAssistant,
@@ -107,7 +108,6 @@
 	}
 
 	const money = (usd: number) => usd.toFixed(2);
-	const thousands = (n: number) => n.toLocaleString('en-US');
 
 	// The done phase never reaches here: the finished branch above it catches it.
 	const PHASE_LABEL: Record<string, string> = {
@@ -376,7 +376,7 @@
 				{:else if estimate}
 					<div class="rm-confirm" class:rm-warn={warned}>
 						<p class="rm-phase">
-							{estimate.scenes} scene{estimate.scenes === 1 ? '' : 's'} to review, about {thousands(
+							{estimate.scenes} scene{estimate.scenes === 1 ? '' : 's'} to review, about {formatNumber(
 								estimate.estTokens
 							)} tokens to send.
 						</p>
@@ -387,7 +387,7 @@
 										<span class="rm-line-label">{line.label}</span>
 										<span class="rm-line-value"
 											>{line.tokens !== undefined
-												? `${thousands(line.tokens)} tokens`
+												? `${formatNumber(line.tokens)} tokens`
 												: line.note}</span
 										>
 									</li>

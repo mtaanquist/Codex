@@ -1,5 +1,13 @@
 # Universe-aware Assistant: Plan-page tabs, cross-story continuity, Write context, and the command palette
 
+Status: shipped. Parts A to E are built: the Assistant tab on both Plan pages
+(universe-level thread on the universe Plan page), cross-story tools and context,
+the preceding-scene prose in the Write action, the full slash-command set in
+`src/lib/assistant-slash.ts` (`/write`, `/rewrite`, `/copyedit`,
+`/continuity-review`, `/who`, `/find`, and the rest), and the command palette.
+The items under "Risks / follow-ups" marked out of scope remain open. The plan is
+kept as the record of how it was built.
+
 ## Context
 
 The writing Assistant (right-pane chat) is helpful while drafting but is missing
@@ -49,13 +57,13 @@ The unifying idea, which also answers "reuse, don't build several versions":
 ## Implementation (ordered)
 
 ### 1. Schema + chat-history scope API (foundational)
-- `src/lib/server/db/schema.ts` — on `assistantChatMessages`: drop `.notNull()` on
+- `src/lib/server/db/schema.ts` - on `assistantChatMessages`: drop `.notNull()` on
   `storyId`, add nullable `universeId` (FK to `universes`), add a CHECK that exactly
   one of the two is set (`(story_id is null) <> (universe_id is null)`), and a new
   index `(universeId, userId, createdAt)`. Generate the migration with
   `drizzle-kit generate` (do not hand-write). Additive and safe: all existing rows
   have `story_id` set, so the CHECK holds with no row rewrites.
-- `src/lib/server/llm/chat-history.ts` — introduce `ChatScope = { storyId } |
+- `src/lib/server/llm/chat-history.ts` - introduce `ChatScope = { storyId } |
   { universeId }` and a `scopeWhere(scope)` helper; rewrite `listChat`,
   `appendChat`, `clearChat`, `setProposalConfirmed` to key on the scope. Add
   `deleteChatForUniverses` and wire it into the universe delete cascade. Update call
@@ -64,16 +72,16 @@ The unifying idea, which also answers "reuse, don't build several versions":
   `routes/stories/[id]/+page.server.ts`, `routes/stories/[id]/review/+page.server.ts`.
 
 ### 2. Context assembly (sources + assemble)
-- `src/lib/server/llm/context/sources.ts` — add `loadUniverseScope`,
+- `src/lib/server/llm/context/sources.ts` - add `loadUniverseScope`,
   `universeSkeleton` (per owned story in the universe, reuse `storySkeleton`,
   summaries only, capped), and `universeEntities` (reuse `planEntityLists` for the id
   set, then the existing entity-building body). Refactor `inScopeEntities` to take an
   explicit id list so story and universe paths share it; make `storyId` optional in
   `activeLore` and `scopeNotes` (universe path skips the per-story overlay note).
-- `src/lib/server/llm/context/assemble.ts` — generalize `assembleContext` to branch
+- `src/lib/server/llm/context/assemble.ts` - generalize `assembleContext` to branch
   on the scope:
   - **Focus path** (storyId present): the existing tiers plus a new low-priority
-    `universe-backbone` tier — a compact index of the *other* stories (title, brief,
+    `universe-backbone` tier - a compact index of the *other* stories (title, brief,
     scene count, one-line outline) via `universeSkeleton` minus the focus story, so
     the model knows what else exists and can pull detail with tools. New renderer
     `renderUniverseBackbone(..., { excludeStoryId })`, placed last (drops first under
@@ -85,7 +93,7 @@ The unifying idea, which also answers "reuse, don't build several versions":
   `assembleRecapContext` stays story-only (recap is "the story so far").
 
 ### 3. Tools become universe-scoped
-- `src/lib/server/llm/tools/dispatch.ts` — `ToolContext`: replace `storyId: string`
+- `src/lib/server/llm/tools/dispatch.ts` - `ToolContext`: replace `storyId: string`
   with `universeId: string; storyId?: string`. Add `ownsUniverse(db, userId,
   universeId)`. `loadScene` scopes by `stories.universeId` + `stories.ownerId` (drop
   the `storyId` constraint) and selects the scene's owning `storyId`. Per tool:
@@ -95,46 +103,46 @@ The unifying idea, which also answers "reuse, don't build several versions":
   `get_entity` already owner-scoped (no change). The write tools (`suggest_edit`,
   `leave_comment`, `propose_scene_split`) stay focus-bound and must use the loaded
   scene's `storyId`, not `ctx.storyId`.
-- `src/lib/server/llm/tools/registry.ts` — update the descriptions of `list_scenes`,
+- `src/lib/server/llm/tools/registry.ts` - update the descriptions of `list_scenes`,
   `find_appearances`, `search_text` to say "across the stories in this universe".
 
 ### 4. Gateway threading
-- `src/lib/server/llm/gateway.ts` — add `universeId?: string` to `GatewayRequest`;
+- `src/lib/server/llm/gateway.ts` - add `universeId?: string` to `GatewayRequest`;
   enable tools when `universeId` present and `ownsUniverse(...)`; build
   `toolContext = { db, userId, universeId, storyId, scope, allowedTools }`.
   `resolveLlmConfig`/usage recording already tolerate an undefined `storyId`.
 
 ### 5. Gate + route helpers + endpoint
-- `src/lib/server/llm/config.ts` — the existing `assistantLayout(db, userId)` with no
+- `src/lib/server/llm/config.ts` - the existing `assistantLayout(db, userId)` with no
   storyId already yields the account-level gate (`muted: false`); use it for the
   universe surface. No per-universe mute in scope (follow-up).
-- `src/lib/server/llm/assistant-route.ts` — add `requireAssistantUniverse(userId,
+- `src/lib/server/llm/assistant-route.ts` - add `requireAssistantUniverse(userId,
   universeId)` (ownership + account gate); generalize `assistantSseResponse` and its
   `appendChat` to take the scope.
-- `src/routes/api/assistant/chat/+server.ts` — POST reads `storyId` or `universeId`
+- `src/routes/api/assistant/chat/+server.ts` - POST reads `storyId` or `universeId`
   (+ `sceneId`); builds the scope (`requireAssistantStory` gives `universeId` for the
   focus path, else `requireAssistantUniverse`); appends chat, assembles context, and
   calls `assistantSseResponse({ scope, enableTools: true, ... })`. DELETE clears by
   scope. Recap endpoint stays story-only.
 
 ### 6. search_text scoping
-- `src/lib/server/search.ts` — add an optional `universeId` filter to `searchAll`
+- `src/lib/server/search.ts` - add an optional `universeId` filter to `searchAll`
   (thread `eq(universes.id, universeId)` into the subqueries). The command palette
   keeps calling it unfiltered; the tool passes the universe.
 
 ### 7. Shared panel + both Plan pages (the reuse payoff)
-- `src/lib/components/AssistantPanel.svelte` — replace required
+- `src/lib/components/AssistantPanel.svelte` - replace required
   `storyId`/`storyTitle` with the scope discriminator (`{ storyId, storyTitle } |
   { universeId, universeName }`). The POST/DELETE/recap bodies send the scope;
   `sceneId` only in story mode. Universe mode: no recap / summaries / mute UI / editor
   props (`onInsert`/`onConfirmSplit`/`onRevertSplit`), a universe-flavoured opening
   line, and guard `catchUp` to a no-op. All existing story behaviour stays identical.
-- `src/routes/stories/[id]/plan/+page.{svelte,server.ts}` — server: add
+- `src/routes/stories/[id]/plan/+page.{svelte,server.ts}` - server: add
   `assistantLayout(db, userId, story.id)` and `listChat(db, userId, { storyId })`;
   return `assistant` + `assistantChat`. Page: add `'assistant'` to `rightTab`, a
   pill gated on `data.assistant.tabEnabled`, and `<AssistantPanel scope={{ storyId,
-  storyTitle }} ... />` (no editor props — the Plan page has no editor).
-- `src/routes/universes/[id]/plan/+page.{svelte,server.ts}` — server: add
+  storyTitle }} ... />` (no editor props - the Plan page has no editor).
+- `src/routes/universes/[id]/plan/+page.{svelte,server.ts}` - server: add
   `assistantLayout(db, userId)` (account gate) and `listChat(db, userId,
   { universeId })`. Page: mirror the pill + `<AssistantPanel scope={{ universeId,
   universeName }} ... />`, with universe-flavoured starter suggestions
@@ -160,18 +168,18 @@ a fresh scene.
 Fix: give the Write action the immediately preceding scene's actual prose as a
 continuity and voice anchor, capped to respect the budget.
 
-- `src/lib/server/llm/context/sources.ts` — extend `sceneNeighbourhood` so the
+- `src/lib/server/llm/context/sources.ts` - extend `sceneNeighbourhood` so the
   nearest "before" neighbour also carries its `bodyMd` (or add a small
   `precedingSceneBody(db, storyId, sceneId)` returning `{ title, bodyMd }` of the
   scene immediately before by `globalPosition`). Reuse the existing
   `globalPosition` ordering already in `sceneNeighbourhood`.
-- `src/lib/server/llm/context/assemble.ts` — add an opt-in option to
+- `src/lib/server/llm/context/assemble.ts` - add an opt-in option to
   `assembleContext` (e.g. `precedingProse?: boolean`). When set and a focus scene
   exists, `renderSceneLocal` renders a "Previous scene (the prose continues into
   this one)" block with a tail excerpt of the preceding scene's body, capped (reuse
   the `RECAP_BODY_EXCERPT_CHARS` ~1500-char pattern). This is most valuable when the
   current scene is empty or short, exactly the reported case.
-- `src/routes/api/assistant/coauthor/+server.ts` — pass `precedingProse: true` into
+- `src/routes/api/assistant/coauthor/+server.ts` - pass `precedingProse: true` into
   `assembleContext`. The cap keeps it within the existing budget; bump
   `MAX_COAUTHOR_TOKENS` only if needed.
 
@@ -189,12 +197,12 @@ rest of the line. Add a `/write` command where everything after `/write` is the
 brief, routed to the same co-author drafting the toolbar Write button uses, so the
 writer can draft a passage without leaving the chat.
 
-- `src/lib/assistant-slash.ts` — add `{ name: 'write', detail: 'Draft a passage from
+- `src/lib/assistant-slash.ts` - add `{ name: 'write', detail: 'Draft a passage from
   a brief (everything after the command)' }`, and add a generic `slashArgs(raw):
   string` helper returning the text after the first token (reuse the same split as
   `slashName`). Keep it generic so other commands can take arguments later, but only
   `/write` uses it now.
-- `src/lib/components/AssistantPanel.svelte` — in `runSlashCommand`, add
+- `src/lib/components/AssistantPanel.svelte` - in `runSlashCommand`, add
   `case 'write':` that reads `const brief = slashArgs(raw)`. If empty, append a short
   usage hint as an assistant message. Otherwise call a new `coauthorDraft(brief)`:
   it appends the brief as a user turn (so the transcript shows the ask), POSTs to
@@ -325,7 +333,7 @@ commands to the in-app help article (see Docs).
 
 ## Risks / follow-ups
 - Write tools must resolve the owning `storyId` from the loaded scene, not
-  `ctx.storyId` (undefined in universe scope) — get this right or suggestions
+  `ctx.storyId` (undefined in universe scope) - get this right or suggestions
   misattribute.
 - Universe-wide `list_scenes`/`search_text` return more than story-scoped; existing
   per-result caps and the tool-call budget bound it; watch per-turn cost on large

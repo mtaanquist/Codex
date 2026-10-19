@@ -16,6 +16,7 @@ import { effectiveAssetConfig } from '$lib/server/assets';
 import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
 import { queueUserExport } from '$lib/server/jobs';
 import { exportLimit } from '$lib/server/rate-limit';
+import { formText } from '$lib/server/validation';
 
 // The uploaded file, parsed into a plan: a Codex export zip, or a Word/EPUB
 // manuscript by its extension. Returns a fail() the action passes straight back.
@@ -88,8 +89,8 @@ export const actions: Actions = {
 	update: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		const data = await request.formData();
-		const name = String(data.get('name') ?? '').trim();
-		const descriptionMd = String(data.get('description') ?? '').trim() || null;
+		const name = formText(data, 'name').trim();
+		const descriptionMd = formText(data, 'description').trim() || null;
 		const establishedSetting = data.get('establishedSetting') === 'on';
 		if (!name) {
 			return fail(400, { action: 'update', message: 'The universe needs a name.' });
@@ -121,7 +122,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		let rows;
 		try {
-			rows = JSON.parse(String(data.get('categories') ?? '')) as unknown;
+			rows = JSON.parse(formText(data, 'categories')) as unknown;
 		} catch {
 			return fail(400, { action: 'categories', message: 'Could not read the category list.' });
 		}

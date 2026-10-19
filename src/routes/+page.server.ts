@@ -15,6 +15,7 @@ import {
 } from '$lib/server/universe-lifecycle';
 import { destroyStory, listTrashedStories, restoreStory } from '$lib/server/story-lifecycle';
 import { signupMode } from '$lib/server/settings';
+import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page. The page checks the layout's
@@ -115,7 +116,7 @@ export const actions: Actions = {
 		// The route is public for the landing page; the action is not.
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const name = String(data.get('name') ?? '').trim();
+		const name = formText(data, 'name').trim();
 		if (!name) {
 			return fail(400, { scope: 'universe', message: 'Give the universe a name.' });
 		}
@@ -147,8 +148,8 @@ export const actions: Actions = {
 	createStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const universeId = String(data.get('universeId') ?? '');
-		const title = String(data.get('title') ?? '').trim();
+		const universeId = formText(data, 'universeId');
+		const title = formText(data, 'title').trim();
 		if (!title) {
 			return fail(400, { scope: 'story', universeId, message: 'Give the story a title.' });
 		}
@@ -170,7 +171,7 @@ export const actions: Actions = {
 	// lazily created "Standalone stories" universe.
 	createStandaloneStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
-		const title = String((await request.formData()).get('title') ?? '').trim();
+		const title = formText(await request.formData(), 'title').trim();
 		if (!title) {
 			return fail(400, { scope: 'standalone', message: 'Give the story a title.' });
 		}
@@ -181,7 +182,7 @@ export const actions: Actions = {
 	restoreUniverse: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const universeId = String(data.get('universeId') ?? '');
+		const universeId = formText(data, 'universeId');
 		if (!isUuid(universeId)) {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
@@ -192,7 +193,7 @@ export const actions: Actions = {
 	destroyUniverse: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const universeId = String(data.get('universeId') ?? '');
+		const universeId = formText(data, 'universeId');
 		if (!isUuid(universeId)) {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
@@ -205,7 +206,7 @@ export const actions: Actions = {
 	restoreStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const storyId = String(data.get('storyId') ?? '');
+		const storyId = formText(data, 'storyId');
 		if (!isUuid(storyId) || !(await restoreStory(db, locals.user.id, storyId))) {
 			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
 		}
@@ -214,7 +215,7 @@ export const actions: Actions = {
 	destroyStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const storyId = String(data.get('storyId') ?? '');
+		const storyId = formText(data, 'storyId');
 		if (!isUuid(storyId) || !(await destroyStory(db, locals.user.id, storyId))) {
 			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
 		}

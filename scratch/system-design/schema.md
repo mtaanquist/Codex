@@ -1,17 +1,17 @@
-# Codex — data model
+# Codex - data model
 
 A self-hosted, web-based writing tool. Markdown is the authoring syntax; content is stored in Postgres. This document captures the current data model decisions.
 
-LLM integration is explicitly deferred to post-v1 (see `design.md`). The schema keeps a few forward-looking columns — `users.llm_config`, `stories.llm_config`, `lore_entries.activation_mode` — so the feature can be bolted on later without a migration of live data. Those columns are called out inline below.
+LLM integration (the Assistant, see `assistant.md`) shipped after v1 as Phase 9. The v1 schema reserved a few columns for it - `users.llm_config`, `stories.llm_config`, `lore_entries.activation_mode` - so it landed without migrating live data. Those columns are called out inline below.
 
 ## Hierarchy
 
 ```
 universe
-  ├── story (one or more)
-  │     └── chapter (organisational)
-  │           └── scene (atomic writing unit)
-  └── characters, places, lore entries
+  |-- story (one or more)
+  |     `-- chapter (organisational)
+  |           `-- scene (atomic writing unit)
+  `-- characters, places, lore entries
         (universe-scoped; surfaced per story by reference)
 ```
 
@@ -45,7 +45,7 @@ users (
   public_archive_enabled boolean not null default false,  -- admin grants this before a user may publish public pages
   password_hash       text not null,
   role                text not null,        -- 'admin' | 'user'
-  llm_config          jsonb not null default '{}',  -- reserved for future LLM integration; inert in v1
+  llm_config          jsonb not null default '{}',  -- Assistant config; '{}' until configured
   preferences         jsonb not null default '{}',  -- theme, content width, autocomplete mode, entity underline toggle, etc.
   plan_id             uuid references plans(id),    -- null falls back to the default plan; see Plans and entitlements
   storage_used_bytes  bigint not null default 0,    -- reserved for quota enforcement; not maintained in v1
@@ -158,7 +158,7 @@ stories (
   visibility          text not null default 'private',  -- 'private' | 'unlisted' | 'public'
   is_adult            boolean not null default false,   -- author-flagged adult content; readers avoid it by default
   cover_asset_id      uuid references assets(id),       -- null renders a default cover from title and author
-  llm_config          jsonb not null default '{}',  -- reserved for future LLM integration; inert in v1
+  llm_config          jsonb not null default '{}',  -- Assistant config; '{}' until configured
   deleted_at          timestamptz,      -- set while in the trash; null means live
   created_at          timestamptz not null,
   updated_at          timestamptz not null
@@ -167,7 +167,7 @@ stories (
 
 **Universe and story trash.** Deleting a universe or a story only stamps its `deleted_at`. Every listing and by-id lookup treats a trashed row, and everything under it, as gone: the library, search, the Assistant, exports, and review links. A trashed story's published edition also leaves the public page; a trashed universe's editions stay up, frozen, until the purge. The library lists trashed universes and stories (a story only while its universe is live) with Restore and Delete forever. After 30 days the worker purges the row for good with the same hard delete that "Delete forever" runs; purging a universe takes all its stories, trashed or not. A trashed story keeps its slug, so a restore never clashes.
 
-`llm_config` on both `users` and `stories` is **reserved for future LLM integration.** When that feature eventually ships, the per-user column will hold endpoint URL, key, and model-per-role mappings (continuation, co-author, editor, rubber duck); the per-story column will hold overrides merged at request time. In v1 both columns exist but are always `{}`; they live on the tables now so the eventual feature doesn't require migrating live data.
+`llm_config` on both `users` and `stories` holds the **Assistant's configuration** (`src/lib/server/llm/config.ts`). The per-user column holds the endpoint, the encrypted key, the master switch, budget, and model-per-role mappings; the per-story column holds overrides merged at request time, which can only subtract (mute, or pick a different model). Both stay `{}` until the writer configures the Assistant. They were reserved on the tables in v1 so the feature landed without migrating live data.
 
 ### Chapters and scenes
 
@@ -281,7 +281,7 @@ lore_entries (
 )
 ```
 
-`keywords` earns its keep in v1: it powers in-editor search/filtering of lore and feeds the mention-detection pass on save. `activation_mode` is **reserved for future LLM context-injection behaviour** — mirroring SillyTavern's lorebook semantics, `keyword` entries would be injected into LLM context only when a keyword appears in the current scene; `always` entries would always be injected; `manual` entries would never be injected automatically. It has no function in v1. Defaulting to `keyword` means existing rows will behave reasonably if and when the feature is added.
+`keywords` earns its keep in v1: it powers in-editor search/filtering of lore and feeds the mention-detection pass on save. `activation_mode` drives the **Assistant's lore injection** (`src/lib/server/llm/context/sources.ts`), mirroring SillyTavern's lorebook semantics: `keyword` entries are injected into the Assistant's context only when a keyword appears in the text in scope; `always` entries are always injected; `manual` entries are never injected automatically. It was reserved in v1, and defaulting to `keyword` meant existing rows behaved reasonably when the feature landed.
 
 ### Per-story context for universe entities
 
@@ -347,7 +347,7 @@ Membership is the explicit "this universe entity belongs to this story" signal; 
 
 ## Entity relationships
 
-Explicit, user-declared relations between entities — character-to-character (parent, sibling, rival, ally, mentor, serves), character-to-place (born in, raised in, lives in, rules, exiled from), and place-to-place (part of). Distinct from `entity_mentions`, which are implicit co-occurrences derived from prose. Relationships are data the user enters; mentions are data the system discovers.
+Explicit, user-declared relations between entities - character-to-character (parent, sibling, rival, ally, mentor, serves), character-to-place (born in, raised in, lives in, rules, exiled from), and place-to-place (part of). Distinct from `entity_mentions`, which are implicit co-occurrences derived from prose. Relationships are data the user enters; mentions are data the system discovers.
 
 ```sql
 relation_types (
@@ -386,8 +386,8 @@ entity_relationships (
 Key points:
 
 - **Direction.** Directional relations store one row; the UI renders the inverse on the target entity's page using the `reverse_label`. Symmetric relations (sibling, friend, rival) have `bidirectional = true`, store one row, and render with the same `forward_label` on both ends.
-- **Built-in vs custom.** A seed migration populates `relation_types` with `universe_id = null` for a standard library (parent_of, sibling_of, spouse_of, friend_of, rival_of, enemy_of, ally_of, mentor_of, serves, born_in, raised_in, lives_in, rules, exiled_from, part_of). Universes can add their own with `universe_id` set — "apprentice of," "sworn sword of," "forged by," whatever the universe needs. This mirrors how entity categories work.
-- **Story scope.** The `story_id` column lets a relationship be scoped to a specific book — "Alice and Bram are reconciled" in book two even though they're rivals at the universe level. Story-scoped rows supersede universe-wide rows where both exist, on the story's pages; the universe's page always shows the universe-wide truth.
+- **Built-in vs custom.** A seed migration populates `relation_types` with `universe_id = null` for a standard library (parent_of, sibling_of, spouse_of, friend_of, rival_of, enemy_of, ally_of, mentor_of, serves, born_in, raised_in, lives_in, rules, exiled_from, part_of). Universes can add their own with `universe_id` set - "apprentice of," "sworn sword of," "forged by," whatever the universe needs. This mirrors how entity categories work.
+- **Story scope.** The `story_id` column lets a relationship be scoped to a specific book - "Alice and Bram are reconciled" in book two even though they're rivals at the universe level. Story-scoped rows supersede universe-wide rows where both exist, on the story's pages; the universe's page always shows the universe-wide truth.
 - **No end-dating yet.** Relationships are either true (row exists) or not (row doesn't). Temporal relationships ("Alice and Bram were rivals until year 1472") can be handled via the notes field in v1, and potentially promoted to first-class time bounds later.
 
 The UI never lets users enter free-form relation labels. The relation type itself is always picked from the defined set (built-in or custom); free-form context goes in the `notes_md` field. This preserves the ability to filter, graph, and inverse-render.
@@ -419,7 +419,7 @@ outline_nodes (
 
 ## Notes
 
-Freeform writer notes, scoped by whichever foreign key is populated. A note with only `universe_id` set is universe-wide; one with `story_id` set is story-specific; one with `scene_id` set is attached to that scene. All four foreign keys are nullable — the populated ones define the scope.
+Freeform writer notes, scoped by whichever foreign key is populated. A note with only `universe_id` set is universe-wide; one with `story_id` set is story-specific; one with `scene_id` set is attached to that scene. All four foreign keys are nullable - the populated ones define the scope.
 
 ```sql
 notes (

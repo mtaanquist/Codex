@@ -44,6 +44,7 @@ import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
 import { listPendingForEntity, type EntitySuggestion } from '$lib/server/entity-suggestions';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
@@ -251,8 +252,8 @@ export const actions: Actions = {
 	declareMember: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const kind = String(data.get('kind') ?? '');
-		const entityId = String(data.get('entityId') ?? '');
+		const kind = formText(data, 'kind');
+		const entityId = formText(data, 'entityId');
 		if ((kind !== 'character' && kind !== 'place') || !isUuid(entityId)) {
 			return fail(400, { kind: 'member', message: 'Pick an entity to add.' });
 		}

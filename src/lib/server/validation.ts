@@ -23,3 +23,8 @@ export async function readJson<T = Record<string, unknown>>(request: Request): P
 export function checkProseLength(value: string): void {
 	if (value.length > MAX_PROSE_CHARS) error(413, 'that is too long to save');
 }
+
+// A form field as a string: '' when it is missing.
+export function formText(data: FormData, key: string): string {
+	return String(data.get(key) ?? '');
+}

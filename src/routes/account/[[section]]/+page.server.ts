@@ -78,6 +78,7 @@ import {
 import { listPasskeys, removePasskey } from '$lib/server/passkeys';
 import { reauthLimit } from '$lib/server/reauth';
 import QRCode from 'qrcode';
+import { formText } from '$lib/server/validation';
 
 // The actions that re-verify the password share one throttle (see reauthLimit),
 // so a borrowed session cannot brute-force the password through them. Passkey
@@ -268,8 +269,8 @@ export const actions: Actions = {
 	updateName: async ({ request, locals }) => {
 		const data = await request.formData();
 		const result = await saveIdentity(db, locals.user!.id, {
-			displayName: String(data.get('displayName') ?? ''),
-			penName: String(data.get('penName') ?? '')
+			displayName: formText(data, 'displayName'),
+			penName: formText(data, 'penName')
 		});
 		if (!result.ok) return fail(400, { scope: 'name', message: result.reason });
 		return { scope: 'name', saved: true };
@@ -277,11 +278,11 @@ export const actions: Actions = {
 	saveProfile: async ({ request, locals }) => {
 		const data = await request.formData();
 		const result = await saveProfile(db, locals.user!.id, {
-			bioMd: String(data.get('bioMd') ?? ''),
+			bioMd: formText(data, 'bioMd'),
 			profilePublic: data.get('profilePublic') === 'on',
-			links: parseLinks(String(data.get('links') ?? '')),
+			links: parseLinks(formText(data, 'links')),
 			commissionsOpen: data.get('commissionsOpen') === 'on',
-			commissionsMd: String(data.get('commissionsMd') ?? '')
+			commissionsMd: formText(data, 'commissionsMd')
 		});
 		if (!result.ok) return fail(400, { scope: 'profile', message: result.reason });
 		return { scope: 'profile', saved: true };
@@ -319,9 +320,9 @@ export const actions: Actions = {
 		// Claiming the handle is the first step into public, so the form may
 		// carry the author-name choice; it lands as the pen name unless one is
 		// already set.
-		const penName = String(data.get('penName') ?? '');
+		const penName = formText(data, 'penName');
 		if (penName) await setPenNameIfUnset(db, locals.user!.id, penName);
-		const result = await claimHandle(db, locals.user!.id, String(data.get('handle') ?? ''));
+		const result = await claimHandle(db, locals.user!.id, formText(data, 'handle'));
 		if (!result.ok) return fail(400, { scope: 'handle', message: result.reason });
 		return { scope: 'handle', saved: true };
 	},
@@ -335,14 +336,14 @@ export const actions: Actions = {
 	},
 	savePreferences: async ({ request, locals }) => {
 		const data = await request.formData();
-		const mode = String(data.get('entityAutocomplete') ?? '');
-		const marks = String(data.get('continuousSceneMarks') ?? '');
-		const editing = String(data.get('editingMode') ?? '');
-		const spell = String(data.get('spellCheck') ?? '');
-		const language = String(data.get('writingLanguage') ?? '');
-		const streak = String(data.get('sessionStreak') ?? '');
-		const nonPrinting = String(data.get('nonPrintingMarks') ?? '');
-		const command = String(data.get('commandMarkers') ?? '');
+		const mode = formText(data, 'entityAutocomplete');
+		const marks = formText(data, 'continuousSceneMarks');
+		const editing = formText(data, 'editingMode');
+		const spell = formText(data, 'spellCheck');
+		const language = formText(data, 'writingLanguage');
+		const streak = formText(data, 'sessionStreak');
+		const nonPrinting = formText(data, 'nonPrintingMarks');
+		const command = formText(data, 'commandMarkers');
 		// Blank or non-numeric means no goal (0); normalise clamps the rest.
 		const dailyWordGoal = Math.trunc(Number(data.get('dailyWordGoal'))) || 0;
 		if (mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
@@ -382,8 +383,8 @@ export const actions: Actions = {
 	},
 	saveEditorAppearance: async ({ request, locals }) => {
 		const data = await request.formData();
-		const font = String(data.get('editorFont') ?? '');
-		const lineSpacing = String(data.get('editorLineSpacing') ?? '');
+		const font = formText(data, 'editorFont');
+		const lineSpacing = formText(data, 'editorLineSpacing');
 		if (!isPageFont(font)) return fail(400, { scope: 'editorappearance', message: 'Pick a font.' });
 		if (!isLineSpacing(lineSpacing)) {
 			return fail(400, { scope: 'editorappearance', message: 'Pick a line spacing.' });
@@ -407,20 +408,20 @@ export const actions: Actions = {
 	saveAssistantIdentity: async ({ request, locals }) => {
 		const data = await request.formData();
 		const result = await patchAssistant(locals.user!.id, {
-			assistantName: String(data.get('assistantName') ?? ''),
-			persona: String(data.get('persona') ?? '')
+			assistantName: formText(data, 'assistantName'),
+			persona: formText(data, 'persona')
 		});
 		if (!result.ok) return fail(400, { scope: 'assistant-identity', message: result.reason });
 		return { scope: 'assistant-identity', saved: true };
 	},
 	saveAssistantEndpoint: async ({ request, locals }) => {
 		const data = await request.formData();
-		const profile = String(data.get('toolProfile') ?? '');
+		const profile = formText(data, 'toolProfile');
 		// An empty box clears the figure (null), rather than being left out, so the
 		// writer can remove a cap they set earlier. Anything that is not a
 		// non-negative number is refused instead of silently clearing it.
 		const usdField = (name: string): number | null | 'invalid' => {
-			const raw = String(data.get(name) ?? '').trim();
+			const raw = formText(data, name).trim();
 			if (!raw) return null;
 			const value = Number(raw);
 			if (!Number.isFinite(value) || value < 0) return 'invalid';
@@ -447,8 +448,8 @@ export const actions: Actions = {
 		const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
 		const result = await patchAssistant(locals.user!.id, {
 			provider: normaliseProviderId(data.get('provider')),
-			endpoint: String(data.get('endpoint') ?? ''),
-			apiKey: String(data.get('apiKey') ?? ''),
+			endpoint: formText(data, 'endpoint'),
+			apiKey: formText(data, 'apiKey'),
 			extraParams,
 			webSearch,
 			spendCapUsd,
@@ -471,7 +472,7 @@ export const actions: Actions = {
 		const storedView = await accountLlmView(db, locals.user!.id);
 		const stored = storedView.tuning;
 		for (const role of ASSISTANT_ROLES) {
-			const value = String(data.get(role) ?? '').trim();
+			const value = formText(data, role).trim();
 			if (value) models[role] = value;
 			const roleTuning: TuningMap[typeof role] = {};
 
@@ -577,17 +578,17 @@ export const actions: Actions = {
 		// Selects constrain the values; normalise drops anything else back to
 		// the defaults rather than erroring.
 		const setup = normalisePageSetup({
-			pageSize: String(data.get('pageSize') ?? ''),
-			margins: String(data.get('margins') ?? ''),
-			font: String(data.get('font') ?? ''),
-			fontCustom: String(data.get('fontCustom') ?? ''),
+			pageSize: formText(data, 'pageSize'),
+			margins: formText(data, 'margins'),
+			font: formText(data, 'font'),
+			fontCustom: formText(data, 'fontCustom'),
 			fontSize: Number(data.get('fontSize')),
-			paragraphStyle: String(data.get('paragraphStyle') ?? ''),
-			lineSpacing: String(data.get('lineSpacing') ?? ''),
+			paragraphStyle: formText(data, 'paragraphStyle'),
+			lineSpacing: formText(data, 'lineSpacing'),
 			lineSpacingCm: Number(data.get('lineSpacingCm')),
-			textAlign: String(data.get('textAlign') ?? ''),
-			gutter: String(data.get('gutter') ?? ''),
-			sceneBreak: String(data.get('sceneBreak') ?? ''),
+			textAlign: formText(data, 'textAlign'),
+			gutter: formText(data, 'gutter'),
+			sceneBreak: formText(data, 'sceneBreak'),
 			pageNumbers: data.get('pageNumbers') === 'on',
 			runningHeader: data.get('runningHeader') === 'on'
 		});
@@ -596,10 +597,10 @@ export const actions: Actions = {
 	},
 	saveAppearance: async ({ request, locals }) => {
 		const data = await request.formData();
-		const theme = String(data.get('theme') ?? '');
-		const accent = String(data.get('accent') ?? '');
-		const systemLightTheme = String(data.get('systemLightTheme') ?? '');
-		const systemDarkTheme = String(data.get('systemDarkTheme') ?? '');
+		const theme = formText(data, 'theme');
+		const accent = formText(data, 'accent');
+		const systemLightTheme = formText(data, 'systemLightTheme');
+		const systemDarkTheme = formText(data, 'systemDarkTheme');
 		if (!isTheme(theme)) return fail(400, { scope: 'appearance', message: 'Pick a theme.' });
 		if (!isAccentColor(accent)) {
 			return fail(400, { scope: 'appearance', message: 'Pick a valid accent colour.' });
@@ -633,10 +634,10 @@ export const actions: Actions = {
 		const limited = reauthGuard(locals.user!.id, 'totp');
 		if (limited) return limited;
 		const data = await request.formData();
-		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+		if (!(await verifyAccountPassword(db, locals.user!.id, formText(data, 'password')))) {
 			return fail(400, { scope: 'totp', message: 'That password is not right.' });
 		}
-		const result = await confirmEnrollment(db, locals.user!.id, String(data.get('code') ?? ''));
+		const result = await confirmEnrollment(db, locals.user!.id, formText(data, 'code'));
 		if (!result.ok) return fail(400, { scope: 'totp', message: result.reason });
 		return { scope: 'totp', recoveryCodes: result.recoveryCodes };
 	},
@@ -650,7 +651,7 @@ export const actions: Actions = {
 		const limited = reauthGuard(locals.user!.id, 'totp');
 		if (limited) return limited;
 		const data = await request.formData();
-		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+		if (!(await verifyAccountPassword(db, locals.user!.id, formText(data, 'password')))) {
 			return fail(400, { scope: 'totp', message: 'That password is not right.' });
 		}
 		await disableTotp(db, locals.user!.id);
@@ -660,7 +661,7 @@ export const actions: Actions = {
 		const limited = reauthGuard(locals.user!.id, 'totp');
 		if (limited) return limited;
 		const data = await request.formData();
-		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+		if (!(await verifyAccountPassword(db, locals.user!.id, formText(data, 'password')))) {
 			return fail(400, { scope: 'totp', message: 'That password is not right.' });
 		}
 		const codes = await regenerateRecoveryCodes(db, locals.user!.id);
@@ -673,10 +674,10 @@ export const actions: Actions = {
 		const data = await request.formData();
 		// Removing a sign-in credential is guarded by the password, the same as
 		// turning two-factor off: a borrowed session must not weaken sign-in.
-		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+		if (!(await verifyAccountPassword(db, locals.user!.id, formText(data, 'password')))) {
 			return fail(400, { scope: 'passkeys', message: 'That password is not right.' });
 		}
-		const id = String(data.get('passkeyId') ?? '');
+		const id = formText(data, 'passkeyId');
 		if (!isUuid(id) || !(await removePasskey(db, locals.user!.id, id))) {
 			return fail(400, { scope: 'passkeys', message: 'That passkey could not be removed.' });
 		}
@@ -689,8 +690,8 @@ export const actions: Actions = {
 		const result = await requestEmailChange(
 			db,
 			locals.user!.id,
-			String(data.get('password') ?? ''),
-			String(data.get('newEmail') ?? '')
+			formText(data, 'password'),
+			formText(data, 'newEmail')
 		);
 		if (!result.ok) return fail(400, { scope: 'email', message: result.reason });
 		await queueEmail({ tokenId: result.tokenId, to: result.newEmail, origin: publicOrigin(url) });
@@ -704,8 +705,8 @@ export const actions: Actions = {
 			db,
 			locals.user!.id,
 			locals.session!.id,
-			String(data.get('currentPassword') ?? ''),
-			String(data.get('newPassword') ?? '')
+			formText(data, 'currentPassword'),
+			formText(data, 'newPassword')
 		);
 		if (!result.ok) return fail(400, { scope: 'password', message: result.reason });
 		return { scope: 'password', saved: true };
@@ -714,7 +715,7 @@ export const actions: Actions = {
 	// signed out quickly. Signing out all others is password-gated below.
 	revokeSession: async ({ request, locals }) => {
 		const data = await request.formData();
-		const sessionId = String(data.get('sessionId') ?? '');
+		const sessionId = formText(data, 'sessionId');
 		if (sessionId === locals.session!.id) {
 			return fail(400, { scope: 'sessions', message: 'Use sign out to end your current session.' });
 		}
@@ -725,7 +726,7 @@ export const actions: Actions = {
 		const limited = reauthGuard(locals.user!.id, 'sessions');
 		if (limited) return limited;
 		const data = await request.formData();
-		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+		if (!(await verifyAccountPassword(db, locals.user!.id, formText(data, 'password')))) {
 			return fail(400, { scope: 'sessions', message: 'That password is not right.' });
 		}
 		await revokeOtherSessions(db, locals.user!.id, locals.session!.id);
@@ -735,7 +736,7 @@ export const actions: Actions = {
 		const limited = reauthGuard(locals.user!.id, 'delete');
 		if (limited) return limited;
 		const data = await request.formData();
-		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+		if (!(await verifyAccountPassword(db, locals.user!.id, formText(data, 'password')))) {
 			return fail(400, { scope: 'delete', message: 'That password is not right.' });
 		}
 		const tokenId = await scheduleAccountDeletion(db, locals.user!.id);
@@ -754,7 +755,7 @@ export const actions: Actions = {
 		return { scope: 'invites', saved: true };
 	},
 	deleteInvite: async ({ request, locals }) => {
-		const inviteId = String((await request.formData()).get('inviteId') ?? '');
+		const inviteId = formText(await request.formData(), 'inviteId');
 		if (!isUuid(inviteId) || !(await deleteUserInviteCode(db, locals.user!.id, inviteId))) {
 			return fail(400, {
 				scope: 'invites',

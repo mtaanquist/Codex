@@ -26,8 +26,6 @@ export const ADMIN_KINDS: NotificationKind[] = ['account_pending'];
 export type NotificationChannels = { inApp: boolean; email: boolean };
 export type NotificationMatrix = Record<NotificationKind, NotificationChannels>;
 
-export const DEFAULT_CHANNELS: NotificationChannels = { inApp: true, email: true };
-
 // What a notification carries for display and navigation. href is absent
 // when there is nowhere to send the reader (a guest reviewer's thread is
 // only reachable through their review link).

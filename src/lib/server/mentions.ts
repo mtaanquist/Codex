@@ -1,5 +1,4 @@
-// Mention index rebuilds. Runs in the worker (plain Node), so relative value
-// imports carry explicit .ts extensions.
+// Mention index rebuilds. Runs in the worker.
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
