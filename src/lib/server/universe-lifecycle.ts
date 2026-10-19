@@ -1,8 +1,7 @@
 // Universe trash and the purge cascade. Deleting a universe is a soft
 // delete: it leaves every live read at once but sits restorable for the
 // window below, after which the worker purges it for good. The cascade is
-// shared with the account purge. Runs in the worker, so relative value
-// imports carry explicit .ts extensions.
+// shared with the account purge. Runs in the worker too.
 import { and, eq, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {

@@ -17,6 +17,7 @@ import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
 import { listTrashedScenes } from '$lib/server/scene-lifecycle';
 import { sceneManageActions } from '$lib/server/scene-manage-actions';
+import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
@@ -215,7 +216,7 @@ export const actions: Actions = {
 	// it in Notes mode, which is where notes are managed.
 	newSceneNote: async ({ request, params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);
-		const sceneId = String((await request.formData()).get('sceneId') ?? '');
+		const sceneId = formText(await request.formData(), 'sceneId');
 		if (!isUuid(sceneId)) {
 			return fail(400, { scope: 'scene-note', message: 'Could not add a note to that scene.' });
 		}

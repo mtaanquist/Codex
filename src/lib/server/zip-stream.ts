@@ -6,7 +6,7 @@ import type { AssetObjectStore } from './assets.ts';
 // Exports and edition files are written as a stream: entries go into the zip
 // one at a time and the output flows straight to the bucket, so neither the
 // finished archive nor every bundled image sits in memory at once. Runs in the
-// worker, so relative value imports carry explicit .ts extensions.
+// worker too.
 //
 // The zip records are written here rather than by fflate's streaming Zip,
 // which marks every entry as "sizes follow the data", stored ones included.

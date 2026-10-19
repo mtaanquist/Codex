@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { formatDateTime } from '$lib/format';
+	import { formatDate, formatDateTime } from '$lib/format';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -53,14 +53,6 @@
 		} finally {
 			passkeyBusy = false;
 		}
-	}
-
-	function onDate(date: Date): string {
-		return new Date(date).toLocaleDateString(undefined, {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
 	}
 
 	// The segmented setup code. Each box holds one digit; the joined value posts
@@ -249,7 +241,7 @@
 				</div>
 				<p class="tfa-sub">
 					{#if data.twoFactor.status === 'on'}
-						{#if data.twoFactor.confirmedAt}Enabled {onDate(data.twoFactor.confirmedAt)} -
+						{#if data.twoFactor.confirmedAt}Enabled {formatDate(data.twoFactor.confirmedAt)} -
 						{/if}you'll be asked for a code on new devices. {data.twoFactor.recoveryRemaining} recovery
 						codes remain.
 					{:else if data.twoFactor.status === 'pending'}
@@ -465,7 +457,7 @@
 							<div class="user-row-identity">
 								<p class="user-row-name">{passkey.name ?? 'Passkey'}</p>
 								<p class="user-row-email">
-									Added {onDate(passkey.createdAt)}{passkey.lastUsedAt
+									Added {formatDate(passkey.createdAt)}{passkey.lastUsedAt
 										? ` - last used ${formatDateTime(passkey.lastUsedAt)}`
 										: ''}
 								</p>

@@ -1,8 +1,7 @@
 // Story trash. Deleting a story is a soft delete: it leaves every live read at
 // once but sits restorable for the same window as a trashed universe, after
 // which the worker purges it for good. The slug stays reserved meanwhile, so a
-// restore never clashes. Runs in the worker, so relative value imports carry
-// explicit .ts extensions.
+// restore never clashes. Runs in the worker too.
 import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { stories, universes } from './db/schema.ts';

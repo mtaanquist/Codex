@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateTime } from '$lib/format';
 	import { diffLines } from 'diff';
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
@@ -67,7 +68,7 @@
 	<div class="revision-banner-main">
 		<div class="revision-banner-title">Viewing a past revision</div>
 		<div class="revision-banner-sub">
-			{revision.createdAt.toLocaleString()}{revision.label ? ` - ${revision.label}` : ''}
+			{formatDateTime(revision.createdAt)}{revision.label ? ` - ${revision.label}` : ''}
 		</div>
 	</div>
 	<div class="revision-banner-actions">

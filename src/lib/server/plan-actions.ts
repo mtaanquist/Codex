@@ -12,6 +12,7 @@ import {
 	places,
 	placeStoryMemberships
 } from './db/schema';
+import { formText } from './validation';
 
 type PlanScope = {
 	universeId: string;
@@ -39,7 +40,7 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 		createCharacter: async (event: PlanEvent) => {
 			const scope = await resolveScope(event);
 			const data = await event.request.formData();
-			const name = String(data.get('name') ?? '').trim();
+			const name = formText(data, 'name').trim();
 			if (!name) {
 				return fail(400, { kind: 'character', message: 'Give the character a name.' });
 			}
@@ -59,7 +60,7 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 		createPlace: async (event: PlanEvent) => {
 			const scope = await resolveScope(event);
 			const data = await event.request.formData();
-			const name = String(data.get('name') ?? '').trim();
+			const name = formText(data, 'name').trim();
 			if (!name) {
 				return fail(400, { kind: 'place', message: 'Give the place a name.' });
 			}
@@ -79,8 +80,8 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 		createLoreEntry: async (event: PlanEvent) => {
 			const scope = await resolveScope(event);
 			const data = await event.request.formData();
-			const title = String(data.get('name') ?? '').trim();
-			const categoryId = String(data.get('categoryId') ?? '');
+			const title = formText(data, 'name').trim();
+			const categoryId = formText(data, 'categoryId');
 			if (!title) {
 				return fail(400, { kind: 'lore', message: 'Give the entry a title.' });
 			}
@@ -107,8 +108,8 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 		createCategory: async (event: PlanEvent) => {
 			const scope = await resolveScope(event);
 			const data = await event.request.formData();
-			const name = String(data.get('name') ?? '').trim();
-			const color = String(data.get('color') ?? '') || null;
+			const name = formText(data, 'name').trim();
+			const color = formText(data, 'color') || null;
 			if (!name) {
 				return fail(400, { kind: 'category', message: 'Give the category a name.' });
 			}

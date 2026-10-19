@@ -12,6 +12,7 @@ import {
 } from '$lib/server/two-factor';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
+import { formText } from '$lib/server/validation';
 
 // Keyed by the challenged account, so the six-digit space cannot be brute
 // forced: a handful of tries per window makes guessing infeasible.
@@ -37,7 +38,7 @@ export const actions: Actions = {
 
 		const data = await request.formData();
 		const useRecovery = data.get('mode') === 'recovery';
-		const code = String(data.get('code') ?? '').trim();
+		const code = formText(data, 'code').trim();
 		if (!code) {
 			return fail(400, { recovery: useRecovery, message: 'Enter a code.' });
 		}

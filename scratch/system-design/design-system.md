@@ -742,7 +742,7 @@ Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
 Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 `ReaderFooter`,
 `UserMenu`, `NotificationBell`, `ActivityCenter`, `ViewMenu`,
-`EditorToolbar`, `SelectionMenu`, `NotesSidebar`, `PlanSidebar`,
+`EditorToolbar`, `SelectionMenu`, `NotesWorkspace`, `NotesSidebar`, `PlanSidebar`,
 `StoryOutline`, `StoryRowMenu`, `RevisionHistory`, `EntityBadgePicker`,
 `EntityRelationships`, `ReviewSurface`, `ReviewPanel`, `ReviewCommentCard`,
 `ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`.
