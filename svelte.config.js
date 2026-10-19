@@ -17,7 +17,9 @@ const config = {
 				'script-src': ['self'],
 				'object-src': ['none'],
 				'base-uri': ['self'],
-				'frame-ancestors': ['none']
+				'frame-ancestors': ['none'],
+				'frame-src': ['none'],
+				'form-action': ['self']
 			}
 		}
 	}

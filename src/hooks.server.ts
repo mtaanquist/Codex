@@ -1,4 +1,4 @@
-import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError, type RequestEvent } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 import { logEvent } from '$lib/server/log';
@@ -35,7 +35,9 @@ const AUTH_PATHS = new Set(['/login', '/signup']);
 // state themselves, and review pages guard on the magic-link token.
 const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/', '/docs/'];
 
-// Set on every response, endpoints included. The Content-Security-Policy for
+// Set on every response that passes through handle, endpoints included.
+// adapter-node serves the built static files (/_app/immutable and static/)
+// before handle runs, so those do not get them. The Content-Security-Policy for
 // pages (scripts and frame-ancestors) comes from kit.csp in svelte.config.js.
 // HSTS is left off plain HTTP so a self-hosted install without TLS is not
 // pinned to HTTPS. It skips includeSubDomains because sibling hosts on a
@@ -47,11 +49,34 @@ function setSecurityHeaders(headers: Headers, url: URL) {
 	if (url.protocol === 'https:') headers.set('Strict-Transport-Security', 'max-age=31536000');
 }
 
+// A redirect thrown from handle bypasses resolve, so it would leave without
+// the headers above. A page navigation gets a plain 303 built here instead.
+// Data, remote and form-action requests still throw: SvelteKit answers those
+// with JSON its client reads, which a plain 303 would break.
+function redirectFromHook(event: RequestEvent, location: string, staleCookie: boolean): Response {
+	const method = event.request.method;
+	if (event.isDataRequest || event.isRemoteRequest || (method !== 'GET' && method !== 'HEAD')) {
+		redirect(303, location);
+	}
+	const headers = new Headers({ location });
+	// The stale-session delete is only applied by SvelteKit on its own
+	// responses, so it is carried here by hand.
+	if (staleCookie) {
+		headers.append(
+			'set-cookie',
+			event.cookies.serialize(SESSION_COOKIE, '', { path: '/', maxAge: 0 })
+		);
+	}
+	setSecurityHeaders(headers, event.url);
+	return new Response(null, { status: 303, headers });
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 	event.locals.session = null;
 
 	const token = event.cookies.get(SESSION_COOKIE);
+	let staleCookie = false;
 	if (token) {
 		const result = await validateSession(db, token);
 		if (result) {
@@ -59,6 +84,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.locals.session = result.session;
 		} else {
 			event.cookies.delete(SESSION_COOKIE, { path: '/' });
+			staleCookie = true;
 		}
 	}
 
@@ -67,10 +93,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 		!PUBLIC_PATHS.has(event.url.pathname) &&
 		!PUBLIC_PREFIXES.some((prefix) => event.url.pathname.startsWith(prefix))
 	) {
-		redirect(303, '/login');
+		return redirectFromHook(event, '/login', staleCookie);
 	}
 	if (event.locals.user && AUTH_PATHS.has(event.url.pathname)) {
-		redirect(303, '/');
+		return redirectFromHook(event, '/', false);
 	}
 
 	const response = await resolve(event);
