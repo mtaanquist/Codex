@@ -10,6 +10,7 @@ import {
 	NOTIFICATION_DIGEST_QUEUE,
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_REVIEW_RUNS_QUEUE,
+	PURGE_SESSIONS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
 	THIN_REVISIONS_QUEUE,
 	SWEEP_DELETED_OBJECTS_QUEUE,
@@ -63,6 +64,7 @@ import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { thinRevisions } from '../lib/server/revisions.ts';
+import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 import { stopWorker } from './shutdown.ts';
@@ -105,6 +107,7 @@ await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
 await boss.createQueue(THIN_REVISIONS_QUEUE);
+await boss.createQueue(PURGE_SESSIONS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
@@ -544,6 +547,11 @@ await boss.work(THIN_REVISIONS_QUEUE, async () => {
 	if (removed > 0) console.log(`revisions: thinned ${removed} old autosave(s)`);
 });
 
+await boss.work(PURGE_SESSIONS_QUEUE, async () => {
+	const deleted = await purgeSessions(db);
+	if (deleted > 0) console.log(`purge: ${deleted} old session(s) deleted`);
+});
+
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
 
@@ -557,6 +565,9 @@ await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
 
 // Old autosave history is thinned once a day, after the review-run sweep.
 await boss.schedule(THIN_REVISIONS_QUEUE, '35 4 * * *', {}, { tz: 'UTC' });
+
+// Expired and long-revoked sessions go once a day.
+await boss.schedule(PURGE_SESSIONS_QUEUE, '50 4 * * *', {}, { tz: 'UTC' });
 
 // Sweep for stale mention indexes every five minutes, so a dropped rebuild
 // self-heals within minutes instead of waiting for the next save.

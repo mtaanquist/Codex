@@ -62,7 +62,7 @@ Sign-in succeeds only when **both** `email_verified_at` and `approved_at` are no
 
 ### Sessions and credentials
 
-Authentication is session-cookie based, with the session row stored server-side so it can be listed and revoked. Email verification and password reset use single-use tokens, stored only as hashes. Two extra factors are modelled from the start: time-based one-time passwords (TOTP) and passkeys (WebAuthn).
+Authentication is session-cookie based, with the session row stored server-side so it can be listed and revoked. A daily worker job deletes sessions once they expire, and revoked ones 30 days after revocation. Email verification and password reset use single-use tokens, stored only as hashes. Two extra factors are modelled from the start: time-based one-time passwords (TOTP) and passkeys (WebAuthn).
 
 ```sql
 sessions (
