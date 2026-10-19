@@ -91,6 +91,36 @@ describe('listStoryTodos', () => {
 		// A marker without a note falls back to the selected text.
 		expect(todos.some((todo) => todo.text === 'Alice')).toBe(true);
 	});
+
+	it('slices un-noted snippets and skips scenes with nothing to do', async () => {
+		// Astral characters ahead of the anchor: UTF-16 offsets must still land.
+		const body = 'A \u{1F409} dragon wakes.\nShe said TODO: not a marker';
+		const [quiet] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 10, title: 'Quiet', bodyMd: 'Nothing left here.' })
+			.returning();
+		const [marked] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 11, title: 'Dragon', bodyMd: body })
+			.returning();
+		const start = body.indexOf('dragon');
+		const plain = await createMarker(db, ownerId, marked.id, start, start + 6);
+		const noted = await createMarker(db, ownerId, quiet.id, 0, 7, 'tighten');
+		if (!plain.ok || !noted.ok) throw new Error('setup failed');
+
+		const todos = await listStoryTodos(db, storyId);
+		expect(todos.filter((todo) => todo.sceneId === marked.id)).toEqual([
+			{ sceneId: marked.id, sceneTitle: 'Dragon', markerId: plain.id, text: 'dragon' }
+		]);
+		expect(todos.filter((todo) => todo.sceneId === quiet.id)).toEqual([
+			{ sceneId: quiet.id, sceneTitle: 'Quiet', markerId: noted.id, text: 'tighten' }
+		]);
+
+		await deleteMarker(db, ownerId, plain.id);
+		await deleteMarker(db, ownerId, noted.id);
+		await db.delete(scenes).where(eq(scenes.id, quiet.id));
+		await db.delete(scenes).where(eq(scenes.id, marked.id));
+	});
 });
 
 describe('resolve and anchors', () => {
