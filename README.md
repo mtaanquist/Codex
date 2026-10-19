@@ -24,7 +24,8 @@ your work stored as markdown that exports cleanly at any time.
 Codex is three containers: the app, a background worker (mention indexing,
 email, exports, backups), and Postgres. Every tagged release publishes a
 production image to GitHub Container Registry as
-`ghcr.io/mtaanquist/codex`, tagged `vX.Y.Z`, `vX.Y`, and `latest`.
+`ghcr.io/mtaanquist/codex`, tagged `vX.Y.Z`, `vX.Y` (the newest patch of that
+minor version), and `latest` (the newest release).
 
 A minimal deployment compose file:
 
@@ -49,6 +50,12 @@ services:
       # Trust the proxy's forwarded client address for rate limiting.
       ADDRESS_HEADER: x-forwarded-for
       XFF_DEPTH: '1'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 5 -O /dev/null http://127.0.0.1:3000/healthz || exit 1']
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
@@ -58,6 +65,9 @@ services:
     restart: unless-stopped
     # codex-worker is baked into the image, like codex-app above.
     command: codex-worker
+    # Time for running jobs to wind down on a stop or redeploy before Docker
+    # kills the process; the worker hands back what is left before then.
+    stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       APP_SECRET: ${APP_SECRET}

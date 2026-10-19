@@ -9,6 +9,7 @@ import {
 import type { ChangeSet, Extension, Range, Text } from '@codemirror/state';
 import { detectMentions, type MentionContext, type MentionTarget } from './mention-detect';
 import { entityLetter } from './entity-color';
+import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from './quick-card';
 import { badgeBackground, badgeImageSrc, type BadgeFields } from './entity-badge';
 
 export type MentionEntity = {
@@ -43,12 +44,6 @@ export type MentionOptions = {
 	// column instead of navigating to the plan.
 	onOpenCard?: (entityId: string) => void;
 };
-
-// The hover card shows the first few quick details and related entities;
-// the rest live on the entity's page. Detail order is the author's, so
-// the top ones are theirs to pick.
-const TOOLTIP_DETAILS = 3;
-const TOOLTIP_RELATED = 4;
 
 const TYPE_LABELS: Record<MentionTarget['type'], string> = {
 	character: 'character',
@@ -223,7 +218,7 @@ export function mentionExtensions(
 				const details = entity.details ?? [];
 				if (details.length > 0) {
 					const fields = el('div', 'pop-fields');
-					for (const detail of details.slice(0, TOOLTIP_DETAILS)) {
+					for (const detail of details.slice(0, QUICK_CARD_DETAILS)) {
 						const field = el('div', 'pop-field');
 						field.appendChild(el('span', 'pop-field-k', detail.label));
 						field.appendChild(el('span', 'pop-field-v', detail.value));
@@ -234,7 +229,7 @@ export function mentionExtensions(
 				const related = entity.related ?? [];
 				if (related.length > 0) {
 					const chips = el('div', 'pop-related');
-					for (const other of related.slice(0, TOOLTIP_RELATED)) {
+					for (const other of related.slice(0, QUICK_CARD_RELATED)) {
 						const chip = el('span', 'chip');
 						chip.appendChild(badge({ name: other.name, categoryColor: other.color }, 'dot'));
 						chip.appendChild(document.createTextNode(` ${other.name}`));

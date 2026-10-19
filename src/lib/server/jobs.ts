@@ -40,7 +40,7 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_JOB_EXPIRY_SECONDS,
-	ASSISTANT_JOB_HEARTBEAT_SECONDS
+	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
 import type { ReviewRunState } from './db/schema.ts';
@@ -179,7 +179,12 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 		const id = await boss.send(
 			EXPORT_ARTIFACTS_QUEUE,
 			{ publicationId },
-			{ singletonKey: publicationId, singletonSeconds: 300, singletonNextSlot: true }
+			{
+				singletonKey: publicationId,
+				singletonSeconds: 300,
+				singletonNextSlot: true,
+				heartbeatSeconds: JOB_HEARTBEAT_SECONDS
+			}
 		);
 		return id !== null;
 	} catch (error) {
@@ -195,7 +200,11 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 export async function queueUserExport(exportId: string): Promise<boolean> {
 	try {
 		const boss = await getBoss();
-		const id = await boss.send(USER_EXPORT_QUEUE, { exportId }, { singletonKey: exportId });
+		const id = await boss.send(
+			USER_EXPORT_QUEUE,
+			{ exportId },
+			{ singletonKey: exportId, heartbeatSeconds: JOB_HEARTBEAT_SECONDS }
+		);
 		return id !== null;
 	} catch (error) {
 		console.error('queueing user export failed:', error);
@@ -212,7 +221,7 @@ export async function queueUserExport(exportId: string): Promise<boolean> {
 function assistantSendOptions(userId: string) {
 	return {
 		expireInSeconds: ASSISTANT_JOB_EXPIRY_SECONDS,
-		heartbeatSeconds: ASSISTANT_JOB_HEARTBEAT_SECONDS,
+		heartbeatSeconds: JOB_HEARTBEAT_SECONDS,
 		retryLimit: 2,
 		group: { id: userId }
 	};

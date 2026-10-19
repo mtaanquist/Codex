@@ -46,11 +46,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
-	const config = await effectiveAssetConfig(db);
-	// With no store we cannot remove the object, but the reference can still go.
-	const store = config ? s3AssetStore(config) : null;
-	if (!store) error(503, 'image storage is not configured');
-	const result = await clearEntityBadgeImage(db, store, locals.user!.id, params.id);
+	const result = await clearEntityBadgeImage(db, locals.user!.id, params.id);
 	if (!result.ok) error(result.reason === 'entity not found' ? 404 : 400, result.reason);
 	return json({ ok: true });
 };

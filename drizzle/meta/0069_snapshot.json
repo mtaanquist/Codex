@@ -1,5 +1,5 @@
 {
-	"id": "253cfaf5-76c4-4098-ab78-2a238a6ff739",
+	"id": "1e6776a0-4a2b-4a09-870a-ede9d9b5bbd4",
 	"prevId": "61afa0de-948c-43de-9f1e-932d758c2d00",
 	"version": "7",
 	"dialect": "postgresql",
@@ -2277,6 +2277,32 @@
 			"checkConstraints": {},
 			"isRLSEnabled": false
 		},
+		"public.pending_object_deletions": {
+			"name": "pending_object_deletions",
+			"schema": "",
+			"columns": {
+				"storage_key": {
+					"name": "storage_key",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"deleted_at": {
+					"name": "deleted_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
 		"public.place_story_memberships": {
 			"name": "place_story_memberships",
 			"schema": "",
@@ -3980,22 +4006,6 @@
 					"concurrently": false,
 					"method": "btree",
 					"with": {}
-				},
-				"scenes_mentions_stale_idx": {
-					"name": "scenes_mentions_stale_idx",
-					"columns": [
-						{
-							"expression": "mentions_indexed_at",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "first"
-						}
-					],
-					"isUnique": false,
-					"where": "\"scenes\".\"mentions_indexed_at\" is null or \"scenes\".\"mentions_indexed_at\" < \"scenes\".\"updated_at\"",
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
 				}
 			},
 			"foreignKeys": {
@@ -4431,12 +4441,6 @@
 				},
 				"deleted_at": {
 					"name": "deleted_at",
-					"type": "timestamp with time zone",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"mentions_changed_at": {
-					"name": "mentions_changed_at",
 					"type": "timestamp with time zone",
 					"primaryKey": false,
 					"notNull": false
