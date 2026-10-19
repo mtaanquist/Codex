@@ -29,29 +29,18 @@ function workerIsReady(): boolean {
 	}
 }
 
+function workerLogTail(lines = 40): string {
+	try {
+		return readFileSync(WORKER_LOG_FILE, 'utf8').trimEnd().split('\n').slice(-lines).join('\n');
+	} catch {
+		return '(no log written)';
+	}
+}
+
 // Migrates the database the preview server uses, seeds the user the e2e tests
 // sign in with, and starts the worker so the mention index actually builds.
 // Idempotent, so repeated local runs are fine.
 export default async function globalSetup() {
-	// Capture the worker's output to a file rather than discarding it, so we can
-	// wait for it to come up and so a CI failure leaves something to read.
-	const log = openSync(WORKER_LOG_FILE, 'w');
-	// Start the worker the same way the app does (see package.json) so the
-	// module resolution hook is active; the worker imports app modules that use
-	// the $lib alias and extensionless paths.
-	const worker = spawn(
-		process.execPath,
-		['--import', './src/worker/register.js', 'src/worker/index.ts'],
-		{
-			stdio: ['ignore', log, log],
-			detached: true,
-			// The worker has its own default database; point it at the suite's, or
-			// it processes the jobs of whatever else is running.
-			env: { ...process.env, DATABASE_URL: e2eDatabaseUrl() }
-		}
-	);
-	worker.unref();
-	writeFileSync(WORKER_PID_FILE, String(worker.pid));
 	const databaseUrl = e2eDatabaseUrl();
 	await ensureTestDatabase(databaseUrl);
 	const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
@@ -122,16 +111,43 @@ export default async function globalSetup() {
 	);
 	await pool.end();
 
+	// Start the worker only now that its database exists and is migrated. Started
+	// earlier, it races the database's creation and on losing exits for good.
+	// Its output goes to a file so we can wait for it to come up and print the
+	// tail if it does not.
+	const log = openSync(WORKER_LOG_FILE, 'w');
+	// Start the worker the same way the app does (see package.json) so the
+	// module resolution hook is active; the worker imports app modules that use
+	// the $lib alias and extensionless paths.
+	const worker = spawn(
+		process.execPath,
+		['--import', './src/worker/register.js', 'src/worker/index.ts'],
+		{
+			stdio: ['ignore', log, log],
+			detached: true,
+			// The worker has its own default database; point it at the suite's, or
+			// it processes the jobs of whatever else is running.
+			env: { ...process.env, DATABASE_URL: databaseUrl }
+		}
+	);
+	worker.unref();
+	writeFileSync(WORKER_PID_FILE, String(worker.pid));
+
 	// Do not start the tests until the worker is actually processing jobs.
 	// Otherwise a slow worker start on a loaded runner looks like a missing
 	// mention index and fails the find-usages assertions intermittently.
+	// Without a worker the run would go on to fail specs for unrelated-looking
+	// reasons (no cast list, no export link), so stop here and say why.
+	const exited = () => worker.exitCode !== null || worker.signalCode !== null;
 	const deadline = Date.now() + WORKER_READY_TIMEOUT_MS;
-	while (!workerIsReady() && Date.now() < deadline) {
+	while (!workerIsReady() && !exited() && Date.now() < deadline) {
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	if (!workerIsReady()) {
-		console.warn(
-			`worker did not report ready within ${WORKER_READY_TIMEOUT_MS}ms; see ${WORKER_LOG_FILE}`
-		);
+		const reason = exited()
+			? `exited (${worker.exitCode ?? worker.signalCode}) before reporting ready`
+			: `did not report ready within ${WORKER_READY_TIMEOUT_MS}ms`;
+		if (!exited()) worker.kill();
+		throw new Error(`E2E worker ${reason}. Last lines of ${WORKER_LOG_FILE}:\n${workerLogTail()}`);
 	}
 }
