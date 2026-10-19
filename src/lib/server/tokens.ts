@@ -11,22 +11,61 @@ export function hashToken(token: string): string {
 	return createHash('sha256').update(token).digest('hex');
 }
 
-// Issues a single-use token of the given kind and returns the raw value to put
-// in the emailed link; the row keeps only its hash and an expiry.
+// Reserves a single-use token row and returns its id. The row starts with the
+// hash of a throwaway value, so it matches no link until armToken gives it one.
+// Emailed links are queued by this id and armed in the worker at send time, so
+// the raw token never sits in the job queue or its dead-letter queue.
+export async function reserveToken(
+	db: Database,
+	userId: string,
+	kind: TokenKind,
+	ttlMinutes: number
+): Promise<string> {
+	const [row] = await db
+		.insert(authTokens)
+		.values({
+			userId,
+			kind,
+			tokenHash: hashToken(randomBytes(32).toString('base64url')),
+			expiresAt: new Date(Date.now() + ttlMinutes * 60_000)
+		})
+		.returning({ id: authTokens.id });
+	return row.id;
+}
+
+// Gives a reserved token a fresh raw value and returns it with the token's
+// kind, or null when the token was revoked, used, or has expired. Arming again
+// (a retried send) replaces the value, so only the last link sent works.
+export async function armToken(
+	db: Database,
+	tokenId: string
+): Promise<{ token: string; kind: TokenKind } | null> {
+	const token = randomBytes(32).toString('base64url');
+	const [row] = await db
+		.update(authTokens)
+		.set({ tokenHash: hashToken(token) })
+		.where(
+			and(
+				eq(authTokens.id, tokenId),
+				isNull(authTokens.consumedAt),
+				gt(authTokens.expiresAt, sql`now()`)
+			)
+		)
+		.returning({ kind: authTokens.kind });
+	return row ? { token, kind: row.kind } : null;
+}
+
+// Issues a token and returns the raw value in one step. Emailed links must not
+// use this (reserve and queue the id instead); tests use it to mint a token.
 export async function issueToken(
 	db: Database,
 	userId: string,
 	kind: TokenKind,
 	ttlMinutes: number
 ): Promise<string> {
-	const token = randomBytes(32).toString('base64url');
-	await db.insert(authTokens).values({
-		userId,
-		kind,
-		tokenHash: hashToken(token),
-		expiresAt: new Date(Date.now() + ttlMinutes * 60_000)
-	});
-	return token;
+	const armed = await armToken(db, await reserveToken(db, userId, kind, ttlMinutes));
+	if (!armed) throw new Error('A token reserved just now could not be armed.');
+	return armed.token;
 }
 
 // Checks a token without spending it: valid, unexpired, unconsumed. The

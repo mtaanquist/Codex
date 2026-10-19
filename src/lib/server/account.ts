@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sessions, users } from './db/schema';
 import { hashPassword, verifyPassword } from './password';
-import { consumeToken, issueToken, revokeTokens } from './tokens';
+import { consumeToken, reserveToken, revokeTokens } from './tokens';
 import { isUniqueViolation } from './db-errors.ts';
 import { EMAIL_RE } from './signup.ts';
 import { MAX_DISPLAY_NAME } from './validation.ts';
@@ -224,10 +224,10 @@ export async function changePassword(
 }
 
 export type EmailChangeResult =
-	{ ok: true; token: string; newEmail: string } | { ok: false; reason: string };
+	{ ok: true; tokenId: string; newEmail: string } | { ok: false; reason: string };
 
 // Begins an email change: verifies the password, checks the address is valid
-// and free, records it as pending, and returns a token for the link sent to
+// and free, records it as pending, and returns a token id for the link sent to
 // the new address. The live email does not change until the link is confirmed.
 export async function requestEmailChange(
 	db: Database,
@@ -256,12 +256,12 @@ export async function requestEmailChange(
 
 	// Revoke any earlier pending change before issuing the new one, so an older
 	// link cannot later confirm whatever address is pending at that moment.
-	const token = await db.transaction(async (tx) => {
+	const tokenId = await db.transaction(async (tx) => {
 		await revokeTokens(tx, userId, 'email_change');
 		await tx.update(users).set({ pendingEmail: email }).where(eq(users.id, userId));
-		return issueToken(tx, userId, 'email_change', EMAIL_CHANGE_TTL_MINUTES);
+		return reserveToken(tx, userId, 'email_change', EMAIL_CHANGE_TTL_MINUTES);
 	});
-	return { ok: true, token, newEmail: email };
+	return { ok: true, tokenId, newEmail: email };
 }
 
 // Confirms an email change: swaps the pending address in as the live, verified

@@ -31,7 +31,8 @@ import {
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
 import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
-import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { sendEmail } from '../lib/server/email.ts';
+import { resolveEmailJob, type EmailJob } from '../lib/server/token-email.ts';
 import { logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
@@ -438,9 +439,14 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs)
 	}
 });
 
-await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
+await boss.work<EmailJob>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		await sendEmail(db, job.data);
+		const message = await resolveEmailJob(db, job.data);
+		if (!message) {
+			logEvent('info', 'email.skipped', { to: redactEmail(job.data.to) });
+			continue;
+		}
+		await sendEmail(db, message);
 		// Structured, with the recipient masked and the subject (which embeds
 		// story titles) omitted, so account PII does not sit in the logs.
 		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
@@ -451,7 +457,7 @@ await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 // The send is given up, but it must not vanish: log it loudly so an operator
 // can resend by hand. The recipient flow already said "check your email", so
 // there is no other signal otherwise.
-await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
+await boss.work<EmailJob>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
 	}

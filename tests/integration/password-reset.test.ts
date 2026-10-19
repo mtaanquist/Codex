@@ -7,7 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import { requestPasswordReset, resetPassword } from '../../src/lib/server/password-reset';
 import { confirmEmailChange, requestEmailChange } from '../../src/lib/server/account';
-import { issueToken, peekToken } from '../../src/lib/server/tokens';
+import { armToken, issueToken, peekToken } from '../../src/lib/server/tokens';
 import { hashPassword as hashFor, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -43,10 +43,19 @@ afterAll(async () => {
 	await pool.end();
 });
 
+// Requests a reset and arms its token the way the email worker does, returning
+// the raw value the emailed link would carry.
+async function sentReset(): Promise<string> {
+	const tokenId = await requestPasswordReset(db, 'reset@example.com');
+	return (await armToken(db, tokenId!))!.token;
+}
+
 describe('requestPasswordReset', () => {
-	it('returns a token for a known address, regardless of case or padding', async () => {
-		const token = await requestPasswordReset(db, '  Reset@Example.com ');
-		expect(token).toBeTruthy();
+	it('reserves a token for a known address, regardless of case or padding', async () => {
+		const tokenId = await requestPasswordReset(db, '  Reset@Example.com ');
+		expect(tokenId).toBeTruthy();
+		// The reserved row matches no link until the worker arms it.
+		expect(await armToken(db, tokenId!)).toMatchObject({ kind: 'password_reset' });
 	});
 
 	it('returns null for an unknown address without leaking', async () => {
@@ -54,8 +63,8 @@ describe('requestPasswordReset', () => {
 	});
 
 	it('revokes an earlier reset link when a new one is requested', async () => {
-		const first = (await requestPasswordReset(db, 'reset@example.com')) as string;
-		const second = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const first = await sentReset();
+		const second = await sentReset();
 		// Only the most recent link is live.
 		expect(await peekToken(db, 'password_reset', first)).toBeNull();
 		expect(await peekToken(db, 'password_reset', second)).toBe(userId);
@@ -67,7 +76,7 @@ describe('resetPassword', () => {
 		await db
 			.insert(sessions)
 			.values({ userId, tokenHash: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60_000) });
-		const token = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const token = await sentReset();
 
 		const result = await resetPassword(db, token, 'brand-new-password');
 		expect(result.ok).toBe(true);
@@ -83,7 +92,7 @@ describe('resetPassword', () => {
 	});
 
 	it('refuses a too-short password without consuming the token', async () => {
-		const token = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const token = await sentReset();
 		expect((await resetPassword(db, token, 'short')).ok).toBe(false);
 		// The link still works for a valid attempt afterwards.
 		expect((await resetPassword(db, token, 'a-good-password')).ok).toBe(true);
@@ -91,7 +100,7 @@ describe('resetPassword', () => {
 
 	it('refuses an unknown token and a reused one', async () => {
 		expect((await resetPassword(db, 'not-real', 'a-good-password')).ok).toBe(false);
-		const token = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const token = await sentReset();
 		expect((await resetPassword(db, token, 'a-good-password')).ok).toBe(true);
 		expect((await resetPassword(db, token, 'another-password')).ok).toBe(false);
 	});
@@ -100,7 +109,7 @@ describe('resetPassword', () => {
 		// Two links outstanding at once (e.g. issued before the revoke-on-request
 		// behaviour, here issued directly to simulate that). Completing one kills
 		// the other so a leaked link cannot reset the password again.
-		const used = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const used = await sentReset();
 		const sibling = await issueToken(db, userId, 'password_reset', 60);
 		expect((await resetPassword(db, used, 'a-good-password')).ok).toBe(true);
 		expect(await peekToken(db, 'password_reset', sibling)).toBeNull();
@@ -117,14 +126,15 @@ describe('password recovery ends an in-flight email change', () => {
 		const change = await requestEmailChange(db, userId, 'correct horse', 'attacker@evil.example');
 		expect(change.ok).toBe(true);
 		if (!change.ok) return;
+		const changeToken = (await armToken(db, change.tokenId))!.token;
 
-		const reset = (await requestPasswordReset(db, 'reset@example.com')) as string;
+		const reset = await sentReset();
 		expect((await resetPassword(db, reset, 'brand-new-password')).ok).toBe(true);
 
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.pendingEmail).toBeNull();
-		expect(await peekToken(db, 'email_change', change.token)).toBeNull();
-		expect((await confirmEmailChange(db, change.token)).ok).toBe(false);
+		expect(await peekToken(db, 'email_change', changeToken)).toBeNull();
+		expect((await confirmEmailChange(db, changeToken)).ok).toBe(false);
 		expect(row.email).toBe('reset@example.com');
 	});
 });
