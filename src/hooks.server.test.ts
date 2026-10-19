@@ -8,7 +8,10 @@ vi.mock('$lib/server/auth', () => ({
 	SESSION_COOKIE: 'session',
 	validateSession: vi.fn(async () => null)
 }));
-vi.mock('$lib/server/log', () => ({ logEvent: vi.fn() }));
+vi.mock('$lib/server/log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/server/log')>()),
+	logEvent: vi.fn()
+}));
 
 const { validateSession } = await import('$lib/server/auth');
 const { logEvent } = await import('$lib/server/log');

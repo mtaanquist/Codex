@@ -14,6 +14,13 @@ export function logEvent(
 	else console.log(line);
 }
 
+// Log fields for a caught error. An Error serialises to {} in JSON, so its
+// message and stack are copied out by hand.
+export function errorFields(error: unknown): { message: string; stack?: string } {
+	if (error instanceof Error) return { message: error.message, stack: error.stack };
+	return { message: String(error) };
+}
+
 // Masks an email for logs: keeps the first character and the domain, so an
 // operator can recognise an account without the full address sitting in logs.
 export function redactEmail(email: string): string {

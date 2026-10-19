@@ -108,7 +108,7 @@ jobs:
           state=$(docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' codex-worker-1)
           echo "worker: $state"
           [ "$state" = "running restarts=0" ]
-          docker logs codex-worker-1 2>&1 | grep -q "Worker started"
+          docker logs codex-worker-1 2>&1 | grep -q '"event":"worker.started"'
       - name: First-admin bootstrap runs in the image
         # seed-admin runs raw under Node in the image, like the worker; a
         # missing-extension import fails only here, never in the host-run tests.

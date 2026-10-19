@@ -13,12 +13,13 @@ import { e2eDatabaseUrl } from './database';
 // Named for this checkout: two worktrees running at once would otherwise
 // overwrite each other's pid file (so teardown kills the wrong worker) and
 // share the log the readiness check reads, letting one run start on the other's
-// "Worker started".
+// ready line.
 export const WORKER_PID_FILE = join(tmpdir(), `codex-e2e-worker-${checkoutId()}.pid`);
 export const WORKER_LOG_FILE = join(tmpdir(), `codex-e2e-worker-${checkoutId()}.log`);
 
-// The worker logs this once pg-boss has started and the queues are registered.
-const WORKER_READY_MARKER = 'Worker started';
+// The worker logs this event once pg-boss has started and the queues are
+// registered.
+const WORKER_READY_MARKER = '"event":"worker.started"';
 const WORKER_READY_TIMEOUT_MS = 30_000;
 
 function workerIsReady(): boolean {

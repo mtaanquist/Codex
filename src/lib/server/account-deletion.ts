@@ -1,5 +1,6 @@
 import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { errorFields, logEvent } from './log.ts';
 import type { AssetObjectStore } from './assets.ts';
 import {
 	assets,
@@ -171,7 +172,7 @@ export async function purgeAccount(
 		];
 		for (const key of keys) {
 			await store.remove(key).catch((error) => {
-				console.error(`purge: removing object ${key} failed:`, error);
+				logEvent('error', 'purge.object_failed', { key, ...errorFields(error) });
 			});
 		}
 	}

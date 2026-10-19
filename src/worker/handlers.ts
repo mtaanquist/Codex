@@ -18,7 +18,7 @@ import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts'
 import { effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
 import { sendEmail } from '../lib/server/email.ts';
 import { resolveEmailJob, type EmailJob } from '../lib/server/token-email.ts';
-import { logEvent, redactEmail } from '../lib/server/log.ts';
+import { errorFields, logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
 	buildUserDigest,
@@ -127,7 +127,7 @@ export function createHandlers(deps: WorkerDeps) {
 		payload: Parameters<typeof insertNotifications>[3]
 	): Promise<void> {
 		if (!(await shouldNotifyWriter(boss, queue, job))) {
-			console.warn(`${queue}: job ${job.id} is being retried, notice left to the retry`);
+			logEvent('warn', 'assistant.notice_deferred', { queue, jobId: job.id });
 			return;
 		}
 		await queueDigests(await insertNotifications(db, [userId], kind, payload));
@@ -137,15 +137,21 @@ export function createHandlers(deps: WorkerDeps) {
 		async mentionsScene(jobs: Job<{ sceneId: string }>[]) {
 			for (const job of jobs) {
 				const result = await rebuildSceneMentions(db, job.data.sceneId);
-				if (result.ok) console.log(`mentions: scene ${job.data.sceneId} -> ${result.count}`);
-				else console.warn(`mentions: scene ${job.data.sceneId} skipped (${result.reason})`);
+				if (result.ok) {
+					logEvent('info', 'mentions.scene', { sceneId: job.data.sceneId, count: result.count });
+				} else {
+					logEvent('warn', 'mentions.scene_skipped', {
+						sceneId: job.data.sceneId,
+						reason: result.reason
+					});
+				}
 			}
 		},
 
 		async mentionsUniverse(jobs: Job<{ universeId: string }>[]) {
 			for (const job of jobs) {
 				const count = await rebuildUniverseMentions(db, job.data.universeId);
-				console.log(`mentions: universe ${job.data.universeId} -> ${count} scenes reindexed`);
+				logEvent('info', 'mentions.universe', { universeId: job.data.universeId, scenes: count });
 			}
 		},
 
@@ -154,7 +160,7 @@ export function createHandlers(deps: WorkerDeps) {
 		// fallen behind.
 		async reconcileMentions() {
 			const reindexed = await reconcileMentions(db);
-			if (reindexed > 0) console.log(`mentions: reconcile reindexed ${reindexed} stale scene(s)`);
+			if (reindexed > 0) logEvent('info', 'mentions.reconcile', { scenes: reindexed });
 		},
 
 		// Generates the stored export files (markdown zip, EPUB, PDF) for a freshly
@@ -164,14 +170,22 @@ export function createHandlers(deps: WorkerDeps) {
 			for (const job of jobs) {
 				const result = await generateEditionArtifacts(db, job.data.publicationId);
 				if (!result.ok) {
-					console.warn(`exports: edition ${job.data.publicationId} skipped (${result.reason})`);
+					logEvent('warn', 'exports.edition_skipped', {
+						publicationId: job.data.publicationId,
+						reason: result.reason
+					});
 					continue;
 				}
-				console.log(`exports: edition ${job.data.publicationId} -> ${result.stored.join(', ')}`);
+				logEvent('info', 'exports.edition', {
+					publicationId: job.data.publicationId,
+					stored: result.stored
+				});
 				for (const failure of result.failed) {
-					console.error(
-						`exports: edition ${job.data.publicationId} ${failure.format} failed: ${failure.error}`
-					);
+					logEvent('error', 'exports.edition_failed', {
+						publicationId: job.data.publicationId,
+						format: failure.format,
+						message: failure.error
+					});
 				}
 			}
 		},
@@ -183,7 +197,7 @@ export function createHandlers(deps: WorkerDeps) {
 			const source = await assetMigrationSource(db);
 			const target = await effectiveAssetConfig(db);
 			if (!source || !target) {
-				console.warn('asset migration: no stashed source or no storage configured, skipping');
+				logEvent('warn', 'assets.migration_skipped', { reason: 'no source or no storage' });
 				return;
 			}
 			const result = await migrateAssetObjects(
@@ -193,7 +207,10 @@ export function createHandlers(deps: WorkerDeps) {
 			);
 			await recordAssetMigrationResult(db, { finishedAt: new Date().toISOString(), ...result });
 			if (result.failed === 0) await clearAssetMigrationSource(db);
-			console.log(`asset migration: ${result.copied} copied, ${result.failed} failed`);
+			logEvent(result.failed > 0 ? 'warn' : 'info', 'assets.migration', {
+				copied: result.copied,
+				failed: result.failed
+			});
 		},
 
 		// Builds a user-requested export (account, story, or universe archive, or a
@@ -206,7 +223,7 @@ export function createHandlers(deps: WorkerDeps) {
 				const store = config ? services.s3AssetStore(config) : null;
 				const result = await runUserExport(db, job.data.exportId, store);
 				if (!result.ok) {
-					console.warn(`export: ${job.data.exportId} failed (${result.reason})`);
+					logEvent('warn', 'export.failed', { exportId: job.data.exportId, reason: result.reason });
 					continue;
 				}
 				if (store) await pruneOwnerExports(db, store, result.ownerId);
@@ -215,7 +232,7 @@ export function createHandlers(deps: WorkerDeps) {
 					href: `/exports/${job.data.exportId}`
 				});
 				await queueDigests(digestUsers);
-				console.log(`export: ${job.data.exportId} ready`);
+				logEvent('info', 'export.ready', { exportId: job.data.exportId });
 			}
 		},
 
@@ -241,9 +258,11 @@ export function createHandlers(deps: WorkerDeps) {
 						.from(schema.universes)
 						.where(eq(schema.universes.id, universeId));
 					if (!universe || universe.ownerId !== userId) {
-						console.warn(
-							`assistant continuity: universe ${universeId} not owned by ${userId}, skipping`
-						);
+						logEvent('warn', 'assistant.continuity_skipped', {
+							universeId,
+							userId,
+							reason: 'not owner'
+						});
 						continue;
 					}
 					const href = `/universes/${universe.slug}/plan`;
@@ -274,12 +293,12 @@ export function createHandlers(deps: WorkerDeps) {
 						title,
 						href
 					});
-					console.log(`assistant continuity: universe ${universeId} done`);
+					logEvent('info', 'assistant.continuity', { universeId });
 					continue;
 				}
 
 				if (!storyId) {
-					console.warn('assistant review: no story or universe in scope, skipping');
+					logEvent('warn', 'assistant.review_skipped', { userId, reason: 'no scope' });
 					continue;
 				}
 				const [story] = await db
@@ -292,7 +311,7 @@ export function createHandlers(deps: WorkerDeps) {
 					.where(eq(schema.stories.id, storyId));
 				// Re-check ownership at run time: the story may have been deleted since.
 				if (!story || story.ownerId !== userId) {
-					console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
+					logEvent('warn', 'assistant.review_skipped', { storyId, userId, reason: 'not owner' });
 					continue;
 				}
 				const href = `/stories/${story.slug}/review`;
@@ -329,14 +348,14 @@ export function createHandlers(deps: WorkerDeps) {
 						title,
 						href
 					});
-					console.log(`assistant continuity: story ${storyId} done`);
+					logEvent('info', 'assistant.continuity', { storyId });
 					continue;
 				}
 
 				// Like both continuity branches: an error that escapes the review must
 				// still reach the writer, or the job fails with nothing said.
 				let title: string;
-				let done: string;
+				let done: Record<string, number | boolean>;
 				try {
 					const result = await services.reviewStoryScenes(db, {
 						userId,
@@ -364,16 +383,16 @@ export function createHandlers(deps: WorkerDeps) {
 					} else if (result.failed === 0 && problem) {
 						title += ` ${problem}`;
 					}
-					done = `${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`;
+					done = { reviewed: result.reviewed, failed: result.failed, notes: result.notes };
 				} catch (err) {
 					title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
-					done = 'failed';
+					done = { threw: true };
 				}
 				await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
 					title,
 					href
 				});
-				console.log(`assistant review: story ${storyId} - ${done}`);
+				logEvent('info', 'assistant.review', { storyId, ...done });
 			}
 		},
 
@@ -393,7 +412,7 @@ export function createHandlers(deps: WorkerDeps) {
 					.from(schema.stories)
 					.where(eq(schema.stories.id, storyId));
 				if (!story || story.ownerId !== userId) {
-					console.warn(`assistant summaries: story ${storyId} not owned by ${userId}, skipping`);
+					logEvent('warn', 'assistant.summaries_skipped', { storyId, userId, reason: 'not owner' });
 					continue;
 				}
 				const result = await services.summariseStory(db, { userId, storyId, signal: job.signal });
@@ -415,18 +434,21 @@ export function createHandlers(deps: WorkerDeps) {
 					title,
 					href
 				});
-				console.log(
-					`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
-				);
+				logEvent('info', 'assistant.summaries', {
+					storyId,
+					scenes: result.scenes,
+					chapters: result.chapters,
+					failed: result.failed
+				});
 			}
 		},
 
 		async backup(jobs: Job<{ trigger?: 'scheduled' | 'manual' }>[]) {
 			for (const job of jobs) {
 				const result = await runBackup(db, job.data.trigger ?? 'scheduled');
-				if (!result.ok) console.error(`backup: failed (${result.reason})`);
-				else if (result.skipped) console.log('backup: skipped, nothing changed');
-				else console.log(`backup: uploaded ${result.key}`);
+				if (!result.ok) logEvent('error', 'backup.failed', { reason: result.reason });
+				else if (result.skipped) logEvent('info', 'backup.skipped', { reason: 'unchanged' });
+				else logEvent('info', 'backup.uploaded', { key: result.key });
 			}
 		},
 
@@ -478,7 +500,7 @@ export function createHandlers(deps: WorkerDeps) {
 				// outcome.
 				await markEmailed(db, digest.ids);
 				await services.sendEmail(db, digest.email);
-				console.log(`notify: digest of ${digest.ids.length} sent to user ${job.data.userId}`);
+				logEvent('info', 'notify.digest', { userId: job.data.userId, count: digest.ids.length });
 			}
 		},
 
@@ -491,7 +513,7 @@ export function createHandlers(deps: WorkerDeps) {
 				// dropping a digest on a hard send failure.
 				await markReviewerNotified(db, digest.reviewerId, digest.upTo);
 				await services.sendEmail(db, digest.email);
-				console.log(`notify: reviewer digest sent for ${job.data.reviewerId}`);
+				logEvent('info', 'notify.reviewer_digest', { reviewerId: job.data.reviewerId });
 			}
 		},
 
@@ -503,9 +525,9 @@ export function createHandlers(deps: WorkerDeps) {
 			for (const userId of due) {
 				try {
 					await purgeAccount(db, userId, store, { requireSchedule: true });
-					console.log(`purge: account ${userId} deleted`);
+					logEvent('info', 'purge.account', { userId });
 				} catch (error) {
-					console.error(`purge: account ${userId} failed`, error);
+					logEvent('error', 'purge.account_failed', { userId, ...errorFields(error) });
 				}
 			}
 		},
@@ -516,17 +538,17 @@ export function createHandlers(deps: WorkerDeps) {
 			for (const universeId of await listUniversesDueForPurge(db)) {
 				try {
 					await purgeUniverse(db, universeId);
-					console.log(`purge: universe ${universeId} deleted`);
+					logEvent('info', 'purge.universe', { universeId });
 				} catch (error) {
-					console.error(`purge: universe ${universeId} failed`, error);
+					logEvent('error', 'purge.universe_failed', { universeId, ...errorFields(error) });
 				}
 			}
 			for (const storyId of await listStoriesDueForPurge(db)) {
 				try {
 					await purgeStory(db, storyId);
-					console.log(`purge: story ${storyId} deleted`);
+					logEvent('info', 'purge.story', { storyId });
 				} catch (error) {
-					console.error(`purge: story ${storyId} failed`, error);
+					logEvent('error', 'purge.story_failed', { storyId, ...errorFields(error) });
 				}
 			}
 		},
@@ -539,9 +561,11 @@ export function createHandlers(deps: WorkerDeps) {
 			const graceDays = objectDeletionGraceDays(await effectiveBackupConfig(db));
 			const result = await sweepDeletedObjects(db, services.s3AssetStore(config), graceDays);
 			if (result.removed + result.kept + result.failed > 0) {
-				console.log(
-					`asset sweep: ${result.removed} removed, ${result.kept} still in use, ${result.failed} failed`
-				);
+				logEvent(result.failed > 0 ? 'warn' : 'info', 'assets.sweep', {
+					removed: result.removed,
+					kept: result.kept,
+					failed: result.failed
+				});
 			}
 		},
 
@@ -551,17 +575,17 @@ export function createHandlers(deps: WorkerDeps) {
 		// grow for good.
 		async purgeReviewRuns() {
 			const deleted = await purgeReviewRuns(db);
-			if (deleted > 0) console.log(`purge: ${deleted} review run row(s) deleted`);
+			if (deleted > 0) logEvent('info', 'purge.review_runs', { deleted });
 		},
 
 		async thinRevisions() {
 			const removed = await thinRevisions(db);
-			if (removed > 0) console.log(`revisions: thinned ${removed} old autosave(s)`);
+			if (removed > 0) logEvent('info', 'revisions.thinned', { removed });
 		},
 
 		async purgeSessions() {
 			const deleted = await purgeSessions(db);
-			if (deleted > 0) console.log(`purge: ${deleted} old session(s) deleted`);
+			if (deleted > 0) logEvent('info', 'purge.sessions', { deleted });
 		}
 	};
 }

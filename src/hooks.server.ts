@@ -7,7 +7,7 @@ import {
 } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
-import { logEvent } from '$lib/server/log';
+import { errorFields, logEvent } from '$lib/server/log';
 import { assertOriginConfigured } from '$lib/server/origin';
 
 export const init: ServerInit = () => {
@@ -123,8 +123,7 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 			method: event.request.method,
 			path: event.url.pathname,
 			status,
-			message: error instanceof Error ? error.message : String(error),
-			stack: error instanceof Error ? error.stack : undefined
+			...errorFields(error)
 		});
 	}
 	return { message };
