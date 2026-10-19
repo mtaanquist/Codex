@@ -11,6 +11,11 @@ updates:
       all-dependencies:
         patterns: ['*']
         update-types: ['minor', 'patch']
+      # The SvelteKit 3 major (#613) has to move kit, the adapter and the Vite
+      # plugin together; separate PRs would each fail on peers.
+      sveltekit-major:
+        patterns: ['@sveltejs/kit', '@sveltejs/adapter-node', '@sveltejs/vite-plugin-svelte']
+        update-types: ['major']
     ignore:
       # svelte-check 4.7.4 still peers on typescript ^5 || ^6, so a bump to 7
       # fails npm ci and takes the whole grouped PR down with it. Drop this
