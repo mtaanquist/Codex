@@ -190,11 +190,76 @@ describe('parseDocument (epub)', () => {
 	});
 });
 
+// Rewrite the uncompressed size a zip declares for one entry, in both the
+// central directory and the local header, to model an archive that lies about
+// how large its contents are.
+function setDeclaredSize(archive: Uint8Array, name: string, size: number): Uint8Array {
+	const out = archive.slice();
+	const view = new DataView(out.buffer);
+	let eocd = out.length - 22;
+	while (view.getUint32(eocd, true) !== 0x06054b50) eocd--;
+	const count = view.getUint16(eocd + 10, true);
+	let offset = view.getUint32(eocd + 16, true);
+	for (let i = 0; i < count; i++) {
+		const nameLength = view.getUint16(offset + 28, true);
+		const extra = view.getUint16(offset + 30, true);
+		const comment = view.getUint16(offset + 32, true);
+		const entryName = new TextDecoder().decode(out.subarray(offset + 46, offset + 46 + nameLength));
+		if (entryName === name) {
+			view.setUint32(offset + 24, size, true);
+			view.setUint32(view.getUint32(offset + 42, true) + 22, size, true);
+			return out;
+		}
+		offset += 46 + nameLength + extra + comment;
+	}
+	throw new Error(`no entry named ${name}`);
+}
+
 describe('parseDocument (errors)', () => {
 	it('rejects an unsupported extension', async () => {
 		await expect(parseDocument(new Uint8Array([1, 2, 3]), 'file.txt')).rejects.toBeInstanceOf(
 			DocumentImportError
 		);
+	});
+
+	it('rejects a Word document with an entry declared too large to unpack', async () => {
+		const docx = setDeclaredSize(
+			buildDocx(paragraph('Hello.')),
+			'word/document.xml',
+			60 * 1024 * 1024
+		);
+		await expect(parseDocument(docx, 'big.docx')).rejects.toThrow(/too large to import/);
+	});
+
+	it('rejects a Word document whose entries add up to too much once unpacked', async () => {
+		let docx = buildDocx(paragraph('Hello.'));
+		for (const name of [
+			'[Content_Types].xml',
+			'_rels/.rels',
+			'docProps/core.xml',
+			'word/document.xml',
+			'word/media/image1.png'
+		]) {
+			docx = setDeclaredSize(docx, name, 45 * 1024 * 1024);
+		}
+		await expect(parseDocument(docx, 'big.docx')).rejects.toThrow(
+			/too large to import once unpacked/
+		);
+	});
+
+	it('never unpacks more of an entry than the archive declares', async () => {
+		const padding = 'x'.repeat(8 * 1024 * 1024);
+		const docx = setDeclaredSize(
+			buildDocx(paragraph('Opening.') + paragraph(padding) + paragraph('SENTINEL')),
+			'word/document.xml',
+			1024
+		);
+		const outcome = await parseDocument(docx, 'bomb.docx').then(
+			(plan) => JSON.stringify(plan),
+			(err: unknown) => err
+		);
+		if (typeof outcome === 'string') expect(outcome).not.toContain('SENTINEL');
+		else expect(outcome).toBeInstanceOf(DocumentImportError);
 	});
 
 	it('rejects an empty file', async () => {

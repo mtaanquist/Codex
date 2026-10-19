@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync, zipSync, strFromU8 } from 'fflate';
 import TurndownService from 'turndown';
 import mammoth from 'mammoth';
 import { detectStructure, markdownToBlocks, type DocBlock } from '../import-document-structure';
@@ -84,6 +84,12 @@ function buildPlan(
 // --- DOCX ---
 
 async function parseDocx(bytes: Uint8Array, filename: string): Promise<ImportPlan> {
+	// mammoth's zip reader inflates every entry in full whatever size it
+	// declares, so unpack with the size guards first (fflate never writes past
+	// the declared size) and hand mammoth an uncompressed copy of what survived.
+	const entries = unzipGuarded(bytes, 'Word document');
+	const bounded = zipSync(entries, { level: 0 });
+
 	const assets: ImportedAsset[] = [];
 	const convertImage = mammoth.images.imgElement(async (image) => {
 		const buffer = await image.read();
@@ -95,35 +101,31 @@ async function parseDocx(bytes: Uint8Array, filename: string): Promise<ImportPla
 
 	let html: string;
 	try {
-		const result = await mammoth.convertToHtml({ buffer: Buffer.from(bytes) }, { convertImage });
+		const result = await mammoth.convertToHtml({ buffer: Buffer.from(bounded) }, { convertImage });
 		html = result.value;
 	} catch {
 		throw new DocumentImportError('This file could not be read as a Word document.');
 	}
 
 	const { chapters, problems } = detectStructure(htmlToBlocks(html));
-	const core = docxCoreProperties(bytes);
+	const core = docxCoreProperties(entries['docProps/core.xml']);
 	return buildPlan(core.title ?? fileStem(filename), core.author, chapters, assets, problems);
 }
 
-// Word stores its title and author in docProps/core.xml; read just that entry
-// rather than decompressing the whole archive a second time.
-function docxCoreProperties(bytes: Uint8Array): { title: string | null; author: string | null } {
-	try {
-		const entries = unzipSync(bytes, { filter: (file) => file.name === 'docProps/core.xml' });
-		const core = entries['docProps/core.xml'];
-		if (!core) return { title: null, author: null };
-		const xml = strFromU8(core);
-		return { title: tagText(xml, 'dc:title'), author: tagText(xml, 'dc:creator') };
-	} catch {
-		return { title: null, author: null };
-	}
+// Word stores its title and author in docProps/core.xml.
+function docxCoreProperties(core: Uint8Array | undefined): {
+	title: string | null;
+	author: string | null;
+} {
+	if (!core) return { title: null, author: null };
+	const xml = strFromU8(core);
+	return { title: tagText(xml, 'dc:title'), author: tagText(xml, 'dc:creator') };
 }
 
 // --- EPUB ---
 
 async function parseEpub(bytes: Uint8Array, filename: string): Promise<ImportPlan> {
-	const entries = unzipGuarded(bytes);
+	const entries = unzipGuarded(bytes, 'EPUB');
 	const container = entries['META-INF/container.xml'];
 	if (!container) throw new DocumentImportError('This EPUB is missing its container file.');
 	const opfPath = attr(strFromU8(container), 'full-path');
@@ -204,28 +206,34 @@ function rewriteEpubImages(
 
 // --- shared XML/zip/path helpers ---
 
-function unzipGuarded(bytes: Uint8Array): Record<string, Uint8Array> {
+function unzipGuarded(
+	bytes: Uint8Array,
+	kind: 'EPUB' | 'Word document'
+): Record<string, Uint8Array> {
 	let count = 0;
 	let total = 0;
 	try {
 		return unzipSync(bytes, {
 			filter(file) {
 				if (++count > MAX_ENTRIES) {
-					throw new DocumentImportError('This EPUB has too many files to import.');
+					throw new DocumentImportError(`This ${kind} has too many files to import.`);
 				}
 				if (file.originalSize > MAX_ENTRY_BYTES) {
-					throw new DocumentImportError('This EPUB contains a file that is too large to import.');
+					throw new DocumentImportError(
+						`This ${kind} contains a file that is too large to import.`
+					);
 				}
 				total += file.originalSize;
 				if (total > MAX_TOTAL_BYTES) {
-					throw new DocumentImportError('This EPUB is too large to import once unpacked.');
+					throw new DocumentImportError(`This ${kind} is too large to import once unpacked.`);
 				}
 				return true;
 			}
 		});
 	} catch (err) {
 		if (err instanceof DocumentImportError) throw err;
-		throw new DocumentImportError('This file could not be read as an EPUB.');
+		const article = kind === 'EPUB' ? 'an' : 'a';
+		throw new DocumentImportError(`This file could not be read as ${article} ${kind}.`);
 	}
 }
 
