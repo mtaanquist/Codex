@@ -7,4 +7,7 @@
 # can change between releases without breaking compose files.
 set -e
 cd /app
+# Migrate here too, so the worker never runs new code against the old schema.
+# The migration lock makes the app and worker apply each migration once.
+node scripts/migrate.ts
 exec node --import ./src/worker/register.js src/worker/index.ts

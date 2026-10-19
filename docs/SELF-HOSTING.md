@@ -38,8 +38,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The app container applies pending database migrations on every start, so there
-is no separate migration step. Watch for it to come up:
+The app and worker containers apply pending database migrations on every start
+(one at a time, so each migration runs once), so there is no separate migration
+step. Watch for it to come up:
 
 ```bash
 docker compose logs -f app   # wait for "Migrations applied." then the server
@@ -323,8 +324,9 @@ logged there and shown in the admin panel's run history.
 ## Updating
 
 Change the image tag (or pull `latest`) and run `docker compose up -d`. Pending
-migrations apply when the app container starts. Migrations are forward-only, so
-take a backup before updating if you are not running the scheduled ones; with
+migrations apply when the app or worker container starts. Migrations are
+forward-only, so take a backup before updating if you are not running the
+scheduled ones; with
 `BACKUP_S3_*` set the worker already keeps hourly dumps, and
 `node scripts/restore-backup.ts latest` brings the newest one back.
 
