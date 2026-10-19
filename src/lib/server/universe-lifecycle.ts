@@ -3,7 +3,7 @@
 // window below, after which the worker purges it for good. The cascade is
 // shared with the account purge. Runs in the worker, so relative value
 // imports carry explicit .ts extensions.
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	assets,
@@ -22,27 +22,9 @@ import {
 	universes
 } from './db/schema.ts';
 import { deleteStoryWithin, type Tx } from './story-delete.ts';
+import { ownedUniverseRow } from './universe-scope.ts';
 
 export const UNIVERSE_TRASH_DAYS = 30;
-
-async function ownedUniverseRow(
-	db: Database,
-	userId: string,
-	universeId: string,
-	deleted: boolean
-) {
-	const [row] = await db
-		.select({ id: universes.id })
-		.from(universes)
-		.where(
-			and(
-				eq(universes.id, universeId),
-				eq(universes.ownerId, userId),
-				deleted ? isNotNull(universes.deletedAt) : isNull(universes.deletedAt)
-			)
-		);
-	return row ?? null;
-}
 
 /** Moves a universe to the trash. Everything inside stops resolving at
  * once; published editions stay frozen until the purge. */
@@ -51,7 +33,7 @@ export async function trashUniverse(
 	userId: string,
 	universeId: string
 ): Promise<boolean> {
-	const universe = await ownedUniverseRow(db, userId, universeId, false);
+	const universe = await ownedUniverseRow(db, userId, universeId);
 	if (!universe) return false;
 	await db
 		.update(universes)
@@ -66,7 +48,7 @@ export async function restoreUniverse(
 	userId: string,
 	universeId: string
 ): Promise<boolean> {
-	const universe = await ownedUniverseRow(db, userId, universeId, true);
+	const universe = await ownedUniverseRow(db, userId, universeId, { deleted: true });
 	if (!universe) return false;
 	await db.update(universes).set({ deletedAt: null }).where(eq(universes.id, universe.id));
 	return true;
@@ -104,7 +86,7 @@ export async function destroyUniverse(
 	userId: string,
 	universeId: string
 ): Promise<{ ok: boolean; assetKeys: string[] }> {
-	const universe = await ownedUniverseRow(db, userId, universeId, true);
+	const universe = await ownedUniverseRow(db, userId, universeId, { deleted: true });
 	if (!universe) return { ok: false, assetKeys: [] };
 	const assetKeys = await universeAssetKeys(db, universe.id);
 	await db.transaction((tx) => purgeUniverseWithin(tx, universe.id));

@@ -14,6 +14,7 @@ import {
 	users
 } from './db/schema.ts';
 import { hashToken } from './tokens.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import { recordRevision } from './revisions.ts';
 import { createAnchorMapper, type AnchorMapper } from '../review-anchor.ts';
@@ -109,7 +110,7 @@ export async function revokeReviewInvitation(
 
 // Resolves a magic-link token to its invitation and story when it still
 // grants access. Distinguishes a dead link from a stale one so the landing
-// page can say which.
+// page can say which. A story in a trashed universe reads as an unknown link.
 export async function invitationByToken(db: Database, token: string) {
 	const [row] = await db
 		.select({
@@ -119,7 +120,9 @@ export async function invitationByToken(db: Database, token: string) {
 		})
 		.from(reviewInvitations)
 		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
-		.where(eq(reviewInvitations.tokenHash, hashToken(token)));
+		.where(
+			and(eq(reviewInvitations.tokenHash, hashToken(token)), inLiveUniverse(stories.universeId))
+		);
 	if (!row) return { status: 'unknown' as const };
 	if (row.invitation.revokedAt) return { status: 'revoked' as const };
 	if (row.invitation.expiresAt && row.invitation.expiresAt < new Date()) {
@@ -189,16 +192,19 @@ export function readReviewerToken(token: string | undefined): string | null {
 }
 
 // The guard for everything a guest does: the reviewer must exist and their
-// invitation must still grant access to this story. Touches last_seen_at.
+// invitation must still grant access to this story, whose universe must not
+// be in the trash. Touches last_seen_at.
 export async function reviewerAccess(db: Database, reviewerId: string, storyId: string) {
 	const [row] = await db
 		.select({ reviewer: reviewers, invitation: reviewInvitations })
 		.from(reviewers)
 		.innerJoin(reviewInvitations, eq(reviewers.invitationId, reviewInvitations.id))
+		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
 		.where(
 			and(
 				eq(reviewers.id, reviewerId),
 				eq(reviewInvitations.storyId, storyId),
+				inLiveUniverse(stories.universeId),
 				isNull(reviewInvitations.revokedAt),
 				or(isNull(reviewInvitations.expiresAt), gt(reviewInvitations.expiresAt, sql`now()`))
 			)

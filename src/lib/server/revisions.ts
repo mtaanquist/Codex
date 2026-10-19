@@ -21,6 +21,7 @@ import {
 	type SnapshotRelationship
 } from '$lib/entity-snapshot';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 export type RevisionEntityType =
 	'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note';
@@ -342,28 +343,48 @@ export async function ownedEntityBody(
 			.select({ bodyMd: scenes.bodyMd })
 			.from(scenes)
 			.innerJoin(stories, eq(scenes.storyId, stories.id))
-			.where(and(eq(scenes.id, entityId), eq(stories.ownerId, userId)));
+			.where(
+				and(
+					eq(scenes.id, entityId),
+					eq(stories.ownerId, userId),
+					inLiveUniverse(stories.universeId)
+				)
+			);
 		return row ?? null;
 	}
 	if (entityType === 'character') {
 		const [row] = await db
 			.select({ bodyMd: characters.bodyMd })
 			.from(characters)
-			.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
+			.where(
+				and(
+					eq(characters.id, entityId),
+					eq(characters.ownerId, userId),
+					inLiveUniverse(characters.universeId)
+				)
+			);
 		return row ?? null;
 	}
 	if (entityType === 'place') {
 		const [row] = await db
 			.select({ bodyMd: places.bodyMd })
 			.from(places)
-			.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
+			.where(
+				and(eq(places.id, entityId), eq(places.ownerId, userId), inLiveUniverse(places.universeId))
+			);
 		return row ?? null;
 	}
 	if (entityType === 'lore_entry') {
 		const [row] = await db
 			.select({ bodyMd: loreEntries.bodyMd })
 			.from(loreEntries)
-			.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+			.where(
+				and(
+					eq(loreEntries.id, entityId),
+					eq(loreEntries.ownerId, userId),
+					inLiveUniverse(loreEntries.universeId)
+				)
+			);
 		return row ?? null;
 	}
 	if (entityType === 'note') {

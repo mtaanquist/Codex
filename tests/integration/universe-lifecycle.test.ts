@@ -30,6 +30,18 @@ import { ownedStory } from '../../src/lib/server/story-access';
 import { ownedUniverse } from '../../src/lib/server/universe-access';
 import { searchAll } from '../../src/lib/server/search';
 import { recordRevision } from '../../src/lib/server/revisions';
+import { ownedScene } from '../../src/lib/server/scene-access';
+import { ownedEntityBody } from '../../src/lib/server/revisions';
+import { getEntityCard } from '../../src/lib/server/plan-data';
+import { setEntityBadgeColor } from '../../src/lib/server/entity-badge';
+import { ownedStoryUniverse, ownsUniverse } from '../../src/lib/server/llm/tools/dispatch';
+import { loadStoryScope, loadUniverseScope } from '../../src/lib/server/llm/context/sources';
+import {
+	createReviewInvitation,
+	ensureReviewer,
+	invitationByToken,
+	reviewerAccess
+} from '../../src/lib/server/review';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -41,6 +53,9 @@ let universeId: string;
 let storyId: string;
 let characterId: string;
 let typeId: string;
+let sceneId: string;
+let reviewToken: string;
+let reviewerId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -70,9 +85,15 @@ beforeAll(async () => {
 		.values({ universeId, ownerId, title: 'Last Orders', slug: 'last-orders' })
 		.returning();
 	storyId = story.id;
-	await db
+	const [scene] = await db
 		.insert(scenes)
-		.values({ storyId, globalPosition: 1, title: 'Bell', bodyMd: 'The bell rang.' });
+		.values({ storyId, globalPosition: 1, title: 'Bell', bodyMd: 'The bell rang.' })
+		.returning();
+	sceneId = scene.id;
+	const invitation = await createReviewInvitation(db, { storyId, createdBy: ownerId });
+	reviewToken = invitation.token;
+	const reviewer = await ensureReviewer(db, invitation.id, { displayName: 'Guest' });
+	reviewerId = reviewer!.id;
 	const [category] = await db
 		.insert(entityCategories)
 		.values({ universeId, ownerId, name: 'Lore', sortOrder: 0 })
@@ -117,6 +138,20 @@ describe('trash and restore', () => {
 		expect(trashed[0].daysLeft).toBe(30);
 	});
 
+	it('by-id lookups, Assistant scopes, and guest review stop resolving too', async () => {
+		expect(await ownedScene(db, ownerId, sceneId)).toBeNull();
+		expect(await ownedEntityBody(db, ownerId, 'scene', sceneId)).toBeNull();
+		expect(await ownedEntityBody(db, ownerId, 'character', characterId)).toBeNull();
+		expect(await getEntityCard(db, ownerId, characterId)).toBeNull();
+		expect((await setEntityBadgeColor(db, ownerId, characterId, null)).ok).toBe(false);
+		expect(await ownsUniverse(db, ownerId, universeId)).toBe(false);
+		expect(await ownedStoryUniverse(db, ownerId, storyId)).toBeNull();
+		expect(await loadUniverseScope(db, ownerId, universeId)).toBeNull();
+		expect(await loadStoryScope(db, ownerId, storyId)).toBeNull();
+		expect((await invitationByToken(db, reviewToken)).status).toBe('unknown');
+		expect(await reviewerAccess(db, reviewerId, storyId)).toBeNull();
+	});
+
 	it('is not due for the purge until the window elapses', async () => {
 		expect(await listUniversesDueForPurge(db)).toEqual([]);
 		await db
@@ -131,6 +166,13 @@ describe('trash and restore', () => {
 		expect((await ownedUniverse('closing-time', ownerId, db)).id).toBe(universeId);
 		expect((await ownedStory('last-orders', ownerId, db)).story.id).toBe(storyId);
 		expect((await searchAll(db, ownerId, 'Mara')).length).toBeGreaterThan(0);
+		expect((await ownedScene(db, ownerId, sceneId))?.id).toBe(sceneId);
+		expect(await ownedEntityBody(db, ownerId, 'character', characterId)).not.toBeNull();
+		expect(await getEntityCard(db, ownerId, characterId)).not.toBeNull();
+		expect(await ownsUniverse(db, ownerId, universeId)).toBe(true);
+		expect(await ownedStoryUniverse(db, ownerId, storyId)).toBe(universeId);
+		expect((await invitationByToken(db, reviewToken)).status).toBe('ok');
+		expect(await reviewerAccess(db, reviewerId, storyId)).not.toBeNull();
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(false);
 	});
 });

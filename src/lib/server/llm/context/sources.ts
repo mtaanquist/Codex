@@ -63,7 +63,9 @@ export async function loadUniverseScope(
 			universeEstablished: universes.establishedSetting
 		})
 		.from(universes)
-		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
+		.where(
+			and(eq(universes.id, universeId), eq(universes.ownerId, userId), isNull(universes.deletedAt))
+		);
 	return row ?? null;
 }
 
@@ -88,7 +90,7 @@ export async function loadStoryScope(
 		})
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), isNull(universes.deletedAt)));
 	return row ?? null;
 }
 
