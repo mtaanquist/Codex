@@ -21,18 +21,21 @@ Next up (as of 2026-10-19, after v3.19.0). Nothing is in flight; pick from:
 
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and
-every finding was filed as an issue (#572 to #630). All of them are fixed on
-staging except the SvelteKit 3 upgrade itself (#613, parked), plus the job
-expiry fix (#638). Partly done, with the rest left open on the issue:
-dependency hygiene (#616, Node 24 engines, `@types/node` and the drizzle-orm
-patch), action error codes (#627, review form actions, scene split and
-passkey responses) and the hygiene sweep (#629, one fixed locale, large-file
-splits). Follow-ups: the worker's purge schedules have no test, and the
-TODO.md format proposal from #630 waits on the owner. Release notes for the
+every finding was filed as an issue (#572 to #630), plus the Assistant retry
+notice (#638). All of them are fixed on staging except the SvelteKit 3 upgrade
+(#613, parked). Partly done, with the rest left open on the issue: dependency
+hygiene (#616, Node 24 engines, `@types/node` and the drizzle-orm patch),
+action error codes (#627, review form actions, scene split and passkey
+responses), the hygiene sweep (#629, one fixed locale, large-file splits) and
+the docs pass (#630, the TODO.md format proposal waits on the owner).
+Follow-ups: the worker's purge schedules have no test, `resolvePlanEntity`
+still queries the three entity tables in turn (#623), and end-to-end CI still
+retries twice, which hides flaky tests (#621). Release notes for the
 staging merge: the app port binds to 127.0.0.1 by default (`APP_BIND`); the
 app and worker refuse to start without `ORIGIN`; restart the worker with or
 before the app; worker logs are JSON events (`worker.started` replaces
-"Worker started"); SimpleWebAuthn 14 needs one manual passkey check on a real
+"Worker started"); the worker container is capped at 2 GB by default
+(`WORKER_MEM_LIMIT`); SimpleWebAuthn 14 needs one manual passkey check on a real
 authenticator before release.
 
 Assistant settings, per-role tuning (2026-08-26, author-scoped, branch
