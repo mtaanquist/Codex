@@ -259,7 +259,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const commentId = String(data.get('commentId') ?? '');
 		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
-		const result = await deleteComment(db, { reviewerId: access.reviewer.id }, commentId);
+		const result = await deleteComment(
+			db,
+			{ reviewerId: access.reviewer.id },
+			resolved.invitation.storyId,
+			commentId
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { deleted: true };
 	},
@@ -272,7 +277,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await deleteSuggestion(db, { reviewerId: access.reviewer.id }, suggestionId);
+		const result = await deleteSuggestion(
+			db,
+			{ reviewerId: access.reviewer.id },
+			resolved.invitation.storyId,
+			suggestionId
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { deleted: true };
 	}

@@ -12,6 +12,7 @@ import {
 	exportArtifacts,
 	notifications,
 	places,
+	reviewComments,
 	publications,
 	relationTypes,
 	revisions,
@@ -40,16 +41,24 @@ import { ownedStoryUniverse, ownsUniverse } from '../../src/lib/server/llm/tools
 import { loadStoryScope, loadUniverseScope } from '../../src/lib/server/llm/context/sources';
 import {
 	createReviewInvitation,
+	createSuggestion,
+	createThread,
+	decideSuggestion,
+	deleteComment,
+	deleteSuggestion,
 	ensureReviewer,
 	invitationByToken,
-	reviewerAccess
+	reviewerAccess,
+	setThreadResolved
 } from '../../src/lib/server/review';
+import { createMarker, deleteMarker, setMarkerResolved } from '../../src/lib/server/markers';
+import { createAsset, type AssetObjectStore } from '../../src/lib/server/assets';
 import { createChapter, createScene, trashScene } from '../../src/lib/server/scene-lifecycle';
 import { duplicateScene, mergeScenes } from '../../src/lib/server/scene-split-merge';
 import { clearMentionPin, setMentionPin } from '../../src/lib/server/mention-pins';
 import { declareMembership } from '../../src/lib/server/membership';
 import { saveEntity } from '../../src/lib/server/entity-save';
-import { createRelationship } from '../../src/lib/server/relationships';
+import { createRelationship, deleteRelationship } from '../../src/lib/server/relationships';
 import { createStoryNote, getNote, setNotePinned } from '../../src/lib/server/notes';
 import { notifyReviewActivity } from '../../src/lib/server/notify';
 import type { Database } from '../../src/lib/server/auth';
@@ -69,6 +78,28 @@ let secondSceneId: string;
 let reviewToken: string;
 let reviewerId: string;
 let noteId: string;
+let markerId: string;
+let relationshipId: string;
+let threadId: string;
+let commentId: string;
+let suggestionId: string;
+
+const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
+const assetConfig = {
+	endpoint: undefined,
+	region: 'auto',
+	bucket: 'test',
+	prefix: 'codex-assets',
+	accessKeyId: 'id',
+	secretAccessKey: 'secret'
+};
+const nullStore: AssetObjectStore = {
+	async put() {},
+	async get() {
+		throw new Error('not stored');
+	},
+	async remove() {}
+};
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -139,6 +170,41 @@ beforeAll(async () => {
 		})
 		.returning();
 	typeId = relType.id;
+
+	const marker = await createMarker(db, ownerId, sceneId, 0, 4);
+	if (!marker.ok) throw new Error(marker.reason);
+	markerId = marker.id;
+	const relationship = await createRelationship(db, ownerId, {
+		fromKind: 'character',
+		fromId: characterId,
+		relationTypeId: typeId,
+		toId: placeId
+	});
+	if (!relationship.ok) throw new Error(relationship.reason);
+	relationshipId = relationship.id;
+	const thread = await createThread(db, {
+		storyId,
+		sceneId,
+		anchor: { start: 0, end: 3 },
+		author: { reviewerId },
+		body: 'Lovely.'
+	});
+	if (!thread.ok) throw new Error(thread.reason);
+	threadId = thread.threadId;
+	const [comment] = await db
+		.select({ id: reviewComments.id })
+		.from(reviewComments)
+		.where(eq(reviewComments.threadId, threadId));
+	commentId = comment.id;
+	const suggestion = await createSuggestion(db, {
+		storyId,
+		sceneId,
+		author: { reviewerId },
+		range: { start: 4, end: 8 },
+		replacement: 'gong'
+	});
+	if (!suggestion.ok) throw new Error(suggestion.reason);
+	suggestionId = suggestion.suggestionId;
 });
 
 afterAll(async () => {
@@ -214,7 +280,25 @@ describe('trash and restore', () => {
 			],
 			['getNote', () => getNote(db, noteId, ownerId)],
 			['setNotePinned', () => setNotePinned(db, noteId, ownerId, true)],
-			['ownedEntityBody note', () => ownedEntityBody(db, ownerId, 'note', noteId)]
+			['ownedEntityBody note', () => ownedEntityBody(db, ownerId, 'note', noteId)],
+			['setMarkerResolved', () => setMarkerResolved(db, ownerId, markerId, true)],
+			['deleteMarker', () => deleteMarker(db, ownerId, markerId)],
+			['deleteRelationship', () => deleteRelationship(db, relationshipId, ownerId)],
+			['setThreadResolved', () => setThreadResolved(db, ownerId, storyId, threadId, true)],
+			['decideSuggestion', () => decideSuggestion(db, ownerId, storyId, suggestionId, false)],
+			['deleteComment', () => deleteComment(db, { reviewerId }, storyId, commentId)],
+			['deleteSuggestion', () => deleteSuggestion(db, { reviewerId }, storyId, suggestionId)],
+			[
+				'createAsset',
+				() =>
+					createAsset(db, nullStore, assetConfig, ownerId, {
+						universeId,
+						kind: 'inline',
+						filename: 'x.png',
+						contentType: 'image/png',
+						bytes: PNG
+					})
+			]
 		];
 		const allowed: string[] = [];
 		for (const [name, call] of refusals) {
@@ -258,6 +342,12 @@ describe('trash and restore', () => {
 		expect((await invitationByToken(db, reviewToken)).status).toBe('ok');
 		expect(await reviewerAccess(db, reviewerId, storyId)).not.toBeNull();
 		expect((await getNote(db, noteId, ownerId))?.id).toBe(noteId);
+		// Review actions are scoped to the story they are asked about.
+		const otherStory = '00000000-0000-4000-8000-000000000000';
+		expect(await setThreadResolved(db, ownerId, otherStory, threadId, true)).toBe(false);
+		expect((await decideSuggestion(db, ownerId, otherStory, suggestionId, false)).ok).toBe(false);
+		expect((await deleteComment(db, { reviewerId }, otherStory, commentId)).ok).toBe(false);
+		expect((await deleteSuggestion(db, { reviewerId }, otherStory, suggestionId)).ok).toBe(false);
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(false);
 	});
 });

@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { sceneMarkers, scenes } from './db/schema';
+import { sceneMarkers, scenes, stories } from './db/schema';
 import { ownedScene } from './scene-access.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 import { findTodoLines } from '$lib/todo-markers';
 
 // A selection turned into a checkable marker. Anchors are clamped to the
@@ -33,6 +34,19 @@ export async function createMarker(
 	return { ok: true, id: marker.id };
 }
 
+// Markers own their scene by id; this keeps a marker in a trashed universe
+// from being changed by id.
+function inLiveScene(db: Database) {
+	return inArray(
+		sceneMarkers.sceneId,
+		db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.innerJoin(stories, eq(scenes.storyId, stories.id))
+			.where(inLiveUniverse(stories.universeId))
+	);
+}
+
 export async function setMarkerResolved(
 	db: Database,
 	userId: string,
@@ -42,7 +56,7 @@ export async function setMarkerResolved(
 	const updated = await db
 		.update(sceneMarkers)
 		.set({ resolvedAt: resolved ? new Date() : null })
-		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId)))
+		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return updated.length > 0;
 }
@@ -54,7 +68,7 @@ export async function deleteMarker(
 ): Promise<boolean> {
 	const deleted = await db
 		.delete(sceneMarkers)
-		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId)))
+		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return deleted.length > 0;
 }

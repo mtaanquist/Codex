@@ -190,7 +190,7 @@ describe('retracting a suggestion with a discussion', () => {
 			body: 'My own note.'
 		});
 		// Only the actor's words in the discussion: the retraction removes both.
-		const removed = await deleteSuggestion(db, { userId: authorId }, made.suggestionId);
+		const removed = await deleteSuggestion(db, { userId: authorId }, storyId, made.suggestionId);
 		expect(removed).toEqual({ ok: true });
 		const threads = await db.select().from(reviewThreads);
 		expect(threads).toHaveLength(0);
@@ -212,7 +212,7 @@ describe('retracting a suggestion with a discussion', () => {
 			author: { assistant: true },
 			body: 'I would keep it.'
 		});
-		const refused = await deleteSuggestion(db, { userId: authorId }, again.suggestionId);
+		const refused = await deleteSuggestion(db, { userId: authorId }, storyId, again.suggestionId);
 		expect(refused).toMatchObject({ ok: false });
 	});
 });
@@ -259,7 +259,7 @@ describe('updateAssistantSuggestion', () => {
 		).toBe(false);
 
 		const assistantId = await assistantSuggestion();
-		await decideSuggestion(db, authorId, assistantId, false);
+		await decideSuggestion(db, authorId, storyId, assistantId, false);
 		expect(
 			(
 				await updateAssistantSuggestion(db, {

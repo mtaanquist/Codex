@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { Database } from './auth.ts';
 import { assets, exportArtifacts, universes, users } from './db/schema.ts';
@@ -157,7 +157,13 @@ export async function createAsset(
 		const [universe] = await db
 			.select({ id: universes.id })
 			.from(universes)
-			.where(and(eq(universes.id, input.universeId), eq(universes.ownerId, userId)));
+			.where(
+				and(
+					eq(universes.id, input.universeId),
+					eq(universes.ownerId, userId),
+					isNull(universes.deletedAt)
+				)
+			);
 		if (!universe) return { ok: false, reason: 'universe not found' };
 	}
 

@@ -449,10 +449,12 @@ export async function addComment(
 	return { ok: true };
 }
 
-// Only the story's owner resolves or reopens a thread.
+// Only the story's owner resolves or reopens a thread, and only one of that
+// story's threads.
 export async function setThreadResolved(
 	db: Database,
 	userId: string,
+	storyId: string,
 	threadId: string,
 	resolved: boolean
 ): Promise<boolean> {
@@ -466,9 +468,13 @@ export async function setThreadResolved(
 		.where(
 			and(
 				eq(reviewThreads.id, threadId),
+				eq(reviewThreads.storyId, storyId),
 				inArray(
 					reviewThreads.storyId,
-					db.select({ id: stories.id }).from(stories).where(eq(stories.ownerId, userId))
+					db
+						.select({ id: stories.id })
+						.from(stories)
+						.where(and(eq(stories.ownerId, userId), inLiveUniverse(stories.universeId)))
 				)
 			)
 		)
@@ -882,6 +888,7 @@ export async function updateAssistantSuggestion(
 export async function decideSuggestion(
 	db: Database,
 	userId: string,
+	storyId: string,
 	suggestionId: string,
 	accept: boolean
 ): Promise<
@@ -899,7 +906,13 @@ export async function decideSuggestion(
 		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
 		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
 		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
-		.where(eq(reviewSuggestions.id, suggestionId));
+		.where(
+			and(
+				eq(reviewSuggestions.id, suggestionId),
+				eq(reviewSuggestions.storyId, storyId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
 	if (!row || row.ownerId !== userId) {
 		return { ok: false, reason: 'That suggestion does not exist.' };
 	}
@@ -980,12 +993,26 @@ export async function decideSuggestion(
 // thread's opening comment can only be removed when no one else has joined the
 // thread (so a retraction never takes someone else's reply with it), and then
 // the whole thread goes. The Assistant's comments are not retractable here.
+// Scoped to the given story, in a live universe.
 export async function deleteComment(
 	db: Database,
 	actor: ReviewViewer,
+	storyId: string,
 	commentId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const [target] = await db.select().from(reviewComments).where(eq(reviewComments.id, commentId));
+	const [found] = await db
+		.select({ comment: reviewComments })
+		.from(reviewComments)
+		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
+		.innerJoin(stories, eq(reviewThreads.storyId, stories.id))
+		.where(
+			and(
+				eq(reviewComments.id, commentId),
+				eq(reviewThreads.storyId, storyId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
+	const target = found?.comment;
 	if (!target) return { ok: false, reason: 'That comment does not exist.' };
 	if (!ownsComment(target, actor)) {
 		return { ok: false, reason: 'You can only delete your own comments.' };
@@ -1020,16 +1047,25 @@ export async function deleteComment(
 
 // Retracts a pending suggestion the viewer proposed. A decided suggestion is
 // part of the record (and an accepted one already changed the text), so it
-// stays.
+// stays. Scoped to the given story, in a live universe.
 export async function deleteSuggestion(
 	db: Database,
 	actor: ReviewViewer,
+	storyId: string,
 	suggestionId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const [row] = await db
-		.select()
+	const [found] = await db
+		.select({ suggestion: reviewSuggestions })
 		.from(reviewSuggestions)
-		.where(eq(reviewSuggestions.id, suggestionId));
+		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
+		.where(
+			and(
+				eq(reviewSuggestions.id, suggestionId),
+				eq(reviewSuggestions.storyId, storyId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
+	const row = found?.suggestion;
 	if (!row) return { ok: false, reason: 'That suggestion does not exist.' };
 	const mine =
 		'userId' in actor ? row.authorUserId === actor.userId : row.reviewerId === actor.reviewerId;

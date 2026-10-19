@@ -324,7 +324,11 @@ export async function deleteRelationship(db: Database, relationshipId: string, u
 		const [deleted] = await tx
 			.delete(entityRelationships)
 			.where(
-				and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.ownerId, userId))
+				and(
+					eq(entityRelationships.id, relationshipId),
+					eq(entityRelationships.ownerId, userId),
+					inLiveUniverse(entityRelationships.universeId)
+				)
 			)
 			.returning({
 				fromType: entityRelationships.fromType,

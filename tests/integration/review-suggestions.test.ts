@@ -203,7 +203,7 @@ describe('assistant suggestions', () => {
 		});
 		// Once the author has decided the first one, the Assistant may propose it
 		// again against the text as it now stands.
-		await decideSuggestion(db, authorId, first.suggestionId, false);
+		await decideSuggestion(db, authorId, storyId, first.suggestionId, false);
 		expect(await assistantSuggest(range, 'red vixen')).toMatchObject({ ok: true });
 	});
 
@@ -233,7 +233,7 @@ describe('decideSuggestion', () => {
 			'red vixen'
 		)) as { ok: true; suggestionId: string };
 
-		const result = await decideSuggestion(db, authorId, suggestionId, true);
+		const result = await decideSuggestion(db, authorId, storyId, suggestionId, true);
 		// The editor rebases its save check onto the returned text.
 		expect(result).toMatchObject({
 			ok: true,
@@ -254,7 +254,9 @@ describe('decideSuggestion', () => {
 		const [view] = await listSuggestions(db, storyId);
 		expect(view.status).toBe('accepted');
 		// A second decision is refused.
-		expect(await decideSuggestion(db, authorId, suggestionId, false)).toMatchObject({ ok: false });
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, false)).toMatchObject({
+			ok: false
+		});
 	});
 
 	it('applies at the re-anchored position after edits elsewhere', async () => {
@@ -269,7 +271,9 @@ describe('decideSuggestion', () => {
 			.set({ bodyMd: 'Lo! ' + BODY })
 			.where(eq(scenes.id, sceneId));
 
-		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({ ok: true });
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+			ok: true
+		});
 		expect(await sceneBody()).toBe('Lo! ' + BODY.replace('brown fox', 'red vixen'));
 	});
 
@@ -286,11 +290,13 @@ describe('decideSuggestion', () => {
 
 		const [view] = await listSuggestions(db, storyId);
 		expect(view.anchorLost).toBe(true);
-		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
 			ok: false,
 			reason: expect.stringContaining('has changed')
 		});
-		expect(await decideSuggestion(db, authorId, suggestionId, false)).toMatchObject({ ok: true });
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, false)).toMatchObject({
+			ok: true
+		});
 	});
 
 	it('refuses to accept once the author edited inside the passage', async () => {
@@ -305,7 +311,7 @@ describe('decideSuggestion', () => {
 
 		const [view] = await listSuggestions(db, storyId);
 		expect(view.anchorLost).toBe(true);
-		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
 			ok: false,
 			reason: expect.stringContaining('has changed')
 		});
@@ -332,7 +338,9 @@ describe('decideSuggestion', () => {
 			const [view] = await listSuggestions(db, storyId);
 			expect(view.anchorLost).toBe(false);
 			expect(edited.slice(view.anchor!.start, view.anchor!.end)).toBe(target);
-			expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({ ok: true });
+			expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+				ok: true
+			});
 			expect(await sceneBody()).toBe(edited.replace(target, replacement));
 		}
 	);
@@ -343,7 +351,9 @@ describe('decideSuggestion', () => {
 			ok: true;
 			suggestionId: string;
 		};
-		expect(await decideSuggestion(db, authorId, insertion.suggestionId, true)).toMatchObject({
+		expect(
+			await decideSuggestion(db, authorId, storyId, insertion.suggestionId, true)
+		).toMatchObject({
 			ok: true
 		});
 		expect(await sceneBody()).toContain('nimbly jumps');
@@ -354,7 +364,9 @@ describe('decideSuggestion', () => {
 			{ start: delStart, end: delStart + ' over the lazy dog'.length },
 			''
 		)) as { ok: true; suggestionId: string };
-		expect(await decideSuggestion(db, authorId, deletion.suggestionId, true)).toMatchObject({
+		expect(
+			await decideSuggestion(db, authorId, storyId, deletion.suggestionId, true)
+		).toMatchObject({
 			ok: true
 		});
 		expect(await sceneBody()).not.toContain('lazy dog');
@@ -366,7 +378,7 @@ describe('decideSuggestion', () => {
 			ok: true;
 			suggestionId: string;
 		};
-		expect(await decideSuggestion(db, strangerId, suggestionId, true)).toMatchObject({
+		expect(await decideSuggestion(db, strangerId, storyId, suggestionId, true)).toMatchObject({
 			ok: false
 		});
 		expect(await sceneBody()).toBe(BODY);
@@ -386,7 +398,7 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 		const [asAuthor] = await listSuggestions(db, storyId, { userId: authorId });
 		expect(asAuthor.mine).toBe(false);
 
-		expect(await deleteSuggestion(db, { reviewerId }, made.suggestionId)).toMatchObject({
+		expect(await deleteSuggestion(db, { reviewerId }, storyId, made.suggestionId)).toMatchObject({
 			ok: true
 		});
 		expect(await listSuggestions(db, storyId)).toEqual([]);
@@ -399,7 +411,9 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 			suggestionId: string;
 		};
 		// The author did not write the guest's suggestion.
-		expect(await deleteSuggestion(db, { userId: authorId }, made.suggestionId)).toMatchObject({
+		expect(
+			await deleteSuggestion(db, { userId: authorId }, storyId, made.suggestionId)
+		).toMatchObject({
 			ok: false
 		});
 		// Once decided, even its own author can no longer retract it.
@@ -411,8 +425,10 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 			range: { start: lazy, end: lazy + 4 },
 			replacement: 'happy'
 		})) as { ok: true; suggestionId: string };
-		await decideSuggestion(db, authorId, own.suggestionId, false);
-		expect(await deleteSuggestion(db, { userId: authorId }, own.suggestionId)).toMatchObject({
+		await decideSuggestion(db, authorId, storyId, own.suggestionId, false);
+		expect(
+			await deleteSuggestion(db, { userId: authorId }, storyId, own.suggestionId)
+		).toMatchObject({
 			ok: false
 		});
 	});
