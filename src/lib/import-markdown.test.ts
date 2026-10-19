@@ -53,6 +53,8 @@ describe('parseStoryZip', () => {
 			'halden/notes/characters/alice-vane.md':
 				'---\nname: "Alice Vane"\nkind: "character"\n---\nLimps here.',
 			'halden/notes/lore/the-toll.md': '---\nname: "The Toll"\nkind: "lore"\n---\nSteep.',
+			'halden/notebook/threads.md': '---\ntitle: "Threads"\n---\nWho paid the toll?\n',
+			'halden/notebook/note-1.md': '---\n---\nUntitled thought.',
 			[`halden/assets/${ASSET_ID}.png`]: new Uint8Array([1, 2, 3])
 		});
 
@@ -75,6 +77,10 @@ describe('parseStoryZip', () => {
 		expect(plan.notes).toEqual([
 			{ kind: 'character', name: 'Alice Vane', notesMd: 'Limps here.' },
 			{ kind: 'lore', name: 'The Toll', notesMd: 'Steep.' }
+		]);
+		expect(plan.freeformNotes).toEqual([
+			{ title: 'Threads', bodyMd: 'Who paid the toll?' },
+			{ title: null, bodyMd: 'Untitled thought.' }
 		]);
 		expect(plan.assets).toEqual([
 			{ id: ASSET_ID, path: `${ASSET_ID}.png`, bytes: new Uint8Array([1, 2, 3]) }

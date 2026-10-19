@@ -11,6 +11,7 @@ import {
 	characterStoryNotes,
 	entityCategories,
 	loreEntries,
+	notes,
 	places,
 	scenes,
 	stories,
@@ -119,6 +120,23 @@ async function seedStory() {
 	await db
 		.insert(characterStoryNotes)
 		.values({ characterId: alice.id, storyId: story.id, notesMd: 'Limps in this book.' });
+	await db.insert(notes).values([
+		{
+			ownerId,
+			universeId: universe.id,
+			storyId: story.id,
+			title: 'Threads',
+			bodyMd: 'Who paid the toll?',
+			createdAt: new Date('2026-01-01')
+		},
+		{
+			ownerId,
+			universeId: universe.id,
+			storyId: story.id,
+			bodyMd: 'An untitled idea.',
+			createdAt: new Date('2026-01-02')
+		}
+	]);
 	return story;
 }
 
@@ -140,6 +158,7 @@ describe('previewImport', () => {
 		expect(preview.chapterCount).toBe(2);
 		expect(preview.sceneCount).toBe(4);
 		expect(preview.words).toBeGreaterThan(0);
+		expect(preview.freeformNoteCount).toBe(2);
 		expect(preview.notes).toEqual([
 			{ kind: 'character', name: 'Alice Vane', outcome: 'ambiguous' },
 			{ kind: 'character', name: 'Bram', outcome: 'create' }
@@ -161,6 +180,7 @@ describe('runImport', () => {
 		expect(result.notesAttached).toBe(1);
 		expect(result.entitiesCreated).toBe(0);
 		expect(result.notesSkipped).toBe(0);
+		expect(result.freeformNotesCreated).toBe(2);
 
 		const [imported] = await db.select().from(stories).where(eq(stories.id, result.storyId));
 		expect(imported.title).toBe('Halden');
@@ -206,6 +226,20 @@ describe('runImport', () => {
 			.from(characterStoryMemberships)
 			.where(eq(characterStoryMemberships.storyId, result.storyId));
 		expect(memberships).toEqual([expect.objectContaining({ characterId: alice.id })]);
+
+		// Freeform notebook notes come back as notes on the new story.
+		const freeform = await db
+			.select()
+			.from(notes)
+			.where(eq(notes.storyId, result.storyId))
+			.orderBy(asc(notes.createdAt));
+		expect(freeform.map((n) => [n.title, n.bodyMd, n.universeId, n.ownerId])).toEqual(
+			expect.arrayContaining([
+				['Threads', 'Who paid the toll?', universe.id, ownerId],
+				[null, 'An untitled idea.', universe.id, ownerId]
+			])
+		);
+		expect(freeform).toHaveLength(2);
 	});
 
 	it('creates missing entities, skips ambiguous ones, and reports both', async () => {

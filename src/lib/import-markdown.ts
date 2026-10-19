@@ -14,12 +14,16 @@ export type ImportedNote = {
 	name: string;
 	notesMd: string;
 };
+// A freeform story note from the notebook/ folder.
+export type ImportedFreeformNote = { title: string | null; bodyMd: string };
 export type ImportedAsset = { id: string; path: string; bytes: Uint8Array };
 export type ImportPlan = {
 	story: { title: string; author: string | null; brief: string | null; descriptionMd: string };
 	chapters: ImportedChapter[];
 	unfiled: ImportedScene[];
 	notes: ImportedNote[];
+	// Absent from plans built from a manuscript document rather than a zip.
+	freeformNotes?: ImportedFreeformNote[];
 	assets: ImportedAsset[];
 	// Tolerated oddities worth telling the author about before they commit.
 	problems: string[];
@@ -178,6 +182,7 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	const chapterFiles = new Map<string, { name: string; files: { path: string; file: string }[] }>();
 	const unfiled: { path: string; file: string }[] = [];
 	const notes: ImportedNote[] = [];
+	const freeformNotes: ImportedFreeformNote[] = [];
 	const assets: ImportedAsset[] = [];
 
 	for (const path of Object.keys(entries)) {
@@ -205,6 +210,9 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 				continue;
 			}
 			notes.push({ kind, name, notesMd: doc.body.trim() });
+		} else if (parts[0] === 'notebook' && parts.length === 2 && parts[1].endsWith('.md')) {
+			const doc = parseFrontMatter(read(path));
+			freeformNotes.push({ title: scalar(doc.fields, 'title'), bodyMd: doc.body.trim() });
 		} else if (parts[0] === 'assets' && parts.length === 2) {
 			const match = parts[1].match(ASSET_FILE);
 			if (match) assets.push({ id: match[1], path: parts[1], bytes: entries[path] });
@@ -229,5 +237,5 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 		.sort((a, b) => orderOf(a.file) - orderOf(b.file) || a.file.localeCompare(b.file))
 		.map((f) => parseScene(f.path, `unfiled/${f.file}`));
 
-	return { story, chapters, unfiled: unfiledScenes, notes, assets, problems };
+	return { story, chapters, unfiled: unfiledScenes, notes, freeformNotes, assets, problems };
 }

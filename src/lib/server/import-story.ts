@@ -7,6 +7,7 @@ import {
 	characterStoryNotes,
 	loreEntries,
 	loreStoryNotes,
+	notes,
 	places,
 	placeStoryMemberships,
 	placeStoryNotes,
@@ -39,6 +40,8 @@ export type ImportPreview = {
 	sceneCount: number;
 	words: number;
 	notes: { kind: ImportedNote['kind']; name: string; outcome: NoteOutcome }[];
+	// Freeform notes from the story's notebook.
+	freeformNoteCount: number;
 	assetCount: number;
 	assetsConfigured: boolean;
 	problems: string[];
@@ -106,6 +109,7 @@ export async function previewImport(
 		sceneCount: allScenes.length,
 		words: allScenes.reduce((sum, scene) => sum + wordCount(scene.bodyMd), 0),
 		notes: resolutions.map(({ kind, name, outcome }) => ({ kind, name, outcome })),
+		freeformNoteCount: plan.freeformNotes?.length ?? 0,
 		assetCount: plan.assets.length,
 		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		problems: plan.problems
@@ -119,6 +123,7 @@ export type ImportResult = {
 	notesAttached: number;
 	entitiesCreated: number;
 	notesSkipped: number;
+	freeformNotesCreated: number;
 	problems: string[];
 };
 
@@ -169,6 +174,7 @@ export async function runImport(
 	let notesAttached = 0;
 	let entitiesCreated = 0;
 	let notesSkipped = 0;
+	let freeformNotesCreated = 0;
 
 	const story = await db.transaction(async (tx) => {
 		const [created] = await tx
@@ -266,6 +272,17 @@ export async function runImport(
 			}
 			notesAttached += 1;
 		}
+
+		for (const note of plan.freeformNotes ?? []) {
+			await tx.insert(notes).values({
+				ownerId: universe.ownerId,
+				universeId: universe.id,
+				storyId: story.id,
+				title: note.title,
+				bodyMd: rewrite(note.bodyMd)
+			});
+			freeformNotesCreated += 1;
+		}
 		return story;
 	});
 
@@ -279,6 +296,7 @@ export async function runImport(
 		notesAttached,
 		entitiesCreated,
 		notesSkipped,
+		freeformNotesCreated,
 		problems
 	};
 }
