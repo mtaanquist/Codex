@@ -64,6 +64,7 @@ import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
+import { stopWorker } from './shutdown.ts';
 import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
@@ -564,8 +565,17 @@ if (backups) {
 
 console.log('Worker started.');
 
+// Running jobs get until the stop timeout to finish; then pg-boss fails them
+// into a retry so they are picked up again on the next start.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
-		void boss.stop().then(() => process.exit(0));
+		console.log(`Worker stopping (${signal}).`);
+		void stopWorker(boss).then(
+			() => process.exit(0),
+			(error) => {
+				console.error('Worker stop failed:', error);
+				process.exit(1);
+			}
+		);
 	});
 }

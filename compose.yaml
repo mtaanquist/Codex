@@ -58,6 +58,9 @@ services:
     build: .
     restart: unless-stopped
     command: codex-worker
+    # Time for running jobs to wind down on a stop or redeploy before Docker
+    # kills the process; the worker hands back what is left before then.
+    stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
       # Off-site backups; off until the bucket and keys are set.
