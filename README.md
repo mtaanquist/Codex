@@ -58,6 +58,9 @@ services:
     restart: unless-stopped
     # codex-worker is baked into the image, like codex-app above.
     command: codex-worker
+    # Time for running jobs to wind down on a stop or redeploy before Docker
+    # kills the process; the worker hands back what is left before then.
+    stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       APP_SECRET: ${APP_SECRET}
