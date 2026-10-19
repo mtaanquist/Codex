@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { updateMarkerAnchors } from './markers';
@@ -55,7 +55,16 @@ export async function saveSceneBody(
 		// is worth a write.
 		if (!bodyChanged) {
 			if (current.title !== save.title) {
-				await tx.update(scenes).set({ title: save.title }).where(eq(scenes.id, sceneId));
+				// Mentions read only the body, so an index that was current stays
+				// current; one already behind keeps its pending rebuild.
+				await tx
+					.update(scenes)
+					.set({
+						title: save.title,
+						updatedAt: sql`now()`,
+						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then now() else ${scenes.mentionsIndexedAt} end`
+					})
+					.where(eq(scenes.id, sceneId));
 			}
 			return { ok: true as const, wordCount: count, bodyChanged: false };
 		}
