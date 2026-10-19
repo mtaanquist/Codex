@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import { sceneMarkers, scenes } from './db/schema';
+import type { Database } from './auth.ts';
+import { sceneMarkers, scenes } from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
 import { findTodoLines } from '$lib/todo-markers';
 import { createAnchorMapper } from '../review-anchor.ts';
@@ -101,8 +101,9 @@ export async function updateMarkerAnchors(
 // For a body rewrite that does not come from the Write editor (a review
 // save, an accepted suggestion, a restore): map every anchored marker
 // through the old-to-new diff, so it keeps pointing at the same words. A
-// marker whose own text is gone loses its anchor rather than pointing at
-// whatever now sits at its old offsets. Run inside the transaction that
+// marker whose start or end text is gone, or whose range is left empty,
+// loses its anchor rather than pointing at whatever now sits at its old
+// offsets. Run inside the transaction that
 // writes the body.
 export async function remapMarkerAnchors(
 	db: Database,
@@ -124,9 +125,13 @@ export async function remapMarkerAnchors(
 	const lost: string[] = [];
 	for (const marker of markers) {
 		if (marker.anchorStart === null || marker.anchorEnd === null) continue;
-		const range = mapper.range(oldBody, newBody, marker.anchorStart, marker.anchorEnd);
-		if (range) moved.push({ id: marker.id, anchorStart: range.start, anchorEnd: range.end });
-		else lost.push(marker.id);
+		// Each end maps on its own, so an edit at the edge of the marked text
+		// stretches or shrinks the range instead of losing it.
+		const start = mapper.point(oldBody, newBody, marker.anchorStart);
+		const end = mapper.point(oldBody, newBody, marker.anchorEnd);
+		if (start !== null && end !== null && start < end) {
+			moved.push({ id: marker.id, anchorStart: start, anchorEnd: end });
+		} else lost.push(marker.id);
 	}
 	await updateMarkerAnchors(db, sceneId, moved, newBody.length);
 	if (lost.length > 0) {

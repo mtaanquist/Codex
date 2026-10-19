@@ -465,4 +465,22 @@ describe('accepting a suggestion moves marker anchors', () => {
 		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
 		expect(body.slice(row.anchorStart!, row.anchorEnd!)).toBe(phrase);
 	});
+
+	it('keeps a stretched anchor when the suggestion replaces the last marked word', async () => {
+		const phrase = 'the lazy dog';
+		const start = BODY.indexOf(phrase);
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId, ownerId: authorId, anchorStart: start, anchorEnd: start + phrase.length })
+			.returning({ id: sceneMarkers.id });
+		const at = BODY.indexOf('dog');
+		const { suggestionId } = (await suggest({ start: at, end: at + 'dog'.length }, 'cat')) as {
+			ok: true;
+			suggestionId: string;
+		};
+		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({ ok: true });
+		const body = await sceneBody();
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
+		expect(body.slice(row.anchorStart!, row.anchorEnd!)).toBe('the lazy cat');
+	});
 });
