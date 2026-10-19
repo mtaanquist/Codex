@@ -1,3 +1,4 @@
+import { isRedirect, redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
 import type { StoryLiveResponse } from '$lib/server/story-live';
 import { liveRefresh, STORY_LIVE } from './live';
@@ -10,18 +11,30 @@ let last: { base: Data; merged: Data } | null = null;
 
 export const load: PageLoad = async ({ data, depends, fetch }) => {
 	depends(STORY_LIVE);
-	if (!liveRefresh.pending) return last?.base === data ? last.merged : data;
+	const previous = last?.base === data ? last.merged : data;
+	if (!liveRefresh.pending) return previous;
 	liveRefresh.pending = false;
 	const scene = data.selectedScene;
 	const query = scene ? `?scene=${scene.id}` : '';
-	const response = await fetch(`/api/stories/${data.story.id}/live${query}`);
-	if (!response.ok) return data;
-	const { sceneMeta, ...live } = (await response.json()) as StoryLiveResponse;
+	let live: StoryLiveResponse;
+	try {
+		const response = await fetch(`/api/stories/${data.story.id}/live${query}`);
+		// A signed-out session is redirected to the sign-in page; go there, the
+		// way a full page load would.
+		if (response.redirected) redirect(303, new URL(response.url).pathname);
+		if (!response.ok) return previous;
+		live = (await response.json()) as StoryLiveResponse;
+	} catch (err) {
+		if (isRedirect(err)) throw err;
+		// Offline or a broken reply: keep what the page shows until the next save.
+		return previous;
+	}
+	const { sceneMeta, ...rest } = live;
 	// JSON carries the dates as strings; the page compares them as dates.
 	const merged: Data = {
 		...data,
-		...live,
-		sceneRevisions: live.sceneRevisions.map((r) => ({ ...r, createdAt: new Date(r.createdAt) })),
+		...rest,
+		sceneRevisions: rest.sceneRevisions.map((r) => ({ ...r, createdAt: new Date(r.createdAt) })),
 		selectedScene:
 			scene && sceneMeta
 				? {
