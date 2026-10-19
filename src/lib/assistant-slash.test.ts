@@ -35,8 +35,15 @@ describe('matchSlash', () => {
 		expect(matchSlash('/w').map((c) => c.name)).toEqual(['write', 'who']);
 	});
 
-	it('lists every command for a bare slash on a story', () => {
-		expect(matchSlash('/')).toHaveLength(SLASH_COMMANDS.length);
+	it('lists every story and shared command for a bare slash on a story', () => {
+		expect(matchSlash('/')).toHaveLength(
+			SLASH_COMMANDS.filter((c) => c.scope !== 'universe').length
+		);
+	});
+
+	it('offers enrich on the universe surface only', () => {
+		expect(matchSlash('/enrich', true).map((c) => c.name)).toEqual(['enrich']);
+		expect(matchSlash('/enrich')).toEqual([]);
 	});
 
 	it('hides story-only commands on the universe surface', () => {
@@ -61,9 +68,12 @@ describe('matchSlash', () => {
 });
 
 describe('commandsForScope', () => {
-	it('returns only the cross-scope commands for the universe', () => {
-		expect(commandsForScope(true).every((c) => c.scope === 'both')).toBe(true);
-		expect(commandsForScope(false)).toEqual(SLASH_COMMANDS);
+	it('returns each surface its own commands plus the shared ones', () => {
+		expect(commandsForScope(true).every((c) => c.scope !== 'story')).toBe(true);
+		expect(commandsForScope(false).every((c) => c.scope !== 'universe')).toBe(true);
+		expect(commandsForScope(false).filter((c) => c.scope === 'both')).toEqual(
+			commandsForScope(true).filter((c) => c.scope === 'both')
+		);
 	});
 });
 

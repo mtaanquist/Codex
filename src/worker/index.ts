@@ -16,6 +16,7 @@ import {
 	USER_EXPORT_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS
 } from '../lib/server/queues.ts';
 import pg from 'pg';
@@ -60,6 +61,7 @@ import {
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
+import { enrichUniverse } from '../lib/server/llm/enrich.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { eq } from 'drizzle-orm';
@@ -103,6 +105,7 @@ await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 await boss.createQueue(USER_EXPORT_QUEUE);
 await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
+await boss.createQueue(ASSISTANT_ENRICH_QUEUE);
 
 await boss.work<{ sceneId: string }>(MENTIONS_SCENE_QUEUE, async (jobs) => {
 	for (const job of jobs) {
@@ -397,6 +400,50 @@ await boss.work<{ userId: string; storyId: string }>(ASSISTANT_SUMMARIES_QUEUE, 
 		await queueDigests(digestUsers);
 		console.log(
 			`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
+		);
+	}
+});
+
+// Whole-universe enrichment: suggest aliases, quick details, and summaries for
+// every entry the prose mentions, staged for the writer on the universe Plan.
+// Owner re-checked at run time; the writer is notified when it is done.
+await boss.work<{ userId: string; universeId: string }>(ASSISTANT_ENRICH_QUEUE, async (jobs) => {
+	for (const job of jobs) {
+		const { userId, universeId } = job.data;
+		const [universe] = await db
+			.select({
+				ownerId: schema.universes.ownerId,
+				name: schema.universes.name,
+				slug: schema.universes.slug
+			})
+			.from(schema.universes)
+			.where(eq(schema.universes.id, universeId));
+		if (!universe || universe.ownerId !== userId) {
+			console.warn(`assistant enrich: universe ${universeId} not owned by ${userId}, skipping`);
+			continue;
+		}
+		const result = await enrichUniverse(db, { userId, universeId });
+		const href = `/universes/${universe.slug}/plan`;
+		let title: string;
+		if (result.suggestions === 0 && result.failed > 0) {
+			title = `The Assistant could not suggest details in "${universe.name}". Check the endpoint in your settings.`;
+		} else if (result.suggestions === 0) {
+			title = `The Assistant found nothing new to suggest in "${universe.name}".`;
+		} else {
+			const entries = `${result.enriched} ${result.enriched === 1 ? 'entry' : 'entries'}`;
+			title = `The Assistant suggested details for ${entries} in "${universe.name}". Open each entry to accept or reject them.`;
+		}
+		if (result.capped) {
+			title += ' It stopped at your spend cap; run it again to continue.';
+		}
+		const digestUsers = await insertNotifications(db, [userId], 'assistant_enrich', {
+			title,
+			detail: result.capNote,
+			href
+		});
+		await queueDigests(digestUsers);
+		console.log(
+			`assistant enrich: universe ${universeId} - ${result.entries} entries, ${result.suggestions} suggestions, ${result.failed} failed`
 		);
 	}
 });

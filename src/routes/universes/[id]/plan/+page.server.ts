@@ -28,6 +28,7 @@ import {
 } from '$lib/server/revisions';
 import { assistantLayout } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { listPendingForEntity, type EntitySuggestion } from '$lib/server/entity-suggestions';
 import { listUniverseNotes } from '$lib/server/notes';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
@@ -150,6 +151,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selected ? Promise.resolve([] as StoryBoardRow[]) : loadStoryBoard(universe.id)
 	]);
 
+	// The open entity's pending Assistant suggestions (from the editor's own
+	// button or the whole-universe pass), for the writer to accept or reject.
+	const assistantSuggestions: EntitySuggestion[] = selected
+		? await listPendingForEntity(db, locals.user!.id, selectedKind, selected.id)
+		: [];
+
 	return {
 		universe,
 		...lists,
@@ -167,7 +174,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionRows,
 		revisionPreview,
 		assistant,
-		assistantChat
+		assistantChat,
+		assistantSuggestions
 	};
 };
 

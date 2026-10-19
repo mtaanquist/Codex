@@ -161,6 +161,9 @@
 						}}
 						entityHref={(id) => `${planPath}?entity=${id}`}
 						universeRef={data.universe.slug}
+						universeId={data.universe.id}
+						assistantEnabled={data.assistant.surfacesEnabled}
+						assistantSuggestions={data.assistantSuggestions}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}

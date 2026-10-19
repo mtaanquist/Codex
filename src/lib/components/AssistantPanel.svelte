@@ -8,6 +8,7 @@
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import {
 		startSummariesJob,
+		startEnrichJob,
 		reviewSceneWithAssistant,
 		startBackgroundReview,
 		startContinuityReview
@@ -327,6 +328,9 @@
 			case 'summaries':
 				void updateSummaries();
 				break;
+			case 'enrich':
+				void enrichUniverse();
+				break;
 			case 'help':
 				messages = [
 					...messages,
@@ -573,6 +577,24 @@
 			await startSummariesJob(scope.storyId);
 		} finally {
 			summarising = false;
+		}
+	}
+
+	// Suggest details for every entry: a background pass over the whole universe
+	// that stages aliases, quick details, and summaries on each entry for the
+	// writer to accept or reject. Like summaries, this only kicks it off.
+	let enriching = $state(false);
+	async function enrichUniverse() {
+		if (enriching) return;
+		if (!('universeId' in scope)) {
+			assistantSay('Open the universe Plan to suggest details for every entry.');
+			return;
+		}
+		enriching = true;
+		try {
+			await startEnrichJob(scope.universeId);
+		} finally {
+			enriching = false;
 		}
 	}
 
@@ -826,6 +848,17 @@
 								onclick={() => runAction(() => void updateSummaries())}
 							>
 								{summarising ? 'Starting...' : 'Update summaries'}
+							</button>
+						{:else}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								disabled={enriching}
+								title="Suggest aliases, details, and summaries for every entry in the background"
+								onclick={() => runAction(() => void enrichUniverse())}
+							>
+								{enriching ? 'Starting...' : 'Suggest details for every entry'}
 							</button>
 						{/if}
 						<button

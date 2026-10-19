@@ -3,15 +3,15 @@
 // owns what each command does.
 
 // Where a command can run: 'story' needs a story focus (and sometimes an open
-// scene); 'both' works on a story focus and the universe surface alike. The
-// universe Plan panel shows only 'both' commands.
+// scene); 'universe' runs over a whole universe and is offered only on the
+// universe Plan; 'both' works on either surface.
 // `args` marks a command that consumes the rest of the line (a brief, a name, a
 // query); selecting it from the menu leaves "/name " in the composer to type into
 // rather than running it empty.
 export type SlashCommand = {
 	name: string;
 	detail: string;
-	scope: 'story' | 'both';
+	scope: 'story' | 'universe' | 'both';
 	args?: boolean;
 };
 
@@ -39,13 +39,19 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	{ name: 'find', detail: 'Search this universe', scope: 'both', args: true },
 	{ name: 'catchup', detail: 'Recap the story so far', scope: 'story' },
 	{ name: 'summaries', detail: 'Refresh scene and chapter summaries', scope: 'story' },
+	{
+		name: 'enrich',
+		detail: 'Suggest aliases, details, and summaries for every entry',
+		scope: 'universe'
+	},
 	{ name: 'clear', detail: 'Clear this conversation', scope: 'both' },
 	{ name: 'help', detail: 'List these commands', scope: 'both' }
 ];
 
-/** The commands available on a surface: every command on a story, the 'both' set on the universe. */
+/** The commands available on a surface: the story set or the universe set, each with the 'both' commands. */
 export function commandsForScope(universe: boolean): SlashCommand[] {
-	return universe ? SLASH_COMMANDS.filter((command) => command.scope === 'both') : SLASH_COMMANDS;
+	const own = universe ? 'universe' : 'story';
+	return SLASH_COMMANDS.filter((command) => command.scope === 'both' || command.scope === own);
 }
 
 /**
@@ -62,7 +68,7 @@ export function slashQuery(input: string): string | null {
 
 /**
  * The commands whose names start with the current slash query, narrowed to the
- * surface's scope (the universe surface hides story-only commands).
+ * surface's scope.
  */
 export function matchSlash(input: string, universe = false): SlashCommand[] {
 	const query = slashQuery(input);

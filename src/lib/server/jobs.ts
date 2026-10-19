@@ -21,7 +21,8 @@ export {
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE
+	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE
 } from './queues.ts';
 import {
 	DIGEST_DELAY_SECONDS,
@@ -37,6 +38,7 @@ import {
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE,
 	ASSISTANT_JOB_EXPIRY_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
@@ -61,6 +63,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 		await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
+		await boss.createQueue(ASSISTANT_ENRICH_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -258,10 +261,37 @@ export async function queueAssistantSummaries(input: {
 	}
 }
 
+// Queues a whole-universe enrichment pass. The singleton key (the universe)
+// coalesces repeat requests while one is already running.
+export async function queueAssistantEnrich(input: {
+	userId: string;
+	universeId: string;
+}): Promise<string | null> {
+	try {
+		const boss = await getBoss();
+		return await boss.send(ASSISTANT_ENRICH_QUEUE, input, {
+			singletonKey: input.universeId,
+			singletonSeconds: 30,
+			...ASSISTANT_SEND_OPTIONS
+		});
+	} catch (error) {
+		console.error('queueing assistant enrichment failed:', error);
+		return null;
+	}
+}
+
 // Where the activity center's polling reads a queued Assistant job's progress.
 // pg-boss archives a job once it settles, so a job it can no longer find by id
 // is treated as done rather than lost.
 export type AssistantJobState = 'running' | 'done' | 'failed';
+
+const ASSISTANT_JOB_QUEUES = {
+	review: ASSISTANT_REVIEW_QUEUE,
+	summaries: ASSISTANT_SUMMARIES_QUEUE,
+	enrich: ASSISTANT_ENRICH_QUEUE
+} as const;
+export type AssistantJobKind = keyof typeof ASSISTANT_JOB_QUEUES;
+export const ASSISTANT_JOB_KINDS = Object.keys(ASSISTANT_JOB_QUEUES) as AssistantJobKind[];
 
 // What the status endpoint reports for a review, which knows more than the
 // queue does: a job pg-boss has forgotten while its recorded progress is still
@@ -277,10 +307,10 @@ export function reviewJobState(
 }
 
 export async function getAssistantJobState(
-	kind: 'review' | 'summaries',
+	kind: AssistantJobKind,
 	id: string
 ): Promise<AssistantJobState> {
-	const queue = kind === 'review' ? ASSISTANT_REVIEW_QUEUE : ASSISTANT_SUMMARIES_QUEUE;
+	const queue = ASSISTANT_JOB_QUEUES[kind];
 	try {
 		const boss = await getBoss();
 		const job = await boss.getJobById(queue, id);

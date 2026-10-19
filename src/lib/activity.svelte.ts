@@ -61,13 +61,13 @@ export function flashActivity(
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Polls a queued background job (review or summaries) to completion, driving one
+// Polls a queued background job (review, summaries, or enrichment) to completion, driving one
 // activity card from running to done or failed. When the enqueue could not hand
 // back a job id (a coalesced singleton, say), it shows the work as accepted and
 // leaves the notification bell to announce the result.
 export async function trackJob(opts: {
 	jobId: string | null;
-	kind: 'review' | 'summaries';
+	kind: 'review' | 'summaries' | 'enrich';
 	runningLabel: string;
 	doneLabel: string;
 	failedLabel: string;

@@ -180,3 +180,21 @@ export async function startSummariesJob(storyId: string): Promise<void> {
 		}
 	});
 }
+
+// Kicks off the background enrichment pass over a whole universe and tracks it
+// to completion. The suggestions wait on each entry in the universe Plan, and
+// the writer is notified when the pass ends.
+export async function startEnrichJob(universeId: string): Promise<void> {
+	await launchJob({
+		url: '/api/assistant/enrich-job',
+		payload: { universeId },
+		kind: 'enrich',
+		failLabel: 'Could not suggest details',
+		startFallback: 'Could not start the suggestion pass.',
+		track: {
+			runningLabel: 'Suggesting details for every entry...',
+			doneLabel: 'Suggestions ready',
+			failedLabel: 'Could not suggest details'
+		}
+	});
+}

@@ -7,6 +7,7 @@ export const NOTIFICATION_KINDS = [
 	'account_pending',
 	'assistant_review',
 	'assistant_summaries',
+	'assistant_enrich',
 	'export_ready'
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -17,6 +18,7 @@ export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
 	account_pending: 'New accounts awaiting approval',
 	assistant_review: 'Assistant reviews you asked for',
 	assistant_summaries: 'Assistant summaries you asked for',
+	assistant_enrich: 'Assistant suggestions for your entries',
 	export_ready: 'Exports you asked for are ready'
 };
 

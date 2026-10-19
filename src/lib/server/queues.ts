@@ -20,6 +20,7 @@ export const PURGE_UNIVERSES_QUEUE = 'purge-universes';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
 export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
 export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
+export const ASSISTANT_ENRICH_QUEUE = 'assistant-enrich';
 // Sweeps the recorded progress of long-finished Assistant runs (see
 // review-runs.ts); the rows are disposable, so nothing is lost with them.
 export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';

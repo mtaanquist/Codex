@@ -31,6 +31,7 @@
 		membership = null,
 		entityHref,
 		universeRef,
+		universeId,
 		assistantEnabled = false,
 		assistantSuggestions = [],
 		onStatus
@@ -65,8 +66,11 @@
 		// When set, a settled rename offers to replace the old name across the
 		// universe's prose (the universe slug for the API path).
 		universeRef?: string;
+		// The universe Plan passes its universe so the Assistant reads appearances
+		// across every story; a story Plan passes storyId instead.
+		universeId?: string;
 		// The Assistant can suggest aliases, details, and a summary for this entity
-		// (needs a story for the appearances it reads, and the account on).
+		// (needs a story or universe for the appearances it reads, and the account on).
 		assistantEnabled?: boolean;
 		// Pending Assistant suggestions for this entity, awaiting accept or reject.
 		assistantSuggestions?: AssistantSuggestion[];
@@ -119,15 +123,17 @@
 	let enriching = $state(false);
 	let enrichNote = $state('');
 
+	const enrichScope = $derived(storyId ? { storyId } : universeId ? { universeId } : null);
+
 	async function runEnrich() {
-		if (enriching || !storyId) return;
+		if (enriching || !enrichScope) return;
 		enriching = true;
 		enrichNote = '';
 		try {
 			const response = await fetch('/api/assistant/enrich', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, entityId: entity.id })
+				body: JSON.stringify({ ...enrichScope, entityId: entity.id })
 			});
 			if (!response.ok) {
 				enrichNote = await apiErrorMessage(response, 'The Assistant could not suggest anything.');
@@ -136,7 +142,11 @@
 			const body = (await response.json()) as { suggestions: AssistantSuggestion[] };
 			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
 			suggestions = [...suggestions, ...fresh];
-			if (fresh.length === 0) enrichNote = 'Nothing new to suggest from this story.';
+			if (fresh.length === 0) {
+				enrichNote = storyId
+					? 'Nothing new to suggest from this story.'
+					: 'Nothing new to suggest from your stories.';
+			}
 		} catch {
 			enrichNote = 'Something went wrong reaching the Assistant.';
 		} finally {
@@ -403,7 +413,7 @@
 		</div>
 	{/if}
 
-	{#if assistantEnabled && storyId}
+	{#if assistantEnabled && enrichScope}
 		<div class="assist-enrich">
 			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={runEnrich}>
 				{enriching ? 'Thinking...' : 'Suggest details with the Assistant'}
