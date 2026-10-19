@@ -295,10 +295,36 @@ take a backup before updating if you are not running the scheduled ones; with
 
 If you used the bundled `minio` profile: it is now `rustfs`, with
 `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` in place of `MINIO_ROOT_USER` and
-`MINIO_ROOT_PASSWORD`, and the `ASSET_S3_*` and `BACKUP_S3_*` endpoints change
-to `http://rustfs:9000`. RustFS starts with empty buckets in a new volume, so
-copy your objects across before switching (for example with `rclone sync` from
-the old bucket to the new one), or uploaded images will not load.
+`MINIO_ROOT_PASSWORD`. RustFS starts with empty buckets in a new volume, so copy
+your objects across before switching, or uploaded images will not load:
+
+1. Pull the new version, set `COMPOSE_PROFILES=rustfs`, and start only the new
+   bucket with `docker compose up -d rustfs rustfs-init`. The old MinIO
+   container keeps running beside it.
+2. Copy both buckets over the compose network (replace `codex_default` with
+   your project's network, shown by `docker network ls`):
+
+   ```
+   docker run --rm --network codex_default \
+     -e RCLONE_CONFIG_OLD_TYPE=s3 -e RCLONE_CONFIG_OLD_PROVIDER=Minio \
+     -e RCLONE_CONFIG_OLD_ENDPOINT=http://minio:9000 \
+     -e RCLONE_CONFIG_OLD_ACCESS_KEY_ID=codex-minio \
+     -e RCLONE_CONFIG_OLD_SECRET_ACCESS_KEY=codex-minio-secret \
+     -e RCLONE_CONFIG_NEW_TYPE=s3 -e RCLONE_CONFIG_NEW_PROVIDER=Other \
+     -e RCLONE_CONFIG_NEW_ENDPOINT=http://rustfs:9000 \
+     -e RCLONE_CONFIG_NEW_ACCESS_KEY_ID=codex-rustfs \
+     -e RCLONE_CONFIG_NEW_SECRET_ACCESS_KEY=codex-rustfs-secret \
+     rclone/rclone sync old:codex-assets new:codex-assets
+   ```
+
+   Run it again with `codex-backups` in place of `codex-assets`, and use your
+   own credentials if you changed the defaults.
+
+3. Point `ASSET_S3_ENDPOINT` and `BACKUP_S3_ENDPOINT` at `http://rustfs:9000`
+   with the new keys, in `.env` or the admin panel, then run
+   `docker compose up -d --remove-orphans` to stop MinIO.
+4. Once images load, remove the old volume with
+   `docker volume rm codex_minio-data`.
 
 ## Scaling and replicas
 

@@ -161,6 +161,12 @@ RustFS is the asset storage exports and image uploads need. Both stay hidden in
 the app until asset storage is configured, and the end-to-end suite covers
 them, so leave it running.
 
+If your dev setup still runs MinIO, switch it over once: run
+`docker compose -f compose.dev.yaml down --remove-orphans`, copy the
+`ASSET_S3_ACCESS_KEY_ID` and `ASSET_S3_SECRET_ACCESS_KEY` values from
+`.env.example` into your `.env`, and start the services again. The old
+`codex-dev_minio-data` volume can then be removed with `docker volume rm`.
+
 Run the worker too: without it mentions never index, and the Reference
 panel stays empty.
 
