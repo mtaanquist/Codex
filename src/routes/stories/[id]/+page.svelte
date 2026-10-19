@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
 	import { refreshStoryLive } from './live';
@@ -15,6 +15,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import StoryPreview from '$lib/components/StoryPreview.svelte';
 	import { editorStyleVars } from '$lib/page-setup';
+	import { nearViewport } from '$lib/near-viewport';
 	import type { ViewItem } from '$lib/components/ViewMenu.svelte';
 	import StoryOutline from '$lib/components/StoryOutline.svelte';
 	import StoryRowMenu, {
@@ -537,10 +538,45 @@
 		| undefined
 	> = $state({});
 
-	function focusNeighbor(sceneId: string, direction: 'up' | 'down') {
+	// A scene's editor mounts as the scene nears the visible part of the
+	// document, so a long story does not open every editor at once; until
+	// then the scene shows its text as plain lines. A mounted editor stays
+	// until the writer leaves the view or opens another story, so coming back
+	// starts lazy again instead of mounting everything seen last time.
+	let docScroll = $state<HTMLElement>();
+	const mountedDocScenes = new SvelteSet<string>();
+	// svelte-ignore state_referenced_locally
+	let mountedFor = `${data.story.id}:${data.view}`;
+	$effect.pre(() => {
+		const key = `${data.story.id}:${data.view}`;
+		if (key === mountedFor) return;
+		mountedFor = key;
+		untrack(() => mountedDocScenes.clear());
+	});
+
+	async function mountDocScene(sceneId: string) {
+		if (mountedDocScenes.has(sceneId)) return;
+		mountedDocScenes.add(sceneId);
+		await tick();
+	}
+
+	// A click or tab onto a scene that has not mounted yet (after a fast
+	// scrollbar drag, say) mounts it and puts the caret where the click was.
+	async function enterDocScene(sceneId: string, at?: { x: number; y: number }) {
+		await mountDocScene(sceneId);
+		const view = docEditors[sceneId]?.getView();
+		if (!view) return;
+		const pos = at ? view.posAtCoords(at) : null;
+		view.focus();
+		if (pos !== null) view.dispatch({ selection: { anchor: pos } });
+	}
+
+	async function focusNeighbor(sceneId: string, direction: 'up' | 'down') {
 		const index = docOrder.indexOf(sceneId);
 		const target = docOrder[index + (direction === 'down' ? 1 : -1)];
-		if (target) docEditors[target]?.focusEdge(direction === 'down' ? 'start' : 'end');
+		if (!target) return;
+		await mountDocScene(target);
+		docEditors[target]?.focusEdge(direction === 'down' ? 'start' : 'end');
 	}
 </script>
 
@@ -613,37 +649,56 @@
 							</a>
 							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{/if}
-						<SceneEditor
-							bind:this={docEditors[scene.id]}
-							compact
-							{editorStyle}
-							sceneId={scene.id}
-							storyId={data.story.id}
-							title={scene.title}
-							body={scene.bodyMd}
-							entities={data.mentionEntities}
-							{mentionOptions}
-							assistantContinuation={data.assistant.surfacesEnabled}
-							autocompleteMode={data.preferences.entityAutocomplete}
-							editingMode={data.preferences.editingMode}
-							spellCheck={data.preferences.spellCheck}
-							writingLanguage={data.preferences.writingLanguage}
-							{nonPrintingMarks}
-							{commandMarkers}
-							imageUniverseId={data.universe.id}
-							markers={data.storyDocMarkers[scene.id] ?? []}
-							loreCategories={data.loreCategories}
-							onCreateEntity={createEntity}
-							onAskAssistant={data.assistant.surfacesEnabled
-								? (text) => askAssistant(scene.id, text)
-								: undefined}
-							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
-							onFocus={() => (activeDocId = scene.id)}
-							onStatus={(status) => {
-								saveStatus = status;
-								if (status === 'saved') void refreshStoryLive();
-							}}
-						/>
+						{#if mountedDocScenes.has(scene.id)}
+							<SceneEditor
+								bind:this={docEditors[scene.id]}
+								compact
+								{editorStyle}
+								sceneId={scene.id}
+								storyId={data.story.id}
+								title={scene.title}
+								body={scene.bodyMd}
+								entities={data.mentionEntities}
+								{mentionOptions}
+								assistantContinuation={data.assistant.surfacesEnabled}
+								autocompleteMode={data.preferences.entityAutocomplete}
+								editingMode={data.preferences.editingMode}
+								spellCheck={data.preferences.spellCheck}
+								writingLanguage={data.preferences.writingLanguage}
+								{nonPrintingMarks}
+								{commandMarkers}
+								imageUniverseId={data.universe.id}
+								markers={data.storyDocMarkers[scene.id] ?? []}
+								loreCategories={data.loreCategories}
+								onCreateEntity={createEntity}
+								onAskAssistant={data.assistant.surfacesEnabled
+									? (text) => askAssistant(scene.id, text)
+									: undefined}
+								onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
+								onFocus={() => (activeDocId = scene.id)}
+								onStatus={(status) => {
+									saveStatus = status;
+									if (status === 'saved') void refreshStoryLive();
+								}}
+							/>
+						{:else}
+							<div
+								class="editor compact"
+								style={editorStyle}
+								role="textbox"
+								aria-label={scene.title ?? 'Untitled scene'}
+								aria-multiline="true"
+								tabindex="0"
+								onpointerdown={(event) => {
+									event.preventDefault();
+									void enterDocScene(scene.id, { x: event.clientX, y: event.clientY });
+								}}
+								onfocus={() => void enterDocScene(scene.id)}
+								{@attach docScroll && nearViewport(docScroll, () => mountedDocScenes.add(scene.id))}
+							>
+								<div class="editor-cm"><div class="prose-static">{scene.bodyMd}</div></div>
+							</div>
+						{/if}
 					</article>
 				{/snippet}
 				<div class="md-editor">
@@ -656,7 +711,7 @@
 						commandMarkersActive={commandMarkers === 'shown'}
 						onToggleCommandMarkers={toggleCommandMarkers}
 					/>
-					<div class="editor-scroll">
+					<div class="editor-scroll" bind:this={docScroll}>
 						<div class="editor story-doc">
 							<h1 class="doc-title">{data.story.title}</h1>
 							{#if (data.storyDoc ?? []).length === 0}

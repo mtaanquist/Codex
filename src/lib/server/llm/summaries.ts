@@ -5,6 +5,7 @@ import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
 import type { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { inLiveUniverse } from '../universe-scope.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
@@ -102,7 +103,14 @@ export async function summariseStory(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)))
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId),
+				isNull(scenes.deletedAt)
+			)
+		)
 		.orderBy(asc(scenes.globalPosition));
 
 	for (const scene of sceneRows) {
@@ -161,7 +169,13 @@ export async function summariseStory(
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
-		.where(and(eq(chapters.storyId, storyId), eq(stories.ownerId, userId)))
+		.where(
+			and(
+				eq(chapters.storyId, storyId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId)
+			)
+		)
 		.orderBy(asc(chapters.position));
 
 	for (const chapter of chapterRows) {

@@ -2,6 +2,8 @@ import { PgBoss } from 'pg-boss';
 import { env } from '$env/dynamic/private';
 import type { EmailMessage } from './email';
 import type { ReviewCategory } from '../review-shape';
+import { db } from './db';
+import { markUniverseMentionsChanged } from './mentions.ts';
 
 // Send-only pg-boss handle for the app; the worker process owns the handlers.
 // Queueing is best-effort: a failed enqueue logs and never breaks a save. A
@@ -113,7 +115,14 @@ export async function queueSceneMentions(sceneId: string): Promise<void> {
 	}
 }
 
+// Call after any change to what the universe's scenes can mention. The flag
+// is what lets the reconcile sweep catch a dropped job, so it is set first.
 export async function queueUniverseMentions(universeId: string): Promise<void> {
+	try {
+		await markUniverseMentionsChanged(db, universeId);
+	} catch (error) {
+		console.error('flagging universe mention rebuild failed:', error);
+	}
 	try {
 		const boss = await getBoss();
 		await boss.send(

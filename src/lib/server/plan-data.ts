@@ -12,6 +12,7 @@ import {
 } from './db/schema.ts';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 import { listEntityRelationships } from './relationships.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // Sidebar lists for a Plan view. Both scopes list the whole universe: the
 // story Plan does too until declared membership (step 20) narrows it.
@@ -180,7 +181,13 @@ async function resolveOwnedEntity(db: Database, userId: string, entityId: string
 		})
 		.from(characters)
 		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-		.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
+		.where(
+			and(
+				eq(characters.id, entityId),
+				eq(characters.ownerId, userId),
+				inLiveUniverse(characters.universeId)
+			)
+		);
 	if (character) return { kind: 'character' as const, ...character };
 	const [place] = await db
 		.select({
@@ -197,7 +204,9 @@ async function resolveOwnedEntity(db: Database, userId: string, entityId: string
 		})
 		.from(places)
 		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-		.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
+		.where(
+			and(eq(places.id, entityId), eq(places.ownerId, userId), inLiveUniverse(places.universeId))
+		);
 	if (place) return { kind: 'place' as const, ...place };
 	const [lore] = await db
 		.select({
@@ -214,7 +223,13 @@ async function resolveOwnedEntity(db: Database, userId: string, entityId: string
 		})
 		.from(loreEntries)
 		.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-		.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+		.where(
+			and(
+				eq(loreEntries.id, entityId),
+				eq(loreEntries.ownerId, userId),
+				inLiveUniverse(loreEntries.universeId)
+			)
+		);
 	if (lore) return { kind: 'lore' as const, ...lore };
 	return null;
 }

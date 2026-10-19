@@ -197,29 +197,35 @@ export const actions: Actions = {
 		return { done: true, threadId: thread.threadId };
 	},
 	resolve: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
-		if (!isUuid(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, true))) {
+		if (
+			!isUuid(threadId) ||
+			!(await setThreadResolved(db, locals.user!.id, story.id, threadId, true))
+		) {
 			return fail(400, { message: 'That thread could not be resolved.' });
 		}
 		return { done: true };
 	},
 	reopen: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const threadId = String(data.get('threadId') ?? '');
-		if (!isUuid(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, false))) {
+		if (
+			!isUuid(threadId) ||
+			!(await setThreadResolved(db, locals.user!.id, story.id, threadId, false))
+		) {
 			return fail(400, { message: 'That thread could not be reopened.' });
 		}
 		return { done: true };
 	},
 	acceptSuggestion: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await decideSuggestion(db, locals.user!.id, suggestionId, true);
+		const result = await decideSuggestion(db, locals.user!.id, story.id, suggestionId, true);
 		if (!result.ok) return fail(400, { message: result.reason });
 		// The body changed; keep the mention index in step.
 		if (result.sceneId) await queueSceneMentions(result.sceneId);
@@ -228,31 +234,31 @@ export const actions: Actions = {
 		return { done: true, bodyMd: result.bodyMd, baseHash: result.baseHash };
 	},
 	rejectSuggestion: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await decideSuggestion(db, locals.user!.id, suggestionId, false);
+		const result = await decideSuggestion(db, locals.user!.id, story.id, suggestionId, false);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	},
 	// The author retracting a comment of their own.
 	deleteComment: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const commentId = String(data.get('commentId') ?? '');
 		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
-		const result = await deleteComment(db, { userId: locals.user!.id }, commentId);
+		const result = await deleteComment(db, { userId: locals.user!.id }, story.id, commentId);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	},
 	// The author retracting a suggestion of their own while it is still pending.
 	deleteSuggestion: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await deleteSuggestion(db, { userId: locals.user!.id }, suggestionId);
+		const result = await deleteSuggestion(db, { userId: locals.user!.id }, story.id, suggestionId);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	},

@@ -4,6 +4,8 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
+	import FormStatus from './FormStatus.svelte';
+	import { put } from '$lib/api';
 	import { dismiss } from '$lib/dismiss';
 	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
 	import { compactCount, pluralSuffix } from '$lib/format';
@@ -117,6 +119,8 @@
 		dropTarget = { chapterId, index: chapterScenes(chapterId).length };
 	}
 
+	let reorderError = $state<string | null>(null);
+
 	function buildOrder(sceneId: string, target: { chapterId: string | null; index: number }) {
 		const chapterLists = chapters.map((chapter) => ({
 			id: chapter.id,
@@ -152,11 +156,12 @@
 		const order = buildOrder(draggingSceneId, { ...dropTarget });
 		draggingSceneId = null;
 		dropTarget = null;
-		await fetch(`/api/stories/${story.id}/scene-order`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(order)
-		});
+		const result = await put(
+			`/api/stories/${story.id}/scene-order`,
+			order,
+			'Could not move the scene. Try again.'
+		);
+		reorderError = result.ok ? null : result.message;
 		await invalidateAll();
 	}
 
@@ -300,6 +305,9 @@
 				</div>
 			{/if}
 		</div>
+	{/if}
+	{#if reorderError}
+		<div class="outline-error"><FormStatus block error={reorderError} /></div>
 	{/if}
 	<div class="chapters">
 		{#each chapters as chapter, index (chapter.id)}
@@ -475,5 +483,8 @@
 	   can reorder. */
 	.outline.selectable:not(.manageable) .scene-row {
 		cursor: pointer;
+	}
+	.outline-error {
+		padding: 0 17px 8px;
 	}
 </style>

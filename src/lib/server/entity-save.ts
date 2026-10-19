@@ -11,6 +11,7 @@ import {
 	placeStoryNotes
 } from './db/schema';
 import type { EntityDetail } from '$lib/entity-snapshot';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // One save path for all three entity kinds. The flow carries real invariants
 // that must not drift between kinds: validate everything BEFORE anything is
@@ -62,7 +63,13 @@ function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: s
 						tags: characters.aliases
 					})
 					.from(characters)
-					.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
+					.where(
+						and(
+							eq(characters.id, entityId),
+							eq(characters.ownerId, userId),
+							inLiveUniverse(characters.universeId)
+						)
+					);
 				return row ?? null;
 			},
 			async update(tx: Database, id: string, fields: Record<string, unknown>) {
@@ -95,7 +102,13 @@ function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: s
 						tags: places.aliases
 					})
 					.from(places)
-					.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
+					.where(
+						and(
+							eq(places.id, entityId),
+							eq(places.ownerId, userId),
+							inLiveUniverse(places.universeId)
+						)
+					);
 				return row ?? null;
 			},
 			async update(tx: Database, id: string, fields: Record<string, unknown>) {
@@ -127,7 +140,13 @@ function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: s
 					tags: loreEntries.keywords
 				})
 				.from(loreEntries)
-				.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+				.where(
+					and(
+						eq(loreEntries.id, entityId),
+						eq(loreEntries.ownerId, userId),
+						inLiveUniverse(loreEntries.universeId)
+					)
+				);
 			return row ?? null;
 		},
 		async update(tx: Database, id: string, fields: Record<string, unknown>) {
