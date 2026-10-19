@@ -76,7 +76,18 @@ export function createAutosave(options: AutosaveOptions): Autosave {
 	let stopped = false;
 	let chain: Promise<void> = Promise.resolve();
 
+	function retryLater(err: unknown) {
+		if (stopped || err instanceof UnretryableSaveError) return;
+		const delay = Math.min(RETRY_BASE_MS * 2 ** failures, RETRY_MAX_MS);
+		failures++;
+		clearTimeout(timer);
+		timer = setTimeout(enqueue, delay);
+	}
+
 	async function run(): Promise<void> {
+		// An earlier run in the chain already saved the latest text (a retry
+		// timer that fired after a queued flush landed).
+		if (!dirty) return;
 		dirty = false;
 		inFlight = true;
 		onStatus('saving');
@@ -90,12 +101,7 @@ export function createAutosave(options: AutosaveOptions): Autosave {
 		} catch (err) {
 			dirty = true;
 			onStatus('error');
-			if (!stopped && !(err instanceof UnretryableSaveError)) {
-				const delay = Math.min(RETRY_BASE_MS * 2 ** failures, RETRY_MAX_MS);
-				failures++;
-				clearTimeout(timer);
-				timer = setTimeout(enqueue, delay);
-			}
+			retryLater(err);
 		} finally {
 			inFlight = false;
 		}
@@ -126,9 +132,19 @@ export function createAutosave(options: AutosaveOptions): Autosave {
 			if (!dirty && !inFlight) return;
 			clearTimeout(timer);
 			dirty = false;
-			void options.save({ keepalive: true }).catch(() => {
-				dirty = true;
-			});
+			// The page may come back from the back-forward cache, so settle the
+			// status and keep retrying as a regular save would.
+			options.save({ keepalive: true }).then(
+				() => {
+					failures = 0;
+					if (!dirty) onStatus('saved');
+				},
+				(err) => {
+					dirty = true;
+					onStatus('error');
+					retryLater(err);
+				}
+			);
 		},
 		warnBeforeUnload(event) {
 			if (dirty || inFlight) event.preventDefault();

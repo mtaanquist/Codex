@@ -60,6 +60,15 @@ describe('createSceneSaver', () => {
 		expect(sent[1].baseHashes).toEqual([textHash('a'), textHash('ab')]);
 	});
 
+	it('keeps an older unsettled save as a base through retries of the same text', async () => {
+		const sent = mockFetch([networkError, networkError, networkError, networkError, ok]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		await expect(saver.save(save('ab'))).rejects.toThrow();
+		for (let i = 0; i < 3; i++) await expect(saver.save(save('abc'))).rejects.toThrow();
+		await saver.save(save('abcd'));
+		expect(sent[4].baseHashes).toEqual([textHash('a'), textHash('ab'), textHash('abc')]);
+	});
+
 	it('never sends more than four fingerprints', async () => {
 		const sent = mockFetch([networkError, networkError, networkError, networkError, ok]);
 		const saver = createSceneSaver('s', 'a', () => {});

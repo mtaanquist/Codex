@@ -56,7 +56,8 @@ export function createSceneSaver(
 			const baseHashes = [base, ...pending];
 			const sendOverwrite = overwrite;
 			const started = generation;
-			pending = [...pending, hash].slice(-MAX_PENDING);
+			// A retry of the same text must not push older unsettled hashes out.
+			pending = [...pending.filter((h) => h !== hash), hash].slice(-MAX_PENDING);
 			// A network error leaves the hash pending: the server may have saved it.
 			const body = JSON.stringify({
 				title,

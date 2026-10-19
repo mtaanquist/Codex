@@ -184,6 +184,54 @@ describe('createAutosave', () => {
 		expect(seen).toEqual(['saving', 'error']);
 	});
 
+	it('a retry timer that fires after a queued save landed sends nothing', async () => {
+		const { calls, save } = manualSave();
+		const autosave = createAutosave({ debounceMs: 100, save });
+		autosave.schedule();
+		vi.advanceTimersByTime(100);
+		await tick();
+		// Another edit is flushed and queued behind the in-flight save.
+		autosave.schedule();
+		const flushing = autosave.flush();
+		calls[0].reject();
+		await tick();
+		expect(calls).toHaveLength(2);
+		calls[1].resolve();
+		await flushing;
+		vi.advanceTimersByTime(120_000);
+		await tick();
+		expect(calls).toHaveLength(2);
+	});
+
+	it('a failed close-tab save reports error and retries', async () => {
+		const { calls, save } = manualSave();
+		const seen: SaveStatus[] = [];
+		const autosave = createAutosave({ debounceMs: 100, save, onStatus: (s) => seen.push(s) });
+		autosave.schedule();
+		autosave.flushOnPageHide();
+		calls[0].reject();
+		await tick();
+		expect(seen).toEqual(['error']);
+		vi.advanceTimersByTime(2000);
+		await tick();
+		expect(calls).toHaveLength(2);
+		expect(calls[1].keepalive).toBe(false);
+		calls[1].resolve();
+		await tick();
+		expect(seen.at(-1)).toBe('saved');
+	});
+
+	it('a close-tab save that lands reports saved', async () => {
+		const { calls, save } = manualSave();
+		const seen: SaveStatus[] = [];
+		const autosave = createAutosave({ debounceMs: 100, save, onStatus: (s) => seen.push(s) });
+		autosave.schedule();
+		autosave.flushOnPageHide();
+		calls[0].resolve();
+		await tick();
+		expect(seen).toEqual(['saved']);
+	});
+
 	it('does not retry after teardown', async () => {
 		const { calls, save } = manualSave();
 		const autosave = createAutosave({ debounceMs: 100, save });
