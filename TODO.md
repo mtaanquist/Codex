@@ -1,7 +1,7 @@
 # TODO
 
 Working checklist against `scratch/system-design/roadmap.md`. One roadmap step
-per line; details live in the roadmap. Cross off as things merge to develop.
+per line; details live in the roadmap. Cross off as things merge to main.
 
 ## Open
 
