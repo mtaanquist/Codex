@@ -3,9 +3,10 @@ name: Release
 # Tags a released version on main and publishes the GitHub release. Exists so
 # a remote session that can merge release PRs but cannot push tags can finish
 # the release flow; run it after the release PR has landed on main and CI has
-# passed on the merge commit, which it checks before tagging. The tag is pushed with the workflow token, which
-# GitHub deliberately keeps from triggering the tag-push image build, so this
-# dispatches the image workflow itself at the new tag.
+# passed on the merge commit, which it checks before tagging. The tag is
+# pushed with the workflow token, which GitHub deliberately keeps from
+# triggering the tag-push image build, so this dispatches the image workflow
+# itself at the new tag.
 on:
   workflow_dispatch:
     inputs:

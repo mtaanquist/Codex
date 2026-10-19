@@ -15,6 +15,12 @@ permissions:
   contents: read
   packages: write
 
+# One publish at a time, so an older release that ranked itself newest
+# cannot finish after a newer one and move `latest` back.
+concurrency:
+  group: release-image
+  cancel-in-progress: false
+
 jobs:
   publish:
     # A dispatch from a branch would publish unreleased code.
