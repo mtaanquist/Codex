@@ -199,7 +199,56 @@ describe('pg_dump round trip', () => {
 		await writeFile(dumpFile, objects.get(dumpKey)!);
 		const { stdout } = await run('pg_restore', ['--list', dumpFile]);
 		expect(stdout).toContain('TABLE DATA');
-		await rm(dumpFile);
+
+		// Restored onto an empty database, the result must be able to take the
+		// next backup: backup_runs keeps its definition even though its rows
+		// are left out of the dump.
+		const restoreUrl = new URL(TEST_DATABASE_URL);
+		restoreUrl.pathname = `${restoreUrl.pathname}_restore`;
+		const adminUrl = new URL(TEST_DATABASE_URL);
+		adminUrl.pathname = '/postgres';
+		const admin = new pg.Client({ connectionString: adminUrl.toString() });
+		await admin.connect();
+		const restoreName = restoreUrl.pathname.slice(1);
+		try {
+			await admin.query(`drop database if exists "${restoreName}"`);
+			await admin.query(`create database "${restoreName}"`);
+			await run('pg_restore', [
+				'--no-owner',
+				'--exit-on-error',
+				'--dbname',
+				restoreUrl.toString(),
+				dumpFile
+			]);
+			const restoredPool = new pg.Pool({ connectionString: restoreUrl.toString() });
+			try {
+				const restored = drizzle(restoredPool, { schema });
+				const runs = await listRecentBackupRuns(restored, 5);
+				expect(runs).toHaveLength(0);
+				const again = await runBackup(restored, 'manual', {
+					config,
+					store: memoryStore().store,
+					databaseUrl: restoreUrl.toString()
+				});
+				expect(again).toMatchObject({ ok: true });
+				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(1);
+
+				// A dump from before the fix restored without the table while the
+				// ledger listed it; the repair migration brings it back.
+				await restoredPool.query('drop table backup_runs');
+				await restoredPool.query(
+					'delete from drizzle.__drizzle_migrations where created_at = (select max(created_at) from drizzle.__drizzle_migrations)'
+				);
+				await migrate(restored, { migrationsFolder: 'drizzle' });
+				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(0);
+			} finally {
+				await restoredPool.end();
+			}
+		} finally {
+			await admin.query(`drop database if exists "${restoreName}" with (force)`);
+			await admin.end();
+			await rm(dumpFile, { force: true });
+		}
 
 		// The real regression: a second backup of the unchanged database hashes
 		// the same and skips the upload. The custom archive's header timestamp
