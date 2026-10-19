@@ -23,7 +23,7 @@ import {
 	type ExportFormat
 } from '$lib/server/user-exports';
 import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
-import { deleteStory } from '$lib/server/story-delete';
+import { STORY_TRASH_DAYS, trashStory } from '$lib/server/story-lifecycle';
 import { publications, users } from '$lib/server/db/schema';
 import {
 	saveStoryPreferences,
@@ -116,6 +116,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		story,
 		universe,
 		timeline,
+		trashDays: STORY_TRASH_DAYS,
 		assetsConfigured,
 		archive,
 		// The first publish with no pen name set asks what name goes public.
@@ -419,9 +420,7 @@ export const actions: Actions = {
 	},
 	delete: async ({ params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);
-		// Clears every story-scoped row first; a plain delete 500s on the FKs
-		// the moment the story has any content or a published edition.
-		await deleteStory(db, story.id, locals.user!.id);
+		await trashStory(db, locals.user!.id, story.id);
 		redirect(303, `/universes/${universe.slug}`);
 	}
 };

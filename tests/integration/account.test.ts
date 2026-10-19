@@ -19,6 +19,8 @@ import {
 	setPenNameIfUnset,
 	verifyAccountPassword
 } from '../../src/lib/server/account';
+import { armToken } from '../../src/lib/server/tokens';
+import { sentToken } from './token-helpers';
 import { hashPassword, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -238,13 +240,16 @@ describe('changePassword', () => {
 		const change = await requestEmailChange(db, userId, 'current-password', 'new@example.com');
 		expect(change.ok).toBe(true);
 		if (!change.ok) return;
+		const link = await sentToken(db, change.tokenId);
 
 		expect(
 			(await changePassword(db, userId, current, 'current-password', 'a-new-password')).ok
 		).toBe(true);
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.pendingEmail).toBeNull();
-		expect((await confirmEmailChange(db, change.token)).ok).toBe(false);
+		expect((await confirmEmailChange(db, link)).ok).toBe(false);
+		// A send still queued for the revoked token is skipped.
+		expect(await armToken(db, change.tokenId)).toEqual({ ok: false, reason: 'revoked' });
 	});
 });
 
@@ -258,7 +263,7 @@ describe('email change', () => {
 		expect(row.pendingEmail).toBe('new@example.com');
 
 		if (!result.ok) throw new Error('unreachable');
-		expect((await confirmEmailChange(db, result.token)).ok).toBe(true);
+		expect((await confirmEmailChange(db, await sentToken(db, result.tokenId))).ok).toBe(true);
 		[row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.email).toBe('new@example.com');
 		expect(row.pendingEmail).toBeNull();
@@ -287,7 +292,7 @@ describe('email change', () => {
 		const [pending] = await db.select().from(users).where(eq(users.id, userId));
 		expect(pending.pendingEmail).toBe('taken@example.com');
 		// Confirmation catches the unique violation and clears the pending address.
-		expect((await confirmEmailChange(db, result.token)).ok).toBe(false);
+		expect((await confirmEmailChange(db, await sentToken(db, result.tokenId))).ok).toBe(false);
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.email).toBe('acct@example.com');
 		expect(row.pendingEmail).toBeNull();
@@ -295,18 +300,19 @@ describe('email change', () => {
 
 	it('invalidates an earlier link when a new change is requested', async () => {
 		const first = await requestEmailChange(db, userId, 'current-password', 'first@example.com');
+		if (!first.ok) throw new Error('unreachable');
+		const firstLink = await sentToken(db, first.tokenId);
 		const second = await requestEmailChange(db, userId, 'current-password', 'second@example.com');
-		expect(first.ok && second.ok).toBe(true);
-		if (!first.ok || !second.ok) throw new Error('unreachable');
+		if (!second.ok) throw new Error('unreachable');
 
 		// The stale link cannot confirm the now-current pending address.
-		expect((await confirmEmailChange(db, first.token)).ok).toBe(false);
+		expect((await confirmEmailChange(db, firstLink)).ok).toBe(false);
 		let [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.email).toBe('acct@example.com');
 		expect(row.pendingEmail).toBe('second@example.com');
 
 		// The current link still works.
-		expect((await confirmEmailChange(db, second.token)).ok).toBe(true);
+		expect((await confirmEmailChange(db, await sentToken(db, second.tokenId))).ok).toBe(true);
 		[row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(row.email).toBe('second@example.com');
 	});

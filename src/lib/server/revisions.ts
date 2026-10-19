@@ -22,7 +22,7 @@ import {
 } from '$lib/entity-snapshot';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
 import { remapMarkerAnchors } from './markers.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { inLiveUniverse, noteIsLive, storyIsLive } from './universe-scope.ts';
 
 export type RevisionEntityType =
 	'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note';
@@ -348,13 +348,7 @@ export async function ownedEntityBody(
 			.select({ bodyMd: scenes.bodyMd })
 			.from(scenes)
 			.innerJoin(stories, eq(scenes.storyId, stories.id))
-			.where(
-				and(
-					eq(scenes.id, entityId),
-					eq(stories.ownerId, userId),
-					inLiveUniverse(stories.universeId)
-				)
-			);
+			.where(and(eq(scenes.id, entityId), eq(stories.ownerId, userId), storyIsLive()));
 		return row ?? null;
 	}
 	if (entityType === 'character') {
@@ -396,9 +390,7 @@ export async function ownedEntityBody(
 		const [row] = await db
 			.select({ bodyMd: notes.bodyMd })
 			.from(notes)
-			.where(
-				and(eq(notes.id, entityId), eq(notes.ownerId, userId), inLiveUniverse(notes.universeId))
-			);
+			.where(and(eq(notes.id, entityId), eq(notes.ownerId, userId), noteIsLive()));
 		return row ?? null;
 	}
 	// Chapters have no revisable body yet.
@@ -795,7 +787,8 @@ export async function universeTimeline(
 					select s.id as entity_id, s.title as entity_name,
 						st.title as story_title, st.slug as story_slug
 					from scenes s join stories st on st.id = s.story_id
-					where st.universe_id = ${universeId} and s.deleted_at is null`
+					where st.universe_id = ${universeId} and st.deleted_at is null
+						and s.deleted_at is null`
 			},
 			{ type: 'character', entities: entity('characters', 'name') },
 			{ type: 'place', entities: entity('places', 'name') },
@@ -813,7 +806,7 @@ export async function universeRevisionCount(db: Database, universeId: string): P
 		select (
 			(select count(*) from scenes s join stories st on st.id = s.story_id
 				join revisions r on r.entity_type = 'scene' and r.entity_id = s.id
-				where st.universe_id = ${universeId})
+				where st.universe_id = ${universeId} and st.deleted_at is null)
 			+ (select count(*) from characters c
 				join revisions r on r.entity_type = 'character' and r.entity_id = c.id
 				where c.universe_id = ${universeId})

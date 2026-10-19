@@ -33,7 +33,8 @@ import {
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
 import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
-import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { sendEmail } from '../lib/server/email.ts';
+import { resolveEmailJob, type EmailJob } from '../lib/server/token-email.ts';
 import { logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
@@ -43,6 +44,8 @@ import {
 } from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
 import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
+import { listStoriesDueForPurge } from '../lib/server/story-lifecycle.ts';
+import { purgeStory } from '../lib/server/story-delete.ts';
 import {
 	assetMigrationSource,
 	clearAssetMigrationSource,
@@ -433,6 +436,10 @@ await boss.work<{ userId: string; storyId: string }, unknown, typeof ASSISTANT_W
 			} else {
 				title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
 			}
+			if (result.capped) {
+				title = `The Assistant stopped summarising "${story.title}" at about $${(result.spentUsd ?? 0).toFixed(2)}, after ${written} ${written === 1 ? 'summary' : 'summaries'}. Raise the cap in settings or run it again to continue.`;
+			}
+			if (result.capNotApplied) title += ` ${result.capNotApplied}`;
 			await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
 				title,
 				href
@@ -453,9 +460,19 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs)
 	}
 });
 
-await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
+await boss.work<EmailJob>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		await sendEmail(db, job.data);
+		const resolved = await resolveEmailJob(db, job.data);
+		if ('skipped' in resolved) {
+			// A superseded link is routine; one that expired before it could be
+			// sent means the person never got a working link, so it is a warning.
+			logEvent(resolved.skipped === 'expired' ? 'warn' : 'info', 'email.skipped', {
+				to: redactEmail(job.data.to),
+				reason: resolved.skipped
+			});
+			continue;
+		}
+		await sendEmail(db, resolved.message);
 		// Structured, with the recipient masked and the subject (which embeds
 		// story titles) omitted, so account PII does not sit in the logs.
 		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
@@ -464,11 +481,16 @@ await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 
 // Transactional email that exhausted its retries (a prolonged SMTP outage).
 // The send is given up, but it must not vanish: log it loudly so an operator
-// can resend by hand. The recipient flow already said "check your email", so
-// there is no other signal otherwise.
-await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
+// knows. A link email holds no usable link to resend; the person requests a new
+// one (sign up again, forgot password, or retry the change). The recipient flow
+// already said "check your email", so there is no other signal otherwise. The
+// token id is safe to log: it is not a credential.
+await boss.work<EmailJob>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
+		logEvent('error', 'email.dropped', {
+			to: redactEmail(job.data.to),
+			...('tokenId' in job.data ? { tokenId: job.data.tokenId } : {})
+		});
 	}
 });
 
@@ -516,7 +538,8 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 	}
 });
 
-// Trashed universes past their restore window go for good.
+// Trashed universes and stories past their restore window go for good.
+// Universes first: their purge takes every story inside, trashed or not.
 await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
 	for (const universeId of await listUniversesDueForPurge(db)) {
 		try {
@@ -524,6 +547,14 @@ await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
 			console.log(`purge: universe ${universeId} deleted`);
 		} catch (error) {
 			console.error(`purge: universe ${universeId} failed`, error);
+		}
+	}
+	for (const storyId of await listStoriesDueForPurge(db)) {
+		try {
+			await purgeStory(db, storyId);
+			console.log(`purge: story ${storyId} deleted`);
+		} catch (error) {
+			console.error(`purge: story ${storyId} failed`, error);
 		}
 	}
 });

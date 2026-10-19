@@ -43,7 +43,7 @@ import { modelContextWindow, resolveLlmConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
 import { logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
-import { inLiveUniverse } from '../universe-scope.ts';
+import { storyIsLive } from '../universe-scope.ts';
 
 // Tool budgets for the exhaustive passes. A focused or full pass stages one
 // tool call per note plus the scene read, so the account's conservative
@@ -499,7 +499,7 @@ async function storySurveyScenes(
 			and(
 				eq(scenes.storyId, storyId),
 				eq(stories.ownerId, userId),
-				inLiveUniverse(stories.universeId),
+				storyIsLive(),
 				isNull(scenes.deletedAt)
 			)
 		)
@@ -558,7 +558,7 @@ async function staleSummaryCount(db: Database, userId: string, storyId: string):
 			and(
 				eq(scenes.storyId, storyId),
 				eq(stories.ownerId, userId),
-				inLiveUniverse(stories.universeId),
+				storyIsLive(),
 				isNull(scenes.deletedAt)
 			)
 		);
@@ -825,7 +825,7 @@ export async function reviewUniverseContinuity(
 			and(
 				eq(stories.universeId, opts.universeId),
 				eq(stories.ownerId, opts.userId),
-				inLiveUniverse(stories.universeId),
+				storyIsLive(),
 				isNull(scenes.deletedAt)
 			)
 		)
@@ -959,7 +959,7 @@ export async function reviewStoryScenes(
 	const where = [
 		eq(scenes.storyId, opts.storyId),
 		eq(stories.ownerId, opts.userId),
-		inLiveUniverse(stories.universeId),
+		storyIsLive(),
 		isNull(scenes.deletedAt)
 	];
 	if (opts.chapterId) where.push(eq(scenes.chapterId, opts.chapterId));

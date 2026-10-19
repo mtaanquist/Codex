@@ -20,7 +20,8 @@
 		{:else}
 			<p class="form-error auth-note" role="alert">
 				This cancellation link is not valid. It may have already been used, expired, or the deletion
-				may have already run. If you still have access, sign in to check.
+				may have already run. If you still have access, sign in to check. If you got more than one
+				email, use the newest one.
 			</p>
 		{/if}
 	{:else if data.valid}
@@ -35,7 +36,8 @@
 	{:else}
 		<p class="form-error auth-note" role="alert">
 			This cancellation link is not valid. It may have already been used, expired, or the deletion
-			may have already run. If you still have access, sign in to check.
+			may have already run. If you still have access, sign in to check. If you got more than one
+			email, use the newest one.
 		</p>
 	{/if}
 	<div class="auth-links">

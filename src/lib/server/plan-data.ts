@@ -1,5 +1,5 @@
 import type { EntityCardData } from '$lib/wire-types';
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	characters,
@@ -125,6 +125,7 @@ export async function entityAppearances(
 				eq(entityMentions.sourceType, 'scene'),
 				eq(entityMentions.targetType, targetType),
 				eq(entityMentions.targetId, target.id),
+				isNull(stories.deletedAt),
 				scopeFilter
 			)
 		)
@@ -154,7 +155,8 @@ export async function entityMentionCount(
 				eq(entityMentions.sourceType, 'scene'),
 				eq(entityMentions.targetType, targetType),
 				eq(entityMentions.targetId, target.id),
-				eq(stories.universeId, universeId)
+				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt)
 			)
 		);
 	return row?.total ?? 0;

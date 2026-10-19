@@ -62,7 +62,6 @@ import {
 	normalisePageSetup,
 	sanitiseFontName
 } from '$lib/page-setup';
-import { accountDeletionEmail, emailChangeEmail } from '$lib/server/email';
 import { isAccentColor, isConcreteTheme, isTheme, normaliseAccent } from '$lib/appearance';
 import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
 import { secretsAvailable } from '$lib/server/crypto';
@@ -694,10 +693,7 @@ export const actions: Actions = {
 			String(data.get('newEmail') ?? '')
 		);
 		if (!result.ok) return fail(400, { scope: 'email', message: result.reason });
-		const origin = publicOrigin(url);
-		await queueEmail(
-			emailChangeEmail(result.newEmail, `${origin}/confirm-email-change?token=${result.token}`)
-		);
+		await queueEmail({ tokenId: result.tokenId, to: result.newEmail, origin: publicOrigin(url) });
 		return { scope: 'email', sent: true };
 	},
 	changePassword: async ({ request, locals }) => {
@@ -742,15 +738,8 @@ export const actions: Actions = {
 		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
 			return fail(400, { scope: 'delete', message: 'That password is not right.' });
 		}
-		const token = await scheduleAccountDeletion(db, locals.user!.id);
-		const origin = publicOrigin(url);
-		await queueEmail(
-			accountDeletionEmail(
-				locals.user!.email,
-				`${origin}/cancel-deletion?token=${token}`,
-				DELETION_GRACE_DAYS
-			)
-		);
+		const tokenId = await scheduleAccountDeletion(db, locals.user!.id);
+		await queueEmail({ tokenId, to: locals.user!.email, origin: publicOrigin(url) });
 		// The account is now deactivated; end the current session.
 		cookies.delete(SESSION_COOKIE, { path: '/' });
 		redirect(303, '/login');
