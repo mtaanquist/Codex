@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import {
 	chapters,
 	entityMentions,
+	notes,
 	reviewComments,
 	reviewSuggestions,
 	reviewThreads,
@@ -143,7 +144,7 @@ export async function restoreScene(
 }
 
 /** Deletes a trashed scene for good: markers, mentions, revisions, review
- * threads and suggestions, then the row. */
+ * threads and suggestions, then the row. Notes on the scene are detached. */
 export async function destroyScene(
 	db: Database,
 	userId: string,
@@ -173,6 +174,8 @@ export async function destroyScene(
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 		await tx.delete(revisions).where(eq(revisions.entityId, scene.id));
+		// Notes on the scene are the writer's own words; keep them as story notes.
+		await tx.update(notes).set({ sceneId: null }).where(eq(notes.sceneId, scene.id));
 		await tx.delete(scenes).where(eq(scenes.id, scene.id));
 	});
 	return true;

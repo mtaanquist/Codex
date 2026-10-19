@@ -8,6 +8,7 @@ import {
 	chapters,
 	characters,
 	entityMentions,
+	notes,
 	revisions,
 	sceneMarkers,
 	scenes,
@@ -188,8 +189,16 @@ describe('destroyScene', () => {
 	it('removes the scene and everything it owns', async () => {
 		await db.insert(sceneMarkers).values({ sceneId: s1, ownerId, kind: 'todo' });
 		await recordRevision(db, 'scene', s1, 'Aldric walks in.');
+		const [note] = await db
+			.insert(notes)
+			.values({ ownerId, universeId, storyId, sceneId: s1, title: 'Scene note' })
+			.returning();
 
 		expect(await destroyScene(db, ownerId, s1)).toBe(true);
+		// The note outlives the scene as a plain story note.
+		const [kept] = await db.select().from(notes).where(eq(notes.id, note.id));
+		expect(kept.sceneId).toBeNull();
+		expect(kept.storyId).toBe(storyId);
 		expect(await db.select().from(scenes).where(eq(scenes.id, s1))).toHaveLength(0);
 		expect(await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, s1))).toHaveLength(
 			0
