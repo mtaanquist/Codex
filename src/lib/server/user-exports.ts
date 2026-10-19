@@ -179,6 +179,8 @@ export async function runUserExport(
 			.update(userExports)
 			.set({
 				status: 'ready',
+				// Clears a stale sweep's note when a slow build finishes after all.
+				error: null,
 				storageKey,
 				filename: built.filename,
 				contentType,

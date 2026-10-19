@@ -231,6 +231,27 @@ describe('failStaleExports', () => {
 		expect(ran).toMatchObject({ ok: false });
 		expect(await failStaleExports(db)).toBe(0);
 	});
+
+	it('shows a build the sweep failed mid-run as ready, without the sweep note', async () => {
+		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const id = (requested as { ok: true; id: string }).id;
+		const { store } = memoryStore();
+		// The sweep lands while the build is uploading.
+		const sweptMidRun: AssetObjectStore = {
+			...store,
+			async put(key, body, contentType) {
+				await db
+					.update(userExports)
+					.set({ status: 'failed', error: 'The export did not finish. Try again.' })
+					.where(eq(userExports.id, id));
+				await store.put(key, body, contentType);
+			}
+		};
+		expect(await runUserExport(db, id, sweptMidRun)).toMatchObject({ ok: true });
+		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
+		expect(row.status).toBe('ready');
+		expect(row.error).toBeNull();
+	});
 });
 
 describe('exportForDownload', () => {
