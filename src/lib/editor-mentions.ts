@@ -6,7 +6,7 @@ import {
 	type DecorationSet,
 	type ViewUpdate
 } from '@codemirror/view';
-import type { Extension } from '@codemirror/state';
+import type { ChangeSet, Extension, Range, Text } from '@codemirror/state';
 import { detectMentions, type MentionContext, type MentionTarget } from './mention-detect';
 import { entityLetter } from './entity-color';
 import { badgeBackground, badgeImageSrc, type BadgeFields } from './entity-badge';
@@ -84,6 +84,36 @@ function badge(fields: BadgeFields, size: 'sm' | 'dot'): HTMLElement {
 	return node;
 }
 
+// After an edit, only the lines it touched are scanned again; the other
+// underlines move with the text. Names never span a line break, so a whole
+// line is a safe unit to rescan.
+export function rescanChangedLines(
+	decorations: DecorationSet,
+	changes: ChangeSet,
+	doc: Text,
+	scan: (text: string, offset: number) => Range<Decoration>[]
+): DecorationSet {
+	const spans: { from: number; to: number }[] = [];
+	changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+		const from = doc.lineAt(fromB).from;
+		const to = doc.lineAt(toB).to;
+		const last = spans[spans.length - 1];
+		if (last && from <= last.to + 1) last.to = Math.max(last.to, to);
+		else spans.push({ from, to });
+	});
+	let next = decorations.map(changes);
+	for (const { from, to } of spans) {
+		next = next.update({
+			filterFrom: from,
+			filterTo: to,
+			filter: () => false,
+			add: scan(doc.sliceString(from, to), from),
+			sort: true
+		});
+	}
+	return next;
+}
+
 // Live underlines and hover tooltips for known entities. Lives in the scene
 // editor's mentions compartment, so pin changes can reconfigure it at
 // runtime.
@@ -102,19 +132,19 @@ export function mentionExtensions(
 		pins: new Map(Object.entries(options.pins ?? {}))
 	};
 
-	function compute(view: EditorView): DecorationSet {
-		const matches = detectMentions(view.state.doc.toString(), targets, context);
-		return Decoration.set(
-			matches.map((match) =>
-				Decoration.mark({
-					class: match.candidates ? 'ref-word ref-ambiguous' : 'ref-word',
-					// A known entity's name is spelled the way its author chose;
-					// the browser's spellchecker keeps its squiggle off it.
-					attributes: { 'data-entity': match.targetId, spellcheck: 'false' }
-				}).range(match.position, match.position + match.length)
-			),
-			true
+	function marks(text: string, offset: number) {
+		return detectMentions(text, targets, context, offset).map((match) =>
+			Decoration.mark({
+				class: match.candidates ? 'ref-word ref-ambiguous' : 'ref-word',
+				// A known entity's name is spelled the way its author chose;
+				// the browser's spellchecker keeps its squiggle off it.
+				attributes: { 'data-entity': match.targetId, spellcheck: 'false' }
+			}).range(match.position, match.position + match.length)
 		);
+	}
+
+	function compute(view: EditorView): DecorationSet {
+		return Decoration.set(marks(view.state.doc.toString(), 0), true);
 	}
 
 	const underlines = ViewPlugin.fromClass(
@@ -124,7 +154,14 @@ export function mentionExtensions(
 				this.decorations = compute(view);
 			}
 			update(update: ViewUpdate) {
-				if (update.docChanged) this.decorations = compute(update.view);
+				if (update.docChanged) {
+					this.decorations = rescanChangedLines(
+						this.decorations,
+						update.changes,
+						update.state.doc,
+						marks
+					);
+				}
 			}
 		},
 		{ decorations: (value) => value.decorations }
