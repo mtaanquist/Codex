@@ -166,14 +166,6 @@ a.chip:hover {
 .modal-body p:last-child {
 	margin-bottom: 0;
 }
-.modal-label {
-	font-size: var(--text-micro);
-	font-weight: 650;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	color: var(--text-faint);
-	padding: var(--space-3) var(--space-2) var(--space-1);
-}
 .modal-foot {
 	flex: none;
 	display: flex;

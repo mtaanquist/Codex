@@ -352,21 +352,6 @@ a.nav-item {
 	color: var(--text-muted);
 	font-weight: 550;
 }
-.admin-stat-ic {
-	width: 28px;
-	height: 28px;
-	border-radius: 8px;
-	display: grid;
-	place-items: center;
-	background: var(--bg-canvas);
-	box-shadow: inset 0 0 0 1px var(--border);
-	color: var(--text-muted);
-	flex: none;
-}
-.admin-stat-ic svg {
-	width: 15px;
-	height: 15px;
-}
 .admin-stat-n {
 	font-family: var(--font-serif);
 	font-size: 30px;
@@ -476,11 +461,6 @@ a.nav-item {
 	padding: 0 12px 11px;
 	border-bottom: 1px solid var(--border);
 }
-.admin-table th.num,
-.admin-table td.num {
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-}
 .admin-table td {
 	padding: 13px 12px;
 	border-bottom: 1px solid var(--border);
@@ -523,10 +503,10 @@ a.nav-item {
 }
 /* Keep this a real table cell so its row border lines up with the others;
    the buttons flex inside an inner wrapper. */
-.row-actions {
+.cell-actions {
 	text-align: right;
 }
-.row-actions-inner {
+.cell-actions-inner {
 	display: flex;
 	gap: 6px;
 	justify-content: flex-end;
@@ -562,55 +542,6 @@ a.nav-item {
 }
 .role-tag.writer::before {
 	background: var(--text-faint);
-}
-
-.storage-seg {
-	height: 100%;
-}
-.storage-seg + .storage-seg {
-	border-left: 2px solid var(--bg-card);
-}
-.storage-legend {
-	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 12px 28px;
-}
-.legend-item {
-	display: flex;
-	align-items: center;
-	gap: 9px;
-	font-size: 13px;
-}
-.legend-dot {
-	width: 10px;
-	height: 10px;
-	border-radius: 3px;
-	flex: none;
-}
-.legend-k {
-	color: var(--text);
-	flex: 1;
-}
-.legend-v {
-	color: var(--text-muted);
-	font-variant-numeric: tabular-nums;
-	font-weight: 550;
-}
-.storage-cap {
-	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 12px;
-	margin-bottom: 2px;
-}
-.storage-cap .used {
-	font-family: var(--font-serif);
-	font-size: 22px;
-	font-weight: 600;
-}
-.storage-cap .total {
-	font-size: 13px;
-	color: var(--text-faint);
 }
 
 /* ============ INVITE / SNAPSHOT ROWS ============ */
@@ -837,40 +768,11 @@ a.nav-item {
 	.admin-main-inner {
 		padding: 28px 24px 80px;
 	}
-	.storage-legend {
-		grid-template-columns: 1fr;
-	}
 }
 
 /* shared account-page groups sit transparent on the work canvas */
 .admin-main .settings-group {
 	background: transparent;
-}
-
-/* gated card - body dims until the toggle is on */
-.admin-card.is-gated .gate-head {
-	margin-bottom: 0;
-}
-.admin-card.is-gated .gate-head .t-title {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	flex-wrap: wrap;
-}
-.admin-card.is-gated .gate-head .pill {
-	white-space: nowrap;
-}
-.admin-card.is-gated .gate-body {
-	margin-top: 18px;
-	padding-top: 18px;
-	border-top: 1px solid var(--border);
-	opacity: 0.45;
-	pointer-events: none;
-	transition: opacity 0.15s;
-}
-.admin-card.is-gated.on .gate-body {
-	opacity: 1;
-	pointer-events: auto;
 }
 
 /* ===== profile: large avatar ===== */
@@ -944,21 +846,6 @@ a.nav-item {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-}
-.link-row .link-ic {
-	width: 36px;
-	height: 36px;
-	border-radius: 9px;
-	flex: none;
-	display: grid;
-	place-items: center;
-	background: var(--bg-inset);
-	border: 1px solid var(--border);
-	color: var(--text-muted);
-}
-.link-row .link-ic svg {
-	width: 16px;
-	height: 16px;
 }
 .link-row .input {
 	flex: 1;
@@ -1143,31 +1030,6 @@ a.nav-item {
 	flex: none;
 }
 
-/* enabled accent treatment */
-[data-tfa].is-on .tfa-ic {
-	background: color-mix(in oklab, var(--status-final) 16%, transparent);
-	box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--status-final) 35%, transparent);
-	color: var(--status-final);
-}
-[data-tfa].is-on .tfa-badge {
-	background: color-mix(in oklab, var(--status-final) 16%, transparent);
-	border-color: color-mix(in oklab, var(--status-final) 35%, transparent);
-	color: var(--status-final);
-}
-
-/* state visibility */
-[data-tfa] [data-tfa-when] {
-	display: none;
-}
-[data-tfa].is-off [data-tfa-when~='off'],
-[data-tfa].is-setup [data-tfa-when~='setup'],
-[data-tfa].is-on [data-tfa-when~='on'] {
-	display: revert;
-}
-[data-tfa].is-on .tfa-on-actions {
-	display: flex;
-}
-
 /* The "on" actions each re-confirm the password, so they stack as small
    password-plus-button rows rather than bare buttons. */
 .tfa-on-actions {
@@ -1254,14 +1116,6 @@ a.nav-item {
 	padding: 10px;
 	background: var(--qr-bg);
 	box-shadow: inset 0 0 0 1px var(--border);
-}
-.qr-grid {
-	display: grid;
-	width: 100%;
-	height: 100%;
-}
-.qr-grid i {
-	background: var(--qr-fg);
 }
 .tfa-scan-alt {
 	flex: 1;

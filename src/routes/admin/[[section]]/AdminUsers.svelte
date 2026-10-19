@@ -213,8 +213,8 @@
 							{userStatus(account)}{account.publicArchiveEnabled ? ', can publish' : ''}
 						</td>
 						<td class="cell-muted">{formatDate(account.createdAt)}</td>
-						<td class="row-actions">
-							<div class="row-actions-inner">
+						<td class="cell-actions">
+							<div class="cell-actions-inner">
 								<form method="POST" action="?/setInviteAllowance" class="allowance-form">
 									<input type="hidden" name="userId" value={account.id} />
 									<label class="allowance-label">
@@ -401,8 +401,8 @@
 									? `, expires ${formatDate(code.expiresAt)}`
 									: ''}
 							</td>
-							<td class="row-actions">
-								<div class="row-actions-inner">
+							<td class="cell-actions">
+								<div class="cell-actions-inner">
 									<button
 										type="button"
 										class="btn btn-ghost btn-sm"

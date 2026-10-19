@@ -1003,10 +1003,11 @@ calls the gateway, which proxies through the egress guard.
 ### Background jobs - sequencing steps 4 and 7
 
 - [built] pg-boss queues `assistant-review` and `assistant-summaries` (names in
-  `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/index.ts`).
-  The handlers call the gateway directly (`complete`/`stream`, no HTTP hop) and
-  write through the same review/entity helpers. Entity enrichment runs inline
-  through `/api/assistant/enrich` rather than a queue.
+  `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
+  registered by `src/worker/index.ts`). The handlers call the gateway directly
+  (`complete`/`stream`, no HTTP hop) and write through the same review/entity
+  helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
+  than a queue.
 
 ### Tool use and structural actions - sequencing step 6
 

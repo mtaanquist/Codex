@@ -324,14 +324,3 @@ a.seg-btn {
 	color: var(--text-muted);
 	margin-top: 1px;
 }
-
-/* Links in running text. Chrome controls are never running text, so this rule
-   is opt-in: it cannot reach the gear, the question mark, or the avatar. */
-.appbar a.text-link,
-.page-body a.text-link {
-	color: var(--accent);
-}
-.appbar a.text-link:hover,
-.page-body a.text-link:hover {
-	color: color-mix(in oklab, var(--accent) 82%, var(--text));
-}

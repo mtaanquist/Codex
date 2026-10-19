@@ -183,6 +183,12 @@ instead. If the proxy runs on another machine, set `APP_BIND` to an address only
 it can reach, or firewall the port. If you run the app with no proxy at all,
 set `APP_BIND=0.0.0.0` and `ADDRESS_HEADER` empty.
 
+The app sets its own security headers (`Content-Security-Policy`,
+`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`), so the proxy
+does not need to add them. When `ORIGIN` starts with `https://` it also sends
+`Strict-Transport-Security` for one year, after which browsers refuse plain
+HTTP for that host.
+
 ### Bundled Caddy
 
 Set `COMPOSE_PROFILES=caddy` and `SITE_ADDRESS` to your domain. Caddy obtains

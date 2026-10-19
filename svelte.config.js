@@ -7,7 +7,21 @@ const config = {
 		runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true)
 	},
 	kit: {
-		adapter: adapter()
+		adapter: adapter(),
+		// Scripts only from this origin, plus the inline ones SvelteKit (and the
+		// theme script in app.html) mark with a nonce. Styles are left open:
+		// Svelte transitions insert inline style elements.
+		csp: {
+			mode: 'auto',
+			directives: {
+				'script-src': ['self'],
+				'object-src': ['none'],
+				'base-uri': ['self'],
+				'frame-ancestors': ['none'],
+				'frame-src': ['none'],
+				'form-action': ['self']
+			}
+		}
 	}
 };
 
