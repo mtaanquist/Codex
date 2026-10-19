@@ -34,6 +34,27 @@ describe('classifyAddress', () => {
 		['2606:4700:4700::1111', 'public'],
 		['::ffff:127.0.0.1', 'loopback'],
 		['::ffff:8.8.8.8', 'public'],
+		// NAT64 well-known prefix (64:ff9b::/96) carries the v4 target.
+		['64:ff9b::a9fe:a9fe', 'link-local'],
+		['64:ff9b::10.0.0.1', 'private'],
+		['64:ff9b::7f00:1', 'loopback'],
+		['64:ff9b::808:808', 'public'],
+		// Local-use NAT64 (64:ff9b:1::/48): the v4 position varies, so blocked.
+		['64:ff9b:1::a9fe:a9fe', 'private'],
+		['64:ff9b:1:ffff::808:808', 'private'],
+		// 6to4 (2002::/16) carries the v4 in bytes 2-5.
+		['2002:a9fe:a9fe::1', 'link-local'],
+		['2002:c0a8:101::', 'private'],
+		['2002:808:808::1', 'public'],
+		// IPv4-compatible (::a.b.c.d, deprecated) and IPv4-translated (::ffff:0:a.b.c.d).
+		['::169.254.169.254', 'link-local'],
+		['::10.1.2.3', 'private'],
+		['::8.8.8.8', 'public'],
+		['::ffff:0:a9fe:a9fe', 'link-local'],
+		// Other reserved ranges are not unicast targets.
+		['2001::a9fe:a9fe', 'invalid'], // Teredo 2001::/32
+		['2001:db8::1', 'invalid'], // documentation
+		['100::1', 'invalid'], // discard-only 100::/64
 		['not-an-ip', 'invalid'],
 		['999.1.1.1', 'invalid']
 	];
@@ -76,6 +97,13 @@ describe('egressHttpRequest', () => {
 		const http = egressHttpRequest({ policy: 'block-private', allowlist: [] });
 		await expect(
 			http('http://127.0.0.1:9/v1/chat/completions', { method: 'POST', headers: {}, body: '{}' })
+		).rejects.toBeInstanceOf(EgressDeniedError);
+	});
+
+	it('refuses a NAT64 literal that embeds the metadata address', async () => {
+		const http = egressHttpRequest({ policy: 'block-private', allowlist: [] });
+		await expect(
+			http('http://[64:ff9b::a9fe:a9fe]/v1/models', { method: 'GET', headers: {} })
 		).rejects.toBeInstanceOf(EgressDeniedError);
 	});
 

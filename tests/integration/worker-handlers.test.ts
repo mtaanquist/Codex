@@ -28,6 +28,8 @@ import {
 	type AssetObjectStore
 } from '../../src/lib/server/assets';
 import { buildReviewerDigest } from '../../src/lib/server/notification-digest';
+import { reserveToken, revokeTokens } from '../../src/lib/server/tokens';
+import type { EmailMessage } from '../../src/lib/server/email';
 import type { StoryReviewResult } from '../../src/lib/server/llm/scene-review';
 import type { Database } from '../../src/lib/server/auth';
 import { NOTIFICATION_DIGEST_QUEUE } from '../../src/lib/server/queues';
@@ -279,6 +281,51 @@ describe('assistant review notices', () => {
 	});
 });
 
+describe('the email queue', () => {
+	function recordingSend() {
+		const messages: EmailMessage[] = [];
+		const sendEmail = async (_db: Database, message: EmailMessage) => {
+			messages.push(message);
+		};
+		return { messages, sendEmail };
+	}
+
+	it('writes the link into a token email at send time', async () => {
+		const me = await makeUser('me@example.com');
+		const tokenId = await reserveToken(db, me.id, 'password_reset', 60);
+		const { messages, sendEmail } = recordingSend();
+		const { handlers } = harness({ sendEmail });
+
+		await handlers.email([job({ tokenId, to: me.email, origin: 'https://codex.test' })]);
+
+		expect(messages).toHaveLength(1);
+		expect(messages[0].to).toBe(me.email);
+		expect(messages[0].text).toMatch(/https:\/\/codex\.test\/reset-password\?token=\S+/);
+	});
+
+	it('does not send a token email whose link was revoked', async () => {
+		const me = await makeUser('me@example.com');
+		const tokenId = await reserveToken(db, me.id, 'email_change', 60);
+		await revokeTokens(db, me.id, 'email_change');
+		const { messages, sendEmail } = recordingSend();
+		const { handlers } = harness({ sendEmail });
+
+		await handlers.email([job({ tokenId, to: me.email, origin: 'https://codex.test' })]);
+
+		expect(messages).toEqual([]);
+	});
+
+	it('sends a finished message as it is', async () => {
+		const message = { to: 'me@example.com', subject: 'Hi', text: 'Body' };
+		const { messages, sendEmail } = recordingSend();
+		const { handlers } = harness({ sendEmail });
+
+		await handlers.email([job(message)]);
+
+		expect(messages).toEqual([message]);
+	});
+});
+
 describe('digests are marked before they are sent', () => {
 	const failingSend = async () => {
 		throw new Error('SMTP is down');
@@ -363,6 +410,11 @@ describe('asset migration', () => {
 			return {
 				async put(key, body) {
 					objects.set(key, body);
+				},
+				async upload(key, body) {
+					const parts: Buffer[] = [];
+					for await (const chunk of body) parts.push(Buffer.from(chunk));
+					objects.set(key, Buffer.concat(parts));
 				},
 				async get(key): Promise<Readable> {
 					const body = objects.get(key);

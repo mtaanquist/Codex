@@ -18,7 +18,7 @@ import {
 	webauthnCredentials
 } from './db/schema.ts';
 import { purgeUniverseWithin } from './universe-lifecycle.ts';
-import { consumeToken, issueToken } from './tokens.ts';
+import { consumeToken, reserveToken } from './tokens.ts';
 
 const GRACE_DAYS = 7;
 const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
@@ -30,7 +30,7 @@ export const DELETION_GRACE_DAYS = GRACE_DAYS;
 // drop) and its public editions taken down right away, with the hard purge
 // deferred by the grace window. suspendedAt stays untouched - that column
 // belongs to admin suspension, so cancelling a deletion can never lift one.
-// Returns a one-time cancellation token for the emailed link.
+// Returns the id of a reserved cancellation token for the emailed link.
 export async function scheduleAccountDeletion(db: Database, userId: string): Promise<string> {
 	await db.transaction(async (tx) => {
 		const scheduled = new Date(Date.now() + GRACE_MS);
@@ -46,7 +46,7 @@ export async function scheduleAccountDeletion(db: Database, userId: string): Pro
 			.set({ removedAt: sql`now()` })
 			.where(and(eq(publications.ownerId, userId), isNull(publications.removedAt)));
 	});
-	return issueToken(db, userId, 'deletion_cancel', GRACE_DAYS * 24 * 60);
+	return reserveToken(db, userId, 'deletion_cancel', GRACE_DAYS * 24 * 60);
 }
 
 // Cancels a scheduled deletion if the token is valid, reactivating the account

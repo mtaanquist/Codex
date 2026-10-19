@@ -16,7 +16,8 @@ import {
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
 import { effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
-import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { sendEmail } from '../lib/server/email.ts';
+import { resolveEmailJob, type EmailJob } from '../lib/server/token-email.ts';
 import { logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
@@ -46,6 +47,8 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
+import { thinRevisions } from '../lib/server/revisions.ts';
+import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 
@@ -421,9 +424,19 @@ export function createHandlers(deps: WorkerDeps) {
 			}
 		},
 
-		async email(jobs: Job<EmailMessage>[]) {
+		async email(jobs: Job<EmailJob>[]) {
 			for (const job of jobs) {
-				await services.sendEmail(db, job.data);
+				const resolved = await resolveEmailJob(db, job.data);
+				if ('skipped' in resolved) {
+					// A superseded link is routine; one that expired before it could be
+					// sent means the person never got a working link, so it is a warning.
+					logEvent(resolved.skipped === 'expired' ? 'warn' : 'info', 'email.skipped', {
+						to: redactEmail(job.data.to),
+						reason: resolved.skipped
+					});
+					continue;
+				}
+				await services.sendEmail(db, resolved.message);
 				// Structured, with the recipient masked and the subject (which embeds
 				// story titles) omitted, so account PII does not sit in the logs.
 				logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
@@ -432,11 +445,17 @@ export function createHandlers(deps: WorkerDeps) {
 
 		// Transactional email that exhausted its retries (a prolonged SMTP
 		// outage). The send is given up, but it must not vanish: log it loudly so
-		// an operator can resend by hand. The recipient flow already said "check
-		// your email", so there is no other signal otherwise.
-		async emailDeadLetter(jobs: Job<EmailMessage>[]) {
+		// an operator knows. A link email holds no usable link to resend; the
+		// person requests a new one (sign up again, forgot password, or retry the
+		// change). The recipient flow already said "check your email", so there is
+		// no other signal otherwise. The token id is safe to log: it is not a
+		// credential.
+		async emailDeadLetter(jobs: Job<EmailJob>[]) {
 			for (const job of jobs) {
-				logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
+				logEvent('error', 'email.dropped', {
+					to: redactEmail(job.data.to),
+					...('tokenId' in job.data ? { tokenId: job.data.tokenId } : {})
+				});
 			}
 		},
 
@@ -518,6 +537,16 @@ export function createHandlers(deps: WorkerDeps) {
 		async purgeReviewRuns() {
 			const deleted = await purgeReviewRuns(db);
 			if (deleted > 0) console.log(`purge: ${deleted} review run row(s) deleted`);
+		},
+
+		async thinRevisions() {
+			const removed = await thinRevisions(db);
+			if (removed > 0) console.log(`revisions: thinned ${removed} old autosave(s)`);
+		},
+
+		async purgeSessions() {
+			const deleted = await purgeSessions(db);
+			if (deleted > 0) console.log(`purge: ${deleted} old session(s) deleted`);
 		}
 	};
 }

@@ -10,7 +10,9 @@ import {
 	NOTIFICATION_DIGEST_QUEUE,
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_REVIEW_RUNS_QUEUE,
+	PURGE_SESSIONS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
+	THIN_REVISIONS_QUEUE,
 	SWEEP_DELETED_OBJECTS_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
@@ -25,9 +27,18 @@ import * as schema from '../lib/server/db/schema.ts';
 import { backupConfig, effectiveBackupConfig } from '../lib/server/backups.ts';
 import { createHandlers } from './handlers.ts';
 import { stopWorker } from './shutdown.ts';
+import { resolveOrigin } from '../lib/server/origin-rule.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
+// Digest links need an absolute origin. Like the app, the worker refuses to
+// start without ORIGIN outside development.
+const origin = resolveOrigin(
+	process.env.ORIGIN,
+	'http://localhost:5173',
+	process.env.NODE_ENV !== 'production'
+);
+
 const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
 
 // Jobs run longer statements than web requests (purges, reindexing), so the
@@ -35,12 +46,7 @@ const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@loc
 const db = drizzle(createPool(connectionString, { statementTimeoutMs: 300_000 }), { schema });
 const boss = new PgBoss(connectionString);
 
-// Links in notification emails need an absolute origin.
-const handlers = createHandlers({
-	db,
-	boss,
-	origin: process.env.ORIGIN ?? 'http://localhost:5173'
-});
+const handlers = createHandlers({ db, boss, origin });
 
 boss.on('error', (error) => {
 	console.error('pg-boss error:', error);
@@ -58,6 +64,8 @@ await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
+await boss.createQueue(THIN_REVISIONS_QUEUE);
+await boss.createQueue(PURGE_SESSIONS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
@@ -91,6 +99,8 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, handlers.purgeAccounts);
 await boss.work(PURGE_UNIVERSES_QUEUE, handlers.purgeUniverses);
 await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, handlers.sweepDeletedObjects);
 await boss.work(PURGE_REVIEW_RUNS_QUEUE, handlers.purgeReviewRuns);
+await boss.work(THIN_REVISIONS_QUEUE, handlers.thinRevisions);
+await boss.work(PURGE_SESSIONS_QUEUE, handlers.purgeSessions);
 
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
@@ -102,6 +112,12 @@ await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' })
 
 // Old review progress goes once a day; nothing is time critical about it.
 await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
+
+// Old autosave history is thinned once a day, after the review-run sweep.
+await boss.schedule(THIN_REVISIONS_QUEUE, '35 4 * * *', {}, { tz: 'UTC' });
+
+// Expired and long-revoked sessions go once a day.
+await boss.schedule(PURGE_SESSIONS_QUEUE, '50 4 * * *', {}, { tz: 'UTC' });
 
 // Sweep for stale mention indexes every five minutes, so a dropped rebuild
 // self-heals within minutes instead of waiting for the next save.

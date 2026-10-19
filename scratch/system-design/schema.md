@@ -62,7 +62,7 @@ Sign-in succeeds only when **both** `email_verified_at` and `approved_at` are no
 
 ### Sessions and credentials
 
-Authentication is session-cookie based, with the session row stored server-side so it can be listed and revoked. Email verification and password reset use single-use tokens, stored only as hashes. Two extra factors are modelled from the start: time-based one-time passwords (TOTP) and passkeys (WebAuthn).
+Authentication is session-cookie based, with the session row stored server-side so it can be listed and revoked. A daily worker job deletes sessions once they expire, and revoked ones 30 days after revocation. Email verification and password reset use single-use tokens, stored only as hashes. Two extra factors are modelled from the start: time-based one-time passwords (TOTP) and passkeys (WebAuthn).
 
 ```sql
 sessions (
@@ -80,7 +80,7 @@ auth_tokens (
   id            uuid primary key,
   user_id       uuid references users(id) not null,
   kind          text not null,           -- 'email_verify' | 'password_reset'
-  token_hash    text not null,           -- the raw token is emailed; only its hash is stored
+  token_hash    text not null,           -- only the hash is stored; the row is reserved with a throwaway hash and armed with the emailed token by the worker at send time
   expires_at    timestamptz not null,
   consumed_at   timestamptz,
   created_at    timestamptz not null
@@ -547,14 +547,15 @@ revisions (
   entity_type   text not null,   -- 'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note'
   entity_id     uuid not null,
   body_md       text not null,
-  reason        text,            -- 'autosave' | 'manual_checkpoint' | 'pre_import' etc
+  word_count    integer,         -- of body_md, stored at write time; null on old rows
+  reason        text,            -- 'autosave' | 'checkpoint' | 'restore' | 'suggestion'
   created_at    timestamptz not null
 )
 
 -- index on (entity_type, entity_id, created_at desc) for timeline queries
 ```
 
-Inserted on debounced save. Later optimisation: snapshot every N revisions, store diffs between snapshots. Don't bother until the table grows large.
+Inserted on debounced save; autosaves within two minutes coalesce into one row. Autosaves older than ninety days are thinned daily to the first and last one per entity per UTC day, never touching checkpoints, restores, suggestions, or revisions pinned as a review base. `word_count` lets Insights read a day's words without re-counting bodies. Later optimisation: snapshot every N revisions, store diffs between snapshots. Don't bother until the table grows large.
 
 ---
 

@@ -491,6 +491,27 @@
 			"when": 1792433761374,
 			"tag": "0069_deferred-object-deletion",
 			"breakpoints": true
+		},
+		{
+			"idx": 70,
+			"version": "7",
+			"when": 1792436266477,
+			"tag": "0070_mention-change-flag",
+			"breakpoints": true
+		},
+		{
+			"idx": 71,
+			"version": "7",
+			"when": 1792437150362,
+			"tag": "0071_revision-word-count",
+			"breakpoints": true
+		},
+		{
+			"idx": 72,
+			"version": "7",
+			"when": 1792437781392,
+			"tag": "0072_foreign-key-indexes",
+			"breakpoints": true
 		}
 	]
 }

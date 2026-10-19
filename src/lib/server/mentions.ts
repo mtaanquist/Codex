@@ -36,6 +36,10 @@ async function storyMemberIds(db: Database, storyId: string): Promise<Set<string
 // every scene (review finding #192).
 export type MentionRebuildContext = {
 	universeId: string;
+	// Database time just before the targets were read. Scenes indexed with this
+	// context are stamped with it, not with their own write time, so a rename
+	// that lands while the context is in use still leaves them stale.
+	loadedAt: Date;
 	targets: MentionTarget[];
 	stories: Map<string, { members: Set<string>; pins: Awaited<ReturnType<typeof listMentionPins>> }>;
 };
@@ -44,6 +48,9 @@ export async function universeMentionContext(
 	db: Database,
 	universeId: string
 ): Promise<MentionRebuildContext> {
+	const [{ loadedAt }] = (await db.execute(sql`select now() as "loadedAt"`)).rows as {
+		loadedAt: Date;
+	}[];
 	const cast = await db
 		.select({ id: characters.id, name: characters.name, aliases: characters.aliases })
 		.from(characters)
@@ -73,7 +80,7 @@ export async function universeMentionContext(
 			names: [entry.title, ...entry.keywords]
 		}))
 	];
-	return { universeId, targets, stories: new Map() };
+	return { universeId, loadedAt, targets, stories: new Map() };
 }
 
 async function storyContext(db: Database, context: MentionRebuildContext, storyId: string) {
@@ -144,11 +151,43 @@ export async function rebuildSceneMentions(
 		}
 		// Stamp the watermark in the same transaction. Raw SQL so it does not trip
 		// the scene's updated_at $onUpdate, which would make every scene look
-		// perpetually stale. now() marks "indexed as of this instant"; a later
-		// body or entity change moves past it and the reconcile sweep catches it.
-		await tx.execute(sql`update scenes set mentions_indexed_at = now() where id = ${scene.id}`);
+		// perpetually stale. The context's load time marks "indexed against the
+		// names as of then"; a later body save or flagged name change moves past
+		// it and the reconcile sweep catches it.
+		await tx.execute(
+			sql`update scenes set mentions_indexed_at = ${shared.loadedAt} where id = ${scene.id}`
+		);
 	});
 	return { ok: true, count: found.length };
+}
+
+// Records that the universe's detection targets changed (a name, alias,
+// keyword, pin, or new entity), so the reconcile sweep reindexes its scenes
+// even if the universe rebuild job is dropped. Raw SQL so it does not bump the
+// universe's updated_at. Call it before queueing the rebuild, so the scenes
+// the job stamps land past it.
+export async function markUniverseMentionsChanged(db: Database, universeId: string): Promise<void> {
+	await db.execute(sql`update universes set mentions_changed_at = now() where id = ${universeId}`);
+}
+
+// Clears the pending flag on every flagged universe (or just the one given)
+// whose live scenes have all been reindexed since it was set. Scenes carry the
+// time their names were read, so a change that lands mid-rebuild (even after
+// the context was loaded) moves mentions_changed_at past them and the flag
+// survives until they are reindexed with the new names.
+async function settleUniverseMentions(db: Database, universeId?: string): Promise<void> {
+	await db.execute(sql`
+		update universes u set mentions_changed_at = null
+		where u.mentions_changed_at is not null
+			${universeId ? sql`and u.id = ${universeId}` : sql``}
+			and not exists (
+				select 1 from scenes s
+				join stories st on st.id = s.story_id
+				where st.universe_id = u.id
+					and s.deleted_at is null
+					and (s.mentions_indexed_at is null or s.mentions_indexed_at < u.mentions_changed_at)
+			)
+	`);
 }
 
 // After a character's name or aliases change, every scene in the universe may
@@ -167,33 +206,46 @@ export async function rebuildUniverseMentions(db: Database, universeId: string):
 	for (const row of sceneRows) {
 		await rebuildSceneMentions(db, row.id, context);
 	}
+	await settleUniverseMentions(db, universeId);
 	return sceneRows.length;
 }
 
-// Scenes whose mention index is behind: never indexed, or indexed before the
-// scene's body last changed, or before any character/place/lore in its universe
-// last changed (an alias edit that should add or drop mentions). This is the
-// backstop for a dropped rebuild job, which would otherwise leave the index
-// stale until the next manual save. Ordered oldest-first so the longest-stale
-// scenes are caught first; bounded so one sweep cannot run unbounded.
+// Scenes whose mention index is behind: never indexed, indexed before the
+// scene's body last changed, or (live scenes only) indexed before its
+// universe's detection targets last changed. Entity edits that touch no names
+// do not count. This is the backstop for a dropped rebuild job, which would
+// otherwise leave the index stale until the next manual save. Each half reads
+// only scenes needing work: the first through a partial index, the second only
+// in universes with a pending change. Oldest-first so the longest-stale scenes
+// are caught first; bounded so one sweep cannot run unbounded.
 export async function listStaleMentionScenes(
 	db: Database,
 	limit = 200
 ): Promise<{ id: string; universeId: string }[]> {
 	const result = await db.execute(sql`
-		select s.id, st.universe_id
-		from scenes s
-		join stories st on st.id = s.story_id
-		where s.mentions_indexed_at is null
-			or s.mentions_indexed_at < s.updated_at
-			-- A trashed scene holds no mentions, so entity edits cannot make it
-			-- stale; only its own change (the trashing) needs a pass.
-			or s.deleted_at is null and s.mentions_indexed_at < greatest(
-				coalesce((select max(updated_at) from characters where universe_id = st.universe_id), to_timestamp(0)),
-				coalesce((select max(updated_at) from places where universe_id = st.universe_id), to_timestamp(0)),
-				coalesce((select max(updated_at) from lore_entries where universe_id = st.universe_id), to_timestamp(0))
+		select id, universe_id from (
+			(
+				select s.id, st.universe_id, s.mentions_indexed_at
+				from scenes s
+				join stories st on st.id = s.story_id
+				where s.mentions_indexed_at is null or s.mentions_indexed_at < s.updated_at
+				order by s.mentions_indexed_at asc nulls first
+				limit ${limit}
 			)
-		order by s.mentions_indexed_at asc nulls first
+			union
+			(
+				select s.id, st.universe_id, s.mentions_indexed_at
+				from universes u
+				join stories st on st.universe_id = u.id
+				join scenes s on s.story_id = st.id
+				where u.mentions_changed_at is not null
+					and s.deleted_at is null
+					and s.mentions_indexed_at < u.mentions_changed_at
+				order by s.mentions_indexed_at asc
+				limit ${limit}
+			)
+		) stale
+		order by mentions_indexed_at asc nulls first
 		limit ${limit}
 	`);
 	return result.rows.map((row) => {
@@ -217,5 +269,6 @@ export async function reconcileMentions(db: Database, limit = 200): Promise<numb
 		}
 		await rebuildSceneMentions(db, scene.id, context);
 	}
+	await settleUniverseMentions(db);
 	return stale.length;
 }

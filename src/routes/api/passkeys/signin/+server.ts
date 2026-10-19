@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { createSession, SESSION_COOKIE } from '$lib/server/auth';
@@ -18,7 +18,7 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, request,
 	if (!body?.response?.id) {
 		return json({ message: 'That passkey was not recognised.' }, { status: 400 });
 	}
-	const origin = env.ORIGIN ?? url.origin;
+	const origin = publicOrigin(url);
 	const result = await finishPasskeySignIn(
 		db,
 		body.response,

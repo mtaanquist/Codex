@@ -1,12 +1,11 @@
 import { fail } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { registerUser } from '$lib/server/signup';
 import { signupMode } from '$lib/server/settings';
-import { issueToken } from '$lib/server/tokens';
+import { reserveToken } from '$lib/server/tokens';
 import { queueEmail } from '$lib/server/jobs';
-import { verificationEmail } from '$lib/server/email';
 import { notifyAdmins } from '$lib/server/notify';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
@@ -62,13 +61,8 @@ export const actions: Actions = {
 		}
 
 		if (result.ok) {
-			const token = await issueToken(db, result.userId, 'email_verify', VERIFY_TTL_MINUTES);
-			// ORIGIN is set in production (adapter-node needs it); the request
-			// origin is the dev fallback. Using a configured origin keeps a spoofed
-			// Host header out of the link.
-			const origin = env.ORIGIN ?? url.origin;
-			const link = `${origin}/verify-email?token=${token}`;
-			await queueEmail(verificationEmail(cleanEmail, link));
+			const tokenId = await reserveToken(db, result.userId, 'email_verify', VERIFY_TTL_MINUTES);
+			await queueEmail({ tokenId, to: cleanEmail, origin: publicOrigin(url) });
 
 			// Let the admins know there is someone to review (or that someone
 			// joined, on an invite or an open instance). Goes through the

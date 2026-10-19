@@ -246,8 +246,8 @@ describe('threads and comments', () => {
 		).toMatchObject({ ok: true });
 
 		// Only the owner resolves.
-		expect(await setThreadResolved(db, strangerId, created.threadId, true)).toBe(false);
-		expect(await setThreadResolved(db, authorId, created.threadId, true)).toBe(true);
+		expect(await setThreadResolved(db, strangerId, storyId, created.threadId, true)).toBe(false);
+		expect(await setThreadResolved(db, authorId, storyId, created.threadId, true)).toBe(true);
 		const [thread] = await listThreads(db, storyId, reanchorRange);
 		expect(thread.resolvedAt).not.toBeNull();
 		expect(thread.comments.map((comment) => comment.authorName)).toEqual(['Robin', 'Avery']);
@@ -318,7 +318,7 @@ describe('assistant comments', () => {
 		expect(
 			await assistantComment({ start: lazy, end: lazy + 4 }, 'The fox changes colour later.')
 		).toMatchObject({ ok: true });
-		await setThreadResolved(db, authorId, first.threadId, true);
+		await setThreadResolved(db, authorId, storyId, first.threadId, true);
 		expect(await assistantComment(anchor, 'The fox changes colour later.')).toMatchObject({
 			ok: true
 		});
@@ -369,9 +369,11 @@ describe('deleteComment (retract your own)', () => {
 		expect(robinReply.mine).toBe(true);
 		expect(before.comments.find((c) => c.body === 'Author reply.')!.mine).toBe(false);
 
-		expect(await deleteComment(db, { reviewerId: robin.id }, robinReply.id)).toMatchObject({
-			ok: true
-		});
+		expect(await deleteComment(db, { reviewerId: robin.id }, storyId, robinReply.id)).toMatchObject(
+			{
+				ok: true
+			}
+		);
 		const [after] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
 		expect(after.comments.map((c) => c.body)).toEqual(['Root by Robin.', 'Author reply.']);
 	});
@@ -389,7 +391,7 @@ describe('deleteComment (retract your own)', () => {
 		if (!solo.ok) throw new Error('no thread');
 		const [soloView] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
 		expect(
-			await deleteComment(db, { reviewerId: robin.id }, soloView.comments[0].id)
+			await deleteComment(db, { reviewerId: robin.id }, storyId, soloView.comments[0].id)
 		).toMatchObject({ ok: true });
 		expect(await listThreads(db, storyId, reanchorRange)).toEqual([]);
 
@@ -410,7 +412,7 @@ describe('deleteComment (retract your own)', () => {
 		});
 		const [withReply] = await listThreads(db, storyId, reanchorRange, { reviewerId: robin.id });
 		expect(
-			await deleteComment(db, { reviewerId: robin.id }, withReply.comments[0].id)
+			await deleteComment(db, { reviewerId: robin.id }, storyId, withReply.comments[0].id)
 		).toMatchObject({ ok: false });
 		expect((await listThreads(db, storyId, reanchorRange)).length).toBe(1);
 	});
@@ -427,10 +429,14 @@ describe('deleteComment (retract your own)', () => {
 		});
 		if (!created.ok) throw new Error('no thread');
 		const [thread] = await listThreads(db, storyId, reanchorRange);
-		expect(await deleteComment(db, { reviewerId: robin.id }, thread.comments[0].id)).toMatchObject({
+		expect(
+			await deleteComment(db, { reviewerId: robin.id }, storyId, thread.comments[0].id)
+		).toMatchObject({
 			ok: false
 		});
-		expect(await deleteComment(db, { userId: strangerId }, thread.comments[0].id)).toMatchObject({
+		expect(
+			await deleteComment(db, { userId: strangerId }, storyId, thread.comments[0].id)
+		).toMatchObject({
 			ok: false
 		});
 		expect((await listThreads(db, storyId, reanchorRange)).length).toBe(1);

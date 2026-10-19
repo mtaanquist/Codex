@@ -13,6 +13,7 @@ import {
 	stories
 } from './db/schema';
 import { ownedScene } from './scene-access.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
 // revisions, markers, and review threads) so restore is instant; only its
@@ -24,7 +25,13 @@ async function ownedChapter(db: Database, userId: string, chapterId: string) {
 		.select({ id: chapters.id, storyId: chapters.storyId, position: chapters.position })
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
-		.where(and(eq(chapters.id, chapterId), eq(stories.ownerId, userId)));
+		.where(
+			and(
+				eq(chapters.id, chapterId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
 	return row ?? null;
 }
 
@@ -34,7 +41,9 @@ async function ownsStory(db: Database, userId: string, storyId: string): Promise
 	const [row] = await db
 		.select({ id: stories.id })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(
+			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
+		);
 	return Boolean(row);
 }
 

@@ -14,6 +14,7 @@ import {
 	users
 } from './db/schema.ts';
 import { hashToken } from './tokens.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import { recordRevision } from './revisions.ts';
 import { remapMarkerAnchors } from './markers.ts';
@@ -110,7 +111,7 @@ export async function revokeReviewInvitation(
 
 // Resolves a magic-link token to its invitation and story when it still
 // grants access. Distinguishes a dead link from a stale one so the landing
-// page can say which.
+// page can say which. A story in a trashed universe reads as an unknown link.
 export async function invitationByToken(db: Database, token: string) {
 	const [row] = await db
 		.select({
@@ -120,7 +121,9 @@ export async function invitationByToken(db: Database, token: string) {
 		})
 		.from(reviewInvitations)
 		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
-		.where(eq(reviewInvitations.tokenHash, hashToken(token)));
+		.where(
+			and(eq(reviewInvitations.tokenHash, hashToken(token)), inLiveUniverse(stories.universeId))
+		);
 	if (!row) return { status: 'unknown' as const };
 	if (row.invitation.revokedAt) return { status: 'revoked' as const };
 	if (row.invitation.expiresAt && row.invitation.expiresAt < new Date()) {
@@ -190,16 +193,19 @@ export function readReviewerToken(token: string | undefined): string | null {
 }
 
 // The guard for everything a guest does: the reviewer must exist and their
-// invitation must still grant access to this story. Touches last_seen_at.
+// invitation must still grant access to this story, whose universe must not
+// be in the trash. Touches last_seen_at.
 export async function reviewerAccess(db: Database, reviewerId: string, storyId: string) {
 	const [row] = await db
 		.select({ reviewer: reviewers, invitation: reviewInvitations })
 		.from(reviewers)
 		.innerJoin(reviewInvitations, eq(reviewers.invitationId, reviewInvitations.id))
+		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
 		.where(
 			and(
 				eq(reviewers.id, reviewerId),
 				eq(reviewInvitations.storyId, storyId),
+				inLiveUniverse(stories.universeId),
 				isNull(reviewInvitations.revokedAt),
 				or(isNull(reviewInvitations.expiresAt), gt(reviewInvitations.expiresAt, sql`now()`))
 			)
@@ -229,7 +235,13 @@ async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string)
 	if (latest && latest.bodyMd === bodyMd) return latest.id;
 	const [created] = await db
 		.insert(revisions)
-		.values({ entityType: 'scene', entityId: sceneId, bodyMd, reason: 'autosave' })
+		.values({
+			entityType: 'scene',
+			entityId: sceneId,
+			bodyMd,
+			wordCount: wordCount(bodyMd),
+			reason: 'autosave'
+		})
 		.returning({ id: revisions.id });
 	return created.id;
 }
@@ -444,10 +456,12 @@ export async function addComment(
 	return { ok: true };
 }
 
-// Only the story's owner resolves or reopens a thread.
+// Only the story's owner resolves or reopens a thread, and only one of that
+// story's threads.
 export async function setThreadResolved(
 	db: Database,
 	userId: string,
+	storyId: string,
 	threadId: string,
 	resolved: boolean
 ): Promise<boolean> {
@@ -461,9 +475,13 @@ export async function setThreadResolved(
 		.where(
 			and(
 				eq(reviewThreads.id, threadId),
+				eq(reviewThreads.storyId, storyId),
 				inArray(
 					reviewThreads.storyId,
-					db.select({ id: stories.id }).from(stories).where(eq(stories.ownerId, userId))
+					db
+						.select({ id: stories.id })
+						.from(stories)
+						.where(and(eq(stories.ownerId, userId), inLiveUniverse(stories.universeId)))
 				)
 			)
 		)
@@ -877,6 +895,7 @@ export async function updateAssistantSuggestion(
 export async function decideSuggestion(
 	db: Database,
 	userId: string,
+	storyId: string,
 	suggestionId: string,
 	accept: boolean
 ): Promise<
@@ -894,7 +913,13 @@ export async function decideSuggestion(
 		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
 		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
 		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
-		.where(eq(reviewSuggestions.id, suggestionId));
+		.where(
+			and(
+				eq(reviewSuggestions.id, suggestionId),
+				eq(reviewSuggestions.storyId, storyId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
 	if (!row || row.ownerId !== userId) {
 		return { ok: false, reason: 'That suggestion does not exist.' };
 	}
@@ -976,12 +1001,26 @@ export async function decideSuggestion(
 // thread's opening comment can only be removed when no one else has joined the
 // thread (so a retraction never takes someone else's reply with it), and then
 // the whole thread goes. The Assistant's comments are not retractable here.
+// Scoped to the given story, in a live universe.
 export async function deleteComment(
 	db: Database,
 	actor: ReviewViewer,
+	storyId: string,
 	commentId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const [target] = await db.select().from(reviewComments).where(eq(reviewComments.id, commentId));
+	const [found] = await db
+		.select({ comment: reviewComments })
+		.from(reviewComments)
+		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
+		.innerJoin(stories, eq(reviewThreads.storyId, stories.id))
+		.where(
+			and(
+				eq(reviewComments.id, commentId),
+				eq(reviewThreads.storyId, storyId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
+	const target = found?.comment;
 	if (!target) return { ok: false, reason: 'That comment does not exist.' };
 	if (!ownsComment(target, actor)) {
 		return { ok: false, reason: 'You can only delete your own comments.' };
@@ -1016,16 +1055,25 @@ export async function deleteComment(
 
 // Retracts a pending suggestion the viewer proposed. A decided suggestion is
 // part of the record (and an accepted one already changed the text), so it
-// stays.
+// stays. Scoped to the given story, in a live universe.
 export async function deleteSuggestion(
 	db: Database,
 	actor: ReviewViewer,
+	storyId: string,
 	suggestionId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const [row] = await db
-		.select()
+	const [found] = await db
+		.select({ suggestion: reviewSuggestions })
 		.from(reviewSuggestions)
-		.where(eq(reviewSuggestions.id, suggestionId));
+		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
+		.where(
+			and(
+				eq(reviewSuggestions.id, suggestionId),
+				eq(reviewSuggestions.storyId, storyId),
+				inLiveUniverse(stories.universeId)
+			)
+		);
+	const row = found?.suggestion;
 	if (!row) return { ok: false, reason: 'That suggestion does not exist.' };
 	const mine =
 		'userId' in actor ? row.authorUserId === actor.userId : row.reviewerId === actor.reviewerId;

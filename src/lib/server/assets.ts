@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { and, asc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth.ts';
 import { assets, exportArtifacts, pendingObjectDeletions, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
@@ -99,6 +100,9 @@ export async function saveAssetStorage(db: Database, input: SaveS3Input): Promis
 
 export type AssetObjectStore = {
 	put(key: string, body: Buffer, contentType: string): Promise<void>;
+	// A multipart upload from a stream of unknown length, for files built on
+	// the fly (exports) that should never be held whole in memory.
+	upload(key: string, body: Readable, contentType: string): Promise<void>;
 	get(key: string): Promise<Readable>;
 	remove(key: string): Promise<void>;
 };
@@ -115,6 +119,19 @@ export function s3AssetStore(config: AssetConfig): AssetObjectStore {
 					ContentType: contentType
 				})
 			);
+		},
+		async upload(key, body, contentType) {
+			try {
+				await new Upload({
+					client,
+					params: { Bucket: config.bucket, Key: key, Body: body, ContentType: contentType }
+				}).done();
+			} catch (error) {
+				// A failed upload stops reading the body; destroying it releases what
+				// feeds it (the zip being written and any open image download).
+				body.destroy();
+				throw error;
+			}
 		},
 		async get(key) {
 			const object = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
@@ -159,7 +176,13 @@ export async function createAsset(
 		const [universe] = await db
 			.select({ id: universes.id })
 			.from(universes)
-			.where(and(eq(universes.id, input.universeId), eq(universes.ownerId, userId)));
+			.where(
+				and(
+					eq(universes.id, input.universeId),
+					eq(universes.ownerId, userId),
+					isNull(universes.deletedAt)
+				)
+			);
 		if (!universe) return { ok: false, reason: 'universe not found' };
 	}
 
