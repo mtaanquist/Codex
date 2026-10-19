@@ -516,7 +516,7 @@
 					</p>
 				</div>
 				<div class="field">
-					<label for="spend_cap">Spend cap per review (USD)</label>
+					<label for="spend_cap">Spend cap per background run (USD)</label>
 					<input
 						id="spend_cap"
 						name="spendCapUsd"
@@ -528,8 +528,9 @@
 						placeholder="No cap"
 					/>
 					<p class="field-hint">
-						A background review stops after the next scene once it has spent this much. Leave it
-						empty for no cap. It only applies when your endpoint publishes prices for the model.
+						A background review or summary update stops after the next scene once it has spent this
+						much. Leave it empty for no cap. It only applies when your endpoint publishes prices for
+						the model.
 					</p>
 				</div>
 				<div class="field">

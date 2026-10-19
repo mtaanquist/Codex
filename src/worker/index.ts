@@ -434,6 +434,10 @@ await boss.work<{ userId: string; storyId: string }, unknown, typeof ASSISTANT_W
 			} else {
 				title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
 			}
+			if (result.capped) {
+				title = `The Assistant stopped summarising "${story.title}" at about $${(result.spentUsd ?? 0).toFixed(2)}, after ${written} ${written === 1 ? 'summary' : 'summaries'}. Raise the cap in settings or run it again to continue.`;
+			}
+			if (result.capNotApplied) title += ` ${result.capNotApplied}`;
 			await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
 				title,
 				href
