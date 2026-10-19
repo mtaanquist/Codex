@@ -20,6 +20,7 @@ import {
 	type SaveS3Result,
 	type StoredS3
 } from './settings.ts';
+import type { ActionFailure } from './action-result';
 
 // Uploaded images live in an S3-compatible bucket, separate from the backups
 // bucket, which holds database dumps only. Deleting an image removes its row
@@ -160,17 +161,22 @@ export async function createAsset(
 	config: AssetConfig,
 	userId: string,
 	input: AssetInput
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
-	if (input.bytes.length === 0) return { ok: false, reason: 'the file is empty' };
+): Promise<{ ok: true; id: string } | ActionFailure> {
+	if (input.bytes.length === 0)
+		return { ok: false, code: 'invalid', reason: 'That image file is empty.' };
 	if (input.bytes.length > MAX_ASSET_BYTES) {
-		return { ok: false, reason: 'the file is larger than 10 MB' };
+		return { ok: false, code: 'invalid', reason: 'That image is larger than 10 MB.' };
 	}
 	// Trust the bytes, not the client-supplied content type: sniff the magic
 	// number and store (and later serve) the detected type, so arbitrary bytes
 	// cannot be stashed under an image label.
 	const contentType = sniffImageType(input.bytes);
 	if (!contentType) {
-		return { ok: false, reason: 'only png, jpeg, webp, gif, and avif images are supported' };
+		return {
+			ok: false,
+			code: 'invalid',
+			reason: 'Only PNG, JPEG, WebP, GIF and AVIF images are supported.'
+		};
 	}
 	if (input.universeId) {
 		const [universe] = await db
@@ -183,7 +189,7 @@ export async function createAsset(
 					isNull(universes.deletedAt)
 				)
 			);
-		if (!universe) return { ok: false, reason: 'universe not found' };
+		if (!universe) return { ok: false, code: 'not_found', reason: 'That universe does not exist.' };
 	}
 
 	const id = randomUUID();
@@ -339,7 +345,7 @@ export async function setUserAvatar(
 	config: AssetConfig,
 	userId: string,
 	input: { filename: string; contentType: string; bytes: Buffer }
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const result = await createAsset(db, store, config, userId, {
 		universeId: null,
 		kind: 'avatar',

@@ -5,6 +5,7 @@ import type { EntityType } from './entity-lookups';
 import { createAsset, deleteAsset, type AssetConfig, type AssetObjectStore } from './assets';
 import { isCategoryColor } from '$lib/entity-color';
 import { inLiveUniverse } from './universe-scope';
+import type { ActionFailure } from './action-result';
 
 // The per-entity badge: a palette colour, or an uploaded image (the image
 // wins). Both live on the entity row. These helpers resolve an entity id to
@@ -67,7 +68,13 @@ async function updateBadge(
 	}
 }
 
-export type BadgeResult = { ok: true } | { ok: false; reason: string };
+export type BadgeResult = { ok: true } | ActionFailure;
+
+const ENTRY_NOT_FOUND: ActionFailure = {
+	ok: false,
+	code: 'not_found',
+	reason: 'This entry no longer exists. Reload the page.'
+};
 
 // Sets (or clears, with null) the entity's badge colour. A colour and an
 // uploaded image are independent on the row; the image just renders on top.
@@ -77,9 +84,10 @@ export async function setEntityBadgeColor(
 	entityId: string,
 	color: string | null
 ): Promise<BadgeResult> {
-	if (!isCategoryColor(color)) return { ok: false, reason: 'not a valid badge colour' };
+	if (!isCategoryColor(color))
+		return { ok: false, code: 'invalid', reason: 'Pick one of the colours in the menu.' };
 	const ref = await resolveOwnedEntity(db, userId, entityId);
-	if (!ref) return { ok: false, reason: 'entity not found' };
+	if (!ref) return ENTRY_NOT_FOUND;
 	await updateBadge(db, ref.type, entityId, { badgeColor: color });
 	return { ok: true };
 }
@@ -92,9 +100,9 @@ export async function setEntityBadgeImage(
 	userId: string,
 	entityId: string,
 	input: { filename: string; contentType: string; bytes: Buffer }
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const ref = await resolveOwnedEntity(db, userId, entityId);
-	if (!ref) return { ok: false, reason: 'entity not found' };
+	if (!ref) return ENTRY_NOT_FOUND;
 	const created = await createAsset(db, store, config, userId, {
 		universeId: ref.universeId,
 		kind: 'badge',
@@ -115,7 +123,7 @@ export async function clearEntityBadgeImage(
 	entityId: string
 ): Promise<BadgeResult> {
 	const ref = await resolveOwnedEntity(db, userId, entityId);
-	if (!ref) return { ok: false, reason: 'entity not found' };
+	if (!ref) return ENTRY_NOT_FOUND;
 	if (ref.badgeAssetId) {
 		await updateBadge(db, ref.type, entityId, { badgeAssetId: null });
 		await deleteAsset(db, userId, ref.badgeAssetId);

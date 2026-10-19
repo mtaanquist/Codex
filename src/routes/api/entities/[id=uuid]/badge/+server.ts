@@ -8,27 +8,11 @@ import {
 	setEntityBadgeImage
 } from '$lib/server/entity-badge';
 import { rateLimitUploads } from '$lib/server/write-guard';
+import { throwActionError } from '$lib/server/action-result';
 
 // The entity badge: PUT sets a palette colour (null clears it), POST uploads
 // an image, DELETE removes the image. Owner-scoped inside the helpers, which
 // resolve the id to whichever entity table holds it.
-
-// The badge menu shows these to the writer, so the helpers' terse reasons are
-// reworded here rather than in the helpers, which other callers share.
-const MESSAGES: Record<string, string> = {
-	'entity not found': 'This entry no longer exists. Reload the page.',
-	'universe not found': 'This entry no longer exists. Reload the page.',
-	'not a valid badge colour': 'Pick one of the colours in the menu.',
-	'the file is empty': 'That image file is empty. Choose another image.',
-	'the file is larger than 10 MB': 'That image is larger than 10 MB. Choose a smaller one.',
-	'only png, jpeg, webp, gif, and avif images are supported':
-		'Choose a PNG, JPEG, WebP, GIF or AVIF image.'
-};
-
-function refuse(reason: string): never {
-	const status = reason === 'entity not found' || reason === 'universe not found' ? 404 : 400;
-	error(status, MESSAGES[reason] ?? reason);
-}
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const body = (await request.json().catch(() => null)) as { color?: unknown } | null;
@@ -36,7 +20,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	if (color !== null && typeof color !== 'string')
 		error(400, 'Pick one of the colours in the menu.');
 	const result = await setEntityBadgeColor(db, locals.user!.id, params.id, color);
-	if (!result.ok) refuse(result.reason);
+	if (!result.ok) throwActionError(result);
 	return json({ ok: true });
 };
 
@@ -59,12 +43,12 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			bytes: Buffer.from(await file.arrayBuffer())
 		}
 	);
-	if (!result.ok) refuse(result.reason);
+	if (!result.ok) throwActionError(result);
 	return json({ id: result.id });
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const result = await clearEntityBadgeImage(db, locals.user!.id, params.id);
-	if (!result.ok) refuse(result.reason);
+	if (!result.ok) throwActionError(result);
 	return json({ ok: true });
 };

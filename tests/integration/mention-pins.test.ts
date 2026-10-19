@@ -114,9 +114,11 @@ describe('shared-name attribution in the index', () => {
 	});
 
 	it('only the owner can pin, and the target must share the universe', async () => {
-		expect(await setMentionPin(db, strangerId, storyId, 'Will', 'place', willPlaceId)).toEqual({
+		expect(
+			await setMentionPin(db, strangerId, storyId, 'Will', 'place', willPlaceId)
+		).toMatchObject({
 			ok: false,
-			reason: 'story not found'
+			code: 'not_found'
 		});
 		expect(
 			await setMentionPin(db, ownerId, storyId, 'Will', 'character', willPlaceId)

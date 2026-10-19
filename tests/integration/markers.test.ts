@@ -85,7 +85,7 @@ describe('createMarker', () => {
 		expect(await createMarker(db, ownerId, sceneId, 3, 3)).toMatchObject({ ok: false });
 		expect(await createMarker(db, strangerId, sceneId, 0, 5)).toMatchObject({
 			ok: false,
-			reason: 'scene not found'
+			code: 'not_found'
 		});
 	});
 });

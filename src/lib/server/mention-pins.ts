@@ -7,6 +7,7 @@ import { mentionPins, stories } from './db/schema.ts';
 import { entityInUniverse } from './entity-lookups.ts';
 import type { EntityType } from './entity-lookups.ts';
 import { inLiveUniverse } from './universe-scope.ts';
+import type { ActionFailure } from './action-result.ts';
 
 // The story's pins as detection wants them: matched text -> target id.
 export async function listMentionPins(db: Database, storyId: string): Promise<Map<string, string>> {
@@ -24,18 +25,19 @@ export async function setMentionPin(
 	name: string,
 	targetType: EntityType,
 	targetId: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const trimmed = name.trim();
-	if (trimmed.length < 2) return { ok: false, reason: 'that is not a pinnable name' };
+	if (trimmed.length < 2)
+		return { ok: false, code: 'invalid', reason: 'That name is too short to pin.' };
 	const [story] = await db
 		.select({ id: stories.id, universeId: stories.universeId })
 		.from(stories)
 		.where(
 			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
 		);
-	if (!story) return { ok: false, reason: 'story not found' };
+	if (!story) return { ok: false, code: 'not_found', reason: 'That story does not exist.' };
 	if (!(await entityInUniverse(db, story.universeId, targetType, targetId))) {
-		return { ok: false, reason: 'entity not found' };
+		return { ok: false, code: 'not_found', reason: 'That entry does not exist.' };
 	}
 	await db
 		.insert(mentionPins)

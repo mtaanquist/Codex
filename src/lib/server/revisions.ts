@@ -23,6 +23,7 @@ import {
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { inLiveUniverse } from './universe-scope.ts';
+import type { ActionFailure } from './action-result.ts';
 
 export type RevisionEntityType =
 	'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note';
@@ -405,6 +406,12 @@ export async function ownedEntityBody(
 	return null;
 }
 
+const ITEM_NOT_FOUND: ActionFailure = {
+	ok: false,
+	code: 'not_found',
+	reason: 'That item does not exist.'
+};
+
 // A manual checkpoint of the entity's current state, with an optional name.
 export async function createCheckpoint(
 	db: Database,
@@ -412,9 +419,9 @@ export async function createCheckpoint(
 	entityType: RevisionEntityType,
 	entityId: string,
 	label?: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const entity = await ownedEntityBody(db, userId, entityType, entityId);
-	if (!entity) return { ok: false, reason: 'entity not found' };
+	if (!entity) return ITEM_NOT_FOUND;
 	if (isSnapshotType(entityType)) {
 		await recordEntityRevision(db, entityType, entityId, 'checkpoint', label);
 	} else {
@@ -559,13 +566,11 @@ export async function restoreRevision(
 	revisionId: string,
 	entityType: RevisionEntityType,
 	entityId: string
-): Promise<
-	{ ok: true; universeId?: string; mentionsAffected?: boolean } | { ok: false; reason: string }
-> {
+): Promise<{ ok: true; universeId?: string; mentionsAffected?: boolean } | ActionFailure> {
 	const entity = await ownedEntityBody(db, userId, entityType, entityId);
-	if (!entity) return { ok: false, reason: 'entity not found' };
+	if (!entity) return ITEM_NOT_FOUND;
 	const revision = await getRevision(db, revisionId, entityType, entityId);
-	if (!revision) return { ok: false, reason: 'revision not found' };
+	if (!revision) return { ok: false, code: 'not_found', reason: 'That revision does not exist.' };
 
 	if (entityType === 'scene') {
 		// One transaction so the body and its 'restore' snapshot commit together.
@@ -593,11 +598,11 @@ export async function restoreRevision(
 		return { ok: true };
 	}
 	if (!isSnapshotType(entityType)) {
-		return { ok: false, reason: 'that cannot be restored' };
+		return { ok: false, code: 'invalid', reason: 'That cannot be restored.' };
 	}
 
 	const before = await buildEntitySnapshot(db, entityType, entityId);
-	if (!before) return { ok: false, reason: 'entity not found' };
+	if (!before) return ITEM_NOT_FOUND;
 	const snapshot = revision.snapshot;
 	const category = snapshot ? await restorableCategory(db, before.universeId, snapshot) : {};
 

@@ -144,7 +144,7 @@ describe('createAsset', () => {
 		).toMatchObject({ ok: false });
 		expect(await createAsset(db, store, config, strangerId, base)).toMatchObject({
 			ok: false,
-			reason: 'universe not found'
+			code: 'not_found'
 		});
 	});
 });

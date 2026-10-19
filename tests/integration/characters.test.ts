@@ -86,7 +86,7 @@ describe('saveCharacter', () => {
 			storyId: '00000000-0000-0000-0000-000000000000',
 			storyNotesMd: 'never lands'
 		});
-		expect(result).toEqual({ ok: false, reason: 'story not found' });
+		expect(result).toMatchObject({ ok: false, code: 'not_found' });
 		const [after] = await db.select().from(characters).where(eq(characters.id, characterId));
 		expect(after.name).toBe(before.name);
 	});
@@ -108,7 +108,7 @@ describe('saveCharacter', () => {
 			storyId: foreign.id,
 			storyNotesMd: 'cross-universe'
 		});
-		expect(result).toEqual({ ok: false, reason: 'story not found' });
+		expect(result).toMatchObject({ ok: false, code: 'not_found' });
 		const notes = await db
 			.select()
 			.from(characterStoryNotes)
