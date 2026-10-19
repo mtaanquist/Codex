@@ -84,14 +84,15 @@ seed.
 | `ORIGIN`            | yes (prod)       | `http://localhost:3000` | The public URL, scheme and any non-standard port included. Form posts that do not match it are rejected.                                                                                                                                                                                                        |
 | `APP_SECRET`        | recommended      | unset                   | Encrypts secrets at rest (SMTP password, two-factor secrets) and signs two-factor and passkey challenges. Keep it stable; changing it makes stored secrets unreadable and breaks two-factor until re-enrolled. Without it, two-factor and passkeys are unavailable and the panel cannot store an SMTP password. |
 | `APP_PORT`          | no               | `3000`                  | Host port the app publishes. The container always listens on 3000.                                                                                                                                                                                                                                              |
+| `APP_BIND`          | no               | `127.0.0.1`             | Host address the app port is published on. Loopback lets only a proxy on the same host reach it. Change it only for a proxy on another machine, to an address that proxy alone can reach.                                                                                                                       |
 | `BODY_SIZE_LIMIT`   | no               | `15M`                   | Upload cap for the Node adapter. Images are capped at 10 MB regardless.                                                                                                                                                                                                                                         |
 
 ### Reverse proxy
 
-| Variable         | Default           | Notes                                                                                                                      |
-| ---------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `ADDRESS_HEADER` | `x-forwarded-for` | Header to read the client address from, for rate limiting. Set empty if no proxy is in front, so a client cannot spoof it. |
-| `XFF_DEPTH`      | `1`               | Number of proxies in front of the app. With one proxy, the default is correct.                                             |
+| Variable         | Default           | Notes                                                                                                                                                                                            |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ADDRESS_HEADER` | `x-forwarded-for` | Header to read the client address from, for rate limiting. Only safe when clients cannot reach the app except through the proxy. Set empty if no proxy is in front, so a client cannot spoof it. |
+| `XFF_DEPTH`      | `1`               | Number of proxies in front of the app. With one proxy, the default is correct.                                                                                                                   |
 
 ### Email (SMTP)
 
@@ -170,6 +171,17 @@ address (`x-forwarded-for` by default) and `XFF_DEPTH` to the number of proxies.
 Without it, every request looks like it comes from the proxy, and the per-address
 sign-in rate limit collapses into one shared counter that enough failed
 attempts can trip for everyone at once.
+
+Trusting that header is only safe when the proxy is the one thing that can
+reach the app. Anyone who can connect to the app port directly can send their
+own `X-Forwarded-For` and get a fresh address on every request, which slips
+past the per-address limits on sign-in, sign-up, and password reset. The
+bundled `compose.yaml` publishes the app port on `127.0.0.1` only (`APP_BIND`),
+so a proxy on the same host reaches it and nothing else does; the bundled Caddy
+and a Traefik on the same Docker network reach the app over that network
+instead. If the proxy runs on another machine, set `APP_BIND` to an address only
+it can reach, or firewall the port. If you run the app with no proxy at all,
+set `APP_BIND=0.0.0.0` and `ADDRESS_HEADER` empty.
 
 ### Bundled Caddy
 
@@ -385,6 +397,9 @@ in place yet.
 - **Sign-in rate limit seems global, or locks everyone out.** A proxy is in
   front but `ADDRESS_HEADER` is unset or wrong, so every request shares the
   proxy's address. Set it (`x-forwarded-for` for most proxies) and `XFF_DEPTH`.
+- **The app port does not answer from another machine.** It is published on
+  `127.0.0.1` only. Point a proxy on the same host at it, or see
+  `APP_BIND` under Reverse proxy and TLS.
 - **No emails arrive.** SMTP is not configured; check the worker log for the
   message body, then set the `SMTP_*` variables or the admin Email relay
   section and send a test.
