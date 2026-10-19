@@ -24,7 +24,8 @@ your work stored as markdown that exports cleanly at any time.
 Codex is three containers: the app, a background worker (mention indexing,
 email, exports, backups), and Postgres. Every tagged release publishes a
 production image to GitHub Container Registry as
-`ghcr.io/mtaanquist/codex`, tagged `vX.Y.Z`, `vX.Y`, and `latest`.
+`ghcr.io/mtaanquist/codex`, tagged `vX.Y.Z`, `vX.Y` (the newest patch of that
+minor version), and `latest` (the newest release).
 
 A minimal deployment compose file:
 
