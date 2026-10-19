@@ -29,6 +29,8 @@ export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
 // Thins old autosave history to the first and last revision per entity per
 // UTC day (see thinRevisions in revisions.ts).
 export const THIN_REVISIONS_QUEUE = 'thin-revisions';
+// Deletes expired and long-revoked sessions (see purgeSessions in auth.ts).
+export const PURGE_SESSIONS_QUEUE = 'purge-sessions';
 
 // pg-boss expires an active job after 15 minutes by default and hands it to a
 // worker again, so a long Assistant run would be started a second time while

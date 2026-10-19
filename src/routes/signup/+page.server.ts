@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { registerUser } from '$lib/server/signup';
@@ -62,10 +62,7 @@ export const actions: Actions = {
 
 		if (result.ok) {
 			const tokenId = await reserveToken(db, result.userId, 'email_verify', VERIFY_TTL_MINUTES);
-			// ORIGIN is set in production (adapter-node needs it); the request
-			// origin is the dev fallback. Using a configured origin keeps a spoofed
-			// Host header out of the link.
-			await queueEmail({ tokenId, to: cleanEmail, origin: env.ORIGIN ?? url.origin });
+			await queueEmail({ tokenId, to: cleanEmail, origin: publicOrigin(url) });
 
 			// Let the admins know there is someone to review (or that someone
 			// joined, on an invite or an open instance). Goes through the

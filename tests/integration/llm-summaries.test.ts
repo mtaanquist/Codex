@@ -20,12 +20,14 @@ const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 // A stub provider that returns a distinct summary on each call, so a refresh is
 // visible as a changed value. The transport is never reached.
 let calls = 0;
+let prompts: string[] = [];
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
 	},
-	async respond() {
+	async respond(req) {
 		calls += 1;
+		prompts.push(req.messages.map((m) => m.content ?? '').join('\n'));
 		return { content: `SUMMARY-${calls}`, toolCalls: [] };
 	},
 	async listModels() {
@@ -55,6 +57,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	calls = 0;
+	prompts = [];
 	await pool.query('truncate table scenes, chapters, stories, universes, users cascade');
 	const [owner] = await db
 		.insert(users)
@@ -201,5 +204,46 @@ describe('summariseStory', () => {
 		const result = await summariseStory(db, { userId: stranger.id, storyId }, deps);
 		expect(result.scenes).toBe(0);
 		expect(result.chapters).toBe(0);
+	});
+
+	it('drafts each chapter from its own live scenes, in story order', async () => {
+		const [second] = await db
+			.insert(chapters)
+			.values({ storyId, position: 2, title: 'Harbour' })
+			.returning({ id: chapters.id });
+		await db.insert(scenes).values([
+			{
+				storyId,
+				chapterId: second.id,
+				globalPosition: 5,
+				bodyMd: 'x',
+				summaryMd: 'Harbour later.'
+			},
+			{
+				storyId,
+				chapterId: second.id,
+				globalPosition: 4,
+				bodyMd: 'x',
+				summaryMd: 'Harbour first.'
+			},
+			{
+				storyId,
+				chapterId: second.id,
+				globalPosition: 6,
+				bodyMd: 'x',
+				summaryMd: 'Harbour deleted.',
+				deletedAt: new Date()
+			}
+		]);
+
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result.chapters).toBe(2);
+		const harbour = prompts.find((p) => p.includes('"Harbour"'));
+		expect(harbour).toContain('1. Harbour first.\n2. Harbour later.');
+		expect(harbour).not.toContain('Harbour deleted.');
+		expect(harbour).not.toContain('My own note.');
+		const descent = prompts.find((p) => p.includes('"Descent"'));
+		expect(descent).toContain('My own note.');
+		expect(descent).not.toContain('Harbour');
 	});
 });

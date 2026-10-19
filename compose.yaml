@@ -74,6 +74,8 @@ services:
     stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
+      # Links in digest emails point here; the worker will not start without it.
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
       # Off-site backups; off until the bucket and keys are set.
       BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
       BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}

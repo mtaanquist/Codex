@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { Actions } from './$types';
 import { db } from '$lib/server/db';
 import { requestPasswordReset } from '$lib/server/password-reset';
@@ -31,7 +31,7 @@ export const actions: Actions = {
 		}
 
 		const tokenId = await requestPasswordReset(db, email);
-		if (tokenId) await queueEmail({ tokenId, to: email, origin: env.ORIGIN ?? url.origin });
+		if (tokenId) await queueEmail({ tokenId, to: email, origin: publicOrigin(url) });
 
 		// Always the same response, whether or not the address has an account.
 		return { sent: true };

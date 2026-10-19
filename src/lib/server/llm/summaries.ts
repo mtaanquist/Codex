@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
@@ -178,19 +178,38 @@ export async function summariseStory(
 		)
 		.orderBy(asc(chapters.position));
 
+	// Every chapter's scene summaries in one read, read after the scene pass so
+	// the summaries it just wrote are included.
+	const summariesByChapter = new Map<string, string[]>();
+	if (chapterRows.length > 0) {
+		const sceneSummaries = await db
+			.select({ chapterId: scenes.chapterId, summaryMd: scenes.summaryMd })
+			.from(scenes)
+			.where(
+				and(
+					inArray(
+						scenes.chapterId,
+						chapterRows.map((c) => c.id)
+					),
+					isNull(scenes.deletedAt)
+				)
+			)
+			.orderBy(asc(scenes.globalPosition));
+		for (const row of sceneSummaries) {
+			const summary = row.summaryMd?.trim();
+			if (!row.chapterId || !summary) continue;
+			const list = summariesByChapter.get(row.chapterId) ?? [];
+			list.push(summary);
+			summariesByChapter.set(row.chapterId, list);
+		}
+	}
+
 	for (const chapter of chapterRows) {
 		if (meter?.capReached) {
 			capped = true;
 			break;
 		}
-		const sceneSummaries = await db
-			.select({ summaryMd: scenes.summaryMd })
-			.from(scenes)
-			.where(and(eq(scenes.chapterId, chapter.id), isNull(scenes.deletedAt)))
-			.orderBy(asc(scenes.globalPosition));
-		const summaries = sceneSummaries
-			.map((s) => s.summaryMd?.trim())
-			.filter((s): s is string => !!s);
+		const summaries = summariesByChapter.get(chapter.id) ?? [];
 		if (summaries.length === 0) continue;
 
 		const changedSince =

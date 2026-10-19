@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { isUuid } from '$lib/slug';
@@ -138,7 +138,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		email: user.email,
 		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		isAdmin: user.role === 'admin',
-		origin: env.ORIGIN ?? url.origin,
+		origin: publicOrigin(url),
 		profile,
 		preferences: await userPreferences(db, user.id),
 		pageSetup: await userPageSetup(db, user.id),
@@ -693,11 +693,7 @@ export const actions: Actions = {
 			String(data.get('newEmail') ?? '')
 		);
 		if (!result.ok) return fail(400, { scope: 'email', message: result.reason });
-		await queueEmail({
-			tokenId: result.tokenId,
-			to: result.newEmail,
-			origin: env.ORIGIN ?? url.origin
-		});
+		await queueEmail({ tokenId: result.tokenId, to: result.newEmail, origin: publicOrigin(url) });
 		return { scope: 'email', sent: true };
 	},
 	changePassword: async ({ request, locals }) => {
@@ -743,7 +739,7 @@ export const actions: Actions = {
 			return fail(400, { scope: 'delete', message: 'That password is not right.' });
 		}
 		const tokenId = await scheduleAccountDeletion(db, locals.user!.id);
-		await queueEmail({ tokenId, to: locals.user!.email, origin: env.ORIGIN ?? url.origin });
+		await queueEmail({ tokenId, to: locals.user!.email, origin: publicOrigin(url) });
 		// The account is now deactivated; end the current session.
 		cookies.delete(SESSION_COOKIE, { path: '/' });
 		redirect(303, '/login');

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { sessions, users } from './db/schema.ts';
 import type * as schema from './db/schema.ts';
@@ -120,6 +120,25 @@ export async function validateSession(db: Database, token: string) {
 		role: row.user.role
 	};
 	return { session: { id: row.session.id, expiresAt: row.session.expiresAt }, user };
+}
+
+// A revoked row is kept this long as a record of the sign-out (who, when, from
+// where) for anyone investigating an account; an expired one goes on the next
+// sweep.
+const REVOKED_SESSION_RETENTION = '30 days';
+
+// Run daily by the worker. Returns how many rows went.
+export async function purgeSessions(db: Database): Promise<number> {
+	const deleted = await db
+		.delete(sessions)
+		.where(
+			or(
+				lt(sessions.expiresAt, sql`now()`),
+				lt(sessions.revokedAt, sql`now() - ${REVOKED_SESSION_RETENTION}::interval`)
+			)
+		)
+		.returning({ id: sessions.id });
+	return deleted.length;
 }
 
 export async function revokeSession(db: Database, sessionId: string) {
