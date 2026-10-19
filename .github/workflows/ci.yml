@@ -122,11 +122,14 @@ jobs:
         # origin, which the image takes from ORIGIN at runtime. A same-origin
         # sign-in must go through and a foreign one must be refused; a change
         # in how the origin is resolved (as in adapter-node 6) breaks every
-        # form in the app, and nothing else here posts one.
+        # form in the app, and nothing else here posts one. The image reads the
+        # client address from X-Forwarded-For (Caddy sets it in production), so
+        # the request carries one.
         run: |
           post() {
             curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST \
-              -H "Origin: $1" -H 'Content-Type: application/x-www-form-urlencoded' \
+              -H "Origin: $1" -H 'X-Forwarded-For: 203.0.113.7' \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
               --data-urlencode 'email=ci-admin@example.com' \
               --data-urlencode 'password=ci-bootstrap-pw' \
               http://localhost:3000/login
