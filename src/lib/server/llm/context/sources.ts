@@ -183,6 +183,15 @@ export async function precedingSceneBody(
 	return prev ?? null;
 }
 
+// The ids of a story's scenes that are not in the trash.
+export async function liveSceneIds(db: Database, storyId: string): Promise<string[]> {
+	const rows = await db
+		.select({ id: scenes.id })
+		.from(scenes)
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
+	return rows.map((row) => row.id);
+}
+
 export type SceneSummary = {
 	id: string;
 	title: string | null;

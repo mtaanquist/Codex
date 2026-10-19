@@ -5,6 +5,11 @@ import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	characters,
+	characterStoryMemberships,
+	entityMentions,
+	entityRelationships,
+	relationTypes,
 	reviewComments,
 	reviewSuggestions,
 	reviewThreads,
@@ -37,6 +42,7 @@ const {
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { complete } = await import('../../src/lib/server/llm/gateway');
 const { reviewReplyToolNames } = await import('../../src/lib/server/llm/prompts/review-reply');
+const { prepareReviewReply } = await import('../../src/lib/server/llm/review-reply');
 
 let pool: pg.Pool;
 let db: Database;
@@ -74,7 +80,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table review_suggestions, review_comments, review_threads, reviewers, review_invitations, revisions, scenes, chapters, stories, app_settings, universes, users cascade'
+		'truncate table entity_mentions, review_suggestions, review_comments, review_threads, reviewers, review_invitations, revisions, scenes, chapters, stories, app_settings, universes, users cascade'
 	);
 	const [author] = await db
 		.insert(users)
@@ -481,5 +487,127 @@ describe('scoped review-reply tools through the gateway', () => {
 		expect(offered).not.toContain('reply_in_thread');
 		expect(offered).not.toContain('update_suggestion');
 		expect(offered).toContain('get_scene');
+	});
+});
+
+describe('prepareReviewReply', () => {
+	// Guests can write in an Assistant thread and read its reply, so the turn
+	// may only carry what the guest review page shows.
+	async function seedWorld() {
+		const [universe] = await db.select().from(universes);
+		await db
+			.update(universes)
+			.set({ descriptionMd: 'WORLD DESCRIPTION' })
+			.where(eq(universes.id, universe.id));
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: authorId, title: 'Unshared book' })
+			.returning({ id: stories.id });
+		const [trashed] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 2, bodyMd: 'Tamsin', deletedAt: new Date() })
+			.returning({ id: scenes.id });
+		const character = async (name: string, summaryMd: string, bodyMd = '') => {
+			const [row] = await db
+				.insert(characters)
+				.values({ universeId: universe.id, ownerId: authorId, name, summaryMd, bodyMd })
+				.returning({ id: characters.id });
+			return row.id;
+		};
+		const mira = await character('Mira', 'MIRA QUICK CARD', 'MIRA FULL RECORD');
+		const hidden = await character('Hollis', 'UNMENTIONED MEMBER');
+		const tamsin = await character('Tamsin', 'ONLY IN THE TRASH');
+		const zebulon = await character('Zebulon', 'FROM THE UNSHARED BOOK');
+		await db.insert(characterStoryMemberships).values([
+			{ characterId: mira, storyId },
+			{ characterId: hidden, storyId },
+			{ characterId: zebulon, storyId: other.id }
+		]);
+		const mention = (sourceId: string, targetId: string) => ({
+			sourceType: 'scene',
+			sourceId,
+			targetType: 'character' as const,
+			targetId,
+			position: 0,
+			surroundingText: ''
+		});
+		await db.insert(entityMentions).values([mention(sceneId, mira), mention(trashed.id, tamsin)]);
+		const [rival] = await db
+			.insert(relationTypes)
+			.values({
+				universeId: universe.id,
+				key: 'rival',
+				forwardLabel: 'rival of',
+				fromType: 'character',
+				toType: 'character'
+			})
+			.returning({ id: relationTypes.id });
+		await db.insert(entityRelationships).values({
+			universeId: universe.id,
+			ownerId: authorId,
+			fromType: 'character',
+			fromId: mira,
+			toType: 'character',
+			toId: zebulon,
+			relationTypeId: rival.id
+		});
+	}
+
+	async function assistantThread(): Promise<string> {
+		const made = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { assistant: true },
+			body: 'This line drags.'
+		});
+		if (!made.ok) throw new Error(made.reason);
+		await addComment(db, {
+			storyId,
+			threadId: made.threadId,
+			author: { userId: authorId },
+			body: 'Why?'
+		});
+		return made.threadId;
+	}
+
+	it('holds the context and the tools to what the guest page shows', async () => {
+		await seedWorld();
+		const threadId = await assistantThread();
+		const turn = await prepareReviewReply(db, {
+			userId: authorId,
+			storyId,
+			threadId,
+			assistantName: 'Muse'
+		});
+		expect(turn.toolScope).toEqual({ threadId, suggestionId: undefined, storyOnly: true });
+		expect(turn.toolNames).toEqual(['list_scenes', 'get_scene', 'reply_in_thread']);
+		const system = turn.messages.find((m) => m.role === 'system')?.content ?? '';
+		expect(system).toContain('MIRA QUICK CARD');
+		expect(system).not.toContain('WORLD DESCRIPTION');
+		expect(system).not.toContain('MIRA FULL RECORD');
+		expect(system).not.toContain('Zebulon');
+		expect(system).not.toContain('UNMENTIONED MEMBER');
+		expect(system).not.toContain('ONLY IN THE TRASH');
+		expect(turn.messages.at(-1)?.content).toContain('Why?');
+	});
+
+	it('refuses a thread the Assistant did not open', async () => {
+		const made = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { userId: authorId },
+			body: 'My note.'
+		});
+		if (!made.ok) throw new Error(made.reason);
+		await expect(
+			prepareReviewReply(db, {
+				userId: authorId,
+				storyId,
+				threadId: made.threadId,
+				assistantName: 'Muse'
+			})
+		).rejects.toMatchObject({ status: 400 });
 	});
 });

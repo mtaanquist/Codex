@@ -2,31 +2,24 @@ import { error, json } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { reviewComments, reviewThreads, scenes } from '$lib/server/db/schema';
+import { reviewComments, reviewThreads } from '$lib/server/db/schema';
 import { ownedStory } from '$lib/server/story-access';
 import {
 	readAssistantPayload,
 	requireAssistantGate,
 	throwAssistantError
 } from '$lib/server/llm/assistant-route';
-import { assembleStoryFrame, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import {
-	buildReviewReplyMessage,
-	excerptAround,
-	reviewReplyToolNames
-} from '$lib/server/llm/prompts/review-reply';
 import { complete } from '$lib/server/llm/gateway';
-import { addComment, listSuggestions, listThreads } from '$lib/server/review';
-import { createAnchorMapper } from '$lib/review-anchor';
+import { prepareReviewReply } from '$lib/server/llm/review-reply';
+import { addComment } from '$lib/server/review';
 import { isUuid } from '$lib/slug';
-import type { ChatMessage } from '$lib/server/llm/providers/types';
 
 // The Assistant answering in a review thread it opened: triggered after the
 // author replies there. It runs with two scoped tools - reply_in_thread, and
 // update_suggestion when the thread discusses one of its suggestions - whose
-// targets are fixed here, never taken from the model, plus scene reads held to
-// this story (guests read the reply; see reviewReplyToolNames). Only the story
-// owner can trigger it, and only on assistant-rooted threads, so a guest
+// targets are fixed server-side, never taken from the model, plus scene reads
+// held to this story (guests read the reply; see prepareReviewReply). Only the
+// story owner can trigger it, and only on assistant-rooted threads, so a guest
 // reviewer can never spend the owner's endpoint.
 
 async function assistantCommentCount(threadId: string): Promise<number> {
@@ -53,77 +46,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const layout = await requireAssistantGate(userId, story.id);
 
-	// The full thread view carries the re-anchored range and display names. One
-	// mapper covers the threads and the suggestion lookup below, so a scene
-	// revision is diffed once rather than once per anchor.
-	const anchors = createAnchorMapper();
-	const threads = await listThreads(db, story.id, anchors.range, { userId });
-	const thread = threads.find((t) => t.id === threadId);
-	if (!thread) error(404, 'That thread does not exist.');
-	if (!thread.comments[0]?.isAssistant) {
-		error(400, 'The Assistant only replies in threads it opened.');
-	}
-
-	const suggestion = thread.suggestionId
-		? ((await listSuggestions(db, story.id, undefined, anchors)).find(
-				(s) => s.id === thread.suggestionId
-			) ?? null)
-		: null;
-
-	const pendingSuggestion = suggestion?.status === 'pending';
-
-	const [scene] = await db
-		.select({ title: scenes.title, bodyMd: scenes.bodyMd })
-		.from(scenes)
-		.where(eq(scenes.id, thread.sceneId));
-	if (!scene) error(404, 'That scene does not exist.');
-
-	const task: ChatMessage = {
-		role: 'user',
-		content: buildReviewReplyMessage({
-			sceneTitle: scene.title,
-			excerpt: excerptAround(scene.bodyMd, thread.anchor),
-			transcript: thread.comments.map((comment) => ({
-				author: comment.isAssistant ? layout.name : comment.authorName,
-				body: comment.body
-			})),
-			suggestion:
-				suggestion && suggestion.status === 'pending'
-					? { original: suggestion.original, replacement: suggestion.replacement }
-					: null
-		})
-	};
-	// A thread reply argues about one passage, and the passage is already in the
-	// task message as an excerpt: it needs the story and world it belongs to
-	// (the frame, which also carries the style notes the note was judged
-	// against) and the characters and places it may name, not the outline, the
-	// lore, the notes, or the other stories. Anything else it needs it can read
-	// with the retrieval tools.
-	const context = await assembleStoryFrame(db, {
+	const turn = await prepareReviewReply(db, {
 		userId,
 		storyId: story.id,
-		includeTiers: ['frame', 'entities']
+		threadId,
+		assistantName: layout.name
 	});
-	const messages: ChatMessage[] = context
-		? // No tool hint: the slim reply context ships no outline for the hint's
-			// "scene ids shown in the outline" to point at, and the task message
-			// already names the scoped tools this turn may use.
-			[buildSystemMessage(context), task]
-		: [task];
 
 	const repliesBefore = await assistantCommentCount(threadId);
 	let content: string;
 	try {
-		content = await complete(db, {
-			userId,
-			storyId: story.id,
-			role: 'reviewer',
-			enableTools: true,
-			toolNames: reviewReplyToolNames(pendingSuggestion),
-			toolScope: { threadId, suggestionId: thread.suggestionId ?? undefined, storyOnly: true },
-			messages,
-			signal: request.signal
-		});
+		content = await complete(db, { ...turn, signal: request.signal });
 	} catch (err) {
 		throwAssistantError(err, 'The Assistant could not reply.');
 	}

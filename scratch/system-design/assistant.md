@@ -469,8 +469,12 @@ assembly entries): tiers left out are neither queried nor rendered. A review
 pass whose categories do not include `lore` ships only the frame, the outline,
 and the scene itself, since entities, lore, notes, and the universe backbone
 only matter to the lore category; the sparing pass (no categories) keeps the
-full stack. A review-thread reply carries the frame and the entities, since the
-passage under discussion is already excerpted into its task message.
+full stack. A review-thread reply has its own assembly
+(`assembleReviewReplyContext`), since guests read the reply and write part of
+the thread: the story frame without the world description, and the guest quick
+cards (summary, aliases, first three details) of the entities mentioned in the
+story's live scenes. No relationships and no full records. The passage under
+discussion is already excerpted into its task message.
 
 TODO (needs a real corpus): the token budget per tier, the split between the
 stable and per-scene shares, the truncation and prioritisation strategy when a
