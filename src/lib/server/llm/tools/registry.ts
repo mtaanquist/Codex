@@ -52,7 +52,7 @@ export const TOOLS: ToolDef[] = [
 		kind: 'read',
 		name: 'search_text',
 		description:
-			'Search the stories, scenes, entities, and prose in this universe by substring. Returns labelled results with links.',
+			'Search the stories, scenes, entities, and prose in this universe by substring (prose is searched only for queries of three or more characters). Returns labelled results with links.',
 		parameters: obj({ query: str('The text to search for.') }, ['query'])
 	},
 	{
