@@ -3,7 +3,8 @@ import type { Database } from '../auth.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
-import type { SpendMeter } from './spend.ts';
+import { resolveLlmConfig } from './config.ts';
+import { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { inLiveUniverse } from '../universe-scope.ts';
 
@@ -22,8 +23,12 @@ export type SummaryResult = {
 	chapters: number;
 	failed: number;
 	// Set when a run's spend ceiling was reached and the rest of the pass was
-	// left for a later run.
+	// left for a later run, with what it had spent by then.
 	capped?: boolean;
+	spentUsd?: number;
+	// Why a cap that was set could not be enforced. Only reported when the run
+	// metered itself; a caller that passed its own meter reads it from that.
+	capNotApplied?: string;
 };
 
 function blank(value: string | null): boolean {
@@ -72,17 +77,28 @@ async function generate(
 	return result.content.trim();
 }
 
+async function storyMeter(db: Database, userId: string, storyId: string): Promise<SpendMeter> {
+	const resolved = await resolveLlmConfig(db, userId, storyId);
+	return new SpendMeter({
+		pricing: resolved.config.modelPricing,
+		capUsd: resolved.config.spendCapUsd
+	});
+}
+
 // Draft and refresh the summaries for a whole story's scenes, then its chapters
 // (chapter summaries draw on the scene summaries, so scenes go first). Owner
-// scoped through the story. Per-item errors are caught so one unreachable turn
-// does not abandon the rest; the result reports how many summaries were written
-// and how many failed.
+// scoped through the story. A review passes the meter it shares across its
+// phases; called on its own, the run meters itself against the account's cap.
+// Per-item errors are caught so one unreachable turn does not abandon the rest;
+// the result reports how many summaries were written and how many failed.
 export async function summariseStory(
 	db: Database,
 	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<SummaryResult> {
-	const { userId, storyId, meter, signal } = opts;
+	const { userId, storyId, signal } = opts;
+	const ownMeter = !opts.meter;
+	const meter = opts.meter ?? (await storyMeter(db, userId, storyId));
 	let written = 0;
 	let chaptersWritten = 0;
 	let failed = 0;
@@ -115,7 +131,7 @@ export async function summariseStory(
 
 	for (const scene of sceneRows) {
 		// Between summaries is the boundary where stopping leaves nothing partial.
-		if (meter?.capReached) {
+		if (meter.capReached) {
 			capped = true;
 			break;
 		}
@@ -205,7 +221,7 @@ export async function summariseStory(
 	}
 
 	for (const chapter of chapterRows) {
-		if (meter?.capReached) {
+		if (meter.capReached) {
 			capped = true;
 			break;
 		}
@@ -254,6 +270,7 @@ export async function summariseStory(
 		scenes: written,
 		chapters: chaptersWritten,
 		failed,
-		...(capped ? { capped: true } : {})
+		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(ownMeter && meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }

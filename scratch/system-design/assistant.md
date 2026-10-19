@@ -262,7 +262,8 @@ token ceiling, and the streaming endpoint is covered by the existing per-user
 write/rate limiter.
 
 Background review runs, which fan over many scenes unattended, do meter
-themselves. Two account settings sit in `users.llm_config`: `spendWarnUsd`
+themselves, and so does the standalone summaries job (it stops between
+summaries; a rerun skips the ones already fresh). Two account settings sit in `users.llm_config`: `spendWarnUsd`
 (the pre-flight confirm step turns into a warning above it, default 2) and
 `spendCapUsd` (the run stops at the next scene boundary once it has spent
 that much, staging nothing partial; a retry resumes through the existing
