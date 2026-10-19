@@ -72,7 +72,8 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 			method: event.request.method,
 			path: event.url.pathname,
 			status,
-			message: error instanceof Error ? error.message : String(error)
+			message: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined
 		});
 	}
 	return { message };

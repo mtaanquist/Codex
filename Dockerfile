@@ -1,19 +1,19 @@
-FROM node:24-alpine AS build
+FROM node:24.22.0-alpine3.24 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
-FROM node:24-alpine
+FROM node:24.22.0-alpine3.24
 WORKDIR /app
 ENV NODE_ENV=production
 # pg_dump and pg_restore for off-site backups; the major version must be
 # able to talk to the postgres:18 server. Chromium renders the stored PDF
-# exports in the worker (driven via puppeteer-core); the font packages give
-# it a serif to typeset with.
+# exports in the worker (driven via puppeteer-core, which finds it on the
+# usual paths); the font packages give it a serif to typeset with. The tag
+# pins the Alpine release, so these packages only move with a base bump.
 RUN apk add --no-cache postgresql18-client chromium font-liberation ttf-dejavu
-ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/build build
 COPY --from=build /app/package.json package.json
