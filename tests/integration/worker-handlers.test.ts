@@ -259,6 +259,24 @@ describe('assistant review notices', () => {
 		]);
 	});
 
+	it('says where a capped summaries run stopped and what it spent', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			summariseStory: async () => ({
+				scenes: 2,
+				chapters: 1,
+				failed: 0,
+				capped: true,
+				spentUsd: 0.4,
+				capNotApplied: 'The cap could not be checked.'
+			})
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant stopped summarising "Halden" at about $0.40, after 3 summaries. Raise the cap in settings or run it again to continue. The cap could not be checked.'
+		]);
+	});
+
 	it('leaves the notice to the retry when pg-boss has already re-queued the job', async () => {
 		const { owner, story } = await seedStory();
 		const { handlers, sent } = harness(
@@ -473,5 +491,44 @@ describe('asset migration', () => {
 			'codex-assets/one',
 			'codex-assets/two'
 		]);
+	});
+});
+
+describe('trash purge', () => {
+	const longAgo = () => new Date(Date.now() - 365 * 86_400_000);
+
+	it('purges trashed stories past their window and keeps recent ones', async () => {
+		const { owner, universe, story: old } = await seedStory();
+		const [recent] = await db
+			.insert(stories)
+			.values({
+				universeId: universe.id,
+				ownerId: owner.id,
+				title: 'Recent',
+				deletedAt: new Date()
+			})
+			.returning();
+		const [live] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: owner.id, title: 'Live' })
+			.returning();
+		await db.update(stories).set({ deletedAt: longAgo() }).where(eq(stories.id, old.id));
+		const { handlers } = harness();
+
+		await handlers.purgeUniverses();
+
+		const left = await db.select({ id: stories.id }).from(stories);
+		expect(left.map((row) => row.id).sort()).toEqual([recent.id, live.id].sort());
+	});
+
+	it('purges a universe past its window with every story inside', async () => {
+		const { universe } = await seedStory();
+		await db.update(universes).set({ deletedAt: longAgo() }).where(eq(universes.id, universe.id));
+		const { handlers } = harness();
+
+		await handlers.purgeUniverses();
+
+		expect(await db.select().from(universes)).toEqual([]);
+		expect(await db.select().from(stories)).toEqual([]);
 	});
 });

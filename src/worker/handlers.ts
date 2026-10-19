@@ -27,6 +27,8 @@ import {
 } from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
 import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
+import { listStoriesDueForPurge } from '../lib/server/story-lifecycle.ts';
+import { purgeStory } from '../lib/server/story-delete.ts';
 import {
 	assetMigrationSource,
 	clearAssetMigrationSource,
@@ -405,6 +407,10 @@ export function createHandlers(deps: WorkerDeps) {
 				} else {
 					title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
 				}
+				if (result.capped) {
+					title = `The Assistant stopped summarising "${story.title}" at about $${(result.spentUsd ?? 0).toFixed(2)}, after ${written} ${written === 1 ? 'summary' : 'summaries'}. Raise the cap in settings or run it again to continue.`;
+				}
+				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
 				await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
 					title,
 					href
@@ -504,7 +510,8 @@ export function createHandlers(deps: WorkerDeps) {
 			}
 		},
 
-		// Trashed universes past their restore window go for good.
+		// Trashed universes and stories past their restore window go for good.
+		// Universes first: their purge takes every story inside, trashed or not.
 		async purgeUniverses() {
 			for (const universeId of await listUniversesDueForPurge(db)) {
 				try {
@@ -512,6 +519,14 @@ export function createHandlers(deps: WorkerDeps) {
 					console.log(`purge: universe ${universeId} deleted`);
 				} catch (error) {
 					console.error(`purge: universe ${universeId} failed`, error);
+				}
+			}
+			for (const storyId of await listStoriesDueForPurge(db)) {
+				try {
+					await purgeStory(db, storyId);
+					console.log(`purge: story ${storyId} deleted`);
+				} catch (error) {
+					console.error(`purge: story ${storyId} failed`, error);
 				}
 			}
 		},

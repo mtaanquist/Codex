@@ -113,14 +113,15 @@ export async function universeContents(
 ): Promise<{ stories: number; characters: number; places: number; lore: number; words: number }> {
 	const result = await db.execute(sql`
 		select
-			(select count(*) from stories st where st.universe_id = ${universeId})::int as stories,
+			(select count(*) from stories st
+				where st.universe_id = ${universeId} and st.deleted_at is null)::int as stories,
 			(select count(*) from characters c where c.universe_id = ${universeId})::int as characters,
 			(select count(*) from places p where p.universe_id = ${universeId})::int as places,
 			(select count(*) from lore_entries l where l.universe_id = ${universeId})::int as lore,
 			coalesce((
 				select sum(s.word_count) from scenes s
 				join stories st on st.id = s.story_id
-				where st.universe_id = ${universeId} and s.deleted_at is null
+				where st.universe_id = ${universeId} and st.deleted_at is null and s.deleted_at is null
 			), 0)::int as words
 	`);
 	return result.rows[0] as {

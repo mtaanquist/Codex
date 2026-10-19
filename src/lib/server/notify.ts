@@ -10,7 +10,7 @@ import {
 } from './db/schema';
 import { queueNotificationDigest, queueReviewerDigest } from './jobs';
 import { insertNotifications } from './notify-core';
-import { inLiveUniverse } from './universe-scope';
+import { storyIsLive } from './universe-scope';
 import {
 	teaser,
 	type NotificationItem,
@@ -60,7 +60,7 @@ export async function notifyReviewActivity(
 	const [story] = await db
 		.select({ ownerId: stories.ownerId, title: stories.title, slug: stories.slug })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), inLiveUniverse(stories.universeId)));
+		.where(and(eq(stories.id, storyId), storyIsLive()));
 	if (!story) return;
 	await notifyUsers(db, [story.ownerId], 'review_activity', {
 		title: `${reviewerName} ${what} on "${story.title}"`,

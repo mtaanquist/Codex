@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { scenes, stories } from './db/schema.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { storyIsLive } from './universe-scope.ts';
 
 // The owned-scene lookup shared by everything that reads or mutates a scene:
 // ownership flows through the story, and soft-deleted scenes and scenes in a
@@ -30,7 +30,7 @@ export async function ownedScene(
 			and(
 				eq(scenes.id, sceneId),
 				eq(stories.ownerId, userId),
-				inLiveUniverse(stories.universeId),
+				storyIsLive(),
 				options.deleted ? isNotNull(scenes.deletedAt) : isNull(scenes.deletedAt)
 			)
 		);

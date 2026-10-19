@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { characters, entityCategories, loreEntries, places, stories } from './db/schema.ts';
 
@@ -53,7 +53,12 @@ export async function ownsStoryInUniverse(
 		.select({ id: stories.id })
 		.from(stories)
 		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), eq(stories.universeId, universeId))
+			and(
+				eq(stories.id, storyId),
+				eq(stories.ownerId, userId),
+				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt)
+			)
 		);
 	return Boolean(row);
 }

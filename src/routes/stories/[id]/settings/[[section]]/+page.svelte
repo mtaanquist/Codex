@@ -160,7 +160,7 @@
 	</div>
 
 	<div class="admin-block danger-block" class:active={active === 'danger'} id="danger">
-		<SettingsDanger />
+		<SettingsDanger trashDays={data.trashDays} />
 	</div>
 </SettingsShell>
 

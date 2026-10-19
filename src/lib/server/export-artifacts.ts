@@ -379,7 +379,8 @@ export async function artifactForDownload(db: Database, artifactId: string, user
 			isCurrent: publications.isCurrent,
 			removedAt: publications.removedAt,
 			downloadsPublic: publications.downloadsPublic,
-			visibility: stories.visibility
+			visibility: stories.visibility,
+			storyDeletedAt: stories.deletedAt
 		})
 		.from(exportArtifacts)
 		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
@@ -388,7 +389,11 @@ export async function artifactForDownload(db: Database, artifactId: string, user
 	if (!row) return null;
 	if (userId && userId === row.ownerId) return row.artifact;
 	const readable =
-		row.isCurrent && !row.removedAt && row.visibility !== 'private' && row.downloadsPublic;
+		row.isCurrent &&
+		!row.removedAt &&
+		!row.storyDeletedAt &&
+		row.visibility !== 'private' &&
+		row.downloadsPublic;
 	if (readable && row.artifact.format !== 'markdown') return row.artifact;
 	return null;
 }

@@ -15,6 +15,8 @@ import type { ChatMessage, Provider } from '../../src/lib/server/llm/providers/t
 const { accountLlmView, saveAccountLlmConfig, saveModelPricing } =
 	await import('../../src/lib/server/llm/config');
 const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
+const { summariseStory } = await import('../../src/lib/server/llm/summaries');
+const { CAP_NOT_APPLIED_MESSAGE } = await import('../../src/lib/server/llm/spend');
 const { estimateStoryReview } = await import('../../src/lib/server/llm/estimate');
 const { loadReviewRun } = await import('../../src/lib/server/review-runs');
 
@@ -433,5 +435,55 @@ describe('spend settings normalisation (#549)', () => {
 
 		expect(view.spendCapUsd).toBeUndefined();
 		expect(view.spendWarnUsd).toBeUndefined();
+	});
+});
+
+describe('spend cap on the standalone summaries job (#622)', () => {
+	// Blank summaries, so every scene needs one and each costs a dollar.
+	async function seedUnsummarised(sceneCount: number): Promise<string> {
+		const storyId = await seedStory(sceneCount);
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.storyId, storyId));
+		return storyId;
+	}
+
+	it('stops between summaries once the cap is spent', async () => {
+		const storyId = await seedUnsummarised(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const { provider: p, seen } = provider();
+		const result = await summariseStory(db, { userId, storyId }, { provider: p });
+
+		expect(seen).toHaveLength(2);
+		expect(result.scenes).toBe(2);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(2, 6);
+		const rows = await db
+			.select({ summaryMd: scenes.summaryMd })
+			.from(scenes)
+			.where(eq(scenes.storyId, storyId))
+			.orderBy(asc(scenes.globalPosition));
+		expect(rows[2].summaryMd).toBeNull();
+	});
+
+	it('runs to the end with no cap set', async () => {
+		const storyId = await seedUnsummarised(3);
+		await priceModel();
+		const { provider: p } = provider();
+		const result = await summariseStory(db, { userId, storyId }, { provider: p });
+
+		expect(result.scenes).toBe(3);
+		expect(result.capped).toBeUndefined();
+		expect(result.capNotApplied).toBeUndefined();
+	});
+
+	it('says the cap could not be applied when the model has no price', async () => {
+		const storyId = await seedUnsummarised(2);
+		await configure({ spendCapUsd: 1.5 });
+		const { provider: p } = provider();
+		const result = await summariseStory(db, { userId, storyId }, { provider: p });
+
+		expect(result.scenes).toBe(2);
+		expect(result.capped).toBeUndefined();
+		expect(result.capNotApplied).toBe(CAP_NOT_APPLIED_MESSAGE);
 	});
 });

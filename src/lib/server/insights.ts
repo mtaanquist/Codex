@@ -58,7 +58,7 @@ export async function storyProgress(db: Database, universeId: string): Promise<S
 			count(s.id) filter (where s.status = 'final')::int as final
 		from stories st
 		left join scenes s on s.story_id = st.id and s.deleted_at is null
-		where st.universe_id = ${universeId}
+		where st.universe_id = ${universeId} and st.deleted_at is null
 		group by st.id
 		order by st.position_in_series asc, st.created_at asc
 	`);
@@ -185,7 +185,7 @@ export async function writingActivity(
 				join revisions r on r.entity_type = 'scene' and r.entity_id = s.id
 					and r.created_at >= ${bound}
 				where s.deleted_at is null
-					and st.universe_id = ${universeId}${storyFilter}
+					and st.universe_id = ${universeId} and st.deleted_at is null${storyFilter}
 			) x
 			order by x.entity_id, x.day, x.created_at desc
 		) picked
@@ -205,7 +205,7 @@ export async function writingActivity(
 			limit 1
 		) r
 		where s.deleted_at is null
-			and st.universe_id = ${universeId}${storyFilter}
+			and st.universe_id = ${universeId} and st.deleted_at is null${storyFilter}
 	`);
 	const yearRows = await db.execute(sql`
 		select distinct ((r.created_at at time zone ${timezone})::date)::text as day
@@ -214,6 +214,7 @@ export async function writingActivity(
 		join stories st on st.id = s.story_id
 		where r.entity_type = 'scene'
 			and st.universe_id = ${universeId}
+			and st.deleted_at is null
 			and r.created_at >= now() - interval '366 days'${storyFilter}
 	`);
 

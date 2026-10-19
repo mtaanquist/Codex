@@ -53,7 +53,7 @@ async function loadStoryBoard(universeId: string): Promise<StoryBoardRow[]> {
 			count(s.id) filter (where s.status = 'final')::int as final
 		from stories st
 		left join scenes s on s.story_id = st.id and s.deleted_at is null
-		where st.universe_id = ${universeId}
+		where st.universe_id = ${universeId} and st.deleted_at is null
 		group by st.id
 		order by st.position_in_series asc nulls last, st.created_at asc
 	`);

@@ -4,7 +4,7 @@ import { assets, publicationAssets, publications, stories, users } from './db/sc
 import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
 import { isUniqueViolation } from './db-errors.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { storyIsLive } from './universe-scope.ts';
 
 // Publishing freezes the story's current prose into an edition; the
 // public reading pages serve only these snapshots, never live drafts.
@@ -31,9 +31,7 @@ export async function publishStory(
 	const [story] = await db
 		.select()
 		.from(stories)
-		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
-		);
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	if (!story) return { ok: false, reason: 'story not found' };
 
 	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
@@ -156,6 +154,7 @@ export async function publicShelf(db: Database, handle: string) {
 				eq(publications.handle, handle),
 				eq(publications.isCurrent, true),
 				isNull(publications.removedAt),
+				isNull(stories.deletedAt),
 				eq(stories.visibility, 'public')
 			)
 		)
@@ -253,7 +252,8 @@ export async function publicEdition(db: Database, handle: string, storyId: strin
 				eq(publications.handle, handle),
 				eq(publications.storyId, storyId),
 				eq(publications.isCurrent, true),
-				isNull(publications.removedAt)
+				isNull(publications.removedAt),
+				isNull(stories.deletedAt)
 			)
 		);
 	if (!edition || edition.visibility === 'private') return null;
@@ -275,6 +275,7 @@ export async function isPublicAsset(db: Database, assetId: string): Promise<bool
 				eq(stories.coverAssetId, assetId),
 				eq(publications.isCurrent, true),
 				isNull(publications.removedAt),
+				isNull(stories.deletedAt),
 				ne(stories.visibility, 'private')
 			)
 		)
@@ -297,6 +298,7 @@ export async function isPublicAsset(db: Database, assetId: string): Promise<bool
 				eq(publicationAssets.assetId, assetId),
 				eq(publications.isCurrent, true),
 				isNull(publications.removedAt),
+				isNull(stories.deletedAt),
 				ne(stories.visibility, 'private')
 			)
 		)
