@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { finishPasskeyRegistration, PASSKEY_CHALLENGE_COOKIE } from '$lib/server/passkeys';
@@ -11,7 +11,7 @@ export const POST: RequestHandler = async ({ cookies, locals, request, url }) =>
 	if (!body?.response) {
 		return json({ message: 'That passkey could not be verified.' }, { status: 400 });
 	}
-	const origin = env.ORIGIN ?? url.origin;
+	const origin = publicOrigin(url);
 	const result = await finishPasskeyRegistration(
 		db,
 		locals.user!.id,
