@@ -731,7 +731,13 @@ disposable, and a daily worker sweep drops those older than 30 days. The
 request cannot start a second pass over the same scenes, and both Assistant
 queues send with an expiry of hours rather than the pg-boss default of 15
 minutes, which would hand a long run to a second worker while the first is
-still going. Before it reviews
+still going. A heartbeat (60 seconds) catches a worker that died, so its job
+is retried in minutes rather than after the expiry, and pg-boss's job signal
+is passed into the run so an expired or stopped job also stops calling the
+model. The worker runs up to four Assistant jobs at once but one per writer
+(the job's pg-boss group), and every model request has a ten-minute idle
+timeout in the egress layer, so one writer's hung endpoint stalls only that
+writer's queue. Before it reviews
 anything, a story-level pass refreshes scene summaries that are missing or
 stale (the `assistant-summaries` logic, called directly), since both the
 context assembly and the cross-scene pass read them.

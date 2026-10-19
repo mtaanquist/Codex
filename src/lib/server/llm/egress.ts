@@ -217,10 +217,23 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<string> {
 	return Buffer.concat(chunks).toString('utf8');
 }
 
+// How long an endpoint may go silent, while connecting, before the first byte,
+// or between chunks, before the request is dropped. Generous, because a local
+// model can think for minutes before it answers a long prompt.
+export const EGRESS_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+export class EgressTimeoutError extends Error {
+	constructor() {
+		super('The model endpoint stopped responding.');
+		this.name = 'EgressTimeoutError';
+	}
+}
+
 function doRequest(
 	url: string,
 	init: HttpRequestInit,
-	policy: EgressPolicy
+	policy: EgressPolicy,
+	idleTimeoutMs: number
 ): Promise<HttpResponse> {
 	let parsed: URL;
 	try {
@@ -248,6 +261,7 @@ function doRequest(
 	const send = parsed.protocol === 'https:' ? httpsRequest : httpRequest;
 
 	return new Promise<HttpResponse>((resolve, reject) => {
+		let response: IncomingMessage | null = null;
 		const req = send(
 			url,
 			{
@@ -257,6 +271,7 @@ function doRequest(
 				...(useLookup ? { lookup: useLookup } : {})
 			},
 			(res: IncomingMessage) => {
+				response = res;
 				const headers: Record<string, string> = {};
 				for (const [k, v] of Object.entries(res.headers)) {
 					if (typeof v === 'string') headers[k] = v;
@@ -272,6 +287,9 @@ function doRequest(
 			}
 		);
 		req.on('error', reject);
+		// Once the response has started, the error has to go to the body being
+		// read, or the reader only sees a bare "aborted".
+		req.setTimeout(idleTimeoutMs, () => (response ?? req).destroy(new EgressTimeoutError()));
 		if (init.body) req.write(init.body);
 		req.end();
 	});
@@ -279,6 +297,9 @@ function doRequest(
 
 // The egress-guarded transport the gateway hands to a provider. Bound to one
 // resolved policy; every call it makes is validated.
-export function egressHttpRequest(policy: EgressPolicy): HttpRequest {
-	return (url, init) => doRequest(url, init, policy);
+export function egressHttpRequest(
+	policy: EgressPolicy,
+	idleTimeoutMs: number = EGRESS_IDLE_TIMEOUT_MS
+): HttpRequest {
+	return (url, init) => doRequest(url, init, policy, idleTimeoutMs);
 }

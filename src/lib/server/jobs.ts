@@ -37,7 +37,8 @@ import {
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
-	ASSISTANT_JOB_EXPIRY_SECONDS
+	ASSISTANT_JOB_EXPIRY_SECONDS,
+	ASSISTANT_JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
 import type { ReviewRunState } from './db/schema.ts';
@@ -195,13 +196,18 @@ export async function queueUserExport(exportId: string): Promise<boolean> {
 
 // An Assistant run talks to a model for as long as the story is big, so the
 // 15-minute default expiry would hand the job out again mid-run. The generous
-// expiry is what keeps one run from executing twice; the retry limit is stated
-// rather than left to the default so a run whose worker died is still picked up
-// again once the expiry passes.
-const ASSISTANT_SEND_OPTIONS = {
-	expireInSeconds: ASSISTANT_JOB_EXPIRY_SECONDS,
-	retryLimit: 2
-} as const;
+// expiry is the outer limit on one run; the heartbeat is what notices a worker
+// that died, so its job is retried within a minute or two instead of hours. The
+// group is the writer: the worker runs one job per writer at a time, so one
+// slow endpoint holds up only its own writer's queue.
+function assistantSendOptions(userId: string) {
+	return {
+		expireInSeconds: ASSISTANT_JOB_EXPIRY_SECONDS,
+		heartbeatSeconds: ASSISTANT_JOB_HEARTBEAT_SECONDS,
+		retryLimit: 2,
+		group: { id: userId }
+	};
+}
 
 // Queues a background Assistant review. Three shapes share the queue: a
 // whole-story or single-chapter copyedit (storyId, the default 'full' mode), a
@@ -226,7 +232,7 @@ export async function queueAssistantReview(input: {
 		const boss = await getBoss();
 		const jobId = await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
 			singletonKey: reviewScopeKey(input),
-			...ASSISTANT_SEND_OPTIONS
+			...assistantSendOptions(input.userId)
 		});
 		// pg-boss returns null when the singleton key coalesced this request into
 		// a review that is already queued or running; the endpoint tells the
@@ -250,7 +256,7 @@ export async function queueAssistantSummaries(input: {
 		return await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
 			singletonKey: input.storyId,
 			singletonSeconds: 30,
-			...ASSISTANT_SEND_OPTIONS
+			...assistantSendOptions(input.userId)
 		});
 	} catch (error) {
 		console.error('queueing assistant summaries failed:', error);
