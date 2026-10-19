@@ -80,7 +80,7 @@ auth_tokens (
   id            uuid primary key,
   user_id       uuid references users(id) not null,
   kind          text not null,           -- 'email_verify' | 'password_reset'
-  token_hash    text not null,           -- the raw token is emailed; only its hash is stored
+  token_hash    text not null,           -- only the hash is stored; the row is reserved with a throwaway hash and armed with the emailed token by the worker at send time
   expires_at    timestamptz not null,
   consumed_at   timestamptz,
   created_at    timestamptz not null

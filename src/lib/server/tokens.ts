@@ -33,13 +33,14 @@ export async function reserveToken(
 	return row.id;
 }
 
+export type ArmResult =
+	{ ok: true; token: string; kind: TokenKind } | { ok: false; reason: 'expired' | 'revoked' };
+
 // Gives a reserved token a fresh raw value and returns it with the token's
-// kind, or null when the token was revoked, used, or has expired. Arming again
-// (a retried send) replaces the value, so only the last link sent works.
-export async function armToken(
-	db: Database,
-	tokenId: string
-): Promise<{ token: string; kind: TokenKind } | null> {
+// kind. Arming again (a retried send) replaces the value, so only the last link
+// sent works. A token that cannot be armed reports why: 'expired', or
+// 'revoked' for one used, superseded, or deleted with its account.
+export async function armToken(db: Database, tokenId: string): Promise<ArmResult> {
 	const token = randomBytes(32).toString('base64url');
 	const [row] = await db
 		.update(authTokens)
@@ -52,7 +53,12 @@ export async function armToken(
 			)
 		)
 		.returning({ kind: authTokens.kind });
-	return row ? { token, kind: row.kind } : null;
+	if (row) return { ok: true, token, kind: row.kind };
+	const [stale] = await db
+		.select({ consumedAt: authTokens.consumedAt })
+		.from(authTokens)
+		.where(eq(authTokens.id, tokenId));
+	return { ok: false, reason: stale && !stale.consumedAt ? 'expired' : 'revoked' };
 }
 
 // Issues a token and returns the raw value in one step. Emailed links must not
@@ -64,7 +70,7 @@ export async function issueToken(
 	ttlMinutes: number
 ): Promise<string> {
 	const armed = await armToken(db, await reserveToken(db, userId, kind, ttlMinutes));
-	if (!armed) throw new Error('A token reserved just now could not be armed.');
+	if (!armed.ok) throw new Error('A token reserved just now could not be armed.');
 	return armed.token;
 }
 

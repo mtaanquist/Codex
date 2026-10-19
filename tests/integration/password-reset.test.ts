@@ -8,6 +8,7 @@ import { sessions, users } from '../../src/lib/server/db/schema';
 import { requestPasswordReset, resetPassword } from '../../src/lib/server/password-reset';
 import { confirmEmailChange, requestEmailChange } from '../../src/lib/server/account';
 import { armToken, issueToken, peekToken } from '../../src/lib/server/tokens';
+import { sentToken } from './token-helpers';
 import { hashPassword as hashFor, verifyPassword } from '../../src/lib/server/password';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -47,7 +48,7 @@ afterAll(async () => {
 // the raw value the emailed link would carry.
 async function sentReset(): Promise<string> {
 	const tokenId = await requestPasswordReset(db, 'reset@example.com');
-	return (await armToken(db, tokenId!))!.token;
+	return sentToken(db, tokenId!);
 }
 
 describe('requestPasswordReset', () => {
@@ -55,7 +56,7 @@ describe('requestPasswordReset', () => {
 		const tokenId = await requestPasswordReset(db, '  Reset@Example.com ');
 		expect(tokenId).toBeTruthy();
 		// The reserved row matches no link until the worker arms it.
-		expect(await armToken(db, tokenId!)).toMatchObject({ kind: 'password_reset' });
+		expect(await armToken(db, tokenId!)).toMatchObject({ ok: true, kind: 'password_reset' });
 	});
 
 	it('returns null for an unknown address without leaking', async () => {
@@ -126,7 +127,7 @@ describe('password recovery ends an in-flight email change', () => {
 		const change = await requestEmailChange(db, userId, 'correct horse', 'attacker@evil.example');
 		expect(change.ok).toBe(true);
 		if (!change.ok) return;
-		const changeToken = (await armToken(db, change.tokenId))!.token;
+		const changeToken = await sentToken(db, change.tokenId);
 
 		const reset = await sentReset();
 		expect((await resetPassword(db, reset, 'brand-new-password')).ok).toBe(true);

@@ -43,7 +43,8 @@ export async function resetPassword(
 	if (!userId) {
 		return {
 			ok: false,
-			reason: 'This reset link is not valid. It may have expired or already been used.'
+			reason:
+				'This reset link is not valid. It may have expired or already been used. If you got more than one email, use the newest one.'
 		};
 	}
 	const passwordHash = await hashPassword(newPassword);

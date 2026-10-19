@@ -270,7 +270,11 @@ export async function requestEmailChange(
 export async function confirmEmailChange(db: Database, token: string): Promise<AccountResult> {
 	const userId = await consumeToken(db, 'email_change', token);
 	if (!userId) {
-		return { ok: false, reason: 'This confirmation link is not valid or has expired.' };
+		return {
+			ok: false,
+			reason:
+				'This confirmation link is not valid or has expired. If you got more than one email, use the newest one.'
+		};
 	}
 	const [user] = await db
 		.select({ pendingEmail: users.pendingEmail })

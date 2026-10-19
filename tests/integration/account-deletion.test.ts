@@ -36,7 +36,8 @@ import {
 	scheduleAccountDeletion
 } from '../../src/lib/server/account-deletion';
 import { setUserSuspended } from '../../src/lib/server/admin';
-import { armToken, issueToken } from '../../src/lib/server/tokens';
+import { issueToken } from '../../src/lib/server/tokens';
+import { sentToken } from './token-helpers';
 import { createSession, validateSession, type Database } from '../../src/lib/server/auth';
 import { ensureBuiltInRelationTypes, ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -256,7 +257,7 @@ describe('scheduleAccountDeletion and cancel', () => {
 		const userId = await makeUser('go@example.com');
 		await seedFullAccount(userId);
 
-		const token = (await armToken(db, await scheduleAccountDeletion(db, userId)))!.token;
+		const token = await sentToken(db, await scheduleAccountDeletion(db, userId));
 		const [scheduled] = await db.select().from(users).where(eq(users.id, userId));
 		expect(scheduled.deletionScheduledAt).not.toBeNull();
 		// The schedule itself blocks sign-in; the shared suspension column
@@ -279,7 +280,7 @@ describe('scheduleAccountDeletion and cancel', () => {
 
 	it('cancelling a deletion never lifts an admin-imposed suspension', async () => {
 		const userId = await makeUser('abuser@example.com');
-		const token = (await armToken(db, await scheduleAccountDeletion(db, userId)))!.token;
+		const token = await sentToken(db, await scheduleAccountDeletion(db, userId));
 		expect(await setUserSuspended(db, userId, true)).toBe(true);
 
 		expect(await cancelAccountDeletion(db, token)).toBe(true);

@@ -444,12 +444,17 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs)
 
 await boss.work<EmailJob>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		const message = await resolveEmailJob(db, job.data);
-		if (!message) {
-			logEvent('info', 'email.skipped', { to: redactEmail(job.data.to) });
+		const resolved = await resolveEmailJob(db, job.data);
+		if ('skipped' in resolved) {
+			// A superseded link is routine; one that expired before it could be
+			// sent means the person never got a working link, so it is a warning.
+			logEvent(resolved.skipped === 'expired' ? 'warn' : 'info', 'email.skipped', {
+				to: redactEmail(job.data.to),
+				reason: resolved.skipped
+			});
 			continue;
 		}
-		await sendEmail(db, message);
+		await sendEmail(db, resolved.message);
 		// Structured, with the recipient masked and the subject (which embeds
 		// story titles) omitted, so account PII does not sit in the logs.
 		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
@@ -458,11 +463,16 @@ await boss.work<EmailJob>(EMAIL_QUEUE, async (jobs) => {
 
 // Transactional email that exhausted its retries (a prolonged SMTP outage).
 // The send is given up, but it must not vanish: log it loudly so an operator
-// can resend by hand. The recipient flow already said "check your email", so
-// there is no other signal otherwise.
+// knows. A link email holds no usable link to resend; the person requests a new
+// one (sign up again, forgot password, or retry the change). The recipient flow
+// already said "check your email", so there is no other signal otherwise. The
+// token id is safe to log: it is not a credential.
 await boss.work<EmailJob>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
+		logEvent('error', 'email.dropped', {
+			to: redactEmail(job.data.to),
+			...('tokenId' in job.data ? { tokenId: job.data.tokenId } : {})
+		});
 	}
 });
 
