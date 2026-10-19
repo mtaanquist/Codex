@@ -327,10 +327,12 @@ export async function runBackup(
 			// Queue state is transient and pg-boss recreates its schema on
 			// start; its partitioned tables also break pg_restore --clean.
 			'--exclude-schema=pgboss',
-			// This run writes a backup_runs row before dumping, so including the
-			// table would make every dump differ from the last and defeat the
-			// unchanged-hour skip. It is operational evidence, not user data.
-			'--exclude-table=backup_runs',
+			// This run writes a backup_runs row before dumping, so including its
+			// rows would make every dump differ from the last and defeat the
+			// unchanged-hour skip. The rows are operational evidence, not user
+			// data; the table itself stays, or a restore onto an empty database
+			// has nowhere to record the next backup.
+			'--exclude-table-data=backup_runs',
 			'--dbname',
 			databaseUrl
 		];
