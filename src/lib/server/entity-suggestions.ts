@@ -1,11 +1,11 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, entitySuggestions, loreEntries, places } from './db/schema';
+import { entitySuggestions } from './db/schema';
+import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups';
 import { recordEntityRevision } from './revisions';
 import { queueUniverseMentions } from './jobs';
 import { MAX_DETAILS, type EntityDetail } from '$lib/entity-snapshot';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { inLiveUniverse } from './universe-scope';
 
 // The Assistant's staged enrichments for an entity: a new alias, a quick detail,
 // or a drafted summary. Nothing here touches an entity until the writer accepts;
@@ -70,36 +70,16 @@ async function loadEntity(
 	details: EntityDetail[];
 	summaryMd: string | null;
 } | null> {
-	if (kind === 'lore') {
-		const [row] = await db
-			.select({
-				universeId: loreEntries.universeId,
-				aliases: loreEntries.keywords,
-				details: loreEntries.details,
-				summaryMd: loreEntries.summaryMd
-			})
-			.from(loreEntries)
-			.where(
-				and(
-					eq(loreEntries.id, entityId),
-					eq(loreEntries.ownerId, ownerId),
-					inLiveUniverse(loreEntries.universeId)
-				)
-			);
-		return row ?? null;
-	}
-	const table = kind === 'character' ? characters : places;
+	const table = entityTable(REVISION_TYPE[kind]);
 	const [row] = await db
 		.select({
 			universeId: table.universeId,
-			aliases: table.aliases,
+			aliases: entityAliasColumn(table),
 			details: table.details,
 			summaryMd: table.summaryMd
 		})
 		.from(table)
-		.where(
-			and(eq(table.id, entityId), eq(table.ownerId, ownerId), inLiveUniverse(table.universeId))
-		);
+		.where(ownedLiveEntity(table, entityId, ownerId));
 	return row ?? null;
 }
 
@@ -246,8 +226,7 @@ async function applyToEntity(
 		else set.aliases = aliases;
 	}
 
-	if (kind === 'character') await tx.update(characters).set(set).where(eq(characters.id, entityId));
-	else if (kind === 'place') await tx.update(places).set(set).where(eq(places.id, entityId));
-	else await tx.update(loreEntries).set(set).where(eq(loreEntries.id, entityId));
+	const table = entityTable(REVISION_TYPE[kind]);
+	await tx.update(table).set(set).where(eq(table.id, entityId));
 	return entity.universeId;
 }

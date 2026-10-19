@@ -7,13 +7,10 @@ import type { Database } from './auth.ts';
 import {
 	assets,
 	assistantChatMessages,
-	characters,
 	entityCategories,
 	entityRelationships,
 	exportArtifacts,
-	loreEntries,
 	notes,
-	places,
 	publications,
 	relationTypes,
 	revisions,
@@ -21,6 +18,7 @@ import {
 	universes
 } from './db/schema.ts';
 import { scheduleObjectDeletions } from './assets.ts';
+import { ENTITY_TYPES, entityTable } from './entity-lookups.ts';
 import { deleteStoryWithin, type Tx } from './story-delete.ts';
 import { ownedUniverseRow } from './universe-scope.ts';
 
@@ -165,17 +163,15 @@ export async function purgeUniverseWithin(tx: Tx, universeId: string): Promise<v
 	}
 
 	// Entity history is polymorphic (no FK), so it goes by the entity ids.
-	const entityIds = [
-		...(await tx
-			.select({ id: characters.id })
-			.from(characters)
-			.where(eq(characters.universeId, universeId))),
-		...(await tx.select({ id: places.id }).from(places).where(eq(places.universeId, universeId))),
-		...(await tx
-			.select({ id: loreEntries.id })
-			.from(loreEntries)
-			.where(eq(loreEntries.universeId, universeId)))
-	].map((row) => row.id);
+	const entityIds: string[] = [];
+	for (const type of ENTITY_TYPES) {
+		const table = entityTable(type);
+		const rows = await tx
+			.select({ id: table.id })
+			.from(table)
+			.where(eq(table.universeId, universeId));
+		entityIds.push(...rows.map((row) => row.id));
+	}
 	if (entityIds.length > 0) {
 		await tx.delete(revisions).where(inArray(revisions.entityId, entityIds));
 	}
@@ -183,9 +179,10 @@ export async function purgeUniverseWithin(tx: Tx, universeId: string): Promise<v
 	// Relationships before their types, entities before their categories.
 	await tx.delete(entityRelationships).where(eq(entityRelationships.universeId, universeId));
 	await tx.delete(relationTypes).where(eq(relationTypes.universeId, universeId));
-	await tx.delete(characters).where(eq(characters.universeId, universeId));
-	await tx.delete(places).where(eq(places.universeId, universeId));
-	await tx.delete(loreEntries).where(eq(loreEntries.universeId, universeId));
+	for (const type of ENTITY_TYPES) {
+		const table = entityTable(type);
+		await tx.delete(table).where(eq(table.universeId, universeId));
+	}
 	await tx.delete(entityCategories).where(eq(entityCategories.universeId, universeId));
 	await tx.delete(assets).where(eq(assets.universeId, universeId));
 	await tx.delete(universes).where(eq(universes.id, universeId));

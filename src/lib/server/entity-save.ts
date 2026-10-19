@@ -1,17 +1,17 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { recordEntityRevision } from './revisions';
-import { categoryInUniverse, ownsStoryInUniverse } from './entity-lookups';
 import {
-	characters,
-	characterStoryNotes,
-	loreEntries,
-	loreStoryNotes,
-	places,
-	placeStoryNotes
-} from './db/schema';
+	categoryInUniverse,
+	entityAliasColumn,
+	entityNameColumn,
+	entityNaming,
+	entityTable,
+	ownedLiveEntity,
+	ownsStoryInUniverse
+} from './entity-lookups';
+import { characterStoryNotes, loreStoryNotes, placeStoryNotes } from './db/schema';
 import type { EntityDetail } from '$lib/entity-snapshot';
-import { inLiveUniverse } from './universe-scope.ts';
 import type { ActionFailure } from './action-result.ts';
 
 // One save path for all three entity kinds. The flow carries real invariants
@@ -50,123 +50,64 @@ const NOUN: Record<EntitySaveKind, { label: string; nameNoun: string }> = {
 	lore: { label: 'lore entry', nameNoun: 'title' }
 };
 
-// The kind-specific row reads and writes, so the shared flow stays fully
-// typed per table (the entity-suggestions.ts pattern, one step further).
-function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: string) {
+const ENTITY_TYPE = { character: 'character', place: 'place', lore: 'lore_entry' } as const;
+
+// The per-story "In this book" notes live in one table per kind.
+async function upsertStoryNotes(
+	tx: Database,
+	kind: EntitySaveKind,
+	id: string,
+	storyId: string,
+	notesMd: string
+) {
+	const set = { notesMd, updatedAt: sql`now()` };
 	if (kind === 'character') {
-		return {
-			async load() {
-				const [row] = await db
-					.select({
-						id: characters.id,
-						universeId: characters.universeId,
-						name: characters.name,
-						tags: characters.aliases
-					})
-					.from(characters)
-					.where(
-						and(
-							eq(characters.id, entityId),
-							eq(characters.ownerId, userId),
-							inLiveUniverse(characters.universeId)
-						)
-					);
-				return row ?? null;
-			},
-			async update(tx: Database, id: string, fields: Record<string, unknown>) {
-				const { name, tags, ...rest } = fields;
-				await tx
-					.update(characters)
-					.set({ name: name as string, aliases: tags as string[], ...rest })
-					.where(eq(characters.id, id));
-				await recordEntityRevision(tx, 'character', id);
-			},
-			async upsertNotes(tx: Database, id: string, storyId: string, notesMd: string) {
-				await tx
-					.insert(characterStoryNotes)
-					.values({ characterId: id, storyId, notesMd })
-					.onConflictDoUpdate({
-						target: [characterStoryNotes.characterId, characterStoryNotes.storyId],
-						set: { notesMd, updatedAt: sql`now()` }
-					});
-			}
-		};
+		await tx
+			.insert(characterStoryNotes)
+			.values({ characterId: id, storyId, notesMd })
+			.onConflictDoUpdate({
+				target: [characterStoryNotes.characterId, characterStoryNotes.storyId],
+				set
+			});
+	} else if (kind === 'place') {
+		await tx
+			.insert(placeStoryNotes)
+			.values({ placeId: id, storyId, notesMd })
+			.onConflictDoUpdate({ target: [placeStoryNotes.placeId, placeStoryNotes.storyId], set });
+	} else {
+		await tx
+			.insert(loreStoryNotes)
+			.values({ loreEntryId: id, storyId, notesMd })
+			.onConflictDoUpdate({ target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId], set });
 	}
-	if (kind === 'place') {
-		return {
-			async load() {
-				const [row] = await db
-					.select({
-						id: places.id,
-						universeId: places.universeId,
-						name: places.name,
-						tags: places.aliases
-					})
-					.from(places)
-					.where(
-						and(
-							eq(places.id, entityId),
-							eq(places.ownerId, userId),
-							inLiveUniverse(places.universeId)
-						)
-					);
-				return row ?? null;
-			},
-			async update(tx: Database, id: string, fields: Record<string, unknown>) {
-				const { name, tags, ...rest } = fields;
-				await tx
-					.update(places)
-					.set({ name: name as string, aliases: tags as string[], ...rest })
-					.where(eq(places.id, id));
-				await recordEntityRevision(tx, 'place', id);
-			},
-			async upsertNotes(tx: Database, id: string, storyId: string, notesMd: string) {
-				await tx
-					.insert(placeStoryNotes)
-					.values({ placeId: id, storyId, notesMd })
-					.onConflictDoUpdate({
-						target: [placeStoryNotes.placeId, placeStoryNotes.storyId],
-						set: { notesMd, updatedAt: sql`now()` }
-					});
-			}
-		};
-	}
+}
+
+function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: string) {
+	const type = ENTITY_TYPE[kind];
+	const table = entityTable(type);
 	return {
 		async load() {
 			const [row] = await db
 				.select({
-					id: loreEntries.id,
-					universeId: loreEntries.universeId,
-					name: loreEntries.title,
-					tags: loreEntries.keywords
+					id: table.id,
+					universeId: table.universeId,
+					name: entityNameColumn(table),
+					tags: entityAliasColumn(table)
 				})
-				.from(loreEntries)
-				.where(
-					and(
-						eq(loreEntries.id, entityId),
-						eq(loreEntries.ownerId, userId),
-						inLiveUniverse(loreEntries.universeId)
-					)
-				);
+				.from(table)
+				.where(ownedLiveEntity(table, entityId, userId));
 			return row ?? null;
 		},
 		async update(tx: Database, id: string, fields: Record<string, unknown>) {
 			const { name, tags, ...rest } = fields;
 			await tx
-				.update(loreEntries)
-				.set({ title: name as string, keywords: tags as string[], ...rest })
-				.where(eq(loreEntries.id, id));
-			await recordEntityRevision(tx, 'lore_entry', id);
+				.update(table)
+				.set({ ...entityNaming(type, name as string, tags as string[]), ...rest })
+				.where(eq(table.id, id));
+			await recordEntityRevision(tx, type, id);
 		},
-		async upsertNotes(tx: Database, id: string, storyId: string, notesMd: string) {
-			await tx
-				.insert(loreStoryNotes)
-				.values({ loreEntryId: id, storyId, notesMd })
-				.onConflictDoUpdate({
-					target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId],
-					set: { notesMd, updatedAt: sql`now()` }
-				});
-		}
+		upsertNotes: (tx: Database, id: string, storyId: string, notesMd: string) =>
+			upsertStoryNotes(tx, kind, id, storyId, notesMd)
 	};
 }
 

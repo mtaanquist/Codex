@@ -1,10 +1,13 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Database } from './auth';
-import { characters, loreEntries, places } from './db/schema';
-import type { EntityType } from './entity-lookups';
+import {
+	entityTable,
+	resolveOwnedEntity,
+	type EntityTable,
+	type EntityType
+} from './entity-lookups';
 import { createAsset, deleteAsset, type AssetConfig, type AssetObjectStore } from './assets';
 import { isCategoryColor } from '$lib/entity-color';
-import { inLiveUniverse } from './universe-scope';
 import type { ActionFailure } from './action-result';
 
 // The per-entity badge: a palette colour, or an uploaded image (the image
@@ -14,59 +17,20 @@ import type { ActionFailure } from './action-result';
 // old). Entities are only ever removed by the universe purge, which sweeps
 // their assets by universeId, so there is no per-entity asset cleanup here.
 
-type EntityRef = { type: EntityType; universeId: string; badgeAssetId: string | null };
-
-async function resolveOwnedEntity(
-	db: Database,
-	userId: string,
-	entityId: string
-): Promise<EntityRef | null> {
-	const [character] = await db
-		.select({ universeId: characters.universeId, badgeAssetId: characters.badgeAssetId })
-		.from(characters)
-		.where(
-			and(
-				eq(characters.id, entityId),
-				eq(characters.ownerId, userId),
-				inLiveUniverse(characters.universeId)
-			)
-		);
-	if (character) return { type: 'character', ...character };
-	const [place] = await db
-		.select({ universeId: places.universeId, badgeAssetId: places.badgeAssetId })
-		.from(places)
-		.where(
-			and(eq(places.id, entityId), eq(places.ownerId, userId), inLiveUniverse(places.universeId))
-		);
-	if (place) return { type: 'place', ...place };
-	const [lore] = await db
-		.select({ universeId: loreEntries.universeId, badgeAssetId: loreEntries.badgeAssetId })
-		.from(loreEntries)
-		.where(
-			and(
-				eq(loreEntries.id, entityId),
-				eq(loreEntries.ownerId, userId),
-				inLiveUniverse(loreEntries.universeId)
-			)
-		);
-	if (lore) return { type: 'lore_entry', ...lore };
-	return null;
-}
-
 async function updateBadge(
 	db: Database,
 	type: EntityType,
 	entityId: string,
 	patch: { badgeColor?: string | null; badgeAssetId?: string | null }
 ): Promise<void> {
-	if (type === 'character') {
-		await db.update(characters).set(patch).where(eq(characters.id, entityId));
-	} else if (type === 'place') {
-		await db.update(places).set(patch).where(eq(places.id, entityId));
-	} else {
-		await db.update(loreEntries).set(patch).where(eq(loreEntries.id, entityId));
-	}
+	const table = entityTable(type);
+	await db.update(table).set(patch).where(eq(table.id, entityId));
 }
+
+const badgeColumns = (table: EntityTable) => ({
+	universeId: table.universeId,
+	badgeAssetId: table.badgeAssetId
+});
 
 export type BadgeResult = { ok: true } | ActionFailure;
 
@@ -86,7 +50,7 @@ export async function setEntityBadgeColor(
 ): Promise<BadgeResult> {
 	if (!isCategoryColor(color))
 		return { ok: false, code: 'invalid', reason: 'Pick one of the colours in the menu.' };
-	const ref = await resolveOwnedEntity(db, userId, entityId);
+	const ref = await resolveOwnedEntity(db, userId, entityId, badgeColumns);
 	if (!ref) return ENTRY_NOT_FOUND;
 	await updateBadge(db, ref.type, entityId, { badgeColor: color });
 	return { ok: true };
@@ -101,7 +65,7 @@ export async function setEntityBadgeImage(
 	entityId: string,
 	input: { filename: string; contentType: string; bytes: Buffer }
 ): Promise<{ ok: true; id: string } | ActionFailure> {
-	const ref = await resolveOwnedEntity(db, userId, entityId);
+	const ref = await resolveOwnedEntity(db, userId, entityId, badgeColumns);
 	if (!ref) return ENTRY_NOT_FOUND;
 	const created = await createAsset(db, store, config, userId, {
 		universeId: ref.universeId,
@@ -122,7 +86,7 @@ export async function clearEntityBadgeImage(
 	userId: string,
 	entityId: string
 ): Promise<BadgeResult> {
-	const ref = await resolveOwnedEntity(db, userId, entityId);
+	const ref = await resolveOwnedEntity(db, userId, entityId, badgeColumns);
 	if (!ref) return ENTRY_NOT_FOUND;
 	if (ref.badgeAssetId) {
 		await updateBadge(db, ref.type, entityId, { badgeAssetId: null });

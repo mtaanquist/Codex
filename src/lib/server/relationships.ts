@@ -1,15 +1,16 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import {
-	characters,
-	entityCategories,
-	entityRelationships,
-	loreEntries,
-	places,
-	relationTypes
-} from './db/schema.ts';
+import { entityCategories, entityRelationships, relationTypes } from './db/schema.ts';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import {
+	ENTITY_TYPES,
+	entityInUniverse,
+	entityNameColumn,
+	entityTable,
+	namesByType,
+	ownedLiveEntity,
+	type EntityType
+} from './entity-lookups.ts';
 import { recordEntityRevision } from './revisions.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { inLiveUniverse } from './universe-scope.ts';
@@ -144,31 +145,15 @@ export async function relatedEntitySummaries(
 		idsByType[row.toType as EntityType].add(row.toId);
 	}
 	const summaries = new Map<string, { name: string; color: string | null }>();
-	for (const type of ['character', 'place', 'lore_entry'] as const) {
+	for (const type of ENTITY_TYPES) {
 		const ids = [...idsByType[type]];
 		if (ids.length === 0) continue;
-		const found =
-			type === 'character'
-				? await db
-						.select({ id: characters.id, name: characters.name, color: entityCategories.color })
-						.from(characters)
-						.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-						.where(inArray(characters.id, ids))
-				: type === 'place'
-					? await db
-							.select({ id: places.id, name: places.name, color: entityCategories.color })
-							.from(places)
-							.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-							.where(inArray(places.id, ids))
-					: await db
-							.select({
-								id: loreEntries.id,
-								name: loreEntries.title,
-								color: entityCategories.color
-							})
-							.from(loreEntries)
-							.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-							.where(inArray(loreEntries.id, ids));
+		const table = entityTable(type);
+		const found = await db
+			.select({ id: table.id, name: entityNameColumn(table), color: entityCategories.color })
+			.from(table)
+			.leftJoin(entityCategories, eq(table.categoryId, entityCategories.id))
+			.where(inArray(table.id, ids));
 		for (const row of found) summaries.set(row.id, { name: row.name, color: row.color });
 	}
 
@@ -217,39 +202,11 @@ export async function createRelationship(
 	}
 
 	// The source entity anchors ownership and the universe.
-	const [fromEntity] =
-		fromType === 'character'
-			? await db
-					.select({ universeId: characters.universeId })
-					.from(characters)
-					.where(
-						and(
-							eq(characters.id, save.fromId),
-							eq(characters.ownerId, userId),
-							inLiveUniverse(characters.universeId)
-						)
-					)
-			: fromType === 'place'
-				? await db
-						.select({ universeId: places.universeId })
-						.from(places)
-						.where(
-							and(
-								eq(places.id, save.fromId),
-								eq(places.ownerId, userId),
-								inLiveUniverse(places.universeId)
-							)
-						)
-				: await db
-						.select({ universeId: loreEntries.universeId })
-						.from(loreEntries)
-						.where(
-							and(
-								eq(loreEntries.id, save.fromId),
-								eq(loreEntries.ownerId, userId),
-								inLiveUniverse(loreEntries.universeId)
-							)
-						);
+	const fromTable = entityTable(fromType);
+	const [fromEntity] = await db
+		.select({ universeId: fromTable.universeId })
+		.from(fromTable)
+		.where(ownedLiveEntity(fromTable, save.fromId, userId));
 	if (!fromEntity) return { ok: false, code: 'not_found', reason: 'That entry does not exist.' };
 	const universeId = fromEntity.universeId;
 

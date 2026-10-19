@@ -2,17 +2,20 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
-	characters,
 	characterStoryMemberships,
 	entityMentions,
-	loreEntries,
-	places,
 	placeStoryMemberships,
 	scenes,
 	stories
 } from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
 import { listMentionPins } from './mention-pins.ts';
+import {
+	ENTITY_TYPES,
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable
+} from './entity-lookups.ts';
 
 // Entities declared in the scene's story outrank the rest when a name is
 // shared; see the attribution rules in mention-detect.
@@ -50,35 +53,15 @@ export async function universeMentionContext(
 	const [{ loadedAt }] = (await db.execute(sql`select now() as "loadedAt"`)).rows as {
 		loadedAt: Date;
 	}[];
-	const cast = await db
-		.select({ id: characters.id, name: characters.name, aliases: characters.aliases })
-		.from(characters)
-		.where(and(eq(characters.universeId, universeId), eq(characters.autoDetectMentions, true)));
-	const placeRows = await db
-		.select({ id: places.id, name: places.name, aliases: places.aliases })
-		.from(places)
-		.where(and(eq(places.universeId, universeId), eq(places.autoDetectMentions, true)));
-	const loreRows = await db
-		.select({ id: loreEntries.id, title: loreEntries.title, keywords: loreEntries.keywords })
-		.from(loreEntries)
-		.where(and(eq(loreEntries.universeId, universeId), eq(loreEntries.autoDetectMentions, true)));
-	const targets: MentionTarget[] = [
-		...cast.map((character): MentionTarget => ({
-			id: character.id,
-			type: 'character',
-			names: [character.name, ...character.aliases]
-		})),
-		...placeRows.map((place): MentionTarget => ({
-			id: place.id,
-			type: 'place',
-			names: [place.name, ...place.aliases]
-		})),
-		...loreRows.map((entry): MentionTarget => ({
-			id: entry.id,
-			type: 'lore_entry',
-			names: [entry.title, ...entry.keywords]
-		}))
-	];
+	const targets: MentionTarget[] = [];
+	for (const type of ENTITY_TYPES) {
+		const table = entityTable(type);
+		const rows = await db
+			.select({ id: table.id, name: entityNameColumn(table), aliases: entityAliasColumn(table) })
+			.from(table)
+			.where(and(eq(table.universeId, universeId), eq(table.autoDetectMentions, true)));
+		for (const row of rows) targets.push({ id: row.id, type, names: [row.name, ...row.aliases] });
+	}
 	return { universeId, loadedAt, targets, stories: new Map() };
 }
 

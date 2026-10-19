@@ -1,13 +1,7 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import {
-	characters,
-	entityCategories,
-	entityMentions,
-	loreEntries,
-	places,
-	scenes
-} from './db/schema';
+import { entityCategories, entityMentions, scenes } from './db/schema';
+import { entityNameColumn, entityTable, type EntityType } from './entity-lookups';
 import { listStoryTodos } from './markers';
 import { listRevisions, type RevisionRow } from './revisions';
 
@@ -76,11 +70,9 @@ export async function loadStoryLive(
 // The open scene's timeline and who is mentioned in it (read from the
 // worker-built index).
 export async function loadSceneLive(db: Database, sceneId: string) {
-	const mentionCounts = (
-		table: typeof characters | typeof places | typeof loreEntries,
-		targetType: 'character' | 'place' | 'lore_entry'
-	) => {
-		const nameColumn = 'name' in table ? table.name : loreEntries.title;
+	const mentionCounts = (targetType: EntityType) => {
+		const table = entityTable(targetType);
+		const nameColumn = entityNameColumn(table);
 		return db
 			.select({
 				id: table.id,
@@ -104,9 +96,9 @@ export async function loadSceneLive(db: Database, sceneId: string) {
 	};
 	const [revisions, mentionedCharacters, mentionedPlaces, mentionedLore] = await Promise.all([
 		listRevisions(db, 'scene', sceneId),
-		mentionCounts(characters, 'character'),
-		mentionCounts(places, 'place'),
-		mentionCounts(loreEntries, 'lore_entry')
+		mentionCounts('character'),
+		mentionCounts('place'),
+		mentionCounts('lore_entry')
 	]);
 	// Tagged with the kind so the panel can group them by entity type.
 	const inScene: InSceneEntity[] = [
