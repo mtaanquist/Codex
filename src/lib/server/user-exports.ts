@@ -3,7 +3,6 @@ import type { Database } from './auth.ts';
 import { stories, universes, userExports } from './db/schema.ts';
 import type { AssetObjectStore } from './assets.ts';
 import {
-	asBuffer,
 	bucketAssetLoader,
 	buildAccountExport,
 	buildStoryZip,
@@ -13,11 +12,12 @@ import {
 import { buildEpub } from './epub.ts';
 import { reviewLoader } from './export-reviews.ts';
 import { storyPageSetup } from './page-setup.ts';
+import { uploadZip, type ZipArchive } from './zip-stream.ts';
 
 // User-requested exports (account, story, or universe archive, or a story
-// EPUB). The heavy in-memory build and zip run in the worker, never on the web
-// request path, so one large export cannot freeze the instance. The finished
-// file lands in the asset bucket and the owner downloads it from /exports/[id].
+// EPUB). The build runs in the worker, never on the web request path, and
+// streams into the asset bucket as it is written, so one large export cannot
+// freeze the instance. The owner downloads it from /exports/[id].
 
 export type ExportScope = 'account' | 'story' | 'universe';
 export type ExportFormat = 'zip' | 'epub';
@@ -142,7 +142,7 @@ export async function runUserExport(
 
 	try {
 		const loadAssets = bucketAssetLoader(db, row.ownerId);
-		let built: { filename: string; bytes: Uint8Array };
+		let built: ZipArchive;
 
 		if (row.scope === 'account') {
 			built = await buildAccountExport(db, row.ownerId, loadAssets, reviewLoader(db));
@@ -174,7 +174,7 @@ export async function runUserExport(
 
 		const contentType = CONTENT_TYPE[row.format];
 		const storageKey = `exports/${row.ownerId}/${row.id}.${row.format}`;
-		await store.put(storageKey, asBuffer(built.bytes), contentType);
+		const byteSize = await uploadZip(store, storageKey, built.entries, contentType);
 		await db
 			.update(userExports)
 			.set({
@@ -184,7 +184,7 @@ export async function runUserExport(
 				storageKey,
 				filename: built.filename,
 				contentType,
-				byteSize: built.bytes.byteLength
+				byteSize
 			})
 			.where(eq(userExports.id, row.id));
 		return { ok: true, ownerId: row.ownerId };
