@@ -488,8 +488,15 @@
 		{
 			"idx": 69,
 			"version": "7",
-			"when": 1792433930700,
-			"tag": "0069_revision-word-count",
+			"when": 1792433761374,
+			"tag": "0069_deferred-object-deletion",
+			"breakpoints": true
+		},
+		{
+			"idx": 70,
+			"version": "7",
+			"when": 1792436290442,
+			"tag": "0070_revision-word-count",
 			"breakpoints": true
 		}
 	]

@@ -1,5 +1,5 @@
 {
-	"id": "2aab6986-3adc-438c-a506-daae5cc7452a",
+	"id": "1e6776a0-4a2b-4a09-870a-ede9d9b5bbd4",
 	"prevId": "61afa0de-948c-43de-9f1e-932d758c2d00",
 	"version": "7",
 	"dialect": "postgresql",
@@ -2277,6 +2277,32 @@
 			"checkConstraints": {},
 			"isRLSEnabled": false
 		},
+		"public.pending_object_deletions": {
+			"name": "pending_object_deletions",
+			"schema": "",
+			"columns": {
+				"storage_key": {
+					"name": "storage_key",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true
+				},
+				"deleted_at": {
+					"name": "deleted_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "now()"
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"policies": {},
+			"checkConstraints": {},
+			"isRLSEnabled": false
+		},
 		"public.place_story_memberships": {
 			"name": "place_story_memberships",
 			"schema": "",
@@ -3634,12 +3660,6 @@
 					"type": "text",
 					"primaryKey": false,
 					"notNull": true
-				},
-				"word_count": {
-					"name": "word_count",
-					"type": "integer",
-					"primaryKey": false,
-					"notNull": false
 				},
 				"snapshot": {
 					"name": "snapshot",

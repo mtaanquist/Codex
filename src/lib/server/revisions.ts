@@ -21,6 +21,7 @@ import {
 	type SnapshotRelationship
 } from '$lib/entity-snapshot';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import { remapMarkerAnchors } from './markers.ts';
 
 export type RevisionEntityType =
 	'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note';
@@ -545,10 +546,16 @@ export async function restoreRevision(
 	if (entityType === 'scene') {
 		// One transaction so the body and its 'restore' snapshot commit together.
 		await db.transaction(async (tx) => {
+			const [current] = await tx
+				.select({ bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(eq(scenes.id, entityId))
+				.for('update');
 			await tx
 				.update(scenes)
 				.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
 				.where(eq(scenes.id, entityId));
+			if (current) await remapMarkerAnchors(tx, entityId, current.bodyMd, revision.bodyMd);
 			await recordRevision(tx, entityType, entityId, revision.bodyMd, 'restore');
 		});
 		return { ok: true };
