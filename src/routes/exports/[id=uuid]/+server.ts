@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { Readable } from 'node:stream';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, getObjectOrNull, s3AssetStore } from '$lib/server/assets';
 import { exportForDownload } from '$lib/server/user-exports';
 
 // Streams a finished user export to its owner. The file was built in the
@@ -17,7 +17,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!row || !row.storageKey) error(404, 'Not found');
 
 	const store = s3AssetStore(config);
-	const body = await store.get(row.storageKey);
+	const body = await getObjectOrNull(store, row.storageKey);
+	if (!body) error(404, 'Not found');
 
 	return new Response(Readable.toWeb(body) as ReadableStream, {
 		headers: {

@@ -119,7 +119,7 @@ export async function buildReviewerDigest(
 		.select({ storyId: reviewInvitations.storyId, title: stories.title })
 		.from(reviewInvitations)
 		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
-		.where(eq(reviewInvitations.id, reviewer.invitationId));
+		.where(and(eq(reviewInvitations.id, reviewer.invitationId), isNull(stories.deletedAt)));
 	if (!invitation) return null;
 
 	const since = reviewer.lastNotifiedAt ?? reviewer.createdAt;

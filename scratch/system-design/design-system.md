@@ -559,7 +559,7 @@ From CLAUDE.md, repeated here because every screen touches it:
 
 ## CSS file map
 
-Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`,
+Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`, `board.css`,
 `pages.css`, `admin.css`, `editor.css`, `review.css`, `menus.css`,
 `primitives.css`, `chrome.css`, `surfaces.css`, `public.css`. All global and
 unscoped, so a later file silently wins a specificity tie; check for an existing
@@ -568,6 +568,8 @@ definition before adding a class.
 - `tokens.css` - tokens and base element rules only. No components.
 - `theme.css` - the workspace shell and its components (outline rows,
   panels, editor chrome, entity UI).
+- `board.css` - the status board (lanes and cards) shared by `SceneBoard`
+  and `StoryBoard`.
 - `pages.css` - the page/settings shells, buttons, forms, cards.
 - `admin.css` - settings and admin surfaces (used by account pages too).
 - `editor.css` - CodeMirror-specific rules (mention underlines, hover
@@ -678,13 +680,42 @@ them.
   `.signup-closed` / `[data-signup-only]` rules. That is scaffolding for static
   HTML; Svelte renders from the mode.
 
+### Removed in the duplicate and dead CSS sweep
+
+- One home each: the assistant chat block lives in `AssistantPanel.svelte`
+  (the `theme.css` copy is gone); the `.insp-*` body, `.inspector` and
+  `.inspector-scroll` live in `EntityCard.svelte`; `.inspector-head`,
+  `.back-btn` and `.inspector-kind` are global in `theme.css`, shared by
+  `EntityCard` and the review composer (the `review.css` copy is gone);
+  `.revision-dot*` and `.brand-name` live in `pages.css`; the board, lane and
+  card rules shared by `SceneBoard` and `StoryBoard` live in `board.css`.
+- The admin table's action cell is `.cell-actions` / `.cell-actions-inner`.
+  It used to be `.row-actions`, which `surfaces.css` also defines as a flex
+  cluster, so the table cell was being turned into a flex box.
+- Dead CSS: the `.ctx-*` leftovers, `.trash-section/head/title/name`,
+  `.settings-layout/content/section` and the `fadeIn` keyframes,
+  `.storage-cap/legend/seg` and `.legend-*`, the gated admin card
+  (`.is-gated`, `.gate-head`, `.gate-body`), the `[data-tfa]` state switch,
+  `.qr-grid`, `.notes-wrap`, `.notes-head`, `.note-editor`, `.note-edit-*`,
+  `.note-rename`, `.note-back`, `.tag-cloud`, `.tag-count`, `.quick-row`,
+  `.quick-label`, `.quick-foot`, `.collapsible`, `.button-card`,
+  `.md-body`, `.editor-kicker/title/body`, `.detail-title/role`,
+  `.focus-foot`, `.rename-input`, `.ghost-anchor`, `.no-underline`,
+  `.search-hint`, `.grip`, `.avatar-me`, `.brand`, `.text-link`, `.spacer`,
+  `.avatar-dd-kbd`, `.admin-stat-ic`, `.link-ic`, `.num`, `.category-drag`,
+  `.category-swatch`, `.user-row-note`, `.input-muted`, `.behavior-toggle`,
+  `.modal-label`, `.rv-card-quote`, `.rv-rationale`,
+  `.reader-pager`, `.insp-related`.
+- `sheets.test.ts` fails when a selector gets a standalone rule in two
+  places across the global sheets. A selector may still appear in a grouped
+  rule next to its own.
+
 ### Still outstanding
 
-Duplicated definitions (later file or component style wins): the assistant
-chat block (`theme.css` and `AssistantPanel.svelte`), the `.insp-*`
-inspector (`theme.css` and `EntityCard.svelte`), the kanban CSS
-(`SceneBoard.svelte` and `StoryBoard.svelte` are copy-pasted),
-`.revision-dot`, `.brand-name`, `.btn-sm`, `.field-hint`, `.ent-row`,
+Duplicated definitions (later file or component style wins): `.btn-sm`,
+`.field-hint`, `.swatch`, `.chip-x`, `.modal-foot-note`, `.new-caret`,
+`.category-delete`, `.trash-list`, `.prose`, `.r-line` and `.ent-row` are
+redefined in a component's `<style>` block as well as a global sheet;
 `.chapter-row`/`.scene-row`.
 
 Hard-coded colours that bypass tokens: the `.swatch-custom` gradient hexes,

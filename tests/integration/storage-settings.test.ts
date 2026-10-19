@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import type { Readable } from 'node:stream';
@@ -9,6 +9,7 @@ import { assets, users } from '../../src/lib/server/db/schema';
 import {
 	assetMigrationSource,
 	assetStorageView,
+	clearAssetConfigCache,
 	clearAssetMigrationSource,
 	effectiveAssetConfig,
 	migrateAssetObjects,
@@ -64,6 +65,7 @@ beforeAll(async () => {
 beforeEach(async () => {
 	await pool.query('truncate table app_settings, assets, users cascade');
 	for (const key of S3_ENV) delete process.env[key];
+	clearAssetConfigCache();
 });
 
 afterAll(async () => {
@@ -157,6 +159,45 @@ describe('effectiveAssetConfig', () => {
 		expect((await saveAssetStorage(db, { ...SAVE_INPUT, bucket: ' ' })).ok).toBe(false);
 		expect((await saveAssetStorage(db, { ...SAVE_INPUT, accessKeyId: '' })).ok).toBe(false);
 		expect((await saveAssetStorage(db, { ...SAVE_INPUT, secretAccessKey: '' })).ok).toBe(false);
+	});
+});
+
+describe('effectiveAssetConfig cache', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	// Counts queries the pool runs, to tell a cached answer from a fresh read.
+	function countQueries() {
+		const spy = vi.spyOn(pool, 'query');
+		return () => spy.mock.calls.length;
+	}
+
+	it('answers a second call within the window without reading the database', async () => {
+		await saveAssetStorage(db, SAVE_INPUT);
+		await effectiveAssetConfig(db);
+		const queries = countQueries();
+		expect(await effectiveAssetConfig(db)).toMatchObject({ bucket: 'bucket-a' });
+		expect(queries()).toBe(0);
+		vi.restoreAllMocks();
+	});
+
+	it('sees a save at once', async () => {
+		await saveAssetStorage(db, SAVE_INPUT);
+		expect(await effectiveAssetConfig(db)).toMatchObject({ bucket: 'bucket-a' });
+		await saveAssetStorage(db, { ...SAVE_INPUT, bucket: 'bucket-b' });
+		expect(await effectiveAssetConfig(db)).toMatchObject({ bucket: 'bucket-b' });
+	});
+
+	it('re-reads an entry older than a minute', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		await saveAssetStorage(db, SAVE_INPUT);
+		expect(await effectiveAssetConfig(db)).toMatchObject({ bucket: 'bucket-a' });
+		// A change made elsewhere (another process) that this one did not see.
+		await pool.query('truncate table app_settings');
+		expect(await effectiveAssetConfig(db)).toMatchObject({ bucket: 'bucket-a' });
+		vi.setSystemTime(Date.now() + 61_000);
+		expect(await effectiveAssetConfig(db)).toBeNull();
 	});
 });
 

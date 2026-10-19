@@ -25,6 +25,7 @@ async function candidateScenes(db: Database, universeId: string, find: string) {
 		.where(
 			and(
 				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt),
 				isNull(scenes.deletedAt),
 				like(scenes.bodyMd, likePattern(find))
 			)

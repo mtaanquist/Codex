@@ -3,7 +3,6 @@ import type { Actions } from './$types';
 import { db } from '$lib/server/db';
 import { requestPasswordReset } from '$lib/server/password-reset';
 import { queueEmail } from '$lib/server/jobs';
-import { passwordResetEmail } from '$lib/server/email';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
 
@@ -31,12 +30,8 @@ export const actions: Actions = {
 			return { sent: true };
 		}
 
-		const token = await requestPasswordReset(db, email);
-		if (token) {
-			const origin = publicOrigin(url);
-			const link = `${origin}/reset-password?token=${token}`;
-			await queueEmail(passwordResetEmail(email, link));
-		}
+		const tokenId = await requestPasswordReset(db, email);
+		if (tokenId) await queueEmail({ tokenId, to: email, origin: publicOrigin(url) });
 
 		// Always the same response, whether or not the address has an account.
 		return { sent: true };

@@ -1,6 +1,6 @@
 import { PgBoss } from 'pg-boss';
 import { env } from '$env/dynamic/private';
-import type { EmailMessage } from './email';
+import type { EmailJob } from './token-email';
 import type { ReviewCategory } from '../review-shape';
 import { db } from './db';
 import { markUniverseMentionsChanged } from './mentions.ts';
@@ -147,12 +147,13 @@ const EMAIL_RETRY = {
 	retryDelayMax: 3600
 } as const;
 
-// Queues a transactional email (verification, password reset). Best-effort
-// enqueue, like the mention queues: a failed enqueue logs rather than breaking
-// the request, and the caller shows the same neutral "check your email" either
-// way. Once queued, the retry policy above keeps the send alive through an
-// outage.
-export async function queueEmail(message: EmailMessage): Promise<void> {
+// Queues a transactional email (verification, password reset). A link email
+// is queued by token id, never with the raw token; the worker builds it (see
+// token-email.ts). Best-effort enqueue, like the mention queues: a failed
+// enqueue logs rather than breaking the request, and the caller shows the same
+// neutral "check your email" either way. Once queued, the retry policy above
+// keeps the send alive through an outage.
+export async function queueEmail(message: EmailJob): Promise<void> {
 	try {
 		const boss = await getBoss();
 		await boss.send(EMAIL_QUEUE, message, {

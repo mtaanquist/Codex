@@ -6,7 +6,7 @@ import type { Database } from './auth.ts';
 import { mentionPins, stories } from './db/schema.ts';
 import { entityInUniverse } from './entity-lookups.ts';
 import type { EntityType } from './entity-lookups.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { storyIsLive } from './universe-scope.ts';
 import type { ActionFailure } from './action-result.ts';
 
 // The story's pins as detection wants them: matched text -> target id.
@@ -32,9 +32,7 @@ export async function setMentionPin(
 	const [story] = await db
 		.select({ id: stories.id, universeId: stories.universeId })
 		.from(stories)
-		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
-		);
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	if (!story) return { ok: false, code: 'not_found', reason: 'That story does not exist.' };
 	if (!(await entityInUniverse(db, story.universeId, targetType, targetId))) {
 		return { ok: false, code: 'not_found', reason: 'That entry does not exist.' };
@@ -58,9 +56,7 @@ export async function clearMentionPin(
 	const [story] = await db
 		.select({ id: stories.id })
 		.from(stories)
-		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
-		);
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	if (!story) return false;
 	const deleted = await db
 		.delete(mentionPins)

@@ -41,7 +41,7 @@ export async function loadStoryLive(
 					0
 				) as words
 			from stories st
-			where st.universe_id = ${ids.universeId}
+			where st.universe_id = ${ids.universeId} and st.deleted_at is null
 			order by st.position_in_series asc nulls last, st.created_at asc
 		`),
 		db

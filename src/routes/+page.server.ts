@@ -13,6 +13,7 @@ import {
 	listTrashedUniverses,
 	restoreUniverse
 } from '$lib/server/universe-lifecycle';
+import { destroyStory, listTrashedStories, restoreStory } from '$lib/server/story-lifecycle';
 import { signupMode } from '$lib/server/settings';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -25,6 +26,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			universes: [],
 			stories: [],
 			trashedUniverses: [],
+			trashedStories: [],
 			// The mode, not a boolean: the landing page offers a sign-up only
 			// where a visitor without an invite code can finish one.
 			signupMode: await signupMode(db)
@@ -37,6 +39,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.where(and(eq(universes.ownerId, user.id), isNull(universes.deletedAt)))
 		.orderBy(desc(universes.updatedAt));
 	const trashedUniverses = await listTrashedUniverses(db, user.id);
+	const trashedStories = await listTrashedStories(db, user.id);
 
 	// One row per story with everything its card shows: chapter and word
 	// totals, scene status counts for the pill, and when anything in it
@@ -55,7 +58,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		from stories st
 		join universes u on u.id = st.universe_id and u.deleted_at is null
 		left join scenes s on s.story_id = st.id and s.deleted_at is null
-		where st.owner_id = ${user.id}
+		where st.owner_id = ${user.id} and st.deleted_at is null
 		group by st.id
 		order by st.position_in_series asc nulls last, st.created_at asc
 	`);
@@ -102,7 +105,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		universes: list,
 		stories: storyList,
-		trashedUniverses
+		trashedUniverses,
+		trashedStories
 	};
 };
 
@@ -197,5 +201,23 @@ export const actions: Actions = {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
 		return { scope: 'trash', destroyed: true };
+	},
+	restoreStory: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const storyId = String(data.get('storyId') ?? '');
+		if (!isUuid(storyId) || !(await restoreStory(db, locals.user.id, storyId))) {
+			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
+		}
+		return { scope: 'story-trash', restored: true };
+	},
+	destroyStory: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const storyId = String(data.get('storyId') ?? '');
+		if (!isUuid(storyId) || !(await destroyStory(db, locals.user.id, storyId))) {
+			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
+		}
+		return { scope: 'story-trash', destroyed: true };
 	}
 };

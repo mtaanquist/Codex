@@ -80,7 +80,7 @@ auth_tokens (
   id            uuid primary key,
   user_id       uuid references users(id) not null,
   kind          text not null,           -- 'email_verify' | 'password_reset'
-  token_hash    text not null,           -- the raw token is emailed; only its hash is stored
+  token_hash    text not null,           -- only the hash is stored; the row is reserved with a throwaway hash and armed with the emailed token by the worker at send time
   expires_at    timestamptz not null,
   consumed_at   timestamptz,
   created_at    timestamptz not null
@@ -141,6 +141,7 @@ universes (
   owner_id        uuid references users(id) not null,
   name            text not null,
   description_md  text,
+  deleted_at      timestamptz,      -- set while in the trash; null means live
   created_at      timestamptz not null,
   updated_at      timestamptz not null
 )
@@ -158,10 +159,13 @@ stories (
   is_adult            boolean not null default false,   -- author-flagged adult content; readers avoid it by default
   cover_asset_id      uuid references assets(id),       -- null renders a default cover from title and author
   llm_config          jsonb not null default '{}',  -- reserved for future LLM integration; inert in v1
+  deleted_at          timestamptz,      -- set while in the trash; null means live
   created_at          timestamptz not null,
   updated_at          timestamptz not null
 )
 ```
+
+**Universe and story trash.** Deleting a universe or a story only stamps its `deleted_at`. Every listing and by-id lookup treats a trashed row, and everything under it, as gone: the library, search, the Assistant, exports, and review links. A trashed story's published edition also leaves the public page; a trashed universe's editions stay up, frozen, until the purge. The library lists trashed universes and stories (a story only while its universe is live) with Restore and Delete forever. After 30 days the worker purges the row for good with the same hard delete that "Delete forever" runs; purging a universe takes all its stories, trashed or not. A trashed story keeps its slug, so a restore never clashes.
 
 `llm_config` on both `users` and `stories` is **reserved for future LLM integration.** When that feature eventually ships, the per-user column will hold endpoint URL, key, and model-per-role mappings (continuation, co-author, editor, rubber duck); the per-story column will hold overrides merged at request time. In v1 both columns exist but are always `{}`; they live on the tables now so the eventual feature doesn't require migrating live data.
 

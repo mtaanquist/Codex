@@ -19,7 +19,7 @@ jobs:
       TEST_S3_SECRET_ACCESS_KEY: codex-rustfs-secret
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine3.24
         env:
           POSTGRES_USER: codex
           POSTGRES_PASSWORD: codex
@@ -67,7 +67,7 @@ jobs:
       ASSET_S3_SECRET_ACCESS_KEY: codex-rustfs-secret
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine3.24
         env:
           POSTGRES_USER: codex
           POSTGRES_PASSWORD: codex
@@ -116,6 +116,15 @@ jobs:
         run: >-
           docker compose -f compose.yaml exec -T -e ADMIN_PASSWORD=ci-bootstrap-pw
           app node scripts/seed-admin.ts ci-admin@example.com "CI Admin"
+      - name: Worker renders a PDF
+        # The image's Chromium must be found and launch; an Alpine package
+        # change that moves or breaks it fails PDF exports only in production.
+        run: >-
+          docker compose -f compose.yaml exec -T worker node --import ./src/worker/register.js --input-type=module -e
+          "const { renderEditionPdf } = await import('/app/src/lib/server/export-artifacts.ts');
+          const pdf = await renderEditionPdf('<p>smoke</p>');
+          if (new TextDecoder().decode(pdf.slice(0, 5)) !== '%PDF-') process.exit(1);
+          console.log('pdf bytes', pdf.length);"
       - name: Form posts pass the origin check
         # SvelteKit refuses a form POST whose Origin does not match the app's
         # origin, which the image takes from ORIGIN at runtime. A same-origin

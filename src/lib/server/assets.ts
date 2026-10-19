@@ -5,7 +5,7 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sd
 import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth.ts';
 import { assets, exportArtifacts, pendingObjectDeletions, universes, users } from './db/schema.ts';
-import { makeS3Client } from './s3-client.ts';
+import { isMissingObject, sharedS3Client } from './s3-client.ts';
 import { sniffImageType } from './media-types.ts';
 import { encryptSecret, secretsAvailable } from './crypto.ts';
 import {
@@ -58,8 +58,25 @@ const ASSETS_KEY = 'asset-storage';
 const ASSET_PREFIX_DEFAULT = 'codex-assets';
 
 // The effective asset storage: settings saved in the admin panel win, the
-// environment is the fallback for instances configured the old way.
+// environment is the fallback for instances configured the old way. Every
+// image and download asks for it, so it is cached in process for a minute.
+// A save clears this process's copy at once; another process (the worker)
+// picks the change up when its copy expires.
+const CONFIG_CACHE_MS = 60_000;
+let cachedConfig: { value: AssetConfig | null; at: number } | null = null;
+
+export function clearAssetConfigCache(): void {
+	cachedConfig = null;
+}
+
 export async function effectiveAssetConfig(db: Database): Promise<AssetConfig | null> {
+	if (cachedConfig && Date.now() - cachedConfig.at < CONFIG_CACHE_MS) return cachedConfig.value;
+	const value = await readAssetConfig(db);
+	cachedConfig = { value, at: Date.now() };
+	return value;
+}
+
+async function readAssetConfig(db: Database): Promise<AssetConfig | null> {
 	const stored = await effectiveS3(db, ASSETS_KEY);
 	if (stored) {
 		return {
@@ -82,10 +99,11 @@ export async function assetStorageView(db: Database): Promise<S3SettingsView> {
 // is being pointed somewhere else, the old connection is stashed first so a
 // migration can copy the objects over (see the migration functions below).
 export async function saveAssetStorage(db: Database, input: SaveS3Input): Promise<SaveS3Result> {
-	const previous = await effectiveAssetConfig(db);
+	const previous = await readAssetConfig(db);
 	const result = await saveS3Settings(db, ASSETS_KEY, input, ASSET_PREFIX_DEFAULT);
 	if (!result.ok) return result;
-	const next = await effectiveAssetConfig(db);
+	clearAssetConfigCache();
+	const next = await readAssetConfig(db);
 	if (
 		previous &&
 		next &&
@@ -104,12 +122,34 @@ export type AssetObjectStore = {
 	// A multipart upload from a stream of unknown length, for files built on
 	// the fly (exports) that should never be held whole in memory.
 	upload(key: string, body: Readable, contentType: string): Promise<void>;
+	// Throws ObjectNotFoundError when the key is absent.
 	get(key: string): Promise<Readable>;
 	remove(key: string): Promise<void>;
 };
 
+export class ObjectNotFoundError extends Error {
+	constructor(key: string) {
+		super(`object not found: ${key}`);
+		this.name = 'ObjectNotFoundError';
+	}
+}
+
+// The object's stream, or null when the bucket no longer has it, so a route
+// can answer 404 instead of failing with a server error.
+export async function getObjectOrNull(
+	store: AssetObjectStore,
+	key: string
+): Promise<Readable | null> {
+	try {
+		return await store.get(key);
+	} catch (error) {
+		if (error instanceof ObjectNotFoundError) return null;
+		throw error;
+	}
+}
+
 export function s3AssetStore(config: AssetConfig): AssetObjectStore {
-	const client = makeS3Client(config);
+	const client = sharedS3Client(config);
 	return {
 		async put(key, body, contentType) {
 			await client.send(
@@ -135,7 +175,13 @@ export function s3AssetStore(config: AssetConfig): AssetObjectStore {
 			}
 		},
 		async get(key) {
-			const object = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+			let object;
+			try {
+				object = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+			} catch (error) {
+				if (isMissingObject(error)) throw new ObjectNotFoundError(key);
+				throw error;
+			}
 			if (!object.Body) throw new Error(`empty object: ${key}`);
 			return object.Body as Readable;
 		},
@@ -214,7 +260,8 @@ export async function createAsset(
 	return { ok: true, id };
 }
 
-// The asset row plus its content stream, ownership checked.
+// The asset row plus its content stream, ownership checked. Null when the
+// row is not the user's, or its object is missing from the bucket.
 export async function openAsset(
 	db: Database,
 	store: AssetObjectStore,
@@ -226,7 +273,8 @@ export async function openAsset(
 		.from(assets)
 		.where(and(eq(assets.id, assetId), eq(assets.ownerId, userId)));
 	if (!row) return null;
-	return { asset: row, body: await store.get(row.storageKey) };
+	const body = await getObjectOrNull(store, row.storageKey);
+	return body ? { asset: row, body } : null;
 }
 
 // Deletes the row now; the object follows after the grace period.

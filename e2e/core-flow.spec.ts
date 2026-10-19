@@ -720,13 +720,20 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Corvin is not a member yet; he shows only in the open universe list.
 	await expect(page.locator('.ent-row:not(.uni-row)', { hasText: 'Corvin' })).toHaveCount(0);
 
-	// Deleting a story that has chapters, scenes, markers, revisions, and a
-	// published edition succeeds rather than 500ing on the foreign keys, and
-	// lands back on the universe.
+	// Deleting a story moves it to the library's deleted list and lands back
+	// on the universe; restoring it brings it back under its universe.
 	await gotoReady(page, `${proseSceneUrl.split('?')[0]}/settings/danger`);
+	page.once('dialog', (dialog) => dialog.accept());
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
+	await page.getByRole('link', { name: 'Codex, your library' }).click();
+	const deletedStories = page.locator('section', { hasText: 'Deleted stories' });
+	await expect(deletedStories.getByText('Book of Ash')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
+	await deletedStories.getByRole('button', { name: 'Restore' }).click();
+	await expect(deletedStories).toHaveCount(0);
+	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
 });
 
 // A signed-out browser of its own: the shared session would bounce off

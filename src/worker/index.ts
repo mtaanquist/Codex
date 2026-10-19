@@ -19,57 +19,15 @@ import {
 	USER_EXPORT_QUEUE,
 	ASSISTANT_JOB_CONCURRENCY,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE,
-	DIGEST_DELAY_SECONDS
+	ASSISTANT_SUMMARIES_QUEUE
 } from '../lib/server/queues.ts';
 import { createPool } from '../lib/server/db/pool.ts';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
-import {
-	rebuildSceneMentions,
-	rebuildUniverseMentions,
-	reconcileMentions
-} from '../lib/server/mentions.ts';
-import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
-import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
-import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
-import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
-import { logEvent, redactEmail } from '../lib/server/log.ts';
-import {
-	buildReviewerDigest,
-	buildUserDigest,
-	markEmailed,
-	markReviewerNotified
-} from '../lib/server/notification-digest.ts';
-import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
-import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
-import {
-	assetMigrationSource,
-	clearAssetMigrationSource,
-	effectiveAssetConfig,
-	migrateAssetObjects,
-	objectDeletionGraceDays,
-	recordAssetMigrationResult,
-	s3AssetStore,
-	sweepDeletedObjects
-} from '../lib/server/assets.ts';
-import {
-	failureMessage,
-	reviewStoryScenes,
-	reviewStoryContinuity,
-	reviewUniverseContinuity
-} from '../lib/server/llm/scene-review.ts';
-import type { ReviewFailure } from '../lib/server/db/schema.ts';
-import type { ReviewCategory } from '../lib/review-shape.ts';
-import { summariseStory } from '../lib/server/llm/summaries.ts';
-import { purgeReviewRuns } from '../lib/server/review-runs.ts';
-import { thinRevisions } from '../lib/server/revisions.ts';
-import { purgeSessions } from '../lib/server/auth.ts';
-import { insertNotifications } from '../lib/server/notify-core.ts';
-import { shouldNotifyWriter } from './job-guard.ts';
+import { backupConfig, effectiveBackupConfig } from '../lib/server/backups.ts';
+import { createHandlers } from './handlers.ts';
 import { stopWorker } from './shutdown.ts';
 import { resolveOrigin } from '../lib/server/origin-rule.ts';
-import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -88,16 +46,7 @@ const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@loc
 const db = drizzle(createPool(connectionString, { statementTimeoutMs: 300_000 }), { schema });
 const boss = new PgBoss(connectionString);
 
-// Queues each recipient's batched digest email after the shared delay.
-async function queueDigests(userIds: string[]) {
-	for (const id of userIds) {
-		await boss.send(
-			NOTIFICATION_DIGEST_QUEUE,
-			{ userId: id },
-			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: id }
-		);
-	}
-}
+const handlers = createHandlers({ db, boss, origin });
 
 boss.on('error', (error) => {
 	console.error('pg-boss error:', error);
@@ -124,98 +73,6 @@ await boss.createQueue(USER_EXPORT_QUEUE);
 await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
 
-await boss.work<{ sceneId: string }>(MENTIONS_SCENE_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const result = await rebuildSceneMentions(db, job.data.sceneId);
-		if (result.ok) console.log(`mentions: scene ${job.data.sceneId} -> ${result.count}`);
-		else console.warn(`mentions: scene ${job.data.sceneId} skipped (${result.reason})`);
-	}
-});
-
-await boss.work<{ universeId: string }>(MENTIONS_UNIVERSE_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const count = await rebuildUniverseMentions(db, job.data.universeId);
-		console.log(`mentions: universe ${job.data.universeId} -> ${count} scenes reindexed`);
-	}
-});
-
-// Backstop for any rebuild job that was dropped (a failed enqueue, or a worker
-// restart mid-job): re-index scenes whose mention watermark has fallen behind.
-await boss.work(RECONCILE_MENTIONS_QUEUE, async () => {
-	const reindexed = await reconcileMentions(db);
-	if (reindexed > 0) console.log(`mentions: reconcile reindexed ${reindexed} stale scene(s)`);
-});
-
-// Generates the stored export files (markdown zip, EPUB, PDF) for a freshly
-// published edition. Formats fail independently, so a PDF problem still
-// leaves the zip and EPUB downloadable.
-await boss.work<{ publicationId: string }>(EXPORT_ARTIFACTS_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const result = await generateEditionArtifacts(db, job.data.publicationId);
-		if (!result.ok) {
-			console.warn(`exports: edition ${job.data.publicationId} skipped (${result.reason})`);
-			continue;
-		}
-		console.log(`exports: edition ${job.data.publicationId} -> ${result.stored.join(', ')}`);
-		for (const failure of result.failed) {
-			console.error(
-				`exports: edition ${job.data.publicationId} ${failure.format} failed: ${failure.error}`
-			);
-		}
-	}
-});
-
-// Copies every stored asset and export file from the stashed previous
-// storage to the current one, after the admin re-points asset storage and
-// asks for the copy. Failures leave the stash in place for another run.
-await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
-	const source = await assetMigrationSource(db);
-	const target = await effectiveAssetConfig(db);
-	if (!source || !target) {
-		console.warn('asset migration: no stashed source or no storage configured, skipping');
-		return;
-	}
-	const result = await migrateAssetObjects(db, s3AssetStore(source), s3AssetStore(target));
-	await recordAssetMigrationResult(db, { finishedAt: new Date().toISOString(), ...result });
-	if (result.failed === 0) await clearAssetMigrationSource(db);
-	console.log(`asset migration: ${result.copied} copied, ${result.failed} failed`);
-});
-
-// Builds a user-requested export (account, story, or universe archive, or a
-// story EPUB) off the web request path, stores it in the asset bucket, and
-// tells the owner it is ready to download. Old exports are swept after each run.
-await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const config = await effectiveAssetConfig(db);
-		const store = config ? s3AssetStore(config) : null;
-		const result = await runUserExport(db, job.data.exportId, store);
-		if (!result.ok) {
-			console.warn(`export: ${job.data.exportId} failed (${result.reason})`);
-			continue;
-		}
-		if (store) await pruneOwnerExports(db, store, result.ownerId);
-		const digestUsers = await insertNotifications(db, [result.ownerId], 'export_ready', {
-			title: 'Your export is ready to download.',
-			href: `/exports/${job.data.exportId}`
-		});
-		await queueDigests(digestUsers);
-		console.log(`export: ${job.data.exportId} ready`);
-	}
-});
-
-// The first distinct thing that went wrong in a run, for the notification
-// title. The whole list rides on the job status the review modal polls.
-function firstFailure(failures: ReviewFailure[] | undefined): string {
-	return [...new Set((failures ?? []).map((failure) => failure.message))][0] ?? '';
-}
-
-// What a run that stopped early still left behind, for the notification that
-// says it stopped.
-function staged(notes: number): string {
-	if (notes === 0) return '';
-	return `, with ${notes} note${notes === 1 ? '' : 's'} left`;
-}
-
 // Assistant jobs run several at once, but one per writer (the job's group),
 // so one writer's slow or hung endpoint does not hold up anyone else. The
 // metadata carries the start time and retry count shouldNotifyWriter reads.
@@ -225,339 +82,25 @@ const ASSISTANT_WORK_OPTIONS = {
 	includeMetadata: true as const
 };
 
-// Tells the writer how an Assistant run went, unless pg-boss is going to run
-// the job again (see job-guard.ts), so one run is one notice.
-async function notifyWriter(
-	queue: string,
-	job: Parameters<typeof shouldNotifyWriter>[2],
-	userId: string,
-	kind: Parameters<typeof insertNotifications>[2],
-	payload: Parameters<typeof insertNotifications>[3]
-): Promise<void> {
-	if (!(await shouldNotifyWriter(boss, queue, job))) {
-		console.warn(`${queue}: job ${job.id} is being retried, notice left to the retry`);
-		return;
-	}
-	await queueDigests(await insertNotifications(db, [userId], kind, payload));
-}
-
-// Whole-story or single-chapter Assistant review: fan over the scenes in scope,
-// stage the Assistant's notes through the review tools, then tell the owner it
-// is ready (or that the endpoint could not be reached). Matches the inline
-// single-scene endpoint, just unattended and over many scenes.
-await boss.work<
-	{
-		userId: string;
-		storyId?: string;
-		universeId?: string;
-		chapterId?: string;
-		categories?: ReviewCategory[];
-		mode?: 'full' | 'continuity';
-	},
-	unknown,
-	typeof ASSISTANT_WORK_OPTIONS
->(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, async (jobs) => {
-	for (const job of jobs) {
-		const { userId, storyId, universeId, chapterId, categories, mode } = job.data;
-
-		// A universe-wide continuity pass: no single story owns it. The notes land
-		// on each owning story's scene; the writer is pointed at the universe Plan
-		// page to follow them.
-		if (mode === 'continuity' && universeId) {
-			const [universe] = await db
-				.select({
-					ownerId: schema.universes.ownerId,
-					name: schema.universes.name,
-					slug: schema.universes.slug
-				})
-				.from(schema.universes)
-				.where(eq(schema.universes.id, universeId));
-			if (!universe || universe.ownerId !== userId) {
-				console.warn(
-					`assistant continuity: universe ${universeId} not owned by ${userId}, skipping`
-				);
-				continue;
-			}
-			const href = `/universes/${universe.slug}/plan`;
-			let title: string;
-			try {
-				const result = await reviewUniverseContinuity(db, {
-					userId,
-					universeId,
-					jobId: job.id,
-					signal: job.signal
-				});
-				if (!result.ran) {
-					title = `There was nothing to compare for continuity in "${universe.name}".`;
-				} else if (result.notes === 0) {
-					title = `The Assistant found no continuity issues across "${universe.name}".`;
-				} else {
-					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} across "${universe.name}".`;
-				}
-				if (result.capped) {
-					title = `The continuity pass on "${universe.name}" stopped at about $${(result.spentUsd ?? 0).toFixed(2)}${staged(result.notes)}. Raise the cap in settings or run the review again to continue.`;
-				}
-				const problem = firstFailure(result.failures);
-				if (problem) title += ` ${problem}`;
-			} catch (err) {
-				title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
-			}
-			await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', { title, href });
-			console.log(`assistant continuity: universe ${universeId} done`);
-			continue;
-		}
-
-		if (!storyId) {
-			console.warn('assistant review: no story or universe in scope, skipping');
-			continue;
-		}
-		const [story] = await db
-			.select({
-				ownerId: schema.stories.ownerId,
-				title: schema.stories.title,
-				slug: schema.stories.slug
-			})
-			.from(schema.stories)
-			.where(eq(schema.stories.id, storyId));
-		// Re-check ownership at run time: the story may have been deleted since.
-		if (!story || story.ownerId !== userId) {
-			console.warn(`assistant review: story ${storyId} not owned by ${userId}, skipping`);
-			continue;
-		}
-		const href = `/stories/${story.slug}/review`;
-
-		// A standalone story continuity pass: the consistency run alone, with no
-		// per-scene copyedit passes before it.
-		if (mode === 'continuity') {
-			let title: string;
-			try {
-				const result = await reviewStoryContinuity(db, {
-					userId,
-					storyId,
-					jobId: job.id,
-					signal: job.signal
-				});
-				// The capped wording replaces the outcome line, so it is built before
-				// the suffixes rather than over the top of them.
-				if (result.capped) {
-					title = `The continuity pass on "${story.title}" stopped at about $${(result.spentUsd ?? 0).toFixed(2)}${staged(result.notes)}. Raise the cap in settings or run the review again to continue.`;
-				} else if (!result.ran) {
-					title = `"${story.title}" needs at least two scenes for a continuity pass.`;
-				} else if (result.notes === 0) {
-					title = `The Assistant found no continuity issues in "${story.title}".`;
-				} else {
-					title = `The Assistant left ${result.notes} continuity note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
-				}
-				if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
-				const problem = firstFailure(result.failures);
-				if (problem) title += ` ${problem}`;
-			} catch (err) {
-				title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
-			}
-			await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', { title, href });
-			console.log(`assistant continuity: story ${storyId} done`);
-			continue;
-		}
-
-		// Like both continuity branches: an error that escapes the review must
-		// still reach the writer, or the job fails with nothing said.
-		let title: string;
-		let done: string;
-		try {
-			const result = await reviewStoryScenes(db, {
-				userId,
-				storyId,
-				chapterId,
-				categories,
-				jobId: job.id,
-				signal: job.signal
-			});
-			const problem = firstFailure(result.failures);
-			if (result.capped) {
-				title = `The review of "${story.title}" stopped after ${result.reviewed} of ${result.total} scenes at about $${(result.spentUsd ?? 0).toFixed(2)}. Raise the cap in settings or run the review again to continue.`;
-			} else if (result.aborted) {
-				title = `The review of "${story.title}" was stopped before it finished.`;
-			} else if (result.reviewed === 0 && result.failed > 0) {
-				title = `The Assistant could not review "${story.title}": ${problem}`;
-			} else if (result.notes === 0) {
-				title = `The Assistant reviewed "${story.title}" and had no notes to add.`;
-			} else {
-				title = `The Assistant left ${result.notes} note${result.notes === 1 ? '' : 's'} on "${story.title}".`;
-			}
-			if (result.summariesRefreshed) title += ' Summaries were refreshed first.';
-			if (result.failed > 0 && result.reviewed > 0) {
-				title += ` ${result.failed} scene${result.failed === 1 ? '' : 's'} failed: ${problem}`;
-			} else if (result.failed === 0 && problem) {
-				title += ` ${problem}`;
-			}
-			done = `${result.reviewed} reviewed, ${result.failed} failed, ${result.notes} notes`;
-		} catch (err) {
-			title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
-			done = 'failed';
-		}
-		await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', { title, href });
-		console.log(`assistant review: story ${storyId} - ${done}`);
-	}
-});
-
-// Whole-story summary maintenance: draft and refresh scene and chapter
-// summaries (the metadata that feeds recap and context). Owner re-checked at run
-// time; the writer is notified when it is done. Like the review job, the gateway
-// is called directly with no HTTP hop.
-await boss.work<{ userId: string; storyId: string }, unknown, typeof ASSISTANT_WORK_OPTIONS>(
-	ASSISTANT_SUMMARIES_QUEUE,
-	ASSISTANT_WORK_OPTIONS,
-	async (jobs) => {
-		for (const job of jobs) {
-			const { userId, storyId } = job.data;
-			const [story] = await db
-				.select({
-					ownerId: schema.stories.ownerId,
-					title: schema.stories.title,
-					slug: schema.stories.slug
-				})
-				.from(schema.stories)
-				.where(eq(schema.stories.id, storyId));
-			if (!story || story.ownerId !== userId) {
-				console.warn(`assistant summaries: story ${storyId} not owned by ${userId}, skipping`);
-				continue;
-			}
-			const result = await summariseStory(db, { userId, storyId, signal: job.signal });
-			const written = result.scenes + result.chapters;
-			const href = `/stories/${story.slug}`;
-			let title: string;
-			if (written === 0 && result.failed > 0) {
-				title = `The Assistant could not summarise "${story.title}". Check the endpoint in your settings.`;
-			} else if (written === 0) {
-				title = `The Assistant found nothing to summarise in "${story.title}".`;
-			} else {
-				title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
-			}
-			await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
-				title,
-				href
-			});
-			console.log(
-				`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
-			);
-		}
-	}
-);
-
-await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const result = await runBackup(db, job.data.trigger ?? 'scheduled');
-		if (!result.ok) console.error(`backup: failed (${result.reason})`);
-		else if (result.skipped) console.log('backup: skipped, nothing changed');
-		else console.log(`backup: uploaded ${result.key}`);
-	}
-});
-
-await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		await sendEmail(db, job.data);
-		// Structured, with the recipient masked and the subject (which embeds
-		// story titles) omitted, so account PII does not sit in the logs.
-		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
-	}
-});
-
-// Transactional email that exhausted its retries (a prolonged SMTP outage).
-// The send is given up, but it must not vanish: log it loudly so an operator
-// can resend by hand. The recipient flow already said "check your email", so
-// there is no other signal otherwise.
-await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
-	}
-});
-
-// Notification digests: one email per recipient gathering everything that
-// arrived since the last one.
-await boss.work<{ userId: string }>(NOTIFICATION_DIGEST_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const digest = await buildUserDigest(db, job.data.userId, origin);
-		if (!digest) continue;
-		// Mark the rows emailed before sending: a job retry after a crash then
-		// finds nothing to send rather than mailing the digest twice. The cost
-		// is that a hard send failure drops one digest, which the next
-		// notification re-forms; an un-recallable duplicate is the worse outcome.
-		await markEmailed(db, digest.ids);
-		await sendEmail(db, digest.email);
-		console.log(`notify: digest of ${digest.ids.length} sent to user ${job.data.userId}`);
-	}
-});
-
-await boss.work<{ reviewerId: string }>(REVIEWER_DIGEST_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const digest = await buildReviewerDigest(db, job.data.reviewerId, origin);
-		if (!digest) continue;
-		// Advance the watermark before sending, for the same reason as the user
-		// digest above: a retry must not re-send, even at the cost of dropping a
-		// digest on a hard send failure.
-		await markReviewerNotified(db, digest.reviewerId, digest.upTo);
-		await sendEmail(db, digest.email);
-		console.log(`notify: reviewer digest sent for ${job.data.reviewerId}`);
-	}
-});
-
-await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
-	const due = await listAccountsDueForPurge(db);
-	if (due.length === 0) return;
-	const config = await effectiveAssetConfig(db);
-	const store = config ? s3AssetStore(config) : null;
-	for (const userId of due) {
-		try {
-			await purgeAccount(db, userId, store, { requireSchedule: true });
-			console.log(`purge: account ${userId} deleted`);
-		} catch (error) {
-			console.error(`purge: account ${userId} failed`, error);
-		}
-	}
-});
-
-// Trashed universes past their restore window go for good.
-await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
-	for (const universeId of await listUniversesDueForPurge(db)) {
-		try {
-			await purgeUniverse(db, universeId);
-			console.log(`purge: universe ${universeId} deleted`);
-		} catch (error) {
-			console.error(`purge: universe ${universeId} failed`, error);
-		}
-	}
-});
-
-// Bucket objects of deleted rows, once no kept backup can still point at them.
-await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, async () => {
-	const config = await effectiveAssetConfig(db);
-	if (!config) return;
-	const graceDays = objectDeletionGraceDays(await effectiveBackupConfig(db));
-	const result = await sweepDeletedObjects(db, s3AssetStore(config), graceDays);
-	if (result.removed + result.kept + result.failed > 0) {
-		console.log(
-			`asset sweep: ${result.removed} removed, ${result.kept} still in use, ${result.failed} failed`
-		);
-	}
-});
-
-// The recorded progress of a review is disposable: it serves the status
-// endpoint while a run is in flight and a resume shortly after, and nothing is
-// lost when it goes. Old rows are swept so the table does not grow for good.
-await boss.work(PURGE_REVIEW_RUNS_QUEUE, async () => {
-	const deleted = await purgeReviewRuns(db);
-	if (deleted > 0) console.log(`purge: ${deleted} review run row(s) deleted`);
-});
-
-await boss.work(THIN_REVISIONS_QUEUE, async () => {
-	const removed = await thinRevisions(db);
-	if (removed > 0) console.log(`revisions: thinned ${removed} old autosave(s)`);
-});
-
-await boss.work(PURGE_SESSIONS_QUEUE, async () => {
-	const deleted = await purgeSessions(db);
-	if (deleted > 0) console.log(`purge: ${deleted} old session(s) deleted`);
-});
+await boss.work(MENTIONS_SCENE_QUEUE, handlers.mentionsScene);
+await boss.work(MENTIONS_UNIVERSE_QUEUE, handlers.mentionsUniverse);
+await boss.work(RECONCILE_MENTIONS_QUEUE, handlers.reconcileMentions);
+await boss.work(EXPORT_ARTIFACTS_QUEUE, handlers.exportArtifacts);
+await boss.work(MIGRATE_ASSETS_QUEUE, handlers.migrateAssets);
+await boss.work(USER_EXPORT_QUEUE, handlers.userExport);
+await boss.work(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantReview);
+await boss.work(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantSummaries);
+await boss.work(BACKUP_QUEUE, handlers.backup);
+await boss.work(EMAIL_QUEUE, handlers.email);
+await boss.work(EMAIL_DEAD_LETTER_QUEUE, handlers.emailDeadLetter);
+await boss.work(NOTIFICATION_DIGEST_QUEUE, handlers.notificationDigest);
+await boss.work(REVIEWER_DIGEST_QUEUE, handlers.reviewerDigest);
+await boss.work(PURGE_ACCOUNTS_QUEUE, handlers.purgeAccounts);
+await boss.work(PURGE_UNIVERSES_QUEUE, handlers.purgeUniverses);
+await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, handlers.sweepDeletedObjects);
+await boss.work(PURGE_REVIEW_RUNS_QUEUE, handlers.purgeReviewRuns);
+await boss.work(THIN_REVISIONS_QUEUE, handlers.thinRevisions);
+await boss.work(PURGE_SESSIONS_QUEUE, handlers.purgeSessions);
 
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });

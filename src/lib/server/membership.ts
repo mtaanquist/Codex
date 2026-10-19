@@ -10,7 +10,7 @@ import {
 	scenes,
 	stories
 } from './db/schema.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { storyIsLive } from './universe-scope.ts';
 
 export type MemberKind = 'character' | 'place';
 
@@ -25,9 +25,7 @@ async function ownedStoryEntity(
 	const [story] = await db
 		.select({ id: stories.id, universeId: stories.universeId })
 		.from(stories)
-		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
-		);
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	if (!story) return null;
 	const table = kind === 'character' ? characters : places;
 	const [entity] = await db

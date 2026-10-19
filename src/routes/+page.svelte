@@ -443,6 +443,49 @@
 					</section>
 				{/if}
 
+				{#if data.trashedStories.length > 0}
+					<section class="universe-section">
+						<h2 class="universe-mark recent-mark">Deleted stories</h2>
+						{#if form?.scope === 'story-trash' && form.message}
+							<p class="form-error" role="alert">{form.message}</p>
+						{/if}
+						<div class="trash-list">
+							{#each data.trashedStories as item (item.id)}
+								<div class="trash-uni">
+									<span class="trash-uni-name">{item.title}</span>
+									<span class="trash-uni-when">
+										in {item.universeName},
+										{item.daysLeft > 0
+											? `kept for ${item.daysLeft} more ${item.daysLeft === 1 ? 'day' : 'days'}`
+											: 'about to be deleted for good'}
+									</span>
+									<form method="POST" action="?/restoreStory">
+										<input type="hidden" name="storyId" value={item.id} />
+										<button class="btn btn-ghost btn-sm" type="submit">Restore</button>
+									</form>
+									<form
+										method="POST"
+										action="?/destroyStory"
+										onsubmit={(e) => {
+											if (
+												!confirm(
+													`Delete "${item.title}" forever? Its chapters, scenes, and history go and cannot be restored after this.`
+												)
+											)
+												e.preventDefault();
+										}}
+									>
+										<input type="hidden" name="storyId" value={item.id} />
+										<button class="btn btn-ghost btn-sm trash-forever" type="submit">
+											Delete forever
+										</button>
+									</form>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
 				<p class="lib-foot">
 					New here? Read the <a href={resolve('/docs')}>help</a>.
 				</p>

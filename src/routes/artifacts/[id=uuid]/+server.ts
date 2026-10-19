@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { Readable } from 'node:stream';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, getObjectOrNull, s3AssetStore } from '$lib/server/assets';
 import { artifactForDownload } from '$lib/server/export-artifacts';
 
 // Streams a stored export file (markdown zip, EPUB, PDF): to the edition's
@@ -16,7 +16,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	if (!artifact) error(404, 'Not found');
 
 	const store = s3AssetStore(config);
-	const body = await store.get(artifact.storageKey);
+	const body = await getObjectOrNull(store, artifact.storageKey);
+	if (!body) error(404, 'Not found');
 
 	return new Response(Readable.toWeb(body) as ReadableStream, {
 		headers: {

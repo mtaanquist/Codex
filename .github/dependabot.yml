@@ -17,12 +17,24 @@ updates:
         patterns: ['@sveltejs/kit', '@sveltejs/adapter-node', '@sveltejs/vite-plugin-svelte']
         update-types: ['major']
     ignore:
-      # svelte-check 4.7.4 still peers on typescript ^5 || ^6, so a bump to 7
-      # fails npm ci and takes the whole grouped PR down with it. Drop this
-      # entry once svelte-check accepts typescript 7.
+      # svelte-check, SvelteKit 3 and typescript-eslint all still peer on
+      # typescript below 7, so a bump fails npm ci and takes the whole grouped
+      # PR down with it. Drop this entry once all three accept typescript 7.
       - dependency-name: typescript
         versions: ['7.x']
   - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Base images are pinned to exact tags (Dockerfile, compose files) so
+  # builds are reproducible; these bring the bumps. Not covered, so they
+  # follow compose by hand: the CI postgres services, the README compose
+  # example, and the RustFS tag in .github/scripts/start-rustfs.sh.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly

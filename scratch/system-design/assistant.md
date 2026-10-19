@@ -225,7 +225,9 @@ distinguishes deployment posture through admin settings:
 So: an admin setting (`app_settings`) for the egress policy, one of
 
 - `block-private` (default; safe for hosted) - resolve the endpoint host and
-  refuse private, loopback, link-local, and unique-local addresses,
+  refuse private, loopback, link-local, and unique-local addresses
+  (including IPv4 targets embedded in IPv6: mapped, NAT64, 6to4) and other
+  reserved IPv6 ranges (Teredo, documentation, discard),
 - `allowlist` - only hosts on an operator-curated whitelist are reachable
   (the middle ground for a hosted operator who wants to permit a known set),
 - `open` - no restriction (the self-host flip).
@@ -262,7 +264,8 @@ token ceiling, and the streaming endpoint is covered by the existing per-user
 write/rate limiter.
 
 Background review runs, which fan over many scenes unattended, do meter
-themselves. Two account settings sit in `users.llm_config`: `spendWarnUsd`
+themselves, and so does the standalone summaries job (it stops between
+summaries; a rerun skips the ones already fresh). Two account settings sit in `users.llm_config`: `spendWarnUsd`
 (the pre-flight confirm step turns into a warning above it, default 2) and
 `spendCapUsd` (the run stops at the next scene boundary once it has spent
 that much, staging nothing partial; a retry resumes through the existing
@@ -1004,7 +1007,7 @@ calls the gateway, which proxies through the egress guard.
 
 - [to build] New pg-boss queues `assistant-review`, `assistant-enrich`,
   `assistant-summaries` (add names to `queues.ts`, enqueue helpers to `jobs.ts`,
-  handlers in `src/worker/index.ts`). The handlers call the gateway directly
+  handlers in `src/worker/handlers.ts`, registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
   helpers. Completion/failure rides the existing notifications matrix (a new
   kind). None of this is built.

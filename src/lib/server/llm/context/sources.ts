@@ -90,7 +90,14 @@ export async function loadStoryScope(
 		})
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), isNull(universes.deletedAt)));
+		.where(
+			and(
+				eq(stories.id, storyId),
+				eq(stories.ownerId, userId),
+				isNull(stories.deletedAt),
+				isNull(universes.deletedAt)
+			)
+		);
 	return row ?? null;
 }
 
@@ -288,7 +295,11 @@ export async function universeSkeleton(
 		.select({ id: stories.id, title: stories.title, brief: stories.brief })
 		.from(stories)
 		.where(
-			and(eq(stories.universeId, universeId), onlyStoryId ? eq(stories.id, onlyStoryId) : undefined)
+			and(
+				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt),
+				onlyStoryId ? eq(stories.id, onlyStoryId) : undefined
+			)
 		)
 		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 	const out: StorySkeleton[] = [];

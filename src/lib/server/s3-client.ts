@@ -21,8 +21,43 @@ export function makeS3Client(connection: S3Connection) {
 		credentials: {
 			accessKeyId: connection.accessKeyId,
 			secretAccessKey: connection.secretAccessKey
+		},
+		// Without these a hung endpoint holds the caller forever. The socket
+		// timeout is an idle limit, so a large transfer that keeps moving is
+		// never cut off.
+		requestHandler: {
+			connectionTimeout: 5_000,
+			socketTimeout: 30_000
 		}
 	});
+}
+
+// One client (and its keep-alive pool) per connection, so request handlers
+// reuse sockets instead of opening a fresh client for every image. A changed
+// setting yields a new key; the few stale entries are not worth evicting.
+const shared = new Map<string, S3Client>();
+
+export function sharedS3Client(connection: S3Connection): S3Client {
+	const key = JSON.stringify([
+		connection.endpoint ?? '',
+		connection.region,
+		connection.accessKeyId,
+		connection.secretAccessKey
+	]);
+	let client = shared.get(key);
+	if (!client) {
+		client = makeS3Client(connection);
+		shared.set(key, client);
+	}
+	return client;
+}
+
+// True for a GetObject on a key that does not exist. S3-compatible services
+// do not all name the error the same, so the HTTP status is checked too.
+export function isMissingObject(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const { name, $metadata } = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+	return name === 'NoSuchKey' || name === 'NotFound' || $metadata?.httpStatusCode === 404;
 }
 
 // Writes and removes a tiny probe object, proving the endpoint, bucket,
