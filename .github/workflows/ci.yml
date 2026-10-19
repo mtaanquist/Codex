@@ -50,13 +50,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgres://codex:codex@localhost:5432/codex
-      # Asset uploads against a throwaway MinIO; the bitnami image creates
-      # the bucket itself, which plain service containers need.
+      # Asset uploads against a throwaway RustFS, started in a step below.
       ASSET_S3_ENDPOINT: http://localhost:9000
       ASSET_S3_REGION: us-east-1
       ASSET_S3_BUCKET: codex-assets
-      ASSET_S3_ACCESS_KEY_ID: codex-minio
-      ASSET_S3_SECRET_ACCESS_KEY: codex-minio-secret
+      ASSET_S3_ACCESS_KEY_ID: codex-rustfs
+      ASSET_S3_SECRET_ACCESS_KEY: codex-rustfs-secret
     services:
       postgres:
         image: postgres:18-alpine
@@ -77,17 +76,18 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - name: Start MinIO (asset uploads)
+      - name: Start RustFS (asset uploads)
         run: |
-          docker run -d --name minio --network host \
-            -e MINIO_ROOT_USER=codex-minio -e MINIO_ROOT_PASSWORD=codex-minio-secret \
-            minio/minio server /data
+          docker run -d --name rustfs --network host \
+            -e RUSTFS_ACCESS_KEY="$ASSET_S3_ACCESS_KEY_ID" -e RUSTFS_SECRET_KEY="$ASSET_S3_SECRET_ACCESS_KEY" \
+            rustfs/rustfs:1.0.3
           for attempt in $(seq 1 30); do
-            curl -fsS http://localhost:9000/minio/health/live >/dev/null && break
+            curl -fsS http://localhost:9000/health >/dev/null && break
             sleep 1
           done
-          docker run --rm --network host --entrypoint sh minio/mc -c \
-            "mc alias set local http://localhost:9000 codex-minio codex-minio-secret && mc mb -p local/codex-assets"
+          curl -fsS -X PUT --aws-sigv4 aws:amz:us-east-1:s3 \
+            --user "$ASSET_S3_ACCESS_KEY_ID:$ASSET_S3_SECRET_ACCESS_KEY" \
+            "$ASSET_S3_ENDPOINT/$ASSET_S3_BUCKET"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

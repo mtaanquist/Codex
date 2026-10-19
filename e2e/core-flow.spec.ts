@@ -449,7 +449,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Assets: a story cover uploads to the bucket and serves back, and a
 	// dropped image lands in the prose as markdown. Needs a bucket (CI
-	// provides MinIO); without one the segment is skipped, loudly.
+	// provides RustFS); without one the segment is skipped, loudly.
 	const PNG_B64 =
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 	if (process.env.ASSET_S3_BUCKET) {
