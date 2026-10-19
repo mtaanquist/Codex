@@ -17,10 +17,18 @@ export const ROLE_TIER: Record<AssistantRole, ModelTier> = {
 	utility: 'fast'
 };
 
-// `id` is set only where the model id is stable and verified, so it can be
-// offered before discovery and used when a role has no model picked. Elsewhere
-// `text` names the model family, since those catalogues rename ids often.
+// `id` is set only where the model id is verified, so it can be offered before
+// discovery and used when a role has no model picked. Elsewhere `text` says
+// what kind of model to pick.
 export type TierSuggestion = { id?: string; text: string };
+
+// Every other hosted provider gets the kind of model to look for rather than
+// a name: their catalogues change too often to keep ids current here.
+const HOSTED: Record<ModelTier, TierSuggestion> = {
+	fast: { text: 'a small, fast, low-cost model (names often include mini, lite, or flash)' },
+	balanced: { text: 'a mid-sized general model that writes well' },
+	strongest: { text: 'the most capable model you can afford; speed matters less here' }
+};
 
 export const MODEL_GUIDE: Record<ProviderId, Record<ModelTier, TierSuggestion>> = {
 	anthropic: {
@@ -28,26 +36,10 @@ export const MODEL_GUIDE: Record<ProviderId, Record<ModelTier, TierSuggestion>> 
 		balanced: { id: 'claude-sonnet-5-5', text: 'Claude Sonnet 5.5' },
 		strongest: { id: 'claude-opus-5-5', text: 'Claude Opus 5.5' }
 	},
-	openai: {
-		fast: { text: 'the newest Luna or mini model' },
-		balanced: { text: 'the newest Sol model' },
-		strongest: { text: 'the newest Astra model, or Sol if Astra is too slow' }
-	},
-	gemini: {
-		fast: { text: 'the newest Flash-Lite model' },
-		balanced: { text: 'the newest Flash model' },
-		strongest: { text: 'the newest Pro model' }
-	},
-	deepseek: {
-		fast: { text: 'deepseek-flash' },
-		balanced: { text: 'deepseek-flash' },
-		strongest: { text: 'the Pro model if your account lists one, otherwise deepseek-flash' }
-	},
-	openrouter: {
-		fast: { text: 'a small fast model, such as Claude Haiku or Gemini Flash-Lite' },
-		balanced: { text: 'a mid-sized model, such as Claude Sonnet or Gemini Flash' },
-		strongest: { text: 'a top model, such as Claude Opus or Gemini Pro' }
-	},
+	openai: HOSTED,
+	gemini: HOSTED,
+	deepseek: HOSTED,
+	openrouter: HOSTED,
 	custom: {
 		fast: {
 			text: 'a mixture-of-experts instruct model such as Qwen3 30B A3B (search for MoE instruct GGUF)'

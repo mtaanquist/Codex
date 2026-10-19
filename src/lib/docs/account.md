@@ -185,19 +185,15 @@ What that means on each provider, for the fast roles, the in-between roles, and
 the Reviewer in that order:
 
 - **Claude**: Claude Haiku 5.5, Claude Sonnet 5.5, Claude Opus 5.5.
-- **ChatGPT**: the newest Luna or mini model, the newest Sol model, and the
-  newest Astra model (or Sol if Astra is too slow).
-- **Gemini**: the newest Flash-Lite, Flash, and Pro models.
-- **DeepSeek**: deepseek-flash for everything, or the Pro model for the Reviewer
-  if your account lists one.
-- **OpenRouter**: any maker's models in the same tiers, such as Claude Haiku or
-  Gemini Flash-Lite, Claude Sonnet or Gemini Flash, and Claude Opus or Gemini
-  Pro.
+- **ChatGPT, Gemini, DeepSeek, and OpenRouter**: a small, fast, low-cost
+  model for the fast roles (names often include mini, lite, or flash), a
+  mid-sized general model that writes well for the in-between roles, and the
+  most capable model you can afford for the Reviewer.
 - **Your own machine**: Qwen3 30B A3B (a mixture-of-experts model) for the fast
   and in-between roles, and Qwen3 32B (a dense model) for the Reviewer.
 
-Providers rename their models often, so for everything but Claude the list
-names the family; select Discover models and pick the newest one in it.
+Providers other than Claude rename their models often, so select Discover
+models and pick the newest one of the kind described.
 
 Turn thinking off for Continuation and Background work. For the Reviewer, set a
 low temperature so it quotes your text faithfully instead of paraphrasing it;
