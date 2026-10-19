@@ -234,7 +234,7 @@
 		color: var(--text-muted);
 	}
 	.card-todos {
-		color: var(--cat-amber, #b8860b);
+		color: var(--cat-amber);
 		font-weight: 600;
 	}
 	.card-tools {

@@ -5,7 +5,13 @@ import { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { assets, characters, universes, users } from '../../src/lib/server/db/schema';
+import {
+	assets,
+	characters,
+	pendingObjectDeletions,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import {
 	clearEntityBadgeImage,
 	setEntityBadgeColor,
@@ -125,7 +131,8 @@ describe('badge image', () => {
 		expect(row.badgeAssetId).toBe(first.ok && first.id);
 		expect(objects.size).toBe(1);
 
-		// A second upload swaps the reference and deletes the first object.
+		// A second upload swaps the reference and deletes the first asset row,
+		// queueing its object for the deferred sweep.
 		const second = await setEntityBadgeImage(db, store, config, ownerId, characterId, {
 			filename: 'b.png',
 			contentType: 'image/png',
@@ -134,17 +141,20 @@ describe('badge image', () => {
 		expect(second.ok).toBe(true);
 		[row] = await db.select().from(characters).where(eq(characters.id, characterId));
 		expect(row.badgeAssetId).toBe(second.ok && second.id);
-		expect(objects.size).toBe(1);
 		if (first.ok) {
 			const [oldAsset] = await db.select().from(assets).where(eq(assets.id, first.id));
 			expect(oldAsset).toBeUndefined();
 		}
 
-		// Removing clears the reference and deletes the object.
-		expect((await clearEntityBadgeImage(db, store, ownerId, characterId)).ok).toBe(true);
+		// Removing clears the reference and deletes the row; both objects now
+		// wait in the deletion queue.
+		expect((await clearEntityBadgeImage(db, ownerId, characterId)).ok).toBe(true);
 		[row] = await db.select().from(characters).where(eq(characters.id, characterId));
 		expect(row.badgeAssetId).toBeNull();
-		expect(objects.size).toBe(0);
+		const queued = await db.select().from(pendingObjectDeletions);
+		for (const key of objects.keys()) {
+			expect(queued.map((q) => q.storageKey)).toContain(key);
+		}
 		const remaining = await db
 			.select()
 			.from(assets)

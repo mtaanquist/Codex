@@ -155,7 +155,7 @@
 }
 .rv-marker.is-focused {
 	background: var(--auth);
-	color: #fff;
+	color: var(--on-color);
 	border-color: transparent;
 	box-shadow: 0 0 0 4px color-mix(in oklab, var(--auth) 20%, transparent);
 }
@@ -278,7 +278,7 @@
 }
 .rv-av {
 	border-radius: 7px;
-	color: #fff;
+	color: var(--on-color);
 	display: grid;
 	place-items: center;
 	font-weight: 700;

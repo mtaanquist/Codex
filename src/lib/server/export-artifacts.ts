@@ -162,6 +162,9 @@ export async function renderEditionPdf(
 	const { launch } = await import('puppeteer-core');
 	const browser = await launch({
 		executablePath,
+		// Puppeteer gives up after 30s by default, and a cold start on a busy
+		// host (a CI runner mid-suite) has run past that.
+		timeout: 90_000,
 		// Sandboxing is off because the container already isolates the process,
 		// the rendered HTML is built from author prose with raw HTML escaped, and
 		// isolatePage blocks scripts and every network request. The dead proxy
