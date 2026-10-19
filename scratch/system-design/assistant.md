@@ -734,7 +734,9 @@ minutes, which would hand a long run to a second worker while the first is
 still going. A heartbeat (60 seconds) catches a worker that died, so its job
 is retried in minutes rather than after the expiry, and pg-boss's job signal
 is passed into the run so an expired or stopped job also stops calling the
-model. The worker runs up to four Assistant jobs at once but one per writer
+model. A run that pg-boss is going to retry (its signal aborted with retries
+left, or its job moved to a retry or picked up again under a newer start time)
+sends no notification, so the writer hears once, from the run that finishes. The worker runs up to four Assistant jobs at once but one per writer
 (the job's pg-boss group), and every model request has a ten-minute idle
 timeout in the egress layer, so one writer's hung endpoint stalls only that
 writer's queue. Before it reviews
