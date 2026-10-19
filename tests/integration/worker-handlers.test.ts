@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { Readable as ReadableStream } from 'node:stream';
@@ -530,5 +530,55 @@ describe('trash purge', () => {
 
 		expect(await db.select().from(universes)).toEqual([]);
 		expect(await db.select().from(stories)).toEqual([]);
+	});
+});
+
+describe('worker logs', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	// Every line goes through logEvent, so the collector can parse it.
+	function captureLog() {
+		const lines: Record<string, unknown>[] = [];
+		const record = (line: string) => lines.push(JSON.parse(line));
+		vi.spyOn(console, 'log').mockImplementation(record);
+		vi.spyOn(console, 'warn').mockImplementation(record);
+		vi.spyOn(console, 'error').mockImplementation(record);
+		return lines;
+	}
+
+	it('logs a skipped job as a structured event', async () => {
+		const { story } = await seedStory();
+		const other = await makeUser('other@example.com');
+		const { handlers } = harness({ summariseStory: neverCalled });
+		const lines = captureLog();
+
+		await handlers.assistantSummaries([job({ userId: other.id, storyId: story.id })]);
+
+		expect(lines).toEqual([
+			expect.objectContaining({
+				level: 'warn',
+				event: 'assistant.summaries_skipped',
+				storyId: story.id,
+				userId: other.id
+			})
+		]);
+	});
+
+	it('logs a purge as a structured event', async () => {
+		const { story } = await seedStory();
+		await db
+			.update(stories)
+			.set({ deletedAt: new Date(Date.now() - 365 * 86_400_000) })
+			.where(eq(stories.id, story.id));
+		const { handlers } = harness();
+		const lines = captureLog();
+
+		await handlers.purgeUniverses();
+
+		expect(lines).toContainEqual(
+			expect.objectContaining({ level: 'info', event: 'purge.story', storyId: story.id })
+		);
 	});
 });

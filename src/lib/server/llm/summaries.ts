@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
+import { errorFields, logEvent } from '../log.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
@@ -170,7 +171,7 @@ export async function summariseStory(
 			written += 1;
 			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {
-			console.error(`summaries: scene ${scene.id} failed:`, err);
+			logEvent('error', 'summaries.scene_failed', { sceneId: scene.id, ...errorFields(err) });
 			failed += 1;
 		}
 	}
@@ -255,7 +256,7 @@ export async function summariseStory(
 				.where(eq(chapters.id, chapter.id));
 			chaptersWritten += 1;
 		} catch (err) {
-			console.error(`summaries: chapter ${chapter.id} failed:`, err);
+			logEvent('error', 'summaries.chapter_failed', { chapterId: chapter.id, ...errorFields(err) });
 			failed += 1;
 		}
 	}

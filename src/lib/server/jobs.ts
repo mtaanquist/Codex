@@ -43,6 +43,7 @@ import {
 	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
+import { errorFields, logEvent, redactEmail } from './log.ts';
 import type { ReviewRunState } from './db/schema.ts';
 
 let starting: Promise<PgBoss> | null = null;
@@ -50,7 +51,7 @@ let starting: Promise<PgBoss> | null = null;
 function getBoss(): Promise<PgBoss> {
 	starting ??= (async () => {
 		const boss = new PgBoss(env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex');
-		boss.on('error', (error) => console.error('pg-boss error:', error));
+		boss.on('error', (error) => logEvent('error', 'pgboss.error', errorFields(error)));
 		await boss.start();
 		await boss.createQueue(MENTIONS_SCENE_QUEUE);
 		await boss.createQueue(MENTIONS_UNIVERSE_QUEUE);
@@ -81,7 +82,11 @@ export async function queueNotificationDigest(userId: string): Promise<void> {
 			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: userId }
 		);
 	} catch (error) {
-		console.error('queueing notification digest failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: NOTIFICATION_DIGEST_QUEUE,
+			userId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -95,7 +100,11 @@ export async function queueReviewerDigest(reviewerId: string): Promise<void> {
 			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: reviewerId }
 		);
 	} catch (error) {
-		console.error('queueing reviewer digest failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: REVIEWER_DIGEST_QUEUE,
+			reviewerId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -111,7 +120,11 @@ export async function queueSceneMentions(sceneId: string): Promise<void> {
 			{ singletonKey: sceneId, singletonSeconds: 2, singletonNextSlot: true }
 		);
 	} catch (error) {
-		console.error('queueing scene mention rebuild failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: MENTIONS_SCENE_QUEUE,
+			sceneId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -121,7 +134,7 @@ export async function queueUniverseMentions(universeId: string): Promise<void> {
 	try {
 		await markUniverseMentionsChanged(db, universeId);
 	} catch (error) {
-		console.error('flagging universe mention rebuild failed:', error);
+		logEvent('error', 'mentions.flag_failed', { universeId, ...errorFields(error) });
 	}
 	try {
 		const boss = await getBoss();
@@ -131,7 +144,11 @@ export async function queueUniverseMentions(universeId: string): Promise<void> {
 			{ singletonKey: universeId, singletonSeconds: 5, singletonNextSlot: true }
 		);
 	} catch (error) {
-		console.error('queueing universe mention rebuild failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: MENTIONS_UNIVERSE_QUEUE,
+			universeId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -161,7 +178,11 @@ export async function queueEmail(message: EmailJob): Promise<void> {
 			deadLetter: EMAIL_DEAD_LETTER_QUEUE
 		});
 	} catch (error) {
-		console.error('queueing email failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: EMAIL_QUEUE,
+			to: redactEmail(message.to),
+			...errorFields(error)
+		});
 	}
 }
 
@@ -189,7 +210,11 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing export artifacts failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: EXPORT_ARTIFACTS_QUEUE,
+			publicationId,
+			...errorFields(error)
+		});
 		return false;
 	}
 }
@@ -208,7 +233,11 @@ export async function queueUserExport(exportId: string): Promise<boolean> {
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing user export failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: USER_EXPORT_QUEUE,
+			exportId,
+			...errorFields(error)
+		});
 		return false;
 	}
 }
@@ -258,7 +287,11 @@ export async function queueAssistantReview(input: {
 		// writer that, rather than reporting a failure.
 		return jobId ?? 'coalesced';
 	} catch (error) {
-		console.error('queueing assistant review failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_REVIEW_QUEUE,
+			userId: input.userId,
+			...errorFields(error)
+		});
 		return null;
 	}
 }
@@ -278,7 +311,11 @@ export async function queueAssistantSummaries(input: {
 			...assistantSendOptions(input.userId)
 		});
 	} catch (error) {
-		console.error('queueing assistant summaries failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_SUMMARIES_QUEUE,
+			storyId: input.storyId,
+			...errorFields(error)
+		});
 		return null;
 	}
 }
@@ -314,7 +351,7 @@ export async function getAssistantJobState(
 		if (job.state === 'completed') return 'done';
 		return 'running';
 	} catch (error) {
-		console.error('reading assistant job state failed:', error);
+		logEvent('error', 'job.state_failed', { queue, jobId: id, ...errorFields(error) });
 		return 'done';
 	}
 }
@@ -331,7 +368,7 @@ export async function queueAssetMigration(): Promise<boolean> {
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing asset migration failed:', error);
+		logEvent('error', 'job.queue_failed', { queue: MIGRATE_ASSETS_QUEUE, ...errorFields(error) });
 		return false;
 	}
 }
@@ -345,7 +382,7 @@ export async function applyBackupSchedule(cron: string | null): Promise<void> {
 		if (cron) await boss.schedule(BACKUP_QUEUE, cron, { trigger: 'scheduled' }, { tz: 'UTC' });
 		else await boss.unschedule(BACKUP_QUEUE);
 	} catch (error) {
-		console.error('applying the backup schedule failed:', error);
+		logEvent('error', 'backup.schedule_failed', { cron, ...errorFields(error) });
 	}
 }
 
@@ -362,7 +399,7 @@ export async function queueBackup(): Promise<boolean> {
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing backup failed:', error);
+		logEvent('error', 'job.queue_failed', { queue: BACKUP_QUEUE, ...errorFields(error) });
 		return false;
 	}
 }

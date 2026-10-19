@@ -28,6 +28,7 @@ import { backupConfig, effectiveBackupConfig } from '../lib/server/backups.ts';
 import { createHandlers } from './handlers.ts';
 import { stopWorker } from './shutdown.ts';
 import { resolveOrigin } from '../lib/server/origin-rule.ts';
+import { errorFields, logEvent } from '../lib/server/log.ts';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
@@ -49,7 +50,7 @@ const boss = new PgBoss(connectionString);
 const handlers = createHandlers({ db, boss, origin });
 
 boss.on('error', (error) => {
-	console.error('pg-boss error:', error);
+	logEvent('error', 'pgboss.error', errorFields(error));
 });
 
 await boss.start();
@@ -129,29 +130,31 @@ await boss.schedule(RECONCILE_MENTIONS_QUEUE, '*/5 * * * *', {}, { tz: 'UTC' });
 // A failed settings read falls back to the environment instead of crashing
 // the process; the next start reconciles fully.
 const backups = await effectiveBackupConfig(db).catch((error) => {
-	console.warn('backups: could not read saved settings, using the environment:', error);
+	logEvent('warn', 'backup.settings_failed', errorFields(error));
 	return backupConfig();
 });
 if (backups) {
 	await boss.schedule(BACKUP_QUEUE, backups.cron, { trigger: 'scheduled' }, { tz: 'UTC' });
-	console.log(
-		`backups: scheduled (${backups.cron} UTC; keep ${backups.keepRecentHours}h full, ${backups.keepDays}d daily)`
-	);
+	logEvent('info', 'backup.scheduled', {
+		cron: backups.cron,
+		keepRecentHours: backups.keepRecentHours,
+		keepDays: backups.keepDays
+	});
 } else {
 	await boss.unschedule(BACKUP_QUEUE);
 }
 
-console.log('Worker started.');
+logEvent('info', 'worker.started');
 
 // Running jobs get until the stop timeout to finish; then pg-boss fails them
 // into a retry so they are picked up again on the next start.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
-		console.log(`Worker stopping (${signal}).`);
+		logEvent('info', 'worker.stopping', { signal });
 		void stopWorker(boss).then(
 			() => process.exit(0),
 			(error) => {
-				console.error('Worker stop failed:', error);
+				logEvent('error', 'worker.stop_failed', errorFields(error));
 				process.exit(1);
 			}
 		);

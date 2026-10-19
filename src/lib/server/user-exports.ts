@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, lt } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { errorFields, logEvent } from './log.ts';
 import { stories, universes, userExports } from './db/schema.ts';
 import type { AssetObjectStore } from './assets.ts';
 import {
@@ -266,7 +267,7 @@ export async function pruneOwnerExports(
 			try {
 				await store.remove(row.storageKey);
 			} catch (error) {
-				console.error(`pruning export object ${row.storageKey} failed:`, error);
+				logEvent('error', 'export.prune_failed', { key: row.storageKey, ...errorFields(error) });
 			}
 		}
 		await db.delete(userExports).where(eq(userExports.id, row.id));

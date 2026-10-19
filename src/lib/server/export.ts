@@ -1,6 +1,7 @@
 import { slugify } from '../slug.ts';
 import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { logEvent } from './log.ts';
 import {
 	assets,
 	chapters,
@@ -99,7 +100,7 @@ export async function readAssets(
 		read.push({ id: ref.id, contentType: ref.contentType, bytes });
 	}
 	if (skipped > 0) {
-		console.warn(`export: image budget reached; ${skipped} image(s) left out of the PDF`);
+		logEvent('warn', 'export.image_budget', { skipped });
 	}
 	return read;
 }

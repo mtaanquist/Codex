@@ -4,6 +4,7 @@ import { and, asc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth.ts';
+import { errorFields, logEvent } from './log.ts';
 import { assets, exportArtifacts, pendingObjectDeletions, universes, users } from './db/schema.ts';
 import { isMissingObject, sharedS3Client } from './s3-client.ts';
 import { sniffImageType } from './media-types.ts';
@@ -364,7 +365,7 @@ export async function sweepDeletedObjects(
 					removed += 1;
 				} catch (error) {
 					failed += 1;
-					console.error(`asset sweep: removing ${key} failed:`, error);
+					logEvent('error', 'assets.sweep_failed', { key, ...errorFields(error) });
 					continue;
 				}
 			}
@@ -515,7 +516,10 @@ export async function migrateAssetObjects(
 			copied += 1;
 		} catch (error) {
 			failed += 1;
-			console.error(`asset migration: ${object.storageKey} failed:`, error);
+			logEvent('error', 'assets.migration_failed', {
+				key: object.storageKey,
+				...errorFields(error)
+			});
 		}
 	}
 	return { copied, failed };

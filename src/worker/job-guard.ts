@@ -1,4 +1,5 @@
 import type { PgBoss } from 'pg-boss';
+import { errorFields, logEvent } from '../lib/server/log.ts';
 
 type RunningJob = {
 	id: string;
@@ -28,7 +29,7 @@ export async function shouldNotifyWriter(
 		return current.state !== 'retry';
 	} catch (error) {
 		// Unknown: a possible second notice beats saying nothing at all.
-		console.error(`checking assistant job ${job.id} failed:`, error);
+		logEvent('error', 'job.state_failed', { queue, jobId: job.id, ...errorFields(error) });
 		return true;
 	}
 }
