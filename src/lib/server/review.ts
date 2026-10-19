@@ -715,7 +715,10 @@ export type SuggestionView = {
 // Unlike a comment anchor, a suggestion replaces the range wholesale, so the
 // range must still hold exactly the text it was proposed against: an edit
 // inside it (which the mapper tolerates by stretching or shrinking) would be
-// silently overwritten on accept, so it counts as lost.
+// silently overwritten on accept, so it counts as lost. A character diff can
+// also stretch the range over an insertion just outside it ("She walked in."
+// -> "She slowly walked in." maps "walked in" to "wly walked in"), so the
+// original is looked for inside the stretched range before giving up.
 function mapSuggestionRange(
 	mapper: AnchorMapper,
 	baseText: string,
@@ -729,8 +732,11 @@ function mapSuggestionRange(
 	}
 	const range = mapper.range(baseText, currentText, start, end);
 	if (!range) return null;
-	if (currentText.slice(range.start, range.end) !== baseText.slice(start, end)) return null;
-	return range;
+	const original = baseText.slice(start, end);
+	if (currentText.slice(range.start, range.end) === original) return range;
+	const at = currentText.indexOf(original, range.start);
+	if (at === -1 || at + original.length > range.end) return null;
+	return { start: at, end: at + original.length };
 }
 
 // Where a decided suggestion now sits, so the Done view can point at it: the

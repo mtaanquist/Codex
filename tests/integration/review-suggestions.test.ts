@@ -312,6 +312,31 @@ describe('decideSuggestion', () => {
 		expect(await sceneBody()).toBe(edited);
 	});
 
+	// A character diff can stretch the mapped range over an insertion right
+	// next to it; the passage itself is untouched, so it still applies.
+	it.each([
+		['She walked in.', 'She slowly walked in.', 'walked in', 'strode in'],
+		['She walked in.', 'She was walked in.', 'walked in', 'strode in'],
+		['The quick brown fox', 'The quiet quick brown fox', 'quick brown', 'slow']
+	])(
+		'accepts after an insertion beside the passage (%s -> %s)',
+		async (base, edited, target, replacement) => {
+			await db.update(scenes).set({ bodyMd: base }).where(eq(scenes.id, sceneId));
+			const start = base.indexOf(target);
+			const { suggestionId } = (await suggest(
+				{ start, end: start + target.length },
+				replacement
+			)) as { ok: true; suggestionId: string };
+			await db.update(scenes).set({ bodyMd: edited }).where(eq(scenes.id, sceneId));
+
+			const [view] = await listSuggestions(db, storyId);
+			expect(view.anchorLost).toBe(false);
+			expect(edited.slice(view.anchor!.start, view.anchor!.end)).toBe(target);
+			expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({ ok: true });
+			expect(await sceneBody()).toBe(edited.replace(target, replacement));
+		}
+	);
+
 	it('handles pure insertions and pure deletions', async () => {
 		const insertAt = BODY.indexOf('jumps');
 		const insertion = (await suggest({ start: insertAt, end: insertAt }, 'nimbly ')) as {
