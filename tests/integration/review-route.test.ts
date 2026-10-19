@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import type pg from 'pg';
 import {
+	reviewers,
 	reviewSuggestions,
 	scenes,
 	stories,
@@ -74,7 +75,7 @@ afterAll(async () => {
 	await pool.end();
 });
 
-function event(token: string, cookie: string | undefined, form: FormData) {
+function event(token: string, cookie: string | undefined, form: FormData, ip = '127.0.0.1') {
 	const url = new URL(`http://localhost/review/${token}`);
 	return {
 		params: { token },
@@ -82,7 +83,7 @@ function event(token: string, cookie: string | undefined, form: FormData) {
 		request: new Request(url, { method: 'POST', body: form }),
 		locals: { user: null, session: null },
 		cookies: { get: vi.fn(() => cookie), set: vi.fn(), delete: vi.fn(), getAll: vi.fn(() => []) },
-		getClientAddress: () => '127.0.0.1'
+		getClientAddress: () => ip
 	} as unknown as Parameters<NonNullable<typeof page.actions.suggest>>[0];
 }
 
@@ -160,5 +161,35 @@ describe('comment action limit', () => {
 			event(invitation.token, issueReviewerToken(second!.id), commentForm())
 		);
 		expect(other).toEqual({ commented: true });
+	});
+});
+
+describe('join action limit', () => {
+	function joinForm() {
+		const form = new FormData();
+		form.set('displayName', 'Robin');
+		return form;
+	}
+
+	// Each join makes a new reviewer with its own comment budget, so joining
+	// is limited per client address.
+	it('refuses the 11th join from one address, not from another', async () => {
+		const invitation = await createReviewInvitation(db, { storyId, createdBy: authorId });
+		for (let i = 0; i < 10; i++) {
+			const result = await page.actions.join(
+				event(invitation.token, undefined, joinForm(), '198.51.100.7')
+			);
+			expect(result).toEqual({ joined: true });
+		}
+		const refused = await page.actions.join(
+			event(invitation.token, undefined, joinForm(), '198.51.100.7')
+		);
+		expect(refused).toMatchObject({ status: 429 });
+		expect(await db.select().from(reviewers)).toHaveLength(10);
+
+		const other = await page.actions.join(
+			event(invitation.token, undefined, joinForm(), '192.0.2.200')
+		);
+		expect(other).toEqual({ joined: true });
 	});
 });

@@ -32,6 +32,10 @@ import { notifyReviewActivity } from '$lib/server/notify';
 
 const COMMENT_LIMIT = 30;
 const COMMENT_WINDOW_MS = 5 * 60 * 1000;
+// Each join makes a new reviewer with a fresh comment budget, so joins are
+// capped per client address to keep the per-reviewer limit meaningful.
+const JOIN_IP_LIMIT = 10;
+const JOIN_WINDOW_MS = 60 * 60 * 1000;
 
 const cookieOptions = {
 	path: '/',
@@ -107,9 +111,12 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 };
 
 export const actions: Actions = {
-	join: async ({ params, request, cookies }) => {
+	join: async ({ params, request, cookies, getClientAddress }) => {
 		const resolved = await invitationByToken(db, params.token);
 		if (resolved.status !== 'ok') return fail(403, { message: 'This link no longer works.' });
+		if (!rateLimit(`review:join:ip:${getClientAddress()}`, JOIN_IP_LIMIT, JOIN_WINDOW_MS).allowed) {
+			return fail(429, { message: 'Slow down a moment, then try again.' });
+		}
 		const data = await request.formData();
 		const reviewer = await ensureReviewer(db, resolved.invitation.id, {
 			displayName: String(data.get('displayName') ?? ''),
