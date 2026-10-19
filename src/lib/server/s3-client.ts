@@ -15,6 +15,9 @@ export function makeS3Client(connection: S3Connection) {
 		region: connection.region,
 		// B2 and RustFS want path-style addressing.
 		forcePathStyle: Boolean(connection.endpoint),
+		// Some S3-compatible services reject the SDK's default checksums.
+		requestChecksumCalculation: 'WHEN_REQUIRED',
+		responseChecksumValidation: 'WHEN_REQUIRED',
 		credentials: {
 			accessKeyId: connection.accessKeyId,
 			secretAccessKey: connection.secretAccessKey
