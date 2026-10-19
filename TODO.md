@@ -27,10 +27,11 @@ backup_runs table in backups (#574), stale-editor save conflicts (#575),
 atomic backup restore (#576), model endpoint idle timeout and per-writer
 Assistant jobs (#591), dependency security patches (#612), story page live
 refresh on save (#602), the mention matcher cache (#604), route authorization
-tests (#617), the Assistant chat trim on tied timestamps (#642), and the
+tests (#617), the Assistant chat trim on tied timestamps (#642), duplicate
+notifications on Assistant job expiry or a lapsed heartbeat (#638), and the
 SvelteKit 3 groundwork from #613 (a form post smoke test and a Dependabot
-group). Still open: the SvelteKit 3 upgrade itself (#613), duplicate
-notifications on job expiry (#638), and the rest of #577 to #630.
+group). Still open: the SvelteKit 3 upgrade itself (#613) and the rest of #577
+to #630.
 
 Assistant settings, per-role tuning (2026-08-26, author-scoped, branch
 `claude/llm-assistant-work-paths-puxtka`): the five tuning controls added with
