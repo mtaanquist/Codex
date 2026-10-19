@@ -8,6 +8,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import {
 	reviewSuggestions,
 	revisions,
+	sceneMarkers,
 	scenes,
 	stories,
 	universes,
@@ -396,5 +397,28 @@ describe('lifecycle', () => {
 		]).flat();
 		const results = await Promise.allSettled(runs);
 		expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
+	});
+});
+
+describe('accepting a suggestion moves marker anchors', () => {
+	it('keeps a marker on the same words when text is inserted before it', async () => {
+		const phrase = 'lazy dog';
+		const start = BODY.indexOf(phrase);
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId, ownerId: authorId, anchorStart: start, anchorEnd: start + phrase.length })
+			.returning({ id: sceneMarkers.id });
+		const at = BODY.indexOf('brown');
+		const { suggestionId } = (await suggest(
+			{ start: at, end: at + 'brown'.length },
+			'big brown'
+		)) as {
+			ok: true;
+			suggestionId: string;
+		};
+		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({ ok: true });
+		const body = await sceneBody();
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
+		expect(body.slice(row.anchorStart!, row.anchorEnd!)).toBe(phrase);
 	});
 });

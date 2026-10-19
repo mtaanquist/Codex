@@ -16,6 +16,7 @@ import {
 import { hashToken } from './tokens.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import { recordRevision } from './revisions.ts';
+import { remapMarkerAnchors } from './markers.ts';
 import { createAnchorMapper, type AnchorMapper } from '../review-anchor.ts';
 import { wordCount } from '../word-count.ts';
 import { normaliseAssistantName } from './llm/prompts/persona.ts';
@@ -940,6 +941,7 @@ export async function decideSuggestion(
 				.update(scenes)
 				.set({ bodyMd: newBody, wordCount: wordCount(newBody) })
 				.where(eq(scenes.id, row.scene.id));
+			await remapMarkerAnchors(tx, row.scene.id, scene.bodyMd, newBody);
 			// Record the revision in the same transaction so the body change and
 			// its snapshot commit together; a failure here rolls the accept back
 			// rather than leaving an unsnapshotted edit.

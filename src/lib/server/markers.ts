@@ -1,8 +1,9 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sceneMarkers, scenes } from './db/schema';
 import { ownedScene } from './scene-access.ts';
 import { findTodoLines } from '$lib/todo-markers';
+import { createAnchorMapper } from '../review-anchor.ts';
 
 // A selection turned into a checkable marker. Anchors are clamped to the
 // scene body so a stale client cannot write ranges past the end.
@@ -95,6 +96,45 @@ export async function updateMarkerAnchors(
 		) as v
 		where scene_markers.id = v.id and scene_markers.scene_id = ${sceneId}
 	`);
+}
+
+// For a body rewrite that does not come from the Write editor (a review
+// save, an accepted suggestion, a restore): map every anchored marker
+// through the old-to-new diff, so it keeps pointing at the same words. A
+// marker whose own text is gone loses its anchor rather than pointing at
+// whatever now sits at its old offsets. Run inside the transaction that
+// writes the body.
+export async function remapMarkerAnchors(
+	db: Database,
+	sceneId: string,
+	oldBody: string,
+	newBody: string
+): Promise<void> {
+	if (oldBody === newBody) return;
+	const markers = await db
+		.select({
+			id: sceneMarkers.id,
+			anchorStart: sceneMarkers.anchorStart,
+			anchorEnd: sceneMarkers.anchorEnd
+		})
+		.from(sceneMarkers)
+		.where(eq(sceneMarkers.sceneId, sceneId));
+	const mapper = createAnchorMapper();
+	const moved: { id: string; anchorStart: number; anchorEnd: number }[] = [];
+	const lost: string[] = [];
+	for (const marker of markers) {
+		if (marker.anchorStart === null || marker.anchorEnd === null) continue;
+		const range = mapper.range(oldBody, newBody, marker.anchorStart, marker.anchorEnd);
+		if (range) moved.push({ id: marker.id, anchorStart: range.start, anchorEnd: range.end });
+		else lost.push(marker.id);
+	}
+	await updateMarkerAnchors(db, sceneId, moved, newBody.length);
+	if (lost.length > 0) {
+		await db
+			.update(sceneMarkers)
+			.set({ anchorStart: null, anchorEnd: null })
+			.where(and(eq(sceneMarkers.sceneId, sceneId), inArray(sceneMarkers.id, lost)));
+	}
 }
 
 // Unresolved markers across a story, for the continuous view's stitched
