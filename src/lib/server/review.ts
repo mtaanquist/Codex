@@ -235,7 +235,13 @@ async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string)
 	if (latest && latest.bodyMd === bodyMd) return latest.id;
 	const [created] = await db
 		.insert(revisions)
-		.values({ entityType: 'scene', entityId: sceneId, bodyMd, reason: 'autosave' })
+		.values({
+			entityType: 'scene',
+			entityId: sceneId,
+			bodyMd,
+			wordCount: wordCount(bodyMd),
+			reason: 'autosave'
+		})
 		.returning({ id: revisions.id });
 	return created.id;
 }

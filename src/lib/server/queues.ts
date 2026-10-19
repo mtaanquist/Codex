@@ -26,6 +26,9 @@ export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
 // Sweeps the recorded progress of long-finished Assistant runs (see
 // review-runs.ts); the rows are disposable, so nothing is lost with them.
 export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
+// Thins old autosave history to the first and last revision per entity per
+// UTC day (see thinRevisions in revisions.ts).
+export const THIN_REVISIONS_QUEUE = 'thin-revisions';
 
 // pg-boss expires an active job after 15 minutes by default and hands it to a
 // worker again, so a long Assistant run would be started a second time while
