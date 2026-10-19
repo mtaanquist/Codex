@@ -25,7 +25,7 @@ import {
 } from './settings.ts';
 
 // Off-site database backups to any S3-compatible bucket (S3, Backblaze B2,
-// MinIO, R2). Off until the bucket and keys are set, in the admin panel or
+// RustFS, R2). Off until the bucket and keys are set, in the admin panel or
 // through the BACKUP_S3_* environment variables; settings saved in the panel
 // win, the environment is the seed. The worker runs the scheduled and
 // ad-hoc jobs; backup_runs holds the evidence either way.
