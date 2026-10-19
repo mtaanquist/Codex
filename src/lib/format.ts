@@ -15,6 +15,15 @@ export function formatDate(date: Date | string): string {
 	});
 }
 
+/** "11 June 2026": publication dates on the public shelf and book pages. */
+export function formatLongDate(date: Date | string): string {
+	return new Date(date).toLocaleDateString('en-GB', {
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric'
+	});
+}
+
 /** "just now", "5m", "3h", "2d", then the date: compact recency badges. */
 export function relativeShort(date: Date | string): string {
 	const then = new Date(date);

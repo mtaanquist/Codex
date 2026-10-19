@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatNumber } from '$lib/format';
 	import {
 		EFFORT_LEVELS,
 		MAX_REPLY_TOKENS,
@@ -220,7 +221,7 @@
 						checked={maxTokens === null}
 						onchange={(event) => (maxTokens = event.currentTarget.checked ? null : codexMaxTokens)}
 					/>
-					Use the Codex default ({codexMaxTokens.toLocaleString()} tokens)
+					Use the Codex default ({formatNumber(codexMaxTokens)} tokens)
 				</label>
 				<div class="slider-row" class:muted={maxTokens === null}>
 					<input
@@ -250,7 +251,7 @@
 					The most this role may write in one go, counted in tokens. Raise it if replies get cut off
 					mid-sentence, lower it to keep them brief.
 					{#if contextWindow}
-						The slider stops at this model's context window, {contextWindow.toLocaleString()} tokens.
+						The slider stops at this model's context window, {formatNumber(contextWindow)} tokens.
 					{/if}
 				</p>
 			</div>

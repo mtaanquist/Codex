@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import { startBackgroundReview } from '$lib/assistant-actions';
@@ -123,9 +124,9 @@
 			{#each data.reviewInvitations as invitation (invitation.id)}
 				<li>
 					<span>
-						{invitation.email ?? 'Review link'} - {inviteStatus(invitation)}, created {new Date(
+						{invitation.email ?? 'Review link'} - {inviteStatus(invitation)}, created {formatDate(
 							invitation.createdAt
-						).toLocaleDateString()}{invitation.guests.length > 0
+						)}{invitation.guests.length > 0
 							? ` - joined: ${invitation.guests.map((guest) => guest.displayName).join(', ')}`
 							: ''}
 					</span>
