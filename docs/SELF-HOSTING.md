@@ -12,7 +12,7 @@ Codex is one Docker image run as three long-lived parts plus your database:
   publishing exports, scheduled backups, and the account and universe purges.
   Nothing in the app sends email or takes a backup directly; the worker does.
 - **db**: PostgreSQL 18. Holds everything.
-- Optional: **caddy** for TLS, and **minio** as a local S3 bucket for testing.
+- Optional: **caddy** for TLS, and **rustfs** as a local S3 bucket for testing.
 
 Run both the app and the worker. Without the worker, mentions never index (the
 Reference panel stays empty), no email is sent, and no backups are taken.
@@ -139,21 +139,21 @@ details can also be set in the admin panel's Backups section.
 
 ### Optional bundled services
 
-| Variable              | Default              | Notes                                                                                  |
-| --------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| `COMPOSE_PROFILES`    | empty                | `caddy` runs the bundled TLS proxy; `minio` runs a local bucket. Combine with a comma. |
-| `SITE_ADDRESS`        | `:80`                | Caddy: a bare domain obtains TLS; `:80` serves plain HTTP.                             |
-| `HTTP_PORT`           | `80`                 | Caddy HTTP port.                                                                       |
-| `HTTPS_PORT`          | `443`                | Caddy HTTPS port.                                                                      |
-| `MINIO_ROOT_USER`     | `codex-minio`        | Credentials for the bundled MinIO; it creates the two buckets on first start.          |
-| `MINIO_ROOT_PASSWORD` | `codex-minio-secret` |                                                                                        |
+| Variable            | Default               | Notes                                                                                   |
+| ------------------- | --------------------- | --------------------------------------------------------------------------------------- |
+| `COMPOSE_PROFILES`  | empty                 | `caddy` runs the bundled TLS proxy; `rustfs` runs a local bucket. Combine with a comma. |
+| `SITE_ADDRESS`      | `:80`                 | Caddy: a bare domain obtains TLS; `:80` serves plain HTTP.                              |
+| `HTTP_PORT`         | `80`                  | Caddy HTTP port.                                                                        |
+| `HTTPS_PORT`        | `443`                 | Caddy HTTPS port.                                                                       |
+| `RUSTFS_ACCESS_KEY` | `codex-rustfs`        | Credentials for the bundled RustFS; it creates the two buckets on first start.          |
+| `RUSTFS_SECRET_KEY` | `codex-rustfs-secret` |                                                                                         |
 
 > **Keep assets and backups in separate buckets.** A restore writes the whole
 > database back, including the rows that point at uploaded images. If the
 > backup and asset buckets were the same, a restore could overwrite or prune
 > your images. Use distinct buckets (or at least distinct prefixes on
-> different lifecycle rules), and never point both at the same bundled MinIO in
-> production. The bundled MinIO keeps data on the same host, so it is for
+> different lifecycle rules), and never point both at the same bundled RustFS in
+> production. The bundled RustFS keeps data on the same host, so it is for
 > testing, not disaster recovery; use an external provider (S3, B2, R2) for a
 > real deployment.
 
@@ -292,6 +292,13 @@ migrations apply when the app container starts. Migrations are forward-only, so
 take a backup before updating if you are not running the scheduled ones; with
 `BACKUP_S3_*` set the worker already keeps hourly dumps, and
 `node scripts/restore-backup.ts latest` brings the newest one back.
+
+If you used the bundled `minio` profile: it is now `rustfs`, with
+`RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` in place of `MINIO_ROOT_USER` and
+`MINIO_ROOT_PASSWORD`, and the `ASSET_S3_*` and `BACKUP_S3_*` endpoints change
+to `http://rustfs:9000`. RustFS starts with empty buckets in a new volume, so
+copy your objects across before switching (for example with `rclone sync` from
+the old bucket to the new one), or uploaded images will not load.
 
 ## Scaling and replicas
 

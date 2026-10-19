@@ -114,8 +114,8 @@ sign-ins can lock the whole instance out at once.
 
 The repository's own `compose.yaml` is the same stack built from source
 instead of pulled, with every optional service wired up: bundled Caddy for
-TLS (`COMPOSE_PROFILES=caddy`), a local MinIO for image uploads
-(`COMPOSE_PROFILES=minio`), and off-site backups. `.env.example` documents
+TLS (`COMPOSE_PROFILES=caddy`), a local RustFS for image uploads
+(`COMPOSE_PROFILES=rustfs`), and off-site backups. `.env.example` documents
 every variable: SMTP for outgoing email, `ASSET_S3_*` for image uploads,
 `BACKUP_S3_*` for hourly database dumps to any S3-compatible bucket.
 
@@ -152,12 +152,12 @@ You need Node 24 and Docker.
 ```
 npm install
 cp .env.example .env          # defaults match the dev services below
-docker compose -f compose.dev.yaml up -d   # Postgres and MinIO
+docker compose -f compose.dev.yaml up -d   # Postgres and RustFS
 npm run dev                   # the app, on http://localhost:5173
 npm run worker                # in a second terminal
 ```
 
-MinIO is the asset storage exports and image uploads need. Both stay hidden in
+RustFS is the asset storage exports and image uploads need. Both stay hidden in
 the app until asset storage is configured, and the end-to-end suite covers
 them, so leave it running.
 
