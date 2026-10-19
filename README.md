@@ -140,8 +140,8 @@ panel instead.
 ### Update
 
 Change the image tag (or pull `latest`), then `docker compose up -d`.
-Pending migrations apply when the app container starts. Migrations are
-forward-only, so take a backup before updating if you are not running the
+Pending migrations apply when the app or worker container starts. Migrations
+are forward-only, so take a backup before updating if you are not running the
 scheduled ones; with `BACKUP_S3_*` configured the worker keeps hourly dumps,
 and `node scripts/restore-backup.ts latest` restores the newest.
 
