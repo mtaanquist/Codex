@@ -117,10 +117,10 @@ describe('isolatePage', () => {
 	});
 });
 
-// Drives the real browser where one is installed (the worker image, or a
-// dev machine with CHROMIUM_PATH set); CI's unit job has none.
+// Drives the real browser where one is found (CHROMIUM_PATH or a system
+// install); skipped on a machine without one.
 describe.skipIf(!chromiumPath())('renderEditionPdf', () => {
-	it('never fetches an external image an author put in the prose', async () => {
+	it('never fetches an external image or prefetch link', async () => {
 		const hits: string[] = [];
 		const server = createServer((req, res) => {
 			hits.push(req.url ?? '');
@@ -144,7 +144,13 @@ describe.skipIf(!chromiumPath())('renderEditionPdf', () => {
 				new Map()
 			);
 			expect(html).toContain(`http://127.0.0.1:${port}/metadata`);
-			const pdf = await renderEditionPdf(html);
+			// Raw HTML is escaped in prose, so the prefetch is planted directly: it
+			// bypasses request interception and only the dead proxy stops it.
+			const probe = html.replace(
+				'</head>',
+				`<link rel="prefetch" href="http://127.0.0.1:${port}/prefetch"/></head>`
+			);
+			const pdf = await renderEditionPdf(probe);
 			expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe('%PDF-');
 			expect(hits).toEqual([]);
 		} finally {

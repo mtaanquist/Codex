@@ -160,8 +160,17 @@ export async function renderEditionPdf(
 		executablePath,
 		// Sandboxing is off because the container already isolates the process,
 		// the rendered HTML is built from author prose with raw HTML escaped, and
-		// isolatePage blocks scripts and every network request.
-		args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+		// isolatePage blocks scripts and every network request. The dead proxy
+		// (loopback included) backs that up for fetches interception does not
+		// see, such as <link rel=prefetch>.
+		args: [
+			'--no-sandbox',
+			'--disable-setuid-sandbox',
+			'--disable-dev-shm-usage',
+			'--disable-gpu',
+			'--proxy-server=127.0.0.1:9',
+			'--proxy-bypass-list=<-loopback>'
+		]
 	});
 	try {
 		const page = await browser.newPage();
