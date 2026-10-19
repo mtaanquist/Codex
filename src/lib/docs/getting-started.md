@@ -20,7 +20,7 @@ Each of those has its own help article. Select the "?" at the top right of any p
 
 ## Deleting things
 
-Right-click a scene in a story's sidebar to delete it; it sits in the story's "Deleted scenes" list until you restore it or delete it forever. Notes attached to a scene you delete forever stay in the story's notes. Deleting a universe (from its settings) keeps it in a "Deleted universes" list on the library for 30 days, restorable with one click; after that it is gone for good, along with everything in it. While a universe is deleted, review links to its stories stop working; restoring it brings them back. Stories delete immediately and permanently from their settings, so export first if in doubt.
+Right-click a scene in a story's sidebar to delete it; it sits in the story's "Deleted scenes" list until you restore it or delete it forever. Notes attached to a scene you delete forever stay in the story's notes. Deleting a universe (from its settings) keeps it in a "Deleted universes" list on the library for 30 days, restorable with one click; after that it is gone for good, along with everything in it. While a universe is deleted, review links to its stories stop working; restoring it brings them back. Deleting a story (from the Danger zone in its settings) works the same way: it goes to a "Deleted stories" list on the library for 30 days, where "Restore" brings it back whole and "Delete forever" removes it at once. While a story is deleted, it is hidden from your library, search, and the Assistant, its published edition is off your public page, and its review links stop working; restoring it brings them all back.
 
 ## Moving work in and out
 

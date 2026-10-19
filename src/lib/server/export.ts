@@ -578,7 +578,7 @@ async function gatherUniverseDocs(
 		const storyList = await db
 			.select()
 			.from(stories)
-			.where(eq(stories.universeId, universe.id))
+			.where(and(eq(stories.universeId, universe.id), isNull(stories.deletedAt)))
 			.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 		const storyFolder = uniqueNamer();
 		for (const story of storyList) {

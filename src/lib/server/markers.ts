@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { sceneMarkers, scenes, stories } from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
-import { inLiveUniverse } from './universe-scope.ts';
+import { storyIsLive } from './universe-scope.ts';
 import { findTodoLines } from '$lib/todo-markers';
 import { createAnchorMapper } from '../review-anchor.ts';
 
@@ -44,7 +44,7 @@ function inLiveScene(db: Database) {
 			.select({ id: scenes.id })
 			.from(scenes)
 			.innerJoin(stories, eq(scenes.storyId, stories.id))
-			.where(inLiveUniverse(stories.universeId))
+			.where(storyIsLive())
 	);
 }
 

@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import { scenes, stories } from '../../db/schema.ts';
-import { inLiveUniverse, ownedUniverseRow } from '../../universe-scope.ts';
+import { ownedUniverseRow, storyIsLive } from '../../universe-scope.ts';
 import { entityAppearances, getEntityCard } from '../../plan-data.ts';
 import { searchAll } from '../../search.ts';
 import {
@@ -102,9 +102,7 @@ export async function ownedStoryUniverse(
 	const [row] = await db
 		.select({ universeId: stories.universeId })
 		.from(stories)
-		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
-		);
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	return row?.universeId ?? null;
 }
 
@@ -210,6 +208,7 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 				eq(scenes.id, sceneId),
 				eq(stories.universeId, ctx.universeId),
 				eq(stories.ownerId, ctx.userId),
+				isNull(stories.deletedAt),
 				isNull(scenes.deletedAt),
 				ctx.scope?.storyOnly && ctx.storyId ? eq(scenes.storyId, ctx.storyId) : undefined
 			)

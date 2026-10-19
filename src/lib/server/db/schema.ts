@@ -207,6 +207,9 @@ export const stories = pgTable(
 		// null means none. Progress shows on Insights.
 		targetWords: integer('target_words'),
 		deadline: date('deadline'),
+		// Set when the story is moved to the trash; the worker purges it once
+		// the restore window passes. The slug stays reserved meanwhile.
+		deletedAt: timestamp('deleted_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
