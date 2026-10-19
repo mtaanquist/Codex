@@ -153,7 +153,9 @@ export type StoryTodo = {
 // which bodies are worth sending: only scenes whose text contains "TODO:"
 // or that hold an unresolved marker with no note (its snippet is sliced
 // from the body here, since anchors are UTF-16 offsets and Postgres counts
-// code points). Every other scene comes back without its body.
+// code points). Every other scene comes back without its body. The
+// subquery names its columns by hand: Drizzle leaves columns in a select
+// field unqualified, so the correlation would bind to scene_markers.id.
 export async function listStoryTodos(db: Database, storyId: string): Promise<StoryTodo[]> {
 	const sceneRows = await db
 		.select({
@@ -162,10 +164,10 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 			bodyMd: sql<string | null>`case
 				when strpos(${scenes.bodyMd}, 'TODO:') > 0
 					or exists (
-						select 1 from ${sceneMarkers}
-						where ${sceneMarkers.sceneId} = ${scenes.id}
-							and ${sceneMarkers.resolvedAt} is null
-							and coalesce(${sceneMarkers.bodyMd}, '') = ''
+						select 1 from scene_markers m
+						where m.scene_id = "scenes"."id"
+							and m.resolved_at is null
+							and coalesce(m.body_md, '') = ''
 					)
 				then ${scenes.bodyMd}
 			end`

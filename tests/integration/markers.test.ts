@@ -93,8 +93,10 @@ describe('listStoryTodos', () => {
 	});
 
 	it('slices un-noted snippets and skips scenes with nothing to do', async () => {
-		// Astral characters ahead of the anchor: UTF-16 offsets must still land.
-		const body = 'A \u{1F409} dragon wakes.\nShe said TODO: not a marker';
+		// No "TODO:" in this body, so only the un-noted marker can make it
+		// come back. Astral characters ahead of the anchor: UTF-16 offsets
+		// must still land.
+		const body = 'A \u{1F409} dragon wakes.';
 		const [quiet] = await db
 			.insert(scenes)
 			.values({ storyId, globalPosition: 10, title: 'Quiet', bodyMd: 'Nothing left here.' })
@@ -102,6 +104,15 @@ describe('listStoryTodos', () => {
 		const [marked] = await db
 			.insert(scenes)
 			.values({ storyId, globalPosition: 11, title: 'Dragon', bodyMd: body })
+			.returning();
+		const [midLine] = await db
+			.insert(scenes)
+			.values({
+				storyId,
+				globalPosition: 12,
+				title: 'Aside',
+				bodyMd: 'She said TODO: not a marker'
+			})
 			.returning();
 		const start = body.indexOf('dragon');
 		const plain = await createMarker(db, ownerId, marked.id, start, start + 6);
@@ -115,11 +126,13 @@ describe('listStoryTodos', () => {
 		expect(todos.filter((todo) => todo.sceneId === quiet.id)).toEqual([
 			{ sceneId: quiet.id, sceneTitle: 'Quiet', markerId: noted.id, text: 'tighten' }
 		]);
+		expect(todos.filter((todo) => todo.sceneId === midLine.id)).toEqual([]);
 
 		await deleteMarker(db, ownerId, plain.id);
 		await deleteMarker(db, ownerId, noted.id);
 		await db.delete(scenes).where(eq(scenes.id, quiet.id));
 		await db.delete(scenes).where(eq(scenes.id, marked.id));
+		await db.delete(scenes).where(eq(scenes.id, midLine.id));
 	});
 });
 
