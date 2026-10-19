@@ -229,6 +229,9 @@ async function patchAssistant(
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
+	// The model picks name the old provider's models, so a provider switch
+	// starts the roles over rather than carrying ids the new one does not have.
+	const providerChanged = patch.provider !== undefined && patch.provider !== current.provider;
 	return saveAccountLlmConfig(db, userId, {
 		enabled: patch.enabled ?? current.enabled,
 		assistantName: patch.assistantName ?? current.assistantName,
@@ -236,7 +239,7 @@ async function patchAssistant(
 		provider: patch.provider ?? current.provider,
 		endpoint: patch.endpoint ?? current.endpoint,
 		apiKey: patch.apiKey ?? '',
-		models: patch.models ?? current.models,
+		models: patch.models ?? (providerChanged ? {} : current.models),
 		tuning: patch.tuning ?? current.tuning,
 		extraParams: patch.extraParams,
 		webSearch: patch.webSearch,
@@ -248,6 +251,56 @@ async function patchAssistant(
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
 	});
+}
+
+// Save the Endpoint form. Test connection submits the same form and saves it
+// first, so the test runs against what is on screen: a key typed just before
+// clicking Test would otherwise race the autosave its blur fires.
+async function saveEndpointForm(userId: string, data: FormData) {
+	const profile = String(data.get('toolProfile') ?? '');
+	// An empty box clears the figure (null), rather than being left out, so the
+	// writer can remove a cap they set earlier. Anything that is not a
+	// non-negative number is refused instead of silently clearing it.
+	const usdField = (name: string): number | null | 'invalid' => {
+		const raw = String(data.get(name) ?? '').trim();
+		if (!raw) return null;
+		const value = Number(raw);
+		if (!Number.isFinite(value) || value < 0) return 'invalid';
+		return value > 0 ? value : null;
+	};
+	const spendCapUsd = usdField('spendCapUsd');
+	const spendWarnUsd = usdField('spendWarnUsd');
+	if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
+		return fail(400, {
+			scope: 'assistant-endpoint',
+			message: 'Enter an amount in dollars, or leave it blank.'
+		});
+	}
+	// The box is only rendered for an OpenAI-compatible endpoint; a save that
+	// did not carry it leaves the stored object alone.
+	const extraParams = data.has('extraParams')
+		? paramsField(String(data.get('extraParams')))
+		: undefined;
+	if (extraParams === 'invalid') {
+		return fail(400, { scope: 'assistant-endpoint', message: PARAMS_MESSAGE });
+	}
+	// An unchecked box sends nothing at all, so the hidden marker is what
+	// separates "turned off" from "this form never showed the box".
+	const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
+	const result = await patchAssistant(userId, {
+		provider: normaliseProviderId(data.get('provider')),
+		endpoint: String(data.get('endpoint') ?? ''),
+		apiKey: String(data.get('apiKey') ?? ''),
+		extraParams,
+		webSearch,
+		spendCapUsd,
+		spendWarnUsd,
+		toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
+			? (profile as ToolProfile)
+			: undefined
+	});
+	if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
+	return null;
 }
 
 export const actions: Actions = {
@@ -416,50 +469,8 @@ export const actions: Actions = {
 		return { scope: 'assistant-identity', saved: true };
 	},
 	saveAssistantEndpoint: async ({ request, locals }) => {
-		const data = await request.formData();
-		const profile = String(data.get('toolProfile') ?? '');
-		// An empty box clears the figure (null), rather than being left out, so the
-		// writer can remove a cap they set earlier. Anything that is not a
-		// non-negative number is refused instead of silently clearing it.
-		const usdField = (name: string): number | null | 'invalid' => {
-			const raw = String(data.get(name) ?? '').trim();
-			if (!raw) return null;
-			const value = Number(raw);
-			if (!Number.isFinite(value) || value < 0) return 'invalid';
-			return value > 0 ? value : null;
-		};
-		const spendCapUsd = usdField('spendCapUsd');
-		const spendWarnUsd = usdField('spendWarnUsd');
-		if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
-			return fail(400, {
-				scope: 'assistant-endpoint',
-				message: 'Enter an amount in dollars, or leave it blank.'
-			});
-		}
-		// The box is only rendered for an OpenAI-compatible endpoint; a save that
-		// did not carry it leaves the stored object alone.
-		const extraParams = data.has('extraParams')
-			? paramsField(String(data.get('extraParams')))
-			: undefined;
-		if (extraParams === 'invalid') {
-			return fail(400, { scope: 'assistant-endpoint', message: PARAMS_MESSAGE });
-		}
-		// An unchecked box sends nothing at all, so the hidden marker is what
-		// separates "turned off" from "this form never showed the box".
-		const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
-		const result = await patchAssistant(locals.user!.id, {
-			provider: normaliseProviderId(data.get('provider')),
-			endpoint: String(data.get('endpoint') ?? ''),
-			apiKey: String(data.get('apiKey') ?? ''),
-			extraParams,
-			webSearch,
-			spendCapUsd,
-			spendWarnUsd,
-			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
-				? (profile as ToolProfile)
-				: undefined
-		});
-		if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
+		const failed = await saveEndpointForm(locals.user!.id, await request.formData());
+		if (failed) return failed;
 		return { scope: 'assistant-endpoint', saved: true };
 	},
 	saveAssistantModels: async ({ request, locals }) => {
@@ -545,7 +556,9 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
 		return { scope: 'assistant-models', saved: true };
 	},
-	testAssistant: async ({ locals }) => {
+	testAssistant: async ({ request, locals }) => {
+		const failed = await saveEndpointForm(locals.user!.id, await request.formData());
+		if (failed) return failed;
 		const result = await testAccountConnection(db, locals.user!.id);
 		if (!result.ok) return fail(400, { scope: 'assistant-test', message: result.reason });
 		return { scope: 'assistant-test', reply: result.reply };

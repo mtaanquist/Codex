@@ -45,8 +45,11 @@ contacts a model on its own.
 - **Endpoint**: pick a provider from the list and paste an API key from that
   provider's website; the link under the picker takes you to the right page to
   create one. The base URL fills in by itself for these. Leave the key blank to
-  keep the one already saved. Select Test connection to send a short message and
-  see the model reply.
+  keep the one already saved. Changing the provider clears the saved key and the
+  models picked for each role, so paste the new provider's key, then select
+  Discover models and pick again. Select Test connection to send a short message
+  and see the model reply; it saves what you typed first, and tests with the
+  Rubber duck model.
   - **Claude (Anthropic)**: create a key in the Anthropic console. A Claude.ai
     subscription (Pro or Max) is not an API key; API use is billed separately
     through the console, where you add credit first.

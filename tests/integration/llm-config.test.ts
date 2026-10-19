@@ -258,6 +258,28 @@ describe('account config round-trip', () => {
 		expect((await accountLlmView(db, userId)).hasKey).toBe(true);
 	});
 
+	it('a provider switch drops the stored key and the discovered snapshots', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'http://ollama.local:11434/v1',
+			models: {},
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, { ...base, apiKey: 'local-key' });
+		await saveModelContext(db, userId, { 'local-model': 8192 });
+		await saveAccountLlmConfig(db, userId, { ...base, provider: 'anthropic', apiKey: '' });
+		const view = await accountLlmView(db, userId);
+		expect(view.hasKey).toBe(false);
+		expect(view.modelContext ?? {}).toEqual({});
+		expect((await resolveLlmConfig(db, userId)).config.apiKey).toBe('');
+
+		// A key typed with the switch is the one kept.
+		await saveAccountLlmConfig(db, userId, { ...base, provider: 'openai', apiKey: 'sk-openai' });
+		expect((await resolveLlmConfig(db, userId)).config.apiKey).toBe('sk-openai');
+	});
+
 	it('rejects a non-http endpoint', async () => {
 		const result = await saveAccountLlmConfig(db, userId, {
 			enabled: true,

@@ -582,7 +582,10 @@ export async function saveAccountLlmConfig(
 	}
 
 	const existing = await accountLlmConfig(db, userId);
-	let apiKeyEnc = existing.apiKeyEnc;
+	// A key belongs to the provider it was saved for, so a provider switch never
+	// carries it over: the old key would be sent to the new provider.
+	const providerChanged = provider !== existing.provider;
+	let apiKeyEnc = providerChanged ? null : existing.apiKeyEnc;
 	if (input.apiKey) {
 		if (!secretsAvailable()) {
 			return { ok: false, reason: 'Set APP_SECRET on the server before storing an API key.' };
@@ -627,8 +630,10 @@ export async function saveAccountLlmConfig(
 	if (input.spendWarnUsd !== undefined) {
 		spend.spendWarnUsd = normaliseUsd(input.spendWarnUsd) ?? null;
 	}
+	// What the last discovery reported describes the old provider's models.
+	const snapshots = providerChanged ? { modelPricing: {}, modelContext: {} } : {};
 	// A jsonb merge, so any unknown keys (a future config field) survive.
-	const stored: Record<string, unknown> = { ...value, ...spend };
+	const stored: Record<string, unknown> = { ...value, ...spend, ...snapshots };
 	await db
 		.update(users)
 		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })

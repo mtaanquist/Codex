@@ -401,6 +401,7 @@
 						name="provider"
 						class="select"
 						bind:value={selectedProvider}
+						onchange={() => (discoveredModels = [])}
 					>
 						{#each data.providers as preset (preset.id)}
 							<option value={preset.id}>{preset.label}</option>
