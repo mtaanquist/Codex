@@ -36,6 +36,10 @@ async function storyMemberIds(db: Database, storyId: string): Promise<Set<string
 // every scene (review finding #192).
 export type MentionRebuildContext = {
 	universeId: string;
+	// Database time just before the targets were read. Scenes indexed with this
+	// context are stamped with it, not with their own write time, so a rename
+	// that lands while the context is in use still leaves them stale.
+	loadedAt: Date;
 	targets: MentionTarget[];
 	stories: Map<string, { members: Set<string>; pins: Awaited<ReturnType<typeof listMentionPins>> }>;
 };
@@ -44,6 +48,9 @@ export async function universeMentionContext(
 	db: Database,
 	universeId: string
 ): Promise<MentionRebuildContext> {
+	const [{ loadedAt }] = (await db.execute(sql`select now() as "loadedAt"`)).rows as {
+		loadedAt: Date;
+	}[];
 	const cast = await db
 		.select({ id: characters.id, name: characters.name, aliases: characters.aliases })
 		.from(characters)
@@ -73,7 +80,7 @@ export async function universeMentionContext(
 			names: [entry.title, ...entry.keywords]
 		}))
 	];
-	return { universeId, targets, stories: new Map() };
+	return { universeId, loadedAt, targets, stories: new Map() };
 }
 
 async function storyContext(db: Database, context: MentionRebuildContext, storyId: string) {
@@ -144,9 +151,12 @@ export async function rebuildSceneMentions(
 		}
 		// Stamp the watermark in the same transaction. Raw SQL so it does not trip
 		// the scene's updated_at $onUpdate, which would make every scene look
-		// perpetually stale. now() marks "indexed as of this instant"; a later
-		// body or entity change moves past it and the reconcile sweep catches it.
-		await tx.execute(sql`update scenes set mentions_indexed_at = now() where id = ${scene.id}`);
+		// perpetually stale. The context's load time marks "indexed against the
+		// names as of then"; a later body save or flagged name change moves past
+		// it and the reconcile sweep catches it.
+		await tx.execute(
+			sql`update scenes set mentions_indexed_at = ${shared.loadedAt} where id = ${scene.id}`
+		);
 	});
 	return { ok: true, count: found.length };
 }
@@ -161,9 +171,10 @@ export async function markUniverseMentionsChanged(db: Database, universeId: stri
 }
 
 // Clears the pending flag on every flagged universe (or just the one given)
-// whose live scenes have all been reindexed since it was set. A change that
-// lands mid-rebuild moves mentions_changed_at past the scenes already done, so
-// the flag survives until those are reindexed too.
+// whose live scenes have all been reindexed since it was set. Scenes carry the
+// time their names were read, so a change that lands mid-rebuild (even after
+// the context was loaded) moves mentions_changed_at past them and the flag
+// survives until they are reindexed with the new names.
 async function settleUniverseMentions(db: Database, universeId?: string): Promise<void> {
 	await db.execute(sql`
 		update universes u set mentions_changed_at = null

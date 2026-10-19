@@ -17,7 +17,8 @@ import {
 	markUniverseMentionsChanged,
 	rebuildSceneMentions,
 	rebuildUniverseMentions,
-	reconcileMentions
+	reconcileMentions,
+	universeMentionContext
 } from '../../src/lib/server/mentions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -233,6 +234,22 @@ describe('reconcile', () => {
 		await rebuildUniverseMentions(db, universeId);
 		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
 		expect(universe.mentionsChangedAt).toBeNull();
+	});
+
+	it('keeps the flag when a rename lands after the rebuild loaded its names', async () => {
+		// The rebuild matched against names read before the rename, so the scene
+		// is not caught up even though it was stamped after the rename.
+		const context = await universeMentionContext(db, universeId);
+		await markUniverseMentionsChanged(db, universeId);
+		await rebuildSceneMentions(db, sceneId, context);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).toContain(sceneId);
+		await reconcileMentions(db, 0);
+		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(universe.mentionsChangedAt).not.toBeNull();
+
+		await reconcileMentions(db);
+		const [settled] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(settled.mentionsChangedAt).toBeNull();
 	});
 
 	it('keeps the flag while a live scene is still behind it', async () => {
