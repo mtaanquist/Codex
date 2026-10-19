@@ -4,7 +4,8 @@ import { rateLimit, type RateLimitResult } from './rate-limit';
 // borrowed session cannot brute-force the password by spreading guesses
 // across the separate actions (change password, change email, disable
 // two-factor, turn two-factor on, regenerate recovery codes, add a passkey,
-// remove a passkey, sign out other sessions, delete the account). 10 attempts per 15 minutes, the way sign-in is.
+// remove a passkey, sign out other sessions, delete the account). 10 attempts
+// per 15 minutes, the way sign-in is.
 export const REAUTH_LIMIT = 10;
 export const REAUTH_WINDOW_MS = 15 * 60 * 1000;
 

@@ -715,6 +715,8 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { scope: 'password', message: result.reason });
 		return { scope: 'password', saved: true };
 	},
+	// Revoking one session stays ungated on purpose, so a lost device can be
+	// signed out quickly. Signing out all others is password-gated below.
 	revokeSession: async ({ request, locals }) => {
 		const data = await request.formData();
 		const sessionId = String(data.get('sessionId') ?? '');

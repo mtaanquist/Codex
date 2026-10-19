@@ -253,7 +253,7 @@
 						{/if}you'll be asked for a code on new devices. {data.twoFactor.recoveryRemaining} recovery
 						codes remain.
 					{:else if data.twoFactor.status === 'pending'}
-						Scan the code, then enter a code to confirm.
+						Scan the code, then enter a code and your password to confirm.
 					{:else if !data.twoFactor.available}
 						Two-factor authentication is not set up on this instance.
 					{:else}

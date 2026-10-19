@@ -15,10 +15,10 @@ typo can never lock you out.
 
 Two-factor adds a code from an authenticator app on top of your password. To
 turn it on, select Set up, scan the QR code (or type the key) into your app,
-then enter a code and your password to confirm. You are shown a set of recovery codes once: save
-them somewhere safe, as each one signs you in if you lose the app. When it is on,
-you can regenerate the recovery codes or turn it off; both ask for your password
-first.
+then enter a code and your password to confirm. You are shown a set of recovery
+codes once: save them somewhere safe, as each one signs you in if you lose the
+app. When it is on, you can regenerate the recovery codes or turn it off; both
+ask for your password first.
 
 After your password at sign-in, you are asked for a code. If you have lost both
 the app and your recovery codes, an admin can reset two-factor on your account.
