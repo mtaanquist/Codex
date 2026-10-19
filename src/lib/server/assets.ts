@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth.ts';
 import { assets, exportArtifacts, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
@@ -97,6 +98,9 @@ export async function saveAssetStorage(db: Database, input: SaveS3Input): Promis
 
 export type AssetObjectStore = {
 	put(key: string, body: Buffer, contentType: string): Promise<void>;
+	// A multipart upload from a stream of unknown length, for files built on
+	// the fly (exports) that should never be held whole in memory.
+	upload(key: string, body: Readable, contentType: string): Promise<void>;
 	get(key: string): Promise<Readable>;
 	remove(key: string): Promise<void>;
 };
@@ -113,6 +117,12 @@ export function s3AssetStore(config: AssetConfig): AssetObjectStore {
 					ContentType: contentType
 				})
 			);
+		},
+		async upload(key, body, contentType) {
+			await new Upload({
+				client,
+				params: { Bucket: config.bucket, Key: key, Body: body, ContentType: contentType }
+			}).done();
 		},
 		async get(key) {
 			const object = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));

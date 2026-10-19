@@ -41,6 +41,11 @@ function memoryStore() {
 		async put(key, body) {
 			objects.set(key, Buffer.from(body));
 		},
+		async upload(key, body) {
+			const parts: Buffer[] = [];
+			for await (const chunk of body) parts.push(Buffer.from(chunk));
+			objects.set(key, Buffer.concat(parts));
+		},
 		async get(key) {
 			const data = objects.get(key);
 			if (!data) throw new Error(`missing: ${key}`);
@@ -239,12 +244,12 @@ describe('failStaleExports', () => {
 		// The sweep lands while the build is uploading.
 		const sweptMidRun: AssetObjectStore = {
 			...store,
-			async put(key, body, contentType) {
+			async upload(key, body, contentType) {
 				await db
 					.update(userExports)
 					.set({ status: 'failed', error: 'The export did not finish. Try again.' })
 					.where(eq(userExports.id, id));
-				await store.put(key, body, contentType);
+				await store.upload(key, body, contentType);
 			}
 		};
 		expect(await runUserExport(db, id, sweptMidRun)).toMatchObject({ ok: true });

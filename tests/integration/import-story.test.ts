@@ -23,6 +23,7 @@ import { parseStoryZip } from '../../src/lib/import-markdown';
 import { previewImport, runImport } from '../../src/lib/server/import-story';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { zipBytes } from '../../src/lib/server/zip-stream';
 
 let pool: pg.Pool;
 let db: Database;
@@ -146,7 +147,9 @@ async function seedStory() {
 }
 
 async function exportPlan(story: Awaited<ReturnType<typeof seedStory>>) {
-	const { bytes } = await buildStoryZip(story, await gatherStory(db, story), noAssets);
+	const bytes = await zipBytes(
+		(await buildStoryZip(story, await gatherStory(db, story), noAssets)).entries
+	);
 	return parseStoryZip(bytes);
 }
 

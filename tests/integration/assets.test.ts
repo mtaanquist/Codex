@@ -39,6 +39,11 @@ function memoryStore() {
 		async put(key, body, contentType) {
 			objects.set(key, { body, contentType });
 		},
+		async upload(key, body, contentType) {
+			const parts: Buffer[] = [];
+			for await (const chunk of body) parts.push(Buffer.from(chunk));
+			objects.set(key, { body: Buffer.concat(parts), contentType });
+		},
 		async get(key) {
 			const object = objects.get(key);
 			if (!object) throw new Error(`missing: ${key}`);
