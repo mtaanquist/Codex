@@ -121,10 +121,17 @@ export function s3AssetStore(config: AssetConfig): AssetObjectStore {
 			);
 		},
 		async upload(key, body, contentType) {
-			await new Upload({
-				client,
-				params: { Bucket: config.bucket, Key: key, Body: body, ContentType: contentType }
-			}).done();
+			try {
+				await new Upload({
+					client,
+					params: { Bucket: config.bucket, Key: key, Body: body, ContentType: contentType }
+				}).done();
+			} catch (error) {
+				// A failed upload stops reading the body; destroying it releases what
+				// feeds it (the zip being written and any open image download).
+				body.destroy();
+				throw error;
+			}
 		},
 		async get(key) {
 			const object = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
