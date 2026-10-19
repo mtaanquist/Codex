@@ -260,10 +260,16 @@ take a fresh dump first if there is anything live worth keeping.
    docker compose run --rm app node scripts/restore-backup.ts latest
    ```
 
-   This streams the dump from the bucket into `pg_restore` against
-   `DATABASE_URL`, dropping and recreating objects as it goes. The backup
+   This downloads the dump from the bucket, then replaces the application
+   data in `DATABASE_URL` with it in one transaction: if anything fails, the
+   database is left as it was. Tables from a newer version of Codex than the
+   dump are removed too, so the app's migrations bring the schema up to date
+   on the next start. The backup
    history on the admin page starts empty after a restore, and the next
-   backup uploads in full.
+   backup uploads in full. The database user in `DATABASE_URL` must own the
+   `public` schema (the bundled Postgres does); on a managed database where it
+   does not, the restore stops with "must be owner of schema public" and
+   changes nothing.
 
 3. Bring the stack back:
 
