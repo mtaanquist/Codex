@@ -14,7 +14,7 @@
 		type RelationTypeOption,
 		type RelationshipRow
 	} from './EntityRelationships.svelte';
-	import { createAutosave } from '$lib/autosave';
+	import { createAutosave, keepaliveFits } from '$lib/autosave';
 	import type { SaveStatus } from '$lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '$lib/format';
 
@@ -186,11 +186,12 @@
 		onStatus: (status) => onStatus(status),
 		save: async ({ keepalive }) => {
 			if (!view) return;
+			const body = JSON.stringify(savePayload(view.state.doc.toString()));
 			const response = await fetch(`/api/${ENDPOINT}/${entity.id}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
-				keepalive,
-				body: JSON.stringify(savePayload(view.state.doc.toString()))
+				keepalive: keepalive && keepaliveFits(body),
+				body
 			});
 			if (!response.ok) throw new Error(`save failed: ${response.status}`);
 		},
@@ -366,7 +367,7 @@
 	});
 </script>
 
-<svelte:window onpagehide={autosave.flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
 
 <div class="detail">
 	<div class="detail-head">

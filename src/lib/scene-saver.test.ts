@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { UnretryableSaveError } from './autosave';
 import { createSceneSaver } from './scene-saver';
 import { textHash } from './text-hash';
 
-type Sent = { baseHashes: string[]; overwrite?: boolean; bodyMd: string };
+type Sent = { baseHashes: string[]; overwrite?: boolean; bodyMd: string; keepalive?: boolean };
 
 // Each fetch is answered by the next queued responder; the request bodies are
 // kept so the test can read what the saver sent.
@@ -11,7 +12,7 @@ function mockFetch(responders: (() => Response | Promise<Response>)[]) {
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async (_url: string, init: RequestInit) => {
-			sent.push(JSON.parse(String(init.body)));
+			sent.push({ ...JSON.parse(String(init.body)), keepalive: init.keepalive });
 			const next = responders.shift();
 			if (!next) throw new Error('no response queued');
 			return next();
@@ -65,6 +66,21 @@ describe('createSceneSaver', () => {
 		for (const body of ['b', 'c', 'd', 'e']) await expect(saver.save(save(body))).rejects.toThrow();
 		await saver.save(save('f'));
 		expect(sent[4].baseHashes).toHaveLength(4);
+	});
+
+	it('sends a close-tab save as keepalive only when the body fits the cap', async () => {
+		const sent = mockFetch([ok, ok]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		await saver.save(save('short', true));
+		await saver.save(save('x'.repeat(70_000), true));
+		expect(sent[0].keepalive).toBe(true);
+		expect(sent[1].keepalive).toBe(false);
+	});
+
+	it('refuses a conflict with an error autosave does not retry', async () => {
+		mockFetch([conflict('theirs')]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		await expect(saver.save(save('mine'))).rejects.toBeInstanceOf(UnretryableSaveError);
 	});
 
 	it('reports a conflict, and keepMine overwrites once', async () => {
