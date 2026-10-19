@@ -186,4 +186,5 @@ export async function deleteChatForStories(db: Database, storyIds: string[]): Pr
 
 export async function deleteChatForUser(db: Database, userId: string): Promise<void> {
 	await db.delete(assistantChatMessages).where(eq(assistantChatMessages.userId, userId));
+	await db.delete(assistantChatSummaries).where(eq(assistantChatSummaries.userId, userId));
 }

@@ -7,11 +7,20 @@ import { fitChatTurns, type ChatScope } from './chat-history';
 import { complete, type GatewayDeps } from './gateway';
 import { buildChatSummaryMessage, chatSummarySystemMessage } from './prompts/chat-summary';
 import type { ChatMessage } from './providers/types';
+import { CHAT_WINDOW_TURNS } from '../../assistant-chat.ts';
 
 // Turns that no longer fit the transcript budget are folded into a running
 // summary instead of being dropped. The summary is refreshed only when turns
-// fall out of the budget, and each refresh covers enough turns to leave half
-// the budget free, so it is not rebuilt on every message.
+// fall out of the budget or pile up after it, and each refresh covers enough
+// turns to leave half the budget free, so it is not rebuilt on every message.
+
+// The browser sends only its newest CHAT_WINDOW_TURNS turns, so the summary
+// must be refreshed before the turn it is anchored on slides out of that
+// window; otherwise the turns in between would reach neither the summary nor
+// the model. A refresh keeps at most KEEP_TURNS turns verbatim, and the next
+// one comes once REFRESH_TURNS have built up after the summary.
+const REFRESH_TURNS = CHAT_WINDOW_TURNS - 10;
+const KEEP_TURNS = CHAT_WINDOW_TURNS / 2;
 
 export type StoredChatSummary = { summary: string; coveredDigest: string };
 
@@ -25,15 +34,33 @@ export type ChatPlan = {
 	refresh: { turns: ChatMessage[]; coveredDigest: string; fallback: ChatMessage[] } | null;
 };
 
-// A fingerprint of one turn, so a stored summary can find its place in the
-// transcript the browser sends, which is a sliding window with no ids.
-export function turnDigest(turn: ChatMessage): string {
-	return createHash('sha256').update(`${turn.role}\n${turn.content}`).digest('hex');
+// The summary's anchor: a fingerprint of the newest writer turn it covers and
+// the writer turn before it, so it can find its place in the transcript the
+// browser sends, which is a sliding window with no ids. Writer turns are the
+// ones the server always stores, so the anchor survives a reload; pairing two
+// keeps a repeated short reply ("yes") from matching the wrong place.
+function anchorAt(turns: ChatMessage[], index: number): string {
+	let previous = '';
+	for (let i = index - 1; i >= 0; i--) {
+		if (turns[i].role === 'user') {
+			previous = turns[i].content;
+			break;
+		}
+	}
+	return createHash('sha256').update(`${previous}\n\0\n${turns[index].content}`).digest('hex');
+}
+
+// The anchor for a summary covering turns[0..end): its newest writer turn.
+export function coveredAnchor(turns: ChatMessage[], end: number): string | null {
+	for (let i = end - 1; i >= 0; i--) {
+		if (turns[i].role === 'user') return anchorAt(turns, i);
+	}
+	return null;
 }
 
 // The most a summary may take, as a share of the transcript budget.
 export function summaryBudgetTokens(budgetTokens: number): number {
-	return Math.min(1500, Math.floor(budgetTokens / 4));
+	return Math.min(1500, Math.max(500, Math.floor(budgetTokens / 4)));
 }
 
 function cost(turns: ChatMessage[]): number {
@@ -45,35 +72,36 @@ export function planChatTurns(
 	budgetTokens: number,
 	stored: StoredChatSummary | null
 ): ChatPlan {
-	// The turns after the newest one the summary covers. The earliest match
-	// wins, so a repeated short turn ("yes") can only make the summary overlap
-	// a few verbatim turns, never hide one. With no match the window has slid
-	// past the covered turn, and every turn sent is newer than the summary.
+	// The turns after the summary: from the writer turn that follows its
+	// anchor. With no match, every turn sent is treated as newer, which can
+	// repeat what the summary holds but never hides a turn.
 	let start = 0;
 	if (stored) {
-		const index = turns.findIndex((turn) => turnDigest(turn) === stored.coveredDigest);
-		if (index >= 0) start = Math.min(index + 1, turns.length - 1);
+		const index = turns.findIndex(
+			(turn, i) => turn.role === 'user' && anchorAt(turns, i) === stored.coveredDigest
+		);
+		if (index >= 0) {
+			const next = turns.findIndex((turn, i) => i > index && turn.role === 'user');
+			start = next >= 0 ? next : turns.length - 1;
+		}
 	}
 	const candidates = turns.slice(start);
 	const summary = stored?.summary ?? null;
 	const available = budgetTokens - (summary ? estimateTokens(summary) : 0);
-	if (cost(candidates) <= available) {
-		return { summary, verbatim: fitChatTurns(candidates, available), refresh: null };
+	const fallback = fitChatTurns(candidates, available);
+	if (cost(candidates) <= available && candidates.length <= REFRESH_TURNS) {
+		return { summary, verbatim: fallback, refresh: null };
 	}
 
-	const verbatim = fitChatTurns(candidates, Math.floor(budgetTokens / 2));
-	const covered = candidates.slice(0, candidates.length - verbatim.length);
-	if (covered.length === 0) {
-		return { summary, verbatim: fitChatTurns(candidates, available), refresh: null };
-	}
+	const verbatim = fitChatTurns(candidates.slice(-KEEP_TURNS), Math.floor(budgetTokens / 2));
+	const end = candidates.length - verbatim.length;
+	// Anchored against the whole window, the way the next request will look it up.
+	const coveredDigest = coveredAnchor(turns, start + end);
+	if (!coveredDigest) return { summary, verbatim: fallback, refresh: null };
 	return {
 		summary,
 		verbatim,
-		refresh: {
-			turns: covered,
-			coveredDigest: turnDigest(covered[covered.length - 1]),
-			fallback: fitChatTurns(candidates, available)
-		}
+		refresh: { turns: candidates.slice(0, end), coveredDigest, fallback }
 	};
 }
 
@@ -180,8 +208,9 @@ export async function fitChatWithSummary(
 			} else {
 				verbatim = plan.refresh.fallback;
 			}
-		} catch (err) {
-			if (opts.signal?.aborted) throw err;
+		} catch {
+			// Includes a client that went away mid-summary: the chat request then
+			// aborts on its own, so there is nothing more to report here.
 			verbatim = plan.refresh.fallback;
 		}
 	}

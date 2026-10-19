@@ -4,9 +4,17 @@ import type { ChatMessage } from '../providers/types';
 // no longer fit the transcript budget, condensed on the utility role. The
 // result rides ahead of the newer turns as a system message.
 
+const MAX_TURN_CHARS = 2000;
+
 export function buildChatSummaryMessage(previous: string | null, turns: ChatMessage[]): string {
+	// Long turns (a pasted scene, a drafted passage) are cut so the request fits
+	// a small background model; the gist is what the summary needs.
 	const transcript = turns
-		.map((turn) => `${turn.role === 'user' ? 'Writer' : 'Assistant'}: ${turn.content.trim()}`)
+		.map((turn) => {
+			const text = turn.content.trim();
+			const cut = text.length > MAX_TURN_CHARS ? `${text.slice(0, MAX_TURN_CHARS)} [...]` : text;
+			return `${turn.role === 'user' ? 'Writer' : 'Assistant'}: ${cut}`;
+		})
 		.join('\n\n');
 	return [
 		previous

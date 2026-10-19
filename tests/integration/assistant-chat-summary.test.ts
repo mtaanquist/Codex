@@ -13,7 +13,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'chat-summary-test-secret';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { clearChat } = await import('../../src/lib/server/llm/chat-history');
-const { fitChatWithSummary, getChatSummary, turnDigest } =
+const { fitChatWithSummary, getChatSummary, coveredAnchor } =
 	await import('../../src/lib/server/llm/chat-summary');
 
 // Records what the utility role was asked and answers with a numbered summary.
@@ -119,7 +119,7 @@ describe('fitChatWithSummary', () => {
 		expect(prompts[0]).not.toContain('turn 8');
 		expect(await getChatSummary(db, userId, scope)).toEqual({
 			summary: 'SUMMARY-1',
-			coveredDigest: turnDigest(first[7])
+			coveredDigest: coveredAnchor(first, 8)
 		});
 
 		// Two more turns still fit beside the summary: no new utility call.

@@ -16,6 +16,7 @@
 	import { REVIEW_CATEGORIES } from '$lib/review-shape';
 	import { flashActivity } from '$lib/activity.svelte';
 	import { parseSseFrames } from '$lib/assistant-stream';
+	import { CHAT_WINDOW_TURNS } from '$lib/assistant-chat';
 	import { commandsForScope, matchSlash, slashName, slashArgs } from '$lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
@@ -291,7 +292,7 @@
 			...scopeBody(),
 			...(isStory ? { sceneId } : {}),
 			messages: turns
-				.slice(-40)
+				.slice(-CHAT_WINDOW_TURNS)
 				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 		});
 	}

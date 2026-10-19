@@ -483,11 +483,14 @@ When the chat transcript outgrows its budget, the turns that fall out are not
 just dropped: they are folded into a running summary on the utility role
 (`chat-summary.ts`), stored per conversation in `assistant_chat_summaries`, and
 sent as a system message ahead of the newer turns. The summary is refreshed only
-when more turns fall out, and each refresh covers enough to leave half the
-budget free. Because the browser sends a sliding window of turns with no ids,
-the summary records a digest of the newest turn it covers to find its place. A
-failed refresh falls back to dropping turns; clearing the conversation clears
-the summary. One summarising step serves every provider rather than Claude's
+when more turns fall out of the budget, or when 30 turns have built up after it
+(the browser sends its newest 40, so the anchor must not slide out of that
+window), and each refresh leaves at most 20 turns and half the budget verbatim.
+Because the browser sends a sliding window of turns with no ids, the summary
+records a digest of the newest writer turn it covers, paired with the writer
+turn before it, to find its place; writer turns are always stored, so the
+anchor survives a reload. A failed refresh falls back to dropping turns and is
+retried on the next message; clearing the conversation clears the summary. One summarising step serves every provider rather than Claude's
 server-side compaction, so the behaviour is the same everywhere.
 
 TODO (needs a real corpus): the token budget per tier, the split between the
