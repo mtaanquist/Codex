@@ -81,13 +81,16 @@ jobs:
           docker run -d --name rustfs --network host \
             -e RUSTFS_ACCESS_KEY="$ASSET_S3_ACCESS_KEY_ID" -e RUSTFS_SECRET_KEY="$ASSET_S3_SECRET_ACCESS_KEY" \
             rustfs/rustfs:1.0.3
+          # /health can answer before the S3 API does (a 503 on the first
+          # PUT), so retry the bucket create itself. 409 means it exists.
           for attempt in $(seq 1 30); do
-            curl -fsS http://localhost:9000/health >/dev/null && break
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT --aws-sigv4 aws:amz:us-east-1:s3 \
+              --user "$ASSET_S3_ACCESS_KEY_ID:$ASSET_S3_SECRET_ACCESS_KEY" \
+              "$ASSET_S3_ENDPOINT/$ASSET_S3_BUCKET" || true)
+            if [ "$code" = 200 ] || [ "$code" = 409 ]; then break; fi
+            if [ "$attempt" = 30 ]; then echo "RustFS bucket create failed: $code"; exit 1; fi
             sleep 1
           done
-          curl -fsS -X PUT --aws-sigv4 aws:amz:us-east-1:s3 \
-            --user "$ASSET_S3_ACCESS_KEY_ID:$ASSET_S3_SECRET_ACCESS_KEY" \
-            "$ASSET_S3_ENDPOINT/$ASSET_S3_BUCKET"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
