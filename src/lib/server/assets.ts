@@ -56,8 +56,25 @@ const ASSETS_KEY = 'asset-storage';
 const ASSET_PREFIX_DEFAULT = 'codex-assets';
 
 // The effective asset storage: settings saved in the admin panel win, the
-// environment is the fallback for instances configured the old way.
+// environment is the fallback for instances configured the old way. Every
+// image and download asks for it, so it is cached in process for a minute.
+// A save clears this process's copy at once; another process (the worker)
+// picks the change up when its copy expires.
+const CONFIG_CACHE_MS = 60_000;
+let cachedConfig: { value: AssetConfig | null; at: number } | null = null;
+
+export function clearAssetConfigCache(): void {
+	cachedConfig = null;
+}
+
 export async function effectiveAssetConfig(db: Database): Promise<AssetConfig | null> {
+	if (cachedConfig && Date.now() - cachedConfig.at < CONFIG_CACHE_MS) return cachedConfig.value;
+	const value = await readAssetConfig(db);
+	cachedConfig = { value, at: Date.now() };
+	return value;
+}
+
+async function readAssetConfig(db: Database): Promise<AssetConfig | null> {
 	const stored = await effectiveS3(db, ASSETS_KEY);
 	if (stored) {
 		return {
@@ -80,10 +97,11 @@ export async function assetStorageView(db: Database): Promise<S3SettingsView> {
 // is being pointed somewhere else, the old connection is stashed first so a
 // migration can copy the objects over (see the migration functions below).
 export async function saveAssetStorage(db: Database, input: SaveS3Input): Promise<SaveS3Result> {
-	const previous = await effectiveAssetConfig(db);
+	const previous = await readAssetConfig(db);
 	const result = await saveS3Settings(db, ASSETS_KEY, input, ASSET_PREFIX_DEFAULT);
 	if (!result.ok) return result;
-	const next = await effectiveAssetConfig(db);
+	clearAssetConfigCache();
+	const next = await readAssetConfig(db);
 	if (
 		previous &&
 		next &&
