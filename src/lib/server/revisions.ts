@@ -87,7 +87,8 @@ export async function recordRevision(
 		const [latest] = await tx
 			.select({
 				id: revisions.id,
-				bodyMd: revisions.bodyMd,
+				// Compared in the database so a long body is not read back each save.
+				sameBody: sql<boolean>`${revisions.bodyMd} = ${bodyMd}`,
 				snapshot: revisions.snapshot,
 				reason: revisions.reason,
 				createdAt: revisions.createdAt
@@ -96,7 +97,7 @@ export async function recordRevision(
 			.where(and(eq(revisions.entityType, entityType), eq(revisions.entityId, entityId)))
 			.orderBy(desc(revisions.createdAt))
 			.limit(1);
-		if (latest && latest.bodyMd === bodyMd && snapshotsEqual(latest.snapshot, snapshot)) {
+		if (latest && latest.sameBody && snapshotsEqual(latest.snapshot, snapshot)) {
 			return { recorded: false };
 		}
 		if (

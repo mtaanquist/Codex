@@ -86,7 +86,7 @@ afterAll(async () => {
 describe('saveSceneBody', () => {
 	it('saves when the editor saw the stored text', async () => {
 		const result = await saveSceneBody(db, sceneId, save({ bodyMd: 'The gate opened wide.' }));
-		expect(result).toEqual({ ok: true, wordCount: 4 });
+		expect(result).toEqual({ ok: true, wordCount: 4, bodyChanged: true });
 		expect((await stored()).bodyMd).toBe('The gate opened wide.');
 		expect(await history()).toEqual([{ bodyMd: 'The gate opened wide.', reason: 'autosave' }]);
 	});
@@ -136,6 +136,36 @@ describe('saveSceneBody', () => {
 	it('lets a save through when the text already matches, whatever the fingerprint', async () => {
 		const result = await saveSceneBody(db, sceneId, save({ baseHashes: ['stale'] }));
 		expect(result).toMatchObject({ ok: true });
+	});
+
+	it('writes nothing when the text and title are unchanged', async () => {
+		await saveSceneBody(db, sceneId, save({ title: 'Gate', bodyMd: 'The gate opened wide.' }));
+		const before = await stored();
+		const result = await saveSceneBody(
+			db,
+			sceneId,
+			save({ title: 'Gate', bodyMd: 'The gate opened wide.', baseHashes: ['stale'] })
+		);
+		expect(result).toEqual({ ok: true, wordCount: 4, bodyChanged: false });
+		expect((await stored()).updatedAt).toEqual(before.updatedAt);
+		expect(await history()).toHaveLength(1);
+	});
+
+	it('saves a new title on unchanged text without touching History', async () => {
+		// The mention index is current for the stored text.
+		await pool.query('update scenes set mentions_indexed_at = now() where id = $1', [sceneId]);
+		const result = await saveSceneBody(db, sceneId, save({ title: 'The Gate' }));
+		expect(result).toMatchObject({ ok: true, bodyChanged: false });
+		const row = await stored();
+		expect(row.title).toBe('The Gate');
+		// No rebuild is queued, so the index must not look stale.
+		expect(row.mentionsIndexedAt!.getTime()).toBeGreaterThanOrEqual(row.updatedAt.getTime());
+		expect(await history()).toEqual([]);
+	});
+
+	it('keeps a pending mention rebuild pending on a title-only save', async () => {
+		await saveSceneBody(db, sceneId, save({ title: 'The Gate' }));
+		expect((await stored()).mentionsIndexedAt).toBeNull();
 	});
 
 	it('reports a scene that is gone', async () => {
