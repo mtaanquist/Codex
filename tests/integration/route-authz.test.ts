@@ -674,7 +674,7 @@ describe('universe routes refuse another user', () => {
 });
 
 // Only the refusal is exercised: the ownership check runs before the
-// Assistant gate, so no model endpoint is needed. A success call would.
+// Assistant gate, so no model endpoint is needed. A success call would need one.
 describe('assistant routes refuse another user', () => {
 	it('POST /api/assistant/review', async () => {
 		await expectRefused(reviewRoute.POST, event(B, { body: { sceneId: s.sceneA1.id } }));
