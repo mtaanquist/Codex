@@ -1,17 +1,13 @@
 import { error, json } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { scenes } from '$lib/server/db/schema';
 import { ownedScene } from '$lib/server/scene-access';
 import { queueSceneMentions } from '$lib/server/jobs';
-import { updateMarkerAnchors } from '$lib/server/markers';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { checkProseLength, readJson } from '$lib/server/validation';
-import { recordRevision } from '$lib/server/revisions';
+import { saveSceneBody } from '$lib/server/scene-save';
 import { setSceneStatus } from '$lib/server/scene-status';
 import { isSceneStatus } from '$lib/scene-status';
-import { wordCount } from '$lib/word-count';
 
 // Debounced autosave target for the scene editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
@@ -23,6 +19,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		title?: unknown;
 		bodyMd?: unknown;
 		markers?: unknown;
+		baseHashes?: unknown;
+		overwrite?: unknown;
 	}>(request);
 	if (typeof payload.bodyMd !== 'string') {
 		error(400, 'bodyMd must be a string');
@@ -32,30 +30,52 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	// A review save omits markers entirely (the review centre does not load
 	// them): when the field is absent, leave the stored anchors untouched
 	// rather than wiping them with an empty set.
-	const touchMarkers = payload.markers !== undefined;
-	const anchors = Array.isArray(payload.markers)
-		? payload.markers.filter(
-				(marker): marker is { id: string; anchorStart: number; anchorEnd: number } =>
-					typeof marker === 'object' &&
-					marker !== null &&
-					typeof (marker as Record<string, unknown>).id === 'string' &&
-					typeof (marker as Record<string, unknown>).anchorStart === 'number' &&
-					typeof (marker as Record<string, unknown>).anchorEnd === 'number'
-			)
-		: [];
+	const anchors =
+		payload.markers === undefined
+			? null
+			: Array.isArray(payload.markers)
+				? payload.markers.filter(
+						(marker): marker is { id: string; anchorStart: number; anchorEnd: number } =>
+							typeof marker === 'object' &&
+							marker !== null &&
+							typeof (marker as Record<string, unknown>).id === 'string' &&
+							typeof (marker as Record<string, unknown>).anchorStart === 'number' &&
+							typeof (marker as Record<string, unknown>).anchorEnd === 'number'
+					)
+				: [];
+	// A tab opened before the conflict check shipped sends no fingerprints;
+	// its saves still go through until it reloads.
+	let baseHashes: string[] | null = null;
+	if (payload.baseHashes !== undefined) {
+		if (
+			!Array.isArray(payload.baseHashes) ||
+			payload.baseHashes.length === 0 ||
+			payload.baseHashes.length > 4 ||
+			!payload.baseHashes.every((hash) => typeof hash === 'string' && hash.length <= 32)
+		) {
+			error(400, 'baseHashes must be a short list of strings');
+		}
+		baseHashes = payload.baseHashes as string[];
+	}
 	const title =
 		typeof payload.title === 'string' && payload.title.trim() !== '' ? payload.title.trim() : null;
 
-	const count = wordCount(payload.bodyMd);
-	await db
-		.update(scenes)
-		.set({ title, bodyMd: payload.bodyMd, wordCount: count })
-		.where(eq(scenes.id, row.id));
-	await recordRevision(db, 'scene', row.id, payload.bodyMd);
-	if (touchMarkers) await updateMarkerAnchors(db, row.id, anchors, payload.bodyMd.length);
+	const result = await saveSceneBody(db, row.id, {
+		title,
+		bodyMd: payload.bodyMd,
+		anchors,
+		baseHashes,
+		overwrite: payload.overwrite === true
+	});
+	if (!result.ok && 'missing' in result) error(404, 'Scene not found');
+	if (!result.ok) {
+		// The scene changed somewhere else since this editor last saw it; the
+		// editor offers to load that version or keep its own.
+		return json({ conflict: true, ...result.conflict }, { status: 409 });
+	}
 	await queueSceneMentions(row.id);
 
-	return json({ savedAt: new Date().toISOString(), wordCount: count });
+	return json({ savedAt: new Date().toISOString(), wordCount: result.wordCount });
 };
 
 // Status changes come from the scene board, separate from the autosave: no

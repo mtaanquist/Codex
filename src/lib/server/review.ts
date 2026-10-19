@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { textHash } from '$lib/text-hash';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
@@ -233,8 +234,11 @@ async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string)
 }
 
 // The same per-entity advisory lock recordRevision takes for autosave
-// coalescing, so pinning a base revision serialises against autosaves.
+// coalescing, so pinning a base revision serialises against autosaves. The
+// scene row is locked first, the order a save takes them in (row, then
+// advisory), so the two cannot deadlock.
 async function sceneRevisionLock(db: Database, sceneId: string): Promise<void> {
+	await db.select({ id: scenes.id }).from(scenes).where(eq(scenes.id, sceneId)).for('key share');
 	await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`scene:${sceneId}`}))`);
 }
 
@@ -860,7 +864,10 @@ export async function decideSuggestion(
 	userId: string,
 	suggestionId: string,
 	accept: boolean
-): Promise<{ ok: true; sceneId: string | null } | { ok: false; reason: string }> {
+): Promise<
+	| { ok: true; sceneId: string | null; bodyMd: string | null; baseHash: string | null }
+	| { ok: false; reason: string }
+> {
 	const [row] = await db
 		.select({
 			suggestion: reviewSuggestions,
@@ -885,14 +892,16 @@ export async function decideSuggestion(
 			.update(reviewSuggestions)
 			.set({ status: 'rejected', decidedByUserId: userId, decidedAt: sql`now()` })
 			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
-		return { ok: true, sceneId: null };
+		return { ok: true, sceneId: null, bodyMd: null, baseHash: null };
 	}
 
 	// The body is read, re-anchored, and written inside one transaction with
 	// the scene row locked, so a concurrent autosave cannot land between the
 	// read and the write and be silently overwritten by stale text.
 	const applied = await db.transaction(
-		async (tx): Promise<{ ok: true; newBody: string } | { ok: false; reason: string }> => {
+		async (
+			tx
+		): Promise<{ ok: true; newBody: string; baseHash: string } | { ok: false; reason: string }> => {
 			const [scene] = await tx
 				.select({ bodyMd: scenes.bodyMd })
 				.from(scenes)
@@ -935,11 +944,16 @@ export async function decideSuggestion(
 			// its snapshot commit together; a failure here rolls the accept back
 			// rather than leaving an unsnapshotted edit.
 			await recordRevision(tx, 'scene', row.scene.id, newBody, 'suggestion');
-			return { ok: true, newBody };
+			return { ok: true, newBody, baseHash: textHash(scene.bodyMd) };
 		}
 	);
 	if (!applied.ok) return applied;
-	return { ok: true, sceneId: row.scene.id };
+	return {
+		ok: true,
+		sceneId: row.scene.id,
+		bodyMd: applied.newBody,
+		baseHash: applied.baseHash
+	};
 }
 
 // Retracts a comment the viewer authored. A reply is removed on its own; the

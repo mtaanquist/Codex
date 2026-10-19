@@ -223,7 +223,9 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { message: result.reason });
 		// The body changed; keep the mention index in step.
 		if (result.sceneId) await queueSceneMentions(result.sceneId);
-		return { done: true };
+		// The editor rebases its save check onto this text, so the accepted
+		// change does not read as an edit from another window.
+		return { done: true, bodyMd: result.bodyMd, baseHash: result.baseHash };
 	},
 	rejectSuggestion: async ({ params, request, locals }) => {
 		await ownedStory(params.id, locals.user!.id);

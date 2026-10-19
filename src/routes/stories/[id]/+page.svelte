@@ -255,9 +255,17 @@
 	// Scenes picked for merging via the row menu; the merge joins them in
 	// story order regardless of the picking order.
 	let mergeSelection = new SvelteSet<string>();
+	// Bumped when a merge rewrites a scene's text, so the open editors remount
+	// on the merged text instead of saving over it.
+	let editorNonce = $state(0);
 
 	async function mergeSelectedScenes() {
 		rowMenu = null;
+		// The merge reads the stored text, so pending saves land first.
+		for (const id of mergeSelection) {
+			const editor = data.selectedScene?.id === id ? sceneEditor : docEditors[id];
+			await editor?.flushSave();
+		}
 		const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
 		if (!result.ok) {
 			alert(result.message);
@@ -266,6 +274,7 @@
 		mergeSelection.clear();
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		editorNonce++;
 	}
 
 	// Copies a scene in full directly after itself; useful for keeping a
@@ -356,6 +365,7 @@
 		persistProposalState(data.story.id, proposal, null);
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		editorNonce++;
 		return null;
 	}
 
@@ -660,7 +670,7 @@
 								{#if docList.length > 0}
 									<section class="doc-chapter" id="chapter-{chapter.id}">
 										<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
-										{#each docList as scene (scene.id)}
+										{#each docList as scene (`${scene.id}:${editorNonce}`)}
 											{@render docScene(scene)}
 										{/each}
 									</section>
@@ -669,7 +679,7 @@
 							{#if docScenes(null).length > 0}
 								<section class="doc-chapter">
 									<h2>Unfiled scenes</h2>
-									{#each docScenes(null) as scene (scene.id)}
+									{#each docScenes(null) as scene (`${scene.id}:${editorNonce}`)}
 										{@render docScene(scene)}
 									{/each}
 								</section>
@@ -697,7 +707,7 @@
 					/>
 				</div>
 			{:else if data.selectedScene}
-				{#key data.selectedScene.id}
+				{#key `${data.selectedScene.id}:${editorNonce}`}
 					<SceneEditor
 						bind:this={sceneEditor}
 						{editorStyle}
