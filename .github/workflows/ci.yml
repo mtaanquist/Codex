@@ -117,6 +117,26 @@ jobs:
         run: >-
           docker compose -f compose.yaml exec -T -e ADMIN_PASSWORD=ci-bootstrap-pw
           app node scripts/seed-admin.ts ci-admin@example.com "CI Admin"
+      - name: Form posts pass the origin check
+        # SvelteKit refuses a form POST whose Origin does not match the app's
+        # origin, which the image takes from ORIGIN at runtime. A same-origin
+        # sign-in must go through and a foreign one must be refused; a change
+        # in how the origin is resolved (as in adapter-node 6) breaks every
+        # form in the app, and nothing else here posts one.
+        run: |
+          post() {
+            curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST \
+              -H "Origin: $1" -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode 'email=ci-admin@example.com' \
+              --data-urlencode 'password=ci-bootstrap-pw' \
+              http://localhost:3000/login
+          }
+          same=$(post http://localhost:3000)
+          echo "same origin: $same"
+          [ "$same" = "303 http://localhost:3000/" ]
+          foreign=$(post http://evil.example)
+          echo "foreign origin: $foreign"
+          [ "${foreign%% *}" = "403" ]
       - name: Show logs on failure
         if: failure()
         run: docker compose -f compose.yaml logs
