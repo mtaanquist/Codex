@@ -414,16 +414,14 @@ export const actions: Actions = {
 		const previous = story.coverAssetId;
 		await db.update(stories).set({ coverAssetId: created.id }).where(eq(stories.id, story.id));
 		// The replaced cover has no other references; clean it up.
-		if (previous) await deleteAsset(db, store, locals.user!.id, previous);
+		if (previous) await deleteAsset(db, locals.user!.id, previous);
 		return { action: 'cover', saved: true };
 	},
 	delete: async ({ params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);
 		// Clears every story-scoped row first; a plain delete 500s on the FKs
-		// the moment the story has any content or a published edition. The store
-		// sweeps the edition export files left behind in the bucket.
-		const config = await effectiveAssetConfig(db);
-		await deleteStory(db, story.id, locals.user!.id, config ? s3AssetStore(config) : null);
+		// the moment the story has any content or a published edition.
+		await deleteStory(db, story.id, locals.user!.id);
 		redirect(303, `/universes/${universe.slug}`);
 	}
 };

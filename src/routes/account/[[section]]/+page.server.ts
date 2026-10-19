@@ -312,8 +312,7 @@ export const actions: Actions = {
 		return { scope: 'avatar', saved: true };
 	},
 	removeAvatar: async ({ locals }) => {
-		const config = await effectiveAssetConfig(db);
-		if (config) await clearUserAvatar(db, s3AssetStore(config), locals.user!.id);
+		await clearUserAvatar(db, locals.user!.id);
 		return { scope: 'avatar', saved: true };
 	},
 	claimHandle: async ({ request, locals }) => {

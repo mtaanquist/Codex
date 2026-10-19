@@ -1,17 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Readable } from 'node:stream';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { universes, users } from '../../src/lib/server/db/schema';
+import { assets, pendingObjectDeletions, universes, users } from '../../src/lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import {
 	clearUserAvatar,
 	createAsset,
 	deleteAsset,
+	objectDeletionGraceDays,
 	openAsset,
+	scheduleObjectDeletions,
 	setUserAvatar,
+	sweepDeletedObjects,
 	type AssetConfig,
 	type AssetObjectStore
 } from '../../src/lib/server/assets';
@@ -58,7 +61,7 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
-	await pool.query('truncate table assets, universes, users cascade');
+	await pool.query('truncate table assets, pending_object_deletions, universes, users cascade');
 
 	const [owner] = await db
 		.insert(users)
@@ -105,7 +108,7 @@ describe('createAsset', () => {
 
 		// Another user can neither open nor delete it.
 		expect(await openAsset(db, store, strangerId, result.id)).toBeNull();
-		expect(await deleteAsset(db, store, strangerId, result.id)).toBe(false);
+		expect(await deleteAsset(db, strangerId, result.id)).toBe(false);
 	});
 
 	it('rejects unsupported types, empty files, oversize files, and foreign universes', async () => {
@@ -155,7 +158,8 @@ describe('avatars', () => {
 		expect(row.avatarAssetId).toBe(first.id);
 		expect(objects.size).toBe(1);
 
-		// A second upload points the user at the new asset and drops the old one.
+		// A second upload points the user at the new asset and drops the old row;
+		// the old object waits for the deferred sweep.
 		const second = await setUserAvatar(db, store, config, ownerId, {
 			filename: 'me2.png',
 			contentType: 'image/png',
@@ -165,17 +169,18 @@ describe('avatars', () => {
 		if (!second.ok) return;
 		[row] = await db.select().from(users).where(eq(users.id, ownerId));
 		expect(row.avatarAssetId).toBe(second.id);
-		expect(objects.size).toBe(1);
 		expect(await openAsset(db, store, ownerId, first.id)).toBeNull();
+		expect(await pendingKeys()).toContain(`codex-assets/${first.id}`);
 
-		await clearUserAvatar(db, store, ownerId);
+		await clearUserAvatar(db, ownerId);
 		[row] = await db.select().from(users).where(eq(users.id, ownerId));
 		expect(row.avatarAssetId).toBeNull();
-		expect(objects.size).toBe(0);
+		expect(await pendingKeys()).toContain(`codex-assets/${second.id}`);
+		expect(objects.size).toBe(2);
 	});
 
 	it('does not orphan an asset when two uploads race', async () => {
-		const { store, objects } = memoryStore();
+		const { store } = memoryStore();
 		const [a, b] = await Promise.all([
 			setUserAvatar(db, store, config, ownerId, {
 				filename: 'a.png',
@@ -191,19 +196,20 @@ describe('avatars', () => {
 		expect(a.ok && b.ok).toBe(true);
 		if (!a.ok || !b.ok) return;
 		const [row] = await db.select().from(users).where(eq(users.id, ownerId));
-		// One upload wins the row; the other's asset must be cleaned up, leaving
-		// exactly one stored object rather than an orphan.
+		// One upload wins the row; the other's asset must be cleaned up (its
+		// object queued for removal) rather than left as an orphan.
 		expect([a.id, b.id]).toContain(row.avatarAssetId);
-		expect(objects.size).toBe(1);
 		const loser = row.avatarAssetId === a.id ? b.id : a.id;
 		expect(await openAsset(db, store, ownerId, loser)).toBeNull();
+		expect(await pendingKeys()).toContain(`codex-assets/${loser}`);
+		expect(await pendingKeys()).not.toContain(`codex-assets/${row.avatarAssetId}`);
 
-		await clearUserAvatar(db, store, ownerId);
+		await clearUserAvatar(db, ownerId);
 	});
 });
 
 describe('deleteAsset', () => {
-	it('removes the row and the object', async () => {
+	it('removes the row at once and queues the object for the sweep', async () => {
 		const { store, objects } = memoryStore();
 		const created = await createAsset(db, store, config, ownerId, {
 			universeId: null,
@@ -213,8 +219,86 @@ describe('deleteAsset', () => {
 			bytes: PNG
 		});
 		if (!created.ok) throw new Error('setup failed');
-		expect(await deleteAsset(db, store, ownerId, created.id)).toBe(true);
-		expect(objects.size).toBe(0);
+		expect(await deleteAsset(db, ownerId, created.id)).toBe(true);
 		expect(await openAsset(db, store, ownerId, created.id)).toBeNull();
+		// The object survives, so a restored dump that still has the row works.
+		expect(objects.has(`codex-assets/${created.id}`)).toBe(true);
+		expect(await pendingKeys()).toContain(`codex-assets/${created.id}`);
 	});
 });
+
+describe('sweepDeletedObjects', () => {
+	async function queueAged(key: string, daysAgo: number) {
+		await scheduleObjectDeletions(db, [key]);
+		await db
+			.update(pendingObjectDeletions)
+			.set({ deletedAt: new Date(Date.now() - daysAgo * 86_400_000) })
+			.where(eq(pendingObjectDeletions.storageKey, key));
+	}
+
+	it('removes objects past the grace period and keeps newer ones', async () => {
+		await db.delete(pendingObjectDeletions);
+		const { store, objects } = memoryStore();
+		await store.put('old', PNG, 'image/png');
+		await store.put('new', PNG, 'image/png');
+		await queueAged('old', 40);
+		await queueAged('new', 5);
+
+		expect(await sweepDeletedObjects(db, store, 31)).toEqual({ removed: 1, kept: 0, failed: 0 });
+		expect(objects.has('old')).toBe(false);
+		expect(objects.has('new')).toBe(true);
+		expect(await pendingKeys()).toEqual(['new']);
+	});
+
+	it('leaves a failed removal queued for the next sweep', async () => {
+		await db.delete(pendingObjectDeletions);
+		const { store } = memoryStore();
+		const failing: AssetObjectStore = {
+			...store,
+			async remove() {
+				throw new Error('bucket unreachable');
+			}
+		};
+		await queueAged('stuck', 40);
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		expect(await sweepDeletedObjects(db, failing, 31)).toEqual({
+			removed: 0,
+			kept: 0,
+			failed: 1
+		});
+		expect(errors).toHaveBeenCalled();
+		errors.mockRestore();
+		expect(await pendingKeys()).toEqual(['stuck']);
+	});
+
+	it('unqueues, without removing, an object a row points at again', async () => {
+		await db.delete(pendingObjectDeletions);
+		const { store, objects } = memoryStore();
+		const created = await createAsset(db, store, config, ownerId, {
+			universeId: null,
+			kind: 'inline',
+			filename: 'back.png',
+			contentType: 'image/png',
+			bytes: PNG
+		});
+		if (!created.ok) throw new Error('setup failed');
+		const [row] = await db.select().from(assets).where(eq(assets.id, created.id));
+		await queueAged(row.storageKey, 40);
+
+		expect(await sweepDeletedObjects(db, store, 31)).toEqual({ removed: 0, kept: 1, failed: 0 });
+		expect(objects.has(row.storageKey)).toBe(true);
+		expect(await pendingKeys()).toEqual([]);
+	});
+
+	it('waits one day past the backup retention, or one day without backups', () => {
+		expect(objectDeletionGraceDays({ keepDays: 30 })).toBe(31);
+		expect(objectDeletionGraceDays(null)).toBe(1);
+	});
+});
+
+async function pendingKeys() {
+	const rows = await db
+		.select({ storageKey: pendingObjectDeletions.storageKey })
+		.from(pendingObjectDeletions);
+	return rows.map((row) => row.storageKey).sort();
+}

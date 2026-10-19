@@ -11,6 +11,7 @@ import {
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_REVIEW_RUNS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
+	SWEEP_DELETED_OBJECTS_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	USER_EXPORT_QUEUE,
@@ -39,18 +40,16 @@ import {
 	markReviewerNotified
 } from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
-import {
-	listUniversesDueForPurge,
-	purgeUniverseWithin,
-	universeAssetKeys
-} from '../lib/server/universe-lifecycle.ts';
+import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
 import {
 	assetMigrationSource,
 	clearAssetMigrationSource,
 	effectiveAssetConfig,
 	migrateAssetObjects,
+	objectDeletionGraceDays,
 	recordAssetMigrationResult,
-	s3AssetStore
+	s3AssetStore,
+	sweepDeletedObjects
 } from '../lib/server/assets.ts';
 import {
 	failureMessage,
@@ -98,6 +97,7 @@ await boss.createQueue(EMAIL_QUEUE);
 await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
+await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
@@ -506,19 +506,26 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 
 // Trashed universes past their restore window go for good.
 await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
-	const due = await listUniversesDueForPurge(db);
-	if (due.length === 0) return;
-	const config = await effectiveAssetConfig(db);
-	const store = config ? s3AssetStore(config) : null;
-	for (const universeId of due) {
+	for (const universeId of await listUniversesDueForPurge(db)) {
 		try {
-			const keys = await universeAssetKeys(db, universeId);
-			await db.transaction((tx) => purgeUniverseWithin(tx, universeId));
-			if (store) for (const key of keys) await store.remove(key).catch(() => {});
+			await purgeUniverse(db, universeId);
 			console.log(`purge: universe ${universeId} deleted`);
 		} catch (error) {
 			console.error(`purge: universe ${universeId} failed`, error);
 		}
+	}
+});
+
+// Bucket objects of deleted rows, once no kept backup can still point at them.
+await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, async () => {
+	const config = await effectiveAssetConfig(db);
+	if (!config) return;
+	const graceDays = objectDeletionGraceDays(await effectiveBackupConfig(db));
+	const result = await sweepDeletedObjects(db, s3AssetStore(config), graceDays);
+	if (result.removed + result.kept + result.failed > 0) {
+		console.log(
+			`asset sweep: ${result.removed} removed, ${result.kept} still in use, ${result.failed} failed`
+		);
 	}
 });
 
@@ -535,6 +542,8 @@ await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
 
 // And the universe trash sweep, offset from the account one.
 await boss.schedule(PURGE_UNIVERSES_QUEUE, '45 * * * *', {}, { tz: 'UTC' });
+
+await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' });
 
 // Old review progress goes once a day; nothing is time critical about it.
 await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
