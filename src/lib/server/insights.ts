@@ -1,6 +1,6 @@
 // Queries behind the universe Insights view. Everything here is derived from
 // data the app already records (scene word counts, the mention index, scene
-// revisions, relationships); nothing is stored.
+// revisions and their word counts, relationships); nothing is stored.
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { entityRelationships, relationTypes } from './db/schema';
@@ -154,45 +154,58 @@ export async function writingActivity(
 	storyId?: string
 ): Promise<WritingActivity> {
 	const storyFilter = storyId ? sql` and st.id = ${storyId}` : sql``;
+	// The window opens at local midnight `days - 1` days before today. It is
+	// computed once as a timestamptz so the created_at predicates below can use
+	// the timeline index instead of converting every row to a local date.
+	const clock = await db.execute(sql`
+		select ((now() at time zone ${timezone})::date)::text as today,
+			(((now() at time zone ${timezone})::date - ${days}::int + 1)::timestamp
+				at time zone ${timezone}) as bound
+	`);
+	const { today, bound } = clock.rows[0] as { today: string; bound: Date };
+	// Rows from before revisions.word_count existed are counted from the body.
+	const words = (alias: string) =>
+		sql.raw(`coalesce(${alias}.word_count, ${WORDS_SQL(`${alias}.body_md`)})`);
 	// The last revision per scene per day carries the scene's end-of-day word
-	// count; the inner distinct-on picks the row, the outer counts its words
-	// so bodies of discarded rows are never counted.
-	// The day lands in an inner select first: distinct-on must name the very
-	// expression the order-by uses, and two ${timezone} bindings read as two
-	// different expressions to the parser.
+	// count. The day lands in an inner select first: distinct-on must name the
+	// very expression the order-by uses, and two ${timezone} bindings read as
+	// two different expressions to the parser.
 	const windowRows = await db.execute(sql`
-		select picked.entity_id, picked.day, ${sql.raw(WORDS_SQL('picked.body_md'))}::int as words
+		select picked.entity_id, picked.day, ${words('picked')}::int as words
 		from (
-			select distinct on (x.entity_id, x.day) x.entity_id, x.day, x.body_md
+			select distinct on (x.entity_id, x.day) x.entity_id, x.day, x.word_count, x.body_md
 			from (
 				select r.entity_id,
 					((r.created_at at time zone ${timezone})::date)::text as day,
+					r.word_count,
 					r.body_md,
 					r.created_at
-				from revisions r
-				join scenes s on s.id = r.entity_id and s.deleted_at is null
+				from scenes s
 				join stories st on st.id = s.story_id
-				where r.entity_type = 'scene'
-					and st.universe_id = ${universeId}
-					and (r.created_at at time zone ${timezone})::date > (now() at time zone ${timezone})::date - ${days}::int${storyFilter}
+				join revisions r on r.entity_type = 'scene' and r.entity_id = s.id
+					and r.created_at >= ${bound}
+				where s.deleted_at is null
+					and st.universe_id = ${universeId}${storyFilter}
 			) x
 			order by x.entity_id, x.day, x.created_at desc
 		) picked
 	`);
 	// Each scene's last word count from before the window, so the first
-	// in-window day diffs against real prior work instead of zero.
+	// in-window day diffs against real prior work instead of zero. One index
+	// probe per scene rather than a sort of the whole history.
 	const baselineRows = await db.execute(sql`
-		select picked.entity_id, ${sql.raw(WORDS_SQL('picked.body_md'))}::int as words
-		from (
-			select distinct on (r.entity_id) r.entity_id, r.body_md
-			from revisions r
-			join scenes s on s.id = r.entity_id and s.deleted_at is null
-			join stories st on st.id = s.story_id
-			where r.entity_type = 'scene'
-				and st.universe_id = ${universeId}
-				and (r.created_at at time zone ${timezone})::date <= (now() at time zone ${timezone})::date - ${days}::int${storyFilter}
-			order by r.entity_id, r.created_at desc
-		) picked
+		select s.id as entity_id, ${words('r')}::int as words
+		from scenes s
+		join stories st on st.id = s.story_id
+		cross join lateral (
+			select rv.word_count, rv.body_md
+			from revisions rv
+			where rv.entity_type = 'scene' and rv.entity_id = s.id and rv.created_at < ${bound}
+			order by rv.created_at desc
+			limit 1
+		) r
+		where s.deleted_at is null
+			and st.universe_id = ${universeId}${storyFilter}
 	`);
 	const yearRows = await db.execute(sql`
 		select distinct ((r.created_at at time zone ${timezone})::date)::text as day
@@ -203,10 +216,6 @@ export async function writingActivity(
 			and st.universe_id = ${universeId}
 			and r.created_at >= now() - interval '366 days'${storyFilter}
 	`);
-	const todayResult = await db.execute(
-		sql`select ((now() at time zone ${timezone})::date)::text as today`
-	);
-	const today = (todayResult.rows[0] as { today: string }).today;
 
 	const net = dailyNetWords(
 		windowRows.rows.map((row) => {

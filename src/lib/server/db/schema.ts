@@ -656,7 +656,8 @@ export const entityRelationships = pgTable(
 // Version history, polymorphic over everything with editable prose. A row
 // per debounced save that changed the body (plus manual checkpoints), the
 // newest first in the timeline. Snapshot-plus-diff compression is a later
-// optimisation if the table grows large.
+// optimisation if the table grows large. Old autosaves are thinned to one per
+// entity per day by thinRevisions (revisions.ts).
 export const revisions = pgTable(
 	'revisions',
 	{
@@ -666,6 +667,10 @@ export const revisions = pgTable(
 		}).notNull(),
 		entityId: uuid('entity_id').notNull(),
 		bodyMd: text('body_md').notNull(),
+		// Word count of body_md (src/lib/word-count.ts), stored at write time so
+		// Insights never re-counts bodies. Null on rows from before the column
+		// existed; readers fall back to counting the body.
+		wordCount: integer('word_count'),
 		// Structured fields captured alongside the body for character, place,
 		// and lore revisions: name, aliases or keywords, summary, category,
 		// details, and the relationship set. Null for scenes and outline nodes,

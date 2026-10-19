@@ -94,6 +94,8 @@ To flag a spot to come back to, select some text and add a mark. Marks show in t
 
 The History tab on the right keeps past versions of the open scene. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Select "Preview" on a version to read it or compare it with the current text, and "Restore this version" to bring it back. Restoring never deletes history: the version you replaced stays in the list.
 
+Versions saved automatically are all kept for 90 days. After that, only the last one from each day is kept. Checkpoints are always kept.
+
 ## The Assistant
 
 When you have set up the Assistant on your account page, an Assistant panel appears on the right alongside Reference, History, and Notes. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	characters,
@@ -66,11 +66,13 @@ export async function recordRevision(
 	options: { label?: string; snapshot?: EntitySnapshot | null } = {}
 ): Promise<{ recorded: boolean }> {
 	const snapshot = options.snapshot ?? null;
+	const words = wordCount(bodyMd);
 	if (reason !== 'autosave') {
 		await db.insert(revisions).values({
 			entityType,
 			entityId,
 			bodyMd,
+			wordCount: words,
 			snapshot,
 			reason,
 			label: options.label?.trim() || null
@@ -106,7 +108,7 @@ export async function recordRevision(
 		) {
 			await tx
 				.update(revisions)
-				.set({ bodyMd, snapshot, createdAt: sql`now()` })
+				.set({ bodyMd, wordCount: words, snapshot, createdAt: sql`now()` })
 				.where(eq(revisions.id, latest.id));
 			return { recorded: true };
 		}
@@ -114,6 +116,7 @@ export async function recordRevision(
 			entityType,
 			entityId,
 			bodyMd,
+			wordCount: words,
 			snapshot,
 			reason,
 			label: options.label?.trim() || null
@@ -663,43 +666,80 @@ export type TimelineRow = RevisionRow & {
 	storySlug?: string | null;
 };
 
-function mergeTimelines(lists: TimelineRow[][], limit: number): TimelineRow[] {
-	return lists
-		.flat()
-		.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-		.slice(0, limit);
+type TimelineSource = { type: RevisionEntityType; entities: SQL };
+
+// The newest `limit` revisions across a set of entities, newest first. Each
+// source yields entity_id, entity_name, story_title and story_slug; a lateral
+// limit per entity walks the timeline index, so the cost is bounded by
+// entities times `limit` rather than by the whole history.
+async function recentRevisions(
+	db: Database,
+	sources: TimelineSource[],
+	limit: number
+): Promise<TimelineRow[]> {
+	const parts = sources.map(
+		({ type, entities }) => sql`
+			select r.id, r.reason, r.label, r.created_at, ${type}::text as entity_type,
+				e.entity_id, e.entity_name, e.story_title, e.story_slug
+			from (${entities}) e
+			cross join lateral (
+				select rv.id, rv.reason, rv.label, rv.created_at
+				from revisions rv
+				where rv.entity_type = ${type} and rv.entity_id = e.entity_id
+				order by rv.created_at desc
+				limit ${limit}
+			) r`
+	);
+	const result = await db.execute(sql`
+		select * from (${sql.join(parts, sql` union all `)}) x
+		order by x.created_at desc
+		limit ${limit}
+	`);
+	return result.rows.map((row) => {
+		const r = row as {
+			id: string;
+			reason: string | null;
+			label: string | null;
+			created_at: Date | string;
+			entity_type: RevisionEntityType;
+			entity_id: string;
+			entity_name: string | null;
+			story_title: string | null;
+			story_slug: string | null;
+		};
+		return {
+			id: r.id,
+			reason: r.reason,
+			label: r.label,
+			createdAt: new Date(r.created_at),
+			entityType: r.entity_type,
+			entityId: r.entity_id,
+			entityName: r.entity_name,
+			...(r.story_title !== null ? { storyTitle: r.story_title, storySlug: r.story_slug } : {})
+		};
+	});
 }
 
-// Recent changes across a story's prose, for its settings page.
+// Recent changes across a story's prose, for its settings page. A trashed
+// scene's history stays out, the same as the universe timeline.
 export async function storyTimeline(
 	db: Database,
 	storyId: string,
 	limit = 50
 ): Promise<TimelineRow[]> {
-	const sceneRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: scenes.title
-		})
-		.from(revisions)
-		.innerJoin(scenes, eq(revisions.entityId, scenes.id))
-		.where(
-			and(
-				eq(revisions.entityType, 'scene'),
-				eq(scenes.storyId, storyId),
-				// A trashed scene's history stays out of the live timeline, the same
-				// as the universe timeline.
-				isNull(scenes.deletedAt)
-			)
-		)
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	return mergeTimelines([sceneRows], limit);
+	return recentRevisions(
+		db,
+		[
+			{
+				type: 'scene',
+				entities: sql`
+					select id as entity_id, title as entity_name,
+						null::text as story_title, null::text as story_slug
+					from scenes where story_id = ${storyId} and deleted_at is null`
+			}
+		],
+		limit
+	);
 }
 
 // Recent changes across a universe's scenes and entities, for its settings
@@ -709,91 +749,89 @@ export async function universeTimeline(
 	universeId: string,
 	limit = 50
 ): Promise<TimelineRow[]> {
-	const sceneRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: scenes.title,
-			storyTitle: stories.title,
-			storySlug: stories.slug
-		})
-		.from(revisions)
-		.innerJoin(scenes, eq(revisions.entityId, scenes.id))
-		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(
-			and(
-				eq(revisions.entityType, 'scene'),
-				eq(stories.universeId, universeId),
-				isNull(scenes.deletedAt)
-			)
-		)
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	const characterRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: characters.name
-		})
-		.from(revisions)
-		.innerJoin(characters, eq(revisions.entityId, characters.id))
-		.where(and(eq(revisions.entityType, 'character'), eq(characters.universeId, universeId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	const placeRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: places.name
-		})
-		.from(revisions)
-		.innerJoin(places, eq(revisions.entityId, places.id))
-		.where(and(eq(revisions.entityType, 'place'), eq(places.universeId, universeId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	const loreRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: loreEntries.title
-		})
-		.from(revisions)
-		.innerJoin(loreEntries, eq(revisions.entityId, loreEntries.id))
-		.where(and(eq(revisions.entityType, 'lore_entry'), eq(loreEntries.universeId, universeId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	return mergeTimelines([sceneRows, characterRows, placeRows, loreRows], limit);
+	const entity = (table: string, nameColumn: string) => sql`
+		select id as entity_id, ${sql.raw(nameColumn)} as entity_name,
+			null::text as story_title, null::text as story_slug
+		from ${sql.raw(table)} where universe_id = ${universeId}`;
+	return recentRevisions(
+		db,
+		[
+			{
+				type: 'scene',
+				entities: sql`
+					select s.id as entity_id, s.title as entity_name,
+						st.title as story_title, st.slug as story_slug
+					from scenes s join stories st on st.id = s.story_id
+					where st.universe_id = ${universeId} and s.deleted_at is null`
+			},
+			{ type: 'character', entities: entity('characters', 'name') },
+			{ type: 'place', entities: entity('places', 'name') },
+			{ type: 'lore_entry', entities: entity('lore_entries', 'title') }
+		],
+		limit
+	);
 }
 
-// The footer's total: every revision recorded across the universe.
+// The footer's total: every revision recorded across the universe. One join
+// per entity type, so each counts from the timeline index instead of an OR
+// over the whole table.
 export async function universeRevisionCount(db: Database, universeId: string): Promise<number> {
 	const result = await db.execute(sql`
-		select count(*)::int as total from revisions r
-		where (r.entity_type = 'scene' and r.entity_id in (
-				select s.id from scenes s join stories st on st.id = s.story_id
-				where st.universe_id = ${universeId}))
-			or (r.entity_type = 'character' and r.entity_id in (
-				select id from characters where universe_id = ${universeId}))
-			or (r.entity_type = 'place' and r.entity_id in (
-				select id from places where universe_id = ${universeId}))
-			or (r.entity_type = 'lore_entry' and r.entity_id in (
-				select id from lore_entries where universe_id = ${universeId}))
+		select (
+			(select count(*) from scenes s join stories st on st.id = s.story_id
+				join revisions r on r.entity_type = 'scene' and r.entity_id = s.id
+				where st.universe_id = ${universeId})
+			+ (select count(*) from characters c
+				join revisions r on r.entity_type = 'character' and r.entity_id = c.id
+				where c.universe_id = ${universeId})
+			+ (select count(*) from places p
+				join revisions r on r.entity_type = 'place' and r.entity_id = p.id
+				where p.universe_id = ${universeId})
+			+ (select count(*) from lore_entries l
+				join revisions r on r.entity_type = 'lore_entry' and r.entity_id = l.id
+				where l.universe_id = ${universeId})
+		)::int as total
 	`);
 	return (result.rows[0] as { total: number }).total;
+}
+
+// Autosaves younger than this are all kept. Older ones are thinned to the
+// last autosave of each entity per UTC day, which is the row Insights reads
+// for that day's word count.
+export const REVISION_FULL_HISTORY_DAYS = 90;
+const THIN_BATCH = 5000;
+
+// Thins old autosave history. Never removes a checkpoint, restore or
+// suggestion row, the day's last autosave of an entity, or a revision pinned
+// as the base of a review thread or suggestion. Deletes in batches so a first
+// run on a long history does not hold one huge transaction. Returns the
+// number of rows removed.
+export async function thinRevisions(
+	db: Database,
+	fullHistoryDays = REVISION_FULL_HISTORY_DAYS
+): Promise<number> {
+	const cutoff = new Date(Date.now() - fullHistoryDays * 24 * 60 * 60 * 1000);
+	let total = 0;
+	for (;;) {
+		const result = await db.execute(sql`
+			delete from revisions where id in (
+				select ranked.id from (
+					select r.id, row_number() over (
+						partition by r.entity_type, r.entity_id, (r.created_at at time zone 'UTC')::date
+						order by r.created_at desc
+					) as rn
+					from revisions r
+					where r.reason = 'autosave' and r.created_at < ${cutoff}
+				) ranked
+				where ranked.rn > 1
+					and not exists (select 1 from review_threads t where t.base_revision_id = ranked.id)
+					and not exists (
+						select 1 from review_suggestions s where s.base_revision_id = ranked.id)
+				limit ${THIN_BATCH}
+			)
+		`);
+		const removed = result.rowCount ?? 0;
+		total += removed;
+		if (removed < THIN_BATCH) return total;
+	}
 }

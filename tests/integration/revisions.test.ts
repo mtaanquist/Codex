@@ -7,6 +7,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
+	reviewThreads,
 	revisions,
 	scenes,
 	stories,
@@ -20,6 +21,8 @@ import {
 	recordRevision,
 	restoreRevision,
 	storyTimeline,
+	thinRevisions,
+	universeRevisionCount,
 	universeTimeline
 } from '../../src/lib/server/revisions';
 import { saveCharacter } from '../../src/lib/server/characters';
@@ -112,6 +115,23 @@ describe('recordRevision', () => {
 			.where(eq(revisions.entityId, id));
 		await recordRevision(db, 'scene', id, 'B.');
 		expect(await listRevisions(db, 'scene', id)).toHaveLength(2);
+	});
+
+	it('stores the word count of each body, including a coalesced one', async () => {
+		const id = randomUUID();
+		const wordsOf = async () =>
+			(
+				await db
+					.select({ wordCount: revisions.wordCount })
+					.from(revisions)
+					.where(eq(revisions.entityId, id))
+			).map((row) => row.wordCount);
+		await recordRevision(db, 'scene', id, 'One two three.');
+		expect(await wordsOf()).toEqual([3]);
+		await recordRevision(db, 'scene', id, 'One two three four five.');
+		expect(await wordsOf()).toEqual([5]);
+		await recordRevision(db, 'scene', id, 'Six.', 'checkpoint');
+		expect((await wordsOf()).sort()).toEqual([1, 5]);
 	});
 
 	it('does not coalesce an autosave into a preceding checkpoint', async () => {
@@ -226,5 +246,163 @@ describe('timelines', () => {
 		expect(scene?.entityName).toBe('Opening');
 		expect(scene?.storyTitle).toBeTruthy();
 		expect(scene?.storySlug).toBeTruthy();
+	});
+});
+
+describe('universe timeline limits', () => {
+	it('returns the newest rows across entities when one has a long history', async () => {
+		const [busy] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 50, title: 'Busy', bodyMd: '' })
+			.returning();
+		const [quiet] = await db
+			.insert(characters)
+			.values({ universeId, ownerId, name: 'Quiet', bodyMd: '' })
+			.returning();
+		const hour = 60 * 60 * 1000;
+		const base = Date.now() + 1000 * hour;
+		// Ten older scene saves, then one newer character save, then one newest
+		// scene save: the top three must interleave the two entities.
+		await db.insert(revisions).values([
+			...Array.from({ length: 10 }, (_, i) => ({
+				entityType: 'scene' as const,
+				entityId: busy.id,
+				bodyMd: `old ${i}`,
+				reason: 'autosave',
+				createdAt: new Date(base + i * hour)
+			})),
+			{
+				entityType: 'character',
+				entityId: quiet.id,
+				bodyMd: 'q',
+				reason: 'autosave',
+				createdAt: new Date(base + 20 * hour)
+			},
+			{
+				entityType: 'scene',
+				entityId: busy.id,
+				bodyMd: 'newest',
+				reason: 'autosave',
+				createdAt: new Date(base + 30 * hour)
+			}
+		]);
+		const rows = await universeTimeline(db, universeId, 3);
+		expect(rows.map((row) => [row.entityName, row.createdAt.getTime()])).toEqual([
+			['Busy', base + 30 * hour],
+			['Quiet', base + 20 * hour],
+			['Busy', base + 9 * hour]
+		]);
+		expect((await storyTimeline(db, storyId, 2)).map((row) => row.createdAt.getTime())).toEqual([
+			base + 30 * hour,
+			base + 9 * hour
+		]);
+	});
+
+	it('counts every revision in the universe', async () => {
+		const [{ total }] = (
+			await pool.query(
+				`select count(*)::int as total from revisions r
+				where r.entity_id in (select s.id from scenes s join stories st on st.id = s.story_id
+					where st.universe_id = $1)
+				or r.entity_id in (select id from characters where universe_id = $1)`,
+				[universeId]
+			)
+		).rows;
+		expect(total).toBeGreaterThan(0);
+		expect(await universeRevisionCount(db, universeId)).toBe(total);
+	});
+});
+
+describe('thinRevisions', () => {
+	it('keeps recent history, checkpoints, pinned bases and the last autosave of each old day', async () => {
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 60, title: 'Old', bodyMd: '' })
+			.returning();
+		const day = 24 * 60 * 60 * 1000;
+		const old = new Date(Date.now() - 200 * day);
+		old.setUTCHours(10, 0, 0, 0);
+		const at = (offsetMs: number) => new Date(old.getTime() + offsetMs);
+		const minute = 60 * 1000;
+		const recentDay = new Date(Date.now() - 2 * day);
+		const rows = await db
+			.insert(revisions)
+			.values([
+				// An old day: three autosaves, a checkpoint, and a pinned autosave.
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'a1',
+					reason: 'autosave',
+					createdAt: at(0)
+				},
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'a2',
+					reason: 'autosave',
+					createdAt: at(10 * minute)
+				},
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'pin',
+					reason: 'autosave',
+					createdAt: at(20 * minute)
+				},
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'cp',
+					reason: 'checkpoint',
+					createdAt: at(30 * minute)
+				},
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'a3',
+					reason: 'autosave',
+					createdAt: at(40 * minute)
+				},
+				// The next old day: a single autosave.
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'b1',
+					reason: 'autosave',
+					createdAt: at(day)
+				},
+				// Recent: every autosave stays.
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'r1',
+					reason: 'autosave',
+					createdAt: recentDay
+				},
+				{
+					entityType: 'scene',
+					entityId: scene.id,
+					bodyMd: 'r2',
+					reason: 'autosave',
+					createdAt: new Date(recentDay.getTime() + minute)
+				}
+			])
+			.returning({ id: revisions.id, bodyMd: revisions.bodyMd });
+		const pinned = rows.find((row) => row.bodyMd === 'pin')!;
+		await db
+			.insert(reviewThreads)
+			.values({ storyId, sceneId: scene.id, baseRevisionId: pinned.id });
+
+		expect(await thinRevisions(db)).toBe(2);
+		const left = await db
+			.select({ bodyMd: revisions.bodyMd })
+			.from(revisions)
+			.where(eq(revisions.entityId, scene.id));
+		expect(left.map((row) => row.bodyMd).sort()).toEqual(
+			['a3', 'b1', 'cp', 'pin', 'r1', 'r2'].sort()
+		);
+		// A second run finds nothing more to do.
+		expect(await thinRevisions(db)).toBe(0);
 	});
 });
