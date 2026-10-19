@@ -13,7 +13,7 @@ export function makeS3Client(connection: S3Connection) {
 	return new S3Client({
 		endpoint: connection.endpoint,
 		region: connection.region,
-		// B2 and MinIO want path-style addressing.
+		// B2 and RustFS want path-style addressing.
 		forcePathStyle: Boolean(connection.endpoint),
 		credentials: {
 			accessKeyId: connection.accessKeyId,
