@@ -4,6 +4,7 @@ import { stories, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
+import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
 import {
 	ASSISTANT_ROLES,
@@ -423,9 +424,16 @@ export async function resolveLlmConfig(
 	};
 }
 
-// The model a role runs on: its own, else the chat model, else whatever is set.
+// The model a role runs on: its own, else the chat model, else the provider's
+// suggestion for the role, else whatever is set.
 export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
-	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
+	return (
+		config.models[role] ||
+		config.models.chat ||
+		suggestedModel(config.provider, role) ||
+		Object.values(config.models)[0] ||
+		''
+	);
 }
 
 // The context window of the model this role runs on, in tokens; undefined when

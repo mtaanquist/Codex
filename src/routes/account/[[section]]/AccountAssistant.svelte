@@ -14,41 +14,38 @@
 	const assistantOff = $derived(!data.assistant.enabled);
 
 	// Per-role model rows. The ids match the Assistant roles the gateway resolves
-	// a model for; the copy is presentational. Model names live here and in the
-	// help article, and nowhere else, so there are two places to refresh.
-	const FAST_SUGGESTION =
-		'Wants a fast model: hosted, Claude Haiku; on your own machine, a mixture-of-experts instruct model such as Qwen3 30B A3B (search for MoE instruct GGUF). Turn thinking off.';
+	// a model for; the copy is presentational. Which model to pick comes from the
+	// provider's guide in the page data; tip is advice that holds on any model.
 	const ROLE_META = [
 		{
 			id: 'chat',
 			name: 'Rubber duck',
 			hint: 'Conversational side panel. Best with a smart, chatty model.',
-			suggestion: 'Any model you like talking to.'
+			tip: ''
 		},
 		{
 			id: 'coauthor',
 			name: 'Co-author',
 			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.',
-			suggestion: FAST_SUGGESTION
+			tip: ''
 		},
 		{
 			id: 'continuation',
 			name: 'Continuation',
 			hint: 'Inline ghost-text suggestions. Fast and light is what matters.',
-			suggestion: FAST_SUGGESTION
+			tip: 'Turn thinking off.'
 		},
 		{
 			id: 'reviewer',
 			name: 'Reviewer',
 			hint: 'Reads a draft and leaves suggested edits in your name.',
-			suggestion:
-				'Wants the strongest model you can run: hosted, Claude Sonnet; on your own machine, a dense 32B instruct model such as Qwen3 32B (search for 32B instruct GGUF). Set a low temperature; thinking is optional.'
+			tip: 'Set a low temperature; thinking is optional.'
 		},
 		{
 			id: 'utility',
 			name: 'Background work',
 			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.',
-			suggestion: 'Use the same fast models as Continuation, with thinking off.'
+			tip: 'Turn thinking off.'
 		}
 	] as const;
 
@@ -120,7 +117,17 @@
 		const ids = discoveredModels
 			.map((m) => m.id)
 			.filter((id) => !filter || id.toLowerCase().includes(filter));
-		return [...new Set([...ids, ...Object.values(savedModels).filter((m): m is string => !!m)])];
+		// A provider with verified ids offers them before any discovery.
+		const suggested = Object.values(data.modelGuide.providers[selectedProvider])
+			.map((tier) => tier.id)
+			.filter((id): id is string => !!id && (!filter || id.toLowerCase().includes(filter)));
+		return [
+			...new Set([
+				...ids,
+				...suggested,
+				...Object.values(savedModels).filter((m): m is string => !!m)
+			])
+		];
 	});
 	// Per-token prices, from the last saved discovery snapshot overlaid with the
 	// one just run; absent for endpoints that report none.
@@ -233,6 +240,20 @@
 			if (apiKeyField) apiKeyField.value = '';
 		}
 	});
+	// The guide follows the live select, like the provider-specific controls.
+	function suggestion(role: AssistantRole) {
+		return data.modelGuide.providers[selectedProvider][data.modelGuide.tiers[role]];
+	}
+	function suggestionLine(role: AssistantRole): string {
+		const { id, text } = suggestion(role);
+		return id ? `${text} (${id})` : text;
+	}
+	// What a role runs on with nothing picked, mirroring the server's pickModel.
+	function unpickedLabel(role: AssistantRole): string {
+		if (role !== 'chat' && savedModels.chat) return 'Same as Rubber duck';
+		const { id } = suggestion(role);
+		return id ? `Suggested: ${id}` : 'Use endpoint default';
+	}
 	function paramsText(params: Record<string, unknown> | undefined): string {
 		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';
 	}
@@ -644,10 +665,12 @@
 							<div class="role-row-label">
 								<div class="role-row-name">{role.name}</div>
 								<div class="role-row-hint">{role.hint}</div>
+								<div class="role-row-hint">Suggested: {suggestionLine(role.id)}.</div>
 							</div>
 							<div class="role-row-controls">
 								<select class="select" name={role.id}>
-									<option value="" selected={!savedModels[role.id]}>Use endpoint default</option>
+									<option value="" selected={!savedModels[role.id]}>{unpickedLabel(role.id)}</option
+									>
 									{#each modelOptions as model (model)}
 										<option value={model} selected={savedModels[role.id] === model}
 											>{modelLabel(model)}</option
@@ -670,8 +693,8 @@
 					{/each}
 				</div>
 				<p class="field-hint">
-					Pick a model for each role, or leave it on the endpoint default. Tune opens that role's
-					thinking, temperature, and reply length.
+					Pick a model for each role; the suggestion under each name is a good place to start for
+					the provider you picked. Tune opens that role's thinking, temperature, and reply length.
 				</p>
 				{#if tuningRole}
 					<!-- Rendered inside the form so its fields save with the table. Only the
@@ -679,6 +702,7 @@
 					{#key tuningRole.id}
 						<RoleTuningModal
 							role={tuningRole}
+							suggestion={suggestionLine(tuningRole.id)}
 							saved={savedTuning[tuningRole.id] ?? {}}
 							anthropic={anthropicShown}
 							contextWindow={savedModels[tuningRole.id]

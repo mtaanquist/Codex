@@ -120,3 +120,21 @@ describe('assistantGate', () => {
 		expect(gate.surfacesEnabled).toBe(false);
 	});
 });
+
+describe('the suggested model', () => {
+	it("runs a Claude role with nothing picked on the guide's model for it", () => {
+		const config = resolved({ provider: 'anthropic' });
+		expect(pickModel(config, 'continuation')).toBe('claude-haiku-5-5');
+		expect(pickModel(config, 'chat')).toBe('claude-sonnet-5-5');
+		expect(pickModel(config, 'reviewer')).toBe('claude-opus-5-5');
+	});
+
+	it('still follows the chat model first, as before', () => {
+		const config = resolved({ provider: 'anthropic', models: { chat: 'claude-x' } });
+		expect(pickModel(config, 'reviewer')).toBe('claude-x');
+	});
+
+	it('leaves a provider without a verified id on the endpoint default', () => {
+		expect(pickModel(resolved({ provider: 'gemini' }), 'chat')).toBe('');
+	});
+});
