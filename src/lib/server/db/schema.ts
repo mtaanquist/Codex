@@ -284,7 +284,7 @@ export const scenes = pgTable(
 	},
 	(table) => [
 		index('scenes_characters_present_gin').using('gin', table.charactersPresent),
-		// Trigram index behind the palette's body-text search; migration 0037
+		// Trigram index for substring matches on prose; migration 0037
 		// creates the pg_trgm extension it needs.
 		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops')),
 		// Every story open, scene list, and mention sweep filters on story_id.
@@ -826,6 +826,14 @@ export const assets = pgTable('assets', {
 	width: integer('width'),
 	height: integer('height'),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// Bucket objects whose rows are gone, waiting out the backup retention window
+// before the worker removes them, so restoring an older database dump still
+// finds every image it points at. See sweepDeletedObjects in assets.ts.
+export const pendingObjectDeletions = pgTable('pending_object_deletions', {
+	storageKey: text('storage_key').primaryKey(),
+	deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 // A user-requested export (account, story, or universe; zip or EPUB), built by

@@ -38,8 +38,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The app container applies pending database migrations on every start, so there
-is no separate migration step. Watch for it to come up:
+The app and worker containers apply pending database migrations on every start
+(one at a time, so each migration runs once), so there is no separate migration
+step. Watch for it to come up:
 
 ```bash
 docker compose logs -f app   # wait for "Migrations applied." then the server
@@ -278,16 +279,43 @@ take a fresh dump first if there is anything live worth keeping.
    ```
 
 The dump excludes the job-queue tables, so any jobs that were pending at dump
-time are not restored; the worker simply carries on with new ones. Uploaded
-images live in the asset bucket, not the database, so they are unaffected by a
-restore as long as that bucket is intact (the reason to keep it separate).
+time are not restored; the worker simply carries on with new ones.
+
+Uploaded images live in the asset bucket, not the database, and **the backups
+do not copy them**. Deleting or replacing an image removes its database row at
+once, but the worker only removes the stored file once it is older than the
+oldest kept backup: one day longer than `BACKUP_KEEP_DAYS` or
+`BACKUP_KEEP_RECENT_HOURS`, whichever reaches further back, or one day when
+backups are off. Restoring any kept dump therefore still finds every image it
+points at. If you switch backups off later, the dumps already in the bucket
+stay there but the wait drops to one day, so images deleted after that are
+missing if you restore one of those older dumps.
+If the asset bucket itself is lost, though, the images are gone: turn on
+versioning or replication for that bucket at your storage provider, or copy it
+somewhere else on a schedule. The bundled RustFS bucket lives in a Docker
+volume on the same host, so back that volume up too. Deleting an account
+removes its images straight away, without the wait.
 
 ## Health checks and monitoring
 
 `GET /healthz` is public and runs a `select 1`. It returns `200` with
 `{"status":"ok"}` when the database is reachable and `503` with
-`{"status":"error"}` when it is not. Point an uptime monitor or an orchestrator
-liveness and readiness probe at it.
+`{"status":"error"}` when it is not, or when the check takes longer than 3
+seconds. Point an uptime monitor or an orchestrator liveness and readiness
+probe at it.
+
+The README example and `compose.yaml` give the app service a healthcheck that
+calls `/healthz` every 30 seconds, so `docker compose ps` shows the app as
+`healthy` or `unhealthy`, and the bundled Caddy waits for a healthy app before
+it starts. If you use your own compose file, copy the app's `healthcheck`
+block into it. The worker has no web port, so it has no healthcheck. Docker
+Compose does not restart a container just because it is unhealthy; use an
+orchestrator or a watchdog if you want that.
+
+If the database restarts, the app and worker log a `db.pool_error` line and
+reconnect on their own. A single database query that runs longer than 30
+seconds in the app (5 minutes in the worker) is cancelled and that request or
+job fails instead of holding a connection.
 
 The worker logs one line per job to stdout; collect those if you want
 visibility into indexing, email, exports, and backups. A failed backup is
@@ -296,8 +324,9 @@ logged there and shown in the admin panel's run history.
 ## Updating
 
 Change the image tag (or pull `latest`) and run `docker compose up -d`. Pending
-migrations apply when the app container starts. Migrations are forward-only, so
-take a backup before updating if you are not running the scheduled ones; with
+migrations apply when the app or worker container starts. Migrations are
+forward-only, so take a backup before updating if you are not running the
+scheduled ones; with
 `BACKUP_S3_*` set the worker already keeps hourly dumps, and
 `node scripts/restore-backup.ts latest` brings the newest one back.
 

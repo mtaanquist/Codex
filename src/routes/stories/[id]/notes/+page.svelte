@@ -145,7 +145,7 @@
 		border-color: var(--accent-line);
 	}
 	.note-tool.danger:hover {
-		color: var(--danger, #b00020);
-		border-color: var(--danger, #b00020);
+		color: var(--danger);
+		border-color: var(--danger);
 	}
 </style>

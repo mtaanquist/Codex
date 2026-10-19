@@ -116,6 +116,6 @@
 	.proposal-error {
 		margin: 8px 0 0;
 		font-size: 12.5px;
-		color: var(--danger, #c0392b);
+		color: var(--danger);
 	}
 </style>

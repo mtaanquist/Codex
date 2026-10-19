@@ -3,7 +3,7 @@
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
-	import { createAutosave, type SaveStatus } from '$lib/autosave';
+	import { createAutosave, keepaliveFits, saveFailure, type SaveStatus } from '$lib/autosave';
 
 	let {
 		note,
@@ -26,13 +26,14 @@
 		onStatus: (status) => onStatus(status),
 		save: async ({ keepalive }) => {
 			if (!view) return;
+			const body = JSON.stringify({ title, bodyMd: view.state.doc.toString() });
 			const response = await fetch(`/api/notes/${note.id}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
-				keepalive,
-				body: JSON.stringify({ title, bodyMd: view.state.doc.toString() })
+				keepalive: keepalive && keepaliveFits(body),
+				body
 			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			if (!response.ok) throw saveFailure(response.status);
 		}
 	});
 	const scheduleSave = autosave.schedule;
@@ -58,7 +59,7 @@
 	});
 </script>
 
-<svelte:window onpagehide={autosave.flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
 
 <div class="detail">
 	<div class="detail-head">

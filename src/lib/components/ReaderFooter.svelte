@@ -60,8 +60,8 @@
 </footer>
 
 <style>
-	/* The brand mark is a filled tile, so its stroke icon is always white. */
+	/* The brand mark is a filled tile, so its icon uses --accent-contrast. */
 	.logo :global(svg) {
-		color: #fff;
+		color: var(--accent-contrast);
 	}
 </style>

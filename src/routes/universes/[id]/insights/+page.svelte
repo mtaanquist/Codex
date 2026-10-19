@@ -560,7 +560,7 @@
 		fill: var(--accent);
 	}
 	.chart-bar.negative {
-		fill: var(--danger, #c0564f);
+		fill: var(--danger);
 		opacity: 0.7;
 	}
 	.chart-range {

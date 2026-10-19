@@ -6,6 +6,19 @@
 
 const EXCERPT_MARGIN = 600;
 
+// The tools a thread reply may use. The reply lands where guest reviewers can
+// read it and the transcript carries their words, so the reads stop at scenes
+// of the thread's own story (the caller sets toolScope.storyOnly): no entity,
+// appearance, or search tools, which reach the whole universe.
+export function reviewReplyToolNames(pendingSuggestion: boolean): string[] {
+	return [
+		'list_scenes',
+		'get_scene',
+		'reply_in_thread',
+		...(pendingSuggestion ? ['update_suggestion'] : [])
+	];
+}
+
 // The scene text around the thread's anchor, so the reply is grounded in the
 // passage under discussion without sending the whole scene. Falls back to the
 // scene's head when there is no anchor (a whole-scene thread).

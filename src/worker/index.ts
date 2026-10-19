@@ -11,6 +11,7 @@ import {
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_REVIEW_RUNS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
+	SWEEP_DELETED_OBJECTS_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	USER_EXPORT_QUEUE,
@@ -19,7 +20,7 @@ import {
 	ASSISTANT_SUMMARIES_QUEUE,
 	DIGEST_DELAY_SECONDS
 } from '../lib/server/queues.ts';
-import pg from 'pg';
+import { createPool } from '../lib/server/db/pool.ts';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
 import {
@@ -39,18 +40,16 @@ import {
 	markReviewerNotified
 } from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
-import {
-	listUniversesDueForPurge,
-	purgeUniverseWithin,
-	universeAssetKeys
-} from '../lib/server/universe-lifecycle.ts';
+import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
 import {
 	assetMigrationSource,
 	clearAssetMigrationSource,
 	effectiveAssetConfig,
 	migrateAssetObjects,
+	objectDeletionGraceDays,
 	recordAssetMigrationResult,
-	s3AssetStore
+	s3AssetStore,
+	sweepDeletedObjects
 } from '../lib/server/assets.ts';
 import {
 	failureMessage,
@@ -64,13 +63,16 @@ import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
+import { stopWorker } from './shutdown.ts';
 import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
 const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
 
-const db = drizzle(new pg.Pool({ connectionString }), { schema });
+// Jobs run longer statements than web requests (purges, reindexing), so the
+// per-statement limit is looser than the app's.
+const db = drizzle(createPool(connectionString, { statementTimeoutMs: 300_000 }), { schema });
 const boss = new PgBoss(connectionString);
 
 // Queues each recipient's batched digest email after the shared delay.
@@ -98,6 +100,7 @@ await boss.createQueue(EMAIL_QUEUE);
 await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
+await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
@@ -169,17 +172,13 @@ await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
 await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const config = await effectiveAssetConfig(db);
-		if (!config) {
-			console.warn(`export: ${job.data.exportId} skipped, asset storage not configured`);
-			continue;
-		}
-		const store = s3AssetStore(config);
+		const store = config ? s3AssetStore(config) : null;
 		const result = await runUserExport(db, job.data.exportId, store);
 		if (!result.ok) {
 			console.warn(`export: ${job.data.exportId} failed (${result.reason})`);
 			continue;
 		}
-		await pruneOwnerExports(db, store, result.ownerId);
+		if (store) await pruneOwnerExports(db, store, result.ownerId);
 		const digestUsers = await insertNotifications(db, [result.ownerId], 'export_ready', {
 			title: 'Your export is ready to download.',
 			href: `/exports/${job.data.exportId}`
@@ -506,19 +505,26 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 
 // Trashed universes past their restore window go for good.
 await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
-	const due = await listUniversesDueForPurge(db);
-	if (due.length === 0) return;
-	const config = await effectiveAssetConfig(db);
-	const store = config ? s3AssetStore(config) : null;
-	for (const universeId of due) {
+	for (const universeId of await listUniversesDueForPurge(db)) {
 		try {
-			const keys = await universeAssetKeys(db, universeId);
-			await db.transaction((tx) => purgeUniverseWithin(tx, universeId));
-			if (store) for (const key of keys) await store.remove(key).catch(() => {});
+			await purgeUniverse(db, universeId);
 			console.log(`purge: universe ${universeId} deleted`);
 		} catch (error) {
 			console.error(`purge: universe ${universeId} failed`, error);
 		}
+	}
+});
+
+// Bucket objects of deleted rows, once no kept backup can still point at them.
+await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, async () => {
+	const config = await effectiveAssetConfig(db);
+	if (!config) return;
+	const graceDays = objectDeletionGraceDays(await effectiveBackupConfig(db));
+	const result = await sweepDeletedObjects(db, s3AssetStore(config), graceDays);
+	if (result.removed + result.kept + result.failed > 0) {
+		console.log(
+			`asset sweep: ${result.removed} removed, ${result.kept} still in use, ${result.failed} failed`
+		);
 	}
 });
 
@@ -536,6 +542,8 @@ await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
 // And the universe trash sweep, offset from the account one.
 await boss.schedule(PURGE_UNIVERSES_QUEUE, '45 * * * *', {}, { tz: 'UTC' });
 
+await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' });
+
 // Old review progress goes once a day; nothing is time critical about it.
 await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
 
@@ -546,9 +554,8 @@ await boss.schedule(RECONCILE_MENTIONS_QUEUE, '*/5 * * * *', {}, { tz: 'UTC' });
 // Off-site backups, only when the bucket is configured (saved settings or
 // environment). The schedule lives in pg-boss, so it is cleared when the
 // configuration goes away; the app re-applies it when settings are saved.
-// On a fresh stack the worker can boot while the app is still running the
-// migrations, so a failed settings read falls back to the environment
-// instead of crashing the process; the next start reconciles fully.
+// A failed settings read falls back to the environment instead of crashing
+// the process; the next start reconciles fully.
 const backups = await effectiveBackupConfig(db).catch((error) => {
 	console.warn('backups: could not read saved settings, using the environment:', error);
 	return backupConfig();
@@ -564,8 +571,17 @@ if (backups) {
 
 console.log('Worker started.');
 
+// Running jobs get until the stop timeout to finish; then pg-boss fails them
+// into a retry so they are picked up again on the next start.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
-		void boss.stop().then(() => process.exit(0));
+		console.log(`Worker stopping (${signal}).`);
+		void stopWorker(boss).then(
+			() => process.exit(0),
+			(error) => {
+				console.error('Worker stop failed:', error);
+				process.exit(1);
+			}
+		);
 	});
 }
