@@ -1,48 +1,48 @@
-# Codex — design
+# Codex - design
 
-A writing workspace for long-form creative work — novels, serials, campaigns, worldbuilding projects that grow across years. Runs in Docker, accessed through a browser. Two ways to use it: install it on a server you control, or sign up on the hosted service run by the project maintainer. Same code either way, same features, MIT-licensed. There is no feature-gated tier; the difference between the two paths is who handles backups, TLS, and updates.
+A writing workspace for long-form creative work - novels, serials, campaigns, worldbuilding projects that grow across years. Runs in Docker, accessed through a browser. Two ways to use it: install it on a server you control, or sign up on the hosted service run by the project maintainer. Same code either way, same features, MIT-licensed. There is no feature-gated tier; the difference between the two paths is who handles backups, TLS, and updates.
 
 Companion documents:
-- `schema.md` — full Postgres schema.
-- `roadmap.md` — phased build sequence.
+- `schema.md` - full Postgres schema.
+- `roadmap.md` - phased build sequence.
 
 ---
 
 ## What Codex is
 
-Codex sits between the formal tools that treat writing as a deliverable (Scrivener, Final Draft) and the prose editors that treat writing as a single document (markdown editors, Word). What it adds is structure: a **universe** that holds shared worldbuilding, **stories** that tell specific narratives within that universe, **chapters** and **scenes** that carry the prose, and **characters, places, and lore entries** — cross-referenced, searchable, visible alongside the writing surface without crowding it.
+Codex sits between the formal tools that treat writing as a deliverable (Scrivener, Final Draft) and the prose editors that treat writing as a single document (markdown editors, Word). What it adds is structure: a **universe** that holds shared worldbuilding, **stories** that tell specific narratives within that universe, **chapters** and **scenes** that carry the prose, and **characters, places, and lore entries** - cross-referenced, searchable, visible alongside the writing surface without crowding it.
 
-It is not a chat tool. It is not a role-play tool. It is not, principally, a publishing platform — though it exports what you need to take your work elsewhere. The shape is the same whether you self-host or use the hosted service: one shared instance with a number of accounts on it, each user's work scoped to them and private by default, and published pages reachable by anyone (the GitHub model). What differs between self-host and hosted is only who is responsible for the box it runs on, not the model.
+It is not a chat tool. It is not a role-play tool. It is not, principally, a publishing platform - though it exports what you need to take your work elsewhere. The shape is the same whether you self-host or use the hosted service: one shared instance with a number of accounts on it, each user's work scoped to them and private by default, and published pages reachable by anyone (the GitHub model). What differs between self-host and hosted is only who is responsible for the box it runs on, not the model.
 
 ## Who uses it
 
-Three types of user shape the product, and in practice they overlap — most people using Codex will be some combination of all three at different moments.
+Three types of user shape the product, and in practice they overlap - most people using Codex will be some combination of all three at different moments.
 
 **The novelist** writes long-form fiction, sometimes standalone, often series. They care about prose quality, consistent worldbuilding across books, finding every mention of a character to verify a detail, and recovering a draft from a week ago because the restructure didn't actually work. They protect their flow state and bristle at anything that interrupts it.
 
-**The worldbuilder** may or may not be writing a specific story. What they're building is the world itself — its geography, its histories, its factions, its magic or its science. They want to hold their material in structured form and link it together. For them the stories (if any) are a way to explore the world; the world is the primary thing.
+**The worldbuilder** may or may not be writing a specific story. What they're building is the world itself - its geography, its histories, its factions, its magic or its science. They want to hold their material in structured form and link it together. For them the stories (if any) are a way to explore the world; the world is the primary thing.
 
-**The TTRPG designer or DM** is running a campaign, writing a setting book, or both. They share a lot with the worldbuilder and some with the novelist — session recaps, NPC journals, faction politics, encounter notes. They want to record canon without being forced into a novel-shaped "story" structure.
+**The TTRPG designer or DM** is running a campaign, writing a setting book, or both. They share a lot with the worldbuilder and some with the novelist - session recaps, NPC journals, faction politics, encounter notes. They want to record canon without being forced into a novel-shaped "story" structure.
 
-Codex does not ask you to pick a lane. It gives you primitives and lets you use them however fits. A novelist's *series bible* and a DM's *campaign setting* map cleanly onto the same concept — a universe with characters, places, and lore, and any number of story-shaped containers drawing from it.
+Codex does not ask you to pick a lane. It gives you primitives and lets you use them however fits. A novelist's *series bible* and a DM's *campaign setting* map cleanly onto the same concept - a universe with characters, places, and lore, and any number of story-shaped containers drawing from it.
 
 ## What it feels like to use
 
 ### Starting fresh
 
-You land on your library. It shows the universes you've already created — "The shattered realms," "Tenfold moon" — each with its cluster of stories, plus any standalones. There is a dashed-border button at the top right: *New universe*. You click it, name it *The long cold*, add three sentences of description, and create your first story inside it. An empty scene is already waiting when you land in the writing view: status *outline*, position zero, untitled. You start typing.
+You land on your library. It shows the universes you've already created - "The shattered realms," "Tenfold moon" - each with its cluster of stories, plus any standalones. There is a dashed-border button at the top right: *New universe*. You click it, name it *The long cold*, add three sentences of description, and create your first story inside it. An empty scene is already waiting when you land in the writing view: status *outline*, position zero, untitled. You start typing.
 
 ### Drafting
 
-Forty minutes in. The editor has underlined — in quiet category colours, dotted not solid — the names of characters and places you've introduced earlier. The first time you type "Hal" in this scene, a faded "den" appears after your cursor; Tab makes it "Halden." An hour later you decide to restructure the opening. Before you rewrite, you open the History tab in the right sidebar and add a manual checkpoint called "before restructure." You rewrite. Two hours after that, you realise the original was actually better. You open the History tab again, click the "before restructure" entry, see the earlier version in the centre column with a blue *Viewing a past revision* banner, and click *Restore*. Nothing is lost; your restructured attempt becomes a new revision in the timeline, still recoverable.
+Forty minutes in. The editor has underlined - in quiet category colours, dotted not solid - the names of characters and places you've introduced earlier. The first time you type "Hal" in this scene, a faded "den" appears after your cursor; Tab makes it "Halden." An hour later you decide to restructure the opening. Before you rewrite, you open the History tab in the right sidebar and add a manual checkpoint called "before restructure." You rewrite. Two hours after that, you realise the original was actually better. You open the History tab again, click the "before restructure" entry, see the earlier version in the centre column with a blue *Viewing a past revision* banner, and click *Restore*. Nothing is lost; your restructured attempt becomes a new revision in the timeline, still recoverable.
 
 ### Coming back
 
-Three weeks later you open Codex. Your library's *Recent* strip shows *Book of ash* at the top — "edited 3 weeks ago." You click in. The scene you were working on is still open. The right sidebar panels you had pinned are still pinned. Your entity underlines are still there. You pick up without orientation.
+Three weeks later you open Codex. Your library's *Recent* strip shows *Book of ash* at the top - "edited 3 weeks ago." You click in. The scene you were working on is still open. The right sidebar panels you had pinned are still pinned. Your entity underlines are still there. You pick up without orientation.
 
 ### Stretching across books
 
-A year later you start *The northern march*, book two in the same universe. You add it as a second story under *The shattered realms*. Alice, Halden, the treaty — all already exist; you don't re-describe them. But in this new book, Alice is seven years older and living somewhere else. You open her entity page; in the *In this book* section (story-scoped, visually distinct with a left accent) you write what's changed for her. Book one's notes are untouched.
+A year later you start *The northern march*, book two in the same universe. You add it as a second story under *The shattered realms*. Alice, Halden, the treaty - all already exist; you don't re-describe them. But in this new book, Alice is seven years older and living somewhere else. You open her entity page; in the *In this book* section (story-scoped, visually distinct with a left accent) you write what's changed for her. Book one's notes are untouched.
 
 ### Just writing
 
@@ -50,16 +50,16 @@ The writing experience stands on its own. You sit down to write and the tool giv
 
 ### Turning over a universe
 
-Years in, your universe has grown large enough that you want to share it. You open universe settings, go to Export, and download a markdown archive — a zip of plain markdown files, each with YAML front matter, organised into folders for characters, places, lore, and a subfolder per story. The archive opens cleanly in Obsidian. You hand it to a friend, who reads through it without needing to run Codex at all. Your words have never been trapped.
+Years in, your universe has grown large enough that you want to share it. You open universe settings, go to Export, and download a markdown archive - a zip of plain markdown files, each with YAML front matter, organised into folders for characters, places, lore, and a subfolder per story. The archive opens cleanly in Obsidian. You hand it to a friend, who reads through it without needing to run Codex at all. Your words have never been trapped.
 
 ## Product structure
 
 ```
 universe
-  ├── story (one or more)
-  │     └── chapter (organisational container)
-  │           └── scene (atomic writing unit)
-  └── characters, places, lore entries (universe-scoped; surfaced per story by reference)
+  |-- story (one or more)
+  |     `-- chapter (organisational container)
+  |           `-- scene (atomic writing unit)
+  `-- characters, places, lore entries (universe-scoped; surfaced per story by reference)
 ```
 
 A few decisions this shape encodes:
@@ -68,17 +68,17 @@ A few decisions this shape encodes:
 
 **Story, not "novel.**" Form-agnostic. Novels, novellas, serials, short stories, and campaigns all fit.
 
-**Scene, not chapter, is the atomic writing unit.** Scenes own prose. Chapters are organisational. A scene has POV, location, time, status, word count, and an optional summary. Chapters are parents that can be reordered and summarised. This is Scrivener's instinct and it's correct — scenes are the unit of writing.
+**Scene, not chapter, is the atomic writing unit.** Scenes own prose. Chapters are organisational. A scene has POV, location, time, status, word count, and an optional summary. Chapters are parents that can be reordered and summarised. This is Scrivener's instinct and it's correct - scenes are the unit of writing.
 
 **Orphan scenes are allowed.** A scene's `chapter_id` is nullable, so you can draft before committing to chapter structure.
 
 **Characters, places, and lore are universe-scoped, surfaced per story by reference.** Alice-at-32 and Alice-at-39 are the same character record, with per-book notes layered on top. Identity lives on the universe; context lives on the story. A story does not own its own entities: its Plan view shows the universe entities it declares as members or mentions in prose, and creating an entity while inside a story simply adds it to the universe and marks it a member of that story.
 
-**Lore categories are user-defined.** Every universe starts with a single "Lore" category; users rename it, delete it, and add as many more as they need — "Factions," "Rituals," "Technologies," "Historical events." Characters and places stay first-class because they have behaviours (aliases, mention detection, POV assignment) the generic lore shape doesn't need.
+**Lore categories are user-defined.** Every universe starts with a single "Lore" category; users rename it, delete it, and add as many more as they need - "Factions," "Rituals," "Technologies," "Historical events." Characters and places stay first-class because they have behaviours (aliases, mention detection, POV assignment) the generic lore shape doesn't need.
 
 ## The writing surface
 
-The editor exists at two scopes: **story** and **universe**. Both use the same three-column shell — structure on the left, working area in the centre, reference on the right — and the same underlying components. What differs is which views are available and what the components display.
+The editor exists at two scopes: **story** and **universe**. Both use the same three-column shell - structure on the left, working area in the centre, reference on the right - and the same underlying components. What differs is which views are available and what the components display.
 
 **Inside a story**, the editor offers three views, selected by tabs at the top of the left sidebar:
 
@@ -88,7 +88,7 @@ The editor exists at two scopes: **story** and **universe**. Both use the same t
 
 **Inside a universe**, the editor still shows all four modes, because the strip is the same four everywhere; **Plan** and **Notes** open at universe scope, while Write and Review resolve to the universe's story list, since both need a story open. One line under the strip says so. A universe doesn't contain prose directly; it contains the worldbuilding that stories draw on. The universe-level Plan is the same entity editor component as the story-level Plan, except it shows every entity in the universe (rather than the subset a story uses) and hides the *In this book* story-scoped section (there's no story context at this scope to define "in this book" against). The universe-level Notes is the same notes component, filtered to notes that aren't attached to any specific story.
 
-This structure — universes as first-class editable surfaces, not just settings containers — is important for worldbuilders and TTRPG designers who may never write a prose "story" but need a full editor for characters, places, and lore. It's also important for novelists adding a character who'll cross multiple books: the natural home for such a character is the universe, not whichever book they happened to appear in first.
+This structure - universes as first-class editable surfaces, not just settings containers - is important for worldbuilders and TTRPG designers who may never write a prose "story" but need a full editor for characters, places, and lore. It's also important for novelists adding a character who'll cross multiple books: the natural home for such a character is the universe, not whichever book they happened to appear in first.
 
 The left strip is routes and never changes shape; the right pane is panels about whatever the centre holds, so it changes with the mode. There are five panels, one order, one label each: **Reference** (what the prose or entry mentions), **Comments** (comments and suggestions on this text), **Assistant** (the text read against the story's settings), **History** (versions of what you are editing), and **Notes** (notes on this scene). A panel with no subject on a page is hidden rather than disabled or renamed, because a subject is not something a viewer can be granted; where one panel is left the pane wears that panel's title instead of a one-segment control, and where none is left the pane closes. The strip is a real tablist, so the panels are reachable by arrow keys and announced as tabs. The Assistant panel shows only when the account has the Assistant configured and enabled and the story has not muted it (see `assistant.md` and "AI: the Assistant" below). A command palette (Ctrl+K), which absorbs search and cross-view navigation into one surface, was added later in Phase 7; it is a shortcut to the navigation model, never a substitute for it, so anything reachable only from the palette is a bug. See `design-system.md` for the panel-by-page table and the primitives.
 
@@ -108,19 +108,19 @@ A per-entity `auto_detect_mentions` flag disables matching for common-word names
 
 Where mentions are *implicit* links derived from prose, relationships are **explicit** links declared by the user. A character is the parent of another character; a character lives in a place; a place is part of a larger place. Relationships are the worldbuilding equivalent of mentions: they cross-reference entities, but the user enters them directly rather than the system discovering them.
 
-Each relationship has a typed label from a defined set — *parent of, sibling of, rival of, lives in, rules, part of,* and so on — plus optional free-text notes. The relation types ship with sensible built-in defaults (family, social, geography) and can be extended per-universe; a universe about sworn-sword hierarchies or starship crews can add the types that fit it without the tool privileging any particular genre. Direction matters: *parent of* is asymmetric, rendered as "child of" on the target's page; *sibling of* is symmetric, rendered the same on both sides. The free-text label is never user-typed — it's always picked from the defined set, so relationships stay filterable, inverse-renderable, and graphable (the relationship web view shipped in v2.16.0).
+Each relationship has a typed label from a defined set - *parent of, sibling of, rival of, lives in, rules, part of,* and so on - plus optional free-text notes. The relation types ship with sensible built-in defaults (family, social, geography) and can be extended per-universe; a universe about sworn-sword hierarchies or starship crews can add the types that fit it without the tool privileging any particular genre. Direction matters: *parent of* is asymmetric, rendered as "child of" on the target's page; *sibling of* is symmetric, rendered the same on both sides. The free-text label is never user-typed - it's always picked from the defined set, so relationships stay filterable, inverse-renderable, and graphable (the relationship web view shipped in v2.16.0).
 
 Relationships can be scoped to a specific story, so a reconciliation in book two doesn't have to rewrite the universe-level rival relationship that's true across the broader canon. Story-scoped relationships supersede universe-wide ones on that story's pages.
 
-The entity editor shows relationships as a dedicated section below the Description. The Reference panel in the right sidebar shows them alongside the mention-derived "Related" list — relationships in one group, mention co-occurrences in another, visually distinct so the user can tell which links are authored and which are discovered.
+The entity editor shows relationships as a dedicated section below the Description. The Reference panel in the right sidebar shows them alongside the mention-derived "Related" list - relationships in one group, mention co-occurrences in another, visually distinct so the user can tell which links are authored and which are discovered.
 
 ### Entity autocomplete
 
-Building on the mention index, the editor also offers completion suggestions while you type. The behaviour is user-configurable through a three-option preference: **off**, **inline ghost-text**, or **popup menu**. Ghost-text is the recommended default for prose — the rest of "Halden" appears as faded text after your cursor when you type "Hal," and Tab accepts it. The popup is a dropdown showing multiple matches with arrow-key selection, more familiar to anyone coming from IDEs. Off disables the feature without affecting the underlines. The three options are exposed because writers genuinely disagree on the best shape, and CodeMirror's compartment-based configuration makes them cheap to switch between.
+Building on the mention index, the editor also offers completion suggestions while you type. The behaviour is user-configurable through a three-option preference: **off**, **inline ghost-text**, or **popup menu**. Ghost-text is the recommended default for prose - the rest of "Halden" appears as faded text after your cursor when you type "Hal," and Tab accepts it. The popup is a dropdown showing multiple matches with arrow-key selection, more familiar to anyone coming from IDEs. Off disables the feature without affecting the underlines. The three options are exposed because writers genuinely disagree on the best shape, and CodeMirror's compartment-based configuration makes them cheap to switch between.
 
 ### History
 
-Every debounced save produces a revision. Manual checkpoints can be added at any time with a short label. Revisions are polymorphic across every editable entity — scenes, chapters, characters, places, lore entries, notes — and surface at three scopes:
+Every debounced save produces a revision. Manual checkpoints can be added at any time with a short label. Revisions are polymorphic across every editable entity - scenes, chapters, characters, places, lore entries, notes - and surface at three scopes:
 
 - **Per-item** via the History tab in the right sidebar: shows the timeline for whatever is currently open.
 - **Per-story** via the History section of story settings: every revision in every scene, chapter, and story-scoped note, across time.
@@ -132,7 +132,7 @@ A diff view sits alongside the timeline. Any two revisions can be compared, and 
 
 ### Focus mode
 
-Focus mode, chosen from the View menu on the editor's formatting bar, hides the navigation bar and both sidebars, using `visibility: hidden` on the sidebars rather than `display: none`, so the prose column stays anchored where it was instead of shifting to the new centre of a now-wider grid. The mode doesn't widen the prose — it removes the chrome around it. The content width setting controls how wide the prose column actually is, independently of focus.
+Focus mode, chosen from the View menu on the editor's formatting bar, hides the navigation bar and both sidebars, using `visibility: hidden` on the sidebars rather than `display: none`, so the prose column stays anchored where it was instead of shifting to the new centre of a now-wider grid. The mode doesn't widen the prose - it removes the chrome around it. The content width setting controls how wide the prose column actually is, independently of focus.
 
 ### Continuous view
 
@@ -252,4 +252,4 @@ Portability is achieved through export, not through storage format. The database
 - **Preference layering.** Resolved: shipped in Phase 7 (migration 0032). `stories.preferences` jsonb holds per-story overrides merged over the user's `users.preferences` at load time, for the editor-behaviour keys; "use my account setting" clears the override.
 - **Sidebar resize.** Deferred. Current fixed widths (240 left, 280 right) are deliberately chosen; resize is polish.
 - **How aggressive revision pruning should be.** Partly resolved: consecutive autosaves within two minutes coalesce into one row, and autosaves older than ninety days are thinned to the first and last per item per UTC day (issue #599). Still open: whether ninety days and two-per-day is the right policy, whether it should be configurable per install or per user, and whether very old history should thin further (one per week or month).
-- **Guest review (reviewer role).** Resolved: shipped in Phase 6 — comments first (v2.8.0), then suggested edits (v2.9.0), with magic-link guest identity and the accept/reject UI.
+- **Guest review (reviewer role).** Resolved: shipped in Phase 6 - comments first (v2.8.0), then suggested edits (v2.9.0), with magic-link guest identity and the accept/reject UI.
