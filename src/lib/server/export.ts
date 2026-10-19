@@ -135,7 +135,14 @@ export type ExportNote = {
 	notesMd: string;
 };
 // A freeform writer note, for the working archive.
-export type ExportFreeformNote = { id: string; title: string | null; bodyMd: string };
+export type ExportFreeformNote = {
+	id: string;
+	title: string | null;
+	bodyMd: string;
+	pinned: boolean;
+	sceneId: string | null;
+	createdAt: Date;
+};
 export type StoryContent = {
 	chapters: { id: string; title: string | null }[];
 	scenes: ExportScene[];
@@ -174,7 +181,14 @@ async function gatherStoryFreeformNotes(
 	storyId: string
 ): Promise<ExportFreeformNote[]> {
 	return db
-		.select({ id: notes.id, title: notes.title, bodyMd: notes.bodyMd })
+		.select({
+			id: notes.id,
+			title: notes.title,
+			bodyMd: notes.bodyMd,
+			pinned: notes.pinned,
+			sceneId: notes.sceneId,
+			createdAt: notes.createdAt
+		})
 		.from(notes)
 		.where(eq(notes.storyId, storyId))
 		.orderBy(asc(notes.createdAt));
@@ -255,8 +269,12 @@ export async function buildStoryZip(
 			(story.descriptionMd ?? '')
 	);
 
+	// Each scene's file path under the root, so notebook notes can name the
+	// scene they hang off in a form the importer resolves.
+	const scenePaths = new Map<string, string>();
 	const sceneFile = (scene: (typeof sceneList)[number], index: number, dir: string) => {
 		const name = `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`;
+		if (scene.id) scenePaths.set(scene.id, `${dir}/${name}`);
 		// Bundled assets get relative links; unbundled ones keep app paths.
 		const up = '../'.repeat(dir.split('/').length);
 		const body = rewriteAssetReferences(scene.bodyMd, (id) =>
@@ -303,7 +321,12 @@ export async function buildStoryZip(
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
 		);
 		files[`${root}/notebook/${freeformNamer(slugify(note.title ?? '', note.id))}.md`] = strToU8(
-			frontMatter({ title: note.title }) + body
+			frontMatter({
+				title: note.title,
+				pinned: note.pinned ? 'true' : null,
+				scene: note.sceneId ? scenePaths.get(note.sceneId) : null,
+				created: note.createdAt.toISOString()
+			}) + body
 		);
 	}
 

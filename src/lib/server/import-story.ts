@@ -199,29 +199,38 @@ export async function runImport(
 			const bodyMd = rewrite(scene.bodyMd);
 			globalPosition += 1;
 			sceneCount += 1;
-			await tx.insert(scenes).values({
-				storyId: story.id,
-				chapterId,
-				positionInChapter,
-				globalPosition,
-				title: scene.title,
-				bodyMd,
-				status: scene.status ?? 'draft',
-				wordCount: wordCount(bodyMd)
-			});
+			const [row] = await tx
+				.insert(scenes)
+				.values({
+					storyId: story.id,
+					chapterId,
+					positionInChapter,
+					globalPosition,
+					title: scene.title,
+					bodyMd,
+					status: scene.status ?? 'draft',
+					wordCount: wordCount(bodyMd)
+				})
+				.returning({ id: scenes.id });
+			return row.id;
 		};
+		// New scene ids by plan position, for notebook notes attached to a scene.
+		const chapterSceneIds: string[][] = [];
+		const unfiledSceneIds: string[] = [];
 
 		for (const [chapterIndex, chapter] of plan.chapters.entries()) {
 			const [row] = await tx
 				.insert(chapters)
 				.values({ storyId: story.id, title: chapter.title, position: chapterIndex + 1 })
 				.returning({ id: chapters.id });
+			const ids: string[] = [];
 			for (const [sceneIndex, scene] of chapter.scenes.entries()) {
-				await insertScene(scene, row.id, sceneIndex + 1);
+				ids.push(await insertScene(scene, row.id, sceneIndex + 1));
 			}
+			chapterSceneIds.push(ids);
 		}
 		for (const scene of plan.unfiled) {
-			await insertScene(scene, null, null);
+			unfiledSceneIds.push(await insertScene(scene, null, null));
 		}
 
 		for (const note of resolutions) {
@@ -278,8 +287,16 @@ export async function runImport(
 				ownerId: universe.ownerId,
 				universeId: universe.id,
 				storyId: story.id,
+				sceneId: note.scene
+					? note.scene.chapter === null
+						? unfiledSceneIds[note.scene.index]
+						: chapterSceneIds[note.scene.chapter][note.scene.index]
+					: null,
 				title: note.title,
-				bodyMd: rewrite(note.bodyMd)
+				bodyMd: rewrite(note.bodyMd),
+				pinned: note.pinned,
+				// Undefined falls back to the column default for older zips.
+				createdAt: note.createdAt ?? undefined
 			});
 			freeformNotesCreated += 1;
 		}
