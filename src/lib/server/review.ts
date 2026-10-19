@@ -712,6 +712,10 @@ export type SuggestionView = {
 
 // Re-anchors the proposed range onto the current text: a real range maps
 // through the mapper's range, a pure insertion point through its point.
+// Unlike a comment anchor, a suggestion replaces the range wholesale, so the
+// range must still hold exactly the text it was proposed against: an edit
+// inside it (which the mapper tolerates by stretching or shrinking) would be
+// silently overwritten on accept, so it counts as lost.
 function mapSuggestionRange(
 	mapper: AnchorMapper,
 	baseText: string,
@@ -723,7 +727,10 @@ function mapSuggestionRange(
 		const point = mapper.point(baseText, currentText, start);
 		return point === null ? null : { start: point, end: point };
 	}
-	return mapper.range(baseText, currentText, start, end);
+	const range = mapper.range(baseText, currentText, start, end);
+	if (!range) return null;
+	if (currentText.slice(range.start, range.end) !== baseText.slice(start, end)) return null;
+	return range;
 }
 
 // Where a decided suggestion now sits, so the Done view can point at it: the
@@ -858,7 +865,8 @@ export async function updateAssistantSuggestion(
 // The author's decision. Rejection only records it; acceptance re-anchors
 // the range against the current text and applies the replacement, recording
 // a revision and leaving the mention index to the caller's enqueue. A
-// passage that was rewritten since cannot be accepted, only rejected.
+// passage that was edited since, even inside it, cannot be accepted, only
+// rejected.
 export async function decideSuggestion(
 	db: Database,
 	userId: string,

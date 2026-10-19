@@ -293,6 +293,25 @@ describe('decideSuggestion', () => {
 		expect(await decideSuggestion(db, authorId, suggestionId, false)).toMatchObject({ ok: true });
 	});
 
+	it('refuses to accept once the author edited inside the passage', async () => {
+		const start = BODY.indexOf('quick brown');
+		const { suggestionId } = (await suggest(
+			{ start, end: start + 'quick brown'.length },
+			'slow'
+		)) as { ok: true; suggestionId: string };
+		// Both ends of the range survive, but the author added words inside it.
+		const edited = BODY.replace('quick brown', 'quick, very brown');
+		await db.update(scenes).set({ bodyMd: edited }).where(eq(scenes.id, sceneId));
+
+		const [view] = await listSuggestions(db, storyId);
+		expect(view.anchorLost).toBe(true);
+		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({
+			ok: false,
+			reason: expect.stringContaining('has changed')
+		});
+		expect(await sceneBody()).toBe(edited);
+	});
+
 	it('handles pure insertions and pure deletions', async () => {
 		const insertAt = BODY.indexOf('jumps');
 		const insertion = (await suggest({ start: insertAt, end: insertAt }, 'nimbly ')) as {
