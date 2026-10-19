@@ -101,7 +101,10 @@ async function parseDocx(bytes: Uint8Array, filename: string): Promise<ImportPla
 
 	let html: string;
 	try {
-		const result = await mammoth.convertToHtml({ buffer: Buffer.from(bounded) }, { convertImage });
+		const result = await mammoth.convertToHtml(
+			{ buffer: Buffer.from(bounded.buffer, bounded.byteOffset, bounded.byteLength) },
+			{ convertImage }
+		);
 		html = result.value;
 	} catch {
 		throw new DocumentImportError('This file could not be read as a Word document.');
@@ -218,12 +221,15 @@ function unzipGuarded(
 				if (++count > MAX_ENTRIES) {
 					throw new DocumentImportError(`This ${kind} has too many files to import.`);
 				}
-				if (file.originalSize > MAX_ENTRY_BYTES) {
+				// fflate inflates to the declared size but copies stored entries
+				// by their stored size, so count whichever is larger.
+				const unpacked = Math.max(file.size, file.originalSize);
+				if (unpacked > MAX_ENTRY_BYTES) {
 					throw new DocumentImportError(
 						`This ${kind} contains a file that is too large to import.`
 					);
 				}
-				total += file.originalSize;
+				total += unpacked;
 				if (total > MAX_TOTAL_BYTES) {
 					throw new DocumentImportError(`This ${kind} is too large to import once unpacked.`);
 				}

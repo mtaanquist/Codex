@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { parseDocument, DocumentImportError } from './import-document';
+import { overlappingStoredZip } from '../../../tests/zip-fixtures';
 
 // A real 1x1 PNG so the bytes survive the importer's magic-number sniff too.
 const PNG = Buffer.from(
@@ -245,6 +246,12 @@ describe('parseDocument (errors)', () => {
 		await expect(parseDocument(docx, 'big.docx')).rejects.toThrow(
 			/too large to import once unpacked/
 		);
+	});
+
+	it('counts stored entries by their stored size, not the size they declare', async () => {
+		await expect(
+			parseDocument(overlappingStoredZip(11, 20 * 1024 * 1024), 'overlap.docx')
+		).rejects.toThrow(/too large to import once unpacked/);
 	});
 
 	it('never unpacks more of an entry than the archive declares', async () => {
