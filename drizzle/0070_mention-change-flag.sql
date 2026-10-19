@@ -1,0 +1,2 @@
+ALTER TABLE "universes" ADD COLUMN "mentions_changed_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "scenes_mentions_stale_idx" ON "scenes" USING btree ("mentions_indexed_at" NULLS FIRST) WHERE "scenes"."mentions_indexed_at" is null or "scenes"."mentions_indexed_at" < "scenes"."updated_at";
