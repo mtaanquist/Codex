@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createAutosave, keepaliveFits, UnretryableSaveError, type SaveStatus } from './autosave';
+import {
+	createAutosave,
+	keepaliveFits,
+	saveFailure,
+	UnretryableSaveError,
+	type SaveStatus
+} from './autosave';
 
 // A controllable save: each call returns a promise the test settles by hand,
 // so ordering and failure paths can be driven exactly.
@@ -162,18 +168,20 @@ describe('createAutosave', () => {
 		expect(calls).toHaveLength(3);
 	});
 
-	it('does not retry a save refused with UnretryableSaveError', async () => {
+	it('does not retry an unretryable refusal, and still reports error', async () => {
 		const { calls, save } = manualSave();
-		const autosave = createAutosave({ debounceMs: 100, save });
+		const seen: SaveStatus[] = [];
+		const autosave = createAutosave({ debounceMs: 100, save, onStatus: (s) => seen.push(s) });
 		autosave.schedule();
 		vi.advanceTimersByTime(100);
 		await tick();
-		calls[0].reject(new UnretryableSaveError('conflict'));
+		calls[0].reject(saveFailure(400));
 		await tick();
 		vi.advanceTimersByTime(120_000);
 		await tick();
 		expect(calls).toHaveLength(1);
 		expect(autosave.isDirty()).toBe(true);
+		expect(seen).toEqual(['saving', 'error']);
 	});
 
 	it('does not retry after teardown', async () => {
@@ -251,5 +259,14 @@ describe('keepaliveFits', () => {
 	it('measures bytes, not characters', () => {
 		// 30k three-byte characters is 90 KB on the wire.
 		expect(keepaliveFits('\u2603'.repeat(30_000))).toBe(false);
+	});
+});
+
+describe('saveFailure', () => {
+	it('marks a 4xx refusal unretryable, except 401, 408 and 429', () => {
+		for (const status of [400, 403, 404, 413, 422])
+			expect(saveFailure(status)).toBeInstanceOf(UnretryableSaveError);
+		for (const status of [401, 408, 429, 500, 502, 503])
+			expect(saveFailure(status)).not.toBeInstanceOf(UnretryableSaveError);
 	});
 });

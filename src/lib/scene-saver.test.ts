@@ -83,6 +83,18 @@ describe('createSceneSaver', () => {
 		await expect(saver.save(save('mine'))).rejects.toBeInstanceOf(UnretryableSaveError);
 	});
 
+	it('refuses a 4xx as unretryable and a 5xx as retryable', async () => {
+		mockFetch([
+			() => new Response('{}', { status: 413 }),
+			() => new Response('{}', { status: 503 })
+		]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		await expect(saver.save(save('b'))).rejects.toBeInstanceOf(UnretryableSaveError);
+		const retryable = saver.save(save('c'));
+		await expect(retryable).rejects.toThrow('save failed: 503');
+		await expect(retryable).rejects.not.toBeInstanceOf(UnretryableSaveError);
+	});
+
 	it('reports a conflict, and keepMine overwrites once', async () => {
 		const sent = mockFetch([conflict('theirs'), ok, ok]);
 		const seen: (string | null)[] = [];

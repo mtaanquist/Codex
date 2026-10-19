@@ -3,7 +3,7 @@
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
 	import { proseExtensions } from '$lib/editor';
-	import { createAutosave, keepaliveFits, type SaveStatus } from '$lib/autosave';
+	import { createAutosave, keepaliveFits, saveFailure, type SaveStatus } from '$lib/autosave';
 
 	let {
 		note,
@@ -33,7 +33,7 @@
 				keepalive: keepalive && keepaliveFits(body),
 				body
 			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			if (!response.ok) throw saveFailure(response.status);
 		}
 	});
 	const scheduleSave = autosave.schedule;

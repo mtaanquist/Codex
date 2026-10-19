@@ -14,7 +14,7 @@
 		type RelationTypeOption,
 		type RelationshipRow
 	} from './EntityRelationships.svelte';
-	import { createAutosave, keepaliveFits } from '$lib/autosave';
+	import { createAutosave, keepaliveFits, saveFailure } from '$lib/autosave';
 	import type { SaveStatus } from '$lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '$lib/format';
 
@@ -193,7 +193,7 @@
 				keepalive: keepalive && keepaliveFits(body),
 				body
 			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			if (!response.ok) throw saveFailure(response.status);
 		},
 		// Only a settled rename makes the offer; mid-typing saves skip it.
 		onSettled: () => void checkRename()

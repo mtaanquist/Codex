@@ -1,4 +1,4 @@
-import { keepaliveFits, UnretryableSaveError } from './autosave';
+import { keepaliveFits, saveFailure, UnretryableSaveError } from './autosave';
 import { textHash } from './text-hash';
 
 // The scene editors' save request, with the conflict check. Each save sends
@@ -77,7 +77,7 @@ export function createSceneSaver(
 				if (started === generation) onConflict({ bodyMd: conflict.bodyMd, title: conflict.title });
 				throw new UnretryableSaveError('the scene changed somewhere else');
 			}
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			if (!response.ok) throw saveFailure(response.status);
 			if (started === generation) {
 				base = hash;
 				overwrite = false;

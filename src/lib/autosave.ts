@@ -42,9 +42,18 @@ export type Autosave = {
 };
 
 // A save the timer must not repeat, because sending the same text again would
-// only fail the same way (the scene changed elsewhere and the writer must
-// choose a version first).
+// only fail the same way (a conflict the writer must settle, a refused 4xx).
+// The editor still shows the failure, and the next edit tries again.
 export class UnretryableSaveError extends Error {}
+
+// The error a save throws for a refused response. A 4xx means this request
+// will keep failing (bad input, no access, too large), except 401 (the writer
+// may sign in again in another tab), 408 and 429; 5xx is worth retrying.
+export function saveFailure(status: number): Error {
+	const message = `save failed: ${status}`;
+	const retryable = status < 400 || status >= 500 || [401, 408, 429].includes(status);
+	return retryable ? new Error(message) : new UnretryableSaveError(message);
+}
 
 // Browsers refuse a keepalive request whose body is over 64 KiB (the budget is
 // shared by every keepalive request in flight), so a bigger page-hide save has
