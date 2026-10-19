@@ -5,9 +5,12 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # Keep noise down: one PR per week for routine updates.
+      # Keep noise down: one PR per week for routine updates. Major versions
+      # stay out of the group and arrive as their own PRs, so one breaking
+      # upgrade does not block the rest.
       all-dependencies:
         patterns: ['*']
+        update-types: ['minor', 'patch']
     ignore:
       # svelte-check 4.7.4 still peers on typescript ^5 || ^6, so a bump to 7
       # fails npm ci and takes the whole grouped PR down with it. Drop this
