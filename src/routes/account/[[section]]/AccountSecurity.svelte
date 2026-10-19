@@ -363,6 +363,17 @@
 									/>
 								{/each}
 							</div>
+							<div class="field" style="margin-top:var(--space-3);">
+								<label for="totp-password">Confirm your password</label>
+								<input
+									id="totp-password"
+									class="input"
+									type="password"
+									name="password"
+									required
+									autocomplete="current-password"
+								/>
+							</div>
 						</form>
 					</div>
 				</div>
@@ -565,10 +576,20 @@
 	</div>
 	{#if data.sessions.length > 1}
 		<div class="settings-actions">
-			{#if form?.scope === 'sessions' && form.saved}
+			{#if form?.scope === 'sessions' && form.message}
+				<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+			{:else if form?.scope === 'sessions' && form.saved}
 				<span class="field-hint" role="status" style="color:var(--status-final);">Done.</span>
 			{/if}
-			<form method="POST" action="?/revokeOthers">
+			<form method="POST" action="?/revokeOthers" class="tfa-guard">
+				<input
+					type="password"
+					name="password"
+					placeholder="Current password"
+					autocomplete="current-password"
+					aria-label="Current password"
+					required
+				/>
 				<button type="submit" class="btn btn-danger">Sign out all other sessions</button>
 			</form>
 		</div>

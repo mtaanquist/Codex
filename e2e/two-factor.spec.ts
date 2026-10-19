@@ -31,6 +31,7 @@ test('two-factor: enrol from the account page and turn it back off', async ({ pa
 	for (let i = 0; i < 6; i++) {
 		await page.getByLabel(`Digit ${i + 1}`).fill(code[i]);
 	}
+	await page.getByLabel('Confirm your password').fill('e2e-password');
 	await page.getByRole('button', { name: 'Verify and turn on' }).click();
 	await expect(page.getByText('Treat these like passwords')).toBeVisible();
 	await expect(page.getByText(/you'll be asked for a code/)).toBeVisible();
