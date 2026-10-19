@@ -1,10 +1,11 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
 import type { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { inLiveUniverse } from '../universe-scope.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
@@ -102,7 +103,14 @@ export async function summariseStory(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)))
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId),
+				isNull(scenes.deletedAt)
+			)
+		)
 		.orderBy(asc(scenes.globalPosition));
 
 	for (const scene of sceneRows) {
@@ -161,22 +169,47 @@ export async function summariseStory(
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
-		.where(and(eq(chapters.storyId, storyId), eq(stories.ownerId, userId)))
+		.where(
+			and(
+				eq(chapters.storyId, storyId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId)
+			)
+		)
 		.orderBy(asc(chapters.position));
+
+	// Every chapter's scene summaries in one read, read after the scene pass so
+	// the summaries it just wrote are included.
+	const summariesByChapter = new Map<string, string[]>();
+	if (chapterRows.length > 0) {
+		const sceneSummaries = await db
+			.select({ chapterId: scenes.chapterId, summaryMd: scenes.summaryMd })
+			.from(scenes)
+			.where(
+				and(
+					inArray(
+						scenes.chapterId,
+						chapterRows.map((c) => c.id)
+					),
+					isNull(scenes.deletedAt)
+				)
+			)
+			.orderBy(asc(scenes.globalPosition));
+		for (const row of sceneSummaries) {
+			const summary = row.summaryMd?.trim();
+			if (!row.chapterId || !summary) continue;
+			const list = summariesByChapter.get(row.chapterId) ?? [];
+			list.push(summary);
+			summariesByChapter.set(row.chapterId, list);
+		}
+	}
 
 	for (const chapter of chapterRows) {
 		if (meter?.capReached) {
 			capped = true;
 			break;
 		}
-		const sceneSummaries = await db
-			.select({ summaryMd: scenes.summaryMd })
-			.from(scenes)
-			.where(and(eq(scenes.chapterId, chapter.id), isNull(scenes.deletedAt)))
-			.orderBy(asc(scenes.globalPosition));
-		const summaries = sceneSummaries
-			.map((s) => s.summaryMd?.trim())
-			.filter((s): s is string => !!s);
+		const summaries = summariesByChapter.get(chapter.id) ?? [];
 		if (summaries.length === 0) continue;
 
 		const changedSince =

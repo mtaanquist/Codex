@@ -5,6 +5,7 @@ import { recordRevision } from './revisions';
 import { ownedScene } from './scene-access.ts';
 import { wordCount } from '$lib/word-count';
 import { locateSplitBefore } from '$lib/scene-split-locate';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // Splitting and merging scenes. Both run in one transaction and record a
 // revision for every body they change; the caller queues the mention
@@ -166,7 +167,14 @@ export async function duplicateScene(
 		.select()
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
+		.where(
+			and(
+				eq(scenes.id, sceneId),
+				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId),
+				isNull(scenes.deletedAt)
+			)
+		);
 	if (!source) return { ok: false, reason: 'scene not found' };
 	const scene = source.scenes;
 
@@ -262,6 +270,7 @@ export async function mergeScenes(
 				inArray(scenes.id, unique),
 				eq(scenes.storyId, storyId),
 				eq(stories.ownerId, userId),
+				inLiveUniverse(stories.universeId),
 				isNull(scenes.deletedAt)
 			)
 		)

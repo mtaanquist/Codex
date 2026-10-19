@@ -41,6 +41,11 @@ function memoryStore() {
 		async put(key, body) {
 			objects.set(key, Buffer.from(body));
 		},
+		async upload(key, body) {
+			const parts: Buffer[] = [];
+			for await (const chunk of body) parts.push(Buffer.from(chunk));
+			objects.set(key, Buffer.concat(parts));
+		},
 		async get(key) {
 			const data = objects.get(key);
 			if (!data) throw new Error(`missing: ${key}`);
@@ -196,6 +201,30 @@ describe('runUserExport', () => {
 	});
 });
 
+describe('runUserExport when the upload fails partway', () => {
+	it('marks the row failed with the upload error', async () => {
+		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const id = (requested as { ok: true; id: string }).id;
+		const failing: AssetObjectStore = {
+			...memoryStore().store,
+			async upload(_key, body) {
+				for await (const chunk of body) {
+					void chunk;
+					break;
+				}
+				throw new Error('connection reset');
+			}
+		};
+		expect(await runUserExport(db, id, failing)).toMatchObject({
+			ok: false,
+			reason: 'connection reset'
+		});
+		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
+		expect(row.status).toBe('failed');
+		expect(row.error).toBe('connection reset');
+	});
+});
+
 describe('runUserExport without storage', () => {
 	it('marks the row failed instead of leaving it pending', async () => {
 		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
@@ -239,12 +268,12 @@ describe('failStaleExports', () => {
 		// The sweep lands while the build is uploading.
 		const sweptMidRun: AssetObjectStore = {
 			...store,
-			async put(key, body, contentType) {
+			async upload(key, body, contentType) {
 				await db
 					.update(userExports)
 					.set({ status: 'failed', error: 'The export did not finish. Try again.' })
 					.where(eq(userExports.id, id));
-				await store.put(key, body, contentType);
+				await store.upload(key, body, contentType);
 			}
 		};
 		expect(await runUserExport(db, id, sweptMidRun)).toMatchObject({ ok: true });

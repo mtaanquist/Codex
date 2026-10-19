@@ -10,7 +10,10 @@ import {
 	NOTIFICATION_DIGEST_QUEUE,
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_REVIEW_RUNS_QUEUE,
+	PURGE_SESSIONS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
+	THIN_REVISIONS_QUEUE,
+	SWEEP_DELETED_OBJECTS_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	USER_EXPORT_QUEUE,
@@ -39,18 +42,16 @@ import {
 	markReviewerNotified
 } from '../lib/server/notification-digest.ts';
 import { listAccountsDueForPurge, purgeAccount } from '../lib/server/account-deletion.ts';
-import {
-	listUniversesDueForPurge,
-	purgeUniverseWithin,
-	universeAssetKeys
-} from '../lib/server/universe-lifecycle.ts';
+import { listUniversesDueForPurge, purgeUniverse } from '../lib/server/universe-lifecycle.ts';
 import {
 	assetMigrationSource,
 	clearAssetMigrationSource,
 	effectiveAssetConfig,
 	migrateAssetObjects,
+	objectDeletionGraceDays,
 	recordAssetMigrationResult,
-	s3AssetStore
+	s3AssetStore,
+	sweepDeletedObjects
 } from '../lib/server/assets.ts';
 import {
 	failureMessage,
@@ -62,6 +63,8 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
+import { thinRevisions } from '../lib/server/revisions.ts';
+import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 import { stopWorker } from './shutdown.ts';
@@ -101,7 +104,10 @@ await boss.createQueue(EMAIL_QUEUE);
 await boss.createQueue(EMAIL_DEAD_LETTER_QUEUE);
 await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
+await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
+await boss.createQueue(THIN_REVISIONS_QUEUE);
+await boss.createQueue(PURGE_SESSIONS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
@@ -505,19 +511,26 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, async () => {
 
 // Trashed universes past their restore window go for good.
 await boss.work(PURGE_UNIVERSES_QUEUE, async () => {
-	const due = await listUniversesDueForPurge(db);
-	if (due.length === 0) return;
-	const config = await effectiveAssetConfig(db);
-	const store = config ? s3AssetStore(config) : null;
-	for (const universeId of due) {
+	for (const universeId of await listUniversesDueForPurge(db)) {
 		try {
-			const keys = await universeAssetKeys(db, universeId);
-			await db.transaction((tx) => purgeUniverseWithin(tx, universeId));
-			if (store) for (const key of keys) await store.remove(key).catch(() => {});
+			await purgeUniverse(db, universeId);
 			console.log(`purge: universe ${universeId} deleted`);
 		} catch (error) {
 			console.error(`purge: universe ${universeId} failed`, error);
 		}
+	}
+});
+
+// Bucket objects of deleted rows, once no kept backup can still point at them.
+await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, async () => {
+	const config = await effectiveAssetConfig(db);
+	if (!config) return;
+	const graceDays = objectDeletionGraceDays(await effectiveBackupConfig(db));
+	const result = await sweepDeletedObjects(db, s3AssetStore(config), graceDays);
+	if (result.removed + result.kept + result.failed > 0) {
+		console.log(
+			`asset sweep: ${result.removed} removed, ${result.kept} still in use, ${result.failed} failed`
+		);
 	}
 });
 
@@ -529,14 +542,32 @@ await boss.work(PURGE_REVIEW_RUNS_QUEUE, async () => {
 	if (deleted > 0) console.log(`purge: ${deleted} review run row(s) deleted`);
 });
 
+await boss.work(THIN_REVISIONS_QUEUE, async () => {
+	const removed = await thinRevisions(db);
+	if (removed > 0) console.log(`revisions: thinned ${removed} old autosave(s)`);
+});
+
+await boss.work(PURGE_SESSIONS_QUEUE, async () => {
+	const deleted = await purgeSessions(db);
+	if (deleted > 0) console.log(`purge: ${deleted} old session(s) deleted`);
+});
+
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
 
 // And the universe trash sweep, offset from the account one.
 await boss.schedule(PURGE_UNIVERSES_QUEUE, '45 * * * *', {}, { tz: 'UTC' });
 
+await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' });
+
 // Old review progress goes once a day; nothing is time critical about it.
 await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
+
+// Old autosave history is thinned once a day, after the review-run sweep.
+await boss.schedule(THIN_REVISIONS_QUEUE, '35 4 * * *', {}, { tz: 'UTC' });
+
+// Expired and long-revoked sessions go once a day.
+await boss.schedule(PURGE_SESSIONS_QUEUE, '50 4 * * *', {}, { tz: 'UTC' });
 
 // Sweep for stale mention indexes every five minutes, so a dropped rebuild
 // self-heals within minutes instead of waiting for the next save.
@@ -545,9 +576,8 @@ await boss.schedule(RECONCILE_MENTIONS_QUEUE, '*/5 * * * *', {}, { tz: 'UTC' });
 // Off-site backups, only when the bucket is configured (saved settings or
 // environment). The schedule lives in pg-boss, so it is cleared when the
 // configuration goes away; the app re-applies it when settings are saved.
-// On a fresh stack the worker can boot while the app is still running the
-// migrations, so a failed settings read falls back to the environment
-// instead of crashing the process; the next start reconciles fully.
+// A failed settings read falls back to the environment instead of crashing
+// the process; the next start reconciles fully.
 const backups = await effectiveBackupConfig(db).catch((error) => {
 	console.warn('backups: could not read saved settings, using the environment:', error);
 	return backupConfig();

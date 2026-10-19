@@ -5,6 +5,7 @@ import { recordEntityRevision } from './revisions';
 import { queueUniverseMentions } from './jobs';
 import { MAX_DETAILS, type EntityDetail } from '$lib/entity-snapshot';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import { inLiveUniverse } from './universe-scope';
 
 // The Assistant's staged enrichments for an entity: a new alias, a quick detail,
 // or a drafted summary. Nothing here touches an entity until the writer accepts;
@@ -78,7 +79,13 @@ async function loadEntity(
 				summaryMd: loreEntries.summaryMd
 			})
 			.from(loreEntries)
-			.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, ownerId)));
+			.where(
+				and(
+					eq(loreEntries.id, entityId),
+					eq(loreEntries.ownerId, ownerId),
+					inLiveUniverse(loreEntries.universeId)
+				)
+			);
 		return row ?? null;
 	}
 	const table = kind === 'character' ? characters : places;
@@ -90,7 +97,9 @@ async function loadEntity(
 			summaryMd: table.summaryMd
 		})
 		.from(table)
-		.where(and(eq(table.id, entityId), eq(table.ownerId, ownerId)));
+		.where(
+			and(eq(table.id, entityId), eq(table.ownerId, ownerId), inLiveUniverse(table.universeId))
+		);
 	return row ?? null;
 }
 

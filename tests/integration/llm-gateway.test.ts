@@ -689,7 +689,7 @@ describe('gateway tool loop', () => {
 		expect(suggestions[0].replacement).toBe('dog');
 
 		// The owner accepts it the same way as any reviewer's suggestion.
-		const decided = await decideSuggestion(db, userId, staged[0].id, true);
+		const decided = await decideSuggestion(db, userId, storyId, staged[0].id, true);
 		expect(decided.ok).toBe(true);
 		const [after] = await db
 			.select({ bodyMd: scenes.bodyMd })

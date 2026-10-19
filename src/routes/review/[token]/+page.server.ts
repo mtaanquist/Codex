@@ -32,6 +32,10 @@ import { notifyReviewActivity } from '$lib/server/notify';
 
 const COMMENT_LIMIT = 30;
 const COMMENT_WINDOW_MS = 5 * 60 * 1000;
+// Each join makes a new reviewer with a fresh comment budget, so joins are
+// capped per client address to keep the per-reviewer limit meaningful.
+const JOIN_IP_LIMIT = 10;
+const JOIN_WINDOW_MS = 60 * 60 * 1000;
 
 const cookieOptions = {
 	path: '/',
@@ -107,9 +111,12 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 };
 
 export const actions: Actions = {
-	join: async ({ params, request, cookies }) => {
+	join: async ({ params, request, cookies, getClientAddress }) => {
 		const resolved = await invitationByToken(db, params.token);
 		if (resolved.status !== 'ok') return fail(403, { message: 'This link no longer works.' });
+		if (!rateLimit(`review:join:ip:${getClientAddress()}`, JOIN_IP_LIMIT, JOIN_WINDOW_MS).allowed) {
+			return fail(429, { message: 'Slow down a moment, then try again.' });
+		}
 		const data = await request.formData();
 		const reviewer = await ensureReviewer(db, resolved.invitation.id, {
 			displayName: String(data.get('displayName') ?? ''),
@@ -259,7 +266,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const commentId = String(data.get('commentId') ?? '');
 		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
-		const result = await deleteComment(db, { reviewerId: access.reviewer.id }, commentId);
+		const result = await deleteComment(
+			db,
+			{ reviewerId: access.reviewer.id },
+			resolved.invitation.storyId,
+			commentId
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { deleted: true };
 	},
@@ -272,7 +284,12 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const suggestionId = String(data.get('suggestionId') ?? '');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await deleteSuggestion(db, { reviewerId: access.reviewer.id }, suggestionId);
+		const result = await deleteSuggestion(
+			db,
+			{ reviewerId: access.reviewer.id },
+			resolved.invitation.storyId,
+			suggestionId
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { deleted: true };
 	}

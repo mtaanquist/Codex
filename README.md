@@ -40,8 +40,9 @@ services:
     # migrations, then serves. Always use it rather than spelling out node
     # commands; the launch sequence can change between releases.
     command: codex-app
+    # Loopback only, so clients reach the app solely through your proxy.
     ports:
-      - '${APP_PORT:-3000}:3000'
+      - '${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000'
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       ORIGIN: ${ORIGIN}
@@ -106,7 +107,10 @@ Put the three values in an `.env` file next to it:
   stored secrets unreadable.
 
 Optionally set `APP_PORT` to publish the app on a different host port;
-it defaults to 3000.
+it defaults to 3000. The port is published on `127.0.0.1` only, so a proxy
+on the same host reaches it and nothing else does. If your proxy runs on
+another machine, set `APP_BIND` to an address only that proxy can reach,
+never one open to the internet.
 
 Then `docker compose up -d` and open the app on its port behind your
 reverse proxy. Run both the app and the worker: mentions, email,
@@ -114,8 +118,11 @@ publishing exports, and backups all happen in the worker.
 
 The example trusts the `X-Forwarded-For` header so rate limits see the real
 client address; set `XFF_DEPTH` to the number of proxies in front of the app
-if more than one. If you ever expose the app with no proxy in front, drop
-`ADDRESS_HEADER` so a client cannot spoof its address.
+if more than one. This is only safe while the proxy is the one thing that can
+reach the app: anyone who can connect to the app port directly can send their
+own header and dodge the per-address rate limits. If you ever expose the app
+with no proxy in front, set `APP_BIND` to `0.0.0.0` and drop `ADDRESS_HEADER`
+so a client cannot spoof its address.
 
 Set `ADDRESS_HEADER` whenever there is a proxy in front of the app. Without it,
 every request appears to come from the proxy's own address, so the per-address
@@ -150,8 +157,8 @@ panel instead.
 ### Update
 
 Change the image tag (or pull `latest`), then `docker compose up -d`.
-Pending migrations apply when the app container starts. Migrations are
-forward-only, so take a backup before updating if you are not running the
+Pending migrations apply when the app or worker container starts. Migrations
+are forward-only, so take a backup before updating if you are not running the
 scheduled ones; with `BACKUP_S3_*` configured the worker keeps hourly dumps,
 and `node scripts/restore-backup.ts latest` restores the newest.
 

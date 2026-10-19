@@ -4,6 +4,7 @@ import { characters, loreEntries, places } from './db/schema';
 import type { EntityType } from './entity-lookups';
 import { createAsset, deleteAsset, type AssetConfig, type AssetObjectStore } from './assets';
 import { isCategoryColor } from '$lib/entity-color';
+import { inLiveUniverse } from './universe-scope';
 
 // The per-entity badge: a palette colour, or an uploaded image (the image
 // wins). Both live on the entity row. These helpers resolve an entity id to
@@ -22,17 +23,31 @@ async function resolveOwnedEntity(
 	const [character] = await db
 		.select({ universeId: characters.universeId, badgeAssetId: characters.badgeAssetId })
 		.from(characters)
-		.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
+		.where(
+			and(
+				eq(characters.id, entityId),
+				eq(characters.ownerId, userId),
+				inLiveUniverse(characters.universeId)
+			)
+		);
 	if (character) return { type: 'character', ...character };
 	const [place] = await db
 		.select({ universeId: places.universeId, badgeAssetId: places.badgeAssetId })
 		.from(places)
-		.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
+		.where(
+			and(eq(places.id, entityId), eq(places.ownerId, userId), inLiveUniverse(places.universeId))
+		);
 	if (place) return { type: 'place', ...place };
 	const [lore] = await db
 		.select({ universeId: loreEntries.universeId, badgeAssetId: loreEntries.badgeAssetId })
 		.from(loreEntries)
-		.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+		.where(
+			and(
+				eq(loreEntries.id, entityId),
+				eq(loreEntries.ownerId, userId),
+				inLiveUniverse(loreEntries.universeId)
+			)
+		);
 	if (lore) return { type: 'lore_entry', ...lore };
 	return null;
 }
@@ -89,14 +104,13 @@ export async function setEntityBadgeImage(
 	});
 	if (!created.ok) return created;
 	await updateBadge(db, ref.type, entityId, { badgeAssetId: created.id });
-	if (ref.badgeAssetId) await deleteAsset(db, store, userId, ref.badgeAssetId);
+	if (ref.badgeAssetId) await deleteAsset(db, userId, ref.badgeAssetId);
 	return { ok: true, id: created.id };
 }
 
 // Clears the entity's badge image and deletes the stored object.
 export async function clearEntityBadgeImage(
 	db: Database,
-	store: AssetObjectStore,
 	userId: string,
 	entityId: string
 ): Promise<BadgeResult> {
@@ -104,7 +118,7 @@ export async function clearEntityBadgeImage(
 	if (!ref) return { ok: false, reason: 'entity not found' };
 	if (ref.badgeAssetId) {
 		await updateBadge(db, ref.type, entityId, { badgeAssetId: null });
-		await deleteAsset(db, store, userId, ref.badgeAssetId);
+		await deleteAsset(db, userId, ref.badgeAssetId);
 	}
 	return { ok: true };
 }

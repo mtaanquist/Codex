@@ -120,9 +120,26 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		'Untitled scene'
 	);
 	await page.reload();
+	await waitForHydration(page);
 	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
 		'Untitled scene'
 	);
+
+	// Issue #626: a refused reorder says so, and the order stays as saved.
+	await page.route('**/scene-order', (route) =>
+		route.fulfill({ status: 429, json: { message: 'Too many requests. Try again shortly.' } })
+	);
+	await page
+		.locator('.scene-row')
+		.nth(1)
+		.dragTo(page.locator('.scene-row').nth(0), { targetPosition: { x: 60, y: 4 } });
+	await expect(page.locator('.outline-error [role="alert"]')).toHaveText(
+		'Too many requests. Try again shortly.'
+	);
+	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+	await page.unroute('**/scene-order');
 
 	// The whole story reads as one continuous document with jump navigation.
 	const sceneUrl = page.url();

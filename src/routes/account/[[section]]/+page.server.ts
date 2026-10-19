@@ -312,8 +312,7 @@ export const actions: Actions = {
 		return { scope: 'avatar', saved: true };
 	},
 	removeAvatar: async ({ locals }) => {
-		const config = await effectiveAssetConfig(db);
-		if (config) await clearUserAvatar(db, s3AssetStore(config), locals.user!.id);
+		await clearUserAvatar(db, locals.user!.id);
 		return { scope: 'avatar', saved: true };
 	},
 	claimHandle: async ({ request, locals }) => {
@@ -629,7 +628,15 @@ export const actions: Actions = {
 		return { scope: 'totp', setupStarted: true };
 	},
 	confirmTotp: async ({ request, locals }) => {
+		// Gated at the step that turns it on: a borrowed session that enrols its
+		// own authenticator would lock the owner out, and a password reset does
+		// not clear two-factor.
+		const limited = reauthGuard(locals.user!.id, 'totp');
+		if (limited) return limited;
 		const data = await request.formData();
+		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+			return fail(400, { scope: 'totp', message: 'That password is not right.' });
+		}
 		const result = await confirmEnrollment(db, locals.user!.id, String(data.get('code') ?? ''));
 		if (!result.ok) return fail(400, { scope: 'totp', message: result.reason });
 		return { scope: 'totp', recoveryCodes: result.recoveryCodes };
@@ -707,6 +714,8 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { scope: 'password', message: result.reason });
 		return { scope: 'password', saved: true };
 	},
+	// Revoking one session stays ungated on purpose, so a lost device can be
+	// signed out quickly. Signing out all others is password-gated below.
 	revokeSession: async ({ request, locals }) => {
 		const data = await request.formData();
 		const sessionId = String(data.get('sessionId') ?? '');
@@ -716,7 +725,13 @@ export const actions: Actions = {
 		await revokeOwnSession(db, locals.user!.id, sessionId);
 		return { scope: 'sessions', saved: true };
 	},
-	revokeOthers: async ({ locals }) => {
+	revokeOthers: async ({ request, locals }) => {
+		const limited = reauthGuard(locals.user!.id, 'sessions');
+		if (limited) return limited;
+		const data = await request.formData();
+		if (!(await verifyAccountPassword(db, locals.user!.id, String(data.get('password') ?? '')))) {
+			return fail(400, { scope: 'sessions', message: 'That password is not right.' });
+		}
 		await revokeOtherSessions(db, locals.user!.id, locals.session!.id);
 		return { scope: 'sessions', saved: true };
 	},

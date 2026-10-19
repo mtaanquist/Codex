@@ -12,6 +12,7 @@ import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
 import { recordEntityRevision } from './revisions.ts';
 import { isUniqueViolation } from './db-errors.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 export type { EntityType };
 
@@ -214,16 +215,34 @@ export async function createRelationship(
 			? await db
 					.select({ universeId: characters.universeId })
 					.from(characters)
-					.where(and(eq(characters.id, save.fromId), eq(characters.ownerId, userId)))
+					.where(
+						and(
+							eq(characters.id, save.fromId),
+							eq(characters.ownerId, userId),
+							inLiveUniverse(characters.universeId)
+						)
+					)
 			: fromType === 'place'
 				? await db
 						.select({ universeId: places.universeId })
 						.from(places)
-						.where(and(eq(places.id, save.fromId), eq(places.ownerId, userId)))
+						.where(
+							and(
+								eq(places.id, save.fromId),
+								eq(places.ownerId, userId),
+								inLiveUniverse(places.universeId)
+							)
+						)
 				: await db
 						.select({ universeId: loreEntries.universeId })
 						.from(loreEntries)
-						.where(and(eq(loreEntries.id, save.fromId), eq(loreEntries.ownerId, userId)));
+						.where(
+							and(
+								eq(loreEntries.id, save.fromId),
+								eq(loreEntries.ownerId, userId),
+								inLiveUniverse(loreEntries.universeId)
+							)
+						);
 	if (!fromEntity) return { ok: false, reason: 'entity not found' };
 	const universeId = fromEntity.universeId;
 
@@ -305,7 +324,11 @@ export async function deleteRelationship(db: Database, relationshipId: string, u
 		const [deleted] = await tx
 			.delete(entityRelationships)
 			.where(
-				and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.ownerId, userId))
+				and(
+					eq(entityRelationships.id, relationshipId),
+					eq(entityRelationships.ownerId, userId),
+					inLiveUniverse(entityRelationships.universeId)
+				)
 			)
 			.returning({
 				fromType: entityRelationships.fromType,

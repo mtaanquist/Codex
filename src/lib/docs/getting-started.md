@@ -20,7 +20,7 @@ Each of those has its own help article. Select the "?" at the top right of any p
 
 ## Deleting things
 
-Right-click a scene in a story's sidebar to delete it; it sits in the story's "Deleted scenes" list until you restore it or delete it forever. Notes attached to a scene you delete forever stay in the story's notes. Deleting a universe (from its settings) keeps it in a "Deleted universes" list on the library for 30 days, restorable with one click; after that it is gone for good, along with everything in it. Stories delete immediately and permanently from their settings, so export first if in doubt.
+Right-click a scene in a story's sidebar to delete it; it sits in the story's "Deleted scenes" list until you restore it or delete it forever. Notes attached to a scene you delete forever stay in the story's notes. Deleting a universe (from its settings) keeps it in a "Deleted universes" list on the library for 30 days, restorable with one click; after that it is gone for good, along with everything in it. While a universe is deleted, review links to its stories stop working; restoring it brings them back. Stories delete immediately and permanently from their settings, so export first if in doubt.
 
 ## Moving work in and out
 
@@ -32,7 +32,7 @@ You can bring in a manuscript written elsewhere the same way. Pick a Word docume
 
 ## Jumping around
 
-Press Ctrl+K, or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose: matches in scene text show a snippet, and opening one selects the match in the editor. The same box lists commands for where you are, such as creating a scene, switching focus mode on, or reading the whole story as one document.
+Press Ctrl+K, or use the Search button in the top bar. Type to find any universe, story, scene, character, place, or lore entry you own, and press Enter to open it. The search also looks inside your prose once you type three or more characters: matches in scene text show a snippet, and opening one selects the match in the editor. The same box lists commands for where you are, such as creating a scene, switching focus mode on, or reading the whole story as one document.
 
 Opening a story without picking a scene resumes the scene you edited last.
 

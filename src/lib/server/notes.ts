@@ -3,6 +3,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth';
 import { notes, revisions } from './db/schema';
 import { recordRevision } from './revisions';
+import { inLiveUniverse } from './universe-scope';
 
 // Freeform writer notes, scoped to a universe or a story. Universe notes have
 // story_id null; story notes carry both the story and its universe. The list
@@ -35,7 +36,9 @@ export async function listStoryNotes(
 	return db
 		.select(LIST_COLUMNS)
 		.from(notes)
-		.where(and(eq(notes.storyId, storyId), eq(notes.ownerId, userId)))
+		.where(
+			and(eq(notes.storyId, storyId), eq(notes.ownerId, userId), inLiveUniverse(notes.universeId))
+		)
 		.orderBy(desc(notes.pinned), desc(notes.updatedAt));
 }
 
@@ -48,7 +51,14 @@ export async function listUniverseNotes(
 	return db
 		.select(LIST_COLUMNS)
 		.from(notes)
-		.where(and(eq(notes.universeId, universeId), isNull(notes.storyId), eq(notes.ownerId, userId)))
+		.where(
+			and(
+				eq(notes.universeId, universeId),
+				isNull(notes.storyId),
+				eq(notes.ownerId, userId),
+				inLiveUniverse(notes.universeId)
+			)
+		)
 		.orderBy(desc(notes.pinned), desc(notes.updatedAt));
 }
 
@@ -61,7 +71,9 @@ export async function listSceneNotes(
 	return db
 		.select(LIST_COLUMNS)
 		.from(notes)
-		.where(and(eq(notes.sceneId, sceneId), eq(notes.ownerId, userId)))
+		.where(
+			and(eq(notes.sceneId, sceneId), eq(notes.ownerId, userId), inLiveUniverse(notes.universeId))
+		)
 		.orderBy(desc(notes.pinned), desc(notes.updatedAt));
 }
 
@@ -77,7 +89,7 @@ export async function getNote(db: Database, noteId: string, userId: string): Pro
 			storyId: notes.storyId
 		})
 		.from(notes)
-		.where(and(eq(notes.id, noteId), eq(notes.ownerId, userId)));
+		.where(and(eq(notes.id, noteId), eq(notes.ownerId, userId), inLiveUniverse(notes.universeId)));
 	return row ?? null;
 }
 
@@ -153,7 +165,7 @@ export async function setNotePinned(
 	const [row] = await db
 		.update(notes)
 		.set({ pinned })
-		.where(and(eq(notes.id, noteId), eq(notes.ownerId, userId)))
+		.where(and(eq(notes.id, noteId), eq(notes.ownerId, userId), inLiveUniverse(notes.universeId)))
 		.returning({ id: notes.id });
 	return Boolean(row);
 }

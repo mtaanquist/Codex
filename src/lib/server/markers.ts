@@ -1,8 +1,10 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import { sceneMarkers, scenes } from './db/schema';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type { Database } from './auth.ts';
+import { sceneMarkers, scenes, stories } from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 import { findTodoLines } from '$lib/todo-markers';
+import { createAnchorMapper } from '../review-anchor.ts';
 
 // A selection turned into a checkable marker. Anchors are clamped to the
 // scene body so a stale client cannot write ranges past the end.
@@ -33,6 +35,19 @@ export async function createMarker(
 	return { ok: true, id: marker.id };
 }
 
+// Markers own their scene by id; this keeps a marker in a trashed universe
+// from being changed by id.
+function inLiveScene(db: Database) {
+	return inArray(
+		sceneMarkers.sceneId,
+		db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.innerJoin(stories, eq(scenes.storyId, stories.id))
+			.where(inLiveUniverse(stories.universeId))
+	);
+}
+
 export async function setMarkerResolved(
 	db: Database,
 	userId: string,
@@ -42,7 +57,7 @@ export async function setMarkerResolved(
 	const updated = await db
 		.update(sceneMarkers)
 		.set({ resolvedAt: resolved ? new Date() : null })
-		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId)))
+		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return updated.length > 0;
 }
@@ -54,7 +69,7 @@ export async function deleteMarker(
 ): Promise<boolean> {
 	const deleted = await db
 		.delete(sceneMarkers)
-		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId)))
+		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return deleted.length > 0;
 }
@@ -95,6 +110,50 @@ export async function updateMarkerAnchors(
 		) as v
 		where scene_markers.id = v.id and scene_markers.scene_id = ${sceneId}
 	`);
+}
+
+// For a body rewrite that does not come from the Write editor (a review
+// save, an accepted suggestion, a restore): map every anchored marker
+// through the old-to-new diff, so it keeps pointing at the same words. A
+// marker whose start or end text is gone, or whose range is left empty,
+// loses its anchor rather than pointing at whatever now sits at its old
+// offsets. Run inside the transaction that
+// writes the body.
+export async function remapMarkerAnchors(
+	db: Database,
+	sceneId: string,
+	oldBody: string,
+	newBody: string
+): Promise<void> {
+	if (oldBody === newBody) return;
+	const markers = await db
+		.select({
+			id: sceneMarkers.id,
+			anchorStart: sceneMarkers.anchorStart,
+			anchorEnd: sceneMarkers.anchorEnd
+		})
+		.from(sceneMarkers)
+		.where(eq(sceneMarkers.sceneId, sceneId));
+	const mapper = createAnchorMapper();
+	const moved: { id: string; anchorStart: number; anchorEnd: number }[] = [];
+	const lost: string[] = [];
+	for (const marker of markers) {
+		if (marker.anchorStart === null || marker.anchorEnd === null) continue;
+		// Each end maps on its own, so an edit at the edge of the marked text
+		// stretches or shrinks the range instead of losing it.
+		const start = mapper.point(oldBody, newBody, marker.anchorStart);
+		const end = mapper.point(oldBody, newBody, marker.anchorEnd);
+		if (start !== null && end !== null && start < end) {
+			moved.push({ id: marker.id, anchorStart: start, anchorEnd: end });
+		} else lost.push(marker.id);
+	}
+	await updateMarkerAnchors(db, sceneId, moved, newBody.length);
+	if (lost.length > 0) {
+		await db
+			.update(sceneMarkers)
+			.set({ anchorStart: null, anchorEnd: null })
+			.where(and(eq(sceneMarkers.sceneId, sceneId), inArray(sceneMarkers.id, lost)));
+	}
 }
 
 // Unresolved markers across a story, for the continuous view's stitched
