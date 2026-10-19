@@ -20,6 +20,7 @@
 		assetsConfigured: boolean;
 		titleTaken: boolean;
 		notes: ImportNote[];
+		freeformNoteCount: number;
 		problems: string[];
 	};
 	type ImportResult = {
@@ -27,6 +28,7 @@
 		sceneCount: number;
 		notesAttached: number;
 		entitiesCreated: number;
+		freeformNotesCreated: number;
 		problems: string[];
 	};
 
@@ -219,6 +221,8 @@
 								? ` and ${imported.notesAttached} ${imported.notesAttached === 1 ? 'story note' : 'story notes'}`
 								: ''}{imported.entitiesCreated > 0
 								? `, creating ${imported.entitiesCreated} ${imported.entitiesCreated === 1 ? 'new entry' : 'new entries'}`
+								: ''}{imported.freeformNotesCreated > 0
+								? `, plus ${imported.freeformNotesCreated} ${imported.freeformNotesCreated === 1 ? 'note' : 'notes'} in the notebook`
 								: ''}.
 						</p>
 						{#each imported.problems as problem (problem)}
@@ -234,6 +238,8 @@
 							{preview.sceneCount === 1 ? 'scene' : 'scenes'},
 							{formatNumber(preview.words)} words{preview.assetCount > 0
 								? `, ${preview.assetCount} ${preview.assetCount === 1 ? 'image' : 'images'}`
+								: ''}{preview.freeformNoteCount > 0
+								? `, ${preview.freeformNoteCount} ${preview.freeformNoteCount === 1 ? 'notebook note' : 'notebook notes'}`
 								: ''}.
 						</p>
 						{#if preview.titleTaken}

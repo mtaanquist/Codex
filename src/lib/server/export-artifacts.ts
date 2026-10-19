@@ -4,8 +4,10 @@ import type { Database } from './auth.ts';
 import { exportArtifacts, publications, stories } from './db/schema.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import {
+	asBuffer,
 	bucketAssetLoader,
 	buildStoryZip,
+	cachedAssetLoader,
 	type AssetLoader,
 	type ExportAsset,
 	type ExportStory,
@@ -63,7 +65,7 @@ function escapeHtml(text: string): string {
 // page setup ($lib/page-setup builds the stylesheet the browser print route
 // shares). Page geometry rides the pdf options instead of an @page rule,
 // since Chromium's header/footer layer needs it there. Images are inlined
-// as data URIs so the headless browser never needs the network.
+// as data URIs; any other image URL is blocked by the renderer (isolatePage).
 export function buildEditionHtml(
 	meta: { title: string; author: string | null },
 	content: StoryContent,
@@ -109,12 +111,35 @@ ${sections.join('\n')}
 </html>`;
 }
 
-function chromiumPath(): string | null {
+export function chromiumPath(): string | null {
 	if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
 	for (const path of ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']) {
 		if (existsSync(path)) return path;
 	}
 	return null;
+}
+
+type IsolatablePage = {
+	setJavaScriptEnabled(enabled: boolean): Promise<void>;
+	setRequestInterception(enabled: boolean): Promise<void>;
+	on(
+		event: 'request',
+		handler: (request: { url(): string; continue(): Promise<void>; abort(): Promise<void> }) => void
+	): unknown;
+};
+
+// The rendered HTML carries author content, and markdown still turns an
+// external image URL into an <img>. Every request other than an inlined
+// data: URI is aborted, so the worker's browser never reaches the network
+// it runs in (internal services, cloud metadata endpoints). Scripts are off
+// as well; nothing in the document needs them.
+export async function isolatePage(page: IsolatablePage): Promise<void> {
+	await page.setJavaScriptEnabled(false);
+	await page.setRequestInterception(true);
+	page.on('request', (request) => {
+		if (request.url().startsWith('data:')) void request.continue();
+		else void request.abort();
+	});
 }
 
 // Renders the document with headless Chromium via puppeteer-core, driving
@@ -135,12 +160,26 @@ export async function renderEditionPdf(
 	const { launch } = await import('puppeteer-core');
 	const browser = await launch({
 		executablePath,
+		// Puppeteer gives up after 30s by default, and a cold start on a busy
+		// host (a CI runner mid-suite) has run past that.
+		timeout: 90_000,
 		// Sandboxing is off because the container already isolates the process,
-		// and the rendered HTML is built from author prose with raw HTML escaped.
-		args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+		// the rendered HTML is built from author prose with raw HTML escaped, and
+		// isolatePage blocks scripts and every network request. The dead proxy
+		// (loopback included) backs that up for fetches interception does not
+		// see, such as <link rel=prefetch>.
+		args: [
+			'--no-sandbox',
+			'--disable-setuid-sandbox',
+			'--disable-dev-shm-usage',
+			'--disable-gpu',
+			'--proxy-server=127.0.0.1:9',
+			'--proxy-bypass-list=<-loopback>'
+		]
 	});
 	try {
 		const page = await browser.newPage();
+		await isolatePage(page);
 		await page.setContent(html, { waitUntil: 'load' });
 		const pdf = await page.pdf(options);
 		return new Uint8Array(pdf);
@@ -209,7 +248,8 @@ export async function generateEditionArtifacts(
 		descriptionMd: edition.descriptionMd
 	};
 	const content = editionStoryContent(edition.content as EditionContent);
-	const loadAssets = deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId);
+	// The three formats share one set of images, fetched from the bucket once.
+	const loadAssets = cachedAssetLoader(deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId));
 	const renderPdf = deps.renderPdf ?? renderEditionPdf;
 	const slug = slugify(edition.title, 'story');
 
@@ -259,7 +299,7 @@ export async function generateEditionArtifacts(
 		try {
 			const artifact = await build();
 			const storageKey = `${prefix}/exports/${publicationId}/${format}`;
-			await store.put(storageKey, Buffer.from(artifact.bytes), artifact.contentType);
+			await store.put(storageKey, asBuffer(artifact.bytes), artifact.contentType);
 			await db
 				.insert(exportArtifacts)
 				.values({
