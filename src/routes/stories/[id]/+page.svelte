@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { refreshStoryLive } from './live';
 	import { altLabel, modLabel } from '$lib/keys';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -247,7 +248,7 @@
 		if (!stale || mentionPolls >= MENTION_POLL_LIMIT) return;
 		const timer = setTimeout(() => {
 			mentionPolls += 1;
-			void invalidateAll();
+			void refreshStoryLive();
 		}, MENTION_POLL_MS);
 		return () => clearTimeout(timer);
 	});
@@ -640,7 +641,7 @@
 							onFocus={() => (activeDocId = scene.id)}
 							onStatus={(status) => {
 								saveStatus = status;
-								if (status === 'saved') void invalidateAll();
+								if (status === 'saved') void refreshStoryLive();
 							}}
 						/>
 					</article>
@@ -746,7 +747,7 @@
 							// Refresh the tree so the sidebar name and word count track edits.
 							if (status === 'saved') {
 								mentionPolls = 0;
-								void invalidateAll();
+								void refreshStoryLive();
 							}
 						}}
 					/>

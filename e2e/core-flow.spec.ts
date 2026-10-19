@@ -417,6 +417,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// TODO markers: a TODO: line highlights in the prose and lands in the
 	// To do panel.
 	await page.getByRole('tab', { name: 'Reference' }).click();
+	// A save refreshes only what it changes, not the whole page load.
+	const pageLoads: string[] = [];
+	const countPageLoads = (request: { url(): string }) => {
+		if (request.url().includes('__data.json')) pageLoads.push(request.url());
+	};
+	page.on('request', countPageLoads);
 	const todoSave = page.waitForResponse(
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
@@ -427,6 +433,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await todoSave;
 	await expect(page.locator('.cm-line.todo-line')).toHaveCount(1);
 	await expect(page.locator('.todo-text').first()).toContainText('tighten the toll scene');
+	page.off('request', countPageLoads);
+	expect(pageLoads).toEqual([]);
 
 	// A marked selection gets a checkable entry and a highlight.
 	const markerCreate = page.waitForResponse(
