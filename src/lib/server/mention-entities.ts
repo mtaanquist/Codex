@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	characters,
 	characterStoryMemberships,
@@ -8,9 +8,9 @@ import {
 	loreEntries,
 	placeStoryMemberships,
 	places
-} from './db/schema';
-import { relatedEntitySummaries } from './relationships';
-import { listMentionPins } from './mention-pins';
+} from './db/schema.ts';
+import { relatedEntitySummaries } from './relationships.ts';
+import { listMentionPins } from './mention-pins.ts';
 import type { MentionEntity } from '$lib/editor-mentions';
 
 export type ReviewMentionData = {
