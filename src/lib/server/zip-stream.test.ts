@@ -4,6 +4,12 @@ import { crc32 } from 'node:zlib';
 import { strFromU8, strToU8, unzipSync } from 'fflate';
 import { uploadZip, zipBytes, zipChunks, type ZipEntry } from './zip-stream';
 
+async function drainAll(stream: AsyncIterable<Uint8Array>): Promise<number> {
+	let size = 0;
+	for await (const chunk of stream) size += chunk.byteLength;
+	return size;
+}
+
 async function* chunks(...parts: string[]) {
 	for (const part of parts) yield strToU8(part);
 }
@@ -103,7 +109,7 @@ describe('zipChunks', () => {
 		const bytes = await zipBytes([
 			{ path: 'mimetype', data: strToU8('application/epub+zip'), stored: true },
 			{ path: 'a/story.md', data: strToU8('# Title\n') },
-			{ path: 'assets/x.png', data: async () => chunks('one', 'two', 'three'), stored: true }
+			{ path: 'assets/x.png', data: async () => chunks('one', 'two', 'three') }
 		]);
 		const entries = unzipSync(bytes);
 		expect(Object.keys(entries)).toEqual(['mimetype', 'a/story.md', 'assets/x.png']);
@@ -131,6 +137,25 @@ describe('zipChunks', () => {
 		expect(opened).toEqual(['a']);
 		for await (const chunk of stream) void chunk;
 		expect(opened).toEqual(['a', 'b', 'c']);
+	});
+
+	it('stops below the Zip64 entry count', async () => {
+		const files = (n: number): ZipEntry[] =>
+			Array.from({ length: n }, (_, i) => ({ path: `${i}.md`, data: strToU8('x') }));
+		const limits = { entries: 3, bytes: 0xffffffff };
+		await expect(drainAll(zipChunks(files(2), limits))).resolves.toBeGreaterThan(0);
+		await expect(drainAll(zipChunks(files(3), limits))).rejects.toThrow('too many files');
+	});
+
+	it('stops before an offset reaches the Zip64 marker', async () => {
+		const entries: ZipEntry[] = [{ path: 'a.md', data: strToU8('hello') }];
+		const size = await drainAll(zipChunks(entries));
+		await expect(drainAll(zipChunks(entries, { entries: 0xffff, bytes: size + 1 }))).resolves.toBe(
+			size
+		);
+		await expect(drainAll(zipChunks(entries, { entries: 0xffff, bytes: size }))).rejects.toThrow(
+			'too large'
+		);
 	});
 
 	it('writes an empty archive', async () => {

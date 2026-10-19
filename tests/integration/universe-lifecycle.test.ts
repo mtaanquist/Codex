@@ -96,6 +96,7 @@ const assetConfig = {
 };
 const nullStore: AssetObjectStore = {
 	async put() {},
+	async upload() {},
 	async get() {
 		throw new Error('not stored');
 	},

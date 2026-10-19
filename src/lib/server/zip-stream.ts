@@ -20,8 +20,10 @@ import type { AssetObjectStore } from './assets.ts';
 // is written.
 export type ZipSource = Uint8Array | (() => Promise<AsyncIterable<Uint8Array>>);
 // `stored` skips compression for an entry in hand: the EPUB mimetype, which
-// the spec requires uncompressed.
-export type ZipEntry = { path: string; data: ZipSource; stored?: boolean };
+// the spec requires uncompressed. Streamed entries are always deflated.
+export type ZipEntry =
+	| { path: string; data: Uint8Array; stored?: boolean }
+	| { path: string; data: () => Promise<AsyncIterable<Uint8Array>> };
 export type ZipArchive = { filename: string; entries: ZipEntry[] };
 
 export function textEntry(path: string, text: string): ZipEntry {
@@ -38,9 +40,13 @@ export function assetEntry(
 
 const FLAG_DESCRIPTOR = 0x0008;
 const FLAG_UTF8 = 0x0800;
-// No Zip64: past these limits the export fails rather than writing a broken file.
-const MAX_U32 = 0xffffffff;
-const MAX_ENTRIES = 0xffff;
+// No Zip64: a count of 0xffff or a size or offset of 0xffffffff means "see the
+// Zip64 record", so the export fails at those values rather than writing a
+// broken file. Checking every offset covers the sizes too: a streamed entry is
+// stored-deflate, so neither of its sizes can pass the offset after it, and
+// prose held in memory is far below 4 GB. Overridable so the boundary is
+// testable without 4 GB.
+export const ZIP_LIMITS = { entries: 0xffff, bytes: 0xffffffff };
 
 type EntryRecord = {
 	name: Uint8Array;
@@ -67,13 +73,16 @@ function dosTime(date: Date): { time: number; day: number } {
 	};
 }
 
-export async function* zipChunks(entries: Iterable<ZipEntry>): AsyncGenerator<Uint8Array> {
+export async function* zipChunks(
+	entries: Iterable<ZipEntry>,
+	limits = ZIP_LIMITS
+): AsyncGenerator<Uint8Array> {
 	const { time, day } = dosTime(new Date());
 	const written: EntryRecord[] = [];
 	let offset = 0;
 	const emit = (chunk: Uint8Array) => {
 		offset += chunk.byteLength;
-		if (offset > MAX_U32) throw new Error('the export is too large for a zip file');
+		if (offset >= limits.bytes) throw new Error('the export is too large for a zip file');
 		return chunk;
 	};
 	// With the descriptor flag set, the CRC and sizes here are zero and follow
@@ -97,16 +106,17 @@ export async function* zipChunks(entries: Iterable<ZipEntry>): AsyncGenerator<Ui
 		);
 
 	for (const entry of entries) {
-		if (written.length === MAX_ENTRIES) throw new Error('the export has too many files');
+		if (written.length + 1 >= limits.entries) throw new Error('the export has too many files');
 		const name = strToU8(entry.path);
 		const flag = name.byteLength === entry.path.length ? 0 : FLAG_UTF8;
 
 		if (entry.data instanceof Uint8Array) {
-			const body = entry.stored ? entry.data : deflateSync(entry.data, { level: 6 });
+			const stored = 'stored' in entry && entry.stored === true;
+			const body = stored ? entry.data : deflateSync(entry.data, { level: 6 });
 			const r: EntryRecord = {
 				name,
 				flag,
-				method: entry.stored ? 0 : 8,
+				method: stored ? 0 : 8,
 				crc: crc32(entry.data),
 				compressed: body.byteLength,
 				size: entry.data.byteLength,
@@ -142,7 +152,6 @@ export async function* zipChunks(entries: Iterable<ZipEntry>): AsyncGenerator<Ui
 		for await (const chunk of await entry.data()) {
 			r.crc = crc32(chunk, r.crc);
 			r.size += chunk.byteLength;
-			if (r.size > MAX_U32) throw new Error('an image is too large for a zip file');
 			deflate.push(chunk);
 			yield* drain();
 		}
