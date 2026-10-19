@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveOrigin } from './origin';
+import { resolveOrigin } from './origin-rule';
 
 describe('resolveOrigin', () => {
 	it('uses the configured origin over the request origin', () => {

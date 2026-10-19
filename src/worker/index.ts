@@ -64,10 +64,19 @@ import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 import { stopWorker } from './shutdown.ts';
+import { resolveOrigin } from '../lib/server/origin-rule.ts';
 import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
+// Digest links need an absolute origin. Like the app, the worker refuses to
+// start without ORIGIN outside development.
+const origin = resolveOrigin(
+	process.env.ORIGIN,
+	'http://localhost:5173',
+	process.env.NODE_ENV !== 'production'
+);
+
 const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
 
 // Jobs run longer statements than web requests (purges, reindexing), so the
@@ -458,9 +467,7 @@ await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
 });
 
 // Notification digests: one email per recipient gathering everything that
-// arrived since the last one. Links in the email need an absolute origin.
-const origin = process.env.ORIGIN ?? 'http://localhost:5173';
-
+// arrived since the last one.
 await boss.work<{ userId: string }>(NOTIFICATION_DIGEST_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const digest = await buildUserDigest(db, job.data.userId, origin);
