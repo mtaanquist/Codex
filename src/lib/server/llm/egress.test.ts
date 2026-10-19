@@ -125,7 +125,7 @@ describe('egressHttpRequest', () => {
 		try {
 			const http = egressHttpRequest({ policy: 'open', allowlist: [] }, 100);
 			const response = await http(`http://127.0.0.1:${port}/`, { method: 'GET', headers: {} });
-			await expect(response.text()).rejects.toThrow();
+			await expect(response.text()).rejects.toBeInstanceOf(EgressTimeoutError);
 		} finally {
 			server.closeAllConnections();
 			server.close();

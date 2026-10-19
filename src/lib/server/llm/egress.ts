@@ -261,6 +261,7 @@ function doRequest(
 	const send = parsed.protocol === 'https:' ? httpsRequest : httpRequest;
 
 	return new Promise<HttpResponse>((resolve, reject) => {
+		let response: IncomingMessage | null = null;
 		const req = send(
 			url,
 			{
@@ -270,6 +271,7 @@ function doRequest(
 				...(useLookup ? { lookup: useLookup } : {})
 			},
 			(res: IncomingMessage) => {
+				response = res;
 				const headers: Record<string, string> = {};
 				for (const [k, v] of Object.entries(res.headers)) {
 					if (typeof v === 'string') headers[k] = v;
@@ -285,8 +287,9 @@ function doRequest(
 			}
 		);
 		req.on('error', reject);
-		// Destroying the request also errors a response body still being read.
-		req.setTimeout(idleTimeoutMs, () => req.destroy(new EgressTimeoutError()));
+		// Once the response has started, the error has to go to the body being
+		// read, or the reader only sees a bare "aborted".
+		req.setTimeout(idleTimeoutMs, () => (response ?? req).destroy(new EgressTimeoutError()));
 		if (init.body) req.write(init.body);
 		req.end();
 	});

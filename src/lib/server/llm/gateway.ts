@@ -15,7 +15,12 @@ import {
 import { loadStoryScope, loadUniverseScope } from './context/sources.ts';
 import { adapterKind } from './providers/presets.ts';
 import { estimateTokens } from './context/assemble.ts';
-import { EgressDeniedError, egressHttpRequest, egressPolicy } from './egress.ts';
+import {
+	EgressDeniedError,
+	EgressTimeoutError,
+	egressHttpRequest,
+	egressPolicy
+} from './egress.ts';
 import { providerFor } from './providers/index.ts';
 import { buildPersonaPrompt } from './prompts/persona.ts';
 import { recordAssistantUsage } from './usage.ts';
@@ -149,9 +154,11 @@ const RETRY_DELAYS_MS = [250, 1000];
 // transport error (socket reset, DNS, connection refused), or a 429/5xx the
 // adapters report as `Endpoint returned <status>: ...`. A 4xx other than 429 is
 // the request's own fault, an egress denial is policy, and an abort was asked
-// for; none of those improve on a second try.
+// for; none of those improve on a second try. Nor does an endpoint that already
+// sat silent for the whole idle timeout.
 function isTransientFailure(err: unknown): boolean {
 	if (err instanceof EgressDeniedError) return false;
+	if (err instanceof EgressTimeoutError) return false;
 	if (!(err instanceof Error)) return false;
 	if (err.name === 'AbortError') return false;
 	// A 200 whose body is not JSON fails the same way every time; retrying it

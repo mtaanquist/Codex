@@ -28,9 +28,9 @@ export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
 // worker again, so a long Assistant run would be started a second time while
 // the first is still going: the same scenes billed twice, and two executions
 // writing the same run state. A story review is minutes per scene on local
-// hardware, so these jobs are given six hours instead. The queue's retry
-// policy still applies, so a run whose worker genuinely died is retried once
-// the expiry passes (and resumes through the recorded progress).
+// hardware, so these jobs are given six hours instead. A run whose worker
+// genuinely died misses its heartbeat and is retried (resuming through the
+// recorded progress).
 export const ASSISTANT_JOB_EXPIRY_SECONDS = 6 * 60 * 60;
 // The worker refreshes a running Assistant job's heartbeat every half of this;
 // a job whose worker stops refreshing is failed and retried.
