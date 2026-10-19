@@ -113,7 +113,7 @@
 	border-radius: 8px;
 	text-decoration: none;
 	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
-	color: #fff;
+	color: var(--accent-contrast);
 	display: grid;
 	place-items: center;
 	font-size: 11px;
@@ -398,7 +398,7 @@
 	display: grid;
 	place-items: center;
 	font-weight: 700;
-	color: #fff;
+	color: var(--on-color);
 	line-height: 1;
 }
 .badge.sm {
@@ -1393,7 +1393,7 @@
 	width: 17px;
 	height: 17px;
 	border-radius: 99px;
-	background: #fff;
+	background: var(--on-color);
 	transition: transform 0.15s;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
@@ -1839,7 +1839,7 @@ a.icon-btn {
 	flex: none;
 	display: grid;
 	place-items: center;
-	color: #fff;
+	color: var(--on-color);
 	font-size: 10.5px;
 	font-weight: 700;
 }

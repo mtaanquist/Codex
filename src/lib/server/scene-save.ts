@@ -1,7 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
-import { updateMarkerAnchors } from './markers';
+import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
 import { textHash } from '$lib/text-hash';
 import { wordCount } from '$lib/word-count';
@@ -9,7 +9,8 @@ import { wordCount } from '$lib/word-count';
 export type SceneSave = {
 	title: string | null;
 	bodyMd: string;
-	// Marker anchors as the editor mapped them; null leaves the stored ones.
+	// Marker anchors as the editor mapped them; null maps the stored ones
+	// through the change.
 	anchors: { id: string; anchorStart: number; anchorEnd: number }[] | null;
 	// Fingerprints of the text the editor last saw. The save goes through only
 	// when the stored text matches one of them; null skips the check.
@@ -20,7 +21,9 @@ export type SceneSave = {
 };
 
 export type SceneSaveResult =
-	| { ok: true; wordCount: number }
+	// bodyChanged is false when the stored text already matched, so the caller
+	// can skip the mention rebuild.
+	| { ok: true; wordCount: number; bodyChanged: boolean }
 	| { ok: false; conflict: { bodyMd: string; title: string | null } }
 	| { ok: false; missing: true };
 
@@ -40,23 +43,46 @@ export async function saveSceneBody(
 			.where(eq(scenes.id, sceneId))
 			.for('update');
 		if (!current) return { ok: false as const, missing: true as const };
-		if (save.baseHashes && !save.baseHashes.includes(textHash(current.bodyMd))) {
-			if (current.bodyMd !== save.bodyMd) {
-				return { ok: false as const, conflict: current };
-			}
+		const bodyChanged = current.bodyMd !== save.bodyMd;
+		if (save.baseHashes && bodyChanged && !save.baseHashes.includes(textHash(current.bodyMd))) {
+			return {
+				ok: false as const,
+				conflict: { bodyMd: current.bodyMd, title: current.title }
+			};
 		}
-		if (save.overwrite && current.bodyMd !== save.bodyMd) {
+		const count = wordCount(save.bodyMd);
+		// An idle editor keeps resending the same text. History already ends on
+		// it and the anchors have nothing to move through, so only a new title
+		// is worth a write.
+		if (!bodyChanged) {
+			if (current.title !== save.title) {
+				// Mentions read only the body, so an index that was current stays
+				// current; one already behind keeps its pending rebuild.
+				await tx
+					.update(scenes)
+					.set({
+						title: save.title,
+						updatedAt: sql`now()`,
+						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then now() else ${scenes.mentionsIndexedAt} end`
+					})
+					.where(eq(scenes.id, sceneId));
+			}
+			return { ok: true as const, wordCount: count, bodyChanged: false };
+		}
+		if (save.overwrite) {
 			await recordRevision(tx, 'scene', sceneId, current.bodyMd, 'checkpoint', {
 				label: 'Replaced from another window'
 			});
 		}
-		const count = wordCount(save.bodyMd);
 		await tx
 			.update(scenes)
 			.set({ title: save.title, bodyMd: save.bodyMd, wordCount: count })
 			.where(eq(scenes.id, sceneId));
 		await recordRevision(tx, 'scene', sceneId, save.bodyMd);
+		// A save without anchors (the review centre's) still moves the text
+		// under the markers, so map them through the diff instead.
 		if (save.anchors) await updateMarkerAnchors(tx, sceneId, save.anchors, save.bodyMd.length);
-		return { ok: true as const, wordCount: count };
+		else await remapMarkerAnchors(tx, sceneId, current.bodyMd, save.bodyMd);
+		return { ok: true as const, wordCount: count, bodyChanged: true };
 	});
 }

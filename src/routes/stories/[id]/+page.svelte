@@ -1040,13 +1040,13 @@
 		height: 14px;
 		margin-top: 2px;
 		flex: none;
-		border: 1.5px solid var(--cat-amber, #b8860b);
+		border: 1.5px solid var(--cat-amber);
 		border-radius: 4px;
 		background: none;
 		cursor: pointer;
 	}
 	.todo-check:hover {
-		background: color-mix(in oklab, var(--cat-amber, #b8860b) 30%, transparent);
+		background: color-mix(in oklab, var(--cat-amber) 30%, transparent);
 	}
 	.todo-dot {
 		width: 14px;
@@ -1054,7 +1054,7 @@
 		margin-top: 2px;
 		flex: none;
 		border-radius: 99px;
-		background: color-mix(in oklab, var(--cat-amber, #b8860b) 35%, transparent);
+		background: color-mix(in oklab, var(--cat-amber) 35%, transparent);
 	}
 	.todo-text {
 		flex: 1;

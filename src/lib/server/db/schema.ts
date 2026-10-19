@@ -828,6 +828,14 @@ export const assets = pgTable('assets', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 });
 
+// Bucket objects whose rows are gone, waiting out the backup retention window
+// before the worker removes them, so restoring an older database dump still
+// finds every image it points at. See sweepDeletedObjects in assets.ts.
+export const pendingObjectDeletions = pgTable('pending_object_deletions', {
+	storageKey: text('storage_key').primaryKey(),
+	deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull().defaultNow()
+});
+
 // A user-requested export (account, story, or universe; zip or EPUB), built by
 // the worker and stored in the asset bucket so the heavy in-memory build never
 // runs on the web request path. The owner downloads the finished file from

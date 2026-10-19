@@ -21,6 +21,7 @@ import {
 	stories,
 	universes
 } from './db/schema.ts';
+import { scheduleObjectDeletions } from './assets.ts';
 import { deleteStoryWithin, type Tx } from './story-delete.ts';
 
 export const UNIVERSE_TRASH_DAYS = 30;
@@ -97,18 +98,26 @@ export async function listTrashedUniverses(
 	});
 }
 
-/** Deletes a trashed universe for good, right now. Owner-guarded; the
- * uploaded image objects are swept by the caller via the returned keys. */
+/** Deletes a trashed universe for good, right now. Owner-guarded. */
 export async function destroyUniverse(
 	db: Database,
 	userId: string,
 	universeId: string
-): Promise<{ ok: boolean; assetKeys: string[] }> {
+): Promise<{ ok: boolean }> {
 	const universe = await ownedUniverseRow(db, userId, universeId, true);
-	if (!universe) return { ok: false, assetKeys: [] };
-	const assetKeys = await universeAssetKeys(db, universe.id);
-	await db.transaction((tx) => purgeUniverseWithin(tx, universe.id));
-	return { ok: true, assetKeys };
+	if (!universe) return { ok: false };
+	await purgeUniverse(db, universe.id);
+	return { ok: true };
+}
+
+/** Hard-deletes a universe and queues its bucket objects for the deferred
+ * sweep (see scheduleObjectDeletions). */
+export async function purgeUniverse(db: Database, universeId: string): Promise<void> {
+	await db.transaction(async (tx) => {
+		const keys = await universeAssetKeys(tx, universeId);
+		await purgeUniverseWithin(tx, universeId);
+		await scheduleObjectDeletions(tx, keys);
+	});
 }
 
 /** Universes whose trash window has elapsed and are due for the purge. */
@@ -127,7 +136,7 @@ export async function listUniversesDueForPurge(db: Database): Promise<string[]> 
 
 /** The bucket keys of everything the universe's purge will orphan: uploaded
  * images and the stored export files of its published editions. */
-export async function universeAssetKeys(db: Database, universeId: string): Promise<string[]> {
+export async function universeAssetKeys(db: Database | Tx, universeId: string): Promise<string[]> {
 	const assetRows = await db
 		.select({ storageKey: assets.storageKey })
 		.from(assets)
