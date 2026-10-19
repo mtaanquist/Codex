@@ -514,7 +514,8 @@ export type SaveAccountInput = {
 	enabled: boolean;
 	assistantName: string;
 	persona: Persona;
-	// Defaults to 'custom' (a bring-your-own endpoint) when absent.
+	// Absent keeps the stored provider, which is 'custom' (a bring-your-own
+	// endpoint) for an account that has never picked one.
 	provider?: ProviderId;
 	endpoint: string;
 	// Blank keeps the stored key, so the writer can edit other fields without
@@ -540,6 +541,30 @@ export type SaveAccountInput = {
 	supportsTools?: boolean;
 };
 
+// On a switch, only what the caller carried over from the stored config is
+// reset; a value it sent deliberately for the new provider is kept.
+function carried(sent: unknown, stored: unknown): boolean {
+	return JSON.stringify(sent) === JSON.stringify(stored);
+}
+
+function originOf(endpoint: string): string {
+	try {
+		return new URL(endpoint).origin;
+	} catch {
+		return endpoint;
+	}
+}
+
+function withoutExtraParams(tuning: TuningMap): TuningMap {
+	const out: TuningMap = {};
+	for (const [role, own] of Object.entries(tuning) as [AssistantRole, RoleTuning][]) {
+		const rest = { ...own };
+		delete rest.extraParams;
+		if (Object.keys(rest).length > 0) out[role] = rest;
+	}
+	return out;
+}
+
 export type SaveResult = { ok: true } | { ok: false; reason: string };
 
 export async function saveAccountLlmConfig(
@@ -547,7 +572,10 @@ export async function saveAccountLlmConfig(
 	userId: string,
 	input: SaveAccountInput
 ): Promise<SaveResult> {
-	const provider = normaliseProviderId(input.provider);
+	const existing = await accountLlmConfig(db, userId);
+	// Absent keeps the stored provider (the partial-save pattern).
+	const provider =
+		input.provider === undefined ? existing.provider : normaliseProviderId(input.provider);
 	// A preset owns its endpoint: the stored URL comes from the preset table, not
 	// the form, so a stale or tampered field cannot point a preset elsewhere.
 	const preset = providerPreset(provider);
@@ -581,11 +609,17 @@ export async function saveAccountLlmConfig(
 		};
 	}
 
-	const existing = await accountLlmConfig(db, userId);
-	// A key belongs to the provider it was saved for, so a provider switch never
-	// carries it over: the old key would be sent to the new provider.
+	// A key belongs to the provider and endpoint it was saved for, so a switch
+	// never carries it over: it would be sent somewhere new. The discovered
+	// snapshots describe the old endpoint too. A preset's URL is fixed, so only a
+	// custom endpoint is compared, by host, and a first URL typed after the key
+	// is not a switch. A provider switch also starts the model picks and the extra request
+	// settings over, since they name the old provider's models and parameters.
 	const providerChanged = provider !== existing.provider;
-	let apiKeyEnc = providerChanged ? null : existing.apiKeyEnc;
+	const connectionChanged =
+		providerChanged ||
+		(!preset && !!existing.endpoint && originOf(endpoint) !== originOf(existing.endpoint));
+	let apiKeyEnc = connectionChanged ? null : existing.apiKeyEnc;
 	if (input.apiKey) {
 		if (!secretsAvailable()) {
 			return { ok: false, reason: 'Set APP_SECRET on the server before storing an API key.' };
@@ -597,6 +631,10 @@ export async function saveAccountLlmConfig(
 	// carries a manual opt-out that would disable surfaces.
 	const supportsStreaming = preset?.adapter === 'anthropic' ? true : input.supportsStreaming;
 	const supportsTools = preset?.adapter === 'anthropic' ? true : input.supportsTools;
+	const tuning = input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning);
+	const models = normaliseModels(input.models);
+	const extraParams =
+		input.extraParams === undefined ? undefined : (normaliseExtraParams(input.extraParams) ?? {});
 	const value: StoredAccountConfig = {
 		enabled: input.enabled,
 		assistantName: normaliseAssistantName(input.assistantName),
@@ -604,13 +642,17 @@ export async function saveAccountLlmConfig(
 		provider,
 		endpoint,
 		apiKeyEnc,
-		models: normaliseModels(input.models),
+		models: providerChanged && carried(models, existing.models) ? {} : models,
 		// Absent means "not part of this form", keeping the stored map (the
 		// blank-api-key pattern); pass {} to clear it.
-		tuning: input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning),
-		...(input.extraParams === undefined
-			? {}
-			: { extraParams: normaliseExtraParams(input.extraParams) ?? {} }),
+		tuning:
+			providerChanged && carried(tuning, existing.tuning) ? withoutExtraParams(tuning) : tuning,
+		...(providerChanged &&
+		(extraParams === undefined || carried(extraParams, existing.extraParams ?? {}))
+			? { extraParams: {} }
+			: extraParams === undefined
+				? {}
+				: { extraParams }),
 		webSearch: input.webSearch === undefined ? existing.webSearch : input.webSearch === true,
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
 		toolProfile:
@@ -631,7 +673,7 @@ export async function saveAccountLlmConfig(
 		spend.spendWarnUsd = normaliseUsd(input.spendWarnUsd) ?? null;
 	}
 	// What the last discovery reported describes the old provider's models.
-	const snapshots = providerChanged ? { modelPricing: {}, modelContext: {} } : {};
+	const snapshots = connectionChanged ? { modelPricing: {}, modelContext: {} } : {};
 	// A jsonb merge, so any unknown keys (a future config field) survive.
 	const stored: Record<string, unknown> = { ...value, ...spend, ...snapshots };
 	await db

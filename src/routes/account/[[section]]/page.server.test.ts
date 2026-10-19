@@ -16,6 +16,7 @@ const storedConfig = {
 	modelContextManual: {} as Record<string, number>
 };
 const savedInputs: {
+	provider?: string;
 	tuning?: Record<string, unknown>;
 	models?: Record<string, string>;
 	modelContextManual?: Record<string, number>;
@@ -203,20 +204,19 @@ describe('saveAssistantEndpoint spend fields', () => {
 	});
 });
 
-describe('switching provider', () => {
+describe('which saves carry the provider', () => {
 	beforeEach(() => {
 		savedInputs.length = 0;
-		storedConfig.models = { chat: 'local-model', reviewer: 'local-big' };
 	});
 
-	it("drops the old provider's model picks", async () => {
+	it('the endpoint form sends the picked provider', async () => {
 		await saveEndpoint({ provider: 'anthropic' });
-		expect(savedInputs[0].models).toEqual({});
+		expect(savedInputs[0]).toMatchObject({ provider: 'anthropic' });
 	});
 
-	it('keeps the picks when the provider stays the same', async () => {
-		await saveEndpoint({ endpoint: 'http://other/v1' });
-		expect(savedInputs[0].models).toEqual({ chat: 'local-model', reviewer: 'local-big' });
+	it('other forms leave it out, so they cannot undo a switch', async () => {
+		await saveModels({ chat: 'some-model' });
+		expect(savedInputs[0].provider).toBeUndefined();
 	});
 });
 

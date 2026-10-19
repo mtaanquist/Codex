@@ -208,7 +208,8 @@ const PARAMS_MESSAGE = 'Extra settings must be a JSON object, like {"top_p": 0.9
 // The Assistant section saves in pieces (identity, endpoint, models, the kill
 // switch), each its own button. saveAccountLlmConfig replaces the whole config
 // from its input, so a partial save first reads the current view and overlays
-// only the changed fields; a blank api key keeps the stored one.
+// only the changed fields; a blank api key keeps the stored one. A provider
+// switch resets what belonged to the old one (see saveAccountLlmConfig).
 async function patchAssistant(
 	userId: string,
 	patch: Partial<{
@@ -229,17 +230,16 @@ async function patchAssistant(
 	}>
 ): Promise<SaveResult> {
 	const current = await accountLlmView(db, userId);
-	// The model picks name the old provider's models, so a provider switch
-	// starts the roles over rather than carrying ids the new one does not have.
-	const providerChanged = patch.provider !== undefined && patch.provider !== current.provider;
 	return saveAccountLlmConfig(db, userId, {
 		enabled: patch.enabled ?? current.enabled,
 		assistantName: patch.assistantName ?? current.assistantName,
 		persona: normalisePersona(patch.persona ?? current.persona),
-		provider: patch.provider ?? current.provider,
+		// Left out unless this save is the provider picker's, so a save from
+		// another form cannot undo a switch that landed after it read the config.
+		provider: patch.provider,
 		endpoint: patch.endpoint ?? current.endpoint,
 		apiKey: patch.apiKey ?? '',
-		models: patch.models ?? (providerChanged ? {} : current.models),
+		models: patch.models ?? current.models,
 		tuning: patch.tuning ?? current.tuning,
 		extraParams: patch.extraParams,
 		webSearch: patch.webSearch,

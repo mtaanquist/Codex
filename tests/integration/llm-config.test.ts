@@ -258,26 +258,89 @@ describe('account config round-trip', () => {
 		expect((await accountLlmView(db, userId)).hasKey).toBe(true);
 	});
 
-	it('a provider switch drops the stored key and the discovered snapshots', async () => {
+	it("a provider switch drops the old provider's key, models, snapshots and extras", async () => {
 		const base = {
 			enabled: true,
 			assistantName: '',
 			persona: 'balanced' as const,
 			endpoint: 'http://ollama.local:11434/v1',
-			models: {},
 			toolCallBudget: 8
 		};
-		await saveAccountLlmConfig(db, userId, { ...base, apiKey: 'local-key' });
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			apiKey: 'local-key',
+			models: { chat: 'local-model' },
+			extraParams: { min_p: 0.05 },
+			tuning: { chat: { temperature: 0.4, extraParams: { top_k: 20 } } }
+		});
 		await saveModelContext(db, userId, { 'local-model': 8192 });
-		await saveAccountLlmConfig(db, userId, { ...base, provider: 'anthropic', apiKey: '' });
+		// The caller carries what it read, as a partial save does.
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			provider: 'anthropic',
+			apiKey: '',
+			models: { chat: 'local-model' }
+		});
 		const view = await accountLlmView(db, userId);
 		expect(view.hasKey).toBe(false);
+		expect(view.models).toEqual({});
 		expect(view.modelContext ?? {}).toEqual({});
+		expect(view.extraParams ?? {}).toEqual({});
+		expect(view.tuning).toEqual({ chat: { temperature: 0.4 } });
 		expect((await resolveLlmConfig(db, userId)).config.apiKey).toBe('');
 
 		// A key typed with the switch is the one kept.
-		await saveAccountLlmConfig(db, userId, { ...base, provider: 'openai', apiKey: 'sk-openai' });
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			provider: 'openai',
+			apiKey: 'sk-openai',
+			models: {}
+		});
 		expect((await resolveLlmConfig(db, userId)).config.apiKey).toBe('sk-openai');
+	});
+
+	it('a save that leaves the provider out keeps the stored one and its key', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: '',
+			models: {},
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, { ...base, provider: 'anthropic', apiKey: 'sk-ant' });
+		await saveAccountLlmConfig(db, userId, { ...base, apiKey: '', models: { chat: 'x' } });
+		const view = await accountLlmView(db, userId);
+		expect(view.provider).toBe('anthropic');
+		expect(view.models).toEqual({ chat: 'x' });
+		expect((await resolveLlmConfig(db, userId)).config.apiKey).toBe('sk-ant');
+	});
+
+	it('moving a custom endpoint to another URL drops the key, but not the first URL', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			models: { chat: 'm' },
+			toolCallBudget: 8
+		};
+		// Key first, URL after: the key stays.
+		await saveAccountLlmConfig(db, userId, { ...base, endpoint: '', apiKey: 'k1' });
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			endpoint: 'https://a.example/v1',
+			apiKey: ''
+		});
+		expect((await resolveLlmConfig(db, userId)).config.apiKey).toBe('k1');
+		// A different host must not receive it.
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			endpoint: 'https://b.example/v1',
+			apiKey: ''
+		});
+		const view = await accountLlmView(db, userId);
+		expect(view.hasKey).toBe(false);
+		expect(view.models).toEqual({ chat: 'm' });
 	});
 
 	it('rejects a non-http endpoint', async () => {
