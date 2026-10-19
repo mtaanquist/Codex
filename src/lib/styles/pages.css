@@ -28,7 +28,7 @@
 	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
 	display: grid;
 	place-items: center;
-	color: #fff;
+	color: var(--accent-contrast);
 	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 .logo svg {
@@ -51,7 +51,7 @@
 	text-decoration: none;
 	cursor: pointer;
 	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
-	color: #fff;
+	color: var(--accent-contrast);
 	display: grid;
 	place-items: center;
 	font-size: 11px;
@@ -112,7 +112,7 @@
 	display: grid;
 	place-items: center;
 	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
-	color: #fff;
+	color: var(--accent-contrast);
 	font-size: 13px;
 	font-weight: 700;
 	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
@@ -285,7 +285,7 @@
 }
 .btn-primary:hover:not(:disabled),
 .btn-primary.is-hover {
-	background: color-mix(in oklab, var(--accent) 88%, #fff);
+	background: color-mix(in oklab, var(--accent) 88%, var(--accent-contrast));
 }
 .btn-primary:active:not(:disabled),
 .btn-primary.is-active {
@@ -699,7 +699,7 @@
 .swatch svg {
 	width: 15px;
 	height: 15px;
-	color: #fff;
+	color: var(--on-color);
 	opacity: 0;
 	filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
 }
@@ -747,7 +747,7 @@
 .swatch-custom svg {
 	width: 13px;
 	height: 13px;
-	color: #fff;
+	color: var(--on-color);
 	filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.55));
 }
 .swatch-custom input {
@@ -1095,7 +1095,7 @@
 	font-weight: 700;
 	letter-spacing: 0.02em;
 	background: linear-gradient(150deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
-	color: #fff;
+	color: var(--accent-contrast);
 }
 .user-row-identity {
 	flex: 1;
