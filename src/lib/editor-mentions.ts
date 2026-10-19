@@ -114,6 +114,24 @@ export function rescanChangedLines(
 	return next;
 }
 
+// The name matcher compiles once per target list (see mention-detect), so
+// the target list is derived once per entity list: every editor on a page
+// handed the same entities shares one compiled matcher.
+const targetLists = new WeakMap<MentionEntity[], MentionTarget[]>();
+
+export function mentionTargets(entities: MentionEntity[]): MentionTarget[] {
+	let targets = targetLists.get(entities);
+	if (!targets) {
+		targets = entities.map((entity) => ({
+			id: entity.id,
+			type: entity.type,
+			names: [entity.name, ...entity.aliases]
+		}));
+		targetLists.set(entities, targets);
+	}
+	return targets;
+}
+
 // Live underlines and hover tooltips for known entities. Lives in the scene
 // editor's mentions compartment, so pin changes can reconfigure it at
 // runtime.
@@ -121,11 +139,7 @@ export function mentionExtensions(
 	entities: MentionEntity[],
 	options: MentionOptions = {}
 ): Extension {
-	const targets: MentionTarget[] = entities.map((entity) => ({
-		id: entity.id,
-		type: entity.type,
-		names: [entity.name, ...entity.aliases]
-	}));
+	const targets = mentionTargets(entities);
 	const byId = new Map(entities.map((entity) => [entity.id, entity]));
 	const context: MentionContext = {
 		storyMembers: new Set(options.storyMembers ?? []),
