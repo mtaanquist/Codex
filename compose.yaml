@@ -8,8 +8,17 @@
 # compose.dev.yaml (database only) instead.
 name: codex
 
+# Docker keeps container logs forever by default; cap each service at three
+# 10 MB files.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
 services:
   app:
+    logging: *logging
     build: .
     image: codex-app
     restart: unless-stopped
@@ -65,6 +74,7 @@ services:
         condition: service_healthy
 
   worker:
+    logging: *logging
     image: codex-app
     build: .
     restart: unless-stopped
@@ -72,8 +82,13 @@ services:
     # Time for running jobs to wind down on a stop or redeploy before Docker
     # kills the process; the worker hands back what is left before then.
     stop_grace_period: 60s
+    # Chromium renders PDF exports here, next to the database; the cap keeps
+    # a runaway render from starving the host. WORKER_MEM_LIMIT in .env.
+    mem_limit: ${WORKER_MEM_LIMIT:-2g}
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
+      # Links in digest emails point here; the worker will not start without it.
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
       # Off-site backups; off until the bucket and keys are set.
       BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
       BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
@@ -98,7 +113,8 @@ services:
         condition: service_healthy
 
   db:
-    image: postgres:18-alpine
+    logging: *logging
+    image: postgres:18.6-alpine3.24
     restart: unless-stopped
     environment:
       POSTGRES_USER: codex
@@ -117,6 +133,7 @@ services:
   # same host; for real disaster recovery point ASSET_S3_* and BACKUP_S3_*
   # at an external bucket (S3, B2, R2) instead.
   rustfs:
+    logging: *logging
     image: rustfs/rustfs:1.0.3
     profiles:
       - rustfs
@@ -135,6 +152,7 @@ services:
   # One-shot: creates the buckets on first start, then exits. A signed PUT
   # with the image's own curl; 409 means the bucket already exists.
   rustfs-init:
+    logging: *logging
     image: rustfs/rustfs:1.0.3
     profiles:
       - rustfs
@@ -157,7 +175,8 @@ services:
         done
 
   caddy:
-    image: caddy:2-alpine
+    logging: *logging
+    image: caddy:2.11.7-alpine
     profiles:
       - caddy
     restart: unless-stopped

@@ -102,6 +102,11 @@ function memoryStore(objects = new Map<string, Buffer>()): AssetObjectStore & {
 		async put(key, body) {
 			objects.set(key, body);
 		},
+		async upload(key, body) {
+			const parts: Buffer[] = [];
+			for await (const chunk of body) parts.push(Buffer.from(chunk));
+			objects.set(key, Buffer.concat(parts));
+		},
 		async get(key): Promise<Readable> {
 			const body = objects.get(key);
 			if (!body) throw new Error(`missing object: ${key}`);

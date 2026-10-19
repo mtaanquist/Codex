@@ -19,6 +19,7 @@ import {
 } from '../../src/lib/server/db/schema';
 import {
 	bucketAssetLoader,
+	inMemoryAsset,
 	buildStoryZip,
 	gatherStory,
 	type ExportStory
@@ -27,6 +28,7 @@ import { buildEpub } from '../../src/lib/server/epub';
 import type { AssetObjectStore } from '../../src/lib/server/assets';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { zipBytes } from '../../src/lib/server/zip-stream';
 
 let pool: pg.Pool;
 let db: Database;
@@ -39,7 +41,7 @@ const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 const loader = async (ids: string[]) =>
 	ids
 		.filter((id) => id === ASSET_ID)
-		.map((id) => ({ id, contentType: 'image/png', bytes: new Uint8Array(PNG) }));
+		.map((id) => inMemoryAsset(id, 'image/png', new Uint8Array(PNG)));
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -95,7 +97,12 @@ afterAll(async () => {
 
 describe('buildStoryZip', () => {
 	it('lays out front-mattered files, bundles assets, and rewrites links', async () => {
-		const { filename, bytes } = await buildStoryZip(story, await gatherStory(db, story), loader);
+		const { filename, entries: archived } = await buildStoryZip(
+			story,
+			await gatherStory(db, story),
+			loader
+		);
+		const bytes = await zipBytes(archived);
 		expect(filename).toBe('book-of-ash.zip');
 		const entries = unzipSync(bytes);
 		const names = Object.keys(entries).sort();
@@ -144,7 +151,9 @@ describe('buildStoryZip', () => {
 			{ characterId: bert.id, storyId: story.id, notesMd: '' }
 		]);
 
-		const { bytes } = await buildStoryZip(story, await gatherStory(db, story), loader);
+		const bytes = await zipBytes(
+			(await buildStoryZip(story, await gatherStory(db, story), loader)).entries
+		);
 		const entries = unzipSync(bytes);
 		const note = strFromU8(entries['book-of-ash/notes/characters/alice-vane.md']);
 		expect(note).toContain('name: "Alice Vane"');
@@ -164,7 +173,9 @@ describe('buildStoryZip', () => {
 			bodyMd: `They met.\n\n![map](/assets/${ASSET_ID})`
 		});
 
-		const { bytes } = await buildStoryZip(story, await gatherStory(db, story), loader);
+		const bytes = await zipBytes(
+			(await buildStoryZip(story, await gatherStory(db, story), loader)).entries
+		);
 		const entries = unzipSync(bytes);
 		const note = strFromU8(entries['book-of-ash/notebook/session-1.md']);
 		expect(note).toContain('title: "Session 1"');
@@ -175,7 +186,13 @@ describe('buildStoryZip', () => {
 
 describe('buildEpub', () => {
 	it('produces a structurally sound EPUB with rendered chapters', async () => {
-		const { filename, bytes } = await buildEpub(story, await gatherStory(db, story), loader, null);
+		const { filename, entries: archived } = await buildEpub(
+			story,
+			await gatherStory(db, story),
+			loader,
+			null
+		);
+		const bytes = await zipBytes(archived);
 		expect(filename).toContain('.epub');
 		const entries = unzipSync(bytes);
 
@@ -238,6 +255,7 @@ describe('bucketAssetLoader ownership', () => {
 		// before it is ever reached.
 		const store: AssetObjectStore = {
 			put: async () => {},
+			upload: async () => {},
 			remove: async () => {},
 			get: async () => Readable.from([PNG])
 		};

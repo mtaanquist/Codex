@@ -1,7 +1,12 @@
-import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError, type ServerInit } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 import { logEvent } from '$lib/server/log';
+import { assertOriginConfigured } from '$lib/server/origin';
+
+export const init: ServerInit = () => {
+	assertOriginConfigured();
+};
 
 const PUBLIC_PATHS = new Set([
 	// The landing page; the root route shows the library once signed in.
@@ -72,7 +77,8 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 			method: event.request.method,
 			path: event.url.pathname,
 			status,
-			message: error instanceof Error ? error.message : String(error)
+			message: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined
 		});
 	}
 	return { message };

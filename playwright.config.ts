@@ -56,7 +56,9 @@ export default defineConfig({
 		env: {
 			...(process.env as Record<string, string>),
 			DATABASE_URL: databaseUrl,
-			APP_SECRET: process.env.APP_SECRET ?? 'e2e-app-secret'
+			APP_SECRET: process.env.APP_SECRET ?? 'e2e-app-secret',
+			// A built app refuses to start without ORIGIN.
+			ORIGIN: `http://localhost:${port}`
 		}
 	}
 });
