@@ -4,8 +4,10 @@ import type { Database } from './auth.ts';
 import { exportArtifacts, publications, stories } from './db/schema.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import {
+	asBuffer,
 	bucketAssetLoader,
 	buildStoryZip,
+	cachedAssetLoader,
 	type AssetLoader,
 	type ExportAsset,
 	type ExportStory,
@@ -158,6 +160,9 @@ export async function renderEditionPdf(
 	const { launch } = await import('puppeteer-core');
 	const browser = await launch({
 		executablePath,
+		// Puppeteer gives up after 30s by default, and a cold start on a busy
+		// host (a CI runner mid-suite) has run past that.
+		timeout: 90_000,
 		// Sandboxing is off because the container already isolates the process,
 		// the rendered HTML is built from author prose with raw HTML escaped, and
 		// isolatePage blocks scripts and every network request. The dead proxy
@@ -243,7 +248,8 @@ export async function generateEditionArtifacts(
 		descriptionMd: edition.descriptionMd
 	};
 	const content = editionStoryContent(edition.content as EditionContent);
-	const loadAssets = deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId);
+	// The three formats share one set of images, fetched from the bucket once.
+	const loadAssets = cachedAssetLoader(deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId));
 	const renderPdf = deps.renderPdf ?? renderEditionPdf;
 	const slug = slugify(edition.title, 'story');
 
@@ -293,7 +299,7 @@ export async function generateEditionArtifacts(
 		try {
 			const artifact = await build();
 			const storageKey = `${prefix}/exports/${publicationId}/${format}`;
-			await store.put(storageKey, Buffer.from(artifact.bytes), artifact.contentType);
+			await store.put(storageKey, asBuffer(artifact.bytes), artifact.contentType);
 			await db
 				.insert(exportArtifacts)
 				.values({

@@ -149,10 +149,29 @@ export type StoryTodo = {
 };
 
 // Everything still to do across the story: unresolved selection markers
-// plus TODO: lines found in the prose, in scene order.
+// plus TODO: lines found in the prose, in scene order. Postgres decides
+// which bodies are worth sending: only scenes whose text contains "TODO:"
+// or that hold an unresolved marker with no note (its snippet is sliced
+// from the body here, since anchors are UTF-16 offsets and Postgres counts
+// code points). Every other scene comes back without its body. The
+// subquery names its columns by hand: Drizzle leaves columns in a select
+// field unqualified, so the correlation would bind to scene_markers.id.
 export async function listStoryTodos(db: Database, storyId: string): Promise<StoryTodo[]> {
 	const sceneRows = await db
-		.select({ id: scenes.id, title: scenes.title, bodyMd: scenes.bodyMd })
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			bodyMd: sql<string | null>`case
+				when strpos(${scenes.bodyMd}, 'TODO:') > 0
+					or exists (
+						select 1 from scene_markers m
+						where m.scene_id = "scenes"."id"
+							and m.resolved_at is null
+							and coalesce(m.body_md, '') = ''
+					)
+				then ${scenes.bodyMd}
+			end`
+		})
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
@@ -167,14 +186,21 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 		.from(sceneMarkers)
 		.innerJoin(scenes, eq(sceneMarkers.sceneId, scenes.id))
 		.where(and(eq(scenes.storyId, storyId), isNull(sceneMarkers.resolvedAt)))
-		.orderBy(asc(scenes.globalPosition), asc(sceneMarkers.anchorStart));
+		.orderBy(asc(sceneMarkers.anchorStart));
+	const markersByScene = new Map<string, typeof markerRows>();
+	for (const row of markerRows) {
+		const list = markersByScene.get(row.sceneId);
+		if (list) list.push(row);
+		else markersByScene.set(row.sceneId, [row]);
+	}
 
 	const todos: StoryTodo[] = [];
 	for (const scene of sceneRows) {
-		for (const marker of markerRows.filter((row) => row.sceneId === scene.id)) {
+		const body = scene.bodyMd ?? '';
+		for (const marker of markersByScene.get(scene.id) ?? []) {
 			const snippet =
 				marker.anchorStart !== null && marker.anchorEnd !== null
-					? scene.bodyMd.slice(marker.anchorStart, marker.anchorEnd)
+					? body.slice(marker.anchorStart, marker.anchorEnd)
 					: '';
 			todos.push({
 				sceneId: scene.id,
@@ -183,7 +209,7 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 				text: marker.bodyMd || snippet.slice(0, 120)
 			});
 		}
-		for (const line of findTodoLines(scene.bodyMd)) {
+		for (const line of findTodoLines(body)) {
 			todos.push({
 				sceneId: scene.id,
 				sceneTitle: scene.title,

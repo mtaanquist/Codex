@@ -50,6 +50,12 @@ services:
       # Trust the proxy's forwarded client address for rate limiting.
       ADDRESS_HEADER: x-forwarded-for
       XFF_DEPTH: '1'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 5 -O /dev/null http://127.0.0.1:3000/healthz || exit 1']
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy

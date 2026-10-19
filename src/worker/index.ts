@@ -19,7 +19,7 @@ import {
 	ASSISTANT_SUMMARIES_QUEUE,
 	DIGEST_DELAY_SECONDS
 } from '../lib/server/queues.ts';
-import pg from 'pg';
+import { createPool } from '../lib/server/db/pool.ts';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
 import {
@@ -71,7 +71,9 @@ import { eq } from 'drizzle-orm';
 // support, so there is no build step; relative imports carry .ts extensions.
 const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
 
-const db = drizzle(new pg.Pool({ connectionString }), { schema });
+// Jobs run longer statements than web requests (purges, reindexing), so the
+// per-statement limit is looser than the app's.
+const db = drizzle(createPool(connectionString, { statementTimeoutMs: 300_000 }), { schema });
 const boss = new PgBoss(connectionString);
 
 // Queues each recipient's batched digest email after the shared delay.
@@ -170,17 +172,13 @@ await boss.work(MIGRATE_ASSETS_QUEUE, async () => {
 await boss.work<{ exportId: string }>(USER_EXPORT_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const config = await effectiveAssetConfig(db);
-		if (!config) {
-			console.warn(`export: ${job.data.exportId} skipped, asset storage not configured`);
-			continue;
-		}
-		const store = s3AssetStore(config);
+		const store = config ? s3AssetStore(config) : null;
 		const result = await runUserExport(db, job.data.exportId, store);
 		if (!result.ok) {
 			console.warn(`export: ${job.data.exportId} failed (${result.reason})`);
 			continue;
 		}
-		await pruneOwnerExports(db, store, result.ownerId);
+		if (store) await pruneOwnerExports(db, store, result.ownerId);
 		const digestUsers = await insertNotifications(db, [result.ownerId], 'export_ready', {
 			title: 'Your export is ready to download.',
 			href: `/exports/${job.data.exportId}`
