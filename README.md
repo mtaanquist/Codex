@@ -71,13 +71,14 @@ services:
     stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
+      ORIGIN: ${ORIGIN}
       APP_SECRET: ${APP_SECRET}
     depends_on:
       db:
         condition: service_healthy
 
   db:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine3.24
     restart: unless-stopped
     environment:
       POSTGRES_USER: codex
@@ -100,7 +101,8 @@ Put the three values in an `.env` file next to it:
 - `POSTGRES_PASSWORD`: something strong; the app and worker pick it up.
 - `ORIGIN`: the public URL the app is reached on, scheme included
   (`https://codex.example.com`). Form submissions are rejected when it does
-  not match what the browser sees.
+  not match what the browser sees, and emailed links use it. The app and
+  worker will not start without it.
 - `APP_SECRET`: a long random value, kept stable. It encrypts secrets
   stored in the database and signs the two-factor and passkey challenges;
   without it those features are unavailable, and changing it later makes

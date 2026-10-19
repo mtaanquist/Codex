@@ -6,6 +6,7 @@ access_key=$1
 secret_key=$2
 bucket=$3
 
+# The RustFS tag must match compose.yaml; Dependabot does not see this file.
 docker run -d --name rustfs --network host \
   -e RUSTFS_ACCESS_KEY="$access_key" -e RUSTFS_SECRET_KEY="$secret_key" \
   rustfs/rustfs:1.0.3

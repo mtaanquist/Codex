@@ -11,7 +11,8 @@ vi.mock('$lib/server/auth', () => ({
 vi.mock('$lib/server/log', () => ({ logEvent: vi.fn() }));
 
 const { validateSession } = await import('$lib/server/auth');
-const { handle } = await import('./hooks.server');
+const { logEvent } = await import('$lib/server/log');
+const { handle, handleError } = await import('./hooks.server');
 
 function request(
 	path: string,
@@ -173,6 +174,20 @@ describe('security headers', () => {
 		expect((await headersFor('/')).get('strict-transport-security')).toBeNull();
 		expect((await headersFor('/', 'https://codex.example')).get('strict-transport-security')).toBe(
 			'max-age=31536000'
+		);
+	});
+});
+
+describe('handleError', () => {
+	const event = { request: { method: 'GET' }, url: new URL('http://localhost/stories/x') };
+
+	it('logs the stack of a server fault', () => {
+		const error = new Error('boom');
+		handleError({ error, event, status: 500, message: 'Internal Error' } as never);
+		expect(logEvent).toHaveBeenCalledWith(
+			'error',
+			'request.error',
+			expect.objectContaining({ message: 'boom', stack: error.stack })
 		);
 	});
 });

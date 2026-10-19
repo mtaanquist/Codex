@@ -26,3 +26,15 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Base images are pinned to exact tags (Dockerfile, compose files) so
+  # builds are reproducible; these bring the bumps. Not covered, so they
+  # follow compose by hand: the CI postgres services, the README compose
+  # example, and the RustFS tag in .github/scripts/start-rustfs.sh.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly

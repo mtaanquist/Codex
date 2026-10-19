@@ -33,7 +33,8 @@ import {
 import { generateEditionArtifacts } from '../lib/server/export-artifacts.ts';
 import { pruneOwnerExports, runUserExport } from '../lib/server/user-exports.ts';
 import { backupConfig, effectiveBackupConfig, runBackup } from '../lib/server/backups.ts';
-import { sendEmail, type EmailMessage } from '../lib/server/email.ts';
+import { sendEmail } from '../lib/server/email.ts';
+import { resolveEmailJob, type EmailJob } from '../lib/server/token-email.ts';
 import { logEvent, redactEmail } from '../lib/server/log.ts';
 import {
 	buildReviewerDigest,
@@ -68,10 +69,19 @@ import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 import { stopWorker } from './shutdown.ts';
+import { resolveOrigin } from '../lib/server/origin-rule.ts';
 import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
+// Digest links need an absolute origin. Like the app, the worker refuses to
+// start without ORIGIN outside development.
+const origin = resolveOrigin(
+	process.env.ORIGIN,
+	'http://localhost:5173',
+	process.env.NODE_ENV !== 'production'
+);
+
 const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
 
 // Jobs run longer statements than web requests (purges, reindexing), so the
@@ -444,9 +454,19 @@ await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs)
 	}
 });
 
-await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
+await boss.work<EmailJob>(EMAIL_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		await sendEmail(db, job.data);
+		const resolved = await resolveEmailJob(db, job.data);
+		if ('skipped' in resolved) {
+			// A superseded link is routine; one that expired before it could be
+			// sent means the person never got a working link, so it is a warning.
+			logEvent(resolved.skipped === 'expired' ? 'warn' : 'info', 'email.skipped', {
+				to: redactEmail(job.data.to),
+				reason: resolved.skipped
+			});
+			continue;
+		}
+		await sendEmail(db, resolved.message);
 		// Structured, with the recipient masked and the subject (which embeds
 		// story titles) omitted, so account PII does not sit in the logs.
 		logEvent('info', 'email.sent', { to: redactEmail(job.data.to) });
@@ -455,18 +475,21 @@ await boss.work<EmailMessage>(EMAIL_QUEUE, async (jobs) => {
 
 // Transactional email that exhausted its retries (a prolonged SMTP outage).
 // The send is given up, but it must not vanish: log it loudly so an operator
-// can resend by hand. The recipient flow already said "check your email", so
-// there is no other signal otherwise.
-await boss.work<EmailMessage>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
+// knows. A link email holds no usable link to resend; the person requests a new
+// one (sign up again, forgot password, or retry the change). The recipient flow
+// already said "check your email", so there is no other signal otherwise. The
+// token id is safe to log: it is not a credential.
+await boss.work<EmailJob>(EMAIL_DEAD_LETTER_QUEUE, async (jobs) => {
 	for (const job of jobs) {
-		logEvent('error', 'email.dropped', { to: redactEmail(job.data.to) });
+		logEvent('error', 'email.dropped', {
+			to: redactEmail(job.data.to),
+			...('tokenId' in job.data ? { tokenId: job.data.tokenId } : {})
+		});
 	}
 });
 
 // Notification digests: one email per recipient gathering everything that
-// arrived since the last one. Links in the email need an absolute origin.
-const origin = process.env.ORIGIN ?? 'http://localhost:5173';
-
+// arrived since the last one.
 await boss.work<{ userId: string }>(NOTIFICATION_DIGEST_QUEUE, async (jobs) => {
 	for (const job of jobs) {
 		const digest = await buildUserDigest(db, job.data.userId, origin);

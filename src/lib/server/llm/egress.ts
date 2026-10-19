@@ -88,16 +88,29 @@ function expandV6(ip: string): number[] | null {
 	return bytes;
 }
 
+const v4At = (b: number[], i: number) => classifyV4(`${b[i]}.${b[i + 1]}.${b[i + 2]}.${b[i + 3]}`);
+const zeros = (b: number[], from: number, to: number) => b.slice(from, to).every((x) => x === 0);
+
 function classifyV6(ip: string): AddressClass {
 	const b = expandV6(ip);
 	if (!b) return 'invalid';
-	// IPv4-mapped (::ffff:0:0/96): classify the embedded v4 so ::ffff:127.0.0.1
-	// is loopback, not a public v6 address.
-	if (b.slice(0, 10).every((x) => x === 0) && b[10] === 0xff && b[11] === 0xff) {
-		return classifyV4(`${b[12]}.${b[13]}.${b[14]}.${b[15]}`);
-	}
 	if (b.every((x) => x === 0)) return 'loopback'; // :: unspecified
-	if (b.slice(0, 15).every((x) => x === 0) && b[15] === 1) return 'loopback'; // ::1
+	if (zeros(b, 0, 15) && b[15] === 1) return 'loopback'; // ::1
+	// Forms that carry an IPv4 address are classified by that address, so
+	// ::ffff:127.0.0.1 or 64:ff9b::a9fe:a9fe cannot reach a private v4 target.
+	if (zeros(b, 0, 10) && b[10] === 0xff && b[11] === 0xff) return v4At(b, 12); // ::ffff:0:0/96 mapped
+	if (zeros(b, 0, 8) && b[8] === 0xff && b[9] === 0xff && zeros(b, 10, 12)) return v4At(b, 12); // ::ffff:0:0:0/96 translated
+	if (zeros(b, 0, 12)) return v4At(b, 12); // ::a.b.c.d compatible (deprecated)
+	if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b) {
+		if (zeros(b, 4, 12)) return v4At(b, 12); // 64:ff9b::/96 NAT64
+		// 64:ff9b:1::/48 local-use NAT64: the embedded v4 can sit at several
+		// offsets depending on the operator's prefix length, so refuse it outright.
+		if (b[4] === 0x00 && b[5] === 0x01) return 'private';
+	}
+	if (b[0] === 0x20 && b[1] === 0x02) return v4At(b, 2); // 2002::/16 6to4
+	if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x00 && b[3] === 0x00) return 'invalid'; // 2001::/32 Teredo
+	if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x0d && b[3] === 0xb8) return 'invalid'; // 2001:db8::/32 documentation
+	if (b[0] === 0x01 && b[1] === 0x00 && zeros(b, 2, 8)) return 'invalid'; // 100::/64 discard
 	if (b[0] === 0xfe && (b[1] & 0xc0) === 0x80) return 'link-local'; // fe80::/10
 	if ((b[0] & 0xfe) === 0xfc) return 'unique-local'; // fc00::/7
 	if (b[0] === 0xff) return 'invalid'; // multicast - not a unicast target

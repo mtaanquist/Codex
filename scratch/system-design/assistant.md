@@ -225,7 +225,9 @@ distinguishes deployment posture through admin settings:
 So: an admin setting (`app_settings`) for the egress policy, one of
 
 - `block-private` (default; safe for hosted) - resolve the endpoint host and
-  refuse private, loopback, link-local, and unique-local addresses,
+  refuse private, loopback, link-local, and unique-local addresses
+  (including IPv4 targets embedded in IPv6: mapped, NAT64, 6to4) and other
+  reserved IPv6 ranges (Teredo, documentation, discard),
 - `allowlist` - only hosts on an operator-curated whitelist are reachable
   (the middle ground for a hosted operator who wants to permit a known set),
 - `open` - no restriction (the self-host flip).
