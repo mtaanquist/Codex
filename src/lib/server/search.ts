@@ -1,7 +1,13 @@
 import type { SearchResult } from '$lib/wire-types';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import { characters, loreEntries, places, scenes, stories, universes } from './db/schema.ts';
+import { scenes, stories, universes } from './db/schema.ts';
+import {
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable,
+	type EntityType
+} from './entity-lookups.ts';
 
 // The command palette's search: everything the user owns that has a name,
 // matched by substring, each result carrying the link that opens it.
@@ -33,6 +39,33 @@ export async function searchAll(
 	// Folded into every subquery's filter; undefined conditions are ignored by
 	// drizzle's and(), so an absent universe means no restriction.
 	const inUniverse = opts?.universeId ? eq(universes.id, opts.universeId) : undefined;
+
+	const entityMatches = (type: EntityType) => {
+		const table = entityTable(type);
+		const name = entityNameColumn(table);
+		return db
+			.select({
+				id: table.id,
+				name,
+				universeSlug: universes.slug,
+				universeName: universes.name
+			})
+			.from(table)
+			.innerJoin(universes, eq(table.universeId, universes.id))
+			.where(
+				and(
+					eq(table.ownerId, userId),
+					isNull(universes.deletedAt),
+					inUniverse,
+					or(
+						ilike(name, like),
+						sql`array_to_string(${entityAliasColumn(table)}, ' ') ilike ${like}`
+					)
+				)
+			)
+			.orderBy(asc(name))
+			.limit(PER_TYPE);
+	};
 
 	// All seven queries are independent and run on a pooled connection, so the
 	// palette pays one round trip's latency per keystroke instead of seven.
@@ -132,72 +165,9 @@ export async function searchAll(
 						)
 						.orderBy(asc(stories.title), asc(scenes.globalPosition))
 						.limit(PER_TYPE),
-			db
-				.select({
-					id: characters.id,
-					name: characters.name,
-					universeSlug: universes.slug,
-					universeName: universes.name
-				})
-				.from(characters)
-				.innerJoin(universes, eq(characters.universeId, universes.id))
-				.where(
-					and(
-						eq(characters.ownerId, userId),
-						isNull(universes.deletedAt),
-						inUniverse,
-						or(
-							ilike(characters.name, like),
-							sql`array_to_string(${characters.aliases}, ' ') ilike ${like}`
-						)
-					)
-				)
-				.orderBy(asc(characters.name))
-				.limit(PER_TYPE),
-			db
-				.select({
-					id: places.id,
-					name: places.name,
-					universeSlug: universes.slug,
-					universeName: universes.name
-				})
-				.from(places)
-				.innerJoin(universes, eq(places.universeId, universes.id))
-				.where(
-					and(
-						eq(places.ownerId, userId),
-						or(
-							ilike(places.name, like),
-							sql`array_to_string(${places.aliases}, ' ') ilike ${like}`
-						),
-						isNull(universes.deletedAt),
-						inUniverse
-					)
-				)
-				.orderBy(asc(places.name))
-				.limit(PER_TYPE),
-			db
-				.select({
-					id: loreEntries.id,
-					title: loreEntries.title,
-					universeSlug: universes.slug,
-					universeName: universes.name
-				})
-				.from(loreEntries)
-				.innerJoin(universes, eq(loreEntries.universeId, universes.id))
-				.where(
-					and(
-						eq(loreEntries.ownerId, userId),
-						isNull(universes.deletedAt),
-						inUniverse,
-						or(
-							ilike(loreEntries.title, like),
-							sql`array_to_string(${loreEntries.keywords}, ' ') ilike ${like}`
-						)
-					)
-				)
-				.orderBy(asc(loreEntries.title))
-				.limit(PER_TYPE)
+			entityMatches('character'),
+			entityMatches('place'),
+			entityMatches('lore_entry')
 		]);
 
 	return [
@@ -239,7 +209,7 @@ export async function searchAll(
 		})),
 		...loreRows.map((row): SearchResult => ({
 			type: 'lore',
-			label: row.title,
+			label: row.name,
 			sublabel: row.universeName,
 			href: `/universes/${row.universeSlug}/plan?entity=${row.id}`
 		}))

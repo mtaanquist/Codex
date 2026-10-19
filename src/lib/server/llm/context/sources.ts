@@ -2,18 +2,17 @@ import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import {
 	chapters,
-	characters,
 	characterStoryNotes,
 	loreEntries,
 	loreStoryNotes,
 	notes,
-	places,
 	placeStoryNotes,
 	scenes,
 	stories,
 	universes
 } from '../../db/schema.ts';
-import { storyEntityLists } from '../../membership.ts';
+import { entityTable } from '../../entity-lookups.ts';
+import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '$lib/entity-snapshot';
 
@@ -393,16 +392,15 @@ export async function inScopeEntities(
 // (no story focus, so no per-story overlay note). Shares the entity-building
 // body with the story path.
 export async function universeEntities(db: Database, universeId: string): Promise<ScopeEntity[]> {
-	const characterIds = (
-		await db
-			.select({ id: characters.id })
-			.from(characters)
-			.where(eq(characters.universeId, universeId))
-	).map((row) => row.id);
-	const placeIds = (
-		await db.select({ id: places.id }).from(places).where(eq(places.universeId, universeId))
-	).map((row) => row.id);
-	return buildScopeEntities(db, universeId, characterIds, placeIds);
+	const idsIn = async (type: MemberKind) => {
+		const table = entityTable(type);
+		const rows = await db
+			.select({ id: table.id })
+			.from(table)
+			.where(eq(table.universeId, universeId));
+		return rows.map((row) => row.id);
+	};
+	return buildScopeEntities(db, universeId, await idsIn('character'), await idsIn('place'));
 }
 
 // The shared entity body: given explicit id lists, fetch detail, the per-story
@@ -415,32 +413,23 @@ async function buildScopeEntities(
 	placeIds: string[],
 	storyId?: string
 ): Promise<ScopeEntity[]> {
-	const characterRows = characterIds.length
-		? await db
-				.select({
-					id: characters.id,
-					name: characters.name,
-					summaryMd: characters.summaryMd,
-					details: characters.details,
-					aliases: characters.aliases
-				})
-				.from(characters)
-				.where(inArray(characters.id, characterIds))
-				.orderBy(asc(characters.name))
-		: [];
-	const placeRows = placeIds.length
-		? await db
-				.select({
-					id: places.id,
-					name: places.name,
-					summaryMd: places.summaryMd,
-					details: places.details,
-					aliases: places.aliases
-				})
-				.from(places)
-				.where(inArray(places.id, placeIds))
-				.orderBy(asc(places.name))
-		: [];
+	const detailRows = async (type: MemberKind, ids: string[]) => {
+		if (ids.length === 0) return [];
+		const table = entityTable(type);
+		return await db
+			.select({
+				id: table.id,
+				name: table.name,
+				summaryMd: table.summaryMd,
+				details: table.details,
+				aliases: table.aliases
+			})
+			.from(table)
+			.where(inArray(table.id, ids))
+			.orderBy(asc(table.name));
+	};
+	const characterRows = await detailRows('character', characterIds);
+	const placeRows = await detailRows('place', placeIds);
 
 	// The per-story overlay note only exists with a story in focus; the
 	// universe surface has no such overlay, so it skips these queries.

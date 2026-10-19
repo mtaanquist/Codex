@@ -1,12 +1,9 @@
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
-	characters,
 	entityCategories,
 	entityRelationships,
-	loreEntries,
 	notes,
-	places,
 	relationTypes,
 	reviewSuggestions,
 	reviewThreads,
@@ -20,9 +17,19 @@ import {
 	type EntitySnapshot,
 	type SnapshotRelationship
 } from '$lib/entity-snapshot';
-import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import {
+	ENTITY_TYPES,
+	entityAliasColumn,
+	entityInUniverse,
+	entityNameColumn,
+	entityNaming,
+	entityTable,
+	namesByType,
+	ownedLiveEntity,
+	type EntityType
+} from './entity-lookups.ts';
 import { remapMarkerAnchors } from './markers.ts';
-import { inLiveUniverse, noteIsLive, storyIsLive } from './universe-scope.ts';
+import { noteIsLive, storyIsLive } from './universe-scope.ts';
 import type { ActionFailure } from './action-result.ts';
 
 export type RevisionEntityType =
@@ -217,46 +224,28 @@ export async function buildEntitySnapshot(
 	universeId: string;
 	ownerId: string;
 } | null> {
-	let bodyMd: string;
-	let universeId: string;
-	let ownerId: string;
-	let base: Pick<EntitySnapshot, 'name' | 'aliases' | 'keywords' | 'summaryMd' | 'categoryId'>;
-	let details: EntitySnapshot['details'];
-
-	if (type === 'character') {
-		const [row] = await db.select().from(characters).where(eq(characters.id, id));
-		if (!row) return null;
-		({ bodyMd, universeId, ownerId } = row);
-		base = {
-			name: row.name,
-			aliases: row.aliases,
-			summaryMd: row.summaryMd,
-			categoryId: row.categoryId
-		};
-		details = row.details;
-	} else if (type === 'place') {
-		const [row] = await db.select().from(places).where(eq(places.id, id));
-		if (!row) return null;
-		({ bodyMd, universeId, ownerId } = row);
-		base = {
-			name: row.name,
-			aliases: row.aliases,
-			summaryMd: row.summaryMd,
-			categoryId: row.categoryId
-		};
-		details = row.details;
-	} else {
-		const [row] = await db.select().from(loreEntries).where(eq(loreEntries.id, id));
-		if (!row) return null;
-		({ bodyMd, universeId, ownerId } = row);
-		base = {
-			name: row.title,
-			keywords: row.keywords,
-			summaryMd: row.summaryMd,
-			categoryId: row.categoryId
-		};
-		details = row.details;
-	}
+	const table = entityTable(type);
+	const [row] = await db
+		.select({
+			bodyMd: table.bodyMd,
+			universeId: table.universeId,
+			ownerId: table.ownerId,
+			name: entityNameColumn(table),
+			tags: entityAliasColumn(table),
+			summaryMd: table.summaryMd,
+			categoryId: table.categoryId,
+			details: table.details
+		})
+		.from(table)
+		.where(eq(table.id, id));
+	if (!row) return null;
+	const { bodyMd, universeId, ownerId, details } = row;
+	const base: Pick<EntitySnapshot, 'name' | 'aliases' | 'keywords' | 'summaryMd' | 'categoryId'> = {
+		name: row.name,
+		...(type === 'lore_entry' ? { keywords: row.tags } : { aliases: row.tags }),
+		summaryMd: row.summaryMd,
+		categoryId: row.categoryId
+	};
 
 	const snapshot: EntitySnapshot = {
 		...base,
@@ -352,39 +341,12 @@ export async function ownedEntityBody(
 			.where(and(eq(scenes.id, entityId), eq(stories.ownerId, userId), storyIsLive()));
 		return row ?? null;
 	}
-	if (entityType === 'character') {
+	if (isSnapshotType(entityType)) {
+		const table = entityTable(entityType);
 		const [row] = await db
-			.select({ bodyMd: characters.bodyMd })
-			.from(characters)
-			.where(
-				and(
-					eq(characters.id, entityId),
-					eq(characters.ownerId, userId),
-					inLiveUniverse(characters.universeId)
-				)
-			);
-		return row ?? null;
-	}
-	if (entityType === 'place') {
-		const [row] = await db
-			.select({ bodyMd: places.bodyMd })
-			.from(places)
-			.where(
-				and(eq(places.id, entityId), eq(places.ownerId, userId), inLiveUniverse(places.universeId))
-			);
-		return row ?? null;
-	}
-	if (entityType === 'lore_entry') {
-		const [row] = await db
-			.select({ bodyMd: loreEntries.bodyMd })
-			.from(loreEntries)
-			.where(
-				and(
-					eq(loreEntries.id, entityId),
-					eq(loreEntries.ownerId, userId),
-					inLiveUniverse(loreEntries.universeId)
-				)
-			);
+			.select({ bodyMd: table.bodyMd })
+			.from(table)
+			.where(ownedLiveEntity(table, entityId, userId));
 		return row ?? null;
 	}
 	if (entityType === 'note') {
@@ -603,61 +565,33 @@ export async function restoreRevision(
 	// entity restored with a half-reconciled relationship set or no 'restore'
 	// entry on the timeline.
 	await db.transaction(async (tx) => {
-		if (entityType === 'character') {
-			await tx
-				.update(characters)
-				.set({
-					bodyMd: revision.bodyMd,
-					...(snapshot
-						? {
-								name: snapshot.name,
-								aliases: snapshot.aliases ?? [],
-								summaryMd: snapshot.summaryMd,
-								details: snapshot.details,
-								...category
-							}
-						: {})
-				})
-				.where(eq(characters.id, entityId));
-		} else if (entityType === 'place') {
-			await tx
-				.update(places)
-				.set({
-					bodyMd: revision.bodyMd,
-					...(snapshot
-						? {
-								name: snapshot.name,
-								aliases: snapshot.aliases ?? [],
-								summaryMd: snapshot.summaryMd,
-								details: snapshot.details,
-								...category
-							}
-						: {})
-				})
-				.where(eq(places.id, entityId));
-		} else {
-			// Lore always has a category, so a cleared or deleted one keeps the
-			// current category rather than setting null.
-			const loreCategory =
-				'categoryId' in category && category.categoryId !== null
+		// Lore always has a category, so a cleared or deleted one keeps the
+		// current category rather than setting null.
+		const restoredCategory =
+			entityType !== 'lore_entry'
+				? category
+				: 'categoryId' in category && category.categoryId !== null
 					? { categoryId: category.categoryId }
 					: {};
-			await tx
-				.update(loreEntries)
-				.set({
-					bodyMd: revision.bodyMd,
-					...(snapshot
-						? {
-								title: snapshot.name,
-								keywords: snapshot.keywords ?? [],
-								summaryMd: snapshot.summaryMd,
-								details: snapshot.details,
-								...loreCategory
-							}
-						: {})
-				})
-				.where(eq(loreEntries.id, entityId));
-		}
+		const table = entityTable(entityType);
+		await tx
+			.update(table)
+			.set({
+				bodyMd: revision.bodyMd,
+				...(snapshot
+					? {
+							...entityNaming(
+								entityType,
+								snapshot.name,
+								(entityType === 'lore_entry' ? snapshot.keywords : snapshot.aliases) ?? []
+							),
+							summaryMd: snapshot.summaryMd,
+							details: snapshot.details,
+							...restoredCategory
+						}
+					: {})
+			})
+			.where(eq(table.id, entityId));
 
 		if (snapshot) {
 			const touched = await reconcileRelationships(
@@ -779,10 +713,16 @@ export async function universeTimeline(
 	universeId: string,
 	limit = 50
 ): Promise<TimelineRow[]> {
-	const entity = (table: string, nameColumn: string) => sql`
-		select id as entity_id, ${sql.raw(nameColumn)} as entity_name,
-			null::text as story_title, null::text as story_slug
-		from ${sql.raw(table)} where universe_id = ${universeId}`;
+	const entity = (type: EntityType) => {
+		const table = entityTable(type);
+		return {
+			type,
+			entities: sql`
+				select ${table.id} as entity_id, ${entityNameColumn(table)} as entity_name,
+					null::text as story_title, null::text as story_slug
+				from ${table} where ${table.universeId} = ${universeId}`
+		};
+	};
 	return recentRevisions(
 		db,
 		[
@@ -795,9 +735,7 @@ export async function universeTimeline(
 					where st.universe_id = ${universeId} and st.deleted_at is null
 						and s.deleted_at is null`
 			},
-			{ type: 'character', entities: entity('characters', 'name') },
-			{ type: 'place', entities: entity('places', 'name') },
-			{ type: 'lore_entry', entities: entity('lore_entries', 'title') }
+			...ENTITY_TYPES.map(entity)
 		],
 		limit
 	);
@@ -807,20 +745,21 @@ export async function universeTimeline(
 // per entity type, so each counts from the timeline index instead of an OR
 // over the whole table.
 export async function universeRevisionCount(db: Database, universeId: string): Promise<number> {
+	const entityCounts = sql.join(
+		ENTITY_TYPES.map((type) => {
+			const table = entityTable(type);
+			return sql`+ (select count(*) from ${table}
+				join revisions r on r.entity_type = ${type} and r.entity_id = ${table.id}
+				where ${table.universeId} = ${universeId})`;
+		}),
+		sql` `
+	);
 	const result = await db.execute(sql`
 		select (
 			(select count(*) from scenes s join stories st on st.id = s.story_id
 				join revisions r on r.entity_type = 'scene' and r.entity_id = s.id
 				where st.universe_id = ${universeId} and st.deleted_at is null)
-			+ (select count(*) from characters c
-				join revisions r on r.entity_type = 'character' and r.entity_id = c.id
-				where c.universe_id = ${universeId})
-			+ (select count(*) from places p
-				join revisions r on r.entity_type = 'place' and r.entity_id = p.id
-				where p.universe_id = ${universeId})
-			+ (select count(*) from lore_entries l
-				join revisions r on r.entity_type = 'lore_entry' and r.entity_id = l.id
-				where l.universe_id = ${universeId})
+			${entityCounts}
 		)::int as total
 	`);
 	return (result.rows[0] as { total: number }).total;

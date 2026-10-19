@@ -2,18 +2,16 @@ import { eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	chapters,
-	characters,
 	characterStoryMemberships,
 	characterStoryNotes,
-	loreEntries,
 	loreStoryNotes,
 	notes,
-	places,
 	placeStoryMemberships,
 	placeStoryNotes,
 	scenes,
 	stories
 } from './db/schema';
+import { entityNameColumn, entityTable, type EntityType } from './entity-lookups';
 import { uniqueSlug } from './slugs';
 import { wordCount } from '../word-count';
 import { rewriteBundledAssetLinks, type ImportedNote, type ImportPlan } from '../import-markdown';
@@ -56,19 +54,17 @@ async function resolveNotes(
 	notes: ImportedNote[]
 ): Promise<NoteResolution[]> {
 	if (notes.length === 0) return [];
+	const namesIn = (type: EntityType) => {
+		const table = entityTable(type);
+		return db
+			.select({ id: table.id, name: entityNameColumn(table) })
+			.from(table)
+			.where(eq(table.universeId, universeId));
+	};
 	const lists = {
-		character: await db
-			.select({ id: characters.id, name: characters.name })
-			.from(characters)
-			.where(eq(characters.universeId, universeId)),
-		place: await db
-			.select({ id: places.id, name: places.name })
-			.from(places)
-			.where(eq(places.universeId, universeId)),
-		lore: await db
-			.select({ id: loreEntries.id, name: loreEntries.title })
-			.from(loreEntries)
-			.where(eq(loreEntries.universeId, universeId))
+		character: await namesIn('character'),
+		place: await namesIn('place'),
+		lore: await namesIn('lore_entry')
 	};
 	const byName = (rows: { id: string; name: string }[]) => {
 		const map = new Map<string, string[]>();

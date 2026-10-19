@@ -23,7 +23,14 @@ import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import { extensionFor } from './media-types.ts';
 import { assetEntry, textEntry, type ZipArchive, type ZipEntry } from './zip-stream.ts';
-import { namesByType, type EntityType } from './entity-lookups.ts';
+import {
+	ENTITY_TYPES,
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable,
+	namesByType,
+	type EntityType
+} from './entity-lookups.ts';
 
 // Story export: a zip of markdown files with YAML front matter, in
 // chapter order, with referenced images bundled into assets/ and the
@@ -270,6 +277,13 @@ async function gatherStoryNotes(db: Database, storyId: string): Promise<ExportNo
 	];
 }
 
+// The universe archive's folder and front-matter keys per entity type.
+const ARCHIVE_LAYOUT = {
+	character: { dir: 'characters', nameKey: 'name', tagsKey: 'aliases' },
+	place: { dir: 'places', nameKey: 'name', tagsKey: 'aliases' },
+	lore_entry: { dir: 'lore', nameKey: 'title', tagsKey: 'keywords' }
+} as const satisfies Record<EntityType, { dir: string; nameKey: string; tagsKey: string }>;
+
 // Subdirectory per note kind, matching the universe archive's layout.
 const NOTE_DIRS = { character: 'characters', place: 'places', lore: 'lore' } as const;
 
@@ -515,64 +529,37 @@ async function gatherUniverseDocs(
 		);
 		const categoryName = (id: string | null) => (id ? (categories.get(id) ?? null) : null);
 
-		const characterList = await db
-			.select()
-			.from(characters)
-			.where(eq(characters.universeId, universe.id))
-			.orderBy(asc(characters.name));
-		const characterName = uniqueNamer();
-		for (const c of characterList) {
-			docs.push({
-				dir: `${uDir}/characters`,
-				name: `${characterName(slugify(c.name, c.id))}.md`,
-				front: {
-					name: c.name,
-					aliases: c.aliases.length ? c.aliases.join(', ') : null,
-					category: categoryName(c.categoryId),
-					details: detailLines(c.details)
-				},
-				body: joinBody(c.summaryMd, c.bodyMd)
-			});
-		}
-
-		const placeList = await db
-			.select()
-			.from(places)
-			.where(eq(places.universeId, universe.id))
-			.orderBy(asc(places.name));
-		const placeName = uniqueNamer();
-		for (const p of placeList) {
-			docs.push({
-				dir: `${uDir}/places`,
-				name: `${placeName(slugify(p.name, p.id))}.md`,
-				front: {
-					name: p.name,
-					aliases: p.aliases.length ? p.aliases.join(', ') : null,
-					category: categoryName(p.categoryId),
-					details: detailLines(p.details)
-				},
-				body: joinBody(p.summaryMd, p.bodyMd)
-			});
-		}
-
-		const loreList = await db
-			.select()
-			.from(loreEntries)
-			.where(eq(loreEntries.universeId, universe.id))
-			.orderBy(asc(loreEntries.title));
-		const loreName = uniqueNamer();
-		for (const l of loreList) {
-			docs.push({
-				dir: `${uDir}/lore`,
-				name: `${loreName(slugify(l.title, l.id))}.md`,
-				front: {
-					title: l.title,
-					keywords: l.keywords.length ? l.keywords.join(', ') : null,
-					category: categoryName(l.categoryId),
-					details: detailLines(l.details)
-				},
-				body: joinBody(l.summaryMd, l.bodyMd)
-			});
+		for (const type of ENTITY_TYPES) {
+			const table = entityTable(type);
+			const name = entityNameColumn(table);
+			const rows = await db
+				.select({
+					id: table.id,
+					name,
+					tags: entityAliasColumn(table),
+					categoryId: table.categoryId,
+					details: table.details,
+					summaryMd: table.summaryMd,
+					bodyMd: table.bodyMd
+				})
+				.from(table)
+				.where(eq(table.universeId, universe.id))
+				.orderBy(asc(name));
+			const { dir, nameKey, tagsKey } = ARCHIVE_LAYOUT[type];
+			const fileName = uniqueNamer();
+			for (const row of rows) {
+				docs.push({
+					dir: `${uDir}/${dir}`,
+					name: `${fileName(slugify(row.name, row.id))}.md`,
+					front: {
+						[nameKey]: row.name,
+						[tagsKey]: row.tags.length ? row.tags.join(', ') : null,
+						category: categoryName(row.categoryId),
+						details: detailLines(row.details)
+					},
+					body: joinBody(row.summaryMd, row.bodyMd)
+				});
+			}
 		}
 
 		const storyList = await db

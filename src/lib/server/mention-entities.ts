@@ -1,14 +1,17 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
-	characters,
 	characterStoryMemberships,
 	entityCategories,
 	entityMentions,
-	loreEntries,
-	placeStoryMemberships,
-	places
+	placeStoryMemberships
 } from './db/schema.ts';
+import {
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable,
+	type EntityType
+} from './entity-lookups.ts';
 import { relatedEntitySummaries } from './relationships.ts';
 import { listMentionPins } from './mention-pins.ts';
 import type { MentionEntity } from '$lib/editor-mentions';
@@ -50,6 +53,25 @@ export async function reviewMentionData(
 	}
 	const keep = (id: string) => allowed === null || allowed.has(id);
 
+	const knownEntities = (type: EntityType) => {
+		const table = entityTable(type);
+		return db
+			.select({
+				id: table.id,
+				name: entityNameColumn(table),
+				aliases: entityAliasColumn(table),
+				summaryMd: table.summaryMd,
+				details: table.details,
+				color: entityCategories.color,
+				categoryName: entityCategories.name,
+				badgeColor: table.badgeColor,
+				badgeAssetId: table.badgeAssetId
+			})
+			.from(table)
+			.leftJoin(entityCategories, eq(table.categoryId, entityCategories.id))
+			.where(and(eq(table.universeId, opts.universeId), eq(table.autoDetectMentions, true)));
+	};
+
 	const [
 		knownCharacters,
 		knownPlaces,
@@ -59,55 +81,9 @@ export async function reviewMentionData(
 		placeMembers,
 		pins
 	] = await Promise.all([
-		db
-			.select({
-				id: characters.id,
-				name: characters.name,
-				aliases: characters.aliases,
-				summaryMd: characters.summaryMd,
-				details: characters.details,
-				color: entityCategories.color,
-				categoryName: entityCategories.name,
-				badgeColor: characters.badgeColor,
-				badgeAssetId: characters.badgeAssetId
-			})
-			.from(characters)
-			.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-			.where(
-				and(eq(characters.universeId, opts.universeId), eq(characters.autoDetectMentions, true))
-			),
-		db
-			.select({
-				id: places.id,
-				name: places.name,
-				aliases: places.aliases,
-				summaryMd: places.summaryMd,
-				details: places.details,
-				color: entityCategories.color,
-				categoryName: entityCategories.name,
-				badgeColor: places.badgeColor,
-				badgeAssetId: places.badgeAssetId
-			})
-			.from(places)
-			.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-			.where(and(eq(places.universeId, opts.universeId), eq(places.autoDetectMentions, true))),
-		db
-			.select({
-				id: loreEntries.id,
-				name: loreEntries.title,
-				keywords: loreEntries.keywords,
-				summaryMd: loreEntries.summaryMd,
-				details: loreEntries.details,
-				color: entityCategories.color,
-				categoryName: entityCategories.name,
-				badgeColor: loreEntries.badgeColor,
-				badgeAssetId: loreEntries.badgeAssetId
-			})
-			.from(loreEntries)
-			.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-			.where(
-				and(eq(loreEntries.universeId, opts.universeId), eq(loreEntries.autoDetectMentions, true))
-			),
+		knownEntities('character'),
+		knownEntities('place'),
+		knownEntities('lore_entry'),
 		relatedEntitySummaries(db, opts.universeId),
 		db
 			.select({ id: characterStoryMemberships.characterId })
@@ -120,36 +96,14 @@ export async function reviewMentionData(
 		listMentionPins(db, opts.storyId)
 	]);
 
+	const asMentions = (type: EntityType, rows: Awaited<ReturnType<typeof knownEntities>>) =>
+		rows
+			.filter((row) => keep(row.id))
+			.map((row) => ({ ...row, type, related: relatedByEntity.get(row.id) ?? [] }));
 	const entities: MentionEntity[] = [
-		...knownCharacters
-			.filter((row) => keep(row.id))
-			.map((row) => ({
-				...row,
-				type: 'character' as const,
-				related: relatedByEntity.get(row.id) ?? []
-			})),
-		...knownPlaces
-			.filter((row) => keep(row.id))
-			.map((row) => ({
-				...row,
-				type: 'place' as const,
-				related: relatedByEntity.get(row.id) ?? []
-			})),
-		...knownLore
-			.filter((row) => keep(row.id))
-			.map((row) => ({
-				id: row.id,
-				type: 'lore_entry' as const,
-				name: row.name,
-				aliases: row.keywords,
-				summaryMd: row.summaryMd,
-				details: row.details,
-				color: row.color,
-				categoryName: row.categoryName,
-				badgeColor: row.badgeColor,
-				badgeAssetId: row.badgeAssetId,
-				related: relatedByEntity.get(row.id) ?? []
-			}))
+		...asMentions('character', knownCharacters),
+		...asMentions('place', knownPlaces),
+		...asMentions('lore_entry', knownLore)
 	];
 
 	// Every consumer renders the quick card only, so ship what it shows (the
