@@ -8,6 +8,7 @@ import {
 	backupKey,
 	latestBackupKey,
 	listRecentBackupRuns,
+	restoreDumpFile,
 	runBackup,
 	type BackupConfig,
 	type BackupStore
@@ -171,7 +172,10 @@ describe('pg_dump round trip', () => {
 		try {
 			await run('pg_dump', ['--version']);
 			await run('pg_restore', ['--version']);
-		} catch {
+			await run('psql', ['--version']);
+		} catch (error) {
+			// CI installs the client tools; a skip there would hide a broken backup.
+			if (process.env.CI) throw error;
 			context.skip();
 			return;
 		}
@@ -184,8 +188,9 @@ describe('pg_dump round trip', () => {
 		});
 		if (!result.ok) {
 			// A version mismatch (client older than server) is an environment
-			// problem, not a code one; skip rather than fail.
+			// problem, not a code one; skip rather than fail, except in CI.
 			expect(result.reason).toMatch(/server version mismatch|aborting/);
+			if (process.env.CI) throw new Error(result.reason);
 			context.skip();
 			return;
 		}
@@ -213,13 +218,7 @@ describe('pg_dump round trip', () => {
 		try {
 			await admin.query(`drop database if exists "${restoreName}"`);
 			await admin.query(`create database "${restoreName}"`);
-			await run('pg_restore', [
-				'--no-owner',
-				'--exit-on-error',
-				'--dbname',
-				restoreUrl.toString(),
-				dumpFile
-			]);
+			await restoreDumpFile(restoreUrl.toString(), dumpFile);
 			const restoredPool = new pg.Pool({ connectionString: restoreUrl.toString() });
 			try {
 				const restored = drizzle(restoredPool, { schema });
@@ -241,6 +240,28 @@ describe('pg_dump round trip', () => {
 				);
 				await migrate(restored, { migrationsFolder: 'drizzle' });
 				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(0);
+
+				// Restoring over a database with a newer schema leaves nothing of
+				// it behind, so the next migrate does not trip over a table the
+				// restored ledger does not know about.
+				await restoredPool.query('create table added_later (id int)');
+				await restoreDumpFile(restoreUrl.toString(), dumpFile);
+				const [{ later }] = (
+					await restoredPool.query("select to_regclass('public.added_later') as later")
+				).rows;
+				expect(later).toBeNull();
+				await migrate(restored, { migrationsFolder: 'drizzle' });
+
+				// A broken dump leaves the database exactly as it was.
+				const dump = objects.get(dumpKey)!;
+				const broken = `${dumpFile}.broken`;
+				await writeFile(broken, dump.subarray(0, Math.floor(dump.length * 0.9)));
+				await restoredPool.query('create table kept (id int)');
+				await expect(restoreDumpFile(restoreUrl.toString(), broken)).rejects.toThrow();
+				await rm(broken, { force: true });
+				const [{ kept }] = (await restoredPool.query("select to_regclass('public.kept') as kept"))
+					.rows;
+				expect(kept).not.toBeNull();
 			} finally {
 				await restoredPool.end();
 			}
@@ -261,7 +282,7 @@ describe('pg_dump round trip', () => {
 		});
 		expect(second).toMatchObject({ ok: true, skipped: true, key: null });
 		expect(objects.size).toBe(1);
-	});
+	}, 60_000);
 });
 
 describe('latestBackupKey', () => {

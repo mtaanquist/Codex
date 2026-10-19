@@ -402,3 +402,41 @@ export async function runBackup(
 export async function listRecentBackupRuns(db: Database, limit = 10) {
 	return await db.select().from(backupRuns).orderBy(desc(backupRuns.startedAt)).limit(limit);
 }
+
+// Replaces the application data in databaseUrl with a dump, all or nothing.
+// The public and drizzle schemas are dropped and rebuilt from the dump in one
+// transaction, so tables added by migrations newer than the dump do not
+// survive to clash with the restored migration ledger, and a failure part way
+// leaves the database as it was. The job-queue schema is not in the dump and
+// is left alone.
+export async function restoreDumpFile(databaseUrl: string, dumpFile: string): Promise<void> {
+	const psql = spawn('psql', ['--no-psqlrc', '--quiet', '-v', 'ON_ERROR_STOP=1', databaseUrl], {
+		stdio: ['pipe', 'ignore', 'pipe']
+	});
+	const psqlExited = exitCode(psql);
+	let psqlErr = '';
+	psql.stderr?.on('data', (chunk: Buffer) => (psqlErr += chunk.toString()));
+	psql.stdin!.on('error', () => {});
+	psql.stdin!.write(
+		'BEGIN;\nDROP SCHEMA IF EXISTS drizzle CASCADE;\nDROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n'
+	);
+
+	const script = spawn('pg_restore', ['--no-owner', '--file', '-', dumpFile], {
+		stdio: ['ignore', 'pipe', 'pipe']
+	});
+	const scriptExited = exitCode(script);
+	let scriptErr = '';
+	script.stderr?.on('data', (chunk: Buffer) => (scriptErr += chunk.toString()));
+	script.stdout!.pipe(psql.stdin!, { end: false });
+
+	// The COMMIT is only sent once the whole script was produced. Ending the
+	// input without it closes the session, which rolls everything back.
+	const scriptCode = await scriptExited.catch(() => 1);
+	if (scriptCode === 0) psql.stdin!.write('COMMIT;\n');
+	psql.stdin!.end();
+	const psqlCode = await psqlExited.catch(() => 1);
+	if (scriptCode !== 0) {
+		throw new Error(`pg_restore exited with ${scriptCode}: ${scriptErr.trim()}`);
+	}
+	if (psqlCode !== 0) throw new Error(`psql exited with ${psqlCode}: ${psqlErr.trim()}`);
+}

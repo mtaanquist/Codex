@@ -1,4 +1,8 @@
-import { spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../src/lib/server/db/schema.ts';
@@ -6,6 +10,7 @@ import {
 	backupConfig,
 	effectiveBackupConfig,
 	latestBackupKey,
+	restoreDumpFile,
 	s3Store
 } from '../src/lib/server/backups.ts';
 
@@ -13,7 +18,8 @@ import {
 // Usage: node scripts/restore-backup.ts <object key | latest>
 //
 // Stop the app and worker first; the restore drops and recreates the
-// application tables. Existing data in the target database is replaced.
+// application tables. Existing data in the target database is replaced, in one
+// transaction: if anything fails, the database is left as it was.
 const [target] = process.argv.slice(2);
 if (!target) {
 	console.error('Usage: node scripts/restore-backup.ts <object key | latest>');
@@ -73,20 +79,18 @@ if (target === 'latest') {
 }
 
 console.log(`Restoring ${key} into ${databaseUrl.replace(/:[^:@/]+@/, ':***@')} ...`);
-const body = await store.get(key);
-const restore = spawn(
-	'pg_restore',
-	['--clean', '--if-exists', '--no-owner', '--dbname', databaseUrl],
-	{ stdio: ['pipe', 'inherit', 'inherit'] }
-);
-body.pipe(restore.stdin);
-
-const code: number = await new Promise((resolve, reject) => {
-	restore.on('error', reject);
-	restore.on('close', (exit) => resolve(exit ?? 1));
-});
-if (code !== 0) {
-	console.error(`pg_restore exited with ${code}.`);
-	process.exit(code);
+// Download in full before touching the database, so a dropped connection
+// cannot leave a half-restored database behind.
+const scratchDir = await mkdtemp(join(tmpdir(), 'codex-restore-'));
+const dumpFile = join(scratchDir, 'backup.dump');
+try {
+	await pipeline(await store.get(key), createWriteStream(dumpFile));
+	await restoreDumpFile(databaseUrl, dumpFile);
+} catch (error) {
+	console.error(error instanceof Error ? error.message : String(error));
+	console.error('The restore did not complete; the database was left unchanged.');
+	process.exitCode = 1;
+} finally {
+	await rm(scratchDir, { recursive: true, force: true });
 }
-console.log('Restore complete. Start the app and worker again.');
+if (!process.exitCode) console.log('Restore complete. Start the app and worker again.');
