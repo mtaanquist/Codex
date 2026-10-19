@@ -7,6 +7,7 @@ import {
 	characterStoryNotes,
 	loreEntries,
 	loreStoryNotes,
+	notes,
 	places,
 	placeStoryMemberships,
 	placeStoryNotes,
@@ -39,6 +40,8 @@ export type ImportPreview = {
 	sceneCount: number;
 	words: number;
 	notes: { kind: ImportedNote['kind']; name: string; outcome: NoteOutcome }[];
+	// Freeform notes from the story's notebook.
+	freeformNoteCount: number;
 	assetCount: number;
 	assetsConfigured: boolean;
 	problems: string[];
@@ -106,6 +109,7 @@ export async function previewImport(
 		sceneCount: allScenes.length,
 		words: allScenes.reduce((sum, scene) => sum + wordCount(scene.bodyMd), 0),
 		notes: resolutions.map(({ kind, name, outcome }) => ({ kind, name, outcome })),
+		freeformNoteCount: plan.freeformNotes?.length ?? 0,
 		assetCount: plan.assets.length,
 		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		problems: plan.problems
@@ -119,6 +123,7 @@ export type ImportResult = {
 	notesAttached: number;
 	entitiesCreated: number;
 	notesSkipped: number;
+	freeformNotesCreated: number;
 	problems: string[];
 };
 
@@ -169,6 +174,7 @@ export async function runImport(
 	let notesAttached = 0;
 	let entitiesCreated = 0;
 	let notesSkipped = 0;
+	let freeformNotesCreated = 0;
 
 	const story = await db.transaction(async (tx) => {
 		const [created] = await tx
@@ -193,29 +199,38 @@ export async function runImport(
 			const bodyMd = rewrite(scene.bodyMd);
 			globalPosition += 1;
 			sceneCount += 1;
-			await tx.insert(scenes).values({
-				storyId: story.id,
-				chapterId,
-				positionInChapter,
-				globalPosition,
-				title: scene.title,
-				bodyMd,
-				status: scene.status ?? 'draft',
-				wordCount: wordCount(bodyMd)
-			});
+			const [row] = await tx
+				.insert(scenes)
+				.values({
+					storyId: story.id,
+					chapterId,
+					positionInChapter,
+					globalPosition,
+					title: scene.title,
+					bodyMd,
+					status: scene.status ?? 'draft',
+					wordCount: wordCount(bodyMd)
+				})
+				.returning({ id: scenes.id });
+			return row.id;
 		};
+		// New scene ids by plan position, for notebook notes attached to a scene.
+		const chapterSceneIds: string[][] = [];
+		const unfiledSceneIds: string[] = [];
 
 		for (const [chapterIndex, chapter] of plan.chapters.entries()) {
 			const [row] = await tx
 				.insert(chapters)
 				.values({ storyId: story.id, title: chapter.title, position: chapterIndex + 1 })
 				.returning({ id: chapters.id });
+			const ids: string[] = [];
 			for (const [sceneIndex, scene] of chapter.scenes.entries()) {
-				await insertScene(scene, row.id, sceneIndex + 1);
+				ids.push(await insertScene(scene, row.id, sceneIndex + 1));
 			}
+			chapterSceneIds.push(ids);
 		}
 		for (const scene of plan.unfiled) {
-			await insertScene(scene, null, null);
+			unfiledSceneIds.push(await insertScene(scene, null, null));
 		}
 
 		for (const note of resolutions) {
@@ -266,6 +281,25 @@ export async function runImport(
 			}
 			notesAttached += 1;
 		}
+
+		for (const note of plan.freeformNotes ?? []) {
+			await tx.insert(notes).values({
+				ownerId: universe.ownerId,
+				universeId: universe.id,
+				storyId: story.id,
+				sceneId: note.scene
+					? note.scene.chapter === null
+						? unfiledSceneIds[note.scene.index]
+						: chapterSceneIds[note.scene.chapter][note.scene.index]
+					: null,
+				title: note.title,
+				bodyMd: rewrite(note.bodyMd),
+				pinned: note.pinned,
+				// Undefined falls back to the column default for older zips.
+				createdAt: note.createdAt ?? undefined
+			});
+			freeformNotesCreated += 1;
+		}
 		return story;
 	});
 
@@ -279,6 +313,7 @@ export async function runImport(
 		notesAttached,
 		entitiesCreated,
 		notesSkipped,
+		freeformNotesCreated,
 		problems
 	};
 }
