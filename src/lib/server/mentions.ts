@@ -1,6 +1,6 @@
 // Mention index rebuilds. Runs in the worker (plain Node), so relative value
 // imports carry explicit .ts extensions.
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	characters,
@@ -158,7 +158,9 @@ export async function rebuildUniverseMentions(db: Database, universeId: string):
 		.select({ id: scenes.id })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(eq(stories.universeId, universeId));
+		// Trashed scenes hold no mentions; their rebuild would only clear and
+		// stamp them again.
+		.where(and(eq(stories.universeId, universeId), isNull(scenes.deletedAt)));
 	// One entity fetch for the whole sweep; only the per-scene body read and
 	// mention write stay in the loop.
 	const context = await universeMentionContext(db, universeId);
@@ -184,7 +186,9 @@ export async function listStaleMentionScenes(
 		join stories st on st.id = s.story_id
 		where s.mentions_indexed_at is null
 			or s.mentions_indexed_at < s.updated_at
-			or s.mentions_indexed_at < greatest(
+			-- A trashed scene holds no mentions, so entity edits cannot make it
+			-- stale; only its own change (the trashing) needs a pass.
+			or s.deleted_at is null and s.mentions_indexed_at < greatest(
 				coalesce((select max(updated_at) from characters where universe_id = st.universe_id), to_timestamp(0)),
 				coalesce((select max(updated_at) from places where universe_id = st.universe_id), to_timestamp(0)),
 				coalesce((select max(updated_at) from lore_entries where universe_id = st.universe_id), to_timestamp(0))

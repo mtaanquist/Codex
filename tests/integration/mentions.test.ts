@@ -214,4 +214,12 @@ describe('reconcile', () => {
 		await reconcileMentions(db);
 		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
 	});
+
+	it('leaves a trashed scene alone when only an entity changed', async () => {
+		await pool.query(`update scenes set deleted_at = now() where id = $1`, [sceneId]);
+		await rebuildSceneMentions(db, sceneId);
+		await pool.query(`update characters set updated_at = now() where id = $1`, [aliceId]);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
+		await pool.query(`update scenes set deleted_at = null where id = $1`, [sceneId]);
+	});
 });
