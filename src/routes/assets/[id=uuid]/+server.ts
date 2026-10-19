@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { assets } from '$lib/server/db/schema';
-import { effectiveAssetConfig, openAsset, s3AssetStore } from '$lib/server/assets';
+import { effectiveAssetConfig, getObjectOrNull, openAsset, s3AssetStore } from '$lib/server/assets';
 import { isPublicAsset, isPublicAvatar } from '$lib/server/publish';
 
 // Streams an uploaded asset: to its owner always, and to anyone when it
@@ -18,8 +18,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	let isPublic = false;
 	if (!opened && ((await isPublicAsset(db, params.id)) || (await isPublicAvatar(db, params.id)))) {
 		const [row] = await db.select().from(assets).where(eq(assets.id, params.id));
-		if (row) {
-			opened = { asset: row, body: await store.get(row.storageKey) };
+		const body = row ? await getObjectOrNull(store, row.storageKey) : null;
+		if (row && body) {
+			opened = { asset: row, body };
 			isPublic = true;
 		}
 	}
