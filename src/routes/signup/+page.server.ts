@@ -9,6 +9,7 @@ import { queueEmail } from '$lib/server/jobs';
 import { notifyAdmins } from '$lib/server/notify';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
+import { formText } from '$lib/server/validation';
 
 const VERIFY_TTL_MINUTES = 60 * 24;
 // Per-address, so repeated sign-ups for one email cannot bomb it with
@@ -31,10 +32,10 @@ export const load: PageServerLoad = async ({ url }) => {
 export const actions: Actions = {
 	default: async ({ request, url, getClientAddress }) => {
 		const data = await request.formData();
-		const email = String(data.get('email') ?? '');
-		const password = String(data.get('password') ?? '');
-		const displayName = String(data.get('displayName') ?? '');
-		const inviteCode = String(data.get('inviteCode') ?? '');
+		const email = formText(data, 'email');
+		const password = formText(data, 'password');
+		const displayName = formText(data, 'displayName');
+		const inviteCode = formText(data, 'inviteCode');
 		const cleanEmail = email.trim().toLowerCase();
 		const mode = await signupMode(db);
 		// Whether this sign-up waits in the approval queue. Derived from the

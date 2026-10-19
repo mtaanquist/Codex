@@ -4,6 +4,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { effectiveAssetConfig, createAsset, s3AssetStore } from '$lib/server/assets';
 import { rateLimitUploads } from '$lib/server/write-guard';
+import { formText } from '$lib/server/validation';
 
 // Accepts an image upload (multipart form: file, kind, universeId) and
 // returns the app-served path for it.
@@ -15,7 +16,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const form = await request.formData();
 	const file = form.get('file');
 	const kind = String(form.get('kind') ?? 'inline');
-	const universeId = String(form.get('universeId') ?? '') || null;
+	const universeId = formText(form, 'universeId') || null;
 	if (!(file instanceof File)) error(400, 'a file is required');
 	if (kind !== 'inline' && kind !== 'cover') error(400, 'kind must be inline or cover');
 
