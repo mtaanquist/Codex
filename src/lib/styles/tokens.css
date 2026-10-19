@@ -18,6 +18,12 @@
 	   and any reasonable custom colour; dark text was illegible on the blues. */
 	--accent-contrast: #ffffff;
 	--danger-contrast: #ffffff;
+	/* Text and icons on any other solid colour tile: universe and story
+	   colours, author colours, swatches, the brand mark, the toggle knob. */
+	--on-color: #ffffff;
+	/* A QR code stays dark-on-white in every theme so phones can scan it. */
+	--qr-bg: #ffffff;
+	--qr-fg: #0b0d12;
 
 	/* density */
 	--row-h: 36px;

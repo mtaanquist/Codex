@@ -290,7 +290,7 @@
 	.sel-menu-error {
 		font-family: var(--font-ui);
 		font-size: 12px;
-		color: var(--danger, #c0564f);
+		color: var(--danger);
 		margin: 2px 7px 4px;
 	}
 	/* The lore item's category flyout. */

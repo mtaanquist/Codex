@@ -167,7 +167,7 @@
 	.danger-ghost {
 		background: transparent;
 		border: 0;
-		color: var(--danger, #b00020);
+		color: var(--danger);
 		cursor: pointer;
 		padding: 0;
 		font-size: 12.5px;

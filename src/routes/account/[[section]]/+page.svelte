@@ -76,7 +76,7 @@
 		<div class="admin-sidebar-title">
 			<span
 				class="ic"
-				style="background:linear-gradient(140deg,var(--accent),color-mix(in oklab,var(--accent) 55%,#000));color:#fff;font-weight:700;font-size:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.2);"
+				style="background:linear-gradient(140deg,var(--accent),color-mix(in oklab,var(--accent) 55%,#000));color:var(--accent-contrast);font-weight:700;font-size:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.2);"
 				>{initials(data.displayName)}</span
 			>
 			<div>
