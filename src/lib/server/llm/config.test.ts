@@ -134,7 +134,17 @@ describe('the suggested model', () => {
 		expect(pickModel(config, 'reviewer')).toBe('claude-x');
 	});
 
-	it('leaves a provider without a verified id on the endpoint default', () => {
+	it('beats a pick made only for another role', () => {
+		const config = resolved({ provider: 'anthropic', models: { reviewer: 'claude-opus-5-5' } });
+		expect(pickModel(config, 'continuation')).toBe('claude-haiku-5-5');
+	});
+
+	it('without one, a role falls back to whatever is picked, as before', () => {
+		const config = resolved({ provider: 'gemini', models: { reviewer: 'gemini-pro' } });
+		expect(pickModel(config, 'continuation')).toBe('gemini-pro');
+	});
+
+	it('leaves a provider without a verified id and no picks with no model', () => {
 		expect(pickModel(resolved({ provider: 'gemini' }), 'chat')).toBe('');
 	});
 });

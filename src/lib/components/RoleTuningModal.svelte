@@ -127,7 +127,10 @@
 		<div class="modal-head">
 			<div class="modal-head-main">
 				<h2 class="modal-title">{role.name}</h2>
-				<p class="modal-sub">{role.hint} Suggested: {suggestion}. {role.tip}</p>
+				<p class="modal-sub">
+					{role.hint} Suggested: {suggestion}.{#if role.tip}
+						{role.tip}{/if}
+				</p>
 			</div>
 		</div>
 

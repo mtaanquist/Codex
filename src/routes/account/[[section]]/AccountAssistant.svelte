@@ -3,7 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { pluralSuffix } from '$lib/format';
-	import type { AssistantRole } from '$lib/assistant-tuning';
+	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -239,6 +239,10 @@
 		) {
 			if (apiKeyField) apiKeyField.value = '';
 		}
+		// A refused save leaves the stored provider in place; show it again.
+		if (form?.scope === 'assistant-endpoint' && form.message) {
+			selectedProvider = data.assistant.provider;
+		}
 	});
 	// The guide follows the live select, like the provider-specific controls.
 	function suggestion(role: AssistantRole) {
@@ -248,11 +252,17 @@
 		const { id, text } = suggestion(role);
 		return id ? `${text} (${id})` : text;
 	}
-	// What a role runs on with nothing picked, mirroring the server's pickModel.
+	// What a role runs on with nothing picked. This follows the saved provider,
+	// not the live select, since that is what the server runs until a switch
+	// lands.
 	function unpickedLabel(role: AssistantRole): string {
-		if (role !== 'chat' && savedModels.chat) return 'Same as Rubber duck';
-		const { id } = suggestion(role);
-		return id ? `Suggested: ${id}` : 'Use endpoint default';
+		const saved = data.modelGuide.providers[data.assistant.provider];
+		const suggested = saved[data.modelGuide.tiers[role]].id ?? '';
+		const runs = resolveRoleModel(savedModels, role, suggested);
+		if (!runs) return 'Pick a model';
+		if (runs === suggested) return `Suggested: ${runs}`;
+		if (runs === savedModels.chat) return 'Same as Rubber duck';
+		return `Same as ${runs}`;
 	}
 	function paramsText(params: Record<string, unknown> | undefined): string {
 		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';

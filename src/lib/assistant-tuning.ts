@@ -59,3 +59,14 @@ const REVIEWER_MAX_TOKENS = 4096;
 export function defaultMaxTokens(role: AssistantRole): number {
 	return role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
 }
+
+// The model a role runs on: its own, else the chat model, else the provider's
+// suggestion for the role, else whatever is set. Shared so the settings page
+// labels an unpicked role with what the server will actually run.
+export function resolveRoleModel(
+	models: Partial<Record<AssistantRole, string>>,
+	role: AssistantRole,
+	suggested: string
+): string {
+	return models[role] || models.chat || suggested || Object.values(models).find(Boolean) || '';
+}

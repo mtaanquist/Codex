@@ -92,10 +92,10 @@ contacts a model on its own.
   Continuation (inline suggestions), Reviewer (suggested edits on a draft), and
   Background work (scene and chapter summaries, suggested entity details, and the
   story recap). Under each role's name is a suggested model for the provider you
-  picked; see the table below. Roles with no model chosen fall back to the model
-  you picked for Rubber duck. With Claude, a role with nothing picked at all uses
-  its suggested model, so Test connection works as soon as the key is in. A single story can
-  override these too. When the list is long, type part of a name in the filter box
+  picked; see the list below. Roles with no model chosen fall back to the model
+  you picked for Rubber duck. With Claude, a role uses its suggested model when
+  neither it nor Rubber duck has one picked, so Test connection works as soon as
+  the key is in. A single story can override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
   tokens sent and received. Next to each role, Tune opens a window holding the
@@ -196,7 +196,7 @@ the Reviewer in that order:
 - **Your own machine**: Qwen3 30B A3B (a mixture-of-experts model) for the fast
   and in-between roles, and Qwen3 32B (a dense model) for the Reviewer.
 
-Providers rename their models often, so for everything but Claude the table
+Providers rename their models often, so for everything but Claude the list
 names the family; select Discover models and pick the newest one in it.
 
 Turn thinking off for Continuation and Background work. For the Reviewer, set a

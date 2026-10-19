@@ -11,6 +11,7 @@ import {
 	EFFORT_LEVELS,
 	MAX_REPLY_TOKENS,
 	MAX_TEMPERATURE,
+	resolveRoleModel,
 	type AssistantRole,
 	type EffortLevel,
 	type ExtraParams,
@@ -424,16 +425,9 @@ export async function resolveLlmConfig(
 	};
 }
 
-// The model a role runs on: its own, else the chat model, else the provider's
-// suggestion for the role, else whatever is set.
+// The model a role runs on; see resolveRoleModel for the order.
 export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
-	return (
-		config.models[role] ||
-		config.models.chat ||
-		suggestedModel(config.provider, role) ||
-		Object.values(config.models)[0] ||
-		''
-	);
+	return resolveRoleModel(config.models, role, suggestedModel(config.provider, role));
 }
 
 // The context window of the model this role runs on, in tokens; undefined when
