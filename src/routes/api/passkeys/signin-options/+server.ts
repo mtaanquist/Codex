@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { secretsAvailable } from '$lib/server/crypto';
 import { PASSKEY_CHALLENGE_COOKIE, startPasskeySignIn } from '$lib/server/passkeys';
@@ -14,7 +14,7 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, url }) =
 	if (!rateLimit(`passkey:${getClientAddress()}`, 30, 5 * 60 * 1000).allowed) {
 		return json({ message: 'Too many attempts. Wait a few minutes.' }, { status: 429 });
 	}
-	const origin = env.ORIGIN ?? url.origin;
+	const origin = publicOrigin(url);
 	const { options, challengeToken } = await startPasskeySignIn(origin);
 	cookies.set(PASSKEY_CHALLENGE_COOKIE, challengeToken, {
 		path: '/',

@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { Actions } from './$types';
 import { db } from '$lib/server/db';
 import { requestPasswordReset } from '$lib/server/password-reset';
@@ -33,7 +33,7 @@ export const actions: Actions = {
 
 		const token = await requestPasswordReset(db, email);
 		if (token) {
-			const origin = env.ORIGIN ?? url.origin;
+			const origin = publicOrigin(url);
 			const link = `${origin}/reset-password?token=${token}`;
 			await queueEmail(passwordResetEmail(email, link));
 		}

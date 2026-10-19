@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { registerUser } from '$lib/server/signup';
@@ -63,10 +63,7 @@ export const actions: Actions = {
 
 		if (result.ok) {
 			const token = await issueToken(db, result.userId, 'email_verify', VERIFY_TTL_MINUTES);
-			// ORIGIN is set in production (adapter-node needs it); the request
-			// origin is the dev fallback. Using a configured origin keeps a spoofed
-			// Host header out of the link.
-			const origin = env.ORIGIN ?? url.origin;
+			const origin = publicOrigin(url);
 			const link = `${origin}/verify-email?token=${token}`;
 			await queueEmail(verificationEmail(cleanEmail, link));
 

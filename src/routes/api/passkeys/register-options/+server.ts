@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { verifyAccountPassword } from '$lib/server/account';
@@ -33,7 +33,7 @@ export const POST: RequestHandler = async ({ cookies, locals, request, url }) =>
 	if (!(await verifyAccountPassword(db, locals.user!.id, String(body?.password ?? '')))) {
 		return json({ message: 'That password is not right.' }, { status: 400 });
 	}
-	const origin = env.ORIGIN ?? url.origin;
+	const origin = publicOrigin(url);
 	const { options, challengeToken } = await startPasskeyRegistration(db, locals.user!, origin);
 	cookies.set(PASSKEY_CHALLENGE_COOKIE, challengeToken, {
 		path: '/',
