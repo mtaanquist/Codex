@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
-import { updateMarkerAnchors } from './markers';
+import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
 import { textHash } from '$lib/text-hash';
 import { wordCount } from '$lib/word-count';
@@ -9,7 +9,8 @@ import { wordCount } from '$lib/word-count';
 export type SceneSave = {
 	title: string | null;
 	bodyMd: string;
-	// Marker anchors as the editor mapped them; null leaves the stored ones.
+	// Marker anchors as the editor mapped them; null maps the stored ones
+	// through the change.
 	anchors: { id: string; anchorStart: number; anchorEnd: number }[] | null;
 	// Fingerprints of the text the editor last saw. The save goes through only
 	// when the stored text matches one of them; null skips the check.
@@ -78,7 +79,10 @@ export async function saveSceneBody(
 			.set({ title: save.title, bodyMd: save.bodyMd, wordCount: count })
 			.where(eq(scenes.id, sceneId));
 		await recordRevision(tx, 'scene', sceneId, save.bodyMd);
+		// A save without anchors (the review centre's) still moves the text
+		// under the markers, so map them through the diff instead.
 		if (save.anchors) await updateMarkerAnchors(tx, sceneId, save.anchors, save.bodyMd.length);
+		else await remapMarkerAnchors(tx, sceneId, current.bodyMd, save.bodyMd);
 		return { ok: true as const, wordCount: count, bodyChanged: true };
 	});
 }

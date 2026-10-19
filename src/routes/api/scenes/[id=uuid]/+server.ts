@@ -28,8 +28,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	checkProseLength(payload.bodyMd);
 	// The editor maps marker anchors through edits; they ride the autosave.
 	// A review save omits markers entirely (the review centre does not load
-	// them): when the field is absent, leave the stored anchors untouched
-	// rather than wiping them with an empty set.
+	// them): when the field is absent, the stored anchors are mapped through
+	// the text change rather than wiped with an empty set.
 	const anchors =
 		payload.markers === undefined
 			? null
