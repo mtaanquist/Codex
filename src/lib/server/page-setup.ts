@@ -5,8 +5,7 @@ import { mergePageSetup, type PageSetup } from '../page-setup.ts';
 import { jsonbMergePatch } from './jsonb-patch.ts';
 
 // Loading and saving print/PDF page setup. The worker reaches this when it
-// generates edition artifacts, so relative value imports carry explicit
-// .ts extensions and no $lib alias.
+// generates edition artifacts.
 
 // The story's effective setup: the owner's account defaults with the
 // story's overrides on top.

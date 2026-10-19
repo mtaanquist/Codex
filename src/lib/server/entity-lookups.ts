@@ -3,8 +3,7 @@ import type { Database } from './auth.ts';
 import { characters, entityCategories, loreEntries, places, stories } from './db/schema.ts';
 
 // Lookups shared by the relationship, revision, and mention-pin modules,
-// split out so none has to import the others. The mention-pin path runs in
-// the worker, so the value import above carries its explicit .ts extension.
+// split out so none has to import the others.
 
 export type EntityType = 'character' | 'place' | 'lore_entry';
 

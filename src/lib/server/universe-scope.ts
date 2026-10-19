@@ -1,8 +1,8 @@
 // The trash rules for lookups that do not go through ownedStory or
 // ownedUniverse. Trashing a universe or a story only stamps its deleted_at, so
 // any query that reaches a story, scene, or entity by id must also check that
-// its universe (and, for story content, its story) is live. Worker-safe: relative value imports carry explicit .ts
-// extensions and nothing here touches $env.
+// its universe (and, for story content, its story) is live. Worker-safe:
+// nothing here touches $env.
 import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { Database } from './auth.ts';

@@ -1,8 +1,7 @@
 import pg from 'pg';
 import { logEvent } from '../log.ts';
 
-// Shared by the app and the worker (which imports it with a .ts extension, so
-// keep imports here relative and extension-qualified).
+// Shared by the app and the worker.
 
 export type PoolOptions = {
 	// Postgres cancels any single statement that runs longer than this. Lock

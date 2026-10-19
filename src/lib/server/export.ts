@@ -27,8 +27,7 @@ import { namesByType, type EntityType } from './entity-lookups.ts';
 // Story export: a zip of markdown files with YAML front matter, in
 // chapter order, with referenced images bundled into assets/ and the
 // links rewritten. Markdown in, markdown out; nothing is trapped.
-// Runs in the worker too (artifact generation), so relative value imports
-// carry explicit .ts extensions and avoid the $lib alias.
+// Runs in the worker too (artifact generation).
 
 function frontMatter(fields: Record<string, string | string[] | null | undefined>): string {
 	const lines = ['---'];

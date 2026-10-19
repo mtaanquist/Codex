@@ -1,6 +1,5 @@
 // Per-story mention pins: the author's pick when a name belongs to more
-// than one entity. Runs in the worker too (the index rebuild reads them),
-// so relative value imports carry explicit .ts extensions.
+// than one entity. Runs in the worker too (the index rebuild reads them).
 import { and, eq } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { mentionPins, stories } from './db/schema.ts';

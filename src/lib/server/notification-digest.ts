@@ -15,8 +15,7 @@ import { teaser } from '../notifications.ts';
 
 // The email half of notifications, run from the worker: a scheduled digest
 // gathers everything unsent for one recipient and composes one email. Runs
-// in the worker, so relative value imports carry explicit .ts extensions
-// and the origin for links arrives as a parameter.
+// in the worker, so the origin for links arrives as a parameter.
 
 export type Digest = { email: EmailMessage; ids: string[] };
 

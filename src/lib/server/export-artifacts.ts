@@ -25,8 +25,7 @@ import { storyPageSetup } from './page-setup.ts';
 // Stored export artifacts: when an edition publishes, the worker generates
 // its markdown zip, EPUB, and PDF from the frozen content and keeps them in
 // the asset bucket, the way a release carries assets. Everything here is
-// derived data; regeneration overwrites in place. Runs in the worker, so
-// relative value imports carry explicit .ts extensions.
+// derived data; regeneration overwrites in place. Runs in the worker.
 
 export type ArtifactFormat = 'markdown' | 'epub' | 'pdf';
 
