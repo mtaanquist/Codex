@@ -172,9 +172,9 @@
 		color: var(--text-muted);
 		white-space: nowrap;
 	}
-	/* The brand mark is a filled tile, so its stroke icon is always white. */
+	/* The brand mark is a filled tile, so its icon uses --accent-contrast. */
 	.logo :global(svg) {
-		color: #fff;
+		color: var(--accent-contrast);
 	}
 	/* The guest shell shows who, not a menu, so the mark is not a button. */
 	.appbar-who .avatar {

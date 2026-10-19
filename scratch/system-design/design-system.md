@@ -72,6 +72,11 @@ Assets and contrast:
 
 - `--danger-contrast` - text on a `--danger` fill (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
+- `--on-color` - text and icons on any other solid colour tile: universe
+  and story colours, author colours, category badges, swatches, the toggle
+  knob. Never write `#fff` on a user-chosen colour.
+- `--qr-bg` / `--qr-fg` - the QR code block, fixed dark-on-white in every
+  theme so it scans.
 - `--select-caret` - the `.select` caret, declared per theme. A data URL
   cannot read a custom property, so each theme carries its own faint stroke
   colour in the asset. `.select` is the only consumer.
@@ -93,9 +98,9 @@ Rules:
 
 - Never write a raw colour value. If a needed colour does not exist as a
   token, that is a design decision to raise, not a hex to inline.
-- Do not write `var(--token, #fallback)`. The tokens are always defined;
-  fallbacks rot (the codebase currently has three different fallbacks for
-  `--danger`, all wrong in at least one theme).
+- Do not write `var(--token, #fallback)`. The tokens are always defined,
+  and fallbacks rot. `src/lib/styles/tokens.test.ts` fails on any hex
+  fallback and on any `#fff` outside `tokens.css`.
 - Do not branch on `[data-theme='...']` in CSS. Tokens carry the theme. The
   single sanctioned exception is softening a box-shadow that reads too heavy
   on light backgrounds.
@@ -683,12 +688,11 @@ inspector (`theme.css` and `EntityCard.svelte`), the kanban CSS
 `.chapter-row`/`.scene-row`.
 
 Hard-coded colours that bypass tokens: the `.swatch-custom` gradient hexes,
-the QR block's fixed light/dark backgrounds, `.toggle-track`'s `#fff` knob,
-the remaining bare `color: #fff` where `--accent-contrast` exists, and
-inline `style="color: #fff"` on both top-bar brand marks. The `.select`
-caret now reads `--select-caret`, the `#1b2a55` navy is gone, and the
-`var(--token, #hex)` fallbacks are cleared from the files the
-consolidation touched.
+the `#000` used to darken accent gradients and hover fills, and the
+`rgba(255, 255, 255, ...)` inset highlights. The `var(--token, #hex)`
+fallbacks and every bare `#fff` are gone (white now comes from
+`--accent-contrast`, `--danger-contrast`, `--on-color` or `--qr-bg`), and
+`tokens.test.ts` keeps them out.
 
 Parallel systems pending a decision: `.saved` vs `.save-status`;
 `FormStatus.svelte` vs `.form-error`/`.form-saved`; six avatar classes.

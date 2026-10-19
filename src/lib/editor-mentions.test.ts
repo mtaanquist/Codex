@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { Decoration, type DecorationSet } from '@codemirror/view';
-import { rescanChangedLines } from './editor-mentions';
+import { mentionTargets, rescanChangedLines, type MentionEntity } from './editor-mentions';
 import { detectMentions, type MentionTarget } from './mention-detect';
 
 const targets: MentionTarget[] = [
@@ -55,5 +55,24 @@ describe('rescanChangedLines', () => {
 			state = tr.state;
 			expect(flatten(marks)).toEqual(full(state.doc.toString()));
 		}
+	});
+});
+
+describe('mentionTargets', () => {
+	const entities: MentionEntity[] = [
+		{ id: 'a', type: 'character', name: 'Alice Vane', aliases: ['Alice'], summaryMd: null }
+	];
+
+	// The compiled name matcher is cached per target list, so every editor
+	// handed the same entity list must get the same list back to share it.
+	it('returns the same target list for the same entity list', () => {
+		expect(mentionTargets(entities)).toBe(mentionTargets(entities));
+		expect(mentionTargets(entities)).toEqual([
+			{ id: 'a', type: 'character', names: ['Alice Vane', 'Alice'] }
+		]);
+	});
+
+	it('builds a fresh list for a new entity list', () => {
+		expect(mentionTargets([...entities])).not.toBe(mentionTargets(entities));
 	});
 });

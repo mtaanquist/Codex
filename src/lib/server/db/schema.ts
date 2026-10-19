@@ -136,6 +136,11 @@ export const universes = pgTable(
 		// Soft delete: a deleted universe sits in the dashboard's trash for the
 		// restore window, then the worker purges it for good. Null means live.
 		deletedAt: timestamp('deleted_at', { withTimezone: true }),
+		// Set when a name, alias, keyword, pin, or new entity changes what the
+		// universe's scenes can mention; cleared once every live scene has been
+		// reindexed past it. Null means no universe-wide reindex is pending. Entity
+		// edits that touch no names leave it alone.
+		mentionsChangedAt: timestamp('mentions_changed_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
@@ -275,8 +280,9 @@ export const scenes = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 		// When the mention index was last rebuilt for this scene. Null means never.
-		// The reconcile sweep re-indexes any scene whose body or whose universe's
-		// entities changed after this, so a dropped rebuild job self-heals.
+		// The reconcile sweep re-indexes any scene whose body changed after this,
+		// or whose universe's mentions_changed_at is later, so a dropped rebuild
+		// job self-heals.
 		mentionsIndexedAt: timestamp('mentions_indexed_at', { withTimezone: true }),
 		// Soft delete: a deleted scene sits in the story's trash until restored
 		// or deleted for good. Null means live; every live query filters on it.
@@ -288,7 +294,14 @@ export const scenes = pgTable(
 		// creates the pg_trgm extension it needs.
 		index('scenes_body_trgm_idx').using('gin', table.bodyMd.op('gin_trgm_ops')),
 		// Every story open, scene list, and mention sweep filters on story_id.
-		index('scenes_story_idx').on(table.storyId)
+		index('scenes_story_idx').on(table.storyId),
+		// The reconcile sweep's per-scene half: only scenes behind their own
+		// body, so the index stays small however many scenes the instance holds.
+		index('scenes_mentions_stale_idx')
+			.on(table.mentionsIndexedAt.asc().nullsFirst())
+			.where(
+				sql`${table.mentionsIndexedAt} is null or ${table.mentionsIndexedAt} < ${table.updatedAt}`
+			)
 	]
 );
 

@@ -18,6 +18,7 @@ import {
 import { buildSurveyMessage, splitSurveyChunks } from './prompts/review.ts';
 import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { reviewTiers, surveyBudgetTokens } from './scene-review.ts';
+import { inLiveUniverse } from '../universe-scope.ts';
 
 // The pre-flight estimate a review run is confirmed against: how many scenes it
 // would read, roughly how many tokens that sends, and - only when the model that
@@ -167,6 +168,7 @@ export async function estimateStoryReview(
 			and(
 				eq(scenes.storyId, opts.storyId),
 				eq(stories.ownerId, opts.userId),
+				inLiveUniverse(stories.universeId),
 				isNull(scenes.deletedAt)
 			)
 		)

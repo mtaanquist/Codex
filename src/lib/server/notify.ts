@@ -10,6 +10,7 @@ import {
 } from './db/schema';
 import { queueNotificationDigest, queueReviewerDigest } from './jobs';
 import { insertNotifications } from './notify-core';
+import { inLiveUniverse } from './universe-scope';
 import {
 	teaser,
 	type NotificationItem,
@@ -47,7 +48,8 @@ export async function notifyAdmins(
 }
 
 // A guest did something on the author's story: comment, reply, or
-// suggestion. One notification to the owner, linking the feedback page.
+// suggestion. One notification to the owner, linking the feedback page;
+// nothing for a story whose universe is in the trash.
 export async function notifyReviewActivity(
 	db: Database,
 	storyId: string,
@@ -58,7 +60,7 @@ export async function notifyReviewActivity(
 	const [story] = await db
 		.select({ ownerId: stories.ownerId, title: stories.title, slug: stories.slug })
 		.from(stories)
-		.where(eq(stories.id, storyId));
+		.where(and(eq(stories.id, storyId), inLiveUniverse(stories.universeId)));
 	if (!story) return;
 	await notifyUsers(db, [story.ownerId], 'review_activity', {
 		title: `${reviewerName} ${what} on "${story.title}"`,

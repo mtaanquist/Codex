@@ -6,6 +6,7 @@ import type { Database } from './auth.ts';
 import { mentionPins, stories } from './db/schema.ts';
 import { entityInUniverse } from './entity-lookups.ts';
 import type { EntityType } from './entity-lookups.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // The story's pins as detection wants them: matched text -> target id.
 export async function listMentionPins(db: Database, storyId: string): Promise<Map<string, string>> {
@@ -29,7 +30,9 @@ export async function setMentionPin(
 	const [story] = await db
 		.select({ id: stories.id, universeId: stories.universeId })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(
+			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
+		);
 	if (!story) return { ok: false, reason: 'story not found' };
 	if (!(await entityInUniverse(db, story.universeId, targetType, targetId))) {
 		return { ok: false, reason: 'entity not found' };
@@ -53,7 +56,9 @@ export async function clearMentionPin(
 	const [story] = await db
 		.select({ id: stories.id })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(
+			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
+		);
 	if (!story) return false;
 	const deleted = await db
 		.delete(mentionPins)

@@ -532,9 +532,9 @@
 	   expensive run is not started by reflex. */
 	.rm-confirm.rm-warn {
 		padding: 12px 14px;
-		border: 1px solid var(--danger, #b4402f);
+		border: 1px solid var(--danger);
 		border-radius: var(--radius-sm, 4px);
-		background: color-mix(in srgb, var(--danger, #b4402f) 8%, transparent);
+		background: color-mix(in srgb, var(--danger) 8%, transparent);
 	}
 	.rm-confirm.rm-warn .rm-phase {
 		font-weight: 600;

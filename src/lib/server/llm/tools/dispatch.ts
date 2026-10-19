@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
-import { scenes, stories, universes } from '../../db/schema.ts';
+import { scenes, stories } from '../../db/schema.ts';
+import { inLiveUniverse, ownedUniverseRow } from '../../universe-scope.ts';
 import { entityAppearances, getEntityCard } from '../../plan-data.ts';
 import { searchAll } from '../../search.ts';
 import {
@@ -101,7 +102,9 @@ export async function ownedStoryUniverse(
 	const [row] = await db
 		.select({ universeId: stories.universeId })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(
+			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
+		);
 	return row?.universeId ?? null;
 }
 
@@ -112,11 +115,7 @@ export async function ownsUniverse(
 	userId: string,
 	universeId: string
 ): Promise<boolean> {
-	const [row] = await db
-		.select({ id: universes.id })
-		.from(universes)
-		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
-	return Boolean(row);
+	return Boolean(await ownedUniverseRow(db, userId, universeId));
 }
 
 export async function dispatchToolCall(

@@ -1,5 +1,5 @@
 {
-	"id": "6f95b993-4666-46a0-ab3e-43fcef824745",
+	"id": "7885ba52-cbb1-4be5-ba5e-d47fd87d3def",
 	"prevId": "1e6776a0-4a2b-4a09-870a-ede9d9b5bbd4",
 	"version": "7",
 	"dialect": "postgresql",
@@ -3661,12 +3661,6 @@
 					"primaryKey": false,
 					"notNull": true
 				},
-				"word_count": {
-					"name": "word_count",
-					"type": "integer",
-					"primaryKey": false,
-					"notNull": false
-				},
 				"snapshot": {
 					"name": "snapshot",
 					"type": "jsonb",
@@ -4009,6 +4003,22 @@
 						}
 					],
 					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
+				},
+				"scenes_mentions_stale_idx": {
+					"name": "scenes_mentions_stale_idx",
+					"columns": [
+						{
+							"expression": "mentions_indexed_at",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "first"
+						}
+					],
+					"isUnique": false,
+					"where": "\"scenes\".\"mentions_indexed_at\" is null or \"scenes\".\"mentions_indexed_at\" < \"scenes\".\"updated_at\"",
 					"concurrently": false,
 					"method": "btree",
 					"with": {}
@@ -4447,6 +4457,12 @@
 				},
 				"deleted_at": {
 					"name": "deleted_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"mentions_changed_at": {
+					"name": "mentions_changed_at",
 					"type": "timestamp with time zone",
 					"primaryKey": false,
 					"notNull": false

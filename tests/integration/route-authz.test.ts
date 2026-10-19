@@ -349,6 +349,21 @@ describe('scene routes refuse another user', () => {
 		);
 	});
 
+	it('PUT /api/scenes/[id] refuses the owner once the universe is trashed', async () => {
+		await db
+			.update(universes)
+			.set({ deletedAt: new Date() })
+			.where(eq(universes.id, s.universeA.id));
+		await expectRefused(
+			sceneRoute.PUT,
+			event(A, {
+				method: 'PUT',
+				params: { id: s.sceneA1.id },
+				body: { title: 'Late', bodyMd: 'Saved into the trash.' }
+			})
+		);
+	});
+
 	it('PATCH /api/scenes/[id]', async () => {
 		const body = { status: 'final' };
 		await expectRefused(

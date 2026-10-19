@@ -222,7 +222,7 @@
 		margin-top: 10px;
 	}
 	.rel-error {
-		color: var(--danger, #b00020);
+		color: var(--danger);
 		font-size: 12.5px;
 		margin: 0;
 	}
