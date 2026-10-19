@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
 import type pg from 'pg';
@@ -80,6 +80,9 @@ async function dashboardData(user: User) {
 beforeAll(async () => {
 	await ensureTestDatabase();
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 
 	const [owner] = await db
@@ -151,12 +154,14 @@ describe('story trash', () => {
 	});
 
 	it('only the owner can trash a story', async () => {
+		await trashStory(db, ownerId, storyId);
 		expect(await trashStory(db, strangerId, keptStoryId)).toBe(false);
 		// Already in the trash.
 		expect(await trashStory(db, ownerId, storyId)).toBe(false);
 	});
 
 	it('hides the trashed story from the dashboard and lists it in the trash', async () => {
+		await trashStory(db, ownerId, storyId);
 		const data = await dashboardData({ id: ownerId, displayName: 'T' });
 		expect(data.stories.map((s) => s.id)).toEqual([keptStoryId]);
 		expect(data.trashedStories.map((s) => s.id)).toEqual([storyId]);
@@ -165,6 +170,7 @@ describe('story trash', () => {
 	});
 
 	it('hides it from the universe listings, search, and the public shelf', async () => {
+		await trashStory(db, ownerId, storyId);
 		expect((await storyProgress(db, universeId)).map((s) => s.id)).toEqual([keptStoryId]);
 		expect((await universeContents(db, universeId)).stories).toBe(1);
 		expect((await universeSkeleton(db, universeId)).map((s) => s.storyId)).toEqual([keptStoryId]);
@@ -178,6 +184,7 @@ describe('story trash', () => {
 	});
 
 	it('refuses by-id lookups, the Assistant, and the review link', async () => {
+		await trashStory(db, ownerId, storyId);
 		await expect(ownedStory('low-tide', ownerId, db)).rejects.toMatchObject({ status: 404 });
 		await expect(ownedStory(storyId, ownerId, db)).rejects.toMatchObject({ status: 404 });
 		expect(await ownedScene(db, ownerId, sceneId)).toBeNull();
@@ -193,6 +200,7 @@ describe('story trash', () => {
 	});
 
 	it('restore brings the story back whole under the same slug', async () => {
+		await trashStory(db, ownerId, storyId);
 		expect(await restoreStory(db, strangerId, storyId)).toBe(false);
 		const owner = { id: ownerId, displayName: 'T' };
 		expect(

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -44,6 +44,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table revisions, scenes, chapters, characters, stories, universes, users cascade'
 	);
@@ -77,6 +80,17 @@ beforeAll(async () => {
 afterAll(async () => {
 	await pool.end();
 });
+
+// A revision for the scene and one for Alice, renamed to Alice Vane.
+async function seedRevisions() {
+	await recordRevision(db, 'scene', sceneId, 'First draft.');
+	await saveCharacter(db, aliceId, ownerId, {
+		name: 'Alice Vane',
+		aliases: [],
+		summaryMd: null,
+		bodyMd: 'A smuggler with debts.'
+	});
+}
 
 describe('recordRevision', () => {
 	it('coalesces a changed autosave into the latest, and skips an unchanged one', async () => {
@@ -171,13 +185,14 @@ describe('save paths record revisions', () => {
 
 describe('createCheckpoint', () => {
 	it('snapshots the current body with a label and checks ownership', async () => {
+		await recordRevision(db, 'scene', sceneId, 'An autosave that never reached the scene.');
 		const ok = await createCheckpoint(db, ownerId, 'scene', sceneId, 'Plotted');
 		expect(ok).toMatchObject({ ok: true });
 		const rows = await listRevisions(db, 'scene', sceneId);
 		expect(rows[0]).toMatchObject({ reason: 'checkpoint', label: 'Plotted' });
 		const revision = await getRevision(db, rows[0].id, 'scene', sceneId);
-		// The checkpoint snapshots the stored scene body, untouched by the
-		// revision rows the earlier cases recorded.
+		// The checkpoint snapshots the stored scene body, not the latest
+		// revision row.
 		expect(revision?.bodyMd).toBe('First draft.');
 
 		expect(await createCheckpoint(db, strangerId, 'scene', sceneId)).toMatchObject({
@@ -211,6 +226,7 @@ describe('restoreRevision', () => {
 	});
 
 	it('rejects a revision belonging to another entity', async () => {
+		await seedRevisions();
 		const [aliceRevision] = await listRevisions(db, 'character', aliceId);
 		const result = await restoreRevision(db, ownerId, aliceRevision.id, 'scene', sceneId);
 		expect(result).toMatchObject({
@@ -221,6 +237,7 @@ describe('restoreRevision', () => {
 	});
 
 	it('rejects another user', async () => {
+		await seedRevisions();
 		const [revision] = await listRevisions(db, 'scene', sceneId);
 		expect(await restoreRevision(db, strangerId, revision.id, 'scene', sceneId)).toMatchObject({
 			ok: false,
@@ -232,6 +249,8 @@ describe('restoreRevision', () => {
 
 describe('timelines', () => {
 	it('story timeline lists scene revisions with names', async () => {
+		await seedRevisions();
+		await recordRevision(db, 'scene', sceneId, 'Second draft.', 'checkpoint');
 		const rows = await storyTimeline(db, storyId);
 		const types = new Set(rows.map((row) => row.entityType));
 		expect(types).toEqual(new Set(['scene']));
@@ -242,6 +261,7 @@ describe('timelines', () => {
 	});
 
 	it('universe timeline spans entities and scenes, with story context', async () => {
+		await seedRevisions();
 		const rows = await universeTimeline(db, universeId);
 		const types = new Set(rows.map((row) => row.entityType));
 		expect(types).toEqual(new Set(['character', 'scene']));
@@ -305,6 +325,8 @@ describe('universe timeline limits', () => {
 	});
 
 	it('counts every revision in the universe', async () => {
+		await seedRevisions();
+		await recordRevision(db, 'scene', sceneId, 'Second draft.', 'checkpoint');
 		const [{ total }] = (
 			await pool.query(
 				`select count(*)::int as total from revisions r
@@ -314,7 +336,7 @@ describe('universe timeline limits', () => {
 				[universeId]
 			)
 		).rows;
-		expect(total).toBeGreaterThan(0);
+		expect(total).toBe(3);
 		expect(await universeRevisionCount(db, universeId)).toBe(total);
 	});
 });

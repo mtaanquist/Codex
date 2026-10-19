@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { asc, eq } from 'drizzle-orm';
@@ -42,6 +42,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table entity_mentions, scenes, chapters, characters, stories, universes, users cascade'
 	);
@@ -103,7 +106,9 @@ describe('rebuildSceneMentions', () => {
 	});
 
 	it('skips characters with auto-detect off', async () => {
+		await rebuildSceneMentions(db, sceneId);
 		const rows = await mentionRows(sceneId);
+		expect(rows).toHaveLength(2);
 		expect(rows.every((row) => row.targetId === aliceId)).toBe(true);
 	});
 
@@ -209,6 +214,10 @@ describe('reconcile', () => {
 
 	it('leaves scenes alone when an entity edit touches no names', async () => {
 		// A bio autosave bumps updated_at but changes nothing a scene can mention.
+		await pool.query(`update scenes set updated_at = now() - interval '5 seconds' where id = $1`, [
+			sceneId
+		]);
+		await rebuildSceneMentions(db, sceneId);
 		await pool.query(
 			`update characters set updated_at = now() + interval '1 second' where id = $1`,
 			[aliceId]

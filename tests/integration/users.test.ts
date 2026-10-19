@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
@@ -14,12 +14,24 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool);
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 });
 
 afterAll(async () => {
 	await pool.end();
 });
+
+async function insertAda() {
+	await db.insert(users).values({
+		email: 'ada@example.com',
+		displayName: 'Ada',
+		passwordHash: 'not-a-real-hash',
+		role: 'admin'
+	});
+}
 
 describe('users table', () => {
 	it('inserts a user and reads it back with defaults applied', async () => {
@@ -49,6 +61,7 @@ describe('users table', () => {
 	});
 
 	it('rejects a duplicate email', async () => {
+		await insertAda();
 		const error: unknown = await db
 			.insert(users)
 			.values({
@@ -69,6 +82,7 @@ describe('users table', () => {
 	});
 
 	it('treats handles as case-insensitive', async () => {
+		await insertAda();
 		await db.update(users).set({ handle: 'Ada' }).where(eq(users.email, 'ada@example.com'));
 
 		const [byLower] = await db.select().from(users).where(eq(users.handle, 'ada'));

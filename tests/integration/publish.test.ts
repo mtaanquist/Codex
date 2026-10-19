@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
@@ -40,6 +40,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table publication_assets, publications, assets, scenes, chapters, stories, universes, users cascade'
 	);
@@ -52,7 +55,7 @@ beforeAll(async () => {
 			passwordHash: 'x',
 			role: 'user',
 			handle: 'inkwright',
-			publicArchiveEnabled: false
+			publicArchiveEnabled: true
 		})
 		.returning();
 	authorId = author.id;
@@ -95,11 +98,11 @@ afterAll(async () => {
 
 describe('publishStory', () => {
 	it('is gated on the admin-granted archive and a handle', async () => {
+		await db.update(users).set({ publicArchiveEnabled: false }).where(eq(users.id, authorId));
 		expect(await publishStory(db, authorId, storyId)).toMatchObject({
 			ok: false,
 			reason: 'the site admin has not enabled your public archive'
 		});
-		await db.update(users).set({ publicArchiveEnabled: true }).where(eq(users.id, authorId));
 	});
 
 	it('freezes the prose into an edition', async () => {
@@ -114,6 +117,7 @@ describe('publishStory', () => {
 	});
 
 	it('keeps the edition frozen while the draft moves on, until republish', async () => {
+		await publishStory(db, authorId, storyId);
 		await db.update(scenes).set({ bodyMd: 'The gate stayed shut.' }).where(eq(scenes.id, sceneId));
 		let edition = await publicEdition(db, 'inkwright', storyId);
 		expect((edition!.content as EditionContent).chapters[0].scenes[0].bodyMd).toBe(
@@ -135,6 +139,7 @@ describe('publishStory', () => {
 
 describe('shelf and visibility', () => {
 	it('lists public stories on the shelf; unlisted stays direct-link only', async () => {
+		await publishStory(db, authorId, storyId);
 		expect(await publicShelf(db, 'inkwright')).toHaveLength(1);
 
 		await db.update(stories).set({ visibility: 'unlisted' }).where(eq(stories.id, storyId));
@@ -143,24 +148,27 @@ describe('shelf and visibility', () => {
 
 		await db.update(stories).set({ visibility: 'private' }).where(eq(stories.id, storyId));
 		expect(await publicEdition(db, 'inkwright', storyId)).toBeNull();
-		await db.update(stories).set({ visibility: 'public' }).where(eq(stories.id, storyId));
 	});
 });
 
 describe('takedown and covers', () => {
 	it('an admin takedown hides the edition without touching the source', async () => {
+		await publishStory(db, authorId, storyId);
 		const [current] = (await listPublications(db)).filter((row) => row.isCurrent);
 		expect(await takedownPublication(db, current.id)).toBe(true);
 		expect(await takedownPublication(db, current.id)).toBe(false);
 		expect(await publicEdition(db, 'inkwright', storyId)).toBeNull();
 		expect(await publicShelf(db, 'inkwright')).toHaveLength(0);
 		const [scene] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
-		expect(scene.bodyMd).toBe('The gate stayed shut.');
+		expect(scene.bodyMd).toBe('The gate opened.');
 	});
 
 	it('treats a cover as public only while an edition is readable', async () => {
 		const coverId = crypto.randomUUID();
 		await db.update(stories).set({ coverAssetId: coverId }).where(eq(stories.id, storyId));
+		const first = await publishStory(db, authorId, storyId);
+		if (!first.ok) throw new Error(first.reason);
+		await takedownPublication(db, first.publicationId);
 		// The only current edition is taken down.
 		expect(await isPublicAsset(db, coverId)).toBe(false);
 		await publishStory(db, authorId, storyId);
@@ -321,9 +329,11 @@ describe('public profile and avatar', () => {
 				storageKey: 'codex-assets/me'
 			})
 			.returning();
-		await db.update(users).set({ avatarAssetId: avatar.id }).where(eq(users.id, authorId));
+		await db
+			.update(users)
+			.set({ avatarAssetId: avatar.id, profilePublic: true })
+			.where(eq(users.id, authorId));
 
-		// profilePublic is true from the previous test.
 		expect(await isPublicAvatar(db, avatar.id)).toBe(true);
 		await db.update(users).set({ profilePublic: false }).where(eq(users.id, authorId));
 		expect(await isPublicAvatar(db, avatar.id)).toBe(false);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -20,6 +20,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 
 	const [owner] = await db
@@ -72,7 +75,7 @@ describe('saveCategories', () => {
 			{ id: emptyCat, name: 'Guilds', color: null }
 		]);
 		expect(drop).toMatchObject({ ok: false });
-		expect((drop as { reason: string }).reason).toContain('Old Lore');
+		expect((drop as { reason: string }).reason).toContain('Lore');
 
 		expect(await saveCategories(db, { universeId, ownerId }, [])).toMatchObject({ ok: false });
 		expect(
@@ -87,7 +90,7 @@ describe('saveCategories', () => {
 
 	it('accepts a palette token but rejects a hex colour and an over-long name', async () => {
 		const list = await listCategories(db, universeId);
-		const guild = list.find((row) => row.name === 'Guilds')!;
+		const guild = list.find((row) => row.name === 'Factions')!;
 		// A palette token the plan sidebar produces saves cleanly.
 		expect(
 			await saveCategories(
@@ -128,17 +131,14 @@ describe('saveCategories', () => {
 
 	it('deleting an emptied category works once nothing uses it', async () => {
 		const list = await listCategories(db, universeId);
-		const keep = list.filter((row) => row.name !== 'Rituals');
+		const keep = list.filter((row) => row.name !== 'Factions');
 		const result = await saveCategories(
 			db,
 			{ universeId, ownerId },
 			keep.map((row) => ({ id: row.id, name: row.name, color: row.color }))
 		);
 		expect(result).toEqual({ ok: true });
-		expect((await listCategories(db, universeId)).map((row) => row.name)).toEqual([
-			'Guilds',
-			'Old Lore'
-		]);
+		expect((await listCategories(db, universeId)).map((row) => row.name)).toEqual(['Lore']);
 	});
 });
 

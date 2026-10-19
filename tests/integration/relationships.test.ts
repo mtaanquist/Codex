@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { and, eq, isNull } from 'drizzle-orm';
+import { isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
@@ -37,6 +37,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	// Truncating universes cascades into relation_types (the FK pulls it
 	// in), so the built-ins are restored right after.
 	await pool.query(
@@ -92,6 +95,23 @@ beforeAll(async () => {
 afterAll(async () => {
 	await pool.end();
 });
+
+// Alice lives in Halden and is Bram's rival.
+async function seedRelationships() {
+	await createRelationship(db, ownerId, {
+		fromKind: 'character',
+		fromId: aliceId,
+		relationTypeId: typeId('lives_in'),
+		toId: haldenId,
+		notesMd: 'Since the toll war.'
+	});
+	await createRelationship(db, ownerId, {
+		fromKind: 'character',
+		fromId: aliceId,
+		relationTypeId: typeId('rival_of'),
+		toId: bramId
+	});
+}
 
 describe('listRelationTypes', () => {
 	it('returns the built-in library plus the universe own types', async () => {
@@ -176,16 +196,6 @@ describe('createRelationship', () => {
 		};
 		await db.insert(entityRelationships).values(values);
 		await expect(db.insert(entityRelationships).values(values)).rejects.toThrow();
-		// Leave the fixture as the other tests expect it.
-		await db
-			.delete(entityRelationships)
-			.where(
-				and(
-					eq(entityRelationships.fromId, bramId),
-					eq(entityRelationships.toId, haldenId),
-					eq(entityRelationships.relationTypeId, typeId('lives_in'))
-				)
-			);
 	});
 
 	it('rejects a relation that does not start from that kind', async () => {
@@ -242,6 +252,7 @@ describe('createRelationship', () => {
 
 describe('listEntityRelationships', () => {
 	it('renders forward on the source and reverse on the target', async () => {
+		await seedRelationships();
 		const fromAlice = await listEntityRelationships(db, universeId, {
 			kind: 'character',
 			id: aliceId
@@ -263,6 +274,7 @@ describe('listEntityRelationships', () => {
 	});
 
 	it('renders a symmetric relation with the same label on both ends', async () => {
+		await seedRelationships();
 		const fromAlice = await listEntityRelationships(db, universeId, {
 			kind: 'character',
 			id: aliceId
@@ -278,6 +290,7 @@ describe('listEntityRelationships', () => {
 
 describe('deleteRelationship', () => {
 	it('removes own rows and refuses others', async () => {
+		await seedRelationships();
 		const fromAlice = await listEntityRelationships(db, universeId, {
 			kind: 'character',
 			id: aliceId
