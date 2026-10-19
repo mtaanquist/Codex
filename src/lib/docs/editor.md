@@ -2,6 +2,8 @@
 
 The editor is where you draft scenes. It saves on its own as you type, so there is no save button; the status near the top shows when your work was last stored.
 
+If the same scene changed in another tab or on another device since you opened it, the editor stops saving and shows a notice above the text. Select "Load newer version" to switch to the other text; your unsaved edits in this window are dropped. Select "Keep mine" to save what you see here; the other version stays in History.
+
 The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
 ## Scenes and chapters

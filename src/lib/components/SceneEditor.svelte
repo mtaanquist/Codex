@@ -7,6 +7,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { createAutosave } from '$lib/autosave';
+	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -24,6 +25,7 @@
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
+	import SceneConflictBanner from './SceneConflictBanner.svelte';
 	import SelectionMenu from './SelectionMenu.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 
@@ -161,25 +163,40 @@
 	// scene id, so a different scene means a fresh instance.
 	// svelte-ignore state_referenced_locally
 	let titleValue = $state(title ?? '');
+	// Set when a save was refused because the scene changed elsewhere.
+	let conflict = $state<SceneConflict | null>(null);
+	// svelte-ignore state_referenced_locally
+	const saver = createSceneSaver(sceneId, body, (next) => (conflict = next));
 	const autosave = createAutosave({
 		debounceMs: SAVE_DEBOUNCE_MS,
 		onStatus: (status) => onStatus(status),
 		save: async ({ keepalive }) => {
 			if (!view) return;
-			const response = await fetch(`/api/scenes/${sceneId}`, {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
+			await saver.save({
 				keepalive,
-				body: JSON.stringify({
-					title: titleValue,
-					bodyMd: view.state.doc.toString(),
-					// Marker anchors as the editor mapped them through edits.
-					markers: markerHandle.anchors(view)
-				})
+				title: titleValue,
+				bodyMd: view.state.doc.toString(),
+				// Marker anchors as the editor mapped them through edits.
+				markers: markerHandle.anchors(view)
 			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
 		}
 	});
+
+	// Swap in the newer text; the edits made here since are dropped.
+	function loadNewer() {
+		if (!view || !conflict) return;
+		const newer = conflict;
+		saver.adopt(newer.bodyMd);
+		titleValue = newer.title ?? '';
+		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: newer.bodyMd } });
+		void autosave.flush();
+	}
+
+	function keepMine() {
+		if (!conflict) return;
+		saver.keepMine(conflict.bodyMd);
+		void autosave.flush();
+	}
 	const scheduleSave = autosave.schedule;
 
 	// A new marker's anchors must land against saved text, so the prose is
@@ -475,6 +492,9 @@
 		style={editorStyle}
 		oncontextmenu={onPaneContextMenu}
 	>
+		{#if conflict}
+			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+		{/if}
 		<div class="editor-cm" bind:this={editorEl}></div>
 	</div>
 {:else}
@@ -509,6 +529,9 @@
 			oncontextmenu={onPaneContextMenu}
 		>
 			<div class="editor" style={editorStyle}>
+				{#if conflict}
+					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+				{/if}
 				<input
 					class="editor-title-input"
 					type="text"
