@@ -187,15 +187,20 @@ export function mergePageSetup(
 	return normalisePageSetup({ ...userRaw, ...storyRaw });
 }
 
-// Escapes a user value for a CSS string literal. The '<' is escaped as a CSS
+// Escapes a user value for a CSS string literal. Control characters become
+// spaces, since a raw newline, carriage return, or form feed ends a CSS string
+// and would let the rest of the value inject rules. The '<' is escaped as a CSS
 // hex escape so the value can never form a literal '</style>' that would close
 // the surrounding style element in the print HTML or EPUB XHTML.
 export function cssEscape(text: string): string {
-	return text
-		.replaceAll('\\', '\\\\')
-		.replaceAll("'", "\\'")
-		.replaceAll('\n', ' ')
-		.replaceAll('<', '\\3c ');
+	return (
+		text
+			.replaceAll('\\', '\\\\')
+			.replaceAll("'", "\\'")
+			// eslint-disable-next-line no-control-regex
+			.replace(/[\u0000-\u001f\u007f]/g, ' ')
+			.replaceAll('<', '\\3c ')
+	);
 }
 
 // The parameterized print stylesheet: page geometry, typography, scene

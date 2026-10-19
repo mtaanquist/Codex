@@ -49,6 +49,13 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+    # The start period covers migrations, which run before the app listens.
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 5 -O /dev/null http://127.0.0.1:3000/healthz || exit 1']
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
@@ -58,6 +65,9 @@ services:
     build: .
     restart: unless-stopped
     command: codex-worker
+    # Time for running jobs to wind down on a stop or redeploy before Docker
+    # kills the process; the worker hands back what is left before then.
+    stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD:-codex}@db:5432/codex
       # Off-site backups; off until the bucket and keys are set.
@@ -157,7 +167,8 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - app
+      app:
+        condition: service_healthy
 
 volumes:
   db-data:
