@@ -186,7 +186,9 @@ export async function listStaleMentionScenes(
 		join stories st on st.id = s.story_id
 		where s.mentions_indexed_at is null
 			or s.mentions_indexed_at < s.updated_at
-			or s.mentions_indexed_at < greatest(
+			-- A trashed scene holds no mentions, so entity edits cannot make it
+			-- stale; only its own change (the trashing) needs a pass.
+			or s.deleted_at is null and s.mentions_indexed_at < greatest(
 				coalesce((select max(updated_at) from characters where universe_id = st.universe_id), to_timestamp(0)),
 				coalesce((select max(updated_at) from places where universe_id = st.universe_id), to_timestamp(0)),
 				coalesce((select max(updated_at) from lore_entries where universe_id = st.universe_id), to_timestamp(0))
