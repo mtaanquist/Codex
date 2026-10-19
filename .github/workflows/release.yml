@@ -2,15 +2,18 @@ name: Release
 
 # Tags a released version on main and publishes the GitHub release. Exists so
 # a remote session that can merge release PRs but cannot push tags can finish
-# the release flow; run it after the release PR has landed on main. The tag is
-# pushed with the workflow token, which GitHub deliberately keeps from
-# triggering the tag-push image build, so this dispatches the image workflow
-# itself at the new tag.
+# the release flow; run it after the release PR has landed on main and CI has
+# passed on the merge commit. The tag is pushed with the workflow token, which
+# GitHub deliberately keeps from triggering the tag-push image build, so this
+# dispatches the image workflow itself at the new tag.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to tag, X.Y.Z; must match package.json on main'
+        description: 'Version to tag, X.Y.Z; must match package.json at the commit'
+        required: true
+      sha:
+        description: 'Full SHA of the commit on main to tag (the release PR merge commit)'
         required: true
       notes:
         description: 'Release notes; left empty, GitHub generates them'
@@ -29,29 +32,62 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
-      - name: Verify the version matches main
+          fetch-depth: 0
+      - name: Verify the commit and version
         env:
           VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
         run: |
-          pkg="$(node -p "require('./package.json').version")"
-          if [ "$pkg" != "$VERSION" ]; then
-            echo "package.json on main is $pkg, not $VERSION; merge the release PR first"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be X.Y.Z, got $VERSION"
             exit 1
           fi
-      - name: Tag main and publish the release
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "SHA must be the full 40-character commit SHA, got $SHA"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SHA" HEAD 2>/dev/null; then
+            echo "$SHA is not a commit on main"
+            exit 1
+          fi
+          pkg="$(git show "$SHA:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+          if [ "$pkg" != "$VERSION" ]; then
+            echo "package.json at $SHA is $pkg, not $VERSION; merge the release PR first"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "Tag v$VERSION already exists"
+            exit 1
+          fi
+      - name: Verify CI passed on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          # Newest CI run for the push of this commit to main; a re-run
+          # updates the same run, so its conclusion is the current verdict.
+          result="$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$SHA" -f event=push -f branch=main \
+            --jq '.workflow_runs | sort_by(.created_at) | last | if . == null then "" else "\(.status) \(.conclusion)" end')"
+          if [ "$result" != "completed success" ]; then
+            echo "CI on main for $SHA is '${result:-not found}', not 'completed success'; wait for it or fix it first"
+            exit 1
+          fi
+      - name: Tag the commit and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
           NOTES: ${{ inputs.notes }}
         run: |
           tag="v$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "$tag"
+          git tag -a "$tag" "$SHA" -m "$tag"
           git push origin "$tag"
           if [ -n "$NOTES" ]; then
-            gh release create "$tag" --title "$tag" --notes "$NOTES"
+            gh release create "$tag" --verify-tag --title "$tag" --notes "$NOTES"
           else
-            gh release create "$tag" --title "$tag" --generate-notes
+            gh release create "$tag" --verify-tag --title "$tag" --generate-notes
           fi
           gh workflow run release-image.yml --ref "$tag"

@@ -17,9 +17,31 @@ permissions:
 
 jobs:
   publish:
+    # A dispatch from a branch would publish unreleased code.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Re-running an older tag must not move `latest` or `vX.Y` backwards.
+      - name: Rank this tag among the releases
+        id: rank
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          strict='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          tags="$(git ls-remote --tags --refs origin | sed 's#.*refs/tags/##' | grep -E "$strict" || true)"
+          highest="$(printf '%s\n' "$tags" | sort -V | tail -n1)"
+          series="${TAG%.*}."
+          highest_in_series="$(printf '%s\n' "$tags" | awk -v p="$series" 'index($0, p) == 1' | sort -V | tail -n1)"
+          latest=false
+          minor=false
+          if [[ "$TAG" =~ $strict ]]; then
+            [ "$TAG" = "$highest" ] && latest=true
+            [ "$TAG" = "$highest_in_series" ] && minor=true
+          fi
+          echo "Tag $TAG: newest release $highest, newest in series $highest_in_series"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -30,10 +52,13 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
+          # The default (auto) adds `latest` to every semver tag; the rank
+          # step decides it instead.
+          flavor: latest=false
           tags: |
             type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern=v{{major}}.{{minor}},enable=${{ steps.rank.outputs.minor }}
+            type=raw,value=latest,enable=${{ steps.rank.outputs.latest }}
       - uses: docker/build-push-action@v7
         with:
           context: .
