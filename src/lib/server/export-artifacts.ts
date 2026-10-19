@@ -145,8 +145,8 @@ export async function isolatePage(page: IsolatablePage): Promise<void> {
 }
 
 // Renders the document with headless Chromium via puppeteer-core, driving
-// the system browser (installed in the Docker image; CHROMIUM_PATH points
-// elsewhere when needed). Loaded lazily so nothing outside the worker's PDF
+// the system browser (installed in the Docker image and found by
+// chromiumPath; CHROMIUM_PATH points elsewhere when needed). Loaded lazily so nothing outside the worker's PDF
 // path pays for it.
 export async function renderEditionPdf(
 	html: string,

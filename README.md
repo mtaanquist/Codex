@@ -78,7 +78,7 @@ services:
         condition: service_healthy
 
   db:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine3.24
     restart: unless-stopped
     environment:
       POSTGRES_USER: codex
