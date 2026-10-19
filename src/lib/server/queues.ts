@@ -32,6 +32,12 @@ export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
 // policy still applies, so a run whose worker genuinely died is retried once
 // the expiry passes (and resumes through the recorded progress).
 export const ASSISTANT_JOB_EXPIRY_SECONDS = 6 * 60 * 60;
+// The worker refreshes a running Assistant job's heartbeat every half of this;
+// a job whose worker stops refreshing is failed and retried.
+export const ASSISTANT_JOB_HEARTBEAT_SECONDS = 60;
+// Assistant jobs the worker runs at once, across writers. Each writer still
+// gets one at a time (see assistantSendOptions in jobs.ts).
+export const ASSISTANT_JOB_CONCURRENCY = 4;
 
 // How long a notification digest waits before sending, so a busy thread
 // lands as one email instead of one per comment. Lives here (not jobs.ts,

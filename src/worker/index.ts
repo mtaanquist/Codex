@@ -14,6 +14,7 @@ import {
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	USER_EXPORT_QUEUE,
+	ASSISTANT_JOB_CONCURRENCY,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	DIGEST_DELAY_SECONDS
@@ -200,6 +201,13 @@ function staged(notes: number): string {
 	return `, with ${notes} note${notes === 1 ? '' : 's'} left`;
 }
 
+// Assistant jobs run several at once, but one per writer (the job's group),
+// so one writer's slow or hung endpoint does not hold up anyone else.
+const ASSISTANT_WORK_OPTIONS = {
+	localConcurrency: ASSISTANT_JOB_CONCURRENCY,
+	localGroupConcurrency: 1
+};
+
 // Whole-story or single-chapter Assistant review: fan over the scenes in scope,
 // stage the Assistant's notes through the review tools, then tell the owner it
 // is ready (or that the endpoint could not be reached). Matches the inline
@@ -211,7 +219,7 @@ await boss.work<{
 	chapterId?: string;
 	categories?: ReviewCategory[];
 	mode?: 'full' | 'continuity';
-}>(ASSISTANT_REVIEW_QUEUE, async (jobs) => {
+}>(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, async (jobs) => {
 	for (const job of jobs) {
 		const { userId, storyId, universeId, chapterId, categories, mode } = job.data;
 
@@ -239,7 +247,8 @@ await boss.work<{
 				const result = await reviewUniverseContinuity(db, {
 					userId,
 					universeId,
-					jobId: job.id
+					jobId: job.id,
+					signal: job.signal
 				});
 				if (!result.ran) {
 					title = `There was nothing to compare for continuity in "${universe.name}".`;
@@ -289,7 +298,12 @@ await boss.work<{
 		if (mode === 'continuity') {
 			let title: string;
 			try {
-				const result = await reviewStoryContinuity(db, { userId, storyId, jobId: job.id });
+				const result = await reviewStoryContinuity(db, {
+					userId,
+					storyId,
+					jobId: job.id,
+					signal: job.signal
+				});
 				// The capped wording replaces the outcome line, so it is built before
 				// the suffixes rather than over the top of them.
 				if (result.capped) {
@@ -326,7 +340,8 @@ await boss.work<{
 				storyId,
 				chapterId,
 				categories,
-				jobId: job.id
+				jobId: job.id,
+				signal: job.signal
 			});
 			const problem = firstFailure(result.failures);
 			if (result.capped) {
@@ -364,42 +379,46 @@ await boss.work<{
 // summaries (the metadata that feeds recap and context). Owner re-checked at run
 // time; the writer is notified when it is done. Like the review job, the gateway
 // is called directly with no HTTP hop.
-await boss.work<{ userId: string; storyId: string }>(ASSISTANT_SUMMARIES_QUEUE, async (jobs) => {
-	for (const job of jobs) {
-		const { userId, storyId } = job.data;
-		const [story] = await db
-			.select({
-				ownerId: schema.stories.ownerId,
-				title: schema.stories.title,
-				slug: schema.stories.slug
-			})
-			.from(schema.stories)
-			.where(eq(schema.stories.id, storyId));
-		if (!story || story.ownerId !== userId) {
-			console.warn(`assistant summaries: story ${storyId} not owned by ${userId}, skipping`);
-			continue;
+await boss.work<{ userId: string; storyId: string }>(
+	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_WORK_OPTIONS,
+	async (jobs) => {
+		for (const job of jobs) {
+			const { userId, storyId } = job.data;
+			const [story] = await db
+				.select({
+					ownerId: schema.stories.ownerId,
+					title: schema.stories.title,
+					slug: schema.stories.slug
+				})
+				.from(schema.stories)
+				.where(eq(schema.stories.id, storyId));
+			if (!story || story.ownerId !== userId) {
+				console.warn(`assistant summaries: story ${storyId} not owned by ${userId}, skipping`);
+				continue;
+			}
+			const result = await summariseStory(db, { userId, storyId, signal: job.signal });
+			const written = result.scenes + result.chapters;
+			const href = `/stories/${story.slug}`;
+			let title: string;
+			if (written === 0 && result.failed > 0) {
+				title = `The Assistant could not summarise "${story.title}". Check the endpoint in your settings.`;
+			} else if (written === 0) {
+				title = `The Assistant found nothing to summarise in "${story.title}".`;
+			} else {
+				title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
+			}
+			const digestUsers = await insertNotifications(db, [userId], 'assistant_summaries', {
+				title,
+				href
+			});
+			await queueDigests(digestUsers);
+			console.log(
+				`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
+			);
 		}
-		const result = await summariseStory(db, { userId, storyId });
-		const written = result.scenes + result.chapters;
-		const href = `/stories/${story.slug}`;
-		let title: string;
-		if (written === 0 && result.failed > 0) {
-			title = `The Assistant could not summarise "${story.title}". Check the endpoint in your settings.`;
-		} else if (written === 0) {
-			title = `The Assistant found nothing to summarise in "${story.title}".`;
-		} else {
-			title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
-		}
-		const digestUsers = await insertNotifications(db, [userId], 'assistant_summaries', {
-			title,
-			href
-		});
-		await queueDigests(digestUsers);
-		console.log(
-			`assistant summaries: story ${storyId} - ${result.scenes} scenes, ${result.chapters} chapters, ${result.failed} failed`
-		);
 	}
-});
+);
 
 await boss.work<{ trigger?: 'scheduled' | 'manual' }>(BACKUP_QUEUE, async (jobs) => {
 	for (const job of jobs) {

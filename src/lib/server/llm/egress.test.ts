@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
 	classifyAddress,
 	decideEgress,
 	egressHttpRequest,
 	EgressDeniedError,
+	EgressTimeoutError,
 	type AddressClass,
 	type EgressPolicy
 } from './egress';
@@ -95,5 +98,37 @@ describe('egressHttpRequest', () => {
 		await expect(
 			http('http://example.com/v1/chat/completions', { method: 'POST', headers: {}, body: '{}' })
 		).rejects.toBeInstanceOf(EgressDeniedError);
+	});
+
+	it('drops an endpoint that accepts the connection and never answers', async () => {
+		const server = createServer(() => {});
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		const { port } = server.address() as AddressInfo;
+		try {
+			const http = egressHttpRequest({ policy: 'open', allowlist: [] }, 100);
+			await expect(
+				http(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: {} })
+			).rejects.toBeInstanceOf(EgressTimeoutError);
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
+	});
+
+	it('drops a response body that stalls part way', async () => {
+		const server = createServer((_req, res) => {
+			res.writeHead(200, { 'content-type': 'text/event-stream' });
+			res.write('data: {}\n\n');
+		});
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		const { port } = server.address() as AddressInfo;
+		try {
+			const http = egressHttpRequest({ policy: 'open', allowlist: [] }, 100);
+			const response = await http(`http://127.0.0.1:${port}/`, { method: 'GET', headers: {} });
+			await expect(response.text()).rejects.toThrow();
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 	});
 });
