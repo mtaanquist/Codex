@@ -547,14 +547,15 @@ revisions (
   entity_type   text not null,   -- 'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note'
   entity_id     uuid not null,
   body_md       text not null,
-  reason        text,            -- 'autosave' | 'manual_checkpoint' | 'pre_import' etc
+  word_count    integer,         -- of body_md, stored at write time; null on old rows
+  reason        text,            -- 'autosave' | 'checkpoint' | 'restore' | 'suggestion'
   created_at    timestamptz not null
 )
 
 -- index on (entity_type, entity_id, created_at desc) for timeline queries
 ```
 
-Inserted on debounced save. Later optimisation: snapshot every N revisions, store diffs between snapshots. Don't bother until the table grows large.
+Inserted on debounced save; autosaves within two minutes coalesce into one row. Autosaves older than ninety days are thinned daily to the first and last one per entity per UTC day, never touching checkpoints, restores, suggestions, or revisions pinned as a review base. `word_count` lets Insights read a day's words without re-counting bodies. Later optimisation: snapshot every N revisions, store diffs between snapshots. Don't bother until the table grows large.
 
 ---
 

@@ -88,8 +88,8 @@
 		<div>
 			<h2 class="admin-block-title">Asset storage</h2>
 			<p class="admin-block-sub">
-				Any S3-compatible bucket works: S3, Backblaze B2, MinIO, R2. Use a different bucket than the
-				one holding backups, so a database restore keeps every image link valid.
+				Any S3-compatible bucket works: S3, Backblaze B2, RustFS, R2. Use a different bucket than
+				the one holding backups, so a database restore keeps every image link valid.
 			</p>
 		</div>
 	</div>

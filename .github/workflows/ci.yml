@@ -10,6 +10,13 @@ jobs:
   quality:
     name: Lint, check, unit, build
     runs-on: ubuntu-latest
+    env:
+      # The backup store's multipart round trip against a throwaway RustFS
+      # (tests/integration/s3-backup-store.test.ts), started in a step below.
+      TEST_S3_ENDPOINT: http://localhost:9000
+      TEST_S3_BUCKET: codex-backups-test
+      TEST_S3_ACCESS_KEY_ID: codex-rustfs
+      TEST_S3_SECRET_ACCESS_KEY: codex-rustfs-secret
     services:
       postgres:
         image: postgres:18-alpine
@@ -39,6 +46,8 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           # The runner image preinstalls an older client; put 18 first.
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+      - name: Start RustFS (backup store test)
+        run: .github/scripts/start-rustfs.sh "$TEST_S3_ACCESS_KEY_ID" "$TEST_S3_SECRET_ACCESS_KEY" "$TEST_S3_BUCKET"
       - run: npm ci
       - run: npm run lint
       - run: npm run check
@@ -77,20 +86,7 @@ jobs:
           node-version: 24
           cache: npm
       - name: Start RustFS (asset uploads)
-        run: |
-          docker run -d --name rustfs --network host \
-            -e RUSTFS_ACCESS_KEY="$ASSET_S3_ACCESS_KEY_ID" -e RUSTFS_SECRET_KEY="$ASSET_S3_SECRET_ACCESS_KEY" \
-            rustfs/rustfs:1.0.3
-          # /health can answer before the S3 API does (a 503 on the first
-          # PUT), so retry the bucket create itself. 409 means it exists.
-          for attempt in $(seq 1 30); do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT --aws-sigv4 aws:amz:us-east-1:s3 \
-              --user "$ASSET_S3_ACCESS_KEY_ID:$ASSET_S3_SECRET_ACCESS_KEY" \
-              "$ASSET_S3_ENDPOINT/$ASSET_S3_BUCKET" || true)
-            if [ "$code" = 200 ] || [ "$code" = 409 ]; then break; fi
-            if [ "$attempt" = 30 ]; then echo "RustFS bucket create failed: $code"; exit 1; fi
-            sleep 1
-          done
+        run: .github/scripts/start-rustfs.sh "$ASSET_S3_ACCESS_KEY_ID" "$ASSET_S3_SECRET_ACCESS_KEY" "$ASSET_S3_BUCKET"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

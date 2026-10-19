@@ -8,12 +8,14 @@ import {
 	bucketAssetLoader,
 	buildStoryZip,
 	cachedAssetLoader,
+	readAssets,
 	type AssetLoader,
 	type ExportAsset,
 	type ExportStory,
 	type StoryContent
 } from './export.ts';
 import { slugify } from '../slug.ts';
+import { uploadZip, type ZipArchive } from './zip-stream.ts';
 import { buildEpub } from './epub.ts';
 import type { EditionContent } from './publish.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
@@ -253,23 +255,23 @@ export async function generateEditionArtifacts(
 	const renderPdf = deps.renderPdf ?? renderEditionPdf;
 	const slug = slugify(edition.title, 'story');
 
-	const builders: {
-		format: ArtifactFormat;
-		build: () => Promise<{ filename: string; bytes: Uint8Array; contentType: string }>;
-	}[] = [
+	// The zip and EPUB stream into the bucket as they are written; the PDF
+	// comes back from the browser whole.
+	type Built = { contentType: string } & (ZipArchive | { filename: string; bytes: Uint8Array });
+	const builders: { format: ArtifactFormat; build: () => Promise<Built> }[] = [
 		{
 			format: 'markdown',
-			build: async () => {
-				const zip = await buildStoryZip(story, content, loadAssets);
-				return { ...zip, contentType: 'application/zip' };
-			}
+			build: async () => ({
+				...(await buildStoryZip(story, content, loadAssets)),
+				contentType: 'application/zip'
+			})
 		},
 		{
 			format: 'epub',
-			build: async () => {
-				const epub = await buildEpub(story, content, loadAssets, edition.coverAssetId, setup);
-				return { ...epub, contentType: 'application/epub+zip' };
-			}
+			build: async () => ({
+				...(await buildEpub(story, content, loadAssets, edition.coverAssetId, setup)),
+				contentType: 'application/epub+zip'
+			})
 		},
 		{
 			format: 'pdf',
@@ -277,7 +279,8 @@ export async function generateEditionArtifacts(
 				const referenced = [
 					...new Set(content.scenes.flatMap((scene) => findAssetReferences(scene.bodyMd)))
 				];
-				const images = new Map((await loadAssets(referenced)).map((asset) => [asset.id, asset]));
+				const loaded = await readAssets(await loadAssets(referenced));
+				const images = new Map(loaded.map((asset) => [asset.id, asset]));
 				const html = buildEditionHtml(
 					{ title: edition.title, author: edition.author },
 					content,
@@ -299,7 +302,13 @@ export async function generateEditionArtifacts(
 		try {
 			const artifact = await build();
 			const storageKey = `${prefix}/exports/${publicationId}/${format}`;
-			await store.put(storageKey, asBuffer(artifact.bytes), artifact.contentType);
+			let byteSize: number;
+			if ('entries' in artifact) {
+				byteSize = await uploadZip(store, storageKey, artifact.entries, artifact.contentType);
+			} else {
+				await store.put(storageKey, asBuffer(artifact.bytes), artifact.contentType);
+				byteSize = artifact.bytes.byteLength;
+			}
 			await db
 				.insert(exportArtifacts)
 				.values({
@@ -308,7 +317,7 @@ export async function generateEditionArtifacts(
 					storageKey,
 					filename: artifact.filename,
 					contentType: artifact.contentType,
-					byteSize: artifact.bytes.byteLength
+					byteSize
 				})
 				.onConflictDoUpdate({
 					target: [exportArtifacts.publicationId, exportArtifacts.format],
@@ -316,7 +325,7 @@ export async function generateEditionArtifacts(
 						storageKey,
 						filename: artifact.filename,
 						contentType: artifact.contentType,
-						byteSize: artifact.bytes.byteLength,
+						byteSize,
 						createdAt: sql`now()`
 					}
 				});

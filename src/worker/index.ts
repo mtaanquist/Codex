@@ -11,6 +11,7 @@ import {
 	PURGE_ACCOUNTS_QUEUE,
 	PURGE_REVIEW_RUNS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
+	THIN_REVISIONS_QUEUE,
 	SWEEP_DELETED_OBJECTS_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
@@ -62,6 +63,7 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
+import { thinRevisions } from '../lib/server/revisions.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 import { stopWorker } from './shutdown.ts';
@@ -103,6 +105,7 @@ await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
+await boss.createQueue(THIN_REVISIONS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
@@ -542,6 +545,11 @@ await boss.work(PURGE_REVIEW_RUNS_QUEUE, async () => {
 	if (deleted > 0) console.log(`purge: ${deleted} review run row(s) deleted`);
 });
 
+await boss.work(THIN_REVISIONS_QUEUE, async () => {
+	const removed = await thinRevisions(db);
+	if (removed > 0) console.log(`revisions: thinned ${removed} old autosave(s)`);
+});
+
 // Run the account purge sweep hourly; accounts past their grace window go.
 await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
 
@@ -552,6 +560,9 @@ await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' })
 
 // Old review progress goes once a day; nothing is time critical about it.
 await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
+
+// Old autosave history is thinned once a day, after the review-run sweep.
+await boss.schedule(THIN_REVISIONS_QUEUE, '35 4 * * *', {}, { tz: 'UTC' });
 
 // Sweep for stale mention indexes every five minutes, so a dropped rebuild
 // self-heals within minutes instead of waiting for the next save.
