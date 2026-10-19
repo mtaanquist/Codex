@@ -12,6 +12,7 @@ import {
 import { relatedEntitySummaries } from './relationships';
 import { listMentionPins } from './mention-pins';
 import type { MentionEntity } from '$lib/editor-mentions';
+import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '$lib/quick-card';
 
 export type ReviewMentionData = {
 	entities: MentionEntity[];
@@ -25,7 +26,7 @@ const EMPTY: ReviewMentionData = { entities: [], storyMembers: [], pins: {} };
 // same shape the writing editor uses. For a guest link `restrictToMentioned`
 // trims the set to entities that actually appear in the story's scenes, so an
 // outside reviewer never receives summaries of entities the manuscript does
-// not mention. The author's own review keeps the full set, like the editor.
+// not mention. The author's own surfaces keep every entity, like the editor.
 export async function reviewMentionData(
 	db: Database,
 	opts: {
@@ -151,17 +152,14 @@ export async function reviewMentionData(
 			}))
 	];
 
-	// A guest only ever sees the quick card, so ship only what it renders (the
-	// top few details and related entities) - never the full authored list.
-	// The quick card shows 3 details and 4 related; the author keeps the full
-	// set, reachable through "Open full details".
-	const visible = opts.restrictToMentioned
-		? entities.map((entity) => ({
-				...entity,
-				details: entity.details?.slice(0, 3),
-				related: entity.related?.slice(0, 4)
-			}))
-		: entities;
+	// Every consumer renders the quick card only, so ship what it shows (the
+	// top few details and related entities), never the full authored list.
+	// "Open full details" fetches the whole entity on demand.
+	const visible = entities.map((entity) => ({
+		...entity,
+		details: entity.details?.slice(0, QUICK_CARD_DETAILS),
+		related: entity.related?.slice(0, QUICK_CARD_RELATED)
+	}));
 
 	const storyMembers = [...charMembers, ...placeMembers].map((row) => row.id).filter(keep);
 	const pinObj = Object.fromEntries([...pins].filter(([, id]) => keep(id)));

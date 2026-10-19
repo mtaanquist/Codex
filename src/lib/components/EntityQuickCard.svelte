@@ -1,6 +1,7 @@
 <script lang="ts">
 	import EntityBadge from './EntityBadge.svelte';
 	import type { MentionEntity } from '$lib/editor-mentions';
+	import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '$lib/quick-card';
 
 	// The read-only quick card shown when a mention is clicked in the review
 	// surface - the same fields the editor's hover card shows, never the full
@@ -35,7 +36,7 @@
 	{/if}
 	{#if entity.details && entity.details.length > 0}
 		<div class="pop-fields">
-			{#each entity.details.slice(0, 3) as detail (detail.label)}
+			{#each entity.details.slice(0, QUICK_CARD_DETAILS) as detail (detail.label)}
 				<div class="pop-field">
 					<span class="pop-field-k">{detail.label}</span>
 					<span class="pop-field-v">{detail.value}</span>
@@ -45,7 +46,7 @@
 	{/if}
 	{#if entity.related && entity.related.length > 0}
 		<div class="pop-related">
-			{#each entity.related.slice(0, 4) as other (other.name)}
+			{#each entity.related.slice(0, QUICK_CARD_RELATED) as other (other.name)}
 				<span class="chip">
 					<EntityBadge name={other.name} categoryColor={other.color} size="dot" />
 					{other.name}
