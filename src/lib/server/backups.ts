@@ -428,6 +428,11 @@ export async function restoreDumpFile(databaseUrl: string, dumpFile: string): Pr
 	let scriptErr = '';
 	script.stderr?.on('data', (chunk: Buffer) => (scriptErr += chunk.toString()));
 	script.stdout!.pipe(psql.stdin!, { end: false });
+	// If psql stops early (a refused connection, an error in the script), the
+	// pipe stalls and pg_restore would wait forever on a full buffer. It only
+	// reads the dump, so a hard kill loses nothing.
+	const stopScript = () => script.kill('SIGKILL');
+	void psqlExited.then(stopScript, stopScript);
 
 	// The COMMIT is only sent once the whole script was produced. Ending the
 	// input without it closes the session, which rolls everything back.
@@ -435,8 +440,10 @@ export async function restoreDumpFile(databaseUrl: string, dumpFile: string): Pr
 	if (scriptCode === 0) psql.stdin!.write('COMMIT;\n');
 	psql.stdin!.end();
 	const psqlCode = await psqlExited.catch(() => 1);
+	// psql's error comes first: when it stopped early, pg_restore's failure is
+	// only the kill above.
+	if (psqlCode !== 0) throw new Error(`psql exited with ${psqlCode}: ${psqlErr.trim()}`);
 	if (scriptCode !== 0) {
 		throw new Error(`pg_restore exited with ${scriptCode}: ${scriptErr.trim()}`);
 	}
-	if (psqlCode !== 0) throw new Error(`psql exited with ${psqlCode}: ${psqlErr.trim()}`);
 }

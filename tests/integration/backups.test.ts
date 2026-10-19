@@ -262,6 +262,23 @@ describe('pg_dump round trip', () => {
 				const [{ kept }] = (await restoredPool.query("select to_regclass('public.kept') as kept"))
 					.rows;
 				expect(kept).not.toBeNull();
+
+				// psql stopping early (here, a database that does not exist) fails
+				// the restore instead of leaving pg_restore stuck on a full pipe. The
+				// dump is made well past the pipe buffer so the stall would show.
+				await restoredPool.query('insert into kept select g from generate_series(1, 200000) g');
+				const big = `${dumpFile}.big`;
+				await run('pg_dump', [
+					'--format=custom',
+					'--compress=0',
+					'--file',
+					big,
+					restoreUrl.toString()
+				]);
+				const missingUrl = new URL(restoreUrl);
+				missingUrl.pathname = `${restoreUrl.pathname}_missing`;
+				await expect(restoreDumpFile(missingUrl.toString(), big)).rejects.toThrow(/psql exited/);
+				await rm(big, { force: true });
 			} finally {
 				await restoredPool.end();
 			}
