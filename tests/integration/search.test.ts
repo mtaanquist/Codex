@@ -122,6 +122,14 @@ describe('searchAll', () => {
 		expect(passages[0].href).toMatch(/^\/stories\/book-of-ash\?scene=[0-9a-f-]{36}$/);
 	});
 
+	it('skips prose passages for queries shorter than three characters', async () => {
+		// "ob" is inside "obsidian" but too short to search prose with.
+		const results = await searchAll(db, ownerId, 'ob');
+		expect(results.filter((result) => result.type === 'passage')).toEqual([]);
+		const three = await searchAll(db, ownerId, 'obs');
+		expect(three.filter((result) => result.type === 'passage')).toHaveLength(1);
+	});
+
 	it('restricts to one universe when given (the Assistant search_text tool)', async () => {
 		// A second universe whose name and story also match "ash", so the filter,
 		// not the absence of matches, is what narrows the results.

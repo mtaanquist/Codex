@@ -11,6 +11,7 @@ import {
 	entityRelationships,
 	exportArtifacts,
 	notifications,
+	pendingObjectDeletions,
 	places,
 	reviewComments,
 	publications,
@@ -394,8 +395,23 @@ describe('destroy', () => {
 	it('refuses a live universe, then purges a trashed one completely', async () => {
 		expect((await destroyUniverse(db, ownerId, universeId)).ok).toBe(false);
 		await trashUniverse(db, ownerId, universeId);
+		await db.insert(assets).values({
+			ownerId,
+			universeId,
+			kind: 'inline',
+			filename: 'gone.png',
+			contentType: 'image/png',
+			byteSize: 1,
+			storageKey: 'destroyed-img-key'
+		});
 		expect((await destroyUniverse(db, strangerId, universeId)).ok).toBe(false);
 		expect((await destroyUniverse(db, ownerId, universeId)).ok).toBe(true);
+		// The image object is queued for the deferred sweep, not removed now.
+		const queued = await db
+			.select()
+			.from(pendingObjectDeletions)
+			.where(eq(pendingObjectDeletions.storageKey, 'destroyed-img-key'));
+		expect(queued).toHaveLength(1);
 
 		expect(await db.select().from(universes).where(eq(universes.id, universeId))).toHaveLength(0);
 		expect(await db.select().from(stories).where(eq(stories.id, storyId))).toHaveLength(0);

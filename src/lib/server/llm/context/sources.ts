@@ -185,6 +185,15 @@ export async function precedingSceneBody(
 	return prev ?? null;
 }
 
+// The ids of a story's scenes that are not in the trash.
+export async function liveSceneIds(db: Database, storyId: string): Promise<string[]> {
+	const rows = await db
+		.select({ id: scenes.id })
+		.from(scenes)
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
+	return rows.map((row) => row.id);
+}
+
 export type SceneSummary = {
 	id: string;
 	title: string | null;
@@ -268,11 +277,19 @@ const MAX_UNIVERSE_STORIES = 25;
 // Every owned story in the universe as a chapter/scene skeleton, for the
 // universe-Plan outline and the universe-scoped list_scenes tool. Summaries
 // only, no bodies; the model pulls a body on demand with get_scene.
-export async function universeSkeleton(db: Database, universeId: string): Promise<StorySkeleton[]> {
+export async function universeSkeleton(
+	db: Database,
+	universeId: string,
+	// Narrows the skeleton to this one story; null matches no story at all.
+	onlyStoryId?: string | null
+): Promise<StorySkeleton[]> {
+	if (onlyStoryId === null) return [];
 	const storyRows = await db
 		.select({ id: stories.id, title: stories.title, brief: stories.brief })
 		.from(stories)
-		.where(eq(stories.universeId, universeId))
+		.where(
+			and(eq(stories.universeId, universeId), onlyStoryId ? eq(stories.id, onlyStoryId) : undefined)
+		)
 		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 	const out: StorySkeleton[] = [];
 	for (const story of storyRows.slice(0, MAX_UNIVERSE_STORIES)) {

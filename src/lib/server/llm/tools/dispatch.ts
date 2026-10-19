@@ -25,6 +25,18 @@ import { findTool } from './registry.ts';
 // payoff); the writes resolve the loaded scene's own owning story, never a
 // fixed ctx.storyId, which is undefined on the universe surface.
 
+export type ToolScope = {
+	// Targets for the scoped tools (reply_in_thread, update_suggestion), fixed
+	// by the calling surface so the model cannot reach another thread or
+	// suggestion even by inventing ids.
+	threadId?: string;
+	suggestionId?: string;
+	// Confine the scene reads (list_scenes, get_scene) to the focus story. Set
+	// where the reply is posted somewhere a guest reviewer can read it, so an
+	// injected instruction cannot pull in stories the guest was never shown.
+	storyOnly?: boolean;
+};
+
 export type ToolContext = {
 	db: Database;
 	userId: string;
@@ -34,10 +46,7 @@ export type ToolContext = {
 	// universe surface has none; write tools use the loaded scene's story, not
 	// this.
 	storyId?: string;
-	// Targets for the scoped tools (reply_in_thread, update_suggestion), fixed
-	// by the calling surface so the model cannot reach another thread or
-	// suggestion even by inventing ids.
-	scope?: { threadId?: string; suggestionId?: string };
+	scope?: ToolScope;
 	// The tools actually offered this turn. A call to anything else is refused:
 	// the prompt-level restriction ("do not leave new comments elsewhere") must
 	// hold even when the model ignores it or answers a cached tool schema.
@@ -184,6 +193,7 @@ function asString(value: unknown): string {
 // selects the scene's own owning storyId so the write tools attribute a staged
 // change to the right story even when the pass was launched from another.
 async function loadScene(ctx: ToolContext, sceneId: string) {
+	if (ctx.scope?.storyOnly && !ctx.storyId) return null;
 	const [row] = await ctx.db
 		.select({
 			id: scenes.id,
@@ -200,18 +210,23 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 				eq(scenes.id, sceneId),
 				eq(stories.universeId, ctx.universeId),
 				eq(stories.ownerId, ctx.userId),
-				isNull(scenes.deletedAt)
+				isNull(scenes.deletedAt),
+				ctx.scope?.storyOnly && ctx.storyId ? eq(scenes.storyId, ctx.storyId) : undefined
 			)
 		);
 	return row ?? null;
 }
 
-// The chapter and scene skeleton for every story in the universe, so the model
-// can find any scene's id and read it with get_scene. ctx.universeId is
-// owner-verified by the gateway before any tool runs, so the skeleton query
-// needs no further scoping.
+// The chapter and scene skeleton for every story in the universe (or only the
+// focus story under scope.storyOnly), so the model can find any scene's id and
+// read it with get_scene. ctx.universeId is owner-verified by the gateway
+// before any tool runs, so the skeleton query needs no further scoping.
 async function listScenes(ctx: ToolContext): Promise<string> {
-	const stories = await universeSkeleton(ctx.db, ctx.universeId);
+	const stories = await universeSkeleton(
+		ctx.db,
+		ctx.universeId,
+		ctx.scope?.storyOnly ? (ctx.storyId ?? null) : undefined
+	);
 	const scene = (s: SceneSummary) => ({
 		id: s.id,
 		title: s.title,

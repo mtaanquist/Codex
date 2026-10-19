@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { Database } from './auth.ts';
-import { assets, exportArtifacts, universes, users } from './db/schema.ts';
+import { assets, exportArtifacts, pendingObjectDeletions, universes, users } from './db/schema.ts';
 import { makeS3Client } from './s3-client.ts';
 import { sniffImageType } from './media-types.ts';
 import { encryptSecret, secretsAvailable } from './crypto.ts';
@@ -20,9 +20,11 @@ import {
 	type StoredS3
 } from './settings.ts';
 
-// Uploaded images live in an S3-compatible bucket, deliberately separate
-// from the backups bucket: a database restore then keeps every asset link
-// valid, and disaster recovery stays one story. Off until configured, in
+// Uploaded images live in an S3-compatible bucket, separate from the backups
+// bucket, which holds database dumps only. Deleting an image removes its row
+// at once but only queues the object (scheduleObjectDeletions); the worker
+// removes it after the backup retention window, so restoring any kept dump
+// still finds every image it points at. Off until configured, in
 // the admin panel or through the ASSET_S3_* environment variables; settings
 // saved in the panel win, the environment is the seed.
 
@@ -204,19 +206,112 @@ export async function openAsset(
 	return { asset: row, body: await store.get(row.storageKey) };
 }
 
-export async function deleteAsset(
+// Deletes the row now; the object follows after the grace period.
+export async function deleteAsset(db: Database, userId: string, assetId: string): Promise<boolean> {
+	return db.transaction(async (tx) => {
+		const deleted = await tx
+			.delete(assets)
+			.where(and(eq(assets.id, assetId), eq(assets.ownerId, userId)))
+			.returning({ storageKey: assets.storageKey });
+		if (deleted.length === 0) return false;
+		await scheduleObjectDeletions(tx, [deleted[0].storageKey]);
+		return true;
+	});
+}
+
+// ============ Deferred object deletion ============
+// A database restore brings back rows deleted since the dump was taken. If
+// their objects were already gone, those images would break. So objects are
+// queued here when their rows go (in the same transaction, where the caller
+// has one) and removed by the worker's sweep once no kept backup can still
+// reference them.
+
+type Inserter = Pick<Database, 'insert'>;
+
+export async function scheduleObjectDeletions(db: Inserter, keys: string[]): Promise<void> {
+	if (keys.length === 0) return;
+	await db
+		.insert(pendingObjectDeletions)
+		.values(keys.map((storageKey) => ({ storageKey })))
+		.onConflictDoNothing();
+}
+
+// Days an object waits before removal: one day longer than the oldest kept
+// backup, counting both the hourly window and the daily one, or one day when
+// backups are off (a manual dump may still exist).
+export function objectDeletionGraceDays(
+	backups: { keepDays: number; keepRecentHours: number } | null
+): number {
+	if (!backups) return 1;
+	return Math.max(backups.keepDays, Math.ceil(backups.keepRecentHours / 24)) + 1;
+}
+
+// Keys looked up per query, well under the bind parameter limit.
+const SWEEP_BATCH = 1000;
+
+// Removes the queued objects older than the grace period. A failed removal is
+// logged and left queued for the next sweep. A key that a row points at again
+// (a restore from a dump taken while it was queued) is unqueued, not removed.
+export async function sweepDeletedObjects(
 	db: Database,
 	store: AssetObjectStore,
-	userId: string,
-	assetId: string
-): Promise<boolean> {
-	const deleted = await db
-		.delete(assets)
-		.where(and(eq(assets.id, assetId), eq(assets.ownerId, userId)))
-		.returning({ storageKey: assets.storageKey });
-	if (deleted.length === 0) return false;
-	await store.remove(deleted[0].storageKey).catch(() => {});
-	return true;
+	graceDays: number
+): Promise<{ removed: number; kept: number; failed: number }> {
+	let removed = 0;
+	let kept = 0;
+	let failed = 0;
+	// Keyset paging, since failed keys stay in the table.
+	let after = '';
+	for (;;) {
+		const due = await db
+			.select({ storageKey: pendingObjectDeletions.storageKey })
+			.from(pendingObjectDeletions)
+			.where(
+				and(
+					lte(pendingObjectDeletions.deletedAt, sql`now() - make_interval(days => ${graceDays})`),
+					gt(pendingObjectDeletions.storageKey, after)
+				)
+			)
+			.orderBy(asc(pendingObjectDeletions.storageKey))
+			.limit(SWEEP_BATCH);
+		if (due.length === 0) break;
+		const keys = due.map((row) => row.storageKey);
+		after = keys[keys.length - 1];
+		const inUse = new Set(
+			[
+				...(await db
+					.select({ storageKey: assets.storageKey })
+					.from(assets)
+					.where(inArray(assets.storageKey, keys))),
+				...(await db
+					.select({ storageKey: exportArtifacts.storageKey })
+					.from(exportArtifacts)
+					.where(inArray(exportArtifacts.storageKey, keys)))
+			].map((row) => row.storageKey)
+		);
+		const done: string[] = [];
+		for (const key of keys) {
+			if (inUse.has(key)) {
+				kept += 1;
+			} else {
+				try {
+					await store.remove(key);
+					removed += 1;
+				} catch (error) {
+					failed += 1;
+					console.error(`asset sweep: removing ${key} failed:`, error);
+					continue;
+				}
+			}
+			done.push(key);
+		}
+		if (done.length > 0) {
+			await db
+				.delete(pendingObjectDeletions)
+				.where(inArray(pendingObjectDeletions.storageKey, done));
+		}
+	}
+	return { removed, kept, failed };
 }
 
 // Uploads a new account avatar and points the user at it, then removes the
@@ -250,7 +345,7 @@ export async function setUserAvatar(
 		return user?.avatarAssetId ?? null;
 	});
 	if (previous && previous !== result.id) {
-		await deleteAsset(db, store, userId, previous).catch(() => {});
+		await deleteAsset(db, userId, previous).catch(() => {});
 	}
 	return { ok: true, id: result.id };
 }
@@ -363,11 +458,7 @@ export async function migrateAssetObjects(
 
 // Clears the account avatar and removes its stored image. Falls back to
 // initials wherever the avatar is shown.
-export async function clearUserAvatar(
-	db: Database,
-	store: AssetObjectStore,
-	userId: string
-): Promise<void> {
+export async function clearUserAvatar(db: Database, userId: string): Promise<void> {
 	// Same locked read-then-write as setUserAvatar, so a clear racing an upload
 	// cannot leave the just-uploaded image orphaned.
 	const previous = await db.transaction(async (tx) => {
@@ -380,5 +471,5 @@ export async function clearUserAvatar(
 		if (current) await tx.update(users).set({ avatarAssetId: null }).where(eq(users.id, userId));
 		return current;
 	});
-	if (previous) await deleteAsset(db, store, userId, previous).catch(() => {});
+	if (previous) await deleteAsset(db, userId, previous).catch(() => {});
 }

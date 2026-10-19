@@ -104,14 +104,13 @@ export async function setEntityBadgeImage(
 	});
 	if (!created.ok) return created;
 	await updateBadge(db, ref.type, entityId, { badgeAssetId: created.id });
-	if (ref.badgeAssetId) await deleteAsset(db, store, userId, ref.badgeAssetId);
+	if (ref.badgeAssetId) await deleteAsset(db, userId, ref.badgeAssetId);
 	return { ok: true, id: created.id };
 }
 
 // Clears the entity's badge image and deletes the stored object.
 export async function clearEntityBadgeImage(
 	db: Database,
-	store: AssetObjectStore,
 	userId: string,
 	entityId: string
 ): Promise<BadgeResult> {
@@ -119,7 +118,7 @@ export async function clearEntityBadgeImage(
 	if (!ref) return { ok: false, reason: 'entity not found' };
 	if (ref.badgeAssetId) {
 		await updateBadge(db, ref.type, entityId, { badgeAssetId: null });
-		await deleteAsset(db, store, userId, ref.badgeAssetId);
+		await deleteAsset(db, userId, ref.badgeAssetId);
 	}
 	return { ok: true };
 }

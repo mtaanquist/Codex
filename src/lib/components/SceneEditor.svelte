@@ -546,7 +546,7 @@
 	</div>
 {/if}
 
-<svelte:window onpagehide={autosave.flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
 
 {#if selectionMenu}
 	<SelectionMenu

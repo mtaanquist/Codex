@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
-import type { Database } from './auth';
-import { scenes, stories } from './db/schema';
-import { inLiveUniverse } from './universe-scope';
+import type { Database } from './auth.ts';
+import { scenes, stories } from './db/schema.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // The owned-scene lookup shared by everything that reads or mutates a scene:
 // ownership flows through the story, and soft-deleted scenes and scenes in a
