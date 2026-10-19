@@ -1007,7 +1007,7 @@ calls the gateway, which proxies through the egress guard.
 
 - [to build] New pg-boss queues `assistant-review`, `assistant-enrich`,
   `assistant-summaries` (add names to `queues.ts`, enqueue helpers to `jobs.ts`,
-  handlers in `src/worker/index.ts`). The handlers call the gateway directly
+  handlers in `src/worker/handlers.ts`, registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
   helpers. Completion/failure rides the existing notifications matrix (a new
   kind). None of this is built.
