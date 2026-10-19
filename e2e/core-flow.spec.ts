@@ -120,6 +120,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		'Untitled scene'
 	);
 	await page.reload();
+	await waitForHydration(page);
 	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
 		'Untitled scene'
 	);

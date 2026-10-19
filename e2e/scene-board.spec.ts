@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoReady } from './navigate';
+import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The scene board: a story's plan shows its scenes in status lanes, and
@@ -51,6 +51,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	const revisedLane = page.getByRole('region', { name: 'Revised scenes' });
 	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
 	await page.reload();
+	await waitForHydration(page);
 	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
 
 	// Issue #626: a refused move says so, and the card stays where it was.
