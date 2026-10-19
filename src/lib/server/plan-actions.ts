@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from './db';
+import { queueUniverseMentions } from './jobs';
 import { isCategoryColor } from '$lib/entity-color';
 import { CATEGORY_NAME_MAX } from './categories';
 import {
@@ -51,6 +52,8 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 					.insert(characterStoryMemberships)
 					.values({ characterId: character.id, storyId: scope.storyId });
 			}
+			// The new name may already appear in existing scenes.
+			await queueUniverseMentions(scope.universeId);
 			redirect(303, `${scope.planPath}?entity=${character.id}`);
 		},
 		createPlace: async (event: PlanEvent) => {
@@ -69,6 +72,8 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 					.insert(placeStoryMemberships)
 					.values({ placeId: place.id, storyId: scope.storyId });
 			}
+			// The new name may already appear in existing scenes.
+			await queueUniverseMentions(scope.universeId);
 			redirect(303, `${scope.planPath}?entity=${place.id}`);
 		},
 		createLoreEntry: async (event: PlanEvent) => {
@@ -95,6 +100,8 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 				.insert(loreEntries)
 				.values({ universeId: scope.universeId, ownerId: scope.ownerId, categoryId, title })
 				.returning({ id: loreEntries.id });
+			// The new name may already appear in existing scenes.
+			await queueUniverseMentions(scope.universeId);
 			redirect(303, `${scope.planPath}?entity=${entry.id}`);
 		},
 		createCategory: async (event: PlanEvent) => {
