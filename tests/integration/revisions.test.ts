@@ -213,14 +213,19 @@ describe('restoreRevision', () => {
 	it('rejects a revision belonging to another entity', async () => {
 		const [aliceRevision] = await listRevisions(db, 'character', aliceId);
 		const result = await restoreRevision(db, ownerId, aliceRevision.id, 'scene', sceneId);
-		expect(result).toMatchObject({ ok: false, reason: 'revision not found' });
+		expect(result).toMatchObject({
+			ok: false,
+			code: 'not_found',
+			reason: 'That revision does not exist.'
+		});
 	});
 
 	it('rejects another user', async () => {
 		const [revision] = await listRevisions(db, 'scene', sceneId);
 		expect(await restoreRevision(db, strangerId, revision.id, 'scene', sceneId)).toMatchObject({
 			ok: false,
-			reason: 'entity not found'
+			code: 'not_found',
+			reason: 'That item does not exist.'
 		});
 	});
 });

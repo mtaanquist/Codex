@@ -5,6 +5,7 @@ import { ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 import { findTodoLines } from '$lib/todo-markers';
 import { createAnchorMapper } from '../review-anchor.ts';
+import type { ActionFailure } from './action-result.ts';
 
 // A selection turned into a checkable marker. Anchors are clamped to the
 // scene body so a stale client cannot write ranges past the end.
@@ -15,13 +16,13 @@ export async function createMarker(
 	anchorStart: number,
 	anchorEnd: number,
 	bodyMd?: string
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const scene = await ownedScene(db, userId, sceneId);
-	if (!scene) return { ok: false, reason: 'scene not found' };
+	if (!scene) return { ok: false, code: 'not_found', reason: 'That scene does not exist.' };
 	const length = scene.bodyMd.length;
 	const start = Math.max(0, Math.min(anchorStart, length));
 	const end = Math.max(start, Math.min(anchorEnd, length));
-	if (end === start) return { ok: false, reason: 'select some text to mark' };
+	if (end === start) return { ok: false, code: 'invalid', reason: 'Select some text to mark.' };
 	const [marker] = await db
 		.insert(sceneMarkers)
 		.values({

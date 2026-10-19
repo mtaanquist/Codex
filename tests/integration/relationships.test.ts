@@ -134,7 +134,7 @@ describe('createRelationship', () => {
 			relationTypeId: typeId('lives_in'),
 			toId: haldenId
 		});
-		expect(duplicate).toMatchObject({ ok: false, reason: 'that relationship already exists' });
+		expect(duplicate).toMatchObject({ ok: false, code: 'conflict' });
 	});
 
 	it('rejects the swapped duplicate of a symmetric relation', async () => {
@@ -161,7 +161,7 @@ describe('createRelationship', () => {
 			relationTypeId: typeId('rival_of'),
 			toId: aliceId
 		});
-		expect(result).toMatchObject({ ok: false, reason: 'an entity cannot relate to itself' });
+		expect(result).toMatchObject({ ok: false, code: 'invalid' });
 	});
 
 	it('has a database unique index that blocks a duplicate universe-wide row', async () => {
@@ -206,7 +206,11 @@ describe('createRelationship', () => {
 			relationTypeId: typeId('born_in'),
 			toId: bramId
 		});
-		expect(wrongKind).toMatchObject({ ok: false, reason: 'target entity not found' });
+		expect(wrongKind).toMatchObject({
+			ok: false,
+			code: 'not_found',
+			reason: 'The other entry does not exist.'
+		});
 
 		const foreign = await createRelationship(db, ownerId, {
 			fromKind: 'character',
@@ -214,7 +218,11 @@ describe('createRelationship', () => {
 			relationTypeId: typeId('born_in'),
 			toId: foreignPlaceId
 		});
-		expect(foreign).toMatchObject({ ok: false, reason: 'target entity not found' });
+		expect(foreign).toMatchObject({
+			ok: false,
+			code: 'not_found',
+			reason: 'The other entry does not exist.'
+		});
 	});
 
 	it('rejects an entity the user does not own', async () => {
@@ -224,7 +232,11 @@ describe('createRelationship', () => {
 			relationTypeId: typeId('lives_in'),
 			toId: haldenId
 		});
-		expect(result).toMatchObject({ ok: false, reason: 'entity not found' });
+		expect(result).toMatchObject({
+			ok: false,
+			code: 'not_found',
+			reason: 'That entry does not exist.'
+		});
 	});
 });
 

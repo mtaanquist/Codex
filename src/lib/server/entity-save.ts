@@ -12,6 +12,7 @@ import {
 } from './db/schema';
 import type { EntityDetail } from '$lib/entity-snapshot';
 import { inLiveUniverse } from './universe-scope.ts';
+import type { ActionFailure } from './action-result.ts';
 
 // One save path for all three entity kinds. The flow carries real invariants
 // that must not drift between kinds: validate everything BEFORE anything is
@@ -41,7 +42,7 @@ export type EntitySave = {
 };
 
 export type EntitySaveResult =
-	{ ok: true; universeId: string; mentionsAffected: boolean } | { ok: false; reason: string };
+	{ ok: true; universeId: string; mentionsAffected: boolean } | ActionFailure;
 
 const NOUN: Record<EntitySaveKind, { label: string; nameNoun: string }> = {
 	character: { label: 'character', nameNoun: 'name' },
@@ -179,10 +180,10 @@ export async function saveEntity(
 	const { label, nameNoun } = NOUN[kind];
 	const rows = adapter(db, kind, entityId, userId);
 	const entity = await rows.load();
-	if (!entity) return { ok: false, reason: `${label} not found` };
+	if (!entity) return { ok: false, code: 'not_found', reason: `That ${label} does not exist.` };
 
 	const name = save.name.trim();
-	if (!name) return { ok: false, reason: `the ${label} needs a ${nameNoun}` };
+	if (!name) return { ok: false, code: 'invalid', reason: `Give the ${label} a ${nameNoun}.` };
 	const tags = save.tags.map((tag) => tag.trim()).filter((tag) => tag !== '');
 
 	// Only a changed name or tag set can add or remove mentions; body and
@@ -193,13 +194,13 @@ export async function saveEntity(
 		tags.some((tag, index) => tag !== entity.tags[index]);
 
 	if (kind === 'lore' && save.categoryId === null) {
-		return { ok: false, reason: 'a lore entry needs a category' };
+		return { ok: false, code: 'invalid', reason: 'Choose a category for the lore entry.' };
 	}
 	if (
 		save.categoryId != null &&
 		!(await categoryInUniverse(db, save.categoryId, entity.universeId))
 	) {
-		return { ok: false, reason: 'category not found' };
+		return { ok: false, code: 'not_found', reason: 'That category does not exist.' };
 	}
 
 	// Validate the optional story BEFORE anything is written: the old
@@ -209,7 +210,7 @@ export async function saveEntity(
 		save.storyId !== undefined &&
 		!(await ownsStoryInUniverse(db, save.storyId, userId, entity.universeId))
 	) {
-		return { ok: false, reason: 'story not found' };
+		return { ok: false, code: 'not_found', reason: 'That story does not exist.' };
 	}
 
 	// One transaction so the entity update, its History snapshot (a full

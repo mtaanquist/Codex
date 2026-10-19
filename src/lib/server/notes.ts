@@ -4,6 +4,7 @@ import type { Database } from './auth';
 import { notes, revisions } from './db/schema';
 import { recordRevision } from './revisions';
 import { noteIsLive } from './universe-scope';
+import type { ActionFailure } from './action-result';
 
 // Freeform writer notes, scoped to a universe or a story. Universe notes have
 // story_id null; story notes carry both the story and its universe. The list
@@ -140,9 +141,9 @@ export async function saveNote(
 	noteId: string,
 	userId: string,
 	save: { title: string | null; bodyMd: string }
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const note = await getNote(db, noteId, userId);
-	if (!note) return { ok: false, reason: 'note not found' };
+	if (!note) return { ok: false, code: 'not_found', reason: 'That note does not exist.' };
 	const title = save.title?.trim() || null;
 	await db.transaction(async (tx) => {
 		await tx.update(notes).set({ title, bodyMd: save.bodyMd }).where(eq(notes.id, noteId));

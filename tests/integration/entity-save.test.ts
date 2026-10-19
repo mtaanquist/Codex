@@ -111,7 +111,7 @@ describe('saveEntity across kinds', () => {
 				storyId: crypto.randomUUID(),
 				storyNotesMd: 'never lands'
 			});
-			expect(result).toMatchObject({ ok: false, reason: 'story not found' });
+			expect(result).toMatchObject({ ok: false, code: 'not_found' });
 		}
 		// Nothing persisted for any kind.
 		const [character] = await db.select().from(characters).where(eq(characters.id, ids.character));
@@ -130,7 +130,7 @@ describe('saveEntity across kinds', () => {
 					tags: [],
 					categoryId: crypto.randomUUID()
 				})
-			).toMatchObject({ ok: false, reason: 'category not found' });
+			).toMatchObject({ ok: false, code: 'not_found' });
 		}
 	});
 
@@ -158,7 +158,7 @@ describe('saveEntity across kinds', () => {
 				tags: [],
 				categoryId: null
 			})
-		).toMatchObject({ ok: false, reason: 'a lore entry needs a category' });
+		).toMatchObject({ ok: false, code: 'invalid' });
 		// The lore entry keeps its category.
 		const [lore] = await db.select().from(loreEntries).where(eq(loreEntries.id, ids.lore));
 		expect(lore.categoryId).toBe(categoryId);

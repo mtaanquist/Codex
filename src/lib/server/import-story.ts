@@ -154,7 +154,7 @@ export async function runImport(
 			if (created.ok) {
 				assetLinks.set(asset.id, `/assets/${created.id}`);
 			} else {
-				problems.push(`The image ${asset.path} could not be stored (${created.reason}).`);
+				problems.push(`The image ${asset.path} could not be stored: ${created.reason}`);
 			}
 		}
 	} else if (plan.assets.length > 0) {

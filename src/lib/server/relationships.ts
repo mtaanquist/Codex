@@ -13,6 +13,7 @@ import { entityInUniverse, namesByType, type EntityType } from './entity-lookups
 import { recordEntityRevision } from './revisions.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { inLiveUniverse } from './universe-scope.ts';
+import type { ActionFailure } from './action-result.ts';
 
 export type { EntityType };
 
@@ -198,15 +199,21 @@ export type RelationshipSave = {
 	notesMd?: string;
 };
 
+const DUPLICATE_RELATIONSHIP: ActionFailure = {
+	ok: false,
+	code: 'conflict',
+	reason: 'That relationship already exists.'
+};
+
 export async function createRelationship(
 	db: Database,
 	userId: string,
 	save: RelationshipSave
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const fromType = toEntityType(save.fromKind);
 
 	if (save.fromId === save.toId) {
-		return { ok: false, reason: 'an entity cannot relate to itself' };
+		return { ok: false, code: 'invalid', reason: 'An entry cannot be related to itself.' };
 	}
 
 	// The source entity anchors ownership and the universe.
@@ -243,7 +250,7 @@ export async function createRelationship(
 								inLiveUniverse(loreEntries.universeId)
 							)
 						);
-	if (!fromEntity) return { ok: false, reason: 'entity not found' };
+	if (!fromEntity) return { ok: false, code: 'not_found', reason: 'That entry does not exist.' };
 	const universeId = fromEntity.universeId;
 
 	const [relationType] = await db
@@ -255,12 +262,17 @@ export async function createRelationship(
 				or(isNull(relationTypes.universeId), eq(relationTypes.universeId, universeId))
 			)
 		);
-	if (!relationType) return { ok: false, reason: 'relation type not found' };
+	if (!relationType)
+		return { ok: false, code: 'not_found', reason: 'That relation type does not exist.' };
 	if (relationType.fromType !== fromType) {
-		return { ok: false, reason: 'that relation does not start from this kind of entity' };
+		return {
+			ok: false,
+			code: 'invalid',
+			reason: 'That relation does not start from this kind of entry.'
+		};
 	}
 	if (!(await entityInUniverse(db, universeId, relationType.toType, save.toId))) {
-		return { ok: false, reason: 'target entity not found' };
+		return { ok: false, code: 'not_found', reason: 'The other entry does not exist.' };
 	}
 
 	// One row per declared relation; for symmetric relations the swapped
@@ -283,7 +295,7 @@ export async function createRelationship(
 				or(...duplicateSides)
 			)
 		);
-	if (duplicate) return { ok: false, reason: 'that relationship already exists' };
+	if (duplicate) return DUPLICATE_RELATIONSHIP;
 
 	// The application duplicate check above closes the common case; the partial
 	// unique index on (relation_type_id, from_id, to_id) for universe-wide rows
@@ -312,7 +324,7 @@ export async function createRelationship(
 		});
 		return { ok: true, id };
 	} catch (err) {
-		if (isUniqueViolation(err)) return { ok: false, reason: 'that relationship already exists' };
+		if (isUniqueViolation(err)) return DUPLICATE_RELATIONSHIP;
 		throw err;
 	}
 }
