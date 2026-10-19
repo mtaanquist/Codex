@@ -656,7 +656,7 @@ export const entityRelationships = pgTable(
 // Version history, polymorphic over everything with editable prose. A row
 // per debounced save that changed the body (plus manual checkpoints), the
 // newest first in the timeline. Snapshot-plus-diff compression is a later
-// optimisation if the table grows large. Old autosaves are thinned to one per
+// optimisation if the table grows large. Old autosaves are thinned to two per
 // entity per day by thinRevisions (revisions.ts).
 export const revisions = pgTable(
 	'revisions',

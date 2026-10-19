@@ -96,7 +96,7 @@ To flag a spot to come back to, select some text and add a mark. Marks show in t
 
 The History tab on the right keeps past versions of the open scene. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Select "Preview" on a version to read it or compare it with the current text, and "Restore this version" to bring it back. Restoring never deletes history: the version you replaced stays in the list.
 
-Versions saved automatically are all kept for 90 days. After that, only the last one from each day is kept. Checkpoints are always kept.
+Versions saved automatically are all kept for 90 days. After that, only the first and last ones from each day are kept. Checkpoints are always kept.
 
 ## The Assistant
 

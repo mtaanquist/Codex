@@ -86,6 +86,6 @@ To jot something down without leaving the editor, press Ctrl+Alt+N or run "Quick
 
 ## History
 
-The History panel on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Versions saved automatically are all kept for 90 days; after that, only the last one from each day is kept. Checkpoints are always kept.
+The History panel on the right keeps past versions of the open entry. Every change counts: the name, aliases, summary, category, details, and relationships, not just the body text. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Versions saved automatically are all kept for 90 days; after that, only the first and last ones from each day are kept. Checkpoints are always kept.
 
 Select "Preview" on a version to read it; the panel above the text lists the fields as they were then. "Restore this version" brings the whole entry back to that state, including its relationships. Restoring never deletes history: the version you replaced stays in the list, so you can return to it the same way.

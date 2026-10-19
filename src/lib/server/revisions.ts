@@ -671,28 +671,30 @@ type TimelineSource = { type: RevisionEntityType; entities: SQL };
 // The newest `limit` revisions across a set of entities, newest first. Each
 // source yields entity_id, entity_name, story_title and story_slug; a lateral
 // limit per entity walks the timeline index, so the cost is bounded by
-// entities times `limit` rather than by the whole history.
+// entities times `limit` rather than by the whole history. Rows with the same
+// timestamp keep the order of `sources` (the order the per-type lists were
+// merged in before), then the id, so the listing is stable.
 async function recentRevisions(
 	db: Database,
 	sources: TimelineSource[],
 	limit: number
 ): Promise<TimelineRow[]> {
 	const parts = sources.map(
-		({ type, entities }) => sql`
-			select r.id, r.reason, r.label, r.created_at, ${type}::text as entity_type,
+		({ type, entities }, ord) => sql`
+			select r.id, r.reason, r.label, r.created_at, ${ord}::int as ord, ${type}::text as entity_type,
 				e.entity_id, e.entity_name, e.story_title, e.story_slug
 			from (${entities}) e
 			cross join lateral (
 				select rv.id, rv.reason, rv.label, rv.created_at
 				from revisions rv
 				where rv.entity_type = ${type} and rv.entity_id = e.entity_id
-				order by rv.created_at desc
+				order by rv.created_at desc, rv.id desc
 				limit ${limit}
 			) r`
 	);
 	const result = await db.execute(sql`
 		select * from (${sql.join(parts, sql` union all `)}) x
-		order by x.created_at desc
+		order by x.created_at desc, x.ord asc, x.id desc
 		limit ${limit}
 	`);
 	return result.rows.map((row) => {
@@ -796,16 +798,17 @@ export async function universeRevisionCount(db: Database, universeId: string): P
 }
 
 // Autosaves younger than this are all kept. Older ones are thinned to the
-// last autosave of each entity per UTC day, which is the row Insights reads
-// for that day's word count.
+// first and last autosave of each entity per UTC day. A local day overlaps at
+// most two UTC days, so in any timezone every local day with writing keeps a
+// row, and Insights streaks are unchanged.
 export const REVISION_FULL_HISTORY_DAYS = 90;
 const THIN_BATCH = 5000;
 
 // Thins old autosave history. Never removes a checkpoint, restore or
-// suggestion row, the day's last autosave of an entity, or a revision pinned
-// as the base of a review thread or suggestion. Deletes in batches so a first
-// run on a long history does not hold one huge transaction. Returns the
-// number of rows removed.
+// suggestion row, the first or last autosave of an entity's UTC day, or a
+// revision pinned as the base of a review thread or suggestion. Deletes in
+// batches so a first run on a long history does not hold one huge
+// transaction. Returns the number of rows removed.
 export async function thinRevisions(
 	db: Database,
 	fullHistoryDays = REVISION_FULL_HISTORY_DAYS
@@ -816,14 +819,16 @@ export async function thinRevisions(
 		const result = await db.execute(sql`
 			delete from revisions where id in (
 				select ranked.id from (
-					select r.id, row_number() over (
-						partition by r.entity_type, r.entity_id, (r.created_at at time zone 'UTC')::date
-						order by r.created_at desc
-					) as rn
+					select r.id,
+						row_number() over (day_window order by r.created_at desc, r.id desc) as from_last,
+						row_number() over (day_window order by r.created_at asc, r.id asc) as from_first
 					from revisions r
 					where r.reason = 'autosave' and r.created_at < ${cutoff}
+					window day_window as (
+						partition by r.entity_type, r.entity_id, (r.created_at at time zone 'UTC')::date
+					)
 				) ranked
-				where ranked.rn > 1
+				where ranked.from_last > 1 and ranked.from_first > 1
 					and not exists (select 1 from review_threads t where t.base_revision_id = ranked.id)
 					and not exists (
 						select 1 from review_suggestions s where s.base_revision_id = ranked.id)
