@@ -206,7 +206,7 @@ export const actions: Actions = {
 	restoreStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const storyId = String(data.get('storyId') ?? '');
+		const storyId = formText(data, 'storyId');
 		if (!isUuid(storyId) || !(await restoreStory(db, locals.user.id, storyId))) {
 			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
 		}
@@ -215,7 +215,7 @@ export const actions: Actions = {
 	destroyStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const storyId = String(data.get('storyId') ?? '');
+		const storyId = formText(data, 'storyId');
 		if (!isUuid(storyId) || !(await destroyStory(db, locals.user.id, storyId))) {
 			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
 		}
