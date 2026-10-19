@@ -290,13 +290,13 @@ restore as long as that bucket is intact (the reason to keep it separate).
 seconds. Point an uptime monitor or an orchestrator liveness and readiness
 probe at it.
 
-The image has a built-in Docker healthcheck that calls `/healthz` every 30
-seconds, so `docker compose ps` shows the app as `healthy` or `unhealthy`. The
-worker runs from the same image but has no web port, so turn the check off for
-it with `healthcheck: disable: true`, as the README example and `compose.yaml` do; otherwise
-`docker compose ps` lists the worker as `unhealthy`. Docker Compose does not
-restart a container just because it is unhealthy; use an orchestrator or a
-watchdog if you want that.
+The README example and `compose.yaml` give the app service a healthcheck that
+calls `/healthz` every 30 seconds, so `docker compose ps` shows the app as
+`healthy` or `unhealthy`, and the bundled Caddy waits for a healthy app before
+it starts. If you use your own compose file, copy the app's `healthcheck`
+block into it. The worker has no web port, so it has no healthcheck. Docker
+Compose does not restart a container just because it is unhealthy; use an
+orchestrator or a watchdog if you want that.
 
 If the database restarts, the app and worker log a `db.pool_error` line and
 reconnect on their own. A single database query that runs longer than 30
