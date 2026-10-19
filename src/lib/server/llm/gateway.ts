@@ -29,6 +29,7 @@ import {
 	ownedStoryUniverse,
 	ownsUniverse,
 	type ToolContext,
+	type ToolScope,
 	type ToolOutcome
 } from './tools/dispatch.ts';
 import { MINIMAL_TOOL_NAMES, toolSpecs } from './tools/registry.ts';
@@ -125,7 +126,7 @@ export type GatewayRequest = {
 	toolNames?: string[];
 	// Targets for the scoped tools, fixed server-side and never taken from the
 	// model's arguments.
-	toolScope?: { threadId?: string; suggestionId?: string };
+	toolScope?: ToolScope;
 	maxTokens?: number;
 	// Raise the tool-call ceiling for this run above the account's budget. A
 	// full review needs one call per note plus one read per scene, far beyond
