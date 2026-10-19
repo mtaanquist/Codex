@@ -63,16 +63,6 @@ export async function publishStory(
 			...content.unfiled.flatMap((scene) => findAssetReferences(scene.bodyMd))
 		])
 	];
-	const referencedAssets =
-		mentionedAssets.length === 0
-			? []
-			: (
-					await db
-						.select({ id: assets.id })
-						.from(assets)
-						.where(and(inArray(assets.id, mentionedAssets), eq(assets.ownerId, userId)))
-				).map((row) => row.id);
-
 	try {
 		const publicationId = await db.transaction(async (tx) => {
 			await tx
@@ -93,6 +83,18 @@ export async function publishStory(
 					versionLabel: versionLabel?.trim() || null
 				})
 				.returning({ id: publications.id });
+			// Locked so a concurrent delete of one of these images cannot slip
+			// in before the link is written.
+			const referencedAssets =
+				mentionedAssets.length === 0
+					? []
+					: (
+							await tx
+								.select({ id: assets.id })
+								.from(assets)
+								.where(and(inArray(assets.id, mentionedAssets), eq(assets.ownerId, userId)))
+								.for('share')
+						).map((row) => row.id);
 			if (referencedAssets.length > 0) {
 				await tx
 					.insert(publicationAssets)

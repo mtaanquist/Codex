@@ -268,10 +268,17 @@ describe('inline images owned by someone else', () => {
 				storageKey: 'codex-assets/old'
 			})
 			.returning();
-		const [current] = (await listPublications(db)).filter(
-			(row) => row.title === 'Borrowed' && row.isCurrent
-		);
-		await db.insert(publicationAssets).values({ publicationId: current.id, assetId: foreign.id });
+		const [oldStory] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: authorId, title: 'Old edition', visibility: 'public' })
+			.returning();
+		await db.insert(scenes).values({ storyId: oldStory.id, globalPosition: 1, bodyMd: 'Text.' });
+		const published = await publishStory(db, authorId, oldStory.id);
+		if (!published.ok) throw new Error(published.reason);
+		// As an edition published before links were owner-checked would have it.
+		await db
+			.insert(publicationAssets)
+			.values({ publicationId: published.publicationId, assetId: foreign.id });
 		expect(await isPublicAsset(db, foreign.id)).toBe(false);
 	});
 });
