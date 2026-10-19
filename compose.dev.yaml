@@ -20,45 +20,46 @@ services:
       timeout: 5s
       retries: 10
 
-  # Asset storage for development. Unlike the deployment stack's MinIO, this
+  # Asset storage for development. Unlike the deployment stack's RustFS, this
   # one publishes its ports: the app and the tests run on the host here, not
   # inside the compose network. Exports and image uploads stay hidden until
   # asset storage is configured, so the end-to-end suite needs this running.
-  minio:
-    image: minio/minio
-    command: server /data --console-address ':9001'
+  rustfs:
+    image: rustfs/rustfs:1.0.3
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-codex-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-codex-minio-secret}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-codex-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-codex-rustfs-secret}
     ports:
-      - '${DEV_MINIO_PORT:-9000}:9000'
-      - '${DEV_MINIO_CONSOLE_PORT:-9001}:9001'
+      - '${DEV_RUSTFS_PORT:-9000}:9000'
+      - '${DEV_RUSTFS_CONSOLE_PORT:-9001}:9001'
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     healthcheck:
-      test: ['CMD-SHELL', 'mc ready local || exit 1']
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/health || exit 1']
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # One-shot: creates the bucket on first start, then exits.
-  minio-init:
-    image: minio/mc
+  # One-shot: creates the bucket on first start, then exits. A signed PUT
+  # with the image's own curl; 409 means the bucket already exists.
+  rustfs-init:
+    image: rustfs/rustfs:1.0.3
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
     restart: 'no'
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-codex-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-codex-minio-secret}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-codex-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-codex-rustfs-secret}
     entrypoint:
       - sh
       - -c
       - >
-        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
-        do sleep 1; done &&
-        mc mb -p local/codex-assets
+        code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT
+        --aws-sigv4 aws:amz:us-east-1:s3 --user "$$RUSTFS_ACCESS_KEY:$$RUSTFS_SECRET_KEY"
+        http://rustfs:9000/codex-assets);
+        [ "$$code" = 200 ] || [ "$$code" = 409 ] || { echo "creating codex-assets failed: $$code"; exit 1; }
 
 volumes:
   db-data:
-  minio-data:
+  rustfs-data:

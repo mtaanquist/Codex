@@ -99,39 +99,48 @@ services:
       retries: 10
 
   # A local S3-compatible bucket for assets (and backups, if pointed at
-  # it). Opt in with COMPOSE_PROFILES=minio. This keeps the objects on the
+  # it). Opt in with COMPOSE_PROFILES=rustfs. This keeps the objects on the
   # same host; for real disaster recovery point ASSET_S3_* and BACKUP_S3_*
   # at an external bucket (S3, B2, R2) instead.
-  minio:
-    image: minio/minio
+  rustfs:
+    image: rustfs/rustfs:1.0.3
     profiles:
-      - minio
+      - rustfs
     restart: unless-stopped
-    command: server /data
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-codex-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-codex-minio-secret}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-codex-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-codex-rustfs-secret}
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/health || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  # One-shot: creates the buckets on first start, then exits.
-  minio-init:
-    image: minio/mc
+  # One-shot: creates the buckets on first start, then exits. A signed PUT
+  # with the image's own curl; 409 means the bucket already exists.
+  rustfs-init:
+    image: rustfs/rustfs:1.0.3
     profiles:
-      - minio
+      - rustfs
     depends_on:
-      - minio
+      rustfs:
+        condition: service_healthy
     restart: 'no'
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-codex-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-codex-minio-secret}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-codex-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-codex-rustfs-secret}
     entrypoint:
       - sh
       - -c
       - >
-        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
-        do sleep 1; done &&
-        mc mb -p local/codex-assets && mc mb -p local/codex-backups
+        for bucket in codex-assets codex-backups; do
+        code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT
+        --aws-sigv4 aws:amz:us-east-1:s3 --user "$$RUSTFS_ACCESS_KEY:$$RUSTFS_SECRET_KEY"
+        "http://rustfs:9000/$$bucket");
+        [ "$$code" = 200 ] || [ "$$code" = 409 ] || { echo "creating $$bucket failed: $$code"; exit 1; };
+        done
 
   caddy:
     image: caddy:2-alpine
@@ -152,6 +161,6 @@ services:
 
 volumes:
   db-data:
-  minio-data:
+  rustfs-data:
   caddy-data:
   caddy-config:
