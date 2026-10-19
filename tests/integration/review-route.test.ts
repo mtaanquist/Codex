@@ -134,3 +134,31 @@ describe('suggest action', () => {
 		expect(await db.select().from(reviewSuggestions)).toHaveLength(0);
 	});
 });
+
+describe('comment action limit', () => {
+	function commentForm() {
+		const form = new FormData();
+		form.set('sceneId', sceneId);
+		form.set('body', 'A note.');
+		return form;
+	}
+
+	it('refuses the 31st comment from one reviewer, not from another', async () => {
+		const invitation = await createReviewInvitation(db, { storyId, createdBy: authorId });
+		const first = await ensureReviewer(db, invitation.id, { displayName: 'Robin' });
+		const second = await ensureReviewer(db, invitation.id, { displayName: 'Sam' });
+		const cookie = issueReviewerToken(first!.id);
+
+		for (let i = 0; i < 30; i++) {
+			const result = await page.actions.comment(event(invitation.token, cookie, commentForm()));
+			expect(result).toEqual({ commented: true });
+		}
+		const refused = await page.actions.comment(event(invitation.token, cookie, commentForm()));
+		expect(refused).toMatchObject({ status: 429 });
+
+		const other = await page.actions.comment(
+			event(invitation.token, issueReviewerToken(second!.id), commentForm())
+		);
+		expect(other).toEqual({ commented: true });
+	});
+});
