@@ -31,4 +31,9 @@ RUN cp scripts/start-app.sh /usr/local/bin/codex-app && \
     chmod +x /usr/local/bin/codex-app /usr/local/bin/codex-worker
 USER node
 EXPOSE 3000
+# Probes the app's /healthz. The start period covers migrations on boot. The
+# worker runs from this image too but serves no HTTP, so its compose service
+# turns the check off.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget -q -T 5 -O /dev/null "http://127.0.0.1:${PORT:-3000}/healthz" || exit 1
 CMD ["codex-app"]

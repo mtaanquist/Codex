@@ -61,6 +61,9 @@ services:
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       APP_SECRET: ${APP_SECRET}
+    # The image's healthcheck probes the app's web port; the worker has none.
+    healthcheck:
+      disable: true
     depends_on:
       db:
         condition: service_healthy

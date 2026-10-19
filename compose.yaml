@@ -79,6 +79,10 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+    # The image's healthcheck probes the app's HTTP endpoint, which the
+    # worker does not serve.
+    healthcheck:
+      disable: true
     depends_on:
       db:
         condition: service_healthy
@@ -157,7 +161,8 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - app
+      app:
+        condition: service_healthy
 
 volumes:
   db-data:
