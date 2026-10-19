@@ -6,6 +6,7 @@ import {
 	rewriteBundledAssetLinks,
 	StoryZipError
 } from './import-markdown';
+import { overlappingStoredZip } from '../../tests/zip-fixtures';
 
 const ASSET_ID = '0b154c2d-13ef-4f3c-9a85-2f1c0a9d8e11';
 
@@ -118,6 +119,12 @@ describe('parseStoryZip', () => {
 		const files: Record<string, string> = { 'story.md': 'x' };
 		for (let i = 0; i < 5001; i++) files[`unfiled/${i}-s.md`] = 'x';
 		expect(() => parseStoryZip(zip(files))).toThrow(/too many files/);
+	});
+
+	it('counts stored entries by their stored size, not the size they declare', () => {
+		expect(() => parseStoryZip(overlappingStoredZip(11, 20 * 1024 * 1024))).toThrow(
+			/too large to import once unpacked/
+		);
 	});
 
 	it('rejects an oversized entry before decompressing it', () => {

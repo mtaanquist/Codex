@@ -120,10 +120,13 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 				if (++count > MAX_ENTRIES) {
 					throw new StoryZipError('This archive has too many files to import.');
 				}
-				if (file.originalSize > MAX_ENTRY_BYTES) {
+				// fflate inflates to the declared size but copies stored entries
+				// by their stored size, so count whichever is larger.
+				const unpacked = Math.max(file.size, file.originalSize);
+				if (unpacked > MAX_ENTRY_BYTES) {
 					throw new StoryZipError('This archive contains a file that is too large to import.');
 				}
-				total += file.originalSize;
+				total += unpacked;
 				if (total > MAX_TOTAL_BYTES) {
 					throw new StoryZipError('This archive is too large to import once unpacked.');
 				}
