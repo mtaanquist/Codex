@@ -261,7 +261,9 @@ take a fresh dump first if there is anything live worth keeping.
    ```
 
    This streams the dump from the bucket into `pg_restore` against
-   `DATABASE_URL`, dropping and recreating objects as it goes.
+   `DATABASE_URL`, dropping and recreating objects as it goes. The backup
+   history on the admin page starts empty after a restore, and the next
+   backup uploads in full.
 
 3. Bring the stack back:
 

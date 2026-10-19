@@ -210,9 +210,9 @@ describe('pg_dump round trip', () => {
 		const admin = new pg.Client({ connectionString: adminUrl.toString() });
 		await admin.connect();
 		const restoreName = restoreUrl.pathname.slice(1);
-		await admin.query(`drop database if exists "${restoreName}"`);
-		await admin.query(`create database "${restoreName}"`);
 		try {
+			await admin.query(`drop database if exists "${restoreName}"`);
+			await admin.query(`create database "${restoreName}"`);
 			await run('pg_restore', [
 				'--no-owner',
 				'--exit-on-error',
@@ -232,14 +232,23 @@ describe('pg_dump round trip', () => {
 				});
 				expect(again).toMatchObject({ ok: true });
 				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(1);
+
+				// A dump from before the fix restored without the table while the
+				// ledger listed it; the repair migration brings it back.
+				await restoredPool.query('drop table backup_runs');
+				await restoredPool.query(
+					'delete from drizzle.__drizzle_migrations where created_at = (select max(created_at) from drizzle.__drizzle_migrations)'
+				);
+				await migrate(restored, { migrationsFolder: 'drizzle' });
+				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(0);
 			} finally {
 				await restoredPool.end();
 			}
 		} finally {
 			await admin.query(`drop database if exists "${restoreName}" with (force)`);
 			await admin.end();
+			await rm(dumpFile, { force: true });
 		}
-		await rm(dumpFile);
 
 		// The real regression: a second backup of the unchanged database hashes
 		// the same and skips the upload. The custom archive's header timestamp
