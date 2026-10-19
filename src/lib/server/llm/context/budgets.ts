@@ -10,8 +10,10 @@ export const CHAT_BUDGET_TOKENS = 8000;
 
 // Shares of the window, with a ceiling on each because every turn resends the
 // transcript and the world context: on a 1M-token model an uncapped share would
-// cost far more per message than it adds. The two shares together leave well
-// over half the window for the persona, the tool schemas, and the reply.
+// cost far more per message than it adds. From about an 8k window up, the two
+// shares together leave over half the window for the persona, the tool
+// schemas, and the reply; below that the floor takes over and the gateway's
+// context guard is the backstop.
 const CONTEXT_WINDOW_SHARE = 0.15;
 const CONTEXT_CEILING_TOKENS = 16000;
 const CHAT_WINDOW_SHARE = 0.25;
