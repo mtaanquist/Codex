@@ -781,6 +781,7 @@
 								muted={data.assistant.muted}
 								suggestions={assistantSuggestions}
 								initialMessages={data.assistantChat}
+								summarised={data.assistantChatSummarised}
 								onConfirmSplit={confirmAssistantSplit}
 								onRevertSplit={revertAssistantSplit}
 								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}

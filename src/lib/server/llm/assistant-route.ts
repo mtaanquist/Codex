@@ -78,6 +78,8 @@ export function assistantSseResponse(options: {
 	role: 'chat' | 'utility';
 	enableTools: boolean;
 	messages: ChatMessage[];
+	// Older turns of this conversation were summarised; the panel shows a note.
+	summarised?: boolean;
 	errorMessage: string;
 }): Response {
 	const { request, userId, scope } = options;
@@ -140,7 +142,8 @@ export function assistantSseResponse(options: {
 		headers: {
 			'content-type': 'text/event-stream',
 			'cache-control': 'no-cache, no-transform',
-			connection: 'keep-alive'
+			connection: 'keep-alive',
+			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
 		}
 	});
 }

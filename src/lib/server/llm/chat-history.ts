@@ -1,6 +1,10 @@
 import { and, asc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
-import { assistantChatMessages, type AssistantChatMeta } from '../db/schema';
+import {
+	assistantChatMessages,
+	assistantChatSummaries,
+	type AssistantChatMeta
+} from '../db/schema';
 import { estimateTokens } from './context/assemble';
 import { CHAT_BUDGET_TOKENS } from './context/budgets';
 import type { ChatMessage } from './providers/types';
@@ -159,6 +163,16 @@ export async function clearChat(db: Database, userId: string, scope: ChatScope):
 	await db
 		.delete(assistantChatMessages)
 		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)));
+	await db
+		.delete(assistantChatSummaries)
+		.where(
+			and(
+				eq(assistantChatSummaries.userId, userId),
+				'storyId' in scope
+					? eq(assistantChatSummaries.storyId, scope.storyId)
+					: eq(assistantChatSummaries.universeId, scope.universeId)
+			)
+		);
 }
 
 // The delete cascades reach for these: a story's transcripts go with the
@@ -167,6 +181,7 @@ export async function clearChat(db: Database, userId: string, scope: ChatScope):
 export async function deleteChatForStories(db: Database, storyIds: string[]): Promise<void> {
 	if (storyIds.length === 0) return;
 	await db.delete(assistantChatMessages).where(inArray(assistantChatMessages.storyId, storyIds));
+	await db.delete(assistantChatSummaries).where(inArray(assistantChatSummaries.storyId, storyIds));
 }
 
 export async function deleteChatForUser(db: Database, userId: string): Promise<void> {

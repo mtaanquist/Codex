@@ -28,6 +28,7 @@ import {
 } from '$lib/server/revisions';
 import { assistantLayout } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { hasChatSummary } from '$lib/server/llm/chat-summary';
 import { listUniverseNotes } from '$lib/server/notes';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
@@ -97,6 +98,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const assistantChat = assistant.tabEnabled
 		? await listChat(db, locals.user!.id, { universeId: universe.id })
 		: [];
+	const assistantChatSummarised =
+		assistant.tabEnabled &&
+		(await hasChatSummary(db, locals.user!.id, { universeId: universe.id }));
 
 	// The entity lists do not depend on the selection; resolve the selected
 	// entity (if the URL names one) alongside them.
@@ -167,7 +171,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionRows,
 		revisionPreview,
 		assistant,
-		assistantChat
+		assistantChat,
+		assistantChatSummarised
 	};
 };
 

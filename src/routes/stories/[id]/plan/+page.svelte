@@ -162,6 +162,7 @@
 								muted={data.assistant.muted}
 								suggestions={assistantSuggestions}
 								initialMessages={data.assistantChat}
+								summarised={data.assistantChatSummarised}
 								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 							/>
 						{:else if id === 'history'}

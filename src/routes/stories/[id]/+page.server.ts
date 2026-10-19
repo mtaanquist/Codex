@@ -22,6 +22,7 @@ import { createSceneNote, listSceneNotes, listStoryNotes } from '$lib/server/not
 import { isUuid } from '$lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { hasChatSummary } from '$lib/server/llm/chat-summary';
 import { listTrashedScenes } from '$lib/server/scene-lifecycle';
 import { sceneManageActions } from '$lib/server/scene-manage-actions';
 
@@ -264,6 +265,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const assistantChat = assistant.tabEnabled
 		? await listChat(db, locals.user!.id, { storyId: story.id })
 		: [];
+	const assistantChatSummarised =
+		assistant.tabEnabled && (await hasChatSummary(db, locals.user!.id, { storyId: story.id }));
 
 	return {
 		trashedScenes,
@@ -272,6 +275,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		reading: await readingPageRef(db, story.id),
 		preferences,
 		assistantChat,
+		assistantChatSummarised,
 		storySiblings,
 		chapters: chapterList,
 		scenes: sceneList,

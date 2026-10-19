@@ -85,9 +85,10 @@ contacts a model on its own.
   models to fill the lists from your endpoint, then choose one per role. The roles
   are Rubber duck (the side panel), Co-author (passages you can insert),
   Continuation (inline suggestions), Reviewer (suggested edits on a draft), and
-  Background work (scene and chapter summaries, suggested entity details, and the
-  story recap). Roles with no model chosen fall back to the model you picked for
-  Rubber duck, or to the endpoint's default. A single story can
+  Background work (scene and chapter summaries, suggested entity details, the
+  story recap, and the summary of a long conversation). Roles with no model
+  chosen fall back to the model you picked for Rubber duck, or to the endpoint's
+  default. A single story can
   override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million

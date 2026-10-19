@@ -24,6 +24,7 @@ import { createAnchorMapper } from '$lib/review-anchor';
 import { queueSceneMentions } from '$lib/server/jobs';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { hasChatSummary } from '$lib/server/llm/chat-summary';
 import { notifySuggestionDiscussion, notifyThreadReviewers } from '$lib/server/notify';
 import { teaser } from '$lib/notifications';
 import { listTrashedScenes } from '$lib/server/scene-lifecycle';
@@ -77,6 +78,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const assistantChat = assistant.tabEnabled
 		? await listChat(db, locals.user!.id, { storyId: story.id })
 		: [];
+	const assistantChatSummarised =
+		assistant.tabEnabled && (await hasChatSummary(db, locals.user!.id, { storyId: story.id }));
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },
@@ -97,7 +100,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		// Whether the Assistant answers in its threads here, and under what name.
 		assistant,
 		// The stored chat transcript for the Assistant tab.
-		assistantChat
+		assistantChat,
+		assistantChatSummarised
 	};
 };
 

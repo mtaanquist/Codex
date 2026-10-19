@@ -479,6 +479,17 @@ window they fall back to the old fixed defaults (6000 and 8000). Chat and
 co-author scale; the review passes and review-thread replies keep the fixed
 world budget, since the per-scene cost and the up-front estimate depend on it.
 
+When the chat transcript outgrows its budget, the turns that fall out are not
+just dropped: they are folded into a running summary on the utility role
+(`chat-summary.ts`), stored per conversation in `assistant_chat_summaries`, and
+sent as a system message ahead of the newer turns. The summary is refreshed only
+when more turns fall out, and each refresh covers enough to leave half the
+budget free. Because the browser sends a sliding window of turns with no ids,
+the summary records a digest of the newest turn it covers to find its place. A
+failed refresh falls back to dropping turns; clearing the conversation clears
+the summary. One summarising step serves every provider rather than Claude's
+server-side compaction, so the behaviour is the same everywhere.
+
 TODO (needs a real corpus): the token budget per tier, the split between the
 stable and per-scene shares, the truncation and prioritisation strategy when a
 story outgrows the budget, and how far the neighbour window reaches. These are
