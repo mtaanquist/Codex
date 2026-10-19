@@ -73,7 +73,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		// editor offers to load that version or keep its own.
 		return json({ conflict: true, ...result.conflict }, { status: 409 });
 	}
-	await queueSceneMentions(row.id);
+	if (result.bodyChanged) await queueSceneMentions(row.id);
 
 	return json({ savedAt: new Date().toISOString(), wordCount: result.wordCount });
 };

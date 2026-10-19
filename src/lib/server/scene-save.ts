@@ -20,7 +20,9 @@ export type SceneSave = {
 };
 
 export type SceneSaveResult =
-	| { ok: true; wordCount: number }
+	// bodyChanged is false when the stored text already matched, so the caller
+	// can skip the mention rebuild.
+	| { ok: true; wordCount: number; bodyChanged: boolean }
 	| { ok: false; conflict: { bodyMd: string; title: string | null } }
 	| { ok: false; missing: true };
 
@@ -40,23 +42,34 @@ export async function saveSceneBody(
 			.where(eq(scenes.id, sceneId))
 			.for('update');
 		if (!current) return { ok: false as const, missing: true as const };
-		if (save.baseHashes && !save.baseHashes.includes(textHash(current.bodyMd))) {
-			if (current.bodyMd !== save.bodyMd) {
-				return { ok: false as const, conflict: current };
-			}
+		const bodyChanged = current.bodyMd !== save.bodyMd;
+		if (save.baseHashes && bodyChanged && !save.baseHashes.includes(textHash(current.bodyMd))) {
+			return {
+				ok: false as const,
+				conflict: { bodyMd: current.bodyMd, title: current.title }
+			};
 		}
-		if (save.overwrite && current.bodyMd !== save.bodyMd) {
+		const count = wordCount(save.bodyMd);
+		// An idle editor keeps resending the same text. History already ends on
+		// it and the anchors have nothing to move through, so only a new title
+		// is worth a write.
+		if (!bodyChanged) {
+			if (current.title !== save.title) {
+				await tx.update(scenes).set({ title: save.title }).where(eq(scenes.id, sceneId));
+			}
+			return { ok: true as const, wordCount: count, bodyChanged: false };
+		}
+		if (save.overwrite) {
 			await recordRevision(tx, 'scene', sceneId, current.bodyMd, 'checkpoint', {
 				label: 'Replaced from another window'
 			});
 		}
-		const count = wordCount(save.bodyMd);
 		await tx
 			.update(scenes)
 			.set({ title: save.title, bodyMd: save.bodyMd, wordCount: count })
 			.where(eq(scenes.id, sceneId));
 		await recordRevision(tx, 'scene', sceneId, save.bodyMd);
 		if (save.anchors) await updateMarkerAnchors(tx, sceneId, save.anchors, save.bodyMd.length);
-		return { ok: true as const, wordCount: count };
+		return { ok: true as const, wordCount: count, bodyChanged: true };
 	});
 }

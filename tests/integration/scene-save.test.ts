@@ -86,7 +86,7 @@ afterAll(async () => {
 describe('saveSceneBody', () => {
 	it('saves when the editor saw the stored text', async () => {
 		const result = await saveSceneBody(db, sceneId, save({ bodyMd: 'The gate opened wide.' }));
-		expect(result).toEqual({ ok: true, wordCount: 4 });
+		expect(result).toEqual({ ok: true, wordCount: 4, bodyChanged: true });
 		expect((await stored()).bodyMd).toBe('The gate opened wide.');
 		expect(await history()).toEqual([{ bodyMd: 'The gate opened wide.', reason: 'autosave' }]);
 	});
@@ -136,6 +136,26 @@ describe('saveSceneBody', () => {
 	it('lets a save through when the text already matches, whatever the fingerprint', async () => {
 		const result = await saveSceneBody(db, sceneId, save({ baseHashes: ['stale'] }));
 		expect(result).toMatchObject({ ok: true });
+	});
+
+	it('writes nothing when the text and title are unchanged', async () => {
+		await saveSceneBody(db, sceneId, save({ title: 'Gate', bodyMd: 'The gate opened wide.' }));
+		const before = await stored();
+		const result = await saveSceneBody(
+			db,
+			sceneId,
+			save({ title: 'Gate', bodyMd: 'The gate opened wide.', baseHashes: ['stale'] })
+		);
+		expect(result).toEqual({ ok: true, wordCount: 4, bodyChanged: false });
+		expect((await stored()).updatedAt).toEqual(before.updatedAt);
+		expect(await history()).toHaveLength(1);
+	});
+
+	it('saves a new title on unchanged text without touching History', async () => {
+		const result = await saveSceneBody(db, sceneId, save({ title: 'The Gate' }));
+		expect(result).toMatchObject({ ok: true, bodyChanged: false });
+		expect((await stored()).title).toBe('The Gate');
+		expect(await history()).toEqual([]);
 	});
 
 	it('reports a scene that is gone', async () => {
