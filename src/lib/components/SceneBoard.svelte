@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import FormStatus from './FormStatus.svelte';
 	import { SCENE_STATUSES, SCENE_STATUS_LABELS, type SceneStatus } from '$lib/scene-status';
 	import { formatNumber, pluralSuffix } from '$lib/format';
 
@@ -25,7 +26,8 @@
 		// Open TODO markers per scene id.
 		todoCounts: Record<string, number>;
 		sceneHref: (sceneId: string) => string;
-		onMove: (sceneId: string, status: SceneStatus) => Promise<void>;
+		// Resolves to an error message when the move did not save, else null.
+		onMove: (sceneId: string, status: SceneStatus) => Promise<string | null>;
 	} = $props();
 
 	const chapterTitles = $derived(
@@ -34,6 +36,11 @@
 
 	let draggingId = $state<string | null>(null);
 	let dropLane = $state<SceneStatus | null>(null);
+	let moveError = $state<string | null>(null);
+
+	async function move(sceneId: string, status: SceneStatus) {
+		moveError = await onMove(sceneId, status);
+	}
 
 	function overLane(event: DragEvent, lane: SceneStatus) {
 		if (!draggingId) return;
@@ -49,7 +56,7 @@
 		if (!sceneId) return;
 		const scene = scenes.find((candidate) => candidate.id === sceneId);
 		if (!scene || scene.status === lane) return;
-		await onMove(sceneId, lane);
+		await move(sceneId, lane);
 	}
 
 	function endDrag() {
@@ -63,6 +70,9 @@
 	}
 </script>
 
+{#if moveError}
+	<div class="board-error"><FormStatus block error={moveError} /></div>
+{/if}
 <div class="board">
 	{#each SCENE_STATUSES as lane (lane)}
 		{@const cards = scenes.filter((scene) => scene.status === lane)}
@@ -115,7 +125,7 @@
 										class="flip"
 										aria-label="Move to {SCENE_STATUS_LABELS[back]}"
 										title="Move to {SCENE_STATUS_LABELS[back]}"
-										onclick={() => onMove(scene.id, back)}
+										onclick={() => move(scene.id, back)}
 									>
 										<Icon name="chevron" size={11} />
 									</button>
@@ -125,7 +135,7 @@
 										type="button"
 										aria-label="Move to {SCENE_STATUS_LABELS[forward]}"
 										title="Move to {SCENE_STATUS_LABELS[forward]}"
-										onclick={() => onMove(scene.id, forward)}
+										onclick={() => move(scene.id, forward)}
 									>
 										<Icon name="chevron" size={11} />
 									</button>
@@ -145,6 +155,9 @@
 </div>
 
 <style>
+	.board-error {
+		padding: 12px 18px 0;
+	}
 	.board {
 		display: flex;
 		gap: 12px;
