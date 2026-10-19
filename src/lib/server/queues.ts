@@ -35,9 +35,11 @@ export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
 // genuinely died misses its heartbeat and is retried (resuming through the
 // recorded progress).
 export const ASSISTANT_JOB_EXPIRY_SECONDS = 6 * 60 * 60;
-// The worker refreshes a running Assistant job's heartbeat every half of this;
-// a job whose worker stops refreshing is failed and retried.
-export const ASSISTANT_JOB_HEARTBEAT_SECONDS = 60;
+// The worker refreshes a running job's heartbeat every half of this; a job
+// whose worker stops refreshing (killed, crashed) is failed and retried within
+// about a minute instead of sitting active until it expires. Used by the long
+// jobs: Assistant runs and exports.
+export const JOB_HEARTBEAT_SECONDS = 60;
 // Assistant jobs the worker runs at once, across writers. Each writer still
 // gets one at a time (see assistantSendOptions in jobs.ts).
 export const ASSISTANT_JOB_CONCURRENCY = 4;

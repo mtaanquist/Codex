@@ -295,8 +295,22 @@ removes its images straight away, without the wait.
 
 `GET /healthz` is public and runs a `select 1`. It returns `200` with
 `{"status":"ok"}` when the database is reachable and `503` with
-`{"status":"error"}` when it is not. Point an uptime monitor or an orchestrator
-liveness and readiness probe at it.
+`{"status":"error"}` when it is not, or when the check takes longer than 3
+seconds. Point an uptime monitor or an orchestrator liveness and readiness
+probe at it.
+
+The README example and `compose.yaml` give the app service a healthcheck that
+calls `/healthz` every 30 seconds, so `docker compose ps` shows the app as
+`healthy` or `unhealthy`, and the bundled Caddy waits for a healthy app before
+it starts. If you use your own compose file, copy the app's `healthcheck`
+block into it. The worker has no web port, so it has no healthcheck. Docker
+Compose does not restart a container just because it is unhealthy; use an
+orchestrator or a watchdog if you want that.
+
+If the database restarts, the app and worker log a `db.pool_error` line and
+reconnect on their own. A single database query that runs longer than 30
+seconds in the app (5 minutes in the worker) is cancelled and that request or
+job fails instead of holding a connection.
 
 The worker logs one line per job to stdout; collect those if you want
 visibility into indexing, email, exports, and backups. A failed backup is

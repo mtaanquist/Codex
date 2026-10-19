@@ -1,3 +1,4 @@
+import { keepaliveFits, saveFailure, UnretryableSaveError } from './autosave';
 import { textHash } from './text-hash';
 
 // The scene editors' save request, with the conflict check. Each save sends
@@ -55,27 +56,29 @@ export function createSceneSaver(
 			const baseHashes = [base, ...pending];
 			const sendOverwrite = overwrite;
 			const started = generation;
-			pending = [...pending, hash].slice(-MAX_PENDING);
+			// A retry of the same text must not push older unsettled hashes out.
+			pending = [...pending.filter((h) => h !== hash), hash].slice(-MAX_PENDING);
 			// A network error leaves the hash pending: the server may have saved it.
+			const body = JSON.stringify({
+				title,
+				bodyMd,
+				markers,
+				baseHashes,
+				overwrite: sendOverwrite || undefined
+			});
 			const response = await fetch(`/api/scenes/${sceneId}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
-				keepalive,
-				body: JSON.stringify({
-					title,
-					bodyMd,
-					markers,
-					baseHashes,
-					overwrite: sendOverwrite || undefined
-				})
+				keepalive: keepalive && keepaliveFits(body),
+				body
 			});
 			settle(hash);
 			if (response.status === 409) {
 				const conflict = (await response.json()) as SceneConflict;
 				if (started === generation) onConflict({ bodyMd: conflict.bodyMd, title: conflict.title });
-				throw new Error('the scene changed somewhere else');
+				throw new UnretryableSaveError('the scene changed somewhere else');
 			}
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			if (!response.ok) throw saveFailure(response.status);
 			if (started === generation) {
 				base = hash;
 				overwrite = false;

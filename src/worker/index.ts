@@ -20,7 +20,7 @@ import {
 	ASSISTANT_SUMMARIES_QUEUE,
 	DIGEST_DELAY_SECONDS
 } from '../lib/server/queues.ts';
-import pg from 'pg';
+import { createPool } from '../lib/server/db/pool.ts';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
 import {
@@ -63,13 +63,16 @@ import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
+import { stopWorker } from './shutdown.ts';
 import { eq } from 'drizzle-orm';
 
 // Background job processor. Runs directly under Node's native TypeScript
 // support, so there is no build step; relative imports carry .ts extensions.
 const connectionString = process.env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex';
 
-const db = drizzle(new pg.Pool({ connectionString }), { schema });
+// Jobs run longer statements than web requests (purges, reindexing), so the
+// per-statement limit is looser than the app's.
+const db = drizzle(createPool(connectionString, { statementTimeoutMs: 300_000 }), { schema });
 const boss = new PgBoss(connectionString);
 
 // Queues each recipient's batched digest email after the shared delay.
@@ -573,8 +576,17 @@ if (backups) {
 
 console.log('Worker started.');
 
+// Running jobs get until the stop timeout to finish; then pg-boss fails them
+// into a retry so they are picked up again on the next start.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 	process.on(signal, () => {
-		void boss.stop().then(() => process.exit(0));
+		console.log(`Worker stopping (${signal}).`);
+		void stopWorker(boss).then(
+			() => process.exit(0),
+			(error) => {
+				console.error('Worker stop failed:', error);
+				process.exit(1);
+			}
+		);
 	});
 }

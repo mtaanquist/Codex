@@ -426,4 +426,4 @@
 	</div>
 </div>
 
-<svelte:window onpagehide={autosave.flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
