@@ -120,6 +120,8 @@ describe('isolatePage', () => {
 // Drives the real browser where one is found (CHROMIUM_PATH or a system
 // install); skipped on a machine without one.
 describe.skipIf(!chromiumPath())('renderEditionPdf', () => {
+	// A cold browser start on a CI runner has taken over 20s, so the budget is
+	// generous.
 	it('never fetches an external image or prefetch link', async () => {
 		const hits: string[] = [];
 		const server = createServer((req, res) => {
@@ -156,5 +158,5 @@ describe.skipIf(!chromiumPath())('renderEditionPdf', () => {
 		} finally {
 			server.close();
 		}
-	}, 30_000);
+	}, 120_000);
 });
