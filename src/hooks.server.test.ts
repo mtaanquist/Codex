@@ -13,10 +13,10 @@ vi.mock('$lib/server/log', () => ({ logEvent: vi.fn() }));
 const { validateSession } = await import('$lib/server/auth');
 const { handle } = await import('./hooks.server');
 
-function request(path: string, cookie?: string) {
+function request(path: string, cookie?: string, origin = 'http://localhost') {
 	const resolve = vi.fn(async () => new Response('ok'));
 	const cookies = { get: vi.fn(() => cookie), delete: vi.fn() };
-	const event = { url: new URL(`http://localhost${path}`), cookies, locals: {} };
+	const event = { url: new URL(`${origin}${path}`), cookies, locals: {} };
 	return { event, resolve, cookies };
 }
 
@@ -100,5 +100,30 @@ describe('handle without a session', () => {
 		expect(validateSession).toHaveBeenCalledTimes(1);
 		expect(cookies.delete).toHaveBeenCalledWith('session', { path: '/' });
 		expect(resolve).not.toHaveBeenCalled();
+	});
+});
+
+describe('security headers', () => {
+	async function headersFor(path: string, origin?: string) {
+		const { event, resolve } = request(path, undefined, origin);
+		const response: Response = await handle({ event, resolve } as never);
+		return response.headers;
+	}
+
+	it.each(['/', '/healthz', '/assets/2f1c6a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f'])(
+		'sets the baseline headers on %s',
+		async (path) => {
+			const headers = await headersFor(path);
+			expect(headers.get('x-content-type-options')).toBe('nosniff');
+			expect(headers.get('referrer-policy')).toBe('same-origin');
+			expect(headers.get('x-frame-options')).toBe('DENY');
+		}
+	);
+
+	it('sends HSTS over HTTPS only', async () => {
+		expect((await headersFor('/')).get('strict-transport-security')).toBeNull();
+		expect((await headersFor('/', 'https://codex.example')).get('strict-transport-security')).toBe(
+			'max-age=31536000'
+		);
 	});
 });

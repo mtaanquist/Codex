@@ -35,6 +35,18 @@ const AUTH_PATHS = new Set(['/login', '/signup']);
 // state themselves, and review pages guard on the magic-link token.
 const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/', '/docs/'];
 
+// Set on every response, endpoints included. The Content-Security-Policy for
+// pages (scripts and frame-ancestors) comes from kit.csp in svelte.config.js.
+// HSTS is left off plain HTTP so a self-hosted install without TLS is not
+// pinned to HTTPS. It skips includeSubDomains because sibling hosts on a
+// self-hoster's domain may not serve HTTPS.
+function setSecurityHeaders(headers: Headers, url: URL) {
+	headers.set('X-Content-Type-Options', 'nosniff');
+	headers.set('Referrer-Policy', 'same-origin');
+	headers.set('X-Frame-Options', 'DENY');
+	if (url.protocol === 'https:') headers.set('Strict-Transport-Security', 'max-age=31536000');
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 	event.locals.session = null;
@@ -61,7 +73,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 		redirect(303, '/');
 	}
 
-	return resolve(event);
+	const response = await resolve(event);
+	setSecurityHeaders(response.headers, event.url);
+	return response;
 };
 
 // Server faults are logged as structured events with a request id; the client

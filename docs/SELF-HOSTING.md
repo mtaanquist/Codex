@@ -170,6 +170,12 @@ Without it, every request looks like it comes from the proxy, and the per-addres
 sign-in rate limit collapses into one shared counter that enough failed
 attempts can trip for everyone at once.
 
+The app sets its own security headers (`Content-Security-Policy`,
+`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`), so the proxy
+does not need to add them. When `ORIGIN` starts with `https://` it also sends
+`Strict-Transport-Security` for one year, after which browsers refuse plain
+HTTP for that host.
+
 ### Bundled Caddy
 
 Set `COMPOSE_PROFILES=caddy` and `SITE_ADDRESS` to your domain. Caddy obtains
