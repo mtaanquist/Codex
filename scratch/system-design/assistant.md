@@ -1014,6 +1014,10 @@ calls the gateway, which proxies through the egress guard.
   `get_scene`, `suggest_edit`, and `leave_comment` and halves the budget, for
   endpoints running a smaller local model. A surface that names its own tools
   (the scoped review-reply turn) is unaffected.
+- [built] The review-reply turn posts where guest reviewers can read it and
+  carries their comments, so its reads are held to the thread's own story:
+  `list_scenes` and `get_scene` under `toolScope.storyOnly` (live scenes of that
+  story only), and no `get_entity`, `find_appearances`, or `search_text`.
 - [built] `get_scene` sizes its result against the role model's context window
   when one is known (about a quarter of it, floor 8000 characters, the 200K
   ceiling unchanged). Sizing the assembled world context against the window is

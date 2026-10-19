@@ -10,7 +10,11 @@ import {
 	throwAssistantError
 } from '$lib/server/llm/assistant-route';
 import { assembleStoryFrame, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import { buildReviewReplyMessage, excerptAround } from '$lib/server/llm/prompts/review-reply';
+import {
+	buildReviewReplyMessage,
+	excerptAround,
+	reviewReplyToolNames
+} from '$lib/server/llm/prompts/review-reply';
 import { complete } from '$lib/server/llm/gateway';
 import { addComment, listSuggestions, listThreads } from '$lib/server/review';
 import { createAnchorMapper } from '$lib/review-anchor';
@@ -20,9 +24,10 @@ import type { ChatMessage } from '$lib/server/llm/providers/types';
 // The Assistant answering in a review thread it opened: triggered after the
 // author replies there. It runs with two scoped tools - reply_in_thread, and
 // update_suggestion when the thread discusses one of its suggestions - whose
-// targets are fixed here, never taken from the model. Only the story owner
-// can trigger it, and only on assistant-rooted threads, so a guest reviewer
-// can never spend the owner's endpoint.
+// targets are fixed here, never taken from the model, plus scene reads held to
+// this story (guests read the reply; see reviewReplyToolNames). Only the story
+// owner can trigger it, and only on assistant-rooted threads, so a guest
+// reviewer can never spend the owner's endpoint.
 
 async function assistantCommentCount(threadId: string): Promise<number> {
 	const [row] = await db
@@ -64,6 +69,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				(s) => s.id === thread.suggestionId
 			) ?? null)
 		: null;
+
+	const pendingSuggestion = suggestion?.status === 'pending';
 
 	const [scene] = await db
 		.select({ title: scenes.title, bodyMd: scenes.bodyMd })
@@ -112,16 +119,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			storyId: story.id,
 			role: 'reviewer',
 			enableTools: true,
-			toolNames: [
-				'list_scenes',
-				'get_scene',
-				'get_entity',
-				'find_appearances',
-				'search_text',
-				'reply_in_thread',
-				...(suggestion && suggestion.status === 'pending' ? ['update_suggestion'] : [])
-			],
-			toolScope: { threadId, suggestionId: thread.suggestionId ?? undefined },
+			toolNames: reviewReplyToolNames(pendingSuggestion),
+			toolScope: { threadId, suggestionId: thread.suggestionId ?? undefined, storyOnly: true },
 			messages,
 			signal: request.signal
 		});
