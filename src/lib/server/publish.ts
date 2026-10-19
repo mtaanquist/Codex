@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import { publicationAssets, publications, stories, users } from './db/schema.ts';
+import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
 import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
 import { isUniqueViolation } from './db-errors.ts';
@@ -52,8 +52,10 @@ export async function publishStory(
 	}
 
 	// Inline images the frozen prose points at, so the reader can serve them
-	// to anonymous visitors without exposing every asset by id.
-	const referencedAssets = [
+	// to anonymous visitors without exposing every asset by id. Only the
+	// author's own existing assets: prose can name any id, including another
+	// user's private image or one that does not exist on this instance.
+	const mentionedAssets = [
 		...new Set([
 			...content.chapters.flatMap((chapter) =>
 				chapter.scenes.flatMap((scene) => findAssetReferences(scene.bodyMd))
@@ -61,7 +63,6 @@ export async function publishStory(
 			...content.unfiled.flatMap((scene) => findAssetReferences(scene.bodyMd))
 		])
 	];
-
 	try {
 		const publicationId = await db.transaction(async (tx) => {
 			await tx
@@ -82,6 +83,18 @@ export async function publishStory(
 					versionLabel: versionLabel?.trim() || null
 				})
 				.returning({ id: publications.id });
+			// Locked so a concurrent delete of one of these images cannot slip
+			// in before the link is written.
+			const referencedAssets =
+				mentionedAssets.length === 0
+					? []
+					: (
+							await tx
+								.select({ id: assets.id })
+								.from(assets)
+								.where(and(inArray(assets.id, mentionedAssets), eq(assets.ownerId, userId)))
+								.for('share')
+						).map((row) => row.id);
 			if (referencedAssets.length > 0) {
 				await tx
 					.insert(publicationAssets)
@@ -270,6 +283,12 @@ export async function isPublicAsset(db: Database, assetId: string): Promise<bool
 		.from(publicationAssets)
 		.innerJoin(publications, eq(publicationAssets.publicationId, publications.id))
 		.innerJoin(stories, eq(publications.storyId, stories.id))
+		// Editions published before links were owner-checked may list another
+		// user's image; only the author's own images are public through them.
+		.innerJoin(
+			assets,
+			and(eq(assets.id, publicationAssets.assetId), eq(assets.ownerId, publications.ownerId))
+		)
 		.where(
 			and(
 				eq(publicationAssets.assetId, assetId),

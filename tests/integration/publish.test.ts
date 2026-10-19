@@ -7,6 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import {
 	assets,
 	chapters,
+	publicationAssets,
 	publications,
 	scenes,
 	stories,
@@ -206,6 +207,79 @@ describe('takedown and covers', () => {
 		);
 		await takedownPublication(db, current.id);
 		expect(await isPublicAsset(db, asset.id)).toBe(false);
+	});
+});
+
+describe('inline images owned by someone else', () => {
+	it("never makes another user's image public, and ignores ids that do not exist", async () => {
+		const [stranger] = await db
+			.insert(users)
+			.values({ email: 'victim@example.com', displayName: 'V', passwordHash: 'x', role: 'user' })
+			.returning();
+		const [strangerUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: stranger.id, name: 'Private' })
+			.returning();
+		const [foreign] = await db
+			.insert(assets)
+			.values({
+				ownerId: stranger.id,
+				universeId: strangerUniverse.id,
+				kind: 'inline',
+				filename: 'secret.png',
+				contentType: 'image/png',
+				byteSize: 8,
+				storageKey: 'codex-assets/secret'
+			})
+			.returning();
+		const missing = '00000000-0000-4000-8000-000000000000';
+		const [borrowing] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: authorId, title: 'Borrowed', visibility: 'unlisted' })
+			.returning();
+		await db.insert(scenes).values({
+			storyId: borrowing.id,
+			globalPosition: 1,
+			bodyMd: `![a](/assets/${foreign.id}) and ![b](/assets/${missing})`
+		});
+
+		expect(await publishStory(db, authorId, borrowing.id)).toMatchObject({ ok: true });
+		expect(await isPublicAsset(db, foreign.id)).toBe(false);
+	});
+
+	it('does not serve a foreign image already linked to an edition', async () => {
+		const [stranger] = await db
+			.insert(users)
+			.values({ email: 'victim2@example.com', displayName: 'V2', passwordHash: 'x', role: 'user' })
+			.returning();
+		const [strangerUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: stranger.id, name: 'Private 2' })
+			.returning();
+		const [foreign] = await db
+			.insert(assets)
+			.values({
+				ownerId: stranger.id,
+				universeId: strangerUniverse.id,
+				kind: 'inline',
+				filename: 'old.png',
+				contentType: 'image/png',
+				byteSize: 8,
+				storageKey: 'codex-assets/old'
+			})
+			.returning();
+		const [oldStory] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: authorId, title: 'Old edition', visibility: 'public' })
+			.returning();
+		await db.insert(scenes).values({ storyId: oldStory.id, globalPosition: 1, bodyMd: 'Text.' });
+		const published = await publishStory(db, authorId, oldStory.id);
+		if (!published.ok) throw new Error(published.reason);
+		// As an edition published before links were owner-checked would have it.
+		await db
+			.insert(publicationAssets)
+			.values({ publicationId: published.publicationId, assetId: foreign.id });
+		expect(await isPublicAsset(db, foreign.id)).toBe(false);
 	});
 });
 
