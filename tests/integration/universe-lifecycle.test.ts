@@ -10,6 +10,8 @@ import {
 	entityCategories,
 	entityRelationships,
 	exportArtifacts,
+	notifications,
+	places,
 	publications,
 	relationTypes,
 	revisions,
@@ -42,6 +44,14 @@ import {
 	invitationByToken,
 	reviewerAccess
 } from '../../src/lib/server/review';
+import { createChapter, createScene, trashScene } from '../../src/lib/server/scene-lifecycle';
+import { duplicateScene, mergeScenes } from '../../src/lib/server/scene-split-merge';
+import { clearMentionPin, setMentionPin } from '../../src/lib/server/mention-pins';
+import { declareMembership } from '../../src/lib/server/membership';
+import { saveEntity } from '../../src/lib/server/entity-save';
+import { createRelationship } from '../../src/lib/server/relationships';
+import { createStoryNote, getNote, setNotePinned } from '../../src/lib/server/notes';
+import { notifyReviewActivity } from '../../src/lib/server/notify';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -54,8 +64,11 @@ let storyId: string;
 let characterId: string;
 let typeId: string;
 let sceneId: string;
+let placeId: string;
+let secondSceneId: string;
 let reviewToken: string;
 let reviewerId: string;
+let noteId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -90,10 +103,16 @@ beforeAll(async () => {
 		.values({ storyId, globalPosition: 1, title: 'Bell', bodyMd: 'The bell rang.' })
 		.returning();
 	sceneId = scene.id;
+	const [secondScene] = await db
+		.insert(scenes)
+		.values({ storyId, globalPosition: 2, title: 'Last call', bodyMd: 'Time, please.' })
+		.returning();
+	secondSceneId = secondScene.id;
 	const invitation = await createReviewInvitation(db, { storyId, createdBy: ownerId });
 	reviewToken = invitation.token;
 	const reviewer = await ensureReviewer(db, invitation.id, { displayName: 'Guest' });
 	reviewerId = reviewer!.id;
+	noteId = await createStoryNote(db, ownerId, universeId, storyId);
 	const [category] = await db
 		.insert(entityCategories)
 		.values({ universeId, ownerId, name: 'Lore', sortOrder: 0 })
@@ -103,6 +122,11 @@ beforeAll(async () => {
 		.values({ universeId, ownerId, name: 'Mara', categoryId: category.id })
 		.returning();
 	characterId = character.id;
+	const [place] = await db
+		.insert(places)
+		.values({ universeId, ownerId, name: 'The Anchor', categoryId: category.id })
+		.returning();
+	placeId = place.id;
 	await recordRevision(db, 'character', characterId, 'A barkeep.');
 	const [relType] = await db
 		.insert(relationTypes)
@@ -152,6 +176,66 @@ describe('trash and restore', () => {
 		expect(await reviewerAccess(db, reviewerId, storyId)).toBeNull();
 	});
 
+	it('refuses writes and reads by id inside the trashed universe', async () => {
+		const refusals: [string, () => Promise<unknown>][] = [
+			['createChapter', () => createChapter(db, ownerId, storyId)],
+			['createScene', () => createScene(db, ownerId, storyId)],
+			['trashScene', () => trashScene(db, ownerId, sceneId)],
+			['duplicateScene', () => duplicateScene(db, ownerId, sceneId)],
+			['mergeScenes', () => mergeScenes(db, ownerId, storyId, [sceneId, secondSceneId])],
+			[
+				'setMentionPin',
+				() => setMentionPin(db, ownerId, storyId, 'Mara', 'character', characterId)
+			],
+			['clearMentionPin', () => clearMentionPin(db, ownerId, storyId, 'Mara')],
+			[
+				'declareMembership',
+				() => declareMembership(db, ownerId, 'character', characterId, storyId)
+			],
+			[
+				'saveEntity',
+				() =>
+					saveEntity(db, 'character', characterId, ownerId, {
+						name: 'Mara',
+						tags: [],
+						summaryMd: null,
+						bodyMd: 'Rewritten.'
+					})
+			],
+			[
+				'createRelationship',
+				() =>
+					createRelationship(db, ownerId, {
+						fromKind: 'character',
+						fromId: characterId,
+						relationTypeId: typeId,
+						toId: placeId
+					})
+			],
+			['getNote', () => getNote(db, noteId, ownerId)],
+			['setNotePinned', () => setNotePinned(db, noteId, ownerId, true)],
+			['ownedEntityBody note', () => ownedEntityBody(db, ownerId, 'note', noteId)]
+		];
+		const allowed: string[] = [];
+		for (const [name, call] of refusals) {
+			const result = await call();
+			const refused =
+				result === null ||
+				result === false ||
+				(typeof result === 'object' && result !== null && 'ok' in result && !result.ok);
+			if (!refused) allowed.push(name);
+		}
+		expect(allowed).toEqual([]);
+		const [{ total: before }] = await db
+			.select({ total: sql<number>`count(*)::int` })
+			.from(notifications);
+		await notifyReviewActivity(db, storyId, 'Guest', 'commented', 'Late note.');
+		const [{ total: after }] = await db
+			.select({ total: sql<number>`count(*)::int` })
+			.from(notifications);
+		expect(after).toBe(before);
+	});
+
 	it('is not due for the purge until the window elapses', async () => {
 		expect(await listUniversesDueForPurge(db)).toEqual([]);
 		await db
@@ -173,6 +257,7 @@ describe('trash and restore', () => {
 		expect(await ownedStoryUniverse(db, ownerId, storyId)).toBe(universeId);
 		expect((await invitationByToken(db, reviewToken)).status).toBe('ok');
 		expect(await reviewerAccess(db, reviewerId, storyId)).not.toBeNull();
+		expect((await getNote(db, noteId, ownerId))?.id).toBe(noteId);
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(false);
 	});
 });

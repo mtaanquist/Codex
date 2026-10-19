@@ -391,7 +391,9 @@ export async function ownedEntityBody(
 		const [row] = await db
 			.select({ bodyMd: notes.bodyMd })
 			.from(notes)
-			.where(and(eq(notes.id, entityId), eq(notes.ownerId, userId)));
+			.where(
+				and(eq(notes.id, entityId), eq(notes.ownerId, userId), inLiveUniverse(notes.universeId))
+			);
 		return row ?? null;
 	}
 	// Chapters have no revisable body yet.

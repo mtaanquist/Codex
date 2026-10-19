@@ -4,6 +4,7 @@ import { assets, publicationAssets, publications, stories, users } from './db/sc
 import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
 import { isUniqueViolation } from './db-errors.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
 // Publishing freezes the story's current prose into an edition; the
 // public reading pages serve only these snapshots, never live drafts.
@@ -30,7 +31,9 @@ export async function publishStory(
 	const [story] = await db
 		.select()
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(
+			and(eq(stories.id, storyId), eq(stories.ownerId, userId), inLiveUniverse(stories.universeId))
+		);
 	if (!story) return { ok: false, reason: 'story not found' };
 
 	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
