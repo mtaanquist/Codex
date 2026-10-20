@@ -109,6 +109,11 @@ contacts a model on its own.
   go back to the reported value. If you run the model yourself, enter the size
   you started the server with (llama.cpp calls this the context size), not the
   largest the model could handle: that setting is what actually applies.
+  The window also sets how much the Assistant reads on each request: a bigger
+  window lets Rubber duck keep more of your conversation, and lets Rubber duck
+  and Co-author carry more of your world (characters, lore, notes) into each
+  answer, up to a fixed limit that keeps the cost of a long conversation down.
+  Without a number, they use a fixed default.
 - **Thinking**: in a role's Tune window, a Thinking list with three settings. On asks the
   model to reason before it answers: noticeably better reviews and feedback, at
   the cost of more tokens and a slower reply. Off tells the endpoint to skip that
