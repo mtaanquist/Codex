@@ -23,12 +23,15 @@
 
 	let {
 		role,
+		suggestion,
 		saved,
 		anthropic,
 		contextWindow,
 		onClose
 	}: {
-		role: { id: AssistantRole; name: string; hint: string; suggestion: string };
+		role: { id: AssistantRole; name: string; hint: string; tip: string };
+		// The model the provider's guide suggests for this role.
+		suggestion: string;
 		saved: RoleTuning;
 		// Claude reads effort and ignores temperature and extra settings; every
 		// other endpoint is the other way round. Show only what will be read.
@@ -124,7 +127,10 @@
 		<div class="modal-head">
 			<div class="modal-head-main">
 				<h2 class="modal-title">{role.name}</h2>
-				<p class="modal-sub">{role.hint} {role.suggestion}</p>
+				<p class="modal-sub">
+					{role.hint} Suggested: {suggestion}.{#if role.tip}
+						{role.tip}{/if}
+				</p>
 			</div>
 		</div>
 

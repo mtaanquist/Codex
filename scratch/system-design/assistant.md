@@ -490,7 +490,8 @@ Because the browser sends a sliding window of turns with no ids, the summary
 records a digest of the newest writer turn it covers, paired with the writer
 turn before it, to find its place; writer turns are always stored, so the
 anchor survives a reload. A failed refresh falls back to dropping turns and is
-retried on the next message; clearing the conversation clears the summary. One summarising step serves every provider rather than Claude's
+retried on the next message; clearing the conversation clears the summary. One
+summarising step serves every provider rather than Claude's
 server-side compaction, so the behaviour is the same everywhere.
 
 TODO (needs a real corpus): the token budget per tier, the split between the

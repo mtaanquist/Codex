@@ -407,7 +407,9 @@ export const anthropicProvider: Provider = {
 	},
 
 	async listModels(conn, http, signal) {
-		const res = await http(`${base(conn.endpoint)}/v1/models`, {
+		// The API pages its list (20 by default); one page of the maximum holds
+		// the whole catalogue.
+		const res = await http(`${base(conn.endpoint)}/v1/models?limit=1000`, {
 			method: 'GET',
 			headers: headers(conn),
 			signal
@@ -416,10 +418,19 @@ export const anthropicProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
 		}
-		const json = JSON.parse(text) as { data?: { id?: unknown }[] };
-		const ids = Array.isArray(json.data)
-			? json.data.map((m) => m.id).filter((id): id is string => typeof id === 'string')
-			: [];
-		return [...new Set(ids)].sort((a, b) => a.localeCompare(b)).map((id): ModelInfo => ({ id }));
+		const json = JSON.parse(text) as { data?: { id?: unknown; max_input_tokens?: unknown }[] };
+		// Each model reports its context window as max_input_tokens.
+		const byId = new Map<string, ModelInfo>();
+		for (const model of Array.isArray(json.data) ? json.data : []) {
+			if (typeof model.id !== 'string' || byId.has(model.id)) continue;
+			const tokens = Number(model.max_input_tokens);
+			byId.set(
+				model.id,
+				Number.isFinite(tokens) && tokens > 0
+					? { id: model.id, contextLength: Math.floor(tokens) }
+					: { id: model.id }
+			);
+		}
+		return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 	}
 };

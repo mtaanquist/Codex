@@ -52,6 +52,7 @@ import {
 	PROVIDER_PRESETS,
 	type ProviderId
 } from '$lib/server/llm/providers/presets';
+import { MODEL_GUIDE, ROLE_TIER } from '$lib/server/llm/providers/model-guide';
 import { recentAssistantUsage } from '$lib/server/llm/usage';
 import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
@@ -159,6 +160,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 			keyHint: p.keyHint,
 			docsUrl: p.docsUrl
 		})),
+		// Which model to suggest for each role, on every provider.
+		modelGuide: { tiers: ROLE_TIER, providers: MODEL_GUIDE },
 		personas: PERSONAS.map((p) => ({ id: p.id, label: p.label, description: p.description })),
 		sessions: await listSessions(db, user.id, sessionId),
 		graceDays: DELETION_GRACE_DAYS,
@@ -208,7 +211,8 @@ const PARAMS_MESSAGE = 'Extra settings must be a JSON object, like {"top_p": 0.9
 // The Assistant section saves in pieces (identity, endpoint, models, the kill
 // switch), each its own button. saveAccountLlmConfig replaces the whole config
 // from its input, so a partial save first reads the current view and overlays
-// only the changed fields; a blank api key keeps the stored one.
+// only the changed fields; a blank api key keeps the stored one. A provider
+// switch resets what belonged to the old one (see saveAccountLlmConfig).
 async function patchAssistant(
 	userId: string,
 	patch: Partial<{
@@ -233,7 +237,9 @@ async function patchAssistant(
 		enabled: patch.enabled ?? current.enabled,
 		assistantName: patch.assistantName ?? current.assistantName,
 		persona: normalisePersona(patch.persona ?? current.persona),
-		provider: patch.provider ?? current.provider,
+		// Left out unless this save is the provider picker's, so a save from
+		// another form cannot undo a switch that landed after it read the config.
+		provider: patch.provider,
 		endpoint: patch.endpoint ?? current.endpoint,
 		apiKey: patch.apiKey ?? '',
 		models: patch.models ?? current.models,
@@ -248,6 +254,56 @@ async function patchAssistant(
 		supportsStreaming: current.supportsStreaming,
 		supportsTools: current.supportsTools
 	});
+}
+
+// Save the Endpoint form. Test connection submits the same form and saves it
+// first, so the test runs against what is on screen: a key typed just before
+// clicking Test would otherwise race the autosave its blur fires.
+async function saveEndpointForm(userId: string, data: FormData) {
+	const profile = String(data.get('toolProfile') ?? '');
+	// An empty box clears the figure (null), rather than being left out, so the
+	// writer can remove a cap they set earlier. Anything that is not a
+	// non-negative number is refused instead of silently clearing it.
+	const usdField = (name: string): number | null | 'invalid' => {
+		const raw = String(data.get(name) ?? '').trim();
+		if (!raw) return null;
+		const value = Number(raw);
+		if (!Number.isFinite(value) || value < 0) return 'invalid';
+		return value > 0 ? value : null;
+	};
+	const spendCapUsd = usdField('spendCapUsd');
+	const spendWarnUsd = usdField('spendWarnUsd');
+	if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
+		return fail(400, {
+			scope: 'assistant-endpoint',
+			message: 'Enter an amount in dollars, or leave it blank.'
+		});
+	}
+	// The box is only rendered for an OpenAI-compatible endpoint; a save that
+	// did not carry it leaves the stored object alone.
+	const extraParams = data.has('extraParams')
+		? paramsField(String(data.get('extraParams')))
+		: undefined;
+	if (extraParams === 'invalid') {
+		return fail(400, { scope: 'assistant-endpoint', message: PARAMS_MESSAGE });
+	}
+	// An unchecked box sends nothing at all, so the hidden marker is what
+	// separates "turned off" from "this form never showed the box".
+	const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
+	const result = await patchAssistant(userId, {
+		provider: normaliseProviderId(data.get('provider')),
+		endpoint: String(data.get('endpoint') ?? ''),
+		apiKey: String(data.get('apiKey') ?? ''),
+		extraParams,
+		webSearch,
+		spendCapUsd,
+		spendWarnUsd,
+		toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
+			? (profile as ToolProfile)
+			: undefined
+	});
+	if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
+	return null;
 }
 
 export const actions: Actions = {
@@ -416,50 +472,8 @@ export const actions: Actions = {
 		return { scope: 'assistant-identity', saved: true };
 	},
 	saveAssistantEndpoint: async ({ request, locals }) => {
-		const data = await request.formData();
-		const profile = String(data.get('toolProfile') ?? '');
-		// An empty box clears the figure (null), rather than being left out, so the
-		// writer can remove a cap they set earlier. Anything that is not a
-		// non-negative number is refused instead of silently clearing it.
-		const usdField = (name: string): number | null | 'invalid' => {
-			const raw = String(data.get(name) ?? '').trim();
-			if (!raw) return null;
-			const value = Number(raw);
-			if (!Number.isFinite(value) || value < 0) return 'invalid';
-			return value > 0 ? value : null;
-		};
-		const spendCapUsd = usdField('spendCapUsd');
-		const spendWarnUsd = usdField('spendWarnUsd');
-		if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
-			return fail(400, {
-				scope: 'assistant-endpoint',
-				message: 'Enter an amount in dollars, or leave it blank.'
-			});
-		}
-		// The box is only rendered for an OpenAI-compatible endpoint; a save that
-		// did not carry it leaves the stored object alone.
-		const extraParams = data.has('extraParams')
-			? paramsField(String(data.get('extraParams')))
-			: undefined;
-		if (extraParams === 'invalid') {
-			return fail(400, { scope: 'assistant-endpoint', message: PARAMS_MESSAGE });
-		}
-		// An unchecked box sends nothing at all, so the hidden marker is what
-		// separates "turned off" from "this form never showed the box".
-		const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
-		const result = await patchAssistant(locals.user!.id, {
-			provider: normaliseProviderId(data.get('provider')),
-			endpoint: String(data.get('endpoint') ?? ''),
-			apiKey: String(data.get('apiKey') ?? ''),
-			extraParams,
-			webSearch,
-			spendCapUsd,
-			spendWarnUsd,
-			toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
-				? (profile as ToolProfile)
-				: undefined
-		});
-		if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
+		const failed = await saveEndpointForm(locals.user!.id, await request.formData());
+		if (failed) return failed;
 		return { scope: 'assistant-endpoint', saved: true };
 	},
 	saveAssistantModels: async ({ request, locals }) => {
@@ -545,7 +559,9 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
 		return { scope: 'assistant-models', saved: true };
 	},
-	testAssistant: async ({ locals }) => {
+	testAssistant: async ({ request, locals }) => {
+		const failed = await saveEndpointForm(locals.user!.id, await request.formData());
+		if (failed) return failed;
 		const result = await testAccountConnection(db, locals.user!.id);
 		if (!result.ok) return fail(400, { scope: 'assistant-test', message: result.reason });
 		return { scope: 'assistant-test', reply: result.reply };

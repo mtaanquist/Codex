@@ -136,6 +136,12 @@ export async function testAccountConnection(
 ): Promise<TestConnectionResult> {
 	const { config } = await resolveLlmConfig(db, userId);
 	const chosen = model?.trim() || pickModel(config, 'chat');
+	if (!chosen && config.endpoint.trim()) {
+		return {
+			ok: false,
+			reason: 'Select Discover models, pick a model for Rubber duck, then test again.'
+		};
+	}
 	return testEndpointConnection(
 		db,
 		{ endpoint: config.endpoint, apiKey: config.apiKey },
