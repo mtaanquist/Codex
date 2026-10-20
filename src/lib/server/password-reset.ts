@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sessions, users } from './db/schema';
 import { hashPassword } from './password';
-import { consumeToken, issueToken, revokeTokens } from './tokens';
+import { consumeToken, reserveToken, revokeTokens } from './tokens';
 
 const MIN_PASSWORD = 8;
 const RESET_TTL_MINUTES = 60;
@@ -10,8 +10,8 @@ const RESET_TTL_MINUTES = 60;
 // address as for a known one.
 const NO_USER = '00000000-0000-0000-0000-000000000000';
 
-// Issues a reset token for an existing account and returns the raw value for
-// the emailed link, or null when no account matches. The caller shows the same
+// Reserves a reset token for an existing account and returns its id for the
+// queued email, or null when no account matches. The caller shows the same
 // message either way, so it never reveals whether an email is registered.
 export async function requestPasswordReset(db: Database, email: string): Promise<string | null> {
 	const normalized = email.trim().toLowerCase();
@@ -22,7 +22,7 @@ export async function requestPasswordReset(db: Database, email: string): Promise
 	// any earlier outstanding link first keeps only the most recent one live.
 	return await db.transaction(async (tx) => {
 		await revokeTokens(tx, user?.id ?? NO_USER, 'password_reset');
-		return user ? issueToken(tx, user.id, 'password_reset', RESET_TTL_MINUTES) : null;
+		return user ? reserveToken(tx, user.id, 'password_reset', RESET_TTL_MINUTES) : null;
 	});
 }
 
@@ -43,7 +43,8 @@ export async function resetPassword(
 	if (!userId) {
 		return {
 			ok: false,
-			reason: 'This reset link is not valid. It may have expired or already been used.'
+			reason:
+				'This reset link is not valid. It may have expired or already been used. If you got more than one email, use the newest one.'
 		};
 	}
 	const passwordHash = await hashPassword(newPassword);

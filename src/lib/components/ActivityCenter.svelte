@@ -76,7 +76,7 @@
 		padding: 11px 12px;
 	}
 	.activity-card.failed {
-		border-color: color-mix(in oklab, var(--danger, #c0564f) 55%, var(--border));
+		border-color: color-mix(in oklab, var(--danger) 55%, var(--border));
 	}
 	.activity-glyph {
 		flex: 0 0 auto;
@@ -89,7 +89,7 @@
 		color: var(--accent, var(--text));
 	}
 	.activity-card.failed .activity-glyph {
-		color: var(--danger, #c0564f);
+		color: var(--danger);
 	}
 	.spinner {
 		width: 14px;

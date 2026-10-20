@@ -6,6 +6,7 @@
 	import ReviewMarginRail from './ReviewMarginRail.svelte';
 	import ReviewSelectionToolbar from './ReviewSelectionToolbar.svelte';
 	import EditorToolbar from './EditorToolbar.svelte';
+	import SceneConflictBanner from './SceneConflictBanner.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 	import {
 		commandMarkerExtensions,
@@ -22,6 +23,7 @@
 		type ReviewMarksHandle
 	} from '$lib/editor-review-marks';
 	import { createAutosave, type SaveStatus } from '$lib/autosave';
+	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
 	import {
 		toggleCommandMarkers as toggleCommandMarkersView,
 		toggleNonPrintingMarks
@@ -103,27 +105,41 @@
 	// svelte-ignore state_referenced_locally
 	let appliedBody = scene.bodyMd;
 
+	// Set when a save was refused because the scene changed elsewhere.
+	let conflict = $state<SceneConflict | null>(null);
+	// svelte-ignore state_referenced_locally
+	const saver = createSceneSaver(scene.id, scene.bodyMd, (next) => (conflict = next));
 	const autosave = createAutosave({
 		debounceMs: SAVE_DEBOUNCE_MS,
 		onStatus: (status) => onStatus(status),
 		save: async ({ keepalive }) => {
 			if (!view) return;
 			const body = view.state.doc.toString();
-			const response = await fetch(`/api/scenes/${scene.id}`, {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				keepalive,
-				// No markers field: the review centre does not load scene markers,
-				// and the endpoint leaves the stored anchors untouched when it is
-				// absent.
-				body: JSON.stringify({ title: scene.title, bodyMd: body })
-			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			// No markers field: the review centre does not load scene markers,
+			// and the endpoint leaves the stored anchors untouched when it is
+			// absent.
+			await saver.save({ keepalive, title: scene.title, bodyMd: body });
 			// What we just persisted is now the server's truth, so the external
 			// sync below does not mistake it for someone else's change.
 			appliedBody = body;
 		}
 	});
+
+	// Swap in the newer text; the edits made here since are dropped.
+	function loadNewer() {
+		if (!view || !conflict) return;
+		const newer = conflict.bodyMd;
+		saver.adopt(newer);
+		appliedBody = newer;
+		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: newer } });
+		void autosave.flush();
+	}
+
+	function keepMine() {
+		if (!conflict) return;
+		saver.keepMine(conflict.bodyMd);
+		void autosave.flush();
+	}
 	const scheduleSave = autosave.schedule;
 
 	// View toggles, mirrored locally and persisted for the user the same way the
@@ -149,18 +165,29 @@
 	// unsaved edits from before the accept) would silently overwrite the
 	// accepted text. Applied one at a time in the server's order, so a later
 	// anchor maps through an earlier application the same way it did there.
-	export function applyAccepted(ids: string[]) {
+	// accepted is the scene text the server saved with the change, and the
+	// fingerprint of the text it was applied to. When that was the text this
+	// editor last saved and the same change lands here, the next save builds on
+	// the new text; otherwise the save check reports the difference.
+	export function applyAccepted(
+		ids: string[],
+		accepted: { bodyMd: string; baseHash: string } | null = null
+	) {
 		if (!view || !handle) return;
+		let applied = true;
 		for (const id of ids) {
 			const suggestion = suggestions.find((s) => s.id === id);
-			if (!suggestion || suggestion.status !== 'pending') continue;
-			const a = handle.anchorOf(view, id);
-			if (!a) continue;
+			const a = suggestion?.status === 'pending' ? handle.anchorOf(view, id) : null;
+			if (!suggestion || !a) {
+				applied = false;
+				continue;
+			}
 			view.dispatch({
 				changes: { from: a.start, to: a.end, insert: suggestion.replacement },
 				effects: removeReviewMarks.of([id])
 			});
 		}
+		if (applied && accepted) saver.rebase(accepted.bodyMd, accepted.baseHash);
 	}
 
 	function rebuildMarks() {
@@ -264,11 +291,16 @@
 		void focusedId;
 		if (!view) return;
 		if (incoming !== appliedBody) {
-			if (!autosave.isDirty() && view.state.doc.toString() !== incoming) {
-				view.dispatch({
-					changes: { from: 0, to: view.state.doc.length, insert: incoming }
-				});
+			if (!autosave.isDirty()) {
+				if (view.state.doc.toString() !== incoming) {
+					view.dispatch({
+						changes: { from: 0, to: view.state.doc.length, insert: incoming }
+					});
+				}
+				saver.adopt(incoming);
 			}
+			// With unsaved edits the next save is refused as a conflict, and the
+			// banner lets the author choose.
 			appliedBody = incoming;
 		}
 		rebuildMarks();
@@ -367,6 +399,9 @@
 
 	<div class="editor-scroll review-scroll">
 		<div class="review-doc" bind:this={docEl}>
+			{#if conflict}
+				<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+			{/if}
 			<ReviewSceneHead
 				{chapterTitle}
 				sceneTitle={scene.title}
@@ -391,4 +426,4 @@
 	</div>
 </div>
 
-<svelte:window onpagehide={autosave.flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />

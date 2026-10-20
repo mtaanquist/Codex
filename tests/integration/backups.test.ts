@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Readable } from 'node:stream';
@@ -8,6 +8,7 @@ import {
 	backupKey,
 	latestBackupKey,
 	listRecentBackupRuns,
+	restoreDumpFile,
 	runBackup,
 	type BackupConfig,
 	type BackupStore
@@ -59,6 +60,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table backup_runs');
 });
 
@@ -113,7 +117,16 @@ describe('runBackup', () => {
 
 	it('skips the upload when nothing changed, and resumes when it does', async () => {
 		const { store, objects } = memoryStore();
+		await runBackup(db, 'manual', {
+			config,
+			store,
+			databaseUrl: TEST_DATABASE_URL,
+			dumpCommand: ['printf', 'fake-dump-bytes'],
+			hashCommand: (scratch) => ['cat', scratch],
+			now: new Date('2026-06-04T12:00:00Z')
+		});
 		const sizeBefore = objects.size;
+		expect(sizeBefore).toBe(1);
 		const again = await runBackup(db, 'scheduled', {
 			config,
 			store,
@@ -171,7 +184,10 @@ describe('pg_dump round trip', () => {
 		try {
 			await run('pg_dump', ['--version']);
 			await run('pg_restore', ['--version']);
-		} catch {
+			await run('psql', ['--version']);
+		} catch (error) {
+			// CI installs the client tools; a skip there would hide a broken backup.
+			if (process.env.CI) throw error;
 			context.skip();
 			return;
 		}
@@ -184,8 +200,9 @@ describe('pg_dump round trip', () => {
 		});
 		if (!result.ok) {
 			// A version mismatch (client older than server) is an environment
-			// problem, not a code one; skip rather than fail.
+			// problem, not a code one; skip rather than fail, except in CI.
 			expect(result.reason).toMatch(/server version mismatch|aborting/);
+			if (process.env.CI) throw new Error(result.reason);
 			context.skip();
 			return;
 		}
@@ -199,7 +216,112 @@ describe('pg_dump round trip', () => {
 		await writeFile(dumpFile, objects.get(dumpKey)!);
 		const { stdout } = await run('pg_restore', ['--list', dumpFile]);
 		expect(stdout).toContain('TABLE DATA');
-		await rm(dumpFile);
+
+		// Restored onto an empty database, the result must be able to take the
+		// next backup: backup_runs keeps its definition even though its rows
+		// are left out of the dump.
+		const restoreUrl = new URL(TEST_DATABASE_URL);
+		restoreUrl.pathname = `${restoreUrl.pathname}_restore`;
+		const adminUrl = new URL(TEST_DATABASE_URL);
+		adminUrl.pathname = '/postgres';
+		const admin = new pg.Client({ connectionString: adminUrl.toString() });
+		await admin.connect();
+		const restoreName = restoreUrl.pathname.slice(1);
+		try {
+			await admin.query(`drop database if exists "${restoreName}"`);
+			await admin.query(`create database "${restoreName}"`);
+			await restoreDumpFile(restoreUrl.toString(), dumpFile);
+			const restoredPool = new pg.Pool({ connectionString: restoreUrl.toString() });
+			try {
+				const restored = drizzle(restoredPool, { schema });
+				const runs = await listRecentBackupRuns(restored, 5);
+				expect(runs).toHaveLength(0);
+				const again = await runBackup(restored, 'manual', {
+					config,
+					store: memoryStore().store,
+					databaseUrl: restoreUrl.toString()
+				});
+				expect(again).toMatchObject({ ok: true });
+				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(1);
+
+				// A dump from before the fix restored without the table while the
+				// ledger listed it; the repair migration brings it back. Replay the
+				// ledger up to the repair migration only, from a copy of the
+				// migrations folder cut off there, so later migrations (which are
+				// not idempotent) are not run a second time.
+				await restoredPool.query('drop table backup_runs');
+				const { mkdtemp, mkdir, readFile, copyFile } = await import('node:fs/promises');
+				const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8')) as {
+					entries: { tag: string; when: number }[];
+				};
+				const repairAt = journal.entries.findIndex(
+					(entry) => entry.tag === '0068_restore-backup-runs'
+				);
+				expect(repairAt).toBeGreaterThan(-1);
+				const upToRepair = journal.entries.slice(0, repairAt + 1);
+				const cutFolder = await mkdtemp(`${process.env.TMPDIR ?? '/tmp'}/codex-migrations-`);
+				await mkdir(`${cutFolder}/meta`);
+				await writeFile(
+					`${cutFolder}/meta/_journal.json`,
+					JSON.stringify({ ...journal, entries: upToRepair })
+				);
+				for (const entry of upToRepair) {
+					await copyFile(`drizzle/${entry.tag}.sql`, `${cutFolder}/${entry.tag}.sql`);
+				}
+				await restoredPool.query(
+					'delete from drizzle.__drizzle_migrations where created_at >= $1',
+					[journal.entries[repairAt].when]
+				);
+				await migrate(restored, { migrationsFolder: cutFolder });
+				await rm(cutFolder, { recursive: true, force: true });
+				expect(await listRecentBackupRuns(restored, 5)).toHaveLength(0);
+
+				// Restoring over a database with a newer schema leaves nothing of
+				// it behind, so the next migrate does not trip over a table the
+				// restored ledger does not know about.
+				await restoredPool.query('create table added_later (id int)');
+				await restoreDumpFile(restoreUrl.toString(), dumpFile);
+				const [{ later }] = (
+					await restoredPool.query("select to_regclass('public.added_later') as later")
+				).rows;
+				expect(later).toBeNull();
+				await migrate(restored, { migrationsFolder: 'drizzle' });
+
+				// A broken dump leaves the database exactly as it was.
+				const dump = objects.get(dumpKey)!;
+				const broken = `${dumpFile}.broken`;
+				await writeFile(broken, dump.subarray(0, Math.floor(dump.length * 0.9)));
+				await restoredPool.query('create table kept (id int)');
+				await expect(restoreDumpFile(restoreUrl.toString(), broken)).rejects.toThrow();
+				await rm(broken, { force: true });
+				const [{ kept }] = (await restoredPool.query("select to_regclass('public.kept') as kept"))
+					.rows;
+				expect(kept).not.toBeNull();
+
+				// psql stopping early (here, a database that does not exist) fails
+				// the restore instead of leaving pg_restore stuck on a full pipe. The
+				// dump is made well past the pipe buffer so the stall would show.
+				await restoredPool.query('insert into kept select g from generate_series(1, 200000) g');
+				const big = `${dumpFile}.big`;
+				await run('pg_dump', [
+					'--format=custom',
+					'--compress=0',
+					'--file',
+					big,
+					restoreUrl.toString()
+				]);
+				const missingUrl = new URL(restoreUrl);
+				missingUrl.pathname = `${restoreUrl.pathname}_missing`;
+				await expect(restoreDumpFile(missingUrl.toString(), big)).rejects.toThrow(/psql exited/);
+				await rm(big, { force: true });
+			} finally {
+				await restoredPool.end();
+			}
+		} finally {
+			await admin.query(`drop database if exists "${restoreName}" with (force)`);
+			await admin.end();
+			await rm(dumpFile, { force: true });
+		}
 
 		// The real regression: a second backup of the unchanged database hashes
 		// the same and skips the upload. The custom archive's header timestamp
@@ -212,7 +334,7 @@ describe('pg_dump round trip', () => {
 		});
 		expect(second).toMatchObject({ ok: true, skipped: true, key: null });
 		expect(objects.size).toBe(1);
-	});
+	}, 60_000);
 });
 
 describe('latestBackupKey', () => {

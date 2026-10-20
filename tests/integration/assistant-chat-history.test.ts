@@ -112,6 +112,25 @@ describe('chat history', () => {
 		expect(stored[0].content).not.toBe('turn 0');
 	});
 
+	it('holds the cap when turns share a timestamp', async () => {
+		// Rows written inside one transaction, or in the same microsecond, carry
+		// the same created_at; the trim must still keep exactly the cap.
+		const at = new Date('2026-06-01T12:00:00Z');
+		await db.insert(assistantChatMessages).values(
+			Array.from({ length: 200 }, (_, i) => ({
+				storyId,
+				userId,
+				role: 'user' as const,
+				content: `tied ${i}`,
+				createdAt: at
+			}))
+		);
+		await appendChat(db, userId, { storyId }, { role: 'user', content: 'newest', meta: null });
+		const stored = await listChat(db, userId, { storyId });
+		expect(stored).toHaveLength(200);
+		expect(stored[stored.length - 1].content).toBe('newest');
+	});
+
 	it('clears on request', async () => {
 		await appendChat(db, userId, { storyId }, { role: 'user', content: 'hello', meta: null });
 		await clearChat(db, userId, { storyId });

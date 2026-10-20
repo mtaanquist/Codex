@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -59,6 +59,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table entity_relationships, revisions, entity_mentions, scenes, chapters, lore_entries, places, characters, entity_categories, stories, universes, users cascade'
 	);
@@ -264,6 +267,56 @@ describe('writingActivity', () => {
 		expect(storyA.daily.at(-1)?.words).toBe(70);
 		const storyB = await writingActivity(db, universeId, 'UTC', 1, storyBId);
 		expect(storyB.daily.at(-1)?.words).toBe(0);
+	});
+
+	it('opens the window at local midnight and prefers stored word counts', async () => {
+		const [owner] = await db
+			.insert(users)
+			.values({
+				email: 'insights-tz@example.com',
+				displayName: 'T',
+				passwordHash: 'x',
+				role: 'user'
+			})
+			.returning();
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId: owner.id, name: 'TZ' })
+			.returning();
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: owner.id, title: 'T' })
+			.returning();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1 })
+			.returning();
+		const timezone = 'America/New_York';
+		const { rows } = await pool.query(
+			`select ((now() at time zone $1)::date::timestamp at time zone $1) as midnight`,
+			[timezone]
+		);
+		const midnight = (rows[0] as { midnight: Date }).midnight.getTime();
+		const minute = 60 * 1000;
+		await db.insert(revisions).values([
+			// Just before local midnight: the baseline, counted from its body.
+			{
+				entityType: 'scene',
+				entityId: scene.id,
+				bodyMd: prose(100),
+				createdAt: new Date(midnight - minute)
+			},
+			// Just after: today. The stored count wins over the body.
+			{
+				entityType: 'scene',
+				entityId: scene.id,
+				bodyMd: prose(5),
+				wordCount: 130,
+				createdAt: new Date(midnight + minute)
+			}
+		]);
+		const activity = await writingActivity(db, universe.id, timezone, 1);
+		expect(activity.daily).toEqual([{ day: activity.today, words: 30 }]);
 	});
 
 	it('an unknown universe yields an empty, zero-filled window', async () => {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoReady } from './navigate';
+import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The scene board: a story's plan shows its scenes in status lanes, and
@@ -51,7 +51,22 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	const revisedLane = page.getByRole('region', { name: 'Revised scenes' });
 	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
 	await page.reload();
+	await waitForHydration(page);
 	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
+
+	// Issue #626: a refused move says so, and the card stays where it was.
+	await page.route('**/api/scenes/*', (route) =>
+		route.request().method() === 'PATCH'
+			? route.fulfill({ status: 429, json: { message: 'Too many requests. Try again shortly.' } })
+			: route.fallback()
+	);
+	await card.hover();
+	await card.getByRole('button', { name: 'Move to Final' }).click();
+	await expect(page.locator('.board-error [role="alert"]')).toHaveText(
+		'Too many requests. Try again shortly.'
+	);
+	await expect(revisedLane.locator('.card', { hasText: 'The crossing' })).toBeVisible();
+	await page.unroute('**/api/scenes/*');
 
 	// The card's title opens the scene in the editor.
 	await page.locator('.card-title', { hasText: 'The crossing' }).click();

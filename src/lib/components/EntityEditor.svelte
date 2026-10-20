@@ -14,7 +14,7 @@
 		type RelationTypeOption,
 		type RelationshipRow
 	} from './EntityRelationships.svelte';
-	import { createAutosave } from '$lib/autosave';
+	import { createAutosave, keepaliveFits, saveFailure } from '$lib/autosave';
 	import type { SaveStatus } from '$lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '$lib/format';
 
@@ -186,13 +186,14 @@
 		onStatus: (status) => onStatus(status),
 		save: async ({ keepalive }) => {
 			if (!view) return;
+			const body = JSON.stringify(savePayload(view.state.doc.toString()));
 			const response = await fetch(`/api/${ENDPOINT}/${entity.id}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
-				keepalive,
-				body: JSON.stringify(savePayload(view.state.doc.toString()))
+				keepalive: keepalive && keepaliveFits(body),
+				body
 			});
-			if (!response.ok) throw new Error(`save failed: ${response.status}`);
+			if (!response.ok) throw saveFailure(response.status);
 		},
 		// Only a settled rename makes the offer; mid-typing saves skip it.
 		onSettled: () => void checkRename()
@@ -366,7 +367,7 @@
 	});
 </script>
 
-<svelte:window onpagehide={autosave.flushOnPageHide} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
 
 <div class="detail">
 	<div class="detail-head">

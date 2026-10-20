@@ -5,7 +5,7 @@
 	import ReaderFooter from '$lib/components/ReaderFooter.svelte';
 	import { pageCrumb } from '$lib/chrome';
 	import { authorInitials, authorName } from '$lib/author-name';
-	import { formatNumber } from '$lib/format';
+	import { formatLongDate, formatNumber } from '$lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -24,10 +24,6 @@
 	// say) is shown as plain text so a profile cannot inject other schemes.
 	function linkHref(url: string): string | null {
 		return /^https?:\/\//i.test(url) ? url : null;
-	}
-
-	function published(date: Date): string {
-		return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 	}
 </script>
 
@@ -127,7 +123,7 @@
 								</span>
 								<span class="shelf-item-title">{book.title}</span>
 								<span class="shelf-item-meta">
-									{published(book.publishedAt)}{#if book.isAdult}
+									{formatLongDate(book.publishedAt)}{#if book.isAdult}
 										- adult content{/if}
 								</span>
 								{#if book.descriptionMd}

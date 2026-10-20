@@ -4,7 +4,7 @@
 // runs over one level and checks a set of categories.
 //
 // Keep this module free of server-only and framework imports: it is pulled into
-// the browser bundle and into the worker (which resolves plain relative paths).
+// the browser bundle and into the worker.
 
 export type ReviewLevel = 'scene' | 'chapter' | 'story';
 
@@ -13,10 +13,6 @@ export type ReviewLevel = 'scene' | 'chapter' | 'story';
 // which also runs the cross-scene consistency pass at story or multi-scene scope.
 export const REVIEW_CATEGORIES = ['mechanics', 'prose', 'lore'] as const;
 export type ReviewCategory = (typeof REVIEW_CATEGORIES)[number];
-
-export function isReviewCategory(value: unknown): value is ReviewCategory {
-	return typeof value === 'string' && (REVIEW_CATEGORIES as readonly string[]).includes(value);
-}
 
 // Narrows an unknown payload field to a clean, de-duplicated category list, in
 // canonical order, so an endpoint can trust whatever a client sends.

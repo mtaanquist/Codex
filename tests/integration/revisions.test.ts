@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -20,6 +20,7 @@ import {
 	recordRevision,
 	restoreRevision,
 	storyTimeline,
+	universeRevisionCount,
 	universeTimeline
 } from '../../src/lib/server/revisions';
 import { saveCharacter } from '../../src/lib/server/characters';
@@ -40,6 +41,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table revisions, scenes, chapters, characters, stories, universes, users cascade'
 	);
@@ -73,6 +77,17 @@ beforeAll(async () => {
 afterAll(async () => {
 	await pool.end();
 });
+
+// A revision for the scene and one for Alice, renamed to Alice Vane.
+async function seedRevisions() {
+	await recordRevision(db, 'scene', sceneId, 'First draft.');
+	await saveCharacter(db, aliceId, ownerId, {
+		name: 'Alice Vane',
+		aliases: [],
+		summaryMd: null,
+		bodyMd: 'A smuggler with debts.'
+	});
+}
 
 describe('recordRevision', () => {
 	it('coalesces a changed autosave into the latest, and skips an unchanged one', async () => {
@@ -114,6 +129,23 @@ describe('recordRevision', () => {
 		expect(await listRevisions(db, 'scene', id)).toHaveLength(2);
 	});
 
+	it('stores the word count of each body, including a coalesced one', async () => {
+		const id = randomUUID();
+		const wordsOf = async () =>
+			(
+				await db
+					.select({ wordCount: revisions.wordCount })
+					.from(revisions)
+					.where(eq(revisions.entityId, id))
+			).map((row) => row.wordCount);
+		await recordRevision(db, 'scene', id, 'One two three.');
+		expect(await wordsOf()).toEqual([3]);
+		await recordRevision(db, 'scene', id, 'One two three four five.');
+		expect(await wordsOf()).toEqual([5]);
+		await recordRevision(db, 'scene', id, 'Six.', 'checkpoint');
+		expect((await wordsOf()).sort()).toEqual([1, 5]);
+	});
+
 	it('does not coalesce an autosave into a preceding checkpoint', async () => {
 		const id = randomUUID();
 		await recordRevision(db, 'scene', id, 'A.');
@@ -150,13 +182,14 @@ describe('save paths record revisions', () => {
 
 describe('createCheckpoint', () => {
 	it('snapshots the current body with a label and checks ownership', async () => {
+		await recordRevision(db, 'scene', sceneId, 'An autosave that never reached the scene.');
 		const ok = await createCheckpoint(db, ownerId, 'scene', sceneId, 'Plotted');
 		expect(ok).toMatchObject({ ok: true });
 		const rows = await listRevisions(db, 'scene', sceneId);
 		expect(rows[0]).toMatchObject({ reason: 'checkpoint', label: 'Plotted' });
 		const revision = await getRevision(db, rows[0].id, 'scene', sceneId);
-		// The checkpoint snapshots the stored scene body, untouched by the
-		// revision rows the earlier cases recorded.
+		// The checkpoint snapshots the stored scene body, not the latest
+		// revision row.
 		expect(revision?.bodyMd).toBe('First draft.');
 
 		expect(await createCheckpoint(db, strangerId, 'scene', sceneId)).toMatchObject({
@@ -190,22 +223,31 @@ describe('restoreRevision', () => {
 	});
 
 	it('rejects a revision belonging to another entity', async () => {
+		await seedRevisions();
 		const [aliceRevision] = await listRevisions(db, 'character', aliceId);
 		const result = await restoreRevision(db, ownerId, aliceRevision.id, 'scene', sceneId);
-		expect(result).toMatchObject({ ok: false, reason: 'revision not found' });
+		expect(result).toMatchObject({
+			ok: false,
+			code: 'not_found',
+			reason: 'That revision does not exist.'
+		});
 	});
 
 	it('rejects another user', async () => {
+		await seedRevisions();
 		const [revision] = await listRevisions(db, 'scene', sceneId);
 		expect(await restoreRevision(db, strangerId, revision.id, 'scene', sceneId)).toMatchObject({
 			ok: false,
-			reason: 'entity not found'
+			code: 'not_found',
+			reason: 'That item does not exist.'
 		});
 	});
 });
 
 describe('timelines', () => {
 	it('story timeline lists scene revisions with names', async () => {
+		await seedRevisions();
+		await recordRevision(db, 'scene', sceneId, 'Second draft.', 'checkpoint');
 		const rows = await storyTimeline(db, storyId);
 		const types = new Set(rows.map((row) => row.entityType));
 		expect(types).toEqual(new Set(['scene']));
@@ -216,6 +258,7 @@ describe('timelines', () => {
 	});
 
 	it('universe timeline spans entities and scenes, with story context', async () => {
+		await seedRevisions();
 		const rows = await universeTimeline(db, universeId);
 		const types = new Set(rows.map((row) => row.entityType));
 		expect(types).toEqual(new Set(['character', 'scene']));
@@ -226,5 +269,71 @@ describe('timelines', () => {
 		expect(scene?.entityName).toBe('Opening');
 		expect(scene?.storyTitle).toBeTruthy();
 		expect(scene?.storySlug).toBeTruthy();
+	});
+});
+
+describe('universe timeline limits', () => {
+	it('returns the newest rows across entities when one has a long history', async () => {
+		const [busy] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 50, title: 'Busy', bodyMd: '' })
+			.returning();
+		const [quiet] = await db
+			.insert(characters)
+			.values({ universeId, ownerId, name: 'Quiet', bodyMd: '' })
+			.returning();
+		const hour = 60 * 60 * 1000;
+		const base = Date.now() + 1000 * hour;
+		// Ten older scene saves, then one newer character save, then one newest
+		// scene save: the top three must interleave the two entities.
+		await db.insert(revisions).values([
+			...Array.from({ length: 10 }, (_, i) => ({
+				entityType: 'scene' as const,
+				entityId: busy.id,
+				bodyMd: `old ${i}`,
+				reason: 'autosave',
+				createdAt: new Date(base + i * hour)
+			})),
+			{
+				entityType: 'character',
+				entityId: quiet.id,
+				bodyMd: 'q',
+				reason: 'autosave',
+				createdAt: new Date(base + 20 * hour)
+			},
+			{
+				entityType: 'scene',
+				entityId: busy.id,
+				bodyMd: 'newest',
+				reason: 'autosave',
+				createdAt: new Date(base + 30 * hour)
+			}
+		]);
+		const rows = await universeTimeline(db, universeId, 3);
+		expect(rows.map((row) => [row.entityName, row.createdAt.getTime()])).toEqual([
+			['Busy', base + 30 * hour],
+			['Quiet', base + 20 * hour],
+			['Busy', base + 9 * hour]
+		]);
+		expect((await storyTimeline(db, storyId, 2)).map((row) => row.createdAt.getTime())).toEqual([
+			base + 30 * hour,
+			base + 9 * hour
+		]);
+	});
+
+	it('counts every revision in the universe', async () => {
+		await seedRevisions();
+		await recordRevision(db, 'scene', sceneId, 'Second draft.', 'checkpoint');
+		const [{ total }] = (
+			await pool.query(
+				`select count(*)::int as total from revisions r
+				where r.entity_id in (select s.id from scenes s join stories st on st.id = s.story_id
+					where st.universe_id = $1)
+				or r.entity_id in (select id from characters where universe_id = $1)`,
+				[universeId]
+			)
+		).rows;
+		expect(total).toBe(3);
+		expect(await universeRevisionCount(db, universeId)).toBe(total);
 	});
 });

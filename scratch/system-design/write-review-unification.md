@@ -1,10 +1,11 @@
 # Sidebar parity for Write and Review
 
-Status: proposed, 2026-06-17 (revised same day after the owner ruled out merging
-the two surfaces). Write and Review stay separate views; "Review" stays a peer
+Status: shipped. All five steps in "Sequencing" are done: `ReviewNav` is deleted
+and `ReviewWorkspace` renders `StoryOutline`. Proposed 2026-06-17 (revised same
+day after the owner ruled out merging the two surfaces). Write and Review stay separate views; "Review" stays a peer
 mode on the Write/Plan/Notes/Review strip. This note is now scoped to one thing:
 making the two left sidebars uniform, including the right-click menu Review
-lacks. Step 1 (below) already shipped.
+lacks.
 
 ## Why not merge (settled)
 

@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import { pluralSuffix } from '$lib/format';
+	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
 	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
@@ -78,7 +78,7 @@
 		} else if (tuning.temperature !== undefined) {
 			parts.push(`Temperature ${tuning.temperature}`);
 		}
-		if (tuning.maxTokens) parts.push(`${tuning.maxTokens.toLocaleString()} tokens`);
+		if (tuning.maxTokens) parts.push(`${formatNumber(tuning.maxTokens)} tokens`);
 		if (extraParamsShown && tuning.extraParams) parts.push('Extra settings');
 		return parts.length > 0 ? parts.join(', ') : 'Defaults';
 	}
@@ -164,7 +164,7 @@
 			price
 				? `${perMillion(price.prompt)} in / ${perMillion(price.completion)} out per 1M tokens`
 				: '',
-			tokens ? `${tokens.toLocaleString()} token context` : ''
+			tokens ? `${formatNumber(tokens)} token context` : ''
 		].filter(Boolean);
 		return parts.length > 0 ? `${id} (${parts.join(', ')})` : id;
 	}
@@ -584,7 +584,7 @@
 					</p>
 				</div>
 				<div class="field">
-					<label for="spend_cap">Spend cap per review (USD)</label>
+					<label for="spend_cap">Spend cap per background run (USD)</label>
 					<input
 						id="spend_cap"
 						name="spendCapUsd"
@@ -596,8 +596,9 @@
 						placeholder="No cap"
 					/>
 					<p class="field-hint">
-						A background review stops after the next scene once it has spent this much. Leave it
-						empty for no cap. It only applies when your endpoint publishes prices for the model.
+						A background review or summary update stops after the next scene once it has spent this
+						much. Leave it empty for no cap. It only applies when your endpoint publishes prices for
+						the model.
 					</p>
 				</div>
 				<div class="field">
@@ -730,7 +731,7 @@
 									<div class="role-row-name">{model}</div>
 									<div class="role-row-hint">
 										{#if discoveredContext[model]}
-											Your endpoint reports {discoveredContext[model].toLocaleString()} tokens.
+											Your endpoint reports {formatNumber(discoveredContext[model])} tokens.
 										{:else}
 											Your endpoint does not report a context window.
 										{/if}
@@ -805,8 +806,8 @@
 					<p class="field-hint">
 						Last 30 days: {data.assistantUsage.totals.requests} request{pluralSuffix(
 							data.assistantUsage.totals.requests
-						)}, {data.assistantUsage.totals.promptTokens.toLocaleString()} tokens sent,
-						{data.assistantUsage.totals.completionTokens.toLocaleString()} received{#if usageTotalCost !== null},
+						)}, {formatNumber(data.assistantUsage.totals.promptTokens)} tokens sent,
+						{formatNumber(data.assistantUsage.totals.completionTokens)} received{#if usageTotalCost !== null},
 							about ${usageTotalCost.toFixed(2)}{/if}.
 					</p>
 				{/if}
@@ -817,11 +818,11 @@
 							<div class="list-main">
 								<div class="list-title">{entry.model}</div>
 								<div class="list-sub">
-									{new Date(entry.createdAt).toLocaleString()} - {entry.role}
+									{formatDateTime(entry.createdAt)} - {entry.role}
 									{#if entry.promptTokens !== null || entry.completionTokens !== null}
-										- {(entry.promptTokens ?? 0).toLocaleString()} in / {(
+										- {formatNumber(entry.promptTokens ?? 0)} in / {formatNumber(
 											entry.completionTokens ?? 0
-										).toLocaleString()} out
+										)} out
 									{:else}
 										- token counts not reported
 									{/if}

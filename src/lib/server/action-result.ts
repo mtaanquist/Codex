@@ -1,8 +1,17 @@
 import { error } from '@sveltejs/kit';
 
-// Maps a failed server-action result to an HTTP error: a "not found" reason
-// becomes a 404, anything else a 400. Centralised so the entity routes share
-// one mapping instead of each copying the same string check.
-export function throwActionError(result: { reason: string }): never {
-	throw error(result.reason.includes('not found') ? 404 : 400, result.reason);
+// Why a server action refused. The code picks the HTTP status; the reason is
+// a sentence the writer may see, so it never decides the status itself.
+export type ActionErrorCode = 'not_found' | 'invalid' | 'conflict';
+
+export type ActionFailure = { ok: false; code: ActionErrorCode; reason: string };
+
+const STATUS: Record<ActionErrorCode, number> = {
+	not_found: 404,
+	invalid: 400,
+	conflict: 409
+};
+
+export function throwActionError(result: ActionFailure): never {
+	throw error(STATUS[result.code], result.reason);
 }

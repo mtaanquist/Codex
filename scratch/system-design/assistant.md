@@ -225,7 +225,9 @@ distinguishes deployment posture through admin settings:
 So: an admin setting (`app_settings`) for the egress policy, one of
 
 - `block-private` (default; safe for hosted) - resolve the endpoint host and
-  refuse private, loopback, link-local, and unique-local addresses,
+  refuse private, loopback, link-local, and unique-local addresses
+  (including IPv4 targets embedded in IPv6: mapped, NAT64, 6to4) and other
+  reserved IPv6 ranges (Teredo, documentation, discard),
 - `allowlist` - only hosts on an operator-curated whitelist are reachable
   (the middle ground for a hosted operator who wants to permit a known set),
 - `open` - no restriction (the self-host flip).
@@ -262,7 +264,8 @@ token ceiling, and the streaming endpoint is covered by the existing per-user
 write/rate limiter.
 
 Background review runs, which fan over many scenes unattended, do meter
-themselves. Two account settings sit in `users.llm_config`: `spendWarnUsd`
+themselves, and so does the standalone summaries job (it stops between
+summaries; a rerun skips the ones already fresh). Two account settings sit in `users.llm_config`: `spendWarnUsd`
 (the pre-flight confirm step turns into a warning above it, default 2) and
 `spendCapUsd` (the run stops at the next scene boundary once it has spent
 that much, staging nothing partial; a retry resumes through the existing
@@ -469,8 +472,12 @@ assembly entries): tiers left out are neither queried nor rendered. A review
 pass whose categories do not include `lore` ships only the frame, the outline,
 and the scene itself, since entities, lore, notes, and the universe backbone
 only matter to the lore category; the sparing pass (no categories) keeps the
-full stack. A review-thread reply carries the frame and the entities, since the
-passage under discussion is already excerpted into its task message.
+full stack. A review-thread reply has its own assembly
+(`assembleReviewReplyContext`), since guests read the reply and write part of
+the thread: the story frame without the world description, and the guest quick
+cards (summary, aliases, first three details) of the entities mentioned in the
+story's live scenes. No relationships and no full records. The passage under
+discussion is already excerpted into its task message.
 
 The world context budget, and the side panel's transcript budget, are shares
 of the resolved model's context window (`context/budgets.ts`), each capped by a
@@ -753,7 +760,15 @@ disposable, and a daily worker sweep drops those older than 30 days. The
 request cannot start a second pass over the same scenes, and both Assistant
 queues send with an expiry of hours rather than the pg-boss default of 15
 minutes, which would hand a long run to a second worker while the first is
-still going. Before it reviews
+still going. A heartbeat (60 seconds) catches a worker that died, so its job
+is retried in minutes rather than after the expiry, and pg-boss's job signal
+is passed into the run so an expired or stopped job also stops calling the
+model. A run that pg-boss is going to retry (its signal aborted with retries
+left, or its job moved to a retry or picked up again under a newer start time)
+sends no notification, so the writer hears once, from the run that finishes. The worker runs up to four Assistant jobs at once but one per writer
+(the job's pg-boss group), and every model request has a ten-minute idle
+timeout in the egress layer, so one writer's hung endpoint stalls only that
+writer's queue. Before it reviews
 anything, a story-level pass refreshes scene summaries that are missing or
 stale (the `assistant-summaries` logic, called directly), since both the
 context assembly and the cross-scene pass read them.
@@ -872,14 +887,11 @@ Not a contract, but the natural order, foundations first:
 8. Deferred refinements: chat persistence and browsing. (The native Claude
    adapter and provider presets have since shipped; see "Configuration".)
 
-## Frontend wiring map (backend on develop; account settings surface on PR #325)
+## Frontend wiring map
 
-A note for the frontend agent. The server-only plumbing is built and tested
-under `src/lib/server/llm/`, and the first surface (the account Assistant
-settings page) is built; the rest of the surfaces (SSE endpoints, the other
-form actions, Svelte UI, worker jobs) are not. This maps each feature to what
-it should call. Status markers: [built] server-side helper exists and is
-tested, or the surface is built; [to build] the frontend agent creates it.
+Written as the hand-off for the frontend work; it now records where each
+surface landed. Status markers: [built] the helper or surface exists and is
+tested; [to build] not built yet (only the deferred items below).
 
 Everything that touches the key or the endpoint is server-only. The browser
 never calls the model endpoint; a SvelteKit `+server.ts` (SSE) or a form action
@@ -890,7 +902,7 @@ calls the gateway, which proxies through the egress guard.
 - [built] `accountLlmView(db, userId)` and `resolveLlmConfig(db, userId, storyId?)`
   (`llm/config.ts`). The gate is `assistantGate(...)` -> `{ configured,
   accountEnabled, tabEnabled, surfacesEnabled }`.
-- [to build] Feed the gate into the layout load (the way asset-backed features
+- [built] Feed the gate into the layout load (the way asset-backed features
   hide when no bucket is set), so the Assistant tab, editor menu items, and
   continuation render only when allowed. Rule: tab needs `tabEnabled`; in-editor
   and in-menu surfaces need `surfacesEnabled`; nothing renders when not
@@ -938,7 +950,7 @@ calls the gateway, which proxies through the egress guard.
 
 - [built] `egressPolicy(db)` / `saveEgressPolicy(db, { policy, allowlist })`
   (`llm/egress.ts`); policy is `block-private | allowlist | open`.
-- [to build] An admin panel section (policy select + host allowlist). No help
+- [built] An admin panel section (policy select + host allowlist). No help
   article needed (admin panel).
 
 ### Per-story override (the Assistant tab's mute)
@@ -946,11 +958,11 @@ calls the gateway, which proxies through the egress guard.
 - [built] `saveStoryLlmOverride(db, storyId, { enabled?: false | null, models? })`
   - `enabled: false` mutes this story, `null` clears the override (back to the
   account default). A story can only subtract.
-- [to build] The mute control on the Assistant tab.
+- [built] The mute control on the Assistant tab.
 
 ### Chat (the Assistant tab) - sequencing step 2
 
-- [to build] `POST /api/assistant/chat` as an SSE `+server.ts`. It should:
+- [built] `POST /api/assistant/chat` as an SSE `+server.ts`. It should:
   1. assemble context: `assembleContext(db, { userId, storyId, sceneId?, focusText? })`
      (`llm/context/assemble.ts`), then `buildSystemMessage(context)`;
   2. call `stream(db, { userId, storyId, sceneId?, role: 'chat', enableTools: true,
@@ -965,11 +977,11 @@ calls the gateway, which proxies through the egress guard.
 
 ### Inline (editor) - sequencing step 5
 
-- [to build] `POST /api/assistant/continuation` and `/api/assistant/coauthor`
+- [built] `POST /api/assistant/continuation` and `/api/assistant/coauthor`
   SSE endpoints. Continuation: `stream(..., role: 'continuation', enableTools:
   false)`, no context needed beyond the current text the client sends. Co-author:
   build context with `assembleContext` first, `role: 'coauthor'`.
-- [to build] The CodeMirror ghost-text extension (its own compartment, distinct
+- [built] The CodeMirror ghost-text extension (its own compartment, distinct
   from entity autocomplete) and the co-author side panel (insert / edit /
   reject).
 
@@ -985,7 +997,7 @@ calls the gateway, which proxies through the egress guard.
   live from the assistant's name. Accept/reject is the unchanged
   `decideSuggestion` / `setThreadResolved`. The existing author-review screen
   already renders these.
-- [to build] Entry points (left-sidebar "Review this scene/chapter", story
+- [built] Entry points (left-sidebar "Review this scene/chapter", story
   settings "Review this story", palette command). Whole-story review is a
   background worker job (see below).
 - [built] The cross-scene continuity pass (the tail of a full review, and the
@@ -1012,12 +1024,12 @@ calls the gateway, which proxies through the egress guard.
 
 ### Background jobs - sequencing steps 4 and 7
 
-- [to build] New pg-boss queues `assistant-review`, `assistant-enrich`,
-  `assistant-summaries` (add names to `queues.ts`, enqueue helpers to `jobs.ts`,
-  handlers in `src/worker/index.ts`). The handlers call the gateway directly
+- [built] pg-boss queues `assistant-review` and `assistant-summaries` (names in
+  `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
+  registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
-  helpers. Completion/failure rides the existing notifications matrix (a new
-  kind). None of this is built.
+  helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
+  than a queue.
 
 ### Tool use and structural actions - sequencing step 6
 
@@ -1030,6 +1042,10 @@ calls the gateway, which proxies through the egress guard.
   `get_scene`, `suggest_edit`, and `leave_comment` and halves the budget, for
   endpoints running a smaller local model. A surface that names its own tools
   (the scoped review-reply turn) is unaffected.
+- [built] The review-reply turn posts where guest reviewers can read it and
+  carries their comments, so its reads are held to the thread's own story:
+  `list_scenes` and `get_scene` under `toolScope.storyOnly` (live scenes of that
+  story only), and no `get_entity`, `find_appearances`, or `search_text`.
 - [built] `get_scene` sizes its result against the role model's context window
   when one is known (about a quarter of it, floor 8000 characters, the 200K
   ceiling unchanged). Sizing the assembled world context against the window is
@@ -1041,9 +1057,10 @@ calls the gateway, which proxies through the egress guard.
 
 ### Help and exports
 
-- [to build] A writer-facing help article under `src/lib/docs/` (configuring an
-  endpoint, the kill switch and what it sends, the three surfaces, accepting
-  suggestions), per the CLAUDE.md rule. The admin egress panel needs none.
+- [built] Writer-facing help (configuring an endpoint, the kill switch and what
+  it sends, the three surfaces, accepting suggestions), spread across the
+  existing articles in `src/lib/docs/` (`account.md`, `editor.md`,
+  `planning.md`, `reviewing.md`) rather than one Assistant article. The admin egress panel needs none.
 - [built] No new trapped content: accepted suggestions land in prose/entities,
   which already export; ephemeral chat and derived artifacts do not ride the
   export.

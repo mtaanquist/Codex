@@ -4,6 +4,7 @@ import { DEFAULT_BUDGET_TOKENS } from './budgets.ts';
 import {
 	activeLore,
 	inScopeEntities,
+	liveSceneIds,
 	loadStoryScope,
 	loadUniverseScope,
 	precedingSceneBody,
@@ -26,6 +27,8 @@ import {
 	type StoryScope,
 	type UniverseScope
 } from './sources.ts';
+import { reviewMentionData } from '../../mention-entities.ts';
+import type { MentionEntity } from '$lib/editor-mentions';
 
 // Assemble the world context for a request, in tiers, against a token budget.
 // The gathering (sources.ts) is settled design; the budget and the order tiers
@@ -111,7 +114,7 @@ export type AssembleOptions = {
 	budgetTokens?: number;
 	// An allow-list of tier names: only these are gathered and rendered. Left
 	// out, every tier of the path is assembled. A surface that does not need the
-	// world (a review pass that checks no lore, a review-thread reply) names the
+	// world (a review pass that checks no lore, the review survey) names the
 	// few tiers it wants; assembly only filters by name, the caller decides.
 	includeTiers?: readonly string[];
 };
@@ -314,6 +317,52 @@ export async function assembleStoryFrame(
 		establishedSetting: scope.universeEstablished,
 		sources: {
 			entities: stable.entities.map((e) => ({ id: e.id, kind: e.kind, name: e.name })),
+			scenes: [],
+			lore: []
+		}
+	};
+}
+
+// The context for a review-thread reply. The reply is posted where guest
+// reviewers can read it and the thread carries their words, so this holds only
+// what the guest review page itself shows: the story frame without the world
+// description, and the quick cards of the entities mentioned in the story's
+// live scenes (summary, aliases, the first few details; no relationships and
+// no full records). Null when the story is not the user's.
+export async function assembleReviewReplyContext(
+	db: Database,
+	options: { userId: string; storyId: string }
+): Promise<AssembledContext | null> {
+	const scope = await loadStoryScope(db, options.userId, options.storyId);
+	if (!scope) return null;
+	const budgetTokens = stableBudget(DEFAULT_BUDGET_TOKENS);
+	const { entities } = await reviewMentionData(db, {
+		universeId: scope.universeId,
+		storyId: scope.storyId,
+		sceneIds: await liveSceneIds(db, scope.storyId),
+		restrictToMentioned: true
+	});
+	const budgeted = selectWithinBudget(
+		[
+			{ name: 'frame', text: renderFrame(scope, { world: false }) },
+			{ name: 'entities', text: renderQuickCards(entities) }
+		],
+		budgetTokens
+	);
+	return {
+		kind: 'story',
+		text: budgeted.text,
+		estimatedTokens: budgeted.estimatedTokens,
+		budgetTokens,
+		includedTiers: budgeted.includedTiers,
+		droppedTiers: budgeted.droppedTiers,
+		establishedSetting: scope.universeEstablished,
+		sources: {
+			entities: entities.map((e) => ({
+				id: e.id,
+				kind: e.type === 'lore_entry' ? ('lore' as const) : e.type,
+				name: e.name
+			})),
 			scenes: [],
 			lore: []
 		}
@@ -538,7 +587,7 @@ export async function assembleRecapContext(
 	return parts.join('\n\n');
 }
 
-function renderFrame(scope: StoryScope): string {
+function renderFrame(scope: StoryScope, options?: { world?: boolean }): string {
 	const lines = [`# Story: ${scope.storyTitle}`];
 	if (scope.storyBrief) lines.push(scope.storyBrief);
 	if (scope.storyDescription) lines.push(scope.storyDescription);
@@ -547,6 +596,7 @@ function renderFrame(scope: StoryScope): string {
 			`Genre and style the author is aiming for (judge the prose against this, not against general taste): ${scope.storyStyleNotes}`
 		);
 	}
+	if (options?.world === false) return lines.join('\n');
 	lines.push('', `## World: ${scope.universeName}`);
 	if (scope.universeDescription) lines.push(scope.universeDescription);
 	return lines.join('\n');
@@ -677,6 +727,21 @@ function renderEntities(entities: ScopeEntity[]): string {
 		for (const detail of entity.details) lines.push(`- ${detail.label}: ${detail.value}`);
 		for (const rel of entity.relationships) lines.push(`- ${rel.label} ${rel.otherName}`);
 		if (entity.storyNote) lines.push(`In this story: ${entity.storyNote}`);
+	}
+	return lines.join('\n');
+}
+
+// The guest quick card's content (mention-entities.ts already trims it to
+// what that card shows). Related entities are left out.
+function renderQuickCards(entities: MentionEntity[]): string {
+	if (!entities.length) return '';
+	const lines = ['## Characters, places, and lore mentioned in this story'];
+	for (const entity of entities) {
+		const kind = entity.type === 'lore_entry' ? 'lore' : entity.type;
+		lines.push(`### ${entity.name} (${kind})`);
+		if (entity.summaryMd) lines.push(entity.summaryMd);
+		if (entity.aliases.length) lines.push(`Also known as: ${entity.aliases.join(', ')}`);
+		for (const detail of entity.details ?? []) lines.push(`- ${detail.label}: ${detail.value}`);
 	}
 	return lines.join('\n');
 }

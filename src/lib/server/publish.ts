@@ -1,9 +1,10 @@
-import { and, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import { publicationAssets, publications, stories, users } from './db/schema.ts';
+import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
 import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
 import { isUniqueViolation } from './db-errors.ts';
+import { storyIsLive } from './universe-scope.ts';
 
 // Publishing freezes the story's current prose into an edition; the
 // public reading pages serve only these snapshots, never live drafts.
@@ -30,7 +31,7 @@ export async function publishStory(
 	const [story] = await db
 		.select()
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	if (!story) return { ok: false, reason: 'story not found' };
 
 	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
@@ -52,8 +53,10 @@ export async function publishStory(
 	}
 
 	// Inline images the frozen prose points at, so the reader can serve them
-	// to anonymous visitors without exposing every asset by id.
-	const referencedAssets = [
+	// to anonymous visitors without exposing every asset by id. Only the
+	// author's own existing assets: prose can name any id, including another
+	// user's private image or one that does not exist on this instance.
+	const mentionedAssets = [
 		...new Set([
 			...content.chapters.flatMap((chapter) =>
 				chapter.scenes.flatMap((scene) => findAssetReferences(scene.bodyMd))
@@ -61,7 +64,6 @@ export async function publishStory(
 			...content.unfiled.flatMap((scene) => findAssetReferences(scene.bodyMd))
 		])
 	];
-
 	try {
 		const publicationId = await db.transaction(async (tx) => {
 			await tx
@@ -82,6 +84,18 @@ export async function publishStory(
 					versionLabel: versionLabel?.trim() || null
 				})
 				.returning({ id: publications.id });
+			// Locked so a concurrent delete of one of these images cannot slip
+			// in before the link is written.
+			const referencedAssets =
+				mentionedAssets.length === 0
+					? []
+					: (
+							await tx
+								.select({ id: assets.id })
+								.from(assets)
+								.where(and(inArray(assets.id, mentionedAssets), eq(assets.ownerId, userId)))
+								.for('share')
+						).map((row) => row.id);
 			if (referencedAssets.length > 0) {
 				await tx
 					.insert(publicationAssets)
@@ -140,6 +154,7 @@ export async function publicShelf(db: Database, handle: string) {
 				eq(publications.handle, handle),
 				eq(publications.isCurrent, true),
 				isNull(publications.removedAt),
+				isNull(stories.deletedAt),
 				eq(stories.visibility, 'public')
 			)
 		)
@@ -237,7 +252,8 @@ export async function publicEdition(db: Database, handle: string, storyId: strin
 				eq(publications.handle, handle),
 				eq(publications.storyId, storyId),
 				eq(publications.isCurrent, true),
-				isNull(publications.removedAt)
+				isNull(publications.removedAt),
+				isNull(stories.deletedAt)
 			)
 		);
 	if (!edition || edition.visibility === 'private') return null;
@@ -259,6 +275,7 @@ export async function isPublicAsset(db: Database, assetId: string): Promise<bool
 				eq(stories.coverAssetId, assetId),
 				eq(publications.isCurrent, true),
 				isNull(publications.removedAt),
+				isNull(stories.deletedAt),
 				ne(stories.visibility, 'private')
 			)
 		)
@@ -270,11 +287,18 @@ export async function isPublicAsset(db: Database, assetId: string): Promise<bool
 		.from(publicationAssets)
 		.innerJoin(publications, eq(publicationAssets.publicationId, publications.id))
 		.innerJoin(stories, eq(publications.storyId, stories.id))
+		// Editions published before links were owner-checked may list another
+		// user's image; only the author's own images are public through them.
+		.innerJoin(
+			assets,
+			and(eq(assets.id, publicationAssets.assetId), eq(assets.ownerId, publications.ownerId))
+		)
 		.where(
 			and(
 				eq(publicationAssets.assetId, assetId),
 				eq(publications.isCurrent, true),
 				isNull(publications.removedAt),
+				isNull(stories.deletedAt),
 				ne(stories.visibility, 'private')
 			)
 		)

@@ -4,7 +4,7 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import ReaderFooter from '$lib/components/ReaderFooter.svelte';
 	import { pageCrumb } from '$lib/chrome';
-	import { formatNumber } from '$lib/format';
+	import { formatLongDate, formatNumber } from '$lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -33,10 +33,6 @@
 						: [])
 				]
 	);
-
-	function published(date: Date): string {
-		return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-	}
 </script>
 
 <svelte:head>
@@ -79,7 +75,7 @@
 				<p class="reader-byline">
 					{chapters.length}
 					{chapters.length === 1 ? 'chapter' : 'chapters'} - {formatNumber(data.words)} words - published
-					{published(data.publishedAt)}{#if data.versionLabel}
+					{formatLongDate(data.publishedAt)}{#if data.versionLabel}
 						- {data.versionLabel}{/if}
 				</p>
 

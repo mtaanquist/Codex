@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { createCheckpoint, type RevisionEntityType } from '$lib/server/revisions';
 import { readJson } from '$lib/server/validation';
@@ -28,6 +29,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.entityId,
 		typeof payload.label === 'string' ? payload.label : undefined
 	);
-	if (!result.ok) error(404, result.reason);
+	if (!result.ok) throwActionError(result);
 	return json({ ok: true }, { status: 201 });
 };

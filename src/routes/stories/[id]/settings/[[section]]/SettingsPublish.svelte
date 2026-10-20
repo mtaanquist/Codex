@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateTime } from '$lib/format';
 	import { tick } from 'svelte';
 	import HelpLink from '$lib/components/HelpLink.svelte';
 	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
@@ -120,9 +121,7 @@
 						<a href="/artifacts/{artifact.id}" download>
 							{FORMAT_LABELS[artifact.format] ?? artifact.format}
 						</a>
-						- {formatBytes(artifact.byteSize)}, generated {new Date(
-							artifact.createdAt
-						).toLocaleString()}
+						- {formatBytes(artifact.byteSize)}, generated {formatDateTime(artifact.createdAt)}
 					</li>
 				{/each}
 			</ul>

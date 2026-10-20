@@ -24,7 +24,8 @@ your work stored as markdown that exports cleanly at any time.
 Codex is three containers: the app, a background worker (mention indexing,
 email, exports, backups), and Postgres. Every tagged release publishes a
 production image to GitHub Container Registry as
-`ghcr.io/mtaanquist/codex`, tagged `vX.Y.Z`, `vX.Y`, and `latest`.
+`ghcr.io/mtaanquist/codex`, tagged `vX.Y.Z`, `vX.Y` (the newest patch of that
+minor version), and `latest` (the newest release).
 
 A minimal deployment compose file:
 
@@ -39,8 +40,9 @@ services:
     # migrations, then serves. Always use it rather than spelling out node
     # commands; the launch sequence can change between releases.
     command: codex-app
+    # Loopback only, so clients reach the app solely through your proxy.
     ports:
-      - '${APP_PORT:-3000}:3000'
+      - '${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000'
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
       ORIGIN: ${ORIGIN}
@@ -49,6 +51,12 @@ services:
       # Trust the proxy's forwarded client address for rate limiting.
       ADDRESS_HEADER: x-forwarded-for
       XFF_DEPTH: '1'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -T 5 -O /dev/null http://127.0.0.1:3000/healthz || exit 1']
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
@@ -58,15 +66,19 @@ services:
     restart: unless-stopped
     # codex-worker is baked into the image, like codex-app above.
     command: codex-worker
+    # Time for running jobs to wind down on a stop or redeploy before Docker
+    # kills the process; the worker hands back what is left before then.
+    stop_grace_period: 60s
     environment:
       DATABASE_URL: postgres://codex:${POSTGRES_PASSWORD}@db:5432/codex
+      ORIGIN: ${ORIGIN}
       APP_SECRET: ${APP_SECRET}
     depends_on:
       db:
         condition: service_healthy
 
   db:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine3.24
     restart: unless-stopped
     environment:
       POSTGRES_USER: codex
@@ -89,14 +101,18 @@ Put the three values in an `.env` file next to it:
 - `POSTGRES_PASSWORD`: something strong; the app and worker pick it up.
 - `ORIGIN`: the public URL the app is reached on, scheme included
   (`https://codex.example.com`). Form submissions are rejected when it does
-  not match what the browser sees.
+  not match what the browser sees, and emailed links use it. The app and
+  worker will not start without it.
 - `APP_SECRET`: a long random value, kept stable. It encrypts secrets
   stored in the database and signs the two-factor and passkey challenges;
   without it those features are unavailable, and changing it later makes
   stored secrets unreadable.
 
 Optionally set `APP_PORT` to publish the app on a different host port;
-it defaults to 3000.
+it defaults to 3000. The port is published on `127.0.0.1` only, so a proxy
+on the same host reaches it and nothing else does. If your proxy runs on
+another machine, set `APP_BIND` to an address only that proxy can reach,
+never one open to the internet.
 
 Then `docker compose up -d` and open the app on its port behind your
 reverse proxy. Run both the app and the worker: mentions, email,
@@ -104,8 +120,11 @@ publishing exports, and backups all happen in the worker.
 
 The example trusts the `X-Forwarded-For` header so rate limits see the real
 client address; set `XFF_DEPTH` to the number of proxies in front of the app
-if more than one. If you ever expose the app with no proxy in front, drop
-`ADDRESS_HEADER` so a client cannot spoof its address.
+if more than one. This is only safe while the proxy is the one thing that can
+reach the app: anyone who can connect to the app port directly can send their
+own header and dodge the per-address rate limits. If you ever expose the app
+with no proxy in front, set `APP_BIND` to `0.0.0.0` and drop `ADDRESS_HEADER`
+so a client cannot spoof its address.
 
 Set `ADDRESS_HEADER` whenever there is a proxy in front of the app. Without it,
 every request appears to come from the proxy's own address, so the per-address
@@ -140,8 +159,8 @@ panel instead.
 ### Update
 
 Change the image tag (or pull `latest`), then `docker compose up -d`.
-Pending migrations apply when the app container starts. Migrations are
-forward-only, so take a backup before updating if you are not running the
+Pending migrations apply when the app or worker container starts. Migrations
+are forward-only, so take a backup before updating if you are not running the
 scheduled ones; with `BACKUP_S3_*` configured the worker keeps hourly dumps,
 and `node scripts/restore-backup.ts latest` restores the newest.
 

@@ -310,17 +310,6 @@
 	color: var(--text-muted);
 	letter-spacing: 0.5em;
 }
-.reader-pager {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--space-4);
-	margin-top: var(--space-10);
-	padding-top: var(--space-5);
-	border-top: 1px solid var(--border);
-	font-size: var(--text-prose-sm);
-	color: var(--text-muted);
-}
 /* Reading text takes its links underlined and in the body colour: accent on a
    light background is under 4.5:1, and a book underlines anyway. */
 .reader-main a,

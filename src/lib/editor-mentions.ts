@@ -6,9 +6,10 @@ import {
 	type DecorationSet,
 	type ViewUpdate
 } from '@codemirror/view';
-import type { Extension } from '@codemirror/state';
+import type { ChangeSet, Extension, Range, Text } from '@codemirror/state';
 import { detectMentions, type MentionContext, type MentionTarget } from './mention-detect';
 import { entityLetter } from './entity-color';
+import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from './quick-card';
 import { badgeBackground, badgeImageSrc, type BadgeFields } from './entity-badge';
 
 export type MentionEntity = {
@@ -44,12 +45,6 @@ export type MentionOptions = {
 	onOpenCard?: (entityId: string) => void;
 };
 
-// The hover card shows the first few quick details and related entities;
-// the rest live on the entity's page. Detail order is the author's, so
-// the top ones are theirs to pick.
-const TOOLTIP_DETAILS = 3;
-const TOOLTIP_RELATED = 4;
-
 const TYPE_LABELS: Record<MentionTarget['type'], string> = {
 	character: 'character',
 	place: 'place',
@@ -84,6 +79,54 @@ function badge(fields: BadgeFields, size: 'sm' | 'dot'): HTMLElement {
 	return node;
 }
 
+// After an edit, only the lines it touched are scanned again; the other
+// underlines move with the text. Names never span a line break, so a whole
+// line is a safe unit to rescan.
+export function rescanChangedLines(
+	decorations: DecorationSet,
+	changes: ChangeSet,
+	doc: Text,
+	scan: (text: string, offset: number) => Range<Decoration>[]
+): DecorationSet {
+	const spans: { from: number; to: number }[] = [];
+	changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+		const from = doc.lineAt(fromB).from;
+		const to = doc.lineAt(toB).to;
+		const last = spans[spans.length - 1];
+		if (last && from <= last.to + 1) last.to = Math.max(last.to, to);
+		else spans.push({ from, to });
+	});
+	let next = decorations.map(changes);
+	for (const { from, to } of spans) {
+		next = next.update({
+			filterFrom: from,
+			filterTo: to,
+			filter: () => false,
+			add: scan(doc.sliceString(from, to), from),
+			sort: true
+		});
+	}
+	return next;
+}
+
+// The name matcher compiles once per target list (see mention-detect), so
+// the target list is derived once per entity list: every editor on a page
+// handed the same entities shares one compiled matcher.
+const targetLists = new WeakMap<MentionEntity[], MentionTarget[]>();
+
+export function mentionTargets(entities: MentionEntity[]): MentionTarget[] {
+	let targets = targetLists.get(entities);
+	if (!targets) {
+		targets = entities.map((entity) => ({
+			id: entity.id,
+			type: entity.type,
+			names: [entity.name, ...entity.aliases]
+		}));
+		targetLists.set(entities, targets);
+	}
+	return targets;
+}
+
 // Live underlines and hover tooltips for known entities. Lives in the scene
 // editor's mentions compartment, so pin changes can reconfigure it at
 // runtime.
@@ -91,30 +134,26 @@ export function mentionExtensions(
 	entities: MentionEntity[],
 	options: MentionOptions = {}
 ): Extension {
-	const targets: MentionTarget[] = entities.map((entity) => ({
-		id: entity.id,
-		type: entity.type,
-		names: [entity.name, ...entity.aliases]
-	}));
+	const targets = mentionTargets(entities);
 	const byId = new Map(entities.map((entity) => [entity.id, entity]));
 	const context: MentionContext = {
 		storyMembers: new Set(options.storyMembers ?? []),
 		pins: new Map(Object.entries(options.pins ?? {}))
 	};
 
-	function compute(view: EditorView): DecorationSet {
-		const matches = detectMentions(view.state.doc.toString(), targets, context);
-		return Decoration.set(
-			matches.map((match) =>
-				Decoration.mark({
-					class: match.candidates ? 'ref-word ref-ambiguous' : 'ref-word',
-					// A known entity's name is spelled the way its author chose;
-					// the browser's spellchecker keeps its squiggle off it.
-					attributes: { 'data-entity': match.targetId, spellcheck: 'false' }
-				}).range(match.position, match.position + match.length)
-			),
-			true
+	function marks(text: string, offset: number) {
+		return detectMentions(text, targets, context, offset).map((match) =>
+			Decoration.mark({
+				class: match.candidates ? 'ref-word ref-ambiguous' : 'ref-word',
+				// A known entity's name is spelled the way its author chose;
+				// the browser's spellchecker keeps its squiggle off it.
+				attributes: { 'data-entity': match.targetId, spellcheck: 'false' }
+			}).range(match.position, match.position + match.length)
 		);
+	}
+
+	function compute(view: EditorView): DecorationSet {
+		return Decoration.set(marks(view.state.doc.toString(), 0), true);
 	}
 
 	const underlines = ViewPlugin.fromClass(
@@ -124,7 +163,14 @@ export function mentionExtensions(
 				this.decorations = compute(view);
 			}
 			update(update: ViewUpdate) {
-				if (update.docChanged) this.decorations = compute(update.view);
+				if (update.docChanged) {
+					this.decorations = rescanChangedLines(
+						this.decorations,
+						update.changes,
+						update.state.doc,
+						marks
+					);
+				}
 			}
 		},
 		{ decorations: (value) => value.decorations }
@@ -186,7 +232,7 @@ export function mentionExtensions(
 				const details = entity.details ?? [];
 				if (details.length > 0) {
 					const fields = el('div', 'pop-fields');
-					for (const detail of details.slice(0, TOOLTIP_DETAILS)) {
+					for (const detail of details.slice(0, QUICK_CARD_DETAILS)) {
 						const field = el('div', 'pop-field');
 						field.appendChild(el('span', 'pop-field-k', detail.label));
 						field.appendChild(el('span', 'pop-field-v', detail.value));
@@ -197,7 +243,7 @@ export function mentionExtensions(
 				const related = entity.related ?? [];
 				if (related.length > 0) {
 					const chips = el('div', 'pop-related');
-					for (const other of related.slice(0, TOOLTIP_RELATED)) {
+					for (const other of related.slice(0, QUICK_CARD_RELATED)) {
 						const chip = el('span', 'chip');
 						chip.appendChild(badge({ name: other.name, categoryColor: other.color }, 'dot'));
 						chip.appendChild(document.createTextNode(` ${other.name}`));

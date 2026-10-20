@@ -53,6 +53,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { users } from '$lib/server/db/schema';
 import pkg from '../../../../package.json';
+import { formText } from '$lib/server/validation';
 
 // A compact uptime for the sidebar footer: minutes, then hours, then days.
 function formatUptime(seconds: number): string {
@@ -98,12 +99,12 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 // The S3 fields shared by the backup and asset storage forms.
 function s3Input(data: FormData) {
 	return {
-		endpoint: String(data.get('endpoint') ?? ''),
-		region: String(data.get('region') ?? ''),
-		bucket: String(data.get('bucket') ?? ''),
-		prefix: String(data.get('prefix') ?? ''),
-		accessKeyId: String(data.get('accessKeyId') ?? ''),
-		secretAccessKey: String(data.get('secretAccessKey') ?? '')
+		endpoint: formText(data, 'endpoint'),
+		region: formText(data, 'region'),
+		bucket: formText(data, 'bucket'),
+		prefix: formText(data, 'prefix'),
+		accessKeyId: formText(data, 'accessKeyId'),
+		secretAccessKey: formText(data, 'secretAccessKey')
 	};
 }
 
@@ -111,7 +112,7 @@ function s3Input(data: FormData) {
 // result for the page. Keeps the per-action handlers to one line each.
 async function onUser(request: Request, scope: string, run: (userId: string) => Promise<boolean>) {
 	const data = await request.formData();
-	const userId = String(data.get('userId') ?? '');
+	const userId = formText(data, 'userId');
 	if (!isUuid(userId) || !(await run(userId))) {
 		return fail(400, { scope, message: 'That account could not be updated.' });
 	}
@@ -147,7 +148,7 @@ export const actions: Actions = {
 	deleteAccount: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const userId = String(data.get('userId') ?? '');
+		const userId = formText(data, 'userId');
 		if (!isUuid(userId)) {
 			return fail(400, { scope: 'accounts', message: 'That account could not be deleted.' });
 		}
@@ -182,7 +183,7 @@ export const actions: Actions = {
 	saveSignup: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const mode = String(data.get('mode') ?? '');
+		const mode = formText(data, 'mode');
 		if (!SIGNUP_MODES.includes(mode as SignupMode)) {
 			return fail(400, { scope: 'signup', message: 'Pick one of the sign-up options.' });
 		}
@@ -194,7 +195,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const maxUses = Number(data.get('maxUses') ?? 1);
 		// Blank means the code never expires.
-		const expiresRaw = String(data.get('expiresDays') ?? '').trim();
+		const expiresRaw = formText(data, 'expiresDays').trim();
 		const expiresDays = expiresRaw === '' ? 0 : Number(expiresRaw);
 		if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000) {
 			return fail(400, {
@@ -210,7 +211,7 @@ export const actions: Actions = {
 		}
 		await createInviteCode(db, {
 			createdBy: locals.user!.id,
-			label: String(data.get('label') ?? ''),
+			label: formText(data, 'label'),
 			maxUses,
 			expiresAt: expiresDays > 0 ? new Date(Date.now() + expiresDays * 86_400_000) : null
 		});
@@ -219,7 +220,7 @@ export const actions: Actions = {
 	deleteInvite: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const inviteId = String(data.get('inviteId') ?? '');
+		const inviteId = formText(data, 'inviteId');
 		if (!isUuid(inviteId) || !(await deleteInviteCode(db, inviteId))) {
 			return fail(400, { scope: 'invites', message: 'That invite code does not exist.' });
 		}
@@ -230,7 +231,7 @@ export const actions: Actions = {
 	setInviteAllowance: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const userId = String(data.get('userId') ?? '');
+		const userId = formText(data, 'userId');
 		const allowance = Number(data.get('allowance') ?? 0);
 		if (!Number.isInteger(allowance) || allowance < 0 || allowance > 99) {
 			return fail(400, {
@@ -246,7 +247,7 @@ export const actions: Actions = {
 	takedown: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const publicationId = String(data.get('publicationId') ?? '');
+		const publicationId = formText(data, 'publicationId');
 		if (!isUuid(publicationId) || !(await takedownPublication(db, publicationId))) {
 			return fail(400, { scope: 'published', message: 'That edition does not exist.' });
 		}
@@ -331,12 +332,12 @@ export const actions: Actions = {
 		requireAdmin(locals);
 		const data = await request.formData();
 		const result = await saveSmtp(db, {
-			host: String(data.get('host') ?? ''),
+			host: formText(data, 'host'),
 			port: Number(data.get('port') ?? 587),
 			secure: data.get('secure') === 'on',
-			user: String(data.get('user') ?? ''),
-			from: String(data.get('from') ?? ''),
-			password: String(data.get('password') ?? '')
+			user: formText(data, 'user'),
+			from: formText(data, 'from'),
+			password: formText(data, 'password')
 		});
 		if (!result.ok) return fail(400, { scope: 'smtp', message: result.reason });
 		return { scope: 'smtp', saved: true };
@@ -344,7 +345,7 @@ export const actions: Actions = {
 	testEmail: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const to = String(data.get('testTo') ?? '').trim() || locals.user!.email;
+		const to = formText(data, 'testTo').trim() || locals.user!.email;
 		if (!EMAIL_RE.test(to)) {
 			return fail(400, { scope: 'smtp', message: 'Enter a valid address to send the test to.' });
 		}
@@ -372,13 +373,13 @@ export const actions: Actions = {
 	saveEgress: async ({ request, locals }) => {
 		requireAdmin(locals);
 		const data = await request.formData();
-		const policy = String(data.get('policy') ?? '');
+		const policy = formText(data, 'policy');
 		if (policy !== 'block-private' && policy !== 'allowlist' && policy !== 'open') {
 			return fail(400, { scope: 'egress', message: 'Pick an egress policy.' });
 		}
 		// One host per line in the textarea; saveEgressPolicy trims, lowercases,
 		// and de-duplicates, and refuses an allowlist policy with no hosts.
-		const allowlist = String(data.get('allowlist') ?? '')
+		const allowlist = formText(data, 'allowlist')
 			.split('\n')
 			.map((host) => host.trim())
 			.filter(Boolean);

@@ -155,7 +155,7 @@
 }
 .rv-marker.is-focused {
 	background: var(--auth);
-	color: #fff;
+	color: var(--on-color);
 	border-color: transparent;
 	box-shadow: 0 0 0 4px color-mix(in oklab, var(--auth) 20%, transparent);
 }
@@ -278,7 +278,7 @@
 }
 .rv-av {
 	border-radius: 7px;
-	color: #fff;
+	color: var(--on-color);
 	display: grid;
 	place-items: center;
 	font-weight: 700;
@@ -309,17 +309,6 @@
 	font-size: 11.5px;
 	color: var(--text-faint);
 	margin-top: 1px;
-}
-
-.rv-card-quote {
-	font-family: var(--font-content);
-	font-size: 13.5px;
-	font-style: italic;
-	line-height: 1.45;
-	color: var(--text-muted);
-	border-left: 2px solid color-mix(in oklab, var(--auth) 55%, transparent);
-	padding-left: 10px;
-	margin-bottom: 10px;
 }
 .rv-scene-wide {
 	font-size: 11px;
@@ -435,12 +424,6 @@
 	color: var(--auth);
 	font-weight: 550;
 	border-bottom: 2px solid color-mix(in oklab, var(--auth) 45%, transparent);
-}
-.rv-rationale {
-	font-size: 12.5px;
-	line-height: 1.55;
-	color: var(--text-muted);
-	margin-bottom: 11px;
 }
 
 .rv-replies {
@@ -674,39 +657,6 @@
 	margin-bottom: 10px;
 }
 /* The right panel becomes a focused composer while drafting a note. */
-.inspector-head {
-	flex: none;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 10px 12px;
-	border-bottom: 1px solid var(--border);
-	background: var(--bg-elevated);
-}
-.inspector-head .back-btn {
-	display: inline-flex;
-	align-items: center;
-	gap: 5px;
-	border: 0;
-	background: none;
-	color: var(--text-muted);
-	font-size: 13px;
-	font-weight: 600;
-	padding: 5px 8px;
-	border-radius: 7px;
-	cursor: pointer;
-}
-.inspector-head .back-btn:hover {
-	background: var(--bg-hover);
-	color: var(--text);
-}
-.inspector-kind {
-	font-size: 10.5px;
-	font-weight: 650;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	color: var(--text-faint);
-}
 .rv-compose-hint {
 	font-size: 11.5px;
 	line-height: 1.45;

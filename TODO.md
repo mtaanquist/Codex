@@ -26,6 +26,25 @@ Then pick from:
 - [ ] Phase 10 (roadmap): public landing pages at `/@handle/<slug>`, genre and
       content tags, quota enforcement.
 
+Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
+review agents covered correctness, security, tech debt and reliability, and
+every finding was filed as an issue (#572 to #630), plus the Assistant retry
+notice (#638). All of them are fixed on staging except the SvelteKit 3 upgrade
+(#613, parked). Partly done, with the rest left open on the issue: dependency
+hygiene (#616, Node 24 engines, `@types/node` and the drizzle-orm patch),
+action error codes (#627, review form actions, scene split and passkey
+responses), the hygiene sweep (#629, one fixed locale, large-file splits) and
+the docs pass (#630, the TODO.md format proposal waits on the owner).
+Follow-ups: the worker's purge schedules have no test, `resolvePlanEntity`
+still queries the three entity tables in turn (#623), and end-to-end CI still
+retries twice, which hides flaky tests (#621). Release notes for the
+staging merge: the app port binds to 127.0.0.1 by default (`APP_BIND`); the
+app and worker refuse to start without `ORIGIN`; restart the worker with or
+before the app; worker logs are JSON events (`worker.started` replaces
+"Worker started"); the worker container is capped at 2 GB by default
+(`WORKER_MEM_LIMIT`); SimpleWebAuthn 14 needs one manual passkey check on a real
+authenticator before release.
+
 Assistant settings, per-role tuning (2026-08-26, author-scoped, branch
 `claude/llm-assistant-work-paths-puxtka`): the five tuning controls added with
 the work below had been crammed into the role table's 280px column, where the
@@ -1013,7 +1032,7 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 - [x] 22. Revisions and history (v1.7): polymorphic revisions table, insert on body-changing saves across all five types, checkpoints with labels, Reference/History tabs in the right column, preview banner with jsdiff changes toggle, restore-on-top, story and universe settings timelines
 - [x] 23. TODO markers (v1.9): scene_markers schema, TODO: line detection shared by editor and panel, selection markers via Ctrl+Alt+M with anchors mapped through edits and persisted on autosave, To do card in the Reference tab with check-off
 - [x] 23b. Editable continuous view (v1.10): the story view stitches one SceneEditor per scene (own autosave chain, mentions, autocomplete, markers), vertical arrows cross scene boundaries, and the continuousSceneMarks preference hides the scene marks for authors who treat scenes as atomic splits (both first-use feedback items)
-- [x] 24. Scheduled off-site backups and restore (v1.8, cadence in v1.8.1): hourly pg_dump from the worker to any S3-compatible bucket with skip-if-unchanged and tiered retention (48h full, 30d daily), admin "Back up now" with visible run history, restore script drilled live against MinIO (took the slot SillyTavern vacated; pulled forward from step 33 because no disaster recovery means not production ready). WAL/PITR noted as a Phase 6 candidate.
+- [x] 24. Scheduled off-site backups and restore (v1.8, cadence in v1.8.1): hourly pg_dump from the worker to any S3-compatible bucket with skip-if-unchanged and tiered retention (48h full, 30d daily), admin "Back up now" with visible run history, restore script drilled live against MinIO, now RustFS since #682 (took the slot SillyTavern vacated; pulled forward from step 33 because no disaster recovery means not production ready). WAL/PITR noted as a Phase 6 candidate.
 - [x] 25. Assets and images (v1.11): S3-compatible storage as the only backend (author's call: a database restore keeps every asset link valid), separate bucket from backups, off until ASSET*S3*\* set with an optional minio compose profile, paste/drop image upload in the scene editors inserting markdown, story covers with a generated SVG default, app-served with nosniff
 - [x] 26. Markdown, EPUB, and PDF export (v1.12): shared markdown-it renderer (raw HTML escaped), zip of front-mattered scene files with bundled rewritten assets, hand-rolled minimal EPUB3 over fflate (stale libs declined), print-optimised route for PDF via the browser dialog; Export section in story settings
 - [x] 27. Public reading pages, self-host (v2.0 candidate): publications table, publish freezes editions (gated on admin-enabled archive + claimed handle), /@handle shelf and per-story reader (semantic HTML, adult confirmation + noindex, public covers), visibility private/unlisted/public, admin enable + takedown. RSS noted as easy follow-on.

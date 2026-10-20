@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Readable } from 'node:stream';
+import { unzipSync } from 'fflate';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
@@ -14,6 +15,7 @@ import {
 	type ArtifactDeps
 } from '../../src/lib/server/export-artifacts';
 import { publishStory } from '../../src/lib/server/publish';
+import { inMemoryAsset } from '../../src/lib/server/export';
 import { purgeAccount } from '../../src/lib/server/account-deletion';
 import type { AssetObjectStore } from '../../src/lib/server/assets';
 import type { Database } from '../../src/lib/server/auth';
@@ -33,6 +35,11 @@ function memoryStore() {
 	const store: AssetObjectStore = {
 		async put(key, body) {
 			objects.set(key, Buffer.from(body));
+		},
+		async upload(key, body) {
+			const parts: Buffer[] = [];
+			for await (const chunk of body) parts.push(Buffer.from(chunk));
+			objects.set(key, Buffer.concat(parts));
 		},
 		async get(key) {
 			const body = objects.get(key);
@@ -106,6 +113,26 @@ afterAll(async () => {
 });
 
 describe('generateEditionArtifacts', () => {
+	it('looks up each image once for all three formats', async () => {
+		const imageId = '11111111-1111-4111-8111-111111111111';
+		await db
+			.update(scenes)
+			.set({ bodyMd: `The gate opened.\n\n![map](/assets/${imageId})` })
+			.where(eq(scenes.storyId, storyId));
+		const publicationId = await publish();
+		const requested: string[] = [];
+		const { store } = memoryStore();
+		const result = await generateEditionArtifacts(db, publicationId, {
+			...deps(store),
+			loadAssets: async (ids) => {
+				requested.push(...ids);
+				return ids.map((id) => inMemoryAsset(id, 'image/png', new Uint8Array([1])));
+			}
+		});
+		expect(result).toMatchObject({ ok: true, failed: [] });
+		expect(requested).toEqual([imageId]);
+	});
+
 	it('stores all three formats with deterministic keys', async () => {
 		const publicationId = await publish();
 		const { objects, store } = memoryStore();
@@ -121,6 +148,52 @@ describe('generateEditionArtifacts', () => {
 		const pdf = rows.find((row) => row.format === 'pdf')!;
 		expect(pdf.filename).toBe('book-of-ash.pdf');
 		expect(pdf.contentType).toBe('application/pdf');
+	});
+
+	it('streams the zip and EPUB to the bucket, reading each image as it is written', async () => {
+		const imageId = '22222222-2222-4222-8222-222222222222';
+		await db
+			.update(scenes)
+			.set({ bodyMd: `![map](/assets/${imageId})` })
+			.where(eq(scenes.storyId, storyId));
+		const publicationId = await publish();
+		const { objects, store } = memoryStore();
+		const calls: string[] = [];
+		const tracked: AssetObjectStore = {
+			...store,
+			async put(key, body, contentType) {
+				calls.push(`put ${key.split('/').pop()}`);
+				await store.put(key, body, contentType);
+			},
+			async upload(key, body, contentType) {
+				calls.push(`upload ${key.split('/').pop()}`);
+				await store.upload(key, body, contentType);
+			}
+		};
+		const result = await generateEditionArtifacts(db, publicationId, {
+			...deps(tracked),
+			loadAssets: async (ids) =>
+				ids.map((id) => ({
+					id,
+					contentType: 'image/png',
+					open: async () => {
+						calls.push('read image');
+						return Readable.from([Buffer.from('png')]);
+					}
+				}))
+		});
+		expect(result).toMatchObject({ ok: true, failed: [] });
+		// The image is read inside each upload, not loaded up front.
+		expect(calls).toEqual([
+			'upload markdown',
+			'read image',
+			'upload epub',
+			'read image',
+			'read image',
+			'put pdf'
+		]);
+		const zip = unzipSync(new Uint8Array(objects.get(`test/exports/${publicationId}/markdown`)!));
+		expect(Object.keys(zip).some((name) => name.endsWith(`${imageId}.png`))).toBe(true);
 	});
 
 	it('replaces rows in place on regeneration', async () => {

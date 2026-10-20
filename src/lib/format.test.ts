@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { pluralSuffix, formatNumber, compactCount } from './format';
+import { pluralSuffix, formatNumber, compactCount, formatLongDate } from './format';
+
+describe('formatLongDate', () => {
+	it('writes the day, the full month and the year', () => {
+		expect(formatLongDate(new Date(2026, 5, 11))).toBe('11 June 2026');
+	});
+});
 
 describe('pluralSuffix', () => {
 	it('is empty for exactly one', () => {

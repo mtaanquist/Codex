@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { textHash } from '$lib/text-hash';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
@@ -13,8 +14,10 @@ import {
 	users
 } from './db/schema.ts';
 import { hashToken } from './tokens.ts';
+import { storyIsLive } from './universe-scope.ts';
 import { signToken, verifyToken } from './crypto.ts';
 import { recordRevision } from './revisions.ts';
+import { remapMarkerAnchors } from './markers.ts';
 import { createAnchorMapper, type AnchorMapper } from '../review-anchor.ts';
 import { wordCount } from '../word-count.ts';
 import { normaliseAssistantName } from './llm/prompts/persona.ts';
@@ -108,7 +111,7 @@ export async function revokeReviewInvitation(
 
 // Resolves a magic-link token to its invitation and story when it still
 // grants access. Distinguishes a dead link from a stale one so the landing
-// page can say which.
+// page can say which. A story in a trashed universe reads as an unknown link.
 export async function invitationByToken(db: Database, token: string) {
 	const [row] = await db
 		.select({
@@ -118,7 +121,7 @@ export async function invitationByToken(db: Database, token: string) {
 		})
 		.from(reviewInvitations)
 		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
-		.where(eq(reviewInvitations.tokenHash, hashToken(token)));
+		.where(and(eq(reviewInvitations.tokenHash, hashToken(token)), storyIsLive()));
 	if (!row) return { status: 'unknown' as const };
 	if (row.invitation.revokedAt) return { status: 'revoked' as const };
 	if (row.invitation.expiresAt && row.invitation.expiresAt < new Date()) {
@@ -188,16 +191,19 @@ export function readReviewerToken(token: string | undefined): string | null {
 }
 
 // The guard for everything a guest does: the reviewer must exist and their
-// invitation must still grant access to this story. Touches last_seen_at.
+// invitation must still grant access to this story, whose universe must not
+// be in the trash. Touches last_seen_at.
 export async function reviewerAccess(db: Database, reviewerId: string, storyId: string) {
 	const [row] = await db
 		.select({ reviewer: reviewers, invitation: reviewInvitations })
 		.from(reviewers)
 		.innerJoin(reviewInvitations, eq(reviewers.invitationId, reviewInvitations.id))
+		.innerJoin(stories, eq(reviewInvitations.storyId, stories.id))
 		.where(
 			and(
 				eq(reviewers.id, reviewerId),
 				eq(reviewInvitations.storyId, storyId),
+				storyIsLive(),
 				isNull(reviewInvitations.revokedAt),
 				or(isNull(reviewInvitations.expiresAt), gt(reviewInvitations.expiresAt, sql`now()`))
 			)
@@ -227,14 +233,23 @@ async function ensureBaseRevision(db: Database, sceneId: string, bodyMd: string)
 	if (latest && latest.bodyMd === bodyMd) return latest.id;
 	const [created] = await db
 		.insert(revisions)
-		.values({ entityType: 'scene', entityId: sceneId, bodyMd, reason: 'autosave' })
+		.values({
+			entityType: 'scene',
+			entityId: sceneId,
+			bodyMd,
+			wordCount: wordCount(bodyMd),
+			reason: 'autosave'
+		})
 		.returning({ id: revisions.id });
 	return created.id;
 }
 
 // The same per-entity advisory lock recordRevision takes for autosave
-// coalescing, so pinning a base revision serialises against autosaves.
+// coalescing, so pinning a base revision serialises against autosaves. The
+// scene row is locked first, the order a save takes them in (row, then
+// advisory), so the two cannot deadlock.
 async function sceneRevisionLock(db: Database, sceneId: string): Promise<void> {
+	await db.select({ id: scenes.id }).from(scenes).where(eq(scenes.id, sceneId)).for('key share');
 	await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`scene:${sceneId}`}))`);
 }
 
@@ -439,10 +454,12 @@ export async function addComment(
 	return { ok: true };
 }
 
-// Only the story's owner resolves or reopens a thread.
+// Only the story's owner resolves or reopens a thread, and only one of that
+// story's threads.
 export async function setThreadResolved(
 	db: Database,
 	userId: string,
+	storyId: string,
 	threadId: string,
 	resolved: boolean
 ): Promise<boolean> {
@@ -456,9 +473,13 @@ export async function setThreadResolved(
 		.where(
 			and(
 				eq(reviewThreads.id, threadId),
+				eq(reviewThreads.storyId, storyId),
 				inArray(
 					reviewThreads.storyId,
-					db.select({ id: stories.id }).from(stories).where(eq(stories.ownerId, userId))
+					db
+						.select({ id: stories.id })
+						.from(stories)
+						.where(and(eq(stories.ownerId, userId), storyIsLive()))
 				)
 			)
 		)
@@ -708,6 +729,13 @@ export type SuggestionView = {
 
 // Re-anchors the proposed range onto the current text: a real range maps
 // through the mapper's range, a pure insertion point through its point.
+// Unlike a comment anchor, a suggestion replaces the range wholesale, so the
+// range must still hold exactly the text it was proposed against: an edit
+// inside it (which the mapper tolerates by stretching or shrinking) would be
+// silently overwritten on accept, so it counts as lost. A character diff can
+// also stretch the range over an insertion just outside it ("She walked in."
+// -> "She slowly walked in." maps "walked in" to "wly walked in"), so the
+// original is looked for inside the stretched range before giving up.
 function mapSuggestionRange(
 	mapper: AnchorMapper,
 	baseText: string,
@@ -719,7 +747,13 @@ function mapSuggestionRange(
 		const point = mapper.point(baseText, currentText, start);
 		return point === null ? null : { start: point, end: point };
 	}
-	return mapper.range(baseText, currentText, start, end);
+	const range = mapper.range(baseText, currentText, start, end);
+	if (!range) return null;
+	const original = baseText.slice(start, end);
+	if (currentText.slice(range.start, range.end) === original) return range;
+	const at = currentText.indexOf(original, range.start);
+	if (at === -1 || at + original.length > range.end) return null;
+	return { start: at, end: at + original.length };
 }
 
 // Where a decided suggestion now sits, so the Done view can point at it: the
@@ -854,13 +888,18 @@ export async function updateAssistantSuggestion(
 // The author's decision. Rejection only records it; acceptance re-anchors
 // the range against the current text and applies the replacement, recording
 // a revision and leaving the mention index to the caller's enqueue. A
-// passage that was rewritten since cannot be accepted, only rejected.
+// passage that was edited since, even inside it, cannot be accepted, only
+// rejected.
 export async function decideSuggestion(
 	db: Database,
 	userId: string,
+	storyId: string,
 	suggestionId: string,
 	accept: boolean
-): Promise<{ ok: true; sceneId: string | null } | { ok: false; reason: string }> {
+): Promise<
+	| { ok: true; sceneId: string | null; bodyMd: string | null; baseHash: string | null }
+	| { ok: false; reason: string }
+> {
 	const [row] = await db
 		.select({
 			suggestion: reviewSuggestions,
@@ -872,7 +911,13 @@ export async function decideSuggestion(
 		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
 		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
 		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
-		.where(eq(reviewSuggestions.id, suggestionId));
+		.where(
+			and(
+				eq(reviewSuggestions.id, suggestionId),
+				eq(reviewSuggestions.storyId, storyId),
+				storyIsLive()
+			)
+		);
 	if (!row || row.ownerId !== userId) {
 		return { ok: false, reason: 'That suggestion does not exist.' };
 	}
@@ -885,14 +930,16 @@ export async function decideSuggestion(
 			.update(reviewSuggestions)
 			.set({ status: 'rejected', decidedByUserId: userId, decidedAt: sql`now()` })
 			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')));
-		return { ok: true, sceneId: null };
+		return { ok: true, sceneId: null, bodyMd: null, baseHash: null };
 	}
 
 	// The body is read, re-anchored, and written inside one transaction with
 	// the scene row locked, so a concurrent autosave cannot land between the
 	// read and the write and be silently overwritten by stale text.
 	const applied = await db.transaction(
-		async (tx): Promise<{ ok: true; newBody: string } | { ok: false; reason: string }> => {
+		async (
+			tx
+		): Promise<{ ok: true; newBody: string; baseHash: string } | { ok: false; reason: string }> => {
 			const [scene] = await tx
 				.select({ bodyMd: scenes.bodyMd })
 				.from(scenes)
@@ -931,27 +978,43 @@ export async function decideSuggestion(
 				.update(scenes)
 				.set({ bodyMd: newBody, wordCount: wordCount(newBody) })
 				.where(eq(scenes.id, row.scene.id));
+			await remapMarkerAnchors(tx, row.scene.id, scene.bodyMd, newBody);
 			// Record the revision in the same transaction so the body change and
 			// its snapshot commit together; a failure here rolls the accept back
 			// rather than leaving an unsnapshotted edit.
 			await recordRevision(tx, 'scene', row.scene.id, newBody, 'suggestion');
-			return { ok: true, newBody };
+			return { ok: true, newBody, baseHash: textHash(scene.bodyMd) };
 		}
 	);
 	if (!applied.ok) return applied;
-	return { ok: true, sceneId: row.scene.id };
+	return {
+		ok: true,
+		sceneId: row.scene.id,
+		bodyMd: applied.newBody,
+		baseHash: applied.baseHash
+	};
 }
 
 // Retracts a comment the viewer authored. A reply is removed on its own; the
 // thread's opening comment can only be removed when no one else has joined the
 // thread (so a retraction never takes someone else's reply with it), and then
 // the whole thread goes. The Assistant's comments are not retractable here.
+// Scoped to the given story, in a live universe.
 export async function deleteComment(
 	db: Database,
 	actor: ReviewViewer,
+	storyId: string,
 	commentId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const [target] = await db.select().from(reviewComments).where(eq(reviewComments.id, commentId));
+	const [found] = await db
+		.select({ comment: reviewComments })
+		.from(reviewComments)
+		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
+		.innerJoin(stories, eq(reviewThreads.storyId, stories.id))
+		.where(
+			and(eq(reviewComments.id, commentId), eq(reviewThreads.storyId, storyId), storyIsLive())
+		);
+	const target = found?.comment;
 	if (!target) return { ok: false, reason: 'That comment does not exist.' };
 	if (!ownsComment(target, actor)) {
 		return { ok: false, reason: 'You can only delete your own comments.' };
@@ -986,16 +1049,25 @@ export async function deleteComment(
 
 // Retracts a pending suggestion the viewer proposed. A decided suggestion is
 // part of the record (and an accepted one already changed the text), so it
-// stays.
+// stays. Scoped to the given story, in a live universe.
 export async function deleteSuggestion(
 	db: Database,
 	actor: ReviewViewer,
+	storyId: string,
 	suggestionId: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-	const [row] = await db
-		.select()
+	const [found] = await db
+		.select({ suggestion: reviewSuggestions })
 		.from(reviewSuggestions)
-		.where(eq(reviewSuggestions.id, suggestionId));
+		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
+		.where(
+			and(
+				eq(reviewSuggestions.id, suggestionId),
+				eq(reviewSuggestions.storyId, storyId),
+				storyIsLive()
+			)
+		);
+	const row = found?.suggestion;
 	if (!row) return { ok: false, reason: 'That suggestion does not exist.' };
 	const mine =
 		'userId' in actor ? row.authorUserId === actor.userId : row.reviewerId === actor.reviewerId;

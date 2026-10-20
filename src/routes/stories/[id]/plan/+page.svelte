@@ -6,6 +6,7 @@
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
 	import PanelStrip from '$lib/components/PanelStrip.svelte';
 	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
+	import { patch } from '$lib/api';
 	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
@@ -126,12 +127,13 @@
 					sceneHref={(sceneId) =>
 						`${resolve('/stories/[id]', { id: data.story.slug })}?scene=${sceneId}`}
 					onMove={async (sceneId, status) => {
-						await fetch(`/api/scenes/${sceneId}`, {
-							method: 'PATCH',
-							headers: { 'content-type': 'application/json' },
-							body: JSON.stringify({ status })
-						});
+						const result = await patch(
+							`/api/scenes/${sceneId}`,
+							{ status },
+							'Could not move the scene. Try again.'
+						);
 						await invalidateAll();
+						return result.ok ? null : result.message;
 					}}
 				/>
 			{:else if data.characters.length === 0 && data.places.length === 0}

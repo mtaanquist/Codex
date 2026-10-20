@@ -1,12 +1,13 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
-import type { Database } from './auth';
-import { scenes, stories } from './db/schema';
+import type { Database } from './auth.ts';
+import { scenes, stories } from './db/schema.ts';
+import { storyIsLive } from './universe-scope.ts';
 
 // The owned-scene lookup shared by everything that reads or mutates a scene:
-// ownership flows through the story, and soft-deleted scenes are filtered by
-// default so the trash check cannot be forgotten. Pass deleted: true for the
-// trash operations that work on a trashed scene. story-access.ts is the
-// sibling for stories.
+// ownership flows through the story, and soft-deleted scenes and scenes in a
+// trashed universe are filtered by default so the trash check cannot be
+// forgotten. Pass deleted: true for the trash operations that work on a
+// trashed scene. story-access.ts is the sibling for stories.
 export async function ownedScene(
 	db: Database,
 	userId: string,
@@ -29,6 +30,7 @@ export async function ownedScene(
 			and(
 				eq(scenes.id, sceneId),
 				eq(stories.ownerId, userId),
+				storyIsLive(),
 				options.deleted ? isNotNull(scenes.deletedAt) : isNull(scenes.deletedAt)
 			)
 		);

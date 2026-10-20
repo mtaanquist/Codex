@@ -41,8 +41,9 @@ import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
-import { logEvent } from '../log.ts';
+import { errorFields, logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { storyIsLive } from '../universe-scope.ts';
 
 // Tool budgets for the exhaustive passes. A focused or full pass stages one
 // tool call per note plus the scene read, so the account's conservative
@@ -493,7 +494,14 @@ async function storySurveyScenes(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)))
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				storyIsLive(),
+				isNull(scenes.deletedAt)
+			)
+		)
 		.orderBy(asc(scenes.globalPosition));
 }
 
@@ -545,7 +553,14 @@ async function staleSummaryCount(db: Database, userId: string, storyId: string):
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				storyIsLive(),
+				isNull(scenes.deletedAt)
+			)
+		);
 	return rows.filter(
 		(row) =>
 			Boolean(row.bodyMd && row.bodyMd.trim()) &&
@@ -643,7 +658,7 @@ async function openRun(
 			// already reviewed are not reviewed (and billed) a second time.
 			state ??= await adoptCappedRun(db, { userId: opts.userId, scope: opts.scope });
 		} catch (err) {
-			console.error('review run: reading progress failed:', err);
+			logEvent('error', 'review_run.load_failed', { jobId: opts.jobId, ...errorFields(err) });
 		}
 	}
 	const current = state ?? emptyReviewRun();
@@ -660,7 +675,7 @@ async function openRun(
 			try {
 				await saveReviewRun(db, { jobId: opts.jobId, userId: opts.userId, state: current });
 			} catch (err) {
-				console.error('review run: saving progress failed:', err);
+				logEvent('error', 'review_run.save_failed', { jobId: opts.jobId, ...errorFields(err) });
 			}
 		}
 	};
@@ -809,6 +824,7 @@ export async function reviewUniverseContinuity(
 			and(
 				eq(stories.universeId, opts.universeId),
 				eq(stories.ownerId, opts.userId),
+				storyIsLive(),
 				isNull(scenes.deletedAt)
 			)
 		)
@@ -942,6 +958,7 @@ export async function reviewStoryScenes(
 	const where = [
 		eq(scenes.storyId, opts.storyId),
 		eq(stories.ownerId, opts.userId),
+		storyIsLive(),
 		isNull(scenes.deletedAt)
 	];
 	if (opts.chapterId) where.push(eq(scenes.chapterId, opts.chapterId));

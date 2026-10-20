@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateTime } from '$lib/format';
 	import { diffLines } from 'diff';
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
@@ -67,7 +68,7 @@
 	<div class="revision-banner-main">
 		<div class="revision-banner-title">Viewing a past revision</div>
 		<div class="revision-banner-sub">
-			{revision.createdAt.toLocaleString()}{revision.label ? ` - ${revision.label}` : ''}
+			{formatDateTime(revision.createdAt)}{revision.label ? ` - ${revision.label}` : ''}
 		</div>
 	</div>
 	<div class="revision-banner-actions">
@@ -177,11 +178,11 @@
 		line-height: 1.7;
 	}
 	.diff-add {
-		background: color-mix(in oklab, var(--cat-green, #3a7d44) 22%, transparent);
+		background: color-mix(in oklab, var(--cat-green) 22%, transparent);
 		border-radius: 3px;
 	}
 	.diff-del {
-		background: color-mix(in oklab, var(--danger, #b00020) 18%, transparent);
+		background: color-mix(in oklab, var(--danger) 18%, transparent);
 		text-decoration: line-through;
 		border-radius: 3px;
 	}

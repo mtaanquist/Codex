@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { textHash } from '../../src/lib/text-hash';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, desc, eq } from 'drizzle-orm';
@@ -7,6 +8,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import {
 	reviewSuggestions,
 	revisions,
+	sceneMarkers,
 	scenes,
 	stories,
 	universes,
@@ -14,6 +16,7 @@ import {
 } from '../../src/lib/server/db/schema';
 import { deleteStory } from '../../src/lib/server/story-delete';
 import { recordRevision } from '../../src/lib/server/revisions';
+import { saveSceneBody } from '../../src/lib/server/scene-save';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -201,7 +204,7 @@ describe('assistant suggestions', () => {
 		});
 		// Once the author has decided the first one, the Assistant may propose it
 		// again against the text as it now stands.
-		await decideSuggestion(db, authorId, first.suggestionId, false);
+		await decideSuggestion(db, authorId, storyId, first.suggestionId, false);
 		expect(await assistantSuggest(range, 'red vixen')).toMatchObject({ ok: true });
 	});
 
@@ -231,8 +234,14 @@ describe('decideSuggestion', () => {
 			'red vixen'
 		)) as { ok: true; suggestionId: string };
 
-		const result = await decideSuggestion(db, authorId, suggestionId, true);
-		expect(result).toMatchObject({ ok: true, sceneId });
+		const result = await decideSuggestion(db, authorId, storyId, suggestionId, true);
+		// The editor rebases its save check onto the returned text.
+		expect(result).toMatchObject({
+			ok: true,
+			sceneId,
+			bodyMd: BODY.replace('brown fox', 'red vixen'),
+			baseHash: textHash(BODY)
+		});
 		expect(await sceneBody()).toBe(BODY.replace('brown fox', 'red vixen'));
 
 		const [latest] = await db
@@ -246,7 +255,9 @@ describe('decideSuggestion', () => {
 		const [view] = await listSuggestions(db, storyId);
 		expect(view.status).toBe('accepted');
 		// A second decision is refused.
-		expect(await decideSuggestion(db, authorId, suggestionId, false)).toMatchObject({ ok: false });
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, false)).toMatchObject({
+			ok: false
+		});
 	});
 
 	it('applies at the re-anchored position after edits elsewhere', async () => {
@@ -261,7 +272,9 @@ describe('decideSuggestion', () => {
 			.set({ bodyMd: 'Lo! ' + BODY })
 			.where(eq(scenes.id, sceneId));
 
-		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({ ok: true });
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+			ok: true
+		});
 		expect(await sceneBody()).toBe('Lo! ' + BODY.replace('brown fox', 'red vixen'));
 	});
 
@@ -278,12 +291,60 @@ describe('decideSuggestion', () => {
 
 		const [view] = await listSuggestions(db, storyId);
 		expect(view.anchorLost).toBe(true);
-		expect(await decideSuggestion(db, authorId, suggestionId, true)).toMatchObject({
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
 			ok: false,
 			reason: expect.stringContaining('has changed')
 		});
-		expect(await decideSuggestion(db, authorId, suggestionId, false)).toMatchObject({ ok: true });
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, false)).toMatchObject({
+			ok: true
+		});
 	});
+
+	it('refuses to accept once the author edited inside the passage', async () => {
+		const start = BODY.indexOf('quick brown');
+		const { suggestionId } = (await suggest(
+			{ start, end: start + 'quick brown'.length },
+			'slow'
+		)) as { ok: true; suggestionId: string };
+		// Both ends of the range survive, but the author added words inside it.
+		const edited = BODY.replace('quick brown', 'quick, very brown');
+		await db.update(scenes).set({ bodyMd: edited }).where(eq(scenes.id, sceneId));
+
+		const [view] = await listSuggestions(db, storyId);
+		expect(view.anchorLost).toBe(true);
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+			ok: false,
+			reason: expect.stringContaining('has changed')
+		});
+		expect(await sceneBody()).toBe(edited);
+	});
+
+	// A character diff can stretch the mapped range over an insertion right
+	// next to it; the passage itself is untouched, so it still applies.
+	it.each([
+		['She walked in.', 'She slowly walked in.', 'walked in', 'strode in'],
+		['She walked in.', 'She was walked in.', 'walked in', 'strode in'],
+		['The quick brown fox', 'The quiet quick brown fox', 'quick brown', 'slow']
+	])(
+		'accepts after an insertion beside the passage (%s -> %s)',
+		async (base, edited, target, replacement) => {
+			await db.update(scenes).set({ bodyMd: base }).where(eq(scenes.id, sceneId));
+			const start = base.indexOf(target);
+			const { suggestionId } = (await suggest(
+				{ start, end: start + target.length },
+				replacement
+			)) as { ok: true; suggestionId: string };
+			await db.update(scenes).set({ bodyMd: edited }).where(eq(scenes.id, sceneId));
+
+			const [view] = await listSuggestions(db, storyId);
+			expect(view.anchorLost).toBe(false);
+			expect(edited.slice(view.anchor!.start, view.anchor!.end)).toBe(target);
+			expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+				ok: true
+			});
+			expect(await sceneBody()).toBe(edited.replace(target, replacement));
+		}
+	);
 
 	it('handles pure insertions and pure deletions', async () => {
 		const insertAt = BODY.indexOf('jumps');
@@ -291,7 +352,9 @@ describe('decideSuggestion', () => {
 			ok: true;
 			suggestionId: string;
 		};
-		expect(await decideSuggestion(db, authorId, insertion.suggestionId, true)).toMatchObject({
+		expect(
+			await decideSuggestion(db, authorId, storyId, insertion.suggestionId, true)
+		).toMatchObject({
 			ok: true
 		});
 		expect(await sceneBody()).toContain('nimbly jumps');
@@ -302,7 +365,9 @@ describe('decideSuggestion', () => {
 			{ start: delStart, end: delStart + ' over the lazy dog'.length },
 			''
 		)) as { ok: true; suggestionId: string };
-		expect(await decideSuggestion(db, authorId, deletion.suggestionId, true)).toMatchObject({
+		expect(
+			await decideSuggestion(db, authorId, storyId, deletion.suggestionId, true)
+		).toMatchObject({
 			ok: true
 		});
 		expect(await sceneBody()).not.toContain('lazy dog');
@@ -314,7 +379,7 @@ describe('decideSuggestion', () => {
 			ok: true;
 			suggestionId: string;
 		};
-		expect(await decideSuggestion(db, strangerId, suggestionId, true)).toMatchObject({
+		expect(await decideSuggestion(db, strangerId, storyId, suggestionId, true)).toMatchObject({
 			ok: false
 		});
 		expect(await sceneBody()).toBe(BODY);
@@ -334,7 +399,7 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 		const [asAuthor] = await listSuggestions(db, storyId, { userId: authorId });
 		expect(asAuthor.mine).toBe(false);
 
-		expect(await deleteSuggestion(db, { reviewerId }, made.suggestionId)).toMatchObject({
+		expect(await deleteSuggestion(db, { reviewerId }, storyId, made.suggestionId)).toMatchObject({
 			ok: true
 		});
 		expect(await listSuggestions(db, storyId)).toEqual([]);
@@ -347,7 +412,9 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 			suggestionId: string;
 		};
 		// The author did not write the guest's suggestion.
-		expect(await deleteSuggestion(db, { userId: authorId }, made.suggestionId)).toMatchObject({
+		expect(
+			await deleteSuggestion(db, { userId: authorId }, storyId, made.suggestionId)
+		).toMatchObject({
 			ok: false
 		});
 		// Once decided, even its own author can no longer retract it.
@@ -359,8 +426,10 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 			range: { start: lazy, end: lazy + 4 },
 			replacement: 'happy'
 		})) as { ok: true; suggestionId: string };
-		await decideSuggestion(db, authorId, own.suggestionId, false);
-		expect(await deleteSuggestion(db, { userId: authorId }, own.suggestionId)).toMatchObject({
+		await decideSuggestion(db, authorId, storyId, own.suggestionId, false);
+		expect(
+			await deleteSuggestion(db, { userId: authorId }, storyId, own.suggestionId)
+		).toMatchObject({
 			ok: false
 		});
 	});
@@ -372,5 +441,66 @@ describe('lifecycle', () => {
 		await suggest({ start, end: start + 5 }, 'swift');
 		expect(await deleteStory(db, storyId, authorId)).toBe(true);
 		expect(await listSuggestions(db, storyId)).toEqual([]);
+	});
+
+	it('does not deadlock against autosaves of the same scene', async () => {
+		const start = BODY.indexOf('quick');
+		const runs = Array.from({ length: 8 }, (_, i) => [
+			saveSceneBody(db, sceneId, {
+				title: null,
+				bodyMd: `${BODY} ${i}`,
+				anchors: null,
+				baseHashes: null,
+				overwrite: false
+			}),
+			suggest({ start, end: start + 5 }, `swift ${i}`)
+		]).flat();
+		const results = await Promise.allSettled(runs);
+		expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
+	});
+});
+
+describe('accepting a suggestion moves marker anchors', () => {
+	it('keeps a marker on the same words when text is inserted before it', async () => {
+		const phrase = 'lazy dog';
+		const start = BODY.indexOf(phrase);
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId, ownerId: authorId, anchorStart: start, anchorEnd: start + phrase.length })
+			.returning({ id: sceneMarkers.id });
+		const at = BODY.indexOf('brown');
+		const { suggestionId } = (await suggest(
+			{ start: at, end: at + 'brown'.length },
+			'big brown'
+		)) as {
+			ok: true;
+			suggestionId: string;
+		};
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+			ok: true
+		});
+		const body = await sceneBody();
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
+		expect(body.slice(row.anchorStart!, row.anchorEnd!)).toBe(phrase);
+	});
+
+	it('keeps a stretched anchor when the suggestion replaces the last marked word', async () => {
+		const phrase = 'the lazy dog';
+		const start = BODY.indexOf(phrase);
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId, ownerId: authorId, anchorStart: start, anchorEnd: start + phrase.length })
+			.returning({ id: sceneMarkers.id });
+		const at = BODY.indexOf('dog');
+		const { suggestionId } = (await suggest({ start: at, end: at + 'dog'.length }, 'cat')) as {
+			ok: true;
+			suggestionId: string;
+		};
+		expect(await decideSuggestion(db, authorId, storyId, suggestionId, true)).toMatchObject({
+			ok: true
+		});
+		const body = await sceneBody();
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
+		expect(body.slice(row.anchorStart!, row.anchorEnd!)).toBe('the lazy cat');
 	});
 });

@@ -2,18 +2,17 @@ import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import {
 	chapters,
-	characters,
 	characterStoryNotes,
 	loreEntries,
 	loreStoryNotes,
 	notes,
-	places,
 	placeStoryNotes,
 	scenes,
 	stories,
 	universes
 } from '../../db/schema.ts';
-import { storyEntityLists } from '../../membership.ts';
+import { entityTable } from '../../entity-lookups.ts';
+import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '$lib/entity-snapshot';
 
@@ -63,7 +62,9 @@ export async function loadUniverseScope(
 			universeEstablished: universes.establishedSetting
 		})
 		.from(universes)
-		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
+		.where(
+			and(eq(universes.id, universeId), eq(universes.ownerId, userId), isNull(universes.deletedAt))
+		);
 	return row ?? null;
 }
 
@@ -88,7 +89,14 @@ export async function loadStoryScope(
 		})
 		.from(stories)
 		.innerJoin(universes, eq(stories.universeId, universes.id))
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(
+			and(
+				eq(stories.id, storyId),
+				eq(stories.ownerId, userId),
+				isNull(stories.deletedAt),
+				isNull(universes.deletedAt)
+			)
+		);
 	return row ?? null;
 }
 
@@ -183,6 +191,15 @@ export async function precedingSceneBody(
 	return prev ?? null;
 }
 
+// The ids of a story's scenes that are not in the trash.
+export async function liveSceneIds(db: Database, storyId: string): Promise<string[]> {
+	const rows = await db
+		.select({ id: scenes.id })
+		.from(scenes)
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
+	return rows.map((row) => row.id);
+}
+
 export type SceneSummary = {
 	id: string;
 	title: string | null;
@@ -266,11 +283,23 @@ const MAX_UNIVERSE_STORIES = 25;
 // Every owned story in the universe as a chapter/scene skeleton, for the
 // universe-Plan outline and the universe-scoped list_scenes tool. Summaries
 // only, no bodies; the model pulls a body on demand with get_scene.
-export async function universeSkeleton(db: Database, universeId: string): Promise<StorySkeleton[]> {
+export async function universeSkeleton(
+	db: Database,
+	universeId: string,
+	// Narrows the skeleton to this one story; null matches no story at all.
+	onlyStoryId?: string | null
+): Promise<StorySkeleton[]> {
+	if (onlyStoryId === null) return [];
 	const storyRows = await db
 		.select({ id: stories.id, title: stories.title, brief: stories.brief })
 		.from(stories)
-		.where(eq(stories.universeId, universeId))
+		.where(
+			and(
+				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt),
+				onlyStoryId ? eq(stories.id, onlyStoryId) : undefined
+			)
+		)
 		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 	const out: StorySkeleton[] = [];
 	for (const story of storyRows.slice(0, MAX_UNIVERSE_STORIES)) {
@@ -363,16 +392,15 @@ export async function inScopeEntities(
 // (no story focus, so no per-story overlay note). Shares the entity-building
 // body with the story path.
 export async function universeEntities(db: Database, universeId: string): Promise<ScopeEntity[]> {
-	const characterIds = (
-		await db
-			.select({ id: characters.id })
-			.from(characters)
-			.where(eq(characters.universeId, universeId))
-	).map((row) => row.id);
-	const placeIds = (
-		await db.select({ id: places.id }).from(places).where(eq(places.universeId, universeId))
-	).map((row) => row.id);
-	return buildScopeEntities(db, universeId, characterIds, placeIds);
+	const idsIn = async (type: MemberKind) => {
+		const table = entityTable(type);
+		const rows = await db
+			.select({ id: table.id })
+			.from(table)
+			.where(eq(table.universeId, universeId));
+		return rows.map((row) => row.id);
+	};
+	return buildScopeEntities(db, universeId, await idsIn('character'), await idsIn('place'));
 }
 
 // The shared entity body: given explicit id lists, fetch detail, the per-story
@@ -385,32 +413,23 @@ async function buildScopeEntities(
 	placeIds: string[],
 	storyId?: string
 ): Promise<ScopeEntity[]> {
-	const characterRows = characterIds.length
-		? await db
-				.select({
-					id: characters.id,
-					name: characters.name,
-					summaryMd: characters.summaryMd,
-					details: characters.details,
-					aliases: characters.aliases
-				})
-				.from(characters)
-				.where(inArray(characters.id, characterIds))
-				.orderBy(asc(characters.name))
-		: [];
-	const placeRows = placeIds.length
-		? await db
-				.select({
-					id: places.id,
-					name: places.name,
-					summaryMd: places.summaryMd,
-					details: places.details,
-					aliases: places.aliases
-				})
-				.from(places)
-				.where(inArray(places.id, placeIds))
-				.orderBy(asc(places.name))
-		: [];
+	const detailRows = async (type: MemberKind, ids: string[]) => {
+		if (ids.length === 0) return [];
+		const table = entityTable(type);
+		return await db
+			.select({
+				id: table.id,
+				name: table.name,
+				summaryMd: table.summaryMd,
+				details: table.details,
+				aliases: table.aliases
+			})
+			.from(table)
+			.where(inArray(table.id, ids))
+			.orderBy(asc(table.name));
+	};
+	const characterRows = await detailRows('character', characterIds);
+	const placeRows = await detailRows('place', placeIds);
 
 	// The per-story overlay note only exists with a story in focus; the
 	// universe surface has no such overlay, so it skips these queries.

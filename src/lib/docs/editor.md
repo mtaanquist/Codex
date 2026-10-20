@@ -2,6 +2,10 @@
 
 The editor is where you draft scenes. It saves on its own as you type, so there is no save button; the status near the top shows when your work was last stored.
 
+If a save fails (for example, your connection drops), the status says so and the editor keeps trying again on its own. If you close the tab or reload the page while an edit has not been saved yet, your browser asks you to confirm first; stay on the page until the status shows your work as saved.
+
+If the same scene changed in another tab or on another device since you opened it, the editor stops saving and shows a notice above the text. Select "Load newer version" to switch to the other text; your unsaved edits in this window are dropped. Select "Keep mine" to save what you see here; the other version stays in History.
+
 The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
 ## Scenes and chapters
@@ -92,6 +96,8 @@ To flag a spot to come back to, select some text and add a mark. Marks show in t
 
 The History tab on the right keeps past versions of the open scene. Use "Checkpoint now" to mark a version you may want back, with a name if you like. Select "Preview" on a version to read it or compare it with the current text, and "Restore this version" to bring it back. Restoring never deletes history: the version you replaced stays in the list.
 
+Every saved version is kept, including checkpoints.
+
 ## The Assistant
 
 When you have set up the Assistant on your account page, an Assistant panel appears on the right alongside Reference, History, and Notes. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.
@@ -124,7 +130,7 @@ On the universe Plan page the chat works across all the stories, so it offers th
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
-Select "Update summaries" from the menu next to the send button to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story.
+Select "Update summaries" from the menu next to the send button to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story. If you set a spend cap on your account page, the update stops once it has spent that much and tells you so; run it again to carry on from where it stopped.
 
 While you are writing, press Ctrl+J to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 

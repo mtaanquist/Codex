@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -18,6 +18,7 @@ import {
 import type { AssetObjectStore } from '../../src/lib/server/assets';
 import {
 	exportForDownload,
+	failStaleExports,
 	listUserExports,
 	pruneOwnerExports,
 	requestExport,
@@ -40,6 +41,11 @@ function memoryStore() {
 		async put(key, body) {
 			objects.set(key, Buffer.from(body));
 		},
+		async upload(key, body) {
+			const parts: Buffer[] = [];
+			for await (const chunk of body) parts.push(Buffer.from(chunk));
+			objects.set(key, Buffer.concat(parts));
+		},
 		async get(key) {
 			const data = objects.get(key);
 			if (!data) throw new Error(`missing: ${key}`);
@@ -57,6 +63,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 
 	const [owner] = await db
@@ -123,7 +132,7 @@ async function build(
 }
 
 describe('requestExport', () => {
-	it('refuses a story that is not the owner’s', async () => {
+	it("refuses a story that is not the owner's", async () => {
 		const result = await requestExport(db, otherId, {
 			scope: 'story',
 			targetId: storyId,
@@ -195,6 +204,88 @@ describe('runUserExport', () => {
 	});
 });
 
+describe('runUserExport when the upload fails partway', () => {
+	it('marks the row failed with the upload error', async () => {
+		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const id = (requested as { ok: true; id: string }).id;
+		const failing: AssetObjectStore = {
+			...memoryStore().store,
+			async upload(_key, body) {
+				for await (const chunk of body) {
+					void chunk;
+					break;
+				}
+				throw new Error('connection reset');
+			}
+		};
+		expect(await runUserExport(db, id, failing)).toMatchObject({
+			ok: false,
+			reason: 'connection reset'
+		});
+		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
+		expect(row.status).toBe('failed');
+		expect(row.error).toBe('connection reset');
+	});
+});
+
+describe('runUserExport without storage', () => {
+	it('marks the row failed instead of leaving it pending', async () => {
+		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const id = (requested as { ok: true; id: string }).id;
+		const ran = await runUserExport(db, id, null);
+		expect(ran).toMatchObject({ ok: false });
+		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
+		expect(row.status).toBe('failed');
+		expect(row.error).toBeTruthy();
+	});
+});
+
+describe('failStaleExports', () => {
+	// A worker killed mid-build (out of memory) never reaches the catch that
+	// marks the row failed, so a row left pending for hours is swept.
+	it('fails exports pending for too long and leaves fresh ones alone', async () => {
+		const stale = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const fresh = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const staleId = (stale as { ok: true; id: string }).id;
+		const freshId = (fresh as { ok: true; id: string }).id;
+		await db
+			.update(userExports)
+			.set({ createdAt: new Date(Date.now() - 3 * 3_600_000) })
+			.where(eq(userExports.id, staleId));
+
+		// Listing the exports is what the owner sees, so it sweeps first.
+		const list = await listUserExports(db, ownerId, { scope: 'account' });
+		expect(list.find((row) => row.id === staleId)?.status).toBe('failed');
+		expect(list.find((row) => row.id === freshId)?.status).toBe('pending');
+
+		// A late run of the stale job does not resurrect it.
+		const ran = await runUserExport(db, staleId, memoryStore().store);
+		expect(ran).toMatchObject({ ok: false });
+		expect(await failStaleExports(db)).toBe(0);
+	});
+
+	it('shows a build the sweep failed mid-run as ready, without the sweep note', async () => {
+		const requested = await requestExport(db, ownerId, { scope: 'account', format: 'zip' });
+		const id = (requested as { ok: true; id: string }).id;
+		const { store } = memoryStore();
+		// The sweep lands while the build is uploading.
+		const sweptMidRun: AssetObjectStore = {
+			...store,
+			async upload(key, body, contentType) {
+				await db
+					.update(userExports)
+					.set({ status: 'failed', error: 'The export did not finish. Try again.' })
+					.where(eq(userExports.id, id));
+				await store.upload(key, body, contentType);
+			}
+		};
+		expect(await runUserExport(db, id, sweptMidRun)).toMatchObject({ ok: true });
+		const [row] = await db.select().from(userExports).where(eq(userExports.id, id));
+		expect(row.status).toBe('ready');
+		expect(row.error).toBeNull();
+	});
+});
+
 describe('exportForDownload', () => {
 	it('refuses an expired export', async () => {
 		const { id } = await build('account', 'zip');
@@ -223,9 +314,16 @@ describe('pruneOwnerExports', () => {
 });
 
 describe('listUserExports', () => {
-	it('lists the owner’s exports for a scope, newest first', async () => {
+	it("lists the owner's exports for a scope, newest first", async () => {
+		const older = await build('story', 'zip', storyId);
+		await db
+			.update(userExports)
+			.set({ createdAt: new Date(Date.now() - 60_000) })
+			.where(eq(userExports.id, older.id));
+		const newer = await build('story', 'epub', storyId);
+		await build('account', 'zip');
 		const list = await listUserExports(db, ownerId, { scope: 'story', targetId: storyId });
-		expect(list.length).toBeGreaterThan(0);
+		expect(list.map((row) => row.id)).toEqual([newer.id, older.id]);
 		expect(list.every((row) => row.scope === 'story' && row.targetId === storyId)).toBe(true);
 	});
 });

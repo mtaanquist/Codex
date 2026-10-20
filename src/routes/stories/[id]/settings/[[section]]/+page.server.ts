@@ -23,7 +23,7 @@ import {
 	type ExportFormat
 } from '$lib/server/user-exports';
 import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
-import { deleteStory } from '$lib/server/story-delete';
+import { STORY_TRASH_DAYS, trashStory } from '$lib/server/story-lifecycle';
 import { publications, users } from '$lib/server/db/schema';
 import {
 	saveStoryPreferences,
@@ -45,6 +45,7 @@ import {
 import { ownedStory } from '$lib/server/story-access';
 import { uniqueSlug } from '$lib/server/slugs';
 import { assistantLayout } from '$lib/server/llm/config';
+import { formText } from '$lib/server/validation';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {
@@ -116,6 +117,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		story,
 		universe,
 		timeline,
+		trashDays: STORY_TRASH_DAYS,
 		assetsConfigured,
 		archive,
 		// The first publish with no pen name set asks what name goes public.
@@ -166,11 +168,11 @@ export const actions: Actions = {
 	update: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const title = String(data.get('title') ?? '').trim();
-		const author = String(data.get('author') ?? '').trim() || null;
-		const brief = String(data.get('brief') ?? '').trim() || null;
-		const descriptionMd = String(data.get('description') ?? '').trim() || null;
-		const styleNotes = String(data.get('styleNotes') ?? '').trim() || null;
+		const title = formText(data, 'title').trim();
+		const author = formText(data, 'author').trim() || null;
+		const brief = formText(data, 'brief').trim() || null;
+		const descriptionMd = formText(data, 'description').trim() || null;
+		const styleNotes = formText(data, 'styleNotes').trim() || null;
 		if (!title) {
 			return fail(400, { action: 'update', message: 'The story needs a title.' });
 		}
@@ -199,8 +201,8 @@ export const actions: Actions = {
 	saveGoals: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const rawTarget = String(data.get('targetWords') ?? '').trim();
-		const rawDeadline = String(data.get('deadline') ?? '').trim();
+		const rawTarget = formText(data, 'targetWords').trim();
+		const rawDeadline = formText(data, 'deadline').trim();
 		let targetWords: number | null = null;
 		if (rawTarget !== '') {
 			const n = Number(rawTarget);
@@ -216,13 +218,13 @@ export const actions: Actions = {
 	savePreferences: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const mode = String(data.get('entityAutocomplete') ?? '');
-		const marks = String(data.get('continuousSceneMarks') ?? '');
-		const editing = String(data.get('editingMode') ?? '');
-		const spell = String(data.get('spellCheck') ?? '');
+		const mode = formText(data, 'entityAutocomplete');
+		const marks = formText(data, 'continuousSceneMarks');
+		const editing = formText(data, 'editingMode');
+		const spell = formText(data, 'spellCheck');
 		// The "browser" sentinel distinguishes an explicit follow-the-browser
 		// override from inheriting the account language.
-		const languageRaw = String(data.get('writingLanguage') ?? '');
+		const languageRaw = formText(data, 'writingLanguage');
 		// An empty value clears the override, so the account setting applies.
 		if (mode !== '' && mode !== 'popup' && mode !== 'ghost' && mode !== 'off') {
 			return fail(400, { action: 'prefs', message: 'Pick an autocomplete option.' });
@@ -252,14 +254,14 @@ export const actions: Actions = {
 		// Enum values outside the option tables clear too, rather than storing
 		// junk for the normaliser to clean up later.
 		const enumValue = (name: string, table: Record<string, unknown>) => {
-			const value = String(data.get(name) ?? '');
+			const value = formText(data, name);
 			return value !== '' && value in table ? value : null;
 		};
 		const triState = (name: string) => {
-			const value = String(data.get(name) ?? '');
+			const value = formText(data, name);
 			return value === 'on' ? true : value === 'off' ? false : null;
 		};
-		const fontSizeRaw = String(data.get('fontSize') ?? '');
+		const fontSizeRaw = formText(data, 'fontSize');
 		const fontSize = FONT_SIZES.includes(Number(fontSizeRaw) as (typeof FONT_SIZES)[number])
 			? Number(fontSizeRaw)
 			: null;
@@ -267,7 +269,7 @@ export const actions: Actions = {
 		const lineSpacing = enumValue('lineSpacing', LINE_SPACINGS);
 		// The companion inputs only carry an override when their select selects
 		// the custom option; otherwise they clear so the account value applies.
-		const fontCustom = font === 'custom' ? String(data.get('fontCustom') ?? '').slice(0, 50) : null;
+		const fontCustom = font === 'custom' ? formText(data, 'fontCustom').slice(0, 50) : null;
 		const lineSpacingCmRaw = Number(data.get('lineSpacingCm'));
 		const lineSpacingCm =
 			lineSpacing === 'custom' &&
@@ -288,10 +290,8 @@ export const actions: Actions = {
 			textAlign: enumValue('textAlign', TEXT_ALIGNS),
 			gutter: enumValue('gutter', GUTTERS),
 			sceneBreak:
-				String(data.get('sceneBreakMode') ?? '') === 'custom'
-					? String(data.get('sceneBreak') ?? '')
-							.trim()
-							.slice(0, 20)
+				formText(data, 'sceneBreakMode') === 'custom'
+					? formText(data, 'sceneBreak').trim().slice(0, 20)
 					: null,
 			pageNumbers: triState('pageNumbers'),
 			runningHeader: triState('runningHeader')
@@ -301,7 +301,7 @@ export const actions: Actions = {
 	setVisibility: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const visibility = String(data.get('visibility') ?? '');
+		const visibility = formText(data, 'visibility');
 		if (visibility !== 'private' && visibility !== 'unlisted' && visibility !== 'public') {
 			return fail(400, { action: 'publish', message: 'Pick a visibility.' });
 		}
@@ -312,10 +312,10 @@ export const actions: Actions = {
 	publish: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const versionLabel = String(data.get('versionLabel') ?? '');
+		const versionLabel = formText(data, 'versionLabel');
 		// The first publish asks what name goes public; the chosen name rides
 		// the form and lands as the pen name, unless one is already set.
-		const penName = String(data.get('penName') ?? '');
+		const penName = formText(data, 'penName');
 		if (penName) await setPenNameIfUnset(db, locals.user!.id, penName);
 		const result = await publishStory(db, locals.user!.id, story.id, versionLabel);
 		if (!result.ok) {
@@ -353,7 +353,7 @@ export const actions: Actions = {
 	createReviewInvite: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const expiresRaw = String(data.get('expiresDays') ?? '').trim();
+		const expiresRaw = formText(data, 'expiresDays').trim();
 		const expiresDays = expiresRaw === '' ? 0 : Number(expiresRaw);
 		if (!Number.isInteger(expiresDays) || expiresDays < 0 || expiresDays > 365) {
 			return fail(400, {
@@ -364,7 +364,7 @@ export const actions: Actions = {
 		const { token } = await createReviewInvitation(db, {
 			storyId: story.id,
 			createdBy: locals.user!.id,
-			email: String(data.get('note') ?? ''),
+			email: formText(data, 'note'),
 			canSuggest: data.get('canSuggest') === 'on',
 			expiresAt: expiresDays > 0 ? new Date(Date.now() + expiresDays * 86_400_000) : null
 		});
@@ -374,7 +374,7 @@ export const actions: Actions = {
 	revokeReviewInvite: async ({ request, params, locals }) => {
 		await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const invitationId = String(data.get('invitationId') ?? '');
+		const invitationId = formText(data, 'invitationId');
 		if (
 			!isUuid(invitationId) ||
 			!(await revokeReviewInvitation(db, locals.user!.id, invitationId))
@@ -414,16 +414,12 @@ export const actions: Actions = {
 		const previous = story.coverAssetId;
 		await db.update(stories).set({ coverAssetId: created.id }).where(eq(stories.id, story.id));
 		// The replaced cover has no other references; clean it up.
-		if (previous) await deleteAsset(db, store, locals.user!.id, previous);
+		if (previous) await deleteAsset(db, locals.user!.id, previous);
 		return { action: 'cover', saved: true };
 	},
 	delete: async ({ params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);
-		// Clears every story-scoped row first; a plain delete 500s on the FKs
-		// the moment the story has any content or a published edition. The store
-		// sweeps the edition export files left behind in the bucket.
-		const config = await effectiveAssetConfig(db);
-		await deleteStory(db, story.id, locals.user!.id, config ? s3AssetStore(config) : null);
+		await trashStory(db, locals.user!.id, story.id);
 		redirect(303, `/universes/${universe.slug}`);
 	}
 };

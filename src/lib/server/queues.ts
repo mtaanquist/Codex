@@ -17,21 +17,34 @@ export const NOTIFICATION_DIGEST_QUEUE = 'notification-digest';
 export const REVIEWER_DIGEST_QUEUE = 'reviewer-digest';
 export const PURGE_ACCOUNTS_QUEUE = 'purge-accounts';
 export const PURGE_UNIVERSES_QUEUE = 'purge-universes';
+// Removes bucket objects whose rows were deleted longer ago than the backup
+// retention window (see sweepDeletedObjects in assets.ts).
+export const SWEEP_DELETED_OBJECTS_QUEUE = 'sweep-deleted-objects';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
 export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
 export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
 // Sweeps the recorded progress of long-finished Assistant runs (see
 // review-runs.ts); the rows are disposable, so nothing is lost with them.
 export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
+// Deletes expired and long-revoked sessions (see purgeSessions in auth.ts).
+export const PURGE_SESSIONS_QUEUE = 'purge-sessions';
 
 // pg-boss expires an active job after 15 minutes by default and hands it to a
 // worker again, so a long Assistant run would be started a second time while
 // the first is still going: the same scenes billed twice, and two executions
 // writing the same run state. A story review is minutes per scene on local
-// hardware, so these jobs are given six hours instead. The queue's retry
-// policy still applies, so a run whose worker genuinely died is retried once
-// the expiry passes (and resumes through the recorded progress).
+// hardware, so these jobs are given six hours instead. A run whose worker
+// genuinely died misses its heartbeat and is retried (resuming through the
+// recorded progress).
 export const ASSISTANT_JOB_EXPIRY_SECONDS = 6 * 60 * 60;
+// The worker refreshes a running job's heartbeat every half of this; a job
+// whose worker stops refreshing (killed, crashed) is failed and retried within
+// about a minute instead of sitting active until it expires. Used by the long
+// jobs: Assistant runs and exports.
+export const JOB_HEARTBEAT_SECONDS = 60;
+// Assistant jobs the worker runs at once, across writers. Each writer still
+// gets one at a time (see assistantSendOptions in jobs.ts).
+export const ASSISTANT_JOB_CONCURRENCY = 4;
 
 // How long a notification digest waits before sending, so a busy thread
 // lands as one email instead of one per comment. Lives here (not jobs.ts,

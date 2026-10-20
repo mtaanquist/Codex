@@ -93,7 +93,7 @@
 	{/snippet}
 	{#snippet sidebar()}
 		<div class="admin-sidebar-title">
-			<span class="ic badge sm" style="background: {coverColor}; color: #fff;">
+			<span class="ic badge sm" style="background: {coverColor}; color: var(--on-color);">
 				{data.story.title.slice(0, 1).toUpperCase()}
 			</span>
 			<div>
@@ -160,7 +160,7 @@
 	</div>
 
 	<div class="admin-block danger-block" class:active={active === 'danger'} id="danger">
-		<SettingsDanger />
+		<SettingsDanger trashDays={data.trashDays} />
 	</div>
 </SettingsShell>
 
@@ -172,6 +172,6 @@
 	}
 
 	.danger-block {
-		border-color: color-mix(in oklab, var(--danger, #b00020) 35%, var(--border));
+		border-color: color-mix(in oklab, var(--danger) 35%, var(--border));
 	}
 </style>

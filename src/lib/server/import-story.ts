@@ -2,17 +2,16 @@ import { eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import {
 	chapters,
-	characters,
 	characterStoryMemberships,
 	characterStoryNotes,
-	loreEntries,
 	loreStoryNotes,
-	places,
+	notes,
 	placeStoryMemberships,
 	placeStoryNotes,
 	scenes,
 	stories
 } from './db/schema';
+import { entityNameColumn, entityTable, type EntityType } from './entity-lookups';
 import { uniqueSlug } from './slugs';
 import { wordCount } from '../word-count';
 import { rewriteBundledAssetLinks, type ImportedNote, type ImportPlan } from '../import-markdown';
@@ -39,6 +38,8 @@ export type ImportPreview = {
 	sceneCount: number;
 	words: number;
 	notes: { kind: ImportedNote['kind']; name: string; outcome: NoteOutcome }[];
+	// Freeform notes from the story's notebook.
+	freeformNoteCount: number;
 	assetCount: number;
 	assetsConfigured: boolean;
 	problems: string[];
@@ -53,19 +54,17 @@ async function resolveNotes(
 	notes: ImportedNote[]
 ): Promise<NoteResolution[]> {
 	if (notes.length === 0) return [];
+	const namesIn = (type: EntityType) => {
+		const table = entityTable(type);
+		return db
+			.select({ id: table.id, name: entityNameColumn(table) })
+			.from(table)
+			.where(eq(table.universeId, universeId));
+	};
 	const lists = {
-		character: await db
-			.select({ id: characters.id, name: characters.name })
-			.from(characters)
-			.where(eq(characters.universeId, universeId)),
-		place: await db
-			.select({ id: places.id, name: places.name })
-			.from(places)
-			.where(eq(places.universeId, universeId)),
-		lore: await db
-			.select({ id: loreEntries.id, name: loreEntries.title })
-			.from(loreEntries)
-			.where(eq(loreEntries.universeId, universeId))
+		character: await namesIn('character'),
+		place: await namesIn('place'),
+		lore: await namesIn('lore_entry')
 	};
 	const byName = (rows: { id: string; name: string }[]) => {
 		const map = new Map<string, string[]>();
@@ -106,6 +105,7 @@ export async function previewImport(
 		sceneCount: allScenes.length,
 		words: allScenes.reduce((sum, scene) => sum + wordCount(scene.bodyMd), 0),
 		notes: resolutions.map(({ kind, name, outcome }) => ({ kind, name, outcome })),
+		freeformNoteCount: plan.freeformNotes?.length ?? 0,
 		assetCount: plan.assets.length,
 		assetsConfigured: (await effectiveAssetConfig(db)) !== null,
 		problems: plan.problems
@@ -119,6 +119,7 @@ export type ImportResult = {
 	notesAttached: number;
 	entitiesCreated: number;
 	notesSkipped: number;
+	freeformNotesCreated: number;
 	problems: string[];
 };
 
@@ -149,7 +150,7 @@ export async function runImport(
 			if (created.ok) {
 				assetLinks.set(asset.id, `/assets/${created.id}`);
 			} else {
-				problems.push(`The image ${asset.path} could not be stored (${created.reason}).`);
+				problems.push(`The image ${asset.path} could not be stored: ${created.reason}`);
 			}
 		}
 	} else if (plan.assets.length > 0) {
@@ -169,6 +170,7 @@ export async function runImport(
 	let notesAttached = 0;
 	let entitiesCreated = 0;
 	let notesSkipped = 0;
+	let freeformNotesCreated = 0;
 
 	const story = await db.transaction(async (tx) => {
 		const [created] = await tx
@@ -193,29 +195,38 @@ export async function runImport(
 			const bodyMd = rewrite(scene.bodyMd);
 			globalPosition += 1;
 			sceneCount += 1;
-			await tx.insert(scenes).values({
-				storyId: story.id,
-				chapterId,
-				positionInChapter,
-				globalPosition,
-				title: scene.title,
-				bodyMd,
-				status: scene.status ?? 'draft',
-				wordCount: wordCount(bodyMd)
-			});
+			const [row] = await tx
+				.insert(scenes)
+				.values({
+					storyId: story.id,
+					chapterId,
+					positionInChapter,
+					globalPosition,
+					title: scene.title,
+					bodyMd,
+					status: scene.status ?? 'draft',
+					wordCount: wordCount(bodyMd)
+				})
+				.returning({ id: scenes.id });
+			return row.id;
 		};
+		// New scene ids by plan position, for notebook notes attached to a scene.
+		const chapterSceneIds: string[][] = [];
+		const unfiledSceneIds: string[] = [];
 
 		for (const [chapterIndex, chapter] of plan.chapters.entries()) {
 			const [row] = await tx
 				.insert(chapters)
 				.values({ storyId: story.id, title: chapter.title, position: chapterIndex + 1 })
 				.returning({ id: chapters.id });
+			const ids: string[] = [];
 			for (const [sceneIndex, scene] of chapter.scenes.entries()) {
-				await insertScene(scene, row.id, sceneIndex + 1);
+				ids.push(await insertScene(scene, row.id, sceneIndex + 1));
 			}
+			chapterSceneIds.push(ids);
 		}
 		for (const scene of plan.unfiled) {
-			await insertScene(scene, null, null);
+			unfiledSceneIds.push(await insertScene(scene, null, null));
 		}
 
 		for (const note of resolutions) {
@@ -266,6 +277,25 @@ export async function runImport(
 			}
 			notesAttached += 1;
 		}
+
+		for (const note of plan.freeformNotes ?? []) {
+			await tx.insert(notes).values({
+				ownerId: universe.ownerId,
+				universeId: universe.id,
+				storyId: story.id,
+				sceneId: note.scene
+					? note.scene.chapter === null
+						? unfiledSceneIds[note.scene.index]
+						: chapterSceneIds[note.scene.chapter][note.scene.index]
+					: null,
+				title: note.title,
+				bodyMd: rewrite(note.bodyMd),
+				pinned: note.pinned,
+				// Undefined falls back to the column default for older zips.
+				createdAt: note.createdAt ?? undefined
+			});
+			freeformNotesCreated += 1;
+		}
 		return story;
 	});
 
@@ -279,6 +309,7 @@ export async function runImport(
 		notesAttached,
 		entitiesCreated,
 		notesSkipped,
+		freeformNotesCreated,
 		problems
 	};
 }

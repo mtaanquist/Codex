@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -27,6 +27,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table users cascade');
 
 	const [owner] = await db
@@ -120,6 +123,14 @@ describe('searchAll', () => {
 		expect(passages[0].label).toContain('obsidian coins');
 		expect(passages[0].sublabel).toBe('Embers - Book of Ash');
 		expect(passages[0].href).toMatch(/^\/stories\/book-of-ash\?scene=[0-9a-f-]{36}$/);
+	});
+
+	it('skips prose passages for queries shorter than three characters', async () => {
+		// "ob" is inside "obsidian" but too short to search prose with.
+		const results = await searchAll(db, ownerId, 'ob');
+		expect(results.filter((result) => result.type === 'passage')).toEqual([]);
+		const three = await searchAll(db, ownerId, 'obs');
+		expect(three.filter((result) => result.type === 'passage')).toHaveLength(1);
 	});
 
 	it('restricts to one universe when given (the Assistant search_text tool)', async () => {

@@ -1,30 +1,82 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import type { SelectedFields } from 'drizzle-orm/pg-core';
+import type { SelectResultFields } from 'drizzle-orm/query-builders/select.types';
 import type { Database } from './auth.ts';
 import { characters, entityCategories, loreEntries, places, stories } from './db/schema.ts';
+import { inLiveUniverse } from './universe-scope.ts';
 
-// Lookups shared by the relationship, revision, and mention-pin modules,
-// split out so none has to import the others. The mention-pin path runs in
-// the worker, so the value import above carries its explicit .ts extension.
+// The one map from an entity type to its table, and the lookups shared by the
+// entity modules, split out so none has to import the others.
 
 export type EntityType = 'character' | 'place' | 'lore_entry';
 
+/** Every entity type, in the order lookups by id try them. */
+export const ENTITY_TYPES = [
+	'character',
+	'place',
+	'lore_entry'
+] as const satisfies readonly EntityType[];
+
+const ENTITY_TABLES = { character: characters, place: places, lore_entry: loreEntries } as const;
+
+export type EntityTable = (typeof ENTITY_TABLES)[EntityType];
+
+export function entityTable<T extends EntityType>(type: T): (typeof ENTITY_TABLES)[T] {
+	return ENTITY_TABLES[type];
+}
+
+// A lore entry's title and keywords play the part of a name and aliases.
+export function entityNameColumn(table: EntityTable) {
+	return 'name' in table ? table.name : table.title;
+}
+
+export function entityAliasColumn(table: EntityTable) {
+	return 'aliases' in table ? table.aliases : table.keywords;
+}
+
+/** The update fields for an entity's name and tags, under lore's column names
+ * for a lore entry. Spread into `db.update(entityTable(type)).set(...)`. */
+export function entityNaming(
+	type: EntityType,
+	name: string,
+	tags: string[]
+): Record<string, unknown> {
+	return type === 'lore_entry' ? { title: name, keywords: tags } : { name, aliases: tags };
+}
+
+/** A where-clause condition: the row is this user's entity and its universe
+ * is not in the trash. */
+export function ownedLiveEntity(table: EntityTable, entityId: string, userId: string): SQL {
+	return and(eq(table.id, entityId), eq(table.ownerId, userId), inLiveUniverse(table.universeId))!;
+}
+
+/** Resolves an entity id to whichever table holds it, owner-scoped and live,
+ * selecting `columns(table)`. Null when none of the tables has it for this
+ * user. */
+export async function resolveOwnedEntity<S extends SelectedFields>(
+	db: Database,
+	userId: string,
+	entityId: string,
+	columns: (table: EntityTable) => S
+): Promise<({ type: EntityType } & SelectResultFields<S>) | null> {
+	for (const type of ENTITY_TYPES) {
+		const table = entityTable(type);
+		const [row] = await db
+			.select(columns(table))
+			.from(table)
+			.where(ownedLiveEntity(table, entityId, userId));
+		if (row) return { type, ...(row as SelectResultFields<S>) };
+	}
+	return null;
+}
+
 export async function namesByType(db: Database, type: EntityType, ids: string[]) {
 	if (ids.length === 0) return new Map<string, string>();
-	const rows =
-		type === 'character'
-			? await db
-					.select({ id: characters.id, name: characters.name })
-					.from(characters)
-					.where(inArray(characters.id, ids))
-			: type === 'place'
-				? await db
-						.select({ id: places.id, name: places.name })
-						.from(places)
-						.where(inArray(places.id, ids))
-				: await db
-						.select({ id: loreEntries.id, name: loreEntries.title })
-						.from(loreEntries)
-						.where(inArray(loreEntries.id, ids));
+	const table = entityTable(type);
+	const rows = await db
+		.select({ id: table.id, name: entityNameColumn(table) })
+		.from(table)
+		.where(inArray(table.id, ids));
 	return new Map(rows.map((row) => [row.id, row.name]));
 }
 
@@ -53,7 +105,12 @@ export async function ownsStoryInUniverse(
 		.select({ id: stories.id })
 		.from(stories)
 		.where(
-			and(eq(stories.id, storyId), eq(stories.ownerId, userId), eq(stories.universeId, universeId))
+			and(
+				eq(stories.id, storyId),
+				eq(stories.ownerId, userId),
+				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt)
+			)
 		);
 	return Boolean(row);
 }
@@ -64,23 +121,10 @@ export async function entityInUniverse(
 	type: EntityType,
 	id: string
 ) {
-	if (type === 'character') {
-		const [row] = await db
-			.select({ id: characters.id })
-			.from(characters)
-			.where(and(eq(characters.id, id), eq(characters.universeId, universeId)));
-		return Boolean(row);
-	}
-	if (type === 'place') {
-		const [row] = await db
-			.select({ id: places.id })
-			.from(places)
-			.where(and(eq(places.id, id), eq(places.universeId, universeId)));
-		return Boolean(row);
-	}
+	const table = entityTable(type);
 	const [row] = await db
-		.select({ id: loreEntries.id })
-		.from(loreEntries)
-		.where(and(eq(loreEntries.id, id), eq(loreEntries.universeId, universeId)));
+		.select({ id: table.id })
+		.from(table)
+		.where(and(eq(table.id, id), eq(table.universeId, universeId)));
 	return Boolean(row);
 }

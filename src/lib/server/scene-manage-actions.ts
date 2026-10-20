@@ -13,6 +13,7 @@ import {
 	restoreScene,
 	trashScene
 } from './scene-lifecycle';
+import { formText } from './validation';
 
 // The sidebar outline's chapter and scene management, as form actions shared by
 // the Write and Review routes. StoryOutline and StoryRowMenu post to relative
@@ -24,7 +25,7 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 	// Where a sidebar action returns after the reload: the open scene when the
 	// form carried one, the route's base otherwise.
 	const sceneReturn = (slug: string, data: FormData) => {
-		const open = String(data.get('openSceneId') ?? '');
+		const open = formText(data, 'openSceneId');
 		return open ? `${base(slug)}?scene=${open}` : base(slug);
 	};
 	return {
@@ -36,7 +37,7 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 		createScene: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const chapterId = String(data.get('chapterId') ?? '') || null;
+			const chapterId = formText(data, 'chapterId') || null;
 			// Guard the uuid cast: a tampered id would throw in Postgres and 500.
 			if (chapterId && !isUuid(chapterId)) {
 				return fail(400, { message: 'That chapter does not exist.' });
@@ -48,21 +49,16 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 		renameChapter: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const chapterId = String(data.get('chapterId') ?? '');
+			const chapterId = formText(data, 'chapterId');
 			if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
-			const ok = await renameChapter(
-				db,
-				locals.user!.id,
-				chapterId,
-				String(data.get('title') ?? '')
-			);
+			const ok = await renameChapter(db, locals.user!.id, chapterId, formText(data, 'title'));
 			if (!ok) return fail(404, { message: 'That chapter does not exist.' });
 			redirect(303, sceneReturn(story.slug, data));
 		},
 		moveChapter: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const chapterId = String(data.get('chapterId') ?? '');
+			const chapterId = formText(data, 'chapterId');
 			if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
 			const direction = data.get('direction') === 'up' ? ('up' as const) : ('down' as const);
 			const ok = await moveChapter(db, locals.user!.id, chapterId, direction);
@@ -72,7 +68,7 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 		deleteChapter: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const chapterId = String(data.get('chapterId') ?? '');
+			const chapterId = formText(data, 'chapterId');
 			if (!isUuid(chapterId)) return fail(404, { message: 'That chapter does not exist.' });
 			const ok = await deleteChapter(db, locals.user!.id, chapterId);
 			if (!ok) return fail(404, { message: 'That chapter does not exist.' });
@@ -81,12 +77,12 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 		deleteScene: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const sceneId = String(data.get('sceneId') ?? '');
+			const sceneId = formText(data, 'sceneId');
 			if (!isUuid(sceneId)) return fail(404, { message: 'That scene does not exist.' });
 			const ok = await trashScene(db, locals.user!.id, sceneId);
 			if (!ok) return fail(404, { message: 'That scene does not exist.' });
 			// Deleting the open scene closes it; deleting another keeps it open.
-			const open = String(data.get('openSceneId') ?? '');
+			const open = formText(data, 'openSceneId');
 			redirect(
 				303,
 				open && open !== sceneId ? `${base(story.slug)}?scene=${open}` : base(story.slug)
@@ -95,7 +91,7 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 		restoreScene: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const sceneId = String(data.get('sceneId') ?? '');
+			const sceneId = formText(data, 'sceneId');
 			if (!isUuid(sceneId)) return fail(404, { message: 'That scene is not in the trash.' });
 			const ok = await restoreScene(db, locals.user!.id, sceneId);
 			if (!ok) return fail(404, { message: 'That scene is not in the trash.' });
@@ -105,7 +101,7 @@ export function sceneManageActions(base: (slug: string) => string): Actions {
 		destroyScene: async ({ request, params, locals }) => {
 			const { story } = await ownedStory(params.id!, locals.user!.id);
 			const data = await request.formData();
-			const sceneId = String(data.get('sceneId') ?? '');
+			const sceneId = formText(data, 'sceneId');
 			if (!isUuid(sceneId)) return fail(404, { message: 'That scene is not in the trash.' });
 			const ok = await destroyScene(db, locals.user!.id, sceneId);
 			if (!ok) return fail(404, { message: 'That scene is not in the trash.' });

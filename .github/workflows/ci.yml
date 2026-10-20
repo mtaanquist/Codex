@@ -10,9 +10,16 @@ jobs:
   quality:
     name: Lint, check, unit, build
     runs-on: ubuntu-latest
+    env:
+      # The backup store's multipart round trip against a throwaway RustFS
+      # (tests/integration/s3-backup-store.test.ts), started in a step below.
+      TEST_S3_ENDPOINT: http://localhost:9000
+      TEST_S3_BUCKET: codex-backups-test
+      TEST_S3_ACCESS_KEY_ID: codex-rustfs
+      TEST_S3_SECRET_ACCESS_KEY: codex-rustfs-secret
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine3.24
         env:
           POSTGRES_USER: codex
           POSTGRES_PASSWORD: codex
@@ -39,6 +46,8 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           # The runner image preinstalls an older client; put 18 first.
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+      - name: Start RustFS (backup store test)
+        run: .github/scripts/start-rustfs.sh "$TEST_S3_ACCESS_KEY_ID" "$TEST_S3_SECRET_ACCESS_KEY" "$TEST_S3_BUCKET"
       - run: npm ci
       - run: npm run lint
       - run: npm run check
@@ -58,7 +67,7 @@ jobs:
       ASSET_S3_SECRET_ACCESS_KEY: codex-rustfs-secret
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:18.6-alpine3.24
         env:
           POSTGRES_USER: codex
           POSTGRES_PASSWORD: codex
@@ -77,17 +86,7 @@ jobs:
           node-version: 24
           cache: npm
       - name: Start RustFS (asset uploads)
-        run: |
-          docker run -d --name rustfs --network host \
-            -e RUSTFS_ACCESS_KEY="$ASSET_S3_ACCESS_KEY_ID" -e RUSTFS_SECRET_KEY="$ASSET_S3_SECRET_ACCESS_KEY" \
-            rustfs/rustfs:1.0.3
-          for attempt in $(seq 1 30); do
-            curl -fsS http://localhost:9000/health >/dev/null && break
-            sleep 1
-          done
-          curl -fsS -X PUT --aws-sigv4 aws:amz:us-east-1:s3 \
-            --user "$ASSET_S3_ACCESS_KEY_ID:$ASSET_S3_SECRET_ACCESS_KEY" \
-            "$ASSET_S3_ENDPOINT/$ASSET_S3_BUCKET"
+        run: .github/scripts/start-rustfs.sh "$ASSET_S3_ACCESS_KEY_ID" "$ASSET_S3_SECRET_ACCESS_KEY" "$ASSET_S3_BUCKET"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -109,7 +108,7 @@ jobs:
           state=$(docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' codex-worker-1)
           echo "worker: $state"
           [ "$state" = "running restarts=0" ]
-          docker logs codex-worker-1 2>&1 | grep -q "Worker started"
+          docker logs codex-worker-1 2>&1 | grep -q '"event":"worker.started"'
       - name: First-admin bootstrap runs in the image
         # seed-admin runs raw under Node in the image, like the worker; a
         # missing-extension import fails only here, never in the host-run tests.
@@ -117,6 +116,39 @@ jobs:
         run: >-
           docker compose -f compose.yaml exec -T -e ADMIN_PASSWORD=ci-bootstrap-pw
           app node scripts/seed-admin.ts ci-admin@example.com "CI Admin"
+      - name: Worker renders a PDF
+        # The image's Chromium must be found and launch; an Alpine package
+        # change that moves or breaks it fails PDF exports only in production.
+        run: >-
+          docker compose -f compose.yaml exec -T worker node --import ./src/worker/register.js --input-type=module -e
+          "const { renderEditionPdf } = await import('/app/src/lib/server/export-artifacts.ts');
+          const pdf = await renderEditionPdf('<p>smoke</p>');
+          if (new TextDecoder().decode(pdf.slice(0, 5)) !== '%PDF-') process.exit(1);
+          console.log('pdf bytes', pdf.length);"
+      - name: Form posts pass the origin check
+        # SvelteKit refuses a form POST whose Origin does not match the app's
+        # origin, which the image takes from ORIGIN at runtime. A same-origin
+        # sign-in must go through and a foreign one must be refused; a change
+        # in how the origin is resolved (as in adapter-node 6) breaks every
+        # form in the app, and nothing else here posts one. The image reads the
+        # client address from X-Forwarded-For (Caddy sets it in production), so
+        # the request carries one, and it asks for HTML as a browser does
+        # (otherwise SvelteKit answers the action with JSON).
+        run: |
+          post() {
+            curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST \
+              -H "Origin: $1" -H 'X-Forwarded-For: 203.0.113.7' -H 'Accept: text/html' \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode 'email=ci-admin@example.com' \
+              --data-urlencode 'password=ci-bootstrap-pw' \
+              http://localhost:3000/login
+          }
+          same=$(post http://localhost:3000)
+          echo "same origin: $same"
+          [ "$same" = "303 http://localhost:3000/" ]
+          foreign=$(post http://evil.example)
+          echo "foreign origin: $foreign"
+          [ "${foreign%% *}" = "403" ]
       - name: Show logs on failure
         if: failure()
         run: docker compose -f compose.yaml logs

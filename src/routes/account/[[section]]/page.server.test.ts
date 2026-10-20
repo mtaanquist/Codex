@@ -1,246 +1,26 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // The route module opens a real database pool on import and calls the account
-// helper; neither is needed to prove the rate-limit guard fires, so stub both.
+// helper; neither is needed to prove the re-auth guards fire, so stub both. The
+// Assistant forms, which store what they save, are covered against a real
+// database in tests/integration/account-assistant-route.test.ts.
 vi.mock('$lib/server/db', () => ({ db: {} }));
 vi.mock('$lib/server/account', async (importActual) => ({
 	...(await importActual<typeof import('$lib/server/account')>()),
-	changePassword: vi.fn(async () => ({ ok: true }))
+	changePassword: vi.fn(async () => ({ ok: true })),
+	verifyAccountPassword: vi.fn(
+		async (_db: unknown, _userId: string, password: string) => password === 'right-password'
+	),
+	revokeOtherSessions: vi.fn(async () => {})
 }));
-
-// The models form saves through the config module; stubbing it captures what
-// the action would store, and lets a test stand a stored config up by hand.
-const storedConfig = {
-	tuning: {} as Record<string, unknown>,
-	models: {},
-	modelContextManual: {} as Record<string, number>
-};
-const savedInputs: {
-	provider?: string;
-	tuning?: Record<string, unknown>;
-	models?: Record<string, string>;
-	modelContextManual?: Record<string, number>;
-	spendCapUsd?: number | null;
-	spendWarnUsd?: number | null;
-}[] = [];
-vi.mock('$lib/server/llm/config', async (importActual) => ({
-	...(await importActual<typeof import('$lib/server/llm/config')>()),
-	accountLlmView: vi.fn(async () => ({
-		configured: true,
-		enabled: true,
-		assistantName: '',
-		persona: 'balanced',
-		provider: 'custom',
-		endpoint: 'http://local/v1',
-		hasKey: false,
-		models: storedConfig.models,
-		tuning: storedConfig.tuning,
-		toolCallBudget: 8,
-		toolProfile: 'full',
-		modelContextManual: storedConfig.modelContextManual
-	})),
-	saveAccountLlmConfig: vi.fn(async (_db: unknown, _userId: string, input: unknown) => {
-		calls.push('save');
-		savedInputs.push(input as (typeof savedInputs)[number]);
-		return { ok: true };
-	})
-}));
-
-// Test connection must run after its own save, so the stub records the order.
-const calls: string[] = [];
-vi.mock('$lib/server/llm/models', () => ({
-	discoverModels: vi.fn(async () => ({ ok: true, models: [] })),
-	testAccountConnection: vi.fn(async () => {
-		calls.push('test');
-		return { ok: true, reply: 'Hello.' };
-	})
+vi.mock('$lib/server/two-factor', async (importActual) => ({
+	...(await importActual<typeof import('$lib/server/two-factor')>()),
+	confirmEnrollment: vi.fn(async () => ({ ok: true, recoveryCodes: ['code-1'] }))
 }));
 
 const { actions } = await import('./+page.server');
-
-function saveModels(fields: Record<string, string>) {
-	const form = new FormData();
-	for (const [key, value] of Object.entries(fields)) form.set(key, value);
-	const call = actions.saveAssistantModels as (event: unknown) => Promise<unknown>;
-	return call({
-		request: { formData: async () => form },
-		locals: { user: { id: 'tuning-test-user' } }
-	});
-}
-
-function lastTuning(): Record<string, unknown> {
-	return savedInputs[savedInputs.length - 1].tuning ?? {};
-}
-
-describe('saveAssistantModels tuning', () => {
-	beforeEach(() => {
-		savedInputs.length = 0;
-		storedConfig.tuning = {};
-		storedConfig.models = {};
-		storedConfig.modelContextManual = {};
-	});
-
-	it('stores the three thinking states and a temperature per role', async () => {
-		await saveModels({
-			reviewer: 'big-model',
-			'reviewer-thinking': 'on',
-			'reviewer-temperature': '0.2',
-			'continuation-thinking': 'off',
-			'continuation-temperature': '',
-			'chat-thinking': ''
-		});
-		expect(lastTuning().reviewer).toEqual({ thinking: true, temperature: 0.2 });
-		expect(lastTuning().continuation).toEqual({ thinking: false });
-		expect(lastTuning().chat).toBeUndefined();
-	});
-
-	it('drops a temperature the writer emptied, and junk in the box', async () => {
-		storedConfig.tuning = { reviewer: { temperature: 0.2 }, chat: { temperature: 0.9 } };
-		await saveModels({ 'reviewer-temperature': '', 'chat-temperature': 'warm' });
-		expect(lastTuning().reviewer).toBeUndefined();
-		expect(lastTuning().chat).toBeUndefined();
-	});
-
-	it('keeps tuning the form did not show: effort survives a temperature save', async () => {
-		// The effort control only renders for the Claude provider, so a save from
-		// an OpenAI-compatible endpoint carries no effort field at all.
-		storedConfig.tuning = { reviewer: { effort: 'high', thinking: true } };
-		await saveModels({ 'reviewer-temperature': '0.2', 'reviewer-thinking': 'on' });
-		expect(lastTuning().reviewer).toEqual({ effort: 'high', thinking: true, temperature: 0.2 });
-	});
-
-	it('keeps a stored temperature when the form shows effort instead', async () => {
-		storedConfig.tuning = { coauthor: { temperature: 0.7 } };
-		await saveModels({ 'coauthor-effort': 'low', 'coauthor-thinking': 'off' });
-		expect(lastTuning().coauthor).toEqual({ temperature: 0.7, effort: 'low', thinking: false });
-	});
-
-	it('carries the utility role through like any other', async () => {
-		await saveModels({ utility: 'small-model', 'utility-thinking': 'off' });
-		expect(savedInputs[0].models).toEqual({ utility: 'small-model' });
-		expect(lastTuning().utility).toEqual({ thinking: false });
-	});
-});
-
-describe('saveAssistantModels context windows', () => {
-	beforeEach(() => {
-		savedInputs.length = 0;
-		storedConfig.tuning = {};
-		storedConfig.models = {};
-		storedConfig.modelContextManual = {};
-	});
-
-	function lastContext(): Record<string, number> {
-		return savedInputs[savedInputs.length - 1].modelContextManual ?? {};
-	}
-
-	it('stores a number typed into a rendered box', async () => {
-		await saveModels({ reviewer: 'big-model', 'context-big-model': '32768' });
-		expect(lastContext()).toEqual({ 'big-model': 32768 });
-	});
-
-	it('clears the entry when the writer empties a rendered box', async () => {
-		storedConfig.modelContextManual = { 'big-model': 32768 };
-		await saveModels({ reviewer: 'big-model', 'context-big-model': '' });
-		expect(lastContext()['big-model']).toBeUndefined();
-	});
-
-	it('keeps entries for models the form did not render', async () => {
-		// The form only renders a box for the models currently picked for a role,
-		// so a save from a form showing one model must not wipe the other's entry.
-		storedConfig.modelContextManual = { 'big-model': 32768, 'small-model': 8192 };
-		await saveModels({ reviewer: 'big-model', 'context-big-model': '65536' });
-		expect(lastContext()).toEqual({ 'big-model': 65536, 'small-model': 8192 });
-	});
-});
-
-function saveEndpoint(
-	fields: Record<string, string>,
-	action: 'saveAssistantEndpoint' | 'testAssistant' = 'saveAssistantEndpoint'
-) {
-	const form = new FormData();
-	form.set('provider', 'custom');
-	form.set('endpoint', 'http://local/v1');
-	for (const [key, value] of Object.entries(fields)) form.set(key, value);
-	const call = actions[action] as (event: unknown) => Promise<unknown>;
-	return call({
-		request: { formData: async () => form },
-		locals: { user: { id: 'spend-test-user' } }
-	});
-}
-
-describe('saveAssistantEndpoint spend fields', () => {
-	beforeEach(() => {
-		savedInputs.length = 0;
-	});
-
-	it('stores the amounts typed into the boxes', async () => {
-		await saveEndpoint({ spendCapUsd: '5', spendWarnUsd: '1.50' });
-		expect(savedInputs[0].spendCapUsd).toBe(5);
-		expect(savedInputs[0].spendWarnUsd).toBe(1.5);
-	});
-
-	it('clears a figure the writer emptied', async () => {
-		await saveEndpoint({ spendCapUsd: '', spendWarnUsd: '' });
-		expect(savedInputs[0].spendCapUsd).toBeNull();
-		expect(savedInputs[0].spendWarnUsd).toBeNull();
-	});
-
-	it('refuses junk rather than clearing the figure in silence', async () => {
-		const result = (await saveEndpoint({ spendCapUsd: 'abc' })) as {
-			status?: number;
-			data?: { scope?: string; message?: string };
-		};
-		expect(result.status).toBe(400);
-		expect(result.data?.scope).toBe('assistant-endpoint');
-		expect(result.data?.message).toBe('Enter an amount in dollars, or leave it blank.');
-		expect(savedInputs).toHaveLength(0);
-	});
-
-	it('refuses a negative amount', async () => {
-		const result = (await saveEndpoint({ spendWarnUsd: '-5' })) as { status?: number };
-		expect(result.status).toBe(400);
-		expect(savedInputs).toHaveLength(0);
-	});
-});
-
-describe('which saves carry the provider', () => {
-	beforeEach(() => {
-		savedInputs.length = 0;
-	});
-
-	it('the endpoint form sends the picked provider', async () => {
-		await saveEndpoint({ provider: 'anthropic' });
-		expect(savedInputs[0]).toMatchObject({ provider: 'anthropic' });
-	});
-
-	it('other forms leave it out, so they cannot undo a switch', async () => {
-		await saveModels({ chat: 'some-model' });
-		expect(savedInputs[0].provider).toBeUndefined();
-	});
-});
-
-describe('testAssistant', () => {
-	beforeEach(() => {
-		savedInputs.length = 0;
-		calls.length = 0;
-	});
-
-	it('saves the form before testing, so a key typed just now is used', async () => {
-		const result = await saveEndpoint({ apiKey: 'sk-new' }, 'testAssistant');
-		expect(calls).toEqual(['save', 'test']);
-		expect(savedInputs[0]).toMatchObject({ apiKey: 'sk-new' });
-		expect(result).toEqual({ scope: 'assistant-test', reply: 'Hello.' });
-	});
-
-	it('does not test when the save is refused', async () => {
-		const result = (await saveEndpoint({ spendCapUsd: 'abc' }, 'testAssistant')) as {
-			status?: number;
-		};
-		expect(result.status).toBe(400);
-		expect(calls).toEqual([]);
-	});
-});
+const { revokeOtherSessions } = await import('$lib/server/account');
+const { confirmEnrollment } = await import('$lib/server/two-factor');
 
 function changePasswordEvent(userId: string) {
 	const form = new FormData();
@@ -273,5 +53,75 @@ describe('changePassword action', () => {
 		};
 		expect(blocked.status).toBe(429);
 		expect(blocked.data?.scope).toBe('password');
+	});
+});
+
+function formEvent(userId: string, fields: Record<string, string>) {
+	const form = new FormData();
+	for (const [key, value] of Object.entries(fields)) form.set(key, value);
+	return {
+		request: { formData: async () => form },
+		locals: { user: { id: userId, email: 'a@example.com' }, session: { id: 'session-1' } }
+	};
+}
+
+type ActionResult = { status?: number; data?: { scope?: string; message?: string } };
+
+// Turning two-factor on and signing out other sessions together let a borrowed
+// session lock the owner out, so both re-confirm the password (#585).
+describe('confirmTotp action', () => {
+	const call = actions.confirmTotp as (event: unknown) => Promise<unknown>;
+
+	beforeEach(() => vi.mocked(confirmEnrollment).mockClear());
+
+	it('refuses to turn two-factor on without the current password', async () => {
+		const result = (await call(
+			formEvent('totp-reauth-user', { code: '123456', password: 'wrong' })
+		)) as ActionResult;
+		expect(result.status).toBe(400);
+		expect(result.data?.scope).toBe('totp');
+		expect(confirmEnrollment).not.toHaveBeenCalled();
+	});
+
+	it('turns two-factor on with the right password', async () => {
+		const result = (await call(
+			formEvent('totp-reauth-user-ok', { code: '123456', password: 'right-password' })
+		)) as { recoveryCodes?: string[] };
+		expect(result.recoveryCodes).toEqual(['code-1']);
+	});
+
+	it('shares the re-auth throttle', async () => {
+		const userId = 'totp-reauth-throttle-user';
+		for (let attempt = 1; attempt <= 10; attempt++) {
+			await call(formEvent(userId, { code: '123456', password: 'wrong' }));
+		}
+		const blocked = (await call(
+			formEvent(userId, { code: '123456', password: 'right-password' })
+		)) as ActionResult;
+		expect(blocked.status).toBe(429);
+		expect(blocked.data?.scope).toBe('totp');
+	});
+});
+
+describe('revokeOthers action', () => {
+	const call = actions.revokeOthers as (event: unknown) => Promise<unknown>;
+
+	beforeEach(() => vi.mocked(revokeOtherSessions).mockClear());
+
+	it('refuses to sign out other sessions without the current password', async () => {
+		const result = (await call(
+			formEvent('revoke-reauth-user', { password: 'wrong' })
+		)) as ActionResult;
+		expect(result.status).toBe(400);
+		expect(result.data?.scope).toBe('sessions');
+		expect(revokeOtherSessions).not.toHaveBeenCalled();
+	});
+
+	it('signs out other sessions with the right password', async () => {
+		const result = (await call(
+			formEvent('revoke-reauth-user-ok', { password: 'right-password' })
+		)) as { saved?: boolean };
+		expect(result.saved).toBe(true);
+		expect(revokeOtherSessions).toHaveBeenCalledOnce();
 	});
 });

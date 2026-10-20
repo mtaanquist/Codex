@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import type { AssetObjectStore } from './assets.ts';
+import { scheduleObjectDeletions } from './assets.ts';
 import {
 	assistantChatMessages,
 	assistantChatSummaries,
@@ -106,11 +106,8 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		await tx.delete(revisions).where(inArray(revisions.entityId, revisableIds));
 	}
 
-	// Scenes reference chapters, so scenes first.
-	await tx.delete(scenes).where(eq(scenes.storyId, storyId));
-	await tx.delete(chapters).where(eq(chapters.storyId, storyId));
-
-	// Freeform story notes and their polymorphic revisions.
+	// Freeform story notes and their polymorphic revisions. A note can point at
+	// a scene, so notes go before scenes.
 	const noteRows = await tx.select({ id: notes.id }).from(notes).where(eq(notes.storyId, storyId));
 	if (noteRows.length > 0) {
 		await tx.delete(revisions).where(
@@ -125,6 +122,10 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		await tx.delete(notes).where(eq(notes.storyId, storyId));
 	}
 
+	// Scenes reference chapters, so scenes first.
+	await tx.delete(scenes).where(eq(scenes.storyId, storyId));
+	await tx.delete(chapters).where(eq(chapters.storyId, storyId));
+
 	await tx.delete(characterStoryNotes).where(eq(characterStoryNotes.storyId, storyId));
 	await tx.delete(loreStoryNotes).where(eq(loreStoryNotes.storyId, storyId));
 	await tx.delete(placeStoryNotes).where(eq(placeStoryNotes.storyId, storyId));
@@ -138,32 +139,32 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 }
 
 // Deletes a story the user owns, in one transaction. Without this a story with
-// any content cannot be deleted at all (the FKs are ON DELETE NO ACTION). A
-// store sweeps the stored export files of the story's editions, whose rows
-// cascade away with the publications.
-export async function deleteStory(
-	db: Database,
-	storyId: string,
-	userId: string,
-	store: AssetObjectStore | null = null
-): Promise<boolean> {
+// any content cannot be deleted at all (the FKs are ON DELETE NO ACTION).
+export async function deleteStory(db: Database, storyId: string, userId: string): Promise<boolean> {
 	const [story] = await db
 		.select({ id: stories.id })
 		.from(stories)
 		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
 	if (!story) return false;
-
-	// Capture the edition export keys before the rows cascade away.
-	const artifactRows = await db
-		.select({ storageKey: exportArtifacts.storageKey })
-		.from(exportArtifacts)
-		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
-		.where(eq(publications.storyId, storyId));
-
-	await db.transaction((tx) => deleteStoryWithin(tx, storyId));
-
-	if (store) {
-		for (const artifact of artifactRows) await store.remove(artifact.storageKey).catch(() => {});
-	}
+	await purgeStory(db, story.id);
 	return true;
+}
+
+// Hard-deletes a story with no owner check, for the trash purge. The stored
+// export files of the story's editions, whose rows cascade away with the
+// publications, are queued for the deferred object sweep.
+export async function purgeStory(db: Database, storyId: string): Promise<void> {
+	await db.transaction(async (tx) => {
+		// Capture the edition export keys before the rows cascade away.
+		const artifactRows = await tx
+			.select({ storageKey: exportArtifacts.storageKey })
+			.from(exportArtifacts)
+			.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
+			.where(eq(publications.storyId, storyId));
+		await deleteStoryWithin(tx, storyId);
+		await scheduleObjectDeletions(
+			tx,
+			artifactRows.map((row) => row.storageKey)
+		);
+	});
 }

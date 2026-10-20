@@ -31,7 +31,8 @@
 		</form>
 	{:else}
 		<p class="form-error auth-note" role="alert">
-			This confirmation link is not valid or has expired.
+			This confirmation link is not valid or has expired. If you got more than one email, use the
+			newest one.
 		</p>
 	{/if}
 	<div class="auth-links">

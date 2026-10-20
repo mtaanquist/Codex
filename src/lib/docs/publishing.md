@@ -20,7 +20,7 @@ Each story has a visibility:
 
 ## Edition downloads
 
-When you publish, Codex also prepares download files of the edition: a markdown archive, an EPUB, and a PDF. Find them in the story's settings under "Edition downloads". They capture the edition exactly as published, so they do not change when you keep writing.
+When you publish, Codex also prepares download files of the edition: a markdown archive, an EPUB, and a PDF. Find them in the story's settings under "Edition downloads". They capture the edition exactly as published, so they do not change when you keep writing. The PDF shows only images you uploaded to Codex; an image linked from another website is left out.
 
 If you want readers to download your story too, turn on "Let readers download this edition" in the same place. Readers then see EPUB and PDF links on the story's public page. The markdown archive is yours alone; it is never offered to readers.
 

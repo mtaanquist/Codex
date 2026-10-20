@@ -1,12 +1,9 @@
-import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
-	characters,
 	entityCategories,
 	entityRelationships,
-	loreEntries,
 	notes,
-	places,
 	relationTypes,
 	reviewSuggestions,
 	reviewThreads,
@@ -20,7 +17,20 @@ import {
 	type EntitySnapshot,
 	type SnapshotRelationship
 } from '$lib/entity-snapshot';
-import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import {
+	ENTITY_TYPES,
+	entityAliasColumn,
+	entityInUniverse,
+	entityNameColumn,
+	entityNaming,
+	entityTable,
+	namesByType,
+	ownedLiveEntity,
+	type EntityType
+} from './entity-lookups.ts';
+import { remapMarkerAnchors } from './markers.ts';
+import { noteIsLive, storyIsLive } from './universe-scope.ts';
+import type { ActionFailure } from './action-result.ts';
 
 export type RevisionEntityType =
 	'scene' | 'character' | 'place' | 'lore_entry' | 'chapter' | 'note';
@@ -66,11 +76,13 @@ export async function recordRevision(
 	options: { label?: string; snapshot?: EntitySnapshot | null } = {}
 ): Promise<{ recorded: boolean }> {
 	const snapshot = options.snapshot ?? null;
+	const words = wordCount(bodyMd);
 	if (reason !== 'autosave') {
 		await db.insert(revisions).values({
 			entityType,
 			entityId,
 			bodyMd,
+			wordCount: words,
 			snapshot,
 			reason,
 			label: options.label?.trim() || null
@@ -86,7 +98,8 @@ export async function recordRevision(
 		const [latest] = await tx
 			.select({
 				id: revisions.id,
-				bodyMd: revisions.bodyMd,
+				// Compared in the database so a long body is not read back each save.
+				sameBody: sql<boolean>`${revisions.bodyMd} = ${bodyMd}`,
 				snapshot: revisions.snapshot,
 				reason: revisions.reason,
 				createdAt: revisions.createdAt
@@ -95,7 +108,7 @@ export async function recordRevision(
 			.where(and(eq(revisions.entityType, entityType), eq(revisions.entityId, entityId)))
 			.orderBy(desc(revisions.createdAt))
 			.limit(1);
-		if (latest && latest.bodyMd === bodyMd && snapshotsEqual(latest.snapshot, snapshot)) {
+		if (latest && latest.sameBody && snapshotsEqual(latest.snapshot, snapshot)) {
 			return { recorded: false };
 		}
 		if (
@@ -106,7 +119,7 @@ export async function recordRevision(
 		) {
 			await tx
 				.update(revisions)
-				.set({ bodyMd, snapshot, createdAt: sql`now()` })
+				.set({ bodyMd, wordCount: words, snapshot, createdAt: sql`now()` })
 				.where(eq(revisions.id, latest.id));
 			return { recorded: true };
 		}
@@ -114,6 +127,7 @@ export async function recordRevision(
 			entityType,
 			entityId,
 			bodyMd,
+			wordCount: words,
 			snapshot,
 			reason,
 			label: options.label?.trim() || null
@@ -210,46 +224,28 @@ export async function buildEntitySnapshot(
 	universeId: string;
 	ownerId: string;
 } | null> {
-	let bodyMd: string;
-	let universeId: string;
-	let ownerId: string;
-	let base: Pick<EntitySnapshot, 'name' | 'aliases' | 'keywords' | 'summaryMd' | 'categoryId'>;
-	let details: EntitySnapshot['details'];
-
-	if (type === 'character') {
-		const [row] = await db.select().from(characters).where(eq(characters.id, id));
-		if (!row) return null;
-		({ bodyMd, universeId, ownerId } = row);
-		base = {
-			name: row.name,
-			aliases: row.aliases,
-			summaryMd: row.summaryMd,
-			categoryId: row.categoryId
-		};
-		details = row.details;
-	} else if (type === 'place') {
-		const [row] = await db.select().from(places).where(eq(places.id, id));
-		if (!row) return null;
-		({ bodyMd, universeId, ownerId } = row);
-		base = {
-			name: row.name,
-			aliases: row.aliases,
-			summaryMd: row.summaryMd,
-			categoryId: row.categoryId
-		};
-		details = row.details;
-	} else {
-		const [row] = await db.select().from(loreEntries).where(eq(loreEntries.id, id));
-		if (!row) return null;
-		({ bodyMd, universeId, ownerId } = row);
-		base = {
-			name: row.title,
-			keywords: row.keywords,
-			summaryMd: row.summaryMd,
-			categoryId: row.categoryId
-		};
-		details = row.details;
-	}
+	const table = entityTable(type);
+	const [row] = await db
+		.select({
+			bodyMd: table.bodyMd,
+			universeId: table.universeId,
+			ownerId: table.ownerId,
+			name: entityNameColumn(table),
+			tags: entityAliasColumn(table),
+			summaryMd: table.summaryMd,
+			categoryId: table.categoryId,
+			details: table.details
+		})
+		.from(table)
+		.where(eq(table.id, id));
+	if (!row) return null;
+	const { bodyMd, universeId, ownerId, details } = row;
+	const base: Pick<EntitySnapshot, 'name' | 'aliases' | 'keywords' | 'summaryMd' | 'categoryId'> = {
+		name: row.name,
+		...(type === 'lore_entry' ? { keywords: row.tags } : { aliases: row.tags }),
+		summaryMd: row.summaryMd,
+		categoryId: row.categoryId
+	};
 
 	const snapshot: EntitySnapshot = {
 		...base,
@@ -342,40 +338,33 @@ export async function ownedEntityBody(
 			.select({ bodyMd: scenes.bodyMd })
 			.from(scenes)
 			.innerJoin(stories, eq(scenes.storyId, stories.id))
-			.where(and(eq(scenes.id, entityId), eq(stories.ownerId, userId)));
+			.where(and(eq(scenes.id, entityId), eq(stories.ownerId, userId), storyIsLive()));
 		return row ?? null;
 	}
-	if (entityType === 'character') {
+	if (isSnapshotType(entityType)) {
+		const table = entityTable(entityType);
 		const [row] = await db
-			.select({ bodyMd: characters.bodyMd })
-			.from(characters)
-			.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
-		return row ?? null;
-	}
-	if (entityType === 'place') {
-		const [row] = await db
-			.select({ bodyMd: places.bodyMd })
-			.from(places)
-			.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
-		return row ?? null;
-	}
-	if (entityType === 'lore_entry') {
-		const [row] = await db
-			.select({ bodyMd: loreEntries.bodyMd })
-			.from(loreEntries)
-			.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+			.select({ bodyMd: table.bodyMd })
+			.from(table)
+			.where(ownedLiveEntity(table, entityId, userId));
 		return row ?? null;
 	}
 	if (entityType === 'note') {
 		const [row] = await db
 			.select({ bodyMd: notes.bodyMd })
 			.from(notes)
-			.where(and(eq(notes.id, entityId), eq(notes.ownerId, userId)));
+			.where(and(eq(notes.id, entityId), eq(notes.ownerId, userId), noteIsLive()));
 		return row ?? null;
 	}
 	// Chapters have no revisable body yet.
 	return null;
 }
+
+const ITEM_NOT_FOUND: ActionFailure = {
+	ok: false,
+	code: 'not_found',
+	reason: 'That item does not exist.'
+};
 
 // A manual checkpoint of the entity's current state, with an optional name.
 export async function createCheckpoint(
@@ -384,9 +373,9 @@ export async function createCheckpoint(
 	entityType: RevisionEntityType,
 	entityId: string,
 	label?: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const entity = await ownedEntityBody(db, userId, entityType, entityId);
-	if (!entity) return { ok: false, reason: 'entity not found' };
+	if (!entity) return ITEM_NOT_FOUND;
 	if (isSnapshotType(entityType)) {
 		await recordEntityRevision(db, entityType, entityId, 'checkpoint', label);
 	} else {
@@ -531,21 +520,25 @@ export async function restoreRevision(
 	revisionId: string,
 	entityType: RevisionEntityType,
 	entityId: string
-): Promise<
-	{ ok: true; universeId?: string; mentionsAffected?: boolean } | { ok: false; reason: string }
-> {
+): Promise<{ ok: true; universeId?: string; mentionsAffected?: boolean } | ActionFailure> {
 	const entity = await ownedEntityBody(db, userId, entityType, entityId);
-	if (!entity) return { ok: false, reason: 'entity not found' };
+	if (!entity) return ITEM_NOT_FOUND;
 	const revision = await getRevision(db, revisionId, entityType, entityId);
-	if (!revision) return { ok: false, reason: 'revision not found' };
+	if (!revision) return { ok: false, code: 'not_found', reason: 'That revision does not exist.' };
 
 	if (entityType === 'scene') {
 		// One transaction so the body and its 'restore' snapshot commit together.
 		await db.transaction(async (tx) => {
+			const [current] = await tx
+				.select({ bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(eq(scenes.id, entityId))
+				.for('update');
 			await tx
 				.update(scenes)
 				.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
 				.where(eq(scenes.id, entityId));
+			if (current) await remapMarkerAnchors(tx, entityId, current.bodyMd, revision.bodyMd);
 			await recordRevision(tx, entityType, entityId, revision.bodyMd, 'restore');
 		});
 		return { ok: true };
@@ -559,11 +552,11 @@ export async function restoreRevision(
 		return { ok: true };
 	}
 	if (!isSnapshotType(entityType)) {
-		return { ok: false, reason: 'that cannot be restored' };
+		return { ok: false, code: 'invalid', reason: 'That cannot be restored.' };
 	}
 
 	const before = await buildEntitySnapshot(db, entityType, entityId);
-	if (!before) return { ok: false, reason: 'entity not found' };
+	if (!before) return ITEM_NOT_FOUND;
 	const snapshot = revision.snapshot;
 	const category = snapshot ? await restorableCategory(db, before.universeId, snapshot) : {};
 
@@ -572,61 +565,33 @@ export async function restoreRevision(
 	// entity restored with a half-reconciled relationship set or no 'restore'
 	// entry on the timeline.
 	await db.transaction(async (tx) => {
-		if (entityType === 'character') {
-			await tx
-				.update(characters)
-				.set({
-					bodyMd: revision.bodyMd,
-					...(snapshot
-						? {
-								name: snapshot.name,
-								aliases: snapshot.aliases ?? [],
-								summaryMd: snapshot.summaryMd,
-								details: snapshot.details,
-								...category
-							}
-						: {})
-				})
-				.where(eq(characters.id, entityId));
-		} else if (entityType === 'place') {
-			await tx
-				.update(places)
-				.set({
-					bodyMd: revision.bodyMd,
-					...(snapshot
-						? {
-								name: snapshot.name,
-								aliases: snapshot.aliases ?? [],
-								summaryMd: snapshot.summaryMd,
-								details: snapshot.details,
-								...category
-							}
-						: {})
-				})
-				.where(eq(places.id, entityId));
-		} else {
-			// Lore always has a category, so a cleared or deleted one keeps the
-			// current category rather than setting null.
-			const loreCategory =
-				'categoryId' in category && category.categoryId !== null
+		// Lore always has a category, so a cleared or deleted one keeps the
+		// current category rather than setting null.
+		const restoredCategory =
+			entityType !== 'lore_entry'
+				? category
+				: 'categoryId' in category && category.categoryId !== null
 					? { categoryId: category.categoryId }
 					: {};
-			await tx
-				.update(loreEntries)
-				.set({
-					bodyMd: revision.bodyMd,
-					...(snapshot
-						? {
-								title: snapshot.name,
-								keywords: snapshot.keywords ?? [],
-								summaryMd: snapshot.summaryMd,
-								details: snapshot.details,
-								...loreCategory
-							}
-						: {})
-				})
-				.where(eq(loreEntries.id, entityId));
-		}
+		const table = entityTable(entityType);
+		await tx
+			.update(table)
+			.set({
+				bodyMd: revision.bodyMd,
+				...(snapshot
+					? {
+							...entityNaming(
+								entityType,
+								snapshot.name,
+								(entityType === 'lore_entry' ? snapshot.keywords : snapshot.aliases) ?? []
+							),
+							summaryMd: snapshot.summaryMd,
+							details: snapshot.details,
+							...restoredCategory
+						}
+					: {})
+			})
+			.where(eq(table.id, entityId));
 
 		if (snapshot) {
 			const touched = await reconcileRelationships(
@@ -663,43 +628,82 @@ export type TimelineRow = RevisionRow & {
 	storySlug?: string | null;
 };
 
-function mergeTimelines(lists: TimelineRow[][], limit: number): TimelineRow[] {
-	return lists
-		.flat()
-		.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-		.slice(0, limit);
+type TimelineSource = { type: RevisionEntityType; entities: SQL };
+
+// The newest `limit` revisions across a set of entities, newest first. Each
+// source yields entity_id, entity_name, story_title and story_slug; a lateral
+// limit per entity walks the timeline index, so the cost is bounded by
+// entities times `limit` rather than by the whole history. Rows with the same
+// timestamp keep the order of `sources` (the order the per-type lists were
+// merged in before), then the id, so the listing is stable.
+async function recentRevisions(
+	db: Database,
+	sources: TimelineSource[],
+	limit: number
+): Promise<TimelineRow[]> {
+	const parts = sources.map(
+		({ type, entities }, ord) => sql`
+			select r.id, r.reason, r.label, r.created_at, ${ord}::int as ord, ${type}::text as entity_type,
+				e.entity_id, e.entity_name, e.story_title, e.story_slug
+			from (${entities}) e
+			cross join lateral (
+				select rv.id, rv.reason, rv.label, rv.created_at
+				from revisions rv
+				where rv.entity_type = ${type} and rv.entity_id = e.entity_id
+				order by rv.created_at desc, rv.id desc
+				limit ${limit}
+			) r`
+	);
+	const result = await db.execute(sql`
+		select * from (${sql.join(parts, sql` union all `)}) x
+		order by x.created_at desc, x.ord asc, x.id desc
+		limit ${limit}
+	`);
+	return result.rows.map((row) => {
+		const r = row as {
+			id: string;
+			reason: string | null;
+			label: string | null;
+			created_at: Date | string;
+			entity_type: RevisionEntityType;
+			entity_id: string;
+			entity_name: string | null;
+			story_title: string | null;
+			story_slug: string | null;
+		};
+		return {
+			id: r.id,
+			reason: r.reason,
+			label: r.label,
+			createdAt: new Date(r.created_at),
+			entityType: r.entity_type,
+			entityId: r.entity_id,
+			entityName: r.entity_name,
+			...(r.story_title !== null ? { storyTitle: r.story_title, storySlug: r.story_slug } : {})
+		};
+	});
 }
 
-// Recent changes across a story's prose, for its settings page.
+// Recent changes across a story's prose, for its settings page. A trashed
+// scene's history stays out, the same as the universe timeline.
 export async function storyTimeline(
 	db: Database,
 	storyId: string,
 	limit = 50
 ): Promise<TimelineRow[]> {
-	const sceneRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: scenes.title
-		})
-		.from(revisions)
-		.innerJoin(scenes, eq(revisions.entityId, scenes.id))
-		.where(
-			and(
-				eq(revisions.entityType, 'scene'),
-				eq(scenes.storyId, storyId),
-				// A trashed scene's history stays out of the live timeline, the same
-				// as the universe timeline.
-				isNull(scenes.deletedAt)
-			)
-		)
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	return mergeTimelines([sceneRows], limit);
+	return recentRevisions(
+		db,
+		[
+			{
+				type: 'scene',
+				entities: sql`
+					select id as entity_id, title as entity_name,
+						null::text as story_title, null::text as story_slug
+					from scenes where story_id = ${storyId} and deleted_at is null`
+			}
+		],
+		limit
+	);
 }
 
 // Recent changes across a universe's scenes and entities, for its settings
@@ -709,91 +713,54 @@ export async function universeTimeline(
 	universeId: string,
 	limit = 50
 ): Promise<TimelineRow[]> {
-	const sceneRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: scenes.title,
-			storyTitle: stories.title,
-			storySlug: stories.slug
-		})
-		.from(revisions)
-		.innerJoin(scenes, eq(revisions.entityId, scenes.id))
-		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(
-			and(
-				eq(revisions.entityType, 'scene'),
-				eq(stories.universeId, universeId),
-				isNull(scenes.deletedAt)
-			)
-		)
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	const characterRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: characters.name
-		})
-		.from(revisions)
-		.innerJoin(characters, eq(revisions.entityId, characters.id))
-		.where(and(eq(revisions.entityType, 'character'), eq(characters.universeId, universeId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	const placeRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: places.name
-		})
-		.from(revisions)
-		.innerJoin(places, eq(revisions.entityId, places.id))
-		.where(and(eq(revisions.entityType, 'place'), eq(places.universeId, universeId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	const loreRows = await db
-		.select({
-			id: revisions.id,
-			reason: revisions.reason,
-			label: revisions.label,
-			createdAt: revisions.createdAt,
-			entityType: revisions.entityType,
-			entityId: revisions.entityId,
-			entityName: loreEntries.title
-		})
-		.from(revisions)
-		.innerJoin(loreEntries, eq(revisions.entityId, loreEntries.id))
-		.where(and(eq(revisions.entityType, 'lore_entry'), eq(loreEntries.universeId, universeId)))
-		.orderBy(desc(revisions.createdAt))
-		.limit(limit);
-	return mergeTimelines([sceneRows, characterRows, placeRows, loreRows], limit);
+	const entity = (type: EntityType) => {
+		const table = entityTable(type);
+		return {
+			type,
+			entities: sql`
+				select ${table.id} as entity_id, ${entityNameColumn(table)} as entity_name,
+					null::text as story_title, null::text as story_slug
+				from ${table} where ${table.universeId} = ${universeId}`
+		};
+	};
+	return recentRevisions(
+		db,
+		[
+			{
+				type: 'scene',
+				entities: sql`
+					select s.id as entity_id, s.title as entity_name,
+						st.title as story_title, st.slug as story_slug
+					from scenes s join stories st on st.id = s.story_id
+					where st.universe_id = ${universeId} and st.deleted_at is null
+						and s.deleted_at is null`
+			},
+			...ENTITY_TYPES.map(entity)
+		],
+		limit
+	);
 }
 
-// The footer's total: every revision recorded across the universe.
+// The footer's total: every revision recorded across the universe. One join
+// per entity type, so each counts from the timeline index instead of an OR
+// over the whole table.
 export async function universeRevisionCount(db: Database, universeId: string): Promise<number> {
+	const entityCounts = sql.join(
+		ENTITY_TYPES.map((type) => {
+			const table = entityTable(type);
+			return sql`+ (select count(*) from ${table}
+				join revisions r on r.entity_type = ${type} and r.entity_id = ${table.id}
+				where ${table.universeId} = ${universeId})`;
+		}),
+		sql` `
+	);
 	const result = await db.execute(sql`
-		select count(*)::int as total from revisions r
-		where (r.entity_type = 'scene' and r.entity_id in (
-				select s.id from scenes s join stories st on st.id = s.story_id
-				where st.universe_id = ${universeId}))
-			or (r.entity_type = 'character' and r.entity_id in (
-				select id from characters where universe_id = ${universeId}))
-			or (r.entity_type = 'place' and r.entity_id in (
-				select id from places where universe_id = ${universeId}))
-			or (r.entity_type = 'lore_entry' and r.entity_id in (
-				select id from lore_entries where universe_id = ${universeId}))
+		select (
+			(select count(*) from scenes s join stories st on st.id = s.story_id
+				join revisions r on r.entity_type = 'scene' and r.entity_id = s.id
+				where st.universe_id = ${universeId} and st.deleted_at is null)
+			${entityCounts}
+		)::int as total
 	`);
 	return (result.rows[0] as { total: number }).total;
 }

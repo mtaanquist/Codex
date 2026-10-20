@@ -1,10 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { sceneMarkers, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	revisions,
+	sceneMarkers,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import {
 	createMarker,
 	deleteMarker,
@@ -13,6 +20,8 @@ import {
 	setMarkerResolved,
 	updateMarkerAnchors
 } from '../../src/lib/server/markers';
+import { saveSceneBody } from '../../src/lib/server/scene-save';
+import { recordRevision, restoreRevision } from '../../src/lib/server/revisions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -30,7 +39,12 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
-	await pool.query('truncate table scene_markers, scenes, stories, universes, users cascade');
+});
+
+beforeEach(async () => {
+	await pool.query(
+		'truncate table scene_markers, revisions, scenes, stories, universes, users cascade'
+	);
 
 	const [owner] = await db
 		.insert(users)
@@ -74,13 +88,15 @@ describe('createMarker', () => {
 		expect(await createMarker(db, ownerId, sceneId, 3, 3)).toMatchObject({ ok: false });
 		expect(await createMarker(db, strangerId, sceneId, 0, 5)).toMatchObject({
 			ok: false,
-			reason: 'scene not found'
+			code: 'not_found'
 		});
 	});
 });
 
 describe('listStoryTodos', () => {
 	it('lists markers and TODO: lines in scene order', async () => {
+		await createMarker(db, ownerId, sceneId, 0, 5);
+		await createMarker(db, ownerId, sceneId, 6, 9999, 'check this');
 		const todos = await listStoryTodos(db, storyId);
 		// Two markers plus one text TODO.
 		expect(todos).toHaveLength(3);
@@ -91,11 +107,50 @@ describe('listStoryTodos', () => {
 		// A marker without a note falls back to the selected text.
 		expect(todos.some((todo) => todo.text === 'Alice')).toBe(true);
 	});
+
+	it('slices un-noted snippets and skips scenes with nothing to do', async () => {
+		// No "TODO:" in this body, so only the un-noted marker can make it
+		// come back. Astral characters ahead of the anchor: UTF-16 offsets
+		// must still land.
+		const body = 'A \u{1F409} dragon wakes.';
+		const [quiet] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 10, title: 'Quiet', bodyMd: 'Nothing left here.' })
+			.returning();
+		const [marked] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 11, title: 'Dragon', bodyMd: body })
+			.returning();
+		const [midLine] = await db
+			.insert(scenes)
+			.values({
+				storyId,
+				globalPosition: 12,
+				title: 'Aside',
+				bodyMd: 'She said TODO: not a marker'
+			})
+			.returning();
+		const start = body.indexOf('dragon');
+		const plain = await createMarker(db, ownerId, marked.id, start, start + 6);
+		const noted = await createMarker(db, ownerId, quiet.id, 0, 7, 'tighten');
+		if (!plain.ok || !noted.ok) throw new Error('setup failed');
+
+		const todos = await listStoryTodos(db, storyId);
+		expect(todos.filter((todo) => todo.sceneId === marked.id)).toEqual([
+			{ sceneId: marked.id, sceneTitle: 'Dragon', markerId: plain.id, text: 'dragon' }
+		]);
+		expect(todos.filter((todo) => todo.sceneId === quiet.id)).toEqual([
+			{ sceneId: quiet.id, sceneTitle: 'Quiet', markerId: noted.id, text: 'tighten' }
+		]);
+		expect(todos.filter((todo) => todo.sceneId === midLine.id)).toEqual([]);
+	});
 });
 
 describe('resolve and anchors', () => {
 	it('checking off hides a marker from the lists; unchecking brings it back', async () => {
-		const [marker] = await listSceneMarkers(db, sceneId);
+		const created = await createMarker(db, ownerId, sceneId, 0, 5);
+		if (!created.ok) throw new Error('setup failed');
+		const marker = { id: created.id };
 		expect(await setMarkerResolved(db, strangerId, marker.id, true)).toBe(false);
 		expect(await setMarkerResolved(db, ownerId, marker.id, true)).toBe(true);
 		expect((await listSceneMarkers(db, sceneId)).map((m) => m.id)).not.toContain(marker.id);
@@ -104,7 +159,9 @@ describe('resolve and anchors', () => {
 	});
 
 	it('moves anchors and ignores ids from other scenes', async () => {
-		const [marker] = await listSceneMarkers(db, sceneId);
+		const created = await createMarker(db, ownerId, sceneId, 0, 5);
+		if (!created.ok) throw new Error('setup failed');
+		const marker = { id: created.id };
 		const [otherScene] = await db
 			.insert(scenes)
 			.values({ storyId, globalPosition: 2, bodyMd: 'Elsewhere.' })
@@ -146,5 +203,73 @@ describe('resolve and anchors', () => {
 		if (!created.ok) throw new Error('setup failed');
 		expect(await deleteMarker(db, strangerId, created.id)).toBe(false);
 		expect(await deleteMarker(db, ownerId, created.id)).toBe(true);
+	});
+});
+
+// Body rewrites that do not come from the Write editor carry no anchors;
+// the stored ones must follow the text rather than keep their old offsets.
+describe('anchors follow body rewrites outside the Write editor', () => {
+	const TEXT = 'The bridge creaks. Alice pays the toll. She rides on.';
+
+	async function markedScene(phrase: string) {
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 10, bodyMd: TEXT })
+			.returning();
+		const start = TEXT.indexOf(phrase);
+		const marker = await createMarker(db, ownerId, scene.id, start, start + phrase.length);
+		if (!marker.ok) throw new Error('setup failed');
+		return { sceneId: scene.id, markerId: marker.id };
+	}
+
+	async function anchors(markerId: string) {
+		const [row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, markerId));
+		return [row.anchorStart, row.anchorEnd];
+	}
+
+	function quote(body: string, range: (number | null)[]) {
+		return body.slice(range[0]!, range[1]!);
+	}
+
+	it('a save without markers maps them through the edit', async () => {
+		const { sceneId: id, markerId } = await markedScene('pays the toll');
+		const edited = 'A new opening line.\n\n' + TEXT;
+		const result = await saveSceneBody(db, id, {
+			title: null,
+			bodyMd: edited,
+			anchors: null,
+			baseHashes: null,
+			overwrite: false
+		});
+		expect(result.ok).toBe(true);
+		expect(quote(edited, await anchors(markerId))).toBe('pays the toll');
+	});
+
+	it('a save without markers drops the anchor when its text is gone', async () => {
+		const { sceneId: id, markerId } = await markedScene('pays the toll');
+		await saveSceneBody(db, id, {
+			title: null,
+			bodyMd: 'The bridge creaks. She rides on.',
+			anchors: null,
+			baseHashes: null,
+			overwrite: false
+		});
+		expect(await anchors(markerId)).toEqual([null, null]);
+	});
+
+	it('restoring a revision maps anchors onto the restored text', async () => {
+		const { sceneId: id, markerId } = await markedScene('She rides on');
+		const older = 'Long before: ' + TEXT;
+		await recordRevision(db, 'scene', id, older, 'checkpoint');
+		const [revision] = await db
+			.select({ id: revisions.id })
+			.from(revisions)
+			.where(and(eq(revisions.entityType, 'scene'), eq(revisions.entityId, id)))
+			.orderBy(desc(revisions.createdAt))
+			.limit(1);
+		expect(await restoreRevision(db, ownerId, revision.id, 'scene', id)).toMatchObject({
+			ok: true
+		});
+		expect(quote(older, await anchors(markerId))).toBe('She rides on');
 	});
 });

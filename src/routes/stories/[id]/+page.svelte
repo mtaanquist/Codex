@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { refreshStoryLive } from './live';
 	import { altLabel, modLabel } from '$lib/keys';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -14,6 +15,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import StoryPreview from '$lib/components/StoryPreview.svelte';
 	import { editorStyleVars } from '$lib/page-setup';
+	import { nearViewport } from '$lib/near-viewport';
 	import type { ViewItem } from '$lib/components/ViewMenu.svelte';
 	import StoryOutline from '$lib/components/StoryOutline.svelte';
 	import StoryRowMenu, {
@@ -247,7 +249,7 @@
 		if (!stale || mentionPolls >= MENTION_POLL_LIMIT) return;
 		const timer = setTimeout(() => {
 			mentionPolls += 1;
-			void invalidateAll();
+			void refreshStoryLive();
 		}, MENTION_POLL_MS);
 		return () => clearTimeout(timer);
 	});
@@ -255,9 +257,17 @@
 	// Scenes picked for merging via the row menu; the merge joins them in
 	// story order regardless of the picking order.
 	let mergeSelection = new SvelteSet<string>();
+	// Bumped when a merge rewrites a scene's text, so the open editors remount
+	// on the merged text instead of saving over it.
+	let editorNonce = $state(0);
 
 	async function mergeSelectedScenes() {
 		rowMenu = null;
+		// The merge reads the stored text, so pending saves land first.
+		for (const id of mergeSelection) {
+			const editor = data.selectedScene?.id === id ? sceneEditor : docEditors[id];
+			await editor?.flushSave();
+		}
 		const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
 		if (!result.ok) {
 			alert(result.message);
@@ -266,6 +276,7 @@
 		mergeSelection.clear();
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		editorNonce++;
 	}
 
 	// Copies a scene in full directly after itself; useful for keeping a
@@ -356,6 +367,7 @@
 		persistProposalState(data.story.id, proposal, null);
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		editorNonce++;
 		return null;
 	}
 
@@ -526,10 +538,45 @@
 		| undefined
 	> = $state({});
 
-	function focusNeighbor(sceneId: string, direction: 'up' | 'down') {
+	// A scene's editor mounts as the scene nears the visible part of the
+	// document, so a long story does not open every editor at once; until
+	// then the scene shows its text as plain lines. A mounted editor stays
+	// until the writer leaves the view or opens another story, so coming back
+	// starts lazy again instead of mounting everything seen last time.
+	let docScroll = $state<HTMLElement>();
+	const mountedDocScenes = new SvelteSet<string>();
+	// svelte-ignore state_referenced_locally
+	let mountedFor = `${data.story.id}:${data.view}`;
+	$effect.pre(() => {
+		const key = `${data.story.id}:${data.view}`;
+		if (key === mountedFor) return;
+		mountedFor = key;
+		untrack(() => mountedDocScenes.clear());
+	});
+
+	async function mountDocScene(sceneId: string) {
+		if (mountedDocScenes.has(sceneId)) return;
+		mountedDocScenes.add(sceneId);
+		await tick();
+	}
+
+	// A click or tab onto a scene that has not mounted yet (after a fast
+	// scrollbar drag, say) mounts it and puts the caret where the click was.
+	async function enterDocScene(sceneId: string, at?: { x: number; y: number }) {
+		await mountDocScene(sceneId);
+		const view = docEditors[sceneId]?.getView();
+		if (!view) return;
+		const pos = at ? view.posAtCoords(at) : null;
+		view.focus();
+		if (pos !== null) view.dispatch({ selection: { anchor: pos } });
+	}
+
+	async function focusNeighbor(sceneId: string, direction: 'up' | 'down') {
 		const index = docOrder.indexOf(sceneId);
 		const target = docOrder[index + (direction === 'down' ? 1 : -1)];
-		if (target) docEditors[target]?.focusEdge(direction === 'down' ? 'start' : 'end');
+		if (!target) return;
+		await mountDocScene(target);
+		docEditors[target]?.focusEdge(direction === 'down' ? 'start' : 'end');
 	}
 </script>
 
@@ -602,37 +649,56 @@
 							</a>
 							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{/if}
-						<SceneEditor
-							bind:this={docEditors[scene.id]}
-							compact
-							{editorStyle}
-							sceneId={scene.id}
-							storyId={data.story.id}
-							title={scene.title}
-							body={scene.bodyMd}
-							entities={data.mentionEntities}
-							{mentionOptions}
-							assistantContinuation={data.assistant.surfacesEnabled}
-							autocompleteMode={data.preferences.entityAutocomplete}
-							editingMode={data.preferences.editingMode}
-							spellCheck={data.preferences.spellCheck}
-							writingLanguage={data.preferences.writingLanguage}
-							{nonPrintingMarks}
-							{commandMarkers}
-							imageUniverseId={data.universe.id}
-							markers={data.storyDocMarkers[scene.id] ?? []}
-							loreCategories={data.loreCategories}
-							onCreateEntity={createEntity}
-							onAskAssistant={data.assistant.surfacesEnabled
-								? (text) => askAssistant(scene.id, text)
-								: undefined}
-							onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
-							onFocus={() => (activeDocId = scene.id)}
-							onStatus={(status) => {
-								saveStatus = status;
-								if (status === 'saved') void invalidateAll();
-							}}
-						/>
+						{#if mountedDocScenes.has(scene.id)}
+							<SceneEditor
+								bind:this={docEditors[scene.id]}
+								compact
+								{editorStyle}
+								sceneId={scene.id}
+								storyId={data.story.id}
+								title={scene.title}
+								body={scene.bodyMd}
+								entities={data.mentionEntities}
+								{mentionOptions}
+								assistantContinuation={data.assistant.surfacesEnabled}
+								autocompleteMode={data.preferences.entityAutocomplete}
+								editingMode={data.preferences.editingMode}
+								spellCheck={data.preferences.spellCheck}
+								writingLanguage={data.preferences.writingLanguage}
+								{nonPrintingMarks}
+								{commandMarkers}
+								imageUniverseId={data.universe.id}
+								markers={data.storyDocMarkers[scene.id] ?? []}
+								loreCategories={data.loreCategories}
+								onCreateEntity={createEntity}
+								onAskAssistant={data.assistant.surfacesEnabled
+									? (text) => askAssistant(scene.id, text)
+									: undefined}
+								onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
+								onFocus={() => (activeDocId = scene.id)}
+								onStatus={(status) => {
+									saveStatus = status;
+									if (status === 'saved') void refreshStoryLive();
+								}}
+							/>
+						{:else}
+							<div
+								class="editor compact"
+								style={editorStyle}
+								role="textbox"
+								aria-label={scene.title ?? 'Untitled scene'}
+								aria-multiline="true"
+								tabindex="0"
+								onpointerdown={(event) => {
+									event.preventDefault();
+									void enterDocScene(scene.id, { x: event.clientX, y: event.clientY });
+								}}
+								onfocus={() => void enterDocScene(scene.id)}
+								{@attach docScroll && nearViewport(docScroll, () => mountedDocScenes.add(scene.id))}
+							>
+								<div class="editor-cm"><div class="prose-static">{scene.bodyMd}</div></div>
+							</div>
+						{/if}
 					</article>
 				{/snippet}
 				<div class="md-editor">
@@ -645,7 +711,7 @@
 						commandMarkersActive={commandMarkers === 'shown'}
 						onToggleCommandMarkers={toggleCommandMarkers}
 					/>
-					<div class="editor-scroll">
+					<div class="editor-scroll" bind:this={docScroll}>
 						<div class="editor story-doc">
 							<h1 class="doc-title">{data.story.title}</h1>
 							{#if (data.storyDoc ?? []).length === 0}
@@ -660,7 +726,7 @@
 								{#if docList.length > 0}
 									<section class="doc-chapter" id="chapter-{chapter.id}">
 										<h2>{chapter.title ?? `Chapter ${index + 1}`}</h2>
-										{#each docList as scene (scene.id)}
+										{#each docList as scene (`${scene.id}:${editorNonce}`)}
 											{@render docScene(scene)}
 										{/each}
 									</section>
@@ -669,7 +735,7 @@
 							{#if docScenes(null).length > 0}
 								<section class="doc-chapter">
 									<h2>Unfiled scenes</h2>
-									{#each docScenes(null) as scene (scene.id)}
+									{#each docScenes(null) as scene (`${scene.id}:${editorNonce}`)}
 										{@render docScene(scene)}
 									{/each}
 								</section>
@@ -697,7 +763,7 @@
 					/>
 				</div>
 			{:else if data.selectedScene}
-				{#key data.selectedScene.id}
+				{#key `${data.selectedScene.id}:${editorNonce}`}
 					<SceneEditor
 						bind:this={sceneEditor}
 						{editorStyle}
@@ -736,7 +802,7 @@
 							// Refresh the tree so the sidebar name and word count track edits.
 							if (status === 'saved') {
 								mentionPolls = 0;
-								void invalidateAll();
+								void refreshStoryLive();
 							}
 						}}
 					/>
@@ -1030,13 +1096,13 @@
 		height: 14px;
 		margin-top: 2px;
 		flex: none;
-		border: 1.5px solid var(--cat-amber, #b8860b);
+		border: 1.5px solid var(--cat-amber);
 		border-radius: 4px;
 		background: none;
 		cursor: pointer;
 	}
 	.todo-check:hover {
-		background: color-mix(in oklab, var(--cat-amber, #b8860b) 30%, transparent);
+		background: color-mix(in oklab, var(--cat-amber) 30%, transparent);
 	}
 	.todo-dot {
 		width: 14px;
@@ -1044,7 +1110,7 @@
 		margin-top: 2px;
 		flex: none;
 		border-radius: 99px;
-		background: color-mix(in oklab, var(--cat-amber, #b8860b) 35%, transparent);
+		background: color-mix(in oklab, var(--cat-amber) 35%, transparent);
 	}
 	.todo-text {
 		flex: 1;

@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { diffChars } from 'diff';
 import { createAnchorMapper, reanchorPoint, reanchorRange } from './review-anchor';
+
+// Wrapped so a test can count the diffs a mapper runs.
+vi.mock('diff', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('diff')>();
+	return { ...actual, diffChars: vi.fn(actual.diffChars) };
+});
 
 const BASE = 'The quick brown fox jumps over the lazy dog.';
 // Anchor "brown fox" = [10, 19).
@@ -134,11 +141,11 @@ describe('createAnchorMapper', () => {
 	it('diffs each pair of texts once however many anchors map through it', () => {
 		const mapper = createAnchorMapper();
 		const current = BASE.replace('lazy dog', 'sleeping cat');
+		vi.mocked(diffChars).mockClear();
 		const first = mapper.range(BASE, current, START, END);
-		const t0 = performance.now();
 		for (let i = 0; i < 1000; i++) mapper.range(BASE, current, START, END);
-		// A thousand cached maps cost far less than a thousand diffs would.
-		expect(performance.now() - t0).toBeLessThan(50);
+		expect(mapper.point(BASE, current, START)).toBe(START);
 		expect(mapper.range(BASE, current, START, END)).toEqual(first);
+		expect(diffChars).toHaveBeenCalledTimes(1);
 	});
 });
