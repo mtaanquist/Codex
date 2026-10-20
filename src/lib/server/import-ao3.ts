@@ -29,11 +29,13 @@ type El = { tag: string; attrs: string; inner: string; outer: string };
 const VOID_TAGS = new Set(['br', 'hr', 'img', 'meta', 'link', 'input', 'col', 'wbr', 'area']);
 
 // The top-level elements of an XHTML fragment, in order. Text between them is
-// ignored; comments and processing instructions are skipped.
+// ignored; comments, CDATA, and processing instructions are skipped.
 function childElements(html: string): El[] {
 	const out: El[] = [];
+	// Attribute text never contains "<" in well-formed XHTML; excluding it keeps
+	// a stray unterminated tag from making every match scan to the end.
 	const re =
-		/<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
+		/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<(\/?)([a-zA-Z][\w:-]*)((?:[^<>"']|"[^"<]*"|'[^'<]*')*?)(\/?)>/g;
 	let depth = 0;
 	let open: { tag: string; attrs: string; start: number; innerStart: number } | null = null;
 	for (let m = re.exec(html); m; m = re.exec(html)) {
@@ -42,6 +44,8 @@ function childElements(html: string): El[] {
 		const tag = m[2].toLowerCase();
 		const selfClosing = m[4] === '/' || VOID_TAGS.has(tag);
 		if (closing) {
+			// "<br></br>" is legal XHTML; the opening tag already counted as complete.
+			if (VOID_TAGS.has(tag)) continue;
 			depth -= 1;
 			if (depth === 0 && open) {
 				out.push({
@@ -86,6 +90,13 @@ function textOf(html: string): string {
 	return decode(html.replace(/<[^>]*>/g, ''))
 		.replace(/\s+/g, ' ')
 		.trim();
+}
+
+// The first non-div element, descending through wrapper divs.
+function firstLeaf(el: El): El | undefined {
+	if (el.tag !== 'div') return el;
+	const first = childElements(el.inner)[0];
+	return first ? firstLeaf(first) : undefined;
 }
 
 // Descends through wrapper divs so label paragraphs and blockquotes sit in one
@@ -173,11 +184,14 @@ export function parseAo3Bodies(bodies: string[]): Ao3Work | null {
 	};
 	for (const block of chapterBlocks) {
 		for (const el of childElements(block.inner)) {
-			const first = flatten(el.outer)[0];
+			const first = firstLeaf(el);
+			// AO3 classes its chapter headings "heading"; the text check covers a
+			// Calibre run that renamed the class.
 			const isHeading =
 				el.tag === 'div' &&
 				first?.tag === 'h2' &&
-				/\bheading\b/.test(attrOf(first, 'class') ?? '') &&
+				(/\bheading\b/.test(attrOf(first, 'class') ?? '') ||
+					/^chapter \d+\b/i.test(textOf(first.inner))) &&
 				!(attrOf(el, 'id') ?? '').startsWith('endnotes');
 			if (isHeading) {
 				const labels = labelled(el.inner);

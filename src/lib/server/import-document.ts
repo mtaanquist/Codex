@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { unzipSync, zipSync, strFromU8 } from 'fflate';
 import TurndownService from 'turndown';
 import mammoth from 'mammoth';
-import { detectStructure, markdownToBlocks, type DocBlock } from '../import-document-structure';
+import {
+	detectStructure,
+	markdownToBlocks,
+	splitScenes,
+	type DocBlock
+} from '../import-document-structure';
 import type { ImportedAsset, ImportedFreeformNote, ImportPlan } from '../import-markdown';
 import { extensionFor } from './media-types';
 import { parseAo3Bodies, type Ao3Work } from './import-ao3';
@@ -224,9 +229,7 @@ function buildAo3Plan(
 	addNote('Notes', md(work.notesHtml));
 
 	const chapters = work.chapters.map((chapter, index) => {
-		const scenes = detectStructure(htmlToBlocks(chapter.proseHtml)).chapters.flatMap(
-			(detected) => detected.scenes
-		);
+		const scenes = splitScenes(htmlToBlocks(chapter.proseHtml));
 		const name = chapter.title ? `Chapter ${index + 1}: ${chapter.title}` : `Chapter ${index + 1}`;
 		addNote(`${name} notes`, md(chapter.notesHtml), { chapter: index, index: 0 });
 		addNote(`${name} end notes`, md(chapter.endNotesHtml), {

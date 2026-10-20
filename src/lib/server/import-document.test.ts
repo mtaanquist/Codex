@@ -367,6 +367,49 @@ describe('parseDocument (AO3 epub)', () => {
 		]);
 	});
 
+	it('keeps headings and chapter lines inside the prose', async () => {
+		const chapter = `<div id="chapters"><div><h2 class="heading">Chapter 1: One</h2></div><div><p>Chapter 1</p><h3>Part A</h3><p>Text.</p><p>* * *</p><h3>Part B</h3><p>More.</p></div></div>`;
+		const plan = await parseDocument(buildAo3Epub([...ao3Preface('Explicit'), chapter]), 'w.epub');
+		expect(plan.chapters[0].scenes.map((s) => s.bodyMd)).toEqual([
+			'Chapter 1\n\n### Part A\n\nText.',
+			'### Part B\n\nMore.'
+		]);
+	});
+
+	it('gives a chapter with notes but no prose one empty scene for its notes', async () => {
+		const chapter = `<div id="chapters"><div><h2 class="heading">Chapter 1</h2><p>Chapter Notes</p><blockquote><p>Note.</p></blockquote></div><div id="endnotes1"><p>Chapter End Notes</p><blockquote><p>End.</p></blockquote></div></div>`;
+		const plan = await parseDocument(buildAo3Epub([...ao3Preface('Explicit'), chapter]), 'w.epub');
+		expect(plan.chapters[0].scenes).toEqual([{ title: null, status: null, bodyMd: '' }]);
+		expect(
+			plan.freeformNotes?.filter((n) => n.title?.startsWith('Chapter')).map((n) => n.scene)
+		).toEqual([
+			{ chapter: 0, index: 0 },
+			{ chapter: 0, index: 0 }
+		]);
+	});
+
+	it('finds chapter headings by their text when the class was renamed', async () => {
+		const chapters = `<div id="chapters"><div><h2 class="calibre9">Chapter 1: One</h2></div><div><p>A.</p></div><div><h2 class="calibre9">Chapter 2: Two</h2></div><div><p>B.</p></div></div>`;
+		const plan = await parseDocument(buildAo3Epub([...ao3Preface('Explicit'), chapters]), 'w.epub');
+		expect(plan.chapters.map((c) => c.title)).toEqual(['One', 'Two']);
+	});
+
+	it('does not lose prose after a closed void tag', async () => {
+		const chapter = `<div id="chapters"><div><h2 class="heading">Chapter 1</h2></div><div><p>a<br></br>b</p></div><div><p>second</p></div></div>`;
+		const plan = await parseDocument(buildAo3Epub([...ao3Preface('Explicit'), chapter]), 'w.epub');
+		expect(plan.chapters).toHaveLength(1);
+		expect(plan.chapters[0].scenes.map((s) => s.bodyMd)).toEqual([
+			expect.stringMatching(/^a\s+b\n\nsecond$/)
+		]);
+	});
+
+	it('skips a CDATA section when finding elements', async () => {
+		const chapter = `<div id="chapters"><div><h2 class="heading">Chapter 1: One</h2></div><div><p>x<![CDATA[ <div> ]]></p></div><div><p>second</p></div></div>`;
+		const plan = await parseDocument(buildAo3Epub([...ao3Preface('Explicit'), chapter]), 'w.epub');
+		expect(plan.chapters.map((c) => c.title)).toEqual(['One']);
+		expect(plan.story.isAdult).toBe(true);
+	});
+
 	it('reads the same markup the ordinary way when the publisher is not AO3', async () => {
 		const plan = await parseDocument(
 			buildAo3Epub([...ao3Preface('Explicit'), ...AO3_CHAPTERS], 'Someone Else'),
