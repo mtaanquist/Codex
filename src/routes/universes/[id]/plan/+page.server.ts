@@ -30,6 +30,7 @@ import { assistantLayout } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
 import { listUniverseNotes } from '$lib/server/notes';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import { formText } from '$lib/server/validation';
 
 type StoryBoardRow = {
 	id: string;
@@ -53,7 +54,7 @@ async function loadStoryBoard(universeId: string): Promise<StoryBoardRow[]> {
 			count(s.id) filter (where s.status = 'final')::int as final
 		from stories st
 		left join scenes s on s.story_id = st.id and s.deleted_at is null
-		where st.universe_id = ${universeId}
+		where st.universe_id = ${universeId} and st.deleted_at is null
 		group by st.id
 		order by st.position_in_series asc nulls last, st.created_at asc
 	`);
@@ -184,7 +185,7 @@ export const actions: Actions = {
 	// story without a detour through the library.
 	createStory: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
-		const title = String((await request.formData()).get('title') ?? '').trim();
+		const title = formText(await request.formData(), 'title').trim();
 		if (!title) return fail(400, { scope: 'story', message: 'Give the story a title.' });
 		const story = await createStoryInUniverse(db, locals.user!.id, universe.id, title);
 		redirect(303, `/stories/${story.slug}`);

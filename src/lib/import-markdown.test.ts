@@ -6,6 +6,7 @@ import {
 	rewriteBundledAssetLinks,
 	StoryZipError
 } from './import-markdown';
+import { overlappingStoredZip } from '../../tests/zip-fixtures';
 
 const ASSET_ID = '0b154c2d-13ef-4f3c-9a85-2f1c0a9d8e11';
 
@@ -53,6 +54,9 @@ describe('parseStoryZip', () => {
 			'halden/notes/characters/alice-vane.md':
 				'---\nname: "Alice Vane"\nkind: "character"\n---\nLimps here.',
 			'halden/notes/lore/the-toll.md': '---\nname: "The Toll"\nkind: "lore"\n---\nSteep.',
+			'halden/notebook/threads.md':
+				'---\ntitle: "Threads"\npinned: "true"\nscene: "chapters/02-the-road/01-tollgate.md"\ncreated: "2026-01-01T10:00:00.000Z"\n---\nWho paid the toll?\n',
+			'halden/notebook/note-1.md': '---\n---\nUntitled thought.',
 			[`halden/assets/${ASSET_ID}.png`]: new Uint8Array([1, 2, 3])
 		});
 
@@ -76,6 +80,17 @@ describe('parseStoryZip', () => {
 			{ kind: 'character', name: 'Alice Vane', notesMd: 'Limps here.' },
 			{ kind: 'lore', name: 'The Toll', notesMd: 'Steep.' }
 		]);
+		expect(plan.freeformNotes).toEqual([
+			{
+				title: 'Threads',
+				bodyMd: 'Who paid the toll?',
+				pinned: true,
+				scene: { chapter: 1, index: 0 },
+				createdAt: new Date('2026-01-01T10:00:00.000Z')
+			},
+			// An older zip's note: no pin, scene, or created time.
+			{ title: null, bodyMd: 'Untitled thought.', pinned: false, scene: null, createdAt: null }
+		]);
 		expect(plan.assets).toEqual([
 			{ id: ASSET_ID, path: `${ASSET_ID}.png`, bytes: new Uint8Array([1, 2, 3]) }
 		]);
@@ -85,6 +100,22 @@ describe('parseStoryZip', () => {
 		const plan = parseStoryZip(full());
 		expect(plan.chapters[0].scenes[1].status).toBeNull();
 		expect(plan.problems).toEqual([expect.stringContaining('unknown status "sketchy"')]);
+	});
+
+	it('keeps a notebook note whose scene is missing on the story, with a problem', () => {
+		const plan = parseStoryZip(
+			zip({
+				'story.md': '---\ntitle: "T"\n---\n',
+				'unfiled/01-one.md': '---\ntitle: "One"\n---\nText.',
+				'notebook/a.md': '---\nscene: "unfiled/01-one.md"\ncreated: "not a date"\n---\nA.',
+				'notebook/b.md': '---\nscene: "unfiled/09-gone.md"\n---\nB.'
+			})
+		);
+		expect(plan.freeformNotes?.map((n) => [n.scene, n.createdAt])).toEqual([
+			[{ chapter: null, index: 0 }, null],
+			[null, null]
+		]);
+		expect(plan.problems).toEqual([expect.stringContaining('unfiled/09-gone.md')]);
 	});
 
 	it('falls back to de-slugified chapter names for zips without chapter.md', () => {
@@ -118,6 +149,12 @@ describe('parseStoryZip', () => {
 		const files: Record<string, string> = { 'story.md': 'x' };
 		for (let i = 0; i < 5001; i++) files[`unfiled/${i}-s.md`] = 'x';
 		expect(() => parseStoryZip(zip(files))).toThrow(/too many files/);
+	});
+
+	it('counts stored entries by their stored size, not the size they declare', () => {
+		expect(() => parseStoryZip(overlappingStoredZip(11, 20 * 1024 * 1024))).toThrow(
+			/too large to import once unpacked/
+		);
 	});
 
 	it('rejects an oversized entry before decompressing it', () => {

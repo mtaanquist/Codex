@@ -14,12 +14,24 @@ export type ImportedNote = {
 	name: string;
 	notesMd: string;
 };
+// A freeform story note from the notebook/ folder. The scene it hangs off is
+// a position in the plan (chapter index, or null for unfiled, and the scene's
+// index within it); older zips carry none of pinned, scene, or created.
+export type ImportedFreeformNote = {
+	title: string | null;
+	bodyMd: string;
+	pinned: boolean;
+	scene: { chapter: number | null; index: number } | null;
+	createdAt: Date | null;
+};
 export type ImportedAsset = { id: string; path: string; bytes: Uint8Array };
 export type ImportPlan = {
 	story: { title: string; author: string | null; brief: string | null; descriptionMd: string };
 	chapters: ImportedChapter[];
 	unfiled: ImportedScene[];
 	notes: ImportedNote[];
+	// Absent from plans built from a manuscript document rather than a zip.
+	freeformNotes?: ImportedFreeformNote[];
 	assets: ImportedAsset[];
 	// Tolerated oddities worth telling the author about before they commit.
 	problems: string[];
@@ -120,10 +132,13 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 				if (++count > MAX_ENTRIES) {
 					throw new StoryZipError('This archive has too many files to import.');
 				}
-				if (file.originalSize > MAX_ENTRY_BYTES) {
+				// fflate inflates to the declared size but copies stored entries
+				// by their stored size, so count whichever is larger.
+				const unpacked = Math.max(file.size, file.originalSize);
+				if (unpacked > MAX_ENTRY_BYTES) {
 					throw new StoryZipError('This archive contains a file that is too large to import.');
 				}
-				total += file.originalSize;
+				total += unpacked;
 				if (total > MAX_TOTAL_BYTES) {
 					throw new StoryZipError('This archive is too large to import once unpacked.');
 				}
@@ -178,6 +193,7 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	const chapterFiles = new Map<string, { name: string; files: { path: string; file: string }[] }>();
 	const unfiled: { path: string; file: string }[] = [];
 	const notes: ImportedNote[] = [];
+	const notebook: { rel: string; doc: ReturnType<typeof parseFrontMatter> }[] = [];
 	const assets: ImportedAsset[] = [];
 
 	for (const path of Object.keys(entries)) {
@@ -205,15 +221,20 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 				continue;
 			}
 			notes.push({ kind, name, notesMd: doc.body.trim() });
+		} else if (parts[0] === 'notebook' && parts.length === 2 && parts[1].endsWith('.md')) {
+			notebook.push({ rel, doc: parseFrontMatter(read(path)) });
 		} else if (parts[0] === 'assets' && parts.length === 2) {
 			const match = parts[1].match(ASSET_FILE);
 			if (match) assets.push({ id: match[1], path: parts[1], bytes: entries[path] });
 		}
 	}
 
+	// Scene file path (as notebook front matter names it) -> plan position.
+	const scenePositions = new Map<string, { chapter: number | null; index: number }>();
+
 	const chapters = [...chapterFiles.values()]
 		.sort((a, b) => orderOf(a.name) - orderOf(b.name) || a.name.localeCompare(b.name))
-		.map((group) => {
+		.map((group, chapterIndex) => {
 			const meta = group.files.find((f) => f.file === 'chapter.md');
 			const title = meta
 				? scalar(parseFrontMatter(read(meta.path)).fields, 'title')
@@ -221,13 +242,40 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 			const scenes = group.files
 				.filter((f) => f.file !== 'chapter.md')
 				.sort((a, b) => orderOf(a.file) - orderOf(b.file) || a.file.localeCompare(b.file))
-				.map((f) => parseScene(f.path, `chapters/${group.name}/${f.file}`));
+				.map((f, index) => {
+					const rel = `chapters/${group.name}/${f.file}`;
+					scenePositions.set(rel, { chapter: chapterIndex, index });
+					return parseScene(f.path, rel);
+				});
 			return { title, scenes };
 		});
 
 	const unfiledScenes = unfiled
 		.sort((a, b) => orderOf(a.file) - orderOf(b.file) || a.file.localeCompare(b.file))
-		.map((f) => parseScene(f.path, `unfiled/${f.file}`));
+		.map((f, index) => {
+			const rel = `unfiled/${f.file}`;
+			scenePositions.set(rel, { chapter: null, index });
+			return parseScene(f.path, rel);
+		});
 
-	return { story, chapters, unfiled: unfiledScenes, notes, assets, problems };
+	const freeformNotes = notebook.map(({ rel, doc }): ImportedFreeformNote => {
+		const scenePath = scalar(doc.fields, 'scene');
+		const scene = scenePath ? (scenePositions.get(scenePath) ?? null) : null;
+		if (scenePath && !scene) {
+			problems.push(
+				`${rel}: the scene ${scenePath} is not in this archive; the note stays on the story.`
+			);
+		}
+		const created = scalar(doc.fields, 'created');
+		const createdAt = created ? new Date(created) : null;
+		return {
+			title: scalar(doc.fields, 'title'),
+			bodyMd: doc.body.trim(),
+			pinned: scalar(doc.fields, 'pinned') === 'true',
+			scene,
+			createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null
+		};
+	});
+
+	return { story, chapters, unfiled: unfiledScenes, notes, freeformNotes, assets, problems };
 }

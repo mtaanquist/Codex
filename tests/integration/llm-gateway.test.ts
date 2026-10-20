@@ -11,6 +11,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { EgressTimeoutError } from '../../src/lib/server/llm/egress';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -688,7 +689,7 @@ describe('gateway tool loop', () => {
 		expect(suggestions[0].replacement).toBe('dog');
 
 		// The owner accepts it the same way as any reviewer's suggestion.
-		const decided = await decideSuggestion(db, userId, staged[0].id, true);
+		const decided = await decideSuggestion(db, userId, storyId, staged[0].id, true);
 		expect(decided.ok).toBe(true);
 		const [after] = await db
 			.select({ bodyMd: scenes.bodyMd })
@@ -1753,6 +1754,8 @@ describe('gateway request retries', () => {
 		}
 		expect(syntaxError).toBeInstanceOf(SyntaxError);
 		expect(await attemptsFor(syntaxError)).toBe(1);
+		// An endpoint that already sat silent for the whole idle timeout.
+		expect(await attemptsFor(new EgressTimeoutError())).toBe(1);
 		// A transport error that would normally be retried, but the caller has
 		// walked away.
 		const controller = new AbortController();

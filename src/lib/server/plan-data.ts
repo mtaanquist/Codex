@@ -1,5 +1,5 @@
 import type { EntityCardData } from '$lib/wire-types';
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	characters,
@@ -12,34 +12,34 @@ import {
 } from './db/schema.ts';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 import { listEntityRelationships } from './relationships.ts';
+import {
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable,
+	resolveOwnedEntity,
+	type EntityTable
+} from './entity-lookups.ts';
 
 // Sidebar lists for a Plan view. Both scopes list the whole universe: the
 // story Plan does too until declared membership (step 20) narrows it.
 export async function planEntityLists(db: Database, universeId: string) {
-	const characterList = await db
-		.select({
-			id: characters.id,
-			name: characters.name,
-			color: entityCategories.color,
-			badgeColor: characters.badgeColor,
-			badgeAssetId: characters.badgeAssetId
-		})
-		.from(characters)
-		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-		.where(eq(characters.universeId, universeId))
-		.orderBy(asc(characters.name));
-	const placeList = await db
-		.select({
-			id: places.id,
-			name: places.name,
-			color: entityCategories.color,
-			badgeColor: places.badgeColor,
-			badgeAssetId: places.badgeAssetId
-		})
-		.from(places)
-		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-		.where(eq(places.universeId, universeId))
-		.orderBy(asc(places.name));
+	const memberList = (type: 'character' | 'place') => {
+		const table = entityTable(type);
+		return db
+			.select({
+				id: table.id,
+				name: table.name,
+				color: entityCategories.color,
+				badgeColor: table.badgeColor,
+				badgeAssetId: table.badgeAssetId
+			})
+			.from(table)
+			.leftJoin(entityCategories, eq(table.categoryId, entityCategories.id))
+			.where(eq(table.universeId, universeId))
+			.orderBy(asc(table.name));
+	};
+	const characterList = await memberList('character');
+	const placeList = await memberList('place');
 	const categories = await db
 		.select({
 			id: entityCategories.id,
@@ -124,6 +124,7 @@ export async function entityAppearances(
 				eq(entityMentions.sourceType, 'scene'),
 				eq(entityMentions.targetType, targetType),
 				eq(entityMentions.targetId, target.id),
+				isNull(stories.deletedAt),
 				scopeFilter
 			)
 		)
@@ -153,7 +154,8 @@ export async function entityMentionCount(
 				eq(entityMentions.sourceType, 'scene'),
 				eq(entityMentions.targetType, targetType),
 				eq(entityMentions.targetId, target.id),
-				eq(stories.universeId, universeId)
+				eq(stories.universeId, universeId),
+				isNull(stories.deletedAt)
 			)
 		);
 	return row?.total ?? 0;
@@ -164,78 +166,42 @@ export type { EntityCardData } from '$lib/wire-types';
 // An entity by id with its category, details, and typed relationships, for
 // the editor's read-only entity card. Owner-scoped, so a foreign id resolves
 // to nothing.
-async function resolveOwnedEntity(db: Database, userId: string, entityId: string) {
-	const [character] = await db
-		.select({
-			universeId: characters.universeId,
-			name: characters.name,
-			aliases: characters.aliases,
-			summaryMd: characters.summaryMd,
-			bodyMd: characters.bodyMd,
-			details: characters.details,
-			categoryName: entityCategories.name,
-			categoryColor: entityCategories.color,
-			badgeColor: characters.badgeColor,
-			badgeAssetId: characters.badgeAssetId
-		})
-		.from(characters)
-		.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-		.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
-	if (character) return { kind: 'character' as const, ...character };
-	const [place] = await db
-		.select({
-			universeId: places.universeId,
-			name: places.name,
-			aliases: places.aliases,
-			summaryMd: places.summaryMd,
-			bodyMd: places.bodyMd,
-			details: places.details,
-			categoryName: entityCategories.name,
-			categoryColor: entityCategories.color,
-			badgeColor: places.badgeColor,
-			badgeAssetId: places.badgeAssetId
-		})
-		.from(places)
-		.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-		.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
-	if (place) return { kind: 'place' as const, ...place };
-	const [lore] = await db
-		.select({
-			universeId: loreEntries.universeId,
-			name: loreEntries.title,
-			aliases: loreEntries.keywords,
-			summaryMd: loreEntries.summaryMd,
-			bodyMd: loreEntries.bodyMd,
-			details: loreEntries.details,
-			categoryName: entityCategories.name,
-			categoryColor: entityCategories.color,
-			badgeColor: loreEntries.badgeColor,
-			badgeAssetId: loreEntries.badgeAssetId
-		})
-		.from(loreEntries)
-		.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-		.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
-	if (lore) return { kind: 'lore' as const, ...lore };
-	return null;
-}
+const cardColumns = (table: EntityTable) => ({
+	universeId: table.universeId,
+	name: entityNameColumn(table),
+	aliases: entityAliasColumn(table),
+	summaryMd: table.summaryMd,
+	bodyMd: table.bodyMd,
+	details: table.details,
+	categoryId: table.categoryId,
+	badgeColor: table.badgeColor,
+	badgeAssetId: table.badgeAssetId
+});
 
 export async function getEntityCard(
 	db: Database,
 	userId: string,
 	entityId: string
 ): Promise<EntityCardData | null> {
-	const base = await resolveOwnedEntity(db, userId, entityId);
+	const base = await resolveOwnedEntity(db, userId, entityId, cardColumns);
 	if (!base) return null;
+	const kind = base.type === 'lore_entry' ? ('lore' as const) : base.type;
+	const [category] = base.categoryId
+		? await db
+				.select({ name: entityCategories.name, color: entityCategories.color })
+				.from(entityCategories)
+				.where(eq(entityCategories.id, base.categoryId))
+		: [];
 	const relationships = await listEntityRelationships(db, base.universeId, {
-		kind: base.kind,
+		kind,
 		id: entityId
 	});
 	return {
 		id: entityId,
-		kind: base.kind,
+		kind,
 		name: base.name,
-		categoryName: base.categoryName,
-		categoryColor: base.categoryColor,
+		categoryName: category?.name ?? null,
+		categoryColor: category?.color ?? null,
 		badgeColor: base.badgeColor,
 		badgeAssetId: base.badgeAssetId,
 		aliases: base.aliases ?? [],

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
@@ -20,6 +20,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table scenes, chapters, stories, universes, users cascade');
 
 	const [owner] = await db
@@ -65,7 +68,7 @@ describe('setSceneStatus', () => {
 
 	it('a stranger cannot touch it', async () => {
 		expect(await setSceneStatus(db, strangerId, sceneId, 'final')).toBe(false);
-		expect(await currentStatus()).toBe('revised');
+		expect(await currentStatus()).toBe('draft');
 	});
 
 	it('an unknown scene reports not found', async () => {

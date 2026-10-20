@@ -17,7 +17,14 @@
 	{:else}
 		<svg class="cover" viewBox="0 0 200 300" role="img" aria-label="Default cover">
 			<rect width="200" height="300" rx="6" style="fill: {coverColor}" />
-			<text x="100" y="150" text-anchor="middle" fill="#fff" font-size="16" font-family="serif">
+			<text
+				x="100"
+				y="150"
+				text-anchor="middle"
+				style="fill: var(--on-color)"
+				font-size="16"
+				font-family="serif"
+			>
 				{data.story.title.slice(0, 18)}
 			</text>
 		</svg>

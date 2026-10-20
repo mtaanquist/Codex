@@ -69,14 +69,15 @@ contacts a model on its own.
   own machine: it is then offered only the three it needs most (read a scene,
   suggest an edit, leave a comment), and it stops sooner instead of retrying,
   which smaller models handle far more reliably.
-- **Spend cap per review**: the most one background review may spend before it
-  stops. It checks between scenes, so it never stops half way through one, and it
-  tells you how far it got and what it spent. To carry on, either raise the cap
-  and run it again, or run the same review again as it is: a run over the same
+- **Spend cap per background run**: the most one background review, or one
+  summary update, may spend before it stops. It checks between scenes, so it
+  never stops half way through one, and it tells you how far it got and what it
+  spent. A stopped summary update picks up where it left off when you run it
+  again. To carry on with a review, either raise the cap and run it again, or run the same review again as it is: a run over the same
   scope (the same chapter, or the same whole story) skips the scenes the stopped
   run already read and starts from a fresh budget. Leave the box empty for no cap.
   This needs your endpoint to publish prices for the model; without a price the
-  review says the cap could not be applied rather than stopping or ignoring it.
+  run says the cap could not be applied rather than stopping or ignoring it.
 - **Warn above**: before a chapter or whole-story review starts, the review window
   shows what it will send and, where a price is known, what that costs. Above this
   figure it asks you to confirm again. Leave the box empty for the default of

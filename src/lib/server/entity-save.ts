@@ -1,16 +1,18 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { recordEntityRevision } from './revisions';
-import { categoryInUniverse, ownsStoryInUniverse } from './entity-lookups';
 import {
-	characters,
-	characterStoryNotes,
-	loreEntries,
-	loreStoryNotes,
-	places,
-	placeStoryNotes
-} from './db/schema';
+	categoryInUniverse,
+	entityAliasColumn,
+	entityNameColumn,
+	entityNaming,
+	entityTable,
+	ownedLiveEntity,
+	ownsStoryInUniverse
+} from './entity-lookups';
+import { characterStoryNotes, loreStoryNotes, placeStoryNotes } from './db/schema';
 import type { EntityDetail } from '$lib/entity-snapshot';
+import type { ActionFailure } from './action-result.ts';
 
 // One save path for all three entity kinds. The flow carries real invariants
 // that must not drift between kinds: validate everything BEFORE anything is
@@ -40,7 +42,7 @@ export type EntitySave = {
 };
 
 export type EntitySaveResult =
-	{ ok: true; universeId: string; mentionsAffected: boolean } | { ok: false; reason: string };
+	{ ok: true; universeId: string; mentionsAffected: boolean } | ActionFailure;
 
 const NOUN: Record<EntitySaveKind, { label: string; nameNoun: string }> = {
 	character: { label: 'character', nameNoun: 'name' },
@@ -48,105 +50,64 @@ const NOUN: Record<EntitySaveKind, { label: string; nameNoun: string }> = {
 	lore: { label: 'lore entry', nameNoun: 'title' }
 };
 
-// The kind-specific row reads and writes, so the shared flow stays fully
-// typed per table (the entity-suggestions.ts pattern, one step further).
-function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: string) {
+const ENTITY_TYPE = { character: 'character', place: 'place', lore: 'lore_entry' } as const;
+
+// The per-story "In this book" notes live in one table per kind.
+async function upsertStoryNotes(
+	tx: Database,
+	kind: EntitySaveKind,
+	id: string,
+	storyId: string,
+	notesMd: string
+) {
+	const set = { notesMd, updatedAt: sql`now()` };
 	if (kind === 'character') {
-		return {
-			async load() {
-				const [row] = await db
-					.select({
-						id: characters.id,
-						universeId: characters.universeId,
-						name: characters.name,
-						tags: characters.aliases
-					})
-					.from(characters)
-					.where(and(eq(characters.id, entityId), eq(characters.ownerId, userId)));
-				return row ?? null;
-			},
-			async update(tx: Database, id: string, fields: Record<string, unknown>) {
-				const { name, tags, ...rest } = fields;
-				await tx
-					.update(characters)
-					.set({ name: name as string, aliases: tags as string[], ...rest })
-					.where(eq(characters.id, id));
-				await recordEntityRevision(tx, 'character', id);
-			},
-			async upsertNotes(tx: Database, id: string, storyId: string, notesMd: string) {
-				await tx
-					.insert(characterStoryNotes)
-					.values({ characterId: id, storyId, notesMd })
-					.onConflictDoUpdate({
-						target: [characterStoryNotes.characterId, characterStoryNotes.storyId],
-						set: { notesMd, updatedAt: sql`now()` }
-					});
-			}
-		};
+		await tx
+			.insert(characterStoryNotes)
+			.values({ characterId: id, storyId, notesMd })
+			.onConflictDoUpdate({
+				target: [characterStoryNotes.characterId, characterStoryNotes.storyId],
+				set
+			});
+	} else if (kind === 'place') {
+		await tx
+			.insert(placeStoryNotes)
+			.values({ placeId: id, storyId, notesMd })
+			.onConflictDoUpdate({ target: [placeStoryNotes.placeId, placeStoryNotes.storyId], set });
+	} else {
+		await tx
+			.insert(loreStoryNotes)
+			.values({ loreEntryId: id, storyId, notesMd })
+			.onConflictDoUpdate({ target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId], set });
 	}
-	if (kind === 'place') {
-		return {
-			async load() {
-				const [row] = await db
-					.select({
-						id: places.id,
-						universeId: places.universeId,
-						name: places.name,
-						tags: places.aliases
-					})
-					.from(places)
-					.where(and(eq(places.id, entityId), eq(places.ownerId, userId)));
-				return row ?? null;
-			},
-			async update(tx: Database, id: string, fields: Record<string, unknown>) {
-				const { name, tags, ...rest } = fields;
-				await tx
-					.update(places)
-					.set({ name: name as string, aliases: tags as string[], ...rest })
-					.where(eq(places.id, id));
-				await recordEntityRevision(tx, 'place', id);
-			},
-			async upsertNotes(tx: Database, id: string, storyId: string, notesMd: string) {
-				await tx
-					.insert(placeStoryNotes)
-					.values({ placeId: id, storyId, notesMd })
-					.onConflictDoUpdate({
-						target: [placeStoryNotes.placeId, placeStoryNotes.storyId],
-						set: { notesMd, updatedAt: sql`now()` }
-					});
-			}
-		};
-	}
+}
+
+function adapter(db: Database, kind: EntitySaveKind, entityId: string, userId: string) {
+	const type = ENTITY_TYPE[kind];
+	const table = entityTable(type);
 	return {
 		async load() {
 			const [row] = await db
 				.select({
-					id: loreEntries.id,
-					universeId: loreEntries.universeId,
-					name: loreEntries.title,
-					tags: loreEntries.keywords
+					id: table.id,
+					universeId: table.universeId,
+					name: entityNameColumn(table),
+					tags: entityAliasColumn(table)
 				})
-				.from(loreEntries)
-				.where(and(eq(loreEntries.id, entityId), eq(loreEntries.ownerId, userId)));
+				.from(table)
+				.where(ownedLiveEntity(table, entityId, userId));
 			return row ?? null;
 		},
 		async update(tx: Database, id: string, fields: Record<string, unknown>) {
 			const { name, tags, ...rest } = fields;
 			await tx
-				.update(loreEntries)
-				.set({ title: name as string, keywords: tags as string[], ...rest })
-				.where(eq(loreEntries.id, id));
-			await recordEntityRevision(tx, 'lore_entry', id);
+				.update(table)
+				.set({ ...entityNaming(type, name as string, tags as string[]), ...rest })
+				.where(eq(table.id, id));
+			await recordEntityRevision(tx, type, id);
 		},
-		async upsertNotes(tx: Database, id: string, storyId: string, notesMd: string) {
-			await tx
-				.insert(loreStoryNotes)
-				.values({ loreEntryId: id, storyId, notesMd })
-				.onConflictDoUpdate({
-					target: [loreStoryNotes.loreEntryId, loreStoryNotes.storyId],
-					set: { notesMd, updatedAt: sql`now()` }
-				});
-		}
+		upsertNotes: (tx: Database, id: string, storyId: string, notesMd: string) =>
+			upsertStoryNotes(tx, kind, id, storyId, notesMd)
 	};
 }
 
@@ -160,10 +121,10 @@ export async function saveEntity(
 	const { label, nameNoun } = NOUN[kind];
 	const rows = adapter(db, kind, entityId, userId);
 	const entity = await rows.load();
-	if (!entity) return { ok: false, reason: `${label} not found` };
+	if (!entity) return { ok: false, code: 'not_found', reason: `That ${label} does not exist.` };
 
 	const name = save.name.trim();
-	if (!name) return { ok: false, reason: `the ${label} needs a ${nameNoun}` };
+	if (!name) return { ok: false, code: 'invalid', reason: `Give the ${label} a ${nameNoun}.` };
 	const tags = save.tags.map((tag) => tag.trim()).filter((tag) => tag !== '');
 
 	// Only a changed name or tag set can add or remove mentions; body and
@@ -174,13 +135,13 @@ export async function saveEntity(
 		tags.some((tag, index) => tag !== entity.tags[index]);
 
 	if (kind === 'lore' && save.categoryId === null) {
-		return { ok: false, reason: 'a lore entry needs a category' };
+		return { ok: false, code: 'invalid', reason: 'Choose a category for the lore entry.' };
 	}
 	if (
 		save.categoryId != null &&
 		!(await categoryInUniverse(db, save.categoryId, entity.universeId))
 	) {
-		return { ok: false, reason: 'category not found' };
+		return { ok: false, code: 'not_found', reason: 'That category does not exist.' };
 	}
 
 	// Validate the optional story BEFORE anything is written: the old
@@ -190,7 +151,7 @@ export async function saveEntity(
 		save.storyId !== undefined &&
 		!(await ownsStoryInUniverse(db, save.storyId, userId, entity.universeId))
 	) {
-		return { ok: false, reason: 'story not found' };
+		return { ok: false, code: 'not_found', reason: 'That story does not exist.' };
 	}
 
 	// One transaction so the entity update, its History snapshot (a full

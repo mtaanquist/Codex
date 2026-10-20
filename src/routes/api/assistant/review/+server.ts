@@ -9,6 +9,7 @@ import {
 } from '$lib/server/llm/assistant-route';
 import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-review';
 import { parseCategories } from '$lib/review-shape';
+import { storyIsLive } from '$lib/server/universe-scope';
 
 // A single-scene Assistant review, run inline (one scene is bounded). The model
 // reads the scene and the assembled world, then stages review comments and
@@ -30,7 +31,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.select({ id: scenes.id, title: scenes.title, storyId: scenes.storyId })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.id, sceneId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)));
+		.where(
+			and(
+				eq(scenes.id, sceneId),
+				eq(stories.ownerId, userId),
+				storyIsLive(),
+				isNull(scenes.deletedAt)
+			)
+		);
 	if (!scene) error(404, 'Scene not found');
 
 	await requireAssistantGate(userId, scene.storyId);

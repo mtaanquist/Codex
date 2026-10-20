@@ -1,20 +1,13 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import {
-	chapters,
-	characters,
-	entityCategories,
-	entityMentions,
-	loreEntries,
-	places,
-	scenes
-} from '$lib/server/db/schema';
+import { chapters, entityCategories, scenes } from '$lib/server/db/schema';
 import { storyPreferences } from '$lib/server/preferences';
 import { storyPageSetup } from '$lib/server/page-setup';
-import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
-import { listSceneMarkers, listStoryMarkersByScene, listStoryTodos } from '$lib/server/markers';
+import { getRevision, type RevisionRow } from '$lib/server/revisions';
+import { listSceneMarkers, listStoryMarkersByScene } from '$lib/server/markers';
+import { loadSceneLive, loadStoryLive, type InSceneEntity } from '$lib/server/story-live';
 import { reviewMentionData } from '$lib/server/mention-entities';
 import { ownedStory } from '$lib/server/story-access';
 import { readingPageRef } from '$lib/server/publish';
@@ -24,6 +17,7 @@ import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
 import { listTrashedScenes } from '$lib/server/scene-lifecycle';
 import { sceneManageActions } from '$lib/server/scene-manage-actions';
+import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
@@ -68,12 +62,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// one parallel wave instead of a dozen serial round-trips - this is the
 	// hottest navigation path in the app (review finding #193).
 	const [
-		siblingResult,
+		live,
 		chapterList,
-		sceneList,
 		storyDoc,
 		selectedScene,
-		storyTodos,
 		storyDocMarkers,
 		mentionData,
 		loreCategories,
@@ -83,37 +75,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		assistant,
 		storyNotes
 	] = await Promise.all([
-		// The sidebar's book switcher: every story in the universe, with the
-		// chapter and word counts its menu rows show.
-		db.execute(sql`
-			select st.id, st.slug, st.title,
-				(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
-				coalesce(
-					(select sum(s.word_count)::int from scenes s
-						where s.story_id = st.id and s.deleted_at is null),
-					0
-				) as words
-			from stories st
-			where st.universe_id = ${universe.id}
-			order by st.position_in_series asc nulls last, st.created_at asc
-		`),
+		// Sibling stories, the scene list and the to-do list (sceneless here;
+		// the open scene's part follows once it is known).
+		loadStoryLive(db, { storyId: story.id, universeId: universe.id, sceneId: null }),
 		db
 			.select()
 			.from(chapters)
 			.where(eq(chapters.storyId, story.id))
 			.orderBy(asc(chapters.position)),
-		db
-			.select({
-				id: scenes.id,
-				chapterId: scenes.chapterId,
-				title: scenes.title,
-				status: scenes.status,
-				wordCount: scenes.wordCount,
-				globalPosition: scenes.globalPosition
-			})
-			.from(scenes)
-			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
-			.orderBy(asc(scenes.globalPosition)),
 		// The story and preview views render every scene as one document.
 		wholeStory
 			? db
@@ -128,8 +97,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 					.orderBy(asc(scenes.globalPosition))
 			: Promise.resolve(null),
 		selectScene(),
-		// Everything still to do across the story, for the right panel.
-		listStoryTodos(db, story.id),
 		// Marker highlights for the continuous view's stitched editors.
 		view === 'story'
 			? listStoryMarkersByScene(db, story.id)
@@ -167,10 +134,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		listStoryNotes(db, story.id, locals.user!.id)
 	]);
 
-	const storySiblings = siblingResult.rows.map((row) => {
-		const r = row as { id: string; slug: string; title: string; chapters: number; words: number };
-		return { id: r.id, slug: r.slug, title: r.title, chapters: r.chapters, words: r.words };
-	});
+	const { storySiblings, scenes: sceneList, storyTodos } = live;
 	const {
 		entities: mentionEntities,
 		storyMembers: storyMemberIds,
@@ -183,80 +147,23 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	let sceneRevisions: RevisionRow[] = [];
 	let revisionPreview = null;
 	let sceneMarkers: Awaited<ReturnType<typeof listSceneMarkers>> = [];
-	type InSceneKind = 'character' | 'place' | 'lore';
-	let inScene: {
-		id: string;
-		name: string;
-		count: number;
-		kind: InSceneKind;
-		categoryColor: string | null;
-		badgeColor: string | null;
-		badgeAssetId: string | null;
-	}[] = [];
+	let inScene: InSceneEntity[] = [];
 	if (selectedScene) {
 		const revisionParam = url.searchParams.get('revision');
 		// Guard the uuid cast, the same as ?scene above.
 		const revisionId = revisionParam && isUuid(revisionParam) ? revisionParam : null;
-		const mentionCounts = (
-			table: typeof characters | typeof places | typeof loreEntries,
-			targetType: 'character' | 'place' | 'lore_entry'
-		) => {
-			const nameColumn = 'name' in table ? table.name : loreEntries.title;
-			return db
-				.select({
-					id: table.id,
-					name: nameColumn,
-					count: sql<number>`count(*)::int`,
-					categoryColor: entityCategories.color,
-					badgeColor: table.badgeColor,
-					badgeAssetId: table.badgeAssetId
-				})
-				.from(entityMentions)
-				.innerJoin(table, eq(entityMentions.targetId, table.id))
-				.leftJoin(entityCategories, eq(table.categoryId, entityCategories.id))
-				.where(
-					and(
-						eq(entityMentions.sourceType, 'scene'),
-						eq(entityMentions.sourceId, selectedScene.id),
-						eq(entityMentions.targetType, targetType)
-					)
-				)
-				.groupBy(
-					table.id,
-					nameColumn,
-					entityCategories.color,
-					table.badgeColor,
-					table.badgeAssetId
-				);
-		};
-		const [
-			revs,
-			markers,
-			preview,
-			notesOnScene,
-			mentionedCharacters,
-			mentionedPlaces,
-			mentionedLore
-		] = await Promise.all([
-			listRevisions(db, 'scene', selectedScene.id),
+		const [sceneLive, markers, preview, notesOnScene] = await Promise.all([
+			loadSceneLive(db, selectedScene.id),
 			listSceneMarkers(db, selectedScene.id),
 			revisionId ? getRevision(db, revisionId, 'scene', selectedScene.id) : Promise.resolve(null),
 			// The Notes panel: what is written about this scene, not the story.
-			listSceneNotes(db, selectedScene.id, locals.user!.id),
-			mentionCounts(characters, 'character'),
-			mentionCounts(places, 'place'),
-			mentionCounts(loreEntries, 'lore_entry')
+			listSceneNotes(db, selectedScene.id, locals.user!.id)
 		]);
-		sceneRevisions = revs;
+		sceneRevisions = sceneLive.revisions;
+		inScene = sceneLive.inScene;
 		sceneMarkers = markers;
 		revisionPreview = preview ?? null;
 		sceneNotes = notesOnScene;
-		// Tagged with the kind so the panel can group them by entity type.
-		inScene = [
-			...mentionedCharacters.map((row) => ({ ...row, kind: 'character' as const })),
-			...mentionedPlaces.map((row) => ({ ...row, kind: 'place' as const })),
-			...mentionedLore.map((row) => ({ ...row, kind: 'lore' as const }))
-		].sort((a, b) => a.name.localeCompare(b.name));
 	}
 
 	// The stored conversation seeds the Assistant tab; nothing to load while
@@ -309,7 +216,7 @@ export const actions: Actions = {
 	// it in Notes mode, which is where notes are managed.
 	newSceneNote: async ({ request, params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);
-		const sceneId = String((await request.formData()).get('sceneId') ?? '');
+		const sceneId = formText(await request.formData(), 'sceneId');
 		if (!isUuid(sceneId)) {
 			return fail(400, { scope: 'scene-note', message: 'Could not add a note to that scene.' });
 		}

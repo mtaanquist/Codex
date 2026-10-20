@@ -10,8 +10,6 @@ export const IMAGE_EXTENSIONS: Record<string, string> = {
 	'image/avif': 'avif'
 };
 
-export const IMAGE_TYPES = new Set(Object.keys(IMAGE_EXTENSIONS));
-
 // The extension for a stored content type, with a safe fallback for the
 // odd legacy row whose type is no longer in the set.
 export function extensionFor(contentType: string): string {

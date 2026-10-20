@@ -72,6 +72,11 @@ Assets and contrast:
 
 - `--danger-contrast` - text on a `--danger` fill (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
+- `--on-color` - text and icons on any other solid colour tile: universe
+  and story colours, author colours, category badges, swatches, the toggle
+  knob. Never write `#fff` on a user-chosen colour.
+- `--qr-bg` / `--qr-fg` - the QR code block, fixed dark-on-white in every
+  theme so it scans.
 - `--select-caret` - the `.select` caret, declared per theme. A data URL
   cannot read a custom property, so each theme carries its own faint stroke
   colour in the asset. `.select` is the only consumer.
@@ -93,9 +98,9 @@ Rules:
 
 - Never write a raw colour value. If a needed colour does not exist as a
   token, that is a design decision to raise, not a hex to inline.
-- Do not write `var(--token, #fallback)`. The tokens are always defined;
-  fallbacks rot (the codebase currently has three different fallbacks for
-  `--danger`, all wrong in at least one theme).
+- Do not write `var(--token, #fallback)`. The tokens are always defined,
+  and fallbacks rot. `src/lib/styles/tokens.test.ts` fails on any hex
+  fallback and on any `#fff` outside `tokens.css`.
 - Do not branch on `[data-theme='...']` in CSS. Tokens carry the theme. The
   single sanctioned exception is softening a box-shadow that reads too heavy
   on light backgrounds.
@@ -554,7 +559,7 @@ From CLAUDE.md, repeated here because every screen touches it:
 
 ## CSS file map
 
-Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`,
+Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`, `board.css`,
 `pages.css`, `admin.css`, `editor.css`, `review.css`, `menus.css`,
 `primitives.css`, `chrome.css`, `surfaces.css`, `public.css`. All global and
 unscoped, so a later file silently wins a specificity tie; check for an existing
@@ -563,6 +568,8 @@ definition before adding a class.
 - `tokens.css` - tokens and base element rules only. No components.
 - `theme.css` - the workspace shell and its components (outline rows,
   panels, editor chrome, entity UI).
+- `board.css` - the status board (lanes and cards) shared by `SceneBoard`
+  and `StoryBoard`.
 - `pages.css` - the page/settings shells, buttons, forms, cards.
 - `admin.css` - settings and admin surfaces (used by account pages too).
 - `editor.css` - CodeMirror-specific rules (mention underlines, hover
@@ -673,22 +680,50 @@ them.
   `.signup-closed` / `[data-signup-only]` rules. That is scaffolding for static
   HTML; Svelte renders from the mode.
 
+### Removed in the duplicate and dead CSS sweep
+
+- One home each: the assistant chat block lives in `AssistantPanel.svelte`
+  (the `theme.css` copy is gone); the `.insp-*` body, `.inspector` and
+  `.inspector-scroll` live in `EntityCard.svelte`; `.inspector-head`,
+  `.back-btn` and `.inspector-kind` are global in `theme.css`, shared by
+  `EntityCard` and the review composer (the `review.css` copy is gone);
+  `.revision-dot*` and `.brand-name` live in `pages.css`; the board, lane and
+  card rules shared by `SceneBoard` and `StoryBoard` live in `board.css`.
+- The admin table's action cell is `.cell-actions` / `.cell-actions-inner`.
+  It used to be `.row-actions`, which `surfaces.css` also defines as a flex
+  cluster, so the table cell was being turned into a flex box.
+- Dead CSS: the `.ctx-*` leftovers, `.trash-section/head/title/name`,
+  `.settings-layout/content/section` and the `fadeIn` keyframes,
+  `.storage-cap/legend/seg` and `.legend-*`, the gated admin card
+  (`.is-gated`, `.gate-head`, `.gate-body`), the `[data-tfa]` state switch,
+  `.qr-grid`, `.notes-wrap`, `.notes-head`, `.note-editor`, `.note-edit-*`,
+  `.note-rename`, `.note-back`, `.tag-cloud`, `.tag-count`, `.quick-row`,
+  `.quick-label`, `.quick-foot`, `.collapsible`, `.button-card`,
+  `.md-body`, `.editor-kicker/title/body`, `.detail-title/role`,
+  `.focus-foot`, `.rename-input`, `.ghost-anchor`, `.no-underline`,
+  `.search-hint`, `.grip`, `.avatar-me`, `.brand`, `.text-link`, `.spacer`,
+  `.avatar-dd-kbd`, `.admin-stat-ic`, `.link-ic`, `.num`, `.category-drag`,
+  `.category-swatch`, `.user-row-note`, `.input-muted`, `.behavior-toggle`,
+  `.modal-label`, `.rv-card-quote`, `.rv-rationale`,
+  `.reader-pager`, `.insp-related`.
+- `sheets.test.ts` fails when a selector gets a standalone rule in two
+  places across the global sheets. A selector may still appear in a grouped
+  rule next to its own.
+
 ### Still outstanding
 
-Duplicated definitions (later file or component style wins): the assistant
-chat block (`theme.css` and `AssistantPanel.svelte`), the `.insp-*`
-inspector (`theme.css` and `EntityCard.svelte`), the kanban CSS
-(`SceneBoard.svelte` and `StoryBoard.svelte` are copy-pasted),
-`.revision-dot`, `.brand-name`, `.btn-sm`, `.field-hint`, `.ent-row`,
+Duplicated definitions (later file or component style wins): `.btn-sm`,
+`.field-hint`, `.swatch`, `.chip-x`, `.modal-foot-note`, `.new-caret`,
+`.category-delete`, `.trash-list`, `.prose`, `.r-line` and `.ent-row` are
+redefined in a component's `<style>` block as well as a global sheet;
 `.chapter-row`/`.scene-row`.
 
 Hard-coded colours that bypass tokens: the `.swatch-custom` gradient hexes,
-the QR block's fixed light/dark backgrounds, `.toggle-track`'s `#fff` knob,
-the remaining bare `color: #fff` where `--accent-contrast` exists, and
-inline `style="color: #fff"` on both top-bar brand marks. The `.select`
-caret now reads `--select-caret`, the `#1b2a55` navy is gone, and the
-`var(--token, #hex)` fallbacks are cleared from the files the
-consolidation touched.
+the `#000` used to darken accent gradients and hover fills, and the
+`rgba(255, 255, 255, ...)` inset highlights. The `var(--token, #hex)`
+fallbacks and every bare `#fff` are gone (white now comes from
+`--accent-contrast`, `--danger-contrast`, `--on-color` or `--qr-bg`), and
+`tokens.test.ts` keeps them out.
 
 Parallel systems pending a decision: `.saved` vs `.save-status`;
 `FormStatus.svelte` vs `.form-error`/`.form-saved`; six avatar classes.
@@ -707,7 +742,7 @@ Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
 Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 `ReaderFooter`,
 `UserMenu`, `NotificationBell`, `ActivityCenter`, `ViewMenu`,
-`EditorToolbar`, `SelectionMenu`, `NotesSidebar`, `PlanSidebar`,
+`EditorToolbar`, `SelectionMenu`, `NotesWorkspace`, `NotesSidebar`, `PlanSidebar`,
 `StoryOutline`, `StoryRowMenu`, `RevisionHistory`, `EntityBadgePicker`,
 `EntityRelationships`, `ReviewSurface`, `ReviewPanel`, `ReviewCommentCard`,
 `ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`.

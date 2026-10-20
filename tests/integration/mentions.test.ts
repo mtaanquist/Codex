@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { asc, eq } from 'drizzle-orm';
@@ -14,9 +14,11 @@ import {
 } from '../../src/lib/server/db/schema';
 import {
 	listStaleMentionScenes,
+	markUniverseMentionsChanged,
 	rebuildSceneMentions,
 	rebuildUniverseMentions,
-	reconcileMentions
+	reconcileMentions,
+	universeMentionContext
 } from '../../src/lib/server/mentions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -40,6 +42,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table entity_mentions, scenes, chapters, characters, stories, universes, users cascade'
 	);
@@ -101,7 +106,9 @@ describe('rebuildSceneMentions', () => {
 	});
 
 	it('skips characters with auto-detect off', async () => {
+		await rebuildSceneMentions(db, sceneId);
 		const rows = await mentionRows(sceneId);
+		expect(rows).toHaveLength(2);
 		expect(rows.every((row) => row.targetId === aliceId)).toBe(true);
 	});
 
@@ -205,13 +212,72 @@ describe('reconcile', () => {
 		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
 	});
 
-	it('reindexes a scene when an entity in its universe changes after indexing', async () => {
+	it('leaves scenes alone when an entity edit touches no names', async () => {
+		// A bio autosave bumps updated_at but changes nothing a scene can mention.
+		await pool.query(`update scenes set updated_at = now() - interval '5 seconds' where id = $1`, [
+			sceneId
+		]);
+		await rebuildSceneMentions(db, sceneId);
+		await pool.query(
+			`update characters set updated_at = now() + interval '1 second' where id = $1`,
+			[aliceId]
+		);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
+	});
+
+	it('reindexes a scene when its universe flags a mention change (a dropped job)', async () => {
 		// An alias edit whose universe rebuild was dropped: the scene body is
-		// unchanged, but a character it could mention changed after the watermark.
-		await pool.query(`update characters set updated_at = now() where id = $1`, [aliceId]);
+		// unchanged, but the universe's detection targets changed after the watermark.
+		await markUniverseMentionsChanged(db, universeId);
 		expect((await listStaleMentionScenes(db)).map((s) => s.id)).toContain(sceneId);
 
 		await reconcileMentions(db);
 		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
+		// Every live scene caught up, so the flag is cleared.
+		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(universe.mentionsChangedAt).toBeNull();
+	});
+
+	it('clears the flag once a universe rebuild finishes', async () => {
+		await markUniverseMentionsChanged(db, universeId);
+		await rebuildUniverseMentions(db, universeId);
+		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(universe.mentionsChangedAt).toBeNull();
+	});
+
+	it('keeps the flag when a rename lands after the rebuild loaded its names', async () => {
+		// The rebuild matched against names read before the rename, so the scene
+		// is not caught up even though it was stamped after the rename.
+		const context = await universeMentionContext(db, universeId);
+		await markUniverseMentionsChanged(db, universeId);
+		await rebuildSceneMentions(db, sceneId, context);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).toContain(sceneId);
+		await reconcileMentions(db, 0);
+		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(universe.mentionsChangedAt).not.toBeNull();
+
+		await reconcileMentions(db);
+		const [settled] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(settled.mentionsChangedAt).toBeNull();
+	});
+
+	it('keeps the flag while a live scene is still behind it', async () => {
+		await rebuildSceneMentions(db, sceneId);
+		await pool.query(
+			`update universes set mentions_changed_at = now() + interval '1 hour' where id = $1`,
+			[universeId]
+		);
+		await reconcileMentions(db, 0);
+		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(universe.mentionsChangedAt).not.toBeNull();
+		await pool.query(`update universes set mentions_changed_at = null where id = $1`, [universeId]);
+	});
+
+	it('leaves a trashed scene alone when only the universe flag moved', async () => {
+		await pool.query(`update scenes set deleted_at = now() where id = $1`, [sceneId]);
+		await rebuildSceneMentions(db, sceneId);
+		await markUniverseMentionsChanged(db, universeId);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
+		await pool.query(`update scenes set deleted_at = null where id = $1`, [sceneId]);
 	});
 });

@@ -93,7 +93,7 @@
 		cursor: pointer;
 	}
 	.chip-x:hover {
-		color: var(--danger, #b00020);
+		color: var(--danger);
 	}
 	.chip-input {
 		background: var(--bg-inset);

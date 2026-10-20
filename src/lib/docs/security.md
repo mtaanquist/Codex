@@ -15,10 +15,10 @@ typo can never lock you out.
 
 Two-factor adds a code from an authenticator app on top of your password. To
 turn it on, select Set up, scan the QR code (or type the key) into your app,
-then enter a code to confirm. You are shown a set of recovery codes once: save
-them somewhere safe, as each one signs you in if you lose the app. When it is on,
-you can regenerate the recovery codes or turn it off; both ask for your password
-first.
+then enter a code and your password to confirm. You are shown a set of recovery
+codes once: save them somewhere safe, as each one signs you in if you lose the
+app. When it is on, you can regenerate the recovery codes or turn it off; both
+ask for your password first.
 
 After your password at sign-in, you are asked for a code. If you have lost both
 the app and your recovery codes, an admin can reset two-factor on your account.
@@ -34,15 +34,18 @@ passkey instead" signs you in with any passkey registered to the account.
 ## Active sessions
 
 The sessions list shows where you are signed in. Revoke any one of them, or sign
-out everywhere else at once, if you used a shared or lost device.
+out everywhere else at once, if you used a shared or lost device. Signing out
+everywhere else asks for your password.
 
 ## Export everything
 
 Select "Prepare everything (.zip)" to build a single zip of everything you own:
-every universe, story, scene, entity, note, and uploaded image, as markdown with
-the images bundled in. The file is prepared in the background; it appears below
+every universe, story, scene, entity, and note, as markdown. Images placed in
+your text and story covers are bundled in; other uploads, such as images used as
+entity badges, are not. The file is prepared in the background; it appears below
 the button when it is ready, and a bell notification tells you too. Reload the
-page if you do not see it yet, then select Download. This is the safety net to
+page if you do not see it yet, then select Download. If an export shows as
+Failed, select the button again to prepare a new one. This is the safety net to
 run before deleting your account.
 
 ## Delete your account

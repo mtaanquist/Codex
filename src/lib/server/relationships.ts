@@ -1,17 +1,20 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import {
-	characters,
-	entityCategories,
-	entityRelationships,
-	loreEntries,
-	places,
-	relationTypes
-} from './db/schema.ts';
+import { entityCategories, entityRelationships, relationTypes } from './db/schema.ts';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { entityInUniverse, namesByType, type EntityType } from './entity-lookups.ts';
+import {
+	ENTITY_TYPES,
+	entityInUniverse,
+	entityNameColumn,
+	entityTable,
+	namesByType,
+	ownedLiveEntity,
+	type EntityType
+} from './entity-lookups.ts';
 import { recordEntityRevision } from './revisions.ts';
 import { isUniqueViolation } from './db-errors.ts';
+import { inLiveUniverse } from './universe-scope.ts';
+import type { ActionFailure } from './action-result.ts';
 
 export type { EntityType };
 
@@ -142,31 +145,15 @@ export async function relatedEntitySummaries(
 		idsByType[row.toType as EntityType].add(row.toId);
 	}
 	const summaries = new Map<string, { name: string; color: string | null }>();
-	for (const type of ['character', 'place', 'lore_entry'] as const) {
+	for (const type of ENTITY_TYPES) {
 		const ids = [...idsByType[type]];
 		if (ids.length === 0) continue;
-		const found =
-			type === 'character'
-				? await db
-						.select({ id: characters.id, name: characters.name, color: entityCategories.color })
-						.from(characters)
-						.leftJoin(entityCategories, eq(characters.categoryId, entityCategories.id))
-						.where(inArray(characters.id, ids))
-				: type === 'place'
-					? await db
-							.select({ id: places.id, name: places.name, color: entityCategories.color })
-							.from(places)
-							.leftJoin(entityCategories, eq(places.categoryId, entityCategories.id))
-							.where(inArray(places.id, ids))
-					: await db
-							.select({
-								id: loreEntries.id,
-								name: loreEntries.title,
-								color: entityCategories.color
-							})
-							.from(loreEntries)
-							.leftJoin(entityCategories, eq(loreEntries.categoryId, entityCategories.id))
-							.where(inArray(loreEntries.id, ids));
+		const table = entityTable(type);
+		const found = await db
+			.select({ id: table.id, name: entityNameColumn(table), color: entityCategories.color })
+			.from(table)
+			.leftJoin(entityCategories, eq(table.categoryId, entityCategories.id))
+			.where(inArray(table.id, ids));
 		for (const row of found) summaries.set(row.id, { name: row.name, color: row.color });
 	}
 
@@ -197,34 +184,30 @@ export type RelationshipSave = {
 	notesMd?: string;
 };
 
+const DUPLICATE_RELATIONSHIP: ActionFailure = {
+	ok: false,
+	code: 'conflict',
+	reason: 'That relationship already exists.'
+};
+
 export async function createRelationship(
 	db: Database,
 	userId: string,
 	save: RelationshipSave
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const fromType = toEntityType(save.fromKind);
 
 	if (save.fromId === save.toId) {
-		return { ok: false, reason: 'an entity cannot relate to itself' };
+		return { ok: false, code: 'invalid', reason: 'An entry cannot be related to itself.' };
 	}
 
 	// The source entity anchors ownership and the universe.
-	const [fromEntity] =
-		fromType === 'character'
-			? await db
-					.select({ universeId: characters.universeId })
-					.from(characters)
-					.where(and(eq(characters.id, save.fromId), eq(characters.ownerId, userId)))
-			: fromType === 'place'
-				? await db
-						.select({ universeId: places.universeId })
-						.from(places)
-						.where(and(eq(places.id, save.fromId), eq(places.ownerId, userId)))
-				: await db
-						.select({ universeId: loreEntries.universeId })
-						.from(loreEntries)
-						.where(and(eq(loreEntries.id, save.fromId), eq(loreEntries.ownerId, userId)));
-	if (!fromEntity) return { ok: false, reason: 'entity not found' };
+	const fromTable = entityTable(fromType);
+	const [fromEntity] = await db
+		.select({ universeId: fromTable.universeId })
+		.from(fromTable)
+		.where(ownedLiveEntity(fromTable, save.fromId, userId));
+	if (!fromEntity) return { ok: false, code: 'not_found', reason: 'That entry does not exist.' };
 	const universeId = fromEntity.universeId;
 
 	const [relationType] = await db
@@ -236,12 +219,17 @@ export async function createRelationship(
 				or(isNull(relationTypes.universeId), eq(relationTypes.universeId, universeId))
 			)
 		);
-	if (!relationType) return { ok: false, reason: 'relation type not found' };
+	if (!relationType)
+		return { ok: false, code: 'not_found', reason: 'That relation type does not exist.' };
 	if (relationType.fromType !== fromType) {
-		return { ok: false, reason: 'that relation does not start from this kind of entity' };
+		return {
+			ok: false,
+			code: 'invalid',
+			reason: 'That relation does not start from this kind of entry.'
+		};
 	}
 	if (!(await entityInUniverse(db, universeId, relationType.toType, save.toId))) {
-		return { ok: false, reason: 'target entity not found' };
+		return { ok: false, code: 'not_found', reason: 'The other entry does not exist.' };
 	}
 
 	// One row per declared relation; for symmetric relations the swapped
@@ -264,7 +252,7 @@ export async function createRelationship(
 				or(...duplicateSides)
 			)
 		);
-	if (duplicate) return { ok: false, reason: 'that relationship already exists' };
+	if (duplicate) return DUPLICATE_RELATIONSHIP;
 
 	// The application duplicate check above closes the common case; the partial
 	// unique index on (relation_type_id, from_id, to_id) for universe-wide rows
@@ -293,7 +281,7 @@ export async function createRelationship(
 		});
 		return { ok: true, id };
 	} catch (err) {
-		if (isUniqueViolation(err)) return { ok: false, reason: 'that relationship already exists' };
+		if (isUniqueViolation(err)) return DUPLICATE_RELATIONSHIP;
 		throw err;
 	}
 }
@@ -305,7 +293,11 @@ export async function deleteRelationship(db: Database, relationshipId: string, u
 		const [deleted] = await tx
 			.delete(entityRelationships)
 			.where(
-				and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.ownerId, userId))
+				and(
+					eq(entityRelationships.id, relationshipId),
+					eq(entityRelationships.ownerId, userId),
+					inLiveUniverse(entityRelationships.universeId)
+				)
 			)
 			.returning({
 				fromType: entityRelationships.fromType,

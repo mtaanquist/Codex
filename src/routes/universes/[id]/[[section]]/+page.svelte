@@ -164,7 +164,7 @@
 	{/snippet}
 	{#snippet sidebar()}
 		<div class="admin-sidebar-title">
-			<span class="ic badge sm" style="background: {universeColor}; color: #fff;">
+			<span class="ic badge sm" style="background: {universeColor}; color: var(--on-color);">
 				{data.universe.name.slice(0, 1).toUpperCase()}
 			</span>
 			<div>
@@ -618,7 +618,7 @@
 		transform: rotate(45deg);
 	}
 	.category-delete:hover:not(:disabled) {
-		color: var(--danger, #c0564f);
+		color: var(--danger);
 		background: var(--bg-hover);
 	}
 	.category-delete:disabled {

@@ -1,7 +1,7 @@
-import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
-import { and, asc, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { logEvent } from './log.ts';
 import {
 	assets,
 	chapters,
@@ -22,13 +22,20 @@ import {
 import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import { extensionFor } from './media-types.ts';
-import { namesByType, type EntityType } from './entity-lookups.ts';
+import { assetEntry, textEntry, type ZipArchive, type ZipEntry } from './zip-stream.ts';
+import {
+	ENTITY_TYPES,
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable,
+	namesByType,
+	type EntityType
+} from './entity-lookups.ts';
 
 // Story export: a zip of markdown files with YAML front matter, in
 // chapter order, with referenced images bundled into assets/ and the
 // links rewritten. Markdown in, markdown out; nothing is trapped.
-// Runs in the worker too (artifact generation), so relative value imports
-// carry explicit .ts extensions and avoid the $lib alias.
+// Runs in the worker too (artifact generation).
 
 function frontMatter(fields: Record<string, string | string[] | null | undefined>): string {
 	const lines = ['---'];
@@ -51,14 +58,59 @@ function detailLines(details: { label: string; value: string }[]): string[] {
 	return details.map((detail) => `${detail.label}: ${detail.value}`);
 }
 
+// An image an export bundles: what it is, and a way to read it. Zip and EPUB
+// builds open each one only as it is written into the archive, so one image at
+// a time is in memory however many the export holds.
+export type AssetRef = {
+	id: string;
+	contentType: string;
+	open(): Promise<AsyncIterable<Uint8Array>>;
+};
+export type AssetLoader = (ids: string[]) => Promise<AssetRef[]>;
+// An image read whole, for the PDF, which inlines images into one document.
 export type ExportAsset = { id: string; contentType: string; bytes: Uint8Array };
-export type AssetLoader = (ids: string[]) => Promise<ExportAsset[]>;
 
-// A ceiling on the total image bytes one export holds in memory at once. An
-// export bundles every referenced image plus the in-memory zip, so without a
-// cap a large library can exhaust the worker. Past it, the remaining images are
-// left unbundled (their links stay as app paths) rather than risking an OOM.
-const MAX_EXPORT_ASSET_BYTES = 500 * 1024 * 1024;
+// A ref over bytes already in hand (test loaders, small fixtures).
+export function inMemoryAsset(id: string, contentType: string, bytes: Uint8Array): AssetRef {
+	return {
+		id,
+		contentType,
+		open: async () =>
+			(async function* () {
+				yield bytes;
+			})()
+	};
+}
+
+// A ceiling on the image bytes read whole for one PDF. The PDF inlines every
+// image into one HTML document, so without a cap a large library can exhaust
+// the worker. Past it, the remaining images are left out of the PDF.
+const MAX_INLINED_ASSET_BYTES = 256 * 1024 * 1024;
+
+// Reads refs into memory, up to the budget, for the PDF path.
+export async function readAssets(
+	refs: AssetRef[],
+	budget = MAX_INLINED_ASSET_BYTES
+): Promise<ExportAsset[]> {
+	const read: ExportAsset[] = [];
+	let total = 0;
+	let skipped = 0;
+	for (const ref of refs) {
+		if (total >= budget) {
+			skipped++;
+			continue;
+		}
+		const chunks: Buffer[] = [];
+		for await (const chunk of await ref.open()) chunks.push(Buffer.from(chunk));
+		const bytes = Buffer.concat(chunks);
+		total += bytes.length;
+		read.push({ id: ref.id, contentType: ref.contentType, bytes });
+	}
+	if (skipped > 0) {
+		logEvent('warn', 'export.image_budget', { skipped });
+	}
+	return read;
+}
 
 // The default loader reads from the configured bucket; absent
 // configuration it returns nothing and links stay as app paths. Scoped to
@@ -79,32 +131,37 @@ export function bucketAssetLoader(
 			if (!config) return [];
 			store = s3AssetStore(config);
 		}
-		const loaded: ExportAsset[] = [];
-		let total = 0;
-		let skipped = 0;
-		for (const id of ids) {
-			if (total >= MAX_EXPORT_ASSET_BYTES) {
-				skipped++;
-				continue;
-			}
-			const [row] = await db
-				.select()
-				.from(assets)
-				.where(and(eq(assets.id, id), eq(assets.ownerId, ownerId)));
-			if (!row) continue;
-			const chunks: Buffer[] = [];
-			for await (const chunk of await store.get(row.storageKey)) {
-				chunks.push(Buffer.from(chunk));
-			}
-			const bytes = Buffer.concat(chunks);
-			total += bytes.length;
-			loaded.push({ id, contentType: row.contentType, bytes });
-		}
-		if (skipped > 0) {
-			console.warn(`export: asset budget reached; ${skipped} image(s) left unbundled`);
-		}
-		return loaded;
+		const bucket = store;
+		const rows = await db
+			.select({ id: assets.id, storageKey: assets.storageKey, contentType: assets.contentType })
+			.from(assets)
+			.where(and(inArray(assets.id, ids), eq(assets.ownerId, ownerId)));
+		const byId = new Map(rows.map((row) => [row.id, row]));
+		return ids.flatMap((id) => {
+			const row = byId.get(id);
+			if (!row) return [];
+			return [{ id, contentType: row.contentType, open: () => bucket.get(row.storageKey) }];
+		});
 	};
+}
+
+// Wraps a loader so each asset is looked up at most once, for a run that
+// builds several files from the same content (an edition's zip, EPUB and PDF).
+export function cachedAssetLoader(load: AssetLoader): AssetLoader {
+	const cache = new Map<string, AssetRef | null>();
+	return async (ids) => {
+		const missing = ids.filter((id) => !cache.has(id));
+		if (missing.length > 0) {
+			const loaded = new Map((await load(missing)).map((asset) => [asset.id, asset]));
+			for (const id of missing) cache.set(id, loaded.get(id) ?? null);
+		}
+		return ids.map((id) => cache.get(id)).filter((asset): asset is AssetRef => !!asset);
+	};
+}
+
+// A Buffer view over built bytes, for the object store, without copying them.
+export function asBuffer(bytes: Uint8Array): Buffer {
+	return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
 export type ExportStory = {
@@ -135,7 +192,14 @@ export type ExportNote = {
 	notesMd: string;
 };
 // A freeform writer note, for the working archive.
-export type ExportFreeformNote = { id: string; title: string | null; bodyMd: string };
+export type ExportFreeformNote = {
+	id: string;
+	title: string | null;
+	bodyMd: string;
+	pinned: boolean;
+	sceneId: string | null;
+	createdAt: Date;
+};
 export type StoryContent = {
 	chapters: { id: string; title: string | null }[];
 	scenes: ExportScene[];
@@ -174,7 +238,14 @@ async function gatherStoryFreeformNotes(
 	storyId: string
 ): Promise<ExportFreeformNote[]> {
 	return db
-		.select({ id: notes.id, title: notes.title, bodyMd: notes.bodyMd })
+		.select({
+			id: notes.id,
+			title: notes.title,
+			bodyMd: notes.bodyMd,
+			pinned: notes.pinned,
+			sceneId: notes.sceneId,
+			createdAt: notes.createdAt
+		})
 		.from(notes)
 		.where(eq(notes.storyId, storyId))
 		.orderBy(asc(notes.createdAt));
@@ -206,6 +277,13 @@ async function gatherStoryNotes(db: Database, storyId: string): Promise<ExportNo
 	];
 }
 
+// The universe archive's folder and front-matter keys per entity type.
+const ARCHIVE_LAYOUT = {
+	character: { dir: 'characters', nameKey: 'name', tagsKey: 'aliases' },
+	place: { dir: 'places', nameKey: 'name', tagsKey: 'aliases' },
+	lore_entry: { dir: 'lore', nameKey: 'title', tagsKey: 'keywords' }
+} as const satisfies Record<EntityType, { dir: string; nameKey: string; tagsKey: string }>;
+
 // Subdirectory per note kind, matching the universe archive's layout.
 const NOTE_DIRS = { character: 'characters', place: 'places', lore: 'lore' } as const;
 
@@ -228,7 +306,7 @@ export async function buildStoryZip(
 	story: ExportStory,
 	content: StoryContent,
 	loadAssets: AssetLoader
-): Promise<{ filename: string; bytes: Uint8Array }> {
+): Promise<ZipArchive> {
 	const {
 		chapters: chapterList,
 		scenes: sceneList,
@@ -249,21 +327,31 @@ export async function buildStoryZip(
 	);
 
 	const root = slugify(story.title, 'story');
-	const files: Zippable = {};
-	files[`${root}/story.md`] = strToU8(
-		frontMatter({ title: story.title, author: story.author, brief: story.brief }) +
-			(story.descriptionMd ?? '')
+	const entries: ZipEntry[] = [];
+	entries.push(
+		textEntry(
+			`${root}/story.md`,
+			frontMatter({ title: story.title, author: story.author, brief: story.brief }) +
+				(story.descriptionMd ?? '')
+		)
 	);
 
+	// Each scene's file path under the root, so notebook notes can name the
+	// scene they hang off in a form the importer resolves.
+	const scenePaths = new Map<string, string>();
 	const sceneFile = (scene: (typeof sceneList)[number], index: number, dir: string) => {
 		const name = `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`;
+		if (scene.id) scenePaths.set(scene.id, `${dir}/${name}`);
 		// Bundled assets get relative links; unbundled ones keep app paths.
 		const up = '../'.repeat(dir.split('/').length);
 		const body = rewriteAssetReferences(scene.bodyMd, (id) =>
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
 		);
-		files[`${root}/${dir}/${name}`] = strToU8(
-			frontMatter({ title: scene.title, status: scene.status }) + body
+		entries.push(
+			textEntry(
+				`${root}/${dir}/${name}`,
+				frontMatter({ title: scene.title, status: scene.status }) + body
+			)
 		);
 	};
 
@@ -271,7 +359,7 @@ export async function buildStoryZip(
 		const dir = `chapters/${String(chapterIndex + 1).padStart(2, '0')}-${slugify(chapter.title, 'chapter')}`;
 		// Carries the chapter's exact title (the folder name is only a slug)
 		// and keeps empty chapters present in the archive.
-		files[`${root}/${dir}/chapter.md`] = strToU8(frontMatter({ title: chapter.title }));
+		entries.push(textEntry(`${root}/${dir}/chapter.md`, frontMatter({ title: chapter.title })));
 		sceneList
 			.filter((scene) => scene.chapterId === chapter.id)
 			.forEach((scene, sceneIndex) => sceneFile(scene, sceneIndex, dir));
@@ -291,8 +379,11 @@ export async function buildStoryZip(
 		const body = rewriteAssetReferences(note.notesMd, (id) =>
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
 		);
-		files[`${root}/${dir}/${noteNamers[note.kind](slugify(note.name, note.id))}.md`] = strToU8(
-			frontMatter({ name: note.name, kind: note.kind }) + body
+		entries.push(
+			textEntry(
+				`${root}/${dir}/${noteNamers[note.kind](slugify(note.name, note.id))}.md`,
+				frontMatter({ name: note.name, kind: note.kind }) + body
+			)
 		);
 	}
 
@@ -302,16 +393,24 @@ export async function buildStoryZip(
 		const body = rewriteAssetReferences(note.bodyMd, (id) =>
 			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`
 		);
-		files[`${root}/notebook/${freeformNamer(slugify(note.title ?? '', note.id))}.md`] = strToU8(
-			frontMatter({ title: note.title }) + body
+		entries.push(
+			textEntry(
+				`${root}/notebook/${freeformNamer(slugify(note.title ?? '', note.id))}.md`,
+				frontMatter({
+					title: note.title,
+					pinned: note.pinned ? 'true' : null,
+					scene: note.sceneId ? scenePaths.get(note.sceneId) : null,
+					created: note.createdAt.toISOString()
+				}) + body
+			)
 		);
 	}
 
 	for (const asset of loaded) {
-		files[`${root}/${assetPath.get(asset.id)!}`] = asset.bytes;
+		entries.push(assetEntry(`${root}/${assetPath.get(asset.id)!}`, asset));
 	}
 
-	return { filename: `${root}.zip`, bytes: zipSync(files) };
+	return { filename: `${root}.zip`, entries };
 }
 
 // One document destined for the account archive, gathered before any assets
@@ -371,7 +470,7 @@ export async function buildAccountExport(
 	userId: string,
 	loadAssets: AssetLoader,
 	loadReviews?: ReviewLoader
-): Promise<{ filename: string; bytes: Uint8Array }> {
+): Promise<ZipArchive> {
 	const docs: Doc[] = [];
 	const universeList = await db
 		.select()
@@ -392,7 +491,7 @@ export async function buildUniverseExport(
 	db: Database,
 	universe: typeof universes.$inferSelect,
 	loadAssets: AssetLoader
-): Promise<{ filename: string; bytes: Uint8Array }> {
+): Promise<ZipArchive> {
 	const docs = await gatherUniverseDocs(db, universe, '.');
 	return packDocs(docs, loadAssets, `${slugify(universe.name, universe.id)}.zip`);
 }
@@ -430,70 +529,43 @@ async function gatherUniverseDocs(
 		);
 		const categoryName = (id: string | null) => (id ? (categories.get(id) ?? null) : null);
 
-		const characterList = await db
-			.select()
-			.from(characters)
-			.where(eq(characters.universeId, universe.id))
-			.orderBy(asc(characters.name));
-		const characterName = uniqueNamer();
-		for (const c of characterList) {
-			docs.push({
-				dir: `${uDir}/characters`,
-				name: `${characterName(slugify(c.name, c.id))}.md`,
-				front: {
-					name: c.name,
-					aliases: c.aliases.length ? c.aliases.join(', ') : null,
-					category: categoryName(c.categoryId),
-					details: detailLines(c.details)
-				},
-				body: joinBody(c.summaryMd, c.bodyMd)
-			});
-		}
-
-		const placeList = await db
-			.select()
-			.from(places)
-			.where(eq(places.universeId, universe.id))
-			.orderBy(asc(places.name));
-		const placeName = uniqueNamer();
-		for (const p of placeList) {
-			docs.push({
-				dir: `${uDir}/places`,
-				name: `${placeName(slugify(p.name, p.id))}.md`,
-				front: {
-					name: p.name,
-					aliases: p.aliases.length ? p.aliases.join(', ') : null,
-					category: categoryName(p.categoryId),
-					details: detailLines(p.details)
-				},
-				body: joinBody(p.summaryMd, p.bodyMd)
-			});
-		}
-
-		const loreList = await db
-			.select()
-			.from(loreEntries)
-			.where(eq(loreEntries.universeId, universe.id))
-			.orderBy(asc(loreEntries.title));
-		const loreName = uniqueNamer();
-		for (const l of loreList) {
-			docs.push({
-				dir: `${uDir}/lore`,
-				name: `${loreName(slugify(l.title, l.id))}.md`,
-				front: {
-					title: l.title,
-					keywords: l.keywords.length ? l.keywords.join(', ') : null,
-					category: categoryName(l.categoryId),
-					details: detailLines(l.details)
-				},
-				body: joinBody(l.summaryMd, l.bodyMd)
-			});
+		for (const type of ENTITY_TYPES) {
+			const table = entityTable(type);
+			const name = entityNameColumn(table);
+			const rows = await db
+				.select({
+					id: table.id,
+					name,
+					tags: entityAliasColumn(table),
+					categoryId: table.categoryId,
+					details: table.details,
+					summaryMd: table.summaryMd,
+					bodyMd: table.bodyMd
+				})
+				.from(table)
+				.where(eq(table.universeId, universe.id))
+				.orderBy(asc(name));
+			const { dir, nameKey, tagsKey } = ARCHIVE_LAYOUT[type];
+			const fileName = uniqueNamer();
+			for (const row of rows) {
+				docs.push({
+					dir: `${uDir}/${dir}`,
+					name: `${fileName(slugify(row.name, row.id))}.md`,
+					front: {
+						[nameKey]: row.name,
+						[tagsKey]: row.tags.length ? row.tags.join(', ') : null,
+						category: categoryName(row.categoryId),
+						details: detailLines(row.details)
+					},
+					body: joinBody(row.summaryMd, row.bodyMd)
+				});
+			}
 		}
 
 		const storyList = await db
 			.select()
 			.from(stories)
-			.where(eq(stories.universeId, universe.id))
+			.where(and(eq(stories.universeId, universe.id), isNull(stories.deletedAt)))
 			.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
 		const storyFolder = uniqueNamer();
 		for (const story of storyList) {
@@ -623,7 +695,7 @@ async function packDocs(
 	docs: Doc[],
 	loadAssets: AssetLoader,
 	filename: string
-): Promise<{ filename: string; bytes: Uint8Array }> {
+): Promise<ZipArchive> {
 	// Collect every referenced and cover asset, load once, then write each doc
 	// with links rewritten relative to its own depth.
 	const referenced = new Set<string>();
@@ -636,7 +708,7 @@ async function packDocs(
 		loaded.map((a) => [a.id, `assets/${a.id}.${extensionFor(a.contentType)}`])
 	);
 
-	const files: Zippable = {};
+	const entries: ZipEntry[] = [];
 	for (const doc of docs) {
 		// A '.' base (the single-universe export) roots files at the top of
 		// the zip; drop it from paths and depth alike.
@@ -650,17 +722,17 @@ async function packDocs(
 			if (doc.coverId && assetPath.has(doc.coverId)) front.cover = linkFor(doc.coverId);
 			head = frontMatter(front);
 		}
-		files[[...parts, doc.name].join('/')] = strToU8(
-			head + rewriteAssetReferences(doc.body, linkFor)
+		entries.push(
+			textEntry([...parts, doc.name].join('/'), head + rewriteAssetReferences(doc.body, linkFor))
 		);
 	}
 	for (const asset of loaded) {
-		files[assetPath.get(asset.id)!] = asset.bytes;
+		entries.push(assetEntry(assetPath.get(asset.id)!, asset));
 	}
 	if (docs.length === 0)
-		files['README.md'] = strToU8('# Codex export\n\nThere is no content here yet.\n');
+		entries.push(textEntry('README.md', '# Codex export\n\nThere is no content here yet.\n'));
 
-	return { filename, bytes: zipSync(files) };
+	return { filename, entries };
 }
 
 function joinBody(summaryMd: string | null, bodyMd: string): string {

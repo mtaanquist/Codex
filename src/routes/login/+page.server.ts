@@ -6,6 +6,7 @@ import { signupMode } from '$lib/server/settings';
 import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '$lib/server/two-factor';
 import { rateLimit } from '$lib/server/rate-limit';
 import { logEvent } from '$lib/server/log';
+import { formText } from '$lib/server/validation';
 
 const CHALLENGE_MAX_AGE_SECONDS = 10 * 60;
 // Keyed by the targeted account, so brute force against one login is slowed
@@ -27,10 +28,8 @@ export const load: PageServerLoad = async () => {
 export const actions: Actions = {
 	default: async ({ request, cookies, getClientAddress }) => {
 		const data = await request.formData();
-		const email = String(data.get('email') ?? '')
-			.trim()
-			.toLowerCase();
-		const password = String(data.get('password') ?? '');
+		const email = formText(data, 'email').trim().toLowerCase();
+		const password = formText(data, 'password');
 
 		if (!email || !password) {
 			return fail(400, { email, message: 'Enter your email and password.' });

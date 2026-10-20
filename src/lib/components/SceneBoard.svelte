@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import FormStatus from './FormStatus.svelte';
 	import { SCENE_STATUSES, SCENE_STATUS_LABELS, type SceneStatus } from '$lib/scene-status';
 	import { formatNumber, pluralSuffix } from '$lib/format';
 
@@ -25,7 +26,8 @@
 		// Open TODO markers per scene id.
 		todoCounts: Record<string, number>;
 		sceneHref: (sceneId: string) => string;
-		onMove: (sceneId: string, status: SceneStatus) => Promise<void>;
+		// Resolves to an error message when the move did not save, else null.
+		onMove: (sceneId: string, status: SceneStatus) => Promise<string | null>;
 	} = $props();
 
 	const chapterTitles = $derived(
@@ -34,6 +36,11 @@
 
 	let draggingId = $state<string | null>(null);
 	let dropLane = $state<SceneStatus | null>(null);
+	let moveError = $state<string | null>(null);
+
+	async function move(sceneId: string, status: SceneStatus) {
+		moveError = await onMove(sceneId, status);
+	}
 
 	function overLane(event: DragEvent, lane: SceneStatus) {
 		if (!draggingId) return;
@@ -49,7 +56,7 @@
 		if (!sceneId) return;
 		const scene = scenes.find((candidate) => candidate.id === sceneId);
 		if (!scene || scene.status === lane) return;
-		await onMove(sceneId, lane);
+		await move(sceneId, lane);
 	}
 
 	function endDrag() {
@@ -63,6 +70,9 @@
 	}
 </script>
 
+{#if moveError}
+	<div class="board-error"><FormStatus block error={moveError} /></div>
+{/if}
 <div class="board">
 	{#each SCENE_STATUSES as lane (lane)}
 		{@const cards = scenes.filter((scene) => scene.status === lane)}
@@ -115,7 +125,7 @@
 										class="flip"
 										aria-label="Move to {SCENE_STATUS_LABELS[back]}"
 										title="Move to {SCENE_STATUS_LABELS[back]}"
-										onclick={() => onMove(scene.id, back)}
+										onclick={() => move(scene.id, back)}
 									>
 										<Icon name="chevron" size={11} />
 									</button>
@@ -125,7 +135,7 @@
 										type="button"
 										aria-label="Move to {SCENE_STATUS_LABELS[forward]}"
 										title="Move to {SCENE_STATUS_LABELS[forward]}"
-										onclick={() => onMove(scene.id, forward)}
+										onclick={() => move(scene.id, forward)}
 									>
 										<Icon name="chevron" size={11} />
 									</button>
@@ -145,96 +155,26 @@
 </div>
 
 <style>
-	.board {
-		display: flex;
-		gap: 12px;
-		align-items: flex-start;
-		height: 100%;
-		overflow-x: auto;
-		padding: 18px;
+	.board-error {
+		padding: 12px 18px 0;
 	}
-	.lane {
-		flex: 1 1 0;
-		min-width: 180px;
-		max-width: 320px;
-		display: flex;
-		flex-direction: column;
-		max-height: 100%;
-		border: 1px solid var(--border);
-		border-radius: var(--radius, 9px);
-		background: var(--bg-sunken, var(--bg));
-	}
+	/* The board, lanes and cards are global (board.css), shared with the
+	   story board. */
 	.lane.drop {
 		border-color: var(--accent);
 	}
-	.lane-head {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		padding: 10px 12px 8px;
-		font-family: var(--font-ui);
-	}
-	.lane-dot {
-		width: 9px;
-		height: 9px;
-		border-radius: 50%;
-	}
-	.lane-name {
-		font-size: 12.5px;
-		font-weight: 650;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--text-muted);
-	}
-	.lane-count {
-		margin-left: auto;
-		font-size: 12px;
-		color: var(--text-faint);
-	}
-	.lane-cards {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 0 10px 12px;
-		overflow-y: auto;
-	}
 	.card {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		padding: 10px 12px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm, 6px);
-		background: var(--bg-elevated);
 		cursor: grab;
 	}
 	.card.dragging {
 		opacity: 0.5;
 	}
-	.card-title {
-		font-family: var(--font-ui);
-		font-weight: 600;
-		font-size: 13.5px;
-		color: var(--text);
-		text-decoration: none;
-	}
-	.card-title:hover {
-		text-decoration: underline;
-	}
 	.card-chapter {
 		font-size: 11.5px;
 		color: var(--text-faint);
 	}
-	.card-foot {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin-top: 2px;
-		font-size: 11.5px;
-		color: var(--text-muted);
-	}
 	.card-todos {
-		color: var(--cat-amber, #b8860b);
+		color: var(--cat-amber);
 		font-weight: 600;
 	}
 	.card-tools {

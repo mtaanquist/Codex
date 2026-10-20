@@ -36,3 +36,34 @@ test('an entity badge can be given a colour from its menu, and it sticks', async
 	await page.reload();
 	await expect(page.locator('.detail-head .badge.lg')).toHaveAttribute('style', /var\(--cat-red\)/);
 });
+
+// Issue #626: a refused badge change says so and leaves the badge as it was,
+// instead of looking saved.
+test('a refused badge colour change shows the reason and is undone', async ({ page }) => {
+	await gotoReady(page, '/');
+	const stamp = Date.now();
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(`Refused badges ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page).toHaveURL(`/universes/refused-badges-${stamp}`);
+
+	await gotoReady(page, `/universes/refused-badges-${stamp}/plan`);
+	await page.getByPlaceholder('New character name').fill('Bram');
+	await page.getByRole('button', { name: 'Add character' }).click();
+	await page.locator('.ent-row', { hasText: 'Bram' }).first().click();
+	await expect(page).toHaveURL(/\?entity=/);
+	const badge = page.locator('.detail-head .badge.lg');
+	await expect(badge).toBeVisible();
+
+	await page.route('**/api/entities/*/badge', (route) =>
+		route.request().method() === 'PUT'
+			? route.fulfill({ status: 429, json: { message: 'Too many requests. Try again shortly.' } })
+			: route.fallback()
+	);
+	await page.locator('.badge-pick-btn').click();
+	await page.getByRole('button', { name: 'Red', exact: true }).click();
+	await expect(page.locator('.badge-menu [role="alert"]')).toHaveText(
+		'Too many requests. Try again shortly.'
+	);
+	await expect(badge).not.toHaveAttribute('style', /var\(--cat-red\)/);
+});

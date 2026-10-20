@@ -7,6 +7,7 @@
 	import '@fontsource-variable/jetbrains-mono/index.css';
 	import '$lib/styles/tokens.css';
 	import '$lib/styles/theme.css';
+	import '$lib/styles/board.css';
 	import '$lib/styles/pages.css';
 	import '$lib/styles/admin.css';
 	import '$lib/styles/editor.css';

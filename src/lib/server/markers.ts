@@ -1,8 +1,11 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import { sceneMarkers, scenes } from './db/schema';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type { Database } from './auth.ts';
+import { sceneMarkers, scenes, stories } from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
+import { storyIsLive } from './universe-scope.ts';
 import { findTodoLines } from '$lib/todo-markers';
+import { createAnchorMapper } from '../review-anchor.ts';
+import type { ActionFailure } from './action-result.ts';
 
 // A selection turned into a checkable marker. Anchors are clamped to the
 // scene body so a stale client cannot write ranges past the end.
@@ -13,13 +16,13 @@ export async function createMarker(
 	anchorStart: number,
 	anchorEnd: number,
 	bodyMd?: string
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const scene = await ownedScene(db, userId, sceneId);
-	if (!scene) return { ok: false, reason: 'scene not found' };
+	if (!scene) return { ok: false, code: 'not_found', reason: 'That scene does not exist.' };
 	const length = scene.bodyMd.length;
 	const start = Math.max(0, Math.min(anchorStart, length));
 	const end = Math.max(start, Math.min(anchorEnd, length));
-	if (end === start) return { ok: false, reason: 'select some text to mark' };
+	if (end === start) return { ok: false, code: 'invalid', reason: 'Select some text to mark.' };
 	const [marker] = await db
 		.insert(sceneMarkers)
 		.values({
@@ -33,6 +36,19 @@ export async function createMarker(
 	return { ok: true, id: marker.id };
 }
 
+// Markers own their scene by id; this keeps a marker in a trashed universe
+// from being changed by id.
+function inLiveScene(db: Database) {
+	return inArray(
+		sceneMarkers.sceneId,
+		db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.innerJoin(stories, eq(scenes.storyId, stories.id))
+			.where(storyIsLive())
+	);
+}
+
 export async function setMarkerResolved(
 	db: Database,
 	userId: string,
@@ -42,7 +58,7 @@ export async function setMarkerResolved(
 	const updated = await db
 		.update(sceneMarkers)
 		.set({ resolvedAt: resolved ? new Date() : null })
-		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId)))
+		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return updated.length > 0;
 }
@@ -54,7 +70,7 @@ export async function deleteMarker(
 ): Promise<boolean> {
 	const deleted = await db
 		.delete(sceneMarkers)
-		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId)))
+		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return deleted.length > 0;
 }
@@ -95,6 +111,50 @@ export async function updateMarkerAnchors(
 		) as v
 		where scene_markers.id = v.id and scene_markers.scene_id = ${sceneId}
 	`);
+}
+
+// For a body rewrite that does not come from the Write editor (a review
+// save, an accepted suggestion, a restore): map every anchored marker
+// through the old-to-new diff, so it keeps pointing at the same words. A
+// marker whose start or end text is gone, or whose range is left empty,
+// loses its anchor rather than pointing at whatever now sits at its old
+// offsets. Run inside the transaction that
+// writes the body.
+export async function remapMarkerAnchors(
+	db: Database,
+	sceneId: string,
+	oldBody: string,
+	newBody: string
+): Promise<void> {
+	if (oldBody === newBody) return;
+	const markers = await db
+		.select({
+			id: sceneMarkers.id,
+			anchorStart: sceneMarkers.anchorStart,
+			anchorEnd: sceneMarkers.anchorEnd
+		})
+		.from(sceneMarkers)
+		.where(eq(sceneMarkers.sceneId, sceneId));
+	const mapper = createAnchorMapper();
+	const moved: { id: string; anchorStart: number; anchorEnd: number }[] = [];
+	const lost: string[] = [];
+	for (const marker of markers) {
+		if (marker.anchorStart === null || marker.anchorEnd === null) continue;
+		// Each end maps on its own, so an edit at the edge of the marked text
+		// stretches or shrinks the range instead of losing it.
+		const start = mapper.point(oldBody, newBody, marker.anchorStart);
+		const end = mapper.point(oldBody, newBody, marker.anchorEnd);
+		if (start !== null && end !== null && start < end) {
+			moved.push({ id: marker.id, anchorStart: start, anchorEnd: end });
+		} else lost.push(marker.id);
+	}
+	await updateMarkerAnchors(db, sceneId, moved, newBody.length);
+	if (lost.length > 0) {
+		await db
+			.update(sceneMarkers)
+			.set({ anchorStart: null, anchorEnd: null })
+			.where(and(eq(sceneMarkers.sceneId, sceneId), inArray(sceneMarkers.id, lost)));
+	}
 }
 
 // Unresolved markers across a story, for the continuous view's stitched
@@ -149,10 +209,29 @@ export type StoryTodo = {
 };
 
 // Everything still to do across the story: unresolved selection markers
-// plus TODO: lines found in the prose, in scene order.
+// plus TODO: lines found in the prose, in scene order. Postgres decides
+// which bodies are worth sending: only scenes whose text contains "TODO:"
+// or that hold an unresolved marker with no note (its snippet is sliced
+// from the body here, since anchors are UTF-16 offsets and Postgres counts
+// code points). Every other scene comes back without its body. The
+// subquery names its columns by hand: Drizzle leaves columns in a select
+// field unqualified, so the correlation would bind to scene_markers.id.
 export async function listStoryTodos(db: Database, storyId: string): Promise<StoryTodo[]> {
 	const sceneRows = await db
-		.select({ id: scenes.id, title: scenes.title, bodyMd: scenes.bodyMd })
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			bodyMd: sql<string | null>`case
+				when strpos(${scenes.bodyMd}, 'TODO:') > 0
+					or exists (
+						select 1 from scene_markers m
+						where m.scene_id = "scenes"."id"
+							and m.resolved_at is null
+							and coalesce(m.body_md, '') = ''
+					)
+				then ${scenes.bodyMd}
+			end`
+		})
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
@@ -167,14 +246,21 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 		.from(sceneMarkers)
 		.innerJoin(scenes, eq(sceneMarkers.sceneId, scenes.id))
 		.where(and(eq(scenes.storyId, storyId), isNull(sceneMarkers.resolvedAt)))
-		.orderBy(asc(scenes.globalPosition), asc(sceneMarkers.anchorStart));
+		.orderBy(asc(sceneMarkers.anchorStart));
+	const markersByScene = new Map<string, typeof markerRows>();
+	for (const row of markerRows) {
+		const list = markersByScene.get(row.sceneId);
+		if (list) list.push(row);
+		else markersByScene.set(row.sceneId, [row]);
+	}
 
 	const todos: StoryTodo[] = [];
 	for (const scene of sceneRows) {
-		for (const marker of markerRows.filter((row) => row.sceneId === scene.id)) {
+		const body = scene.bodyMd ?? '';
+		for (const marker of markersByScene.get(scene.id) ?? []) {
 			const snippet =
 				marker.anchorStart !== null && marker.anchorEnd !== null
-					? scene.bodyMd.slice(marker.anchorStart, marker.anchorEnd)
+					? body.slice(marker.anchorStart, marker.anchorEnd)
 					: '';
 			todos.push({
 				sceneId: scene.id,
@@ -183,7 +269,7 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 				text: marker.bodyMd || snippet.slice(0, 120)
 			});
 		}
-		for (const line of findTodoLines(scene.bodyMd)) {
+		for (const line of findTodoLines(body)) {
 			todos.push({
 				sceneId: scene.id,
 				sceneTitle: scene.title,

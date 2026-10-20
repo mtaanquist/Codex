@@ -1,5 +1,6 @@
 import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { errorFields, logEvent } from './log.ts';
 import type { AssetObjectStore } from './assets.ts';
 import {
 	assets,
@@ -18,7 +19,7 @@ import {
 	webauthnCredentials
 } from './db/schema.ts';
 import { purgeUniverseWithin } from './universe-lifecycle.ts';
-import { consumeToken, issueToken } from './tokens.ts';
+import { consumeToken, reserveToken } from './tokens.ts';
 
 const GRACE_DAYS = 7;
 const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
@@ -30,7 +31,7 @@ export const DELETION_GRACE_DAYS = GRACE_DAYS;
 // drop) and its public editions taken down right away, with the hard purge
 // deferred by the grace window. suspendedAt stays untouched - that column
 // belongs to admin suspension, so cancelling a deletion can never lift one.
-// Returns a one-time cancellation token for the emailed link.
+// Returns the id of a reserved cancellation token for the emailed link.
 export async function scheduleAccountDeletion(db: Database, userId: string): Promise<string> {
 	await db.transaction(async (tx) => {
 		const scheduled = new Date(Date.now() + GRACE_MS);
@@ -46,7 +47,7 @@ export async function scheduleAccountDeletion(db: Database, userId: string): Pro
 			.set({ removedAt: sql`now()` })
 			.where(and(eq(publications.ownerId, userId), isNull(publications.removedAt)));
 	});
-	return issueToken(db, userId, 'deletion_cancel', GRACE_DAYS * 24 * 60);
+	return reserveToken(db, userId, 'deletion_cancel', GRACE_DAYS * 24 * 60);
 }
 
 // Cancels a scheduled deletion if the token is valid, reactivating the account
@@ -161,11 +162,18 @@ export async function purgeAccount(
 
 	// Only sweep the bucket if the account was actually purged (not cancelled
 	// out from under us between reading the keys and the locked re-check).
+	// Removed at once rather than deferred: this is the owner's erasure. A
+	// failure is logged so the operator can remove the object by hand.
 	if (purged && store) {
-		for (const asset of assetRows) await store.remove(asset.storageKey).catch(() => {});
-		for (const artifact of artifactRows) await store.remove(artifact.storageKey).catch(() => {});
-		for (const userExport of userExportRows) {
-			if (userExport.storageKey) await store.remove(userExport.storageKey).catch(() => {});
+		const keys = [
+			...assetRows.map((row) => row.storageKey),
+			...artifactRows.map((row) => row.storageKey),
+			...userExportRows.flatMap((row) => (row.storageKey ? [row.storageKey] : []))
+		];
+		for (const key of keys) {
+			await store.remove(key).catch((error) => {
+				logEvent('error', 'purge.object_failed', { key, ...errorFields(error) });
+			});
 		}
 	}
 }

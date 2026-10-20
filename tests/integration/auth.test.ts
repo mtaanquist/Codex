@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
@@ -7,6 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import { users, sessions } from '../../src/lib/server/db/schema';
 import {
 	createSession,
+	purgeSessions,
 	revokeSession,
 	validateSession,
 	verifyCredentials,
@@ -42,6 +43,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query('truncate table sessions, auth_tokens, users cascade');
 });
 
@@ -140,5 +144,35 @@ describe('sessions', () => {
 		expect(await validateSession(db, session.token)).not.toBeNull();
 		await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, userId));
 		expect(await validateSession(db, session.token)).toBeNull();
+	});
+});
+
+describe('purgeSessions', () => {
+	it('deletes expired sessions and ones revoked over 30 days ago, and keeps the rest', async () => {
+		await pool.query('truncate table sessions');
+		const userId = await seedUser('purge-sessions@example.com');
+		const live = await createSession(db, userId);
+		const expired = await createSession(db, userId);
+		const oldRevoked = await createSession(db, userId);
+		const recentRevoked = await createSession(db, userId);
+		await db
+			.update(sessions)
+			.set({ expiresAt: sql`now() - interval '1 minute'` })
+			.where(eq(sessions.id, expired.id));
+		await db
+			.update(sessions)
+			.set({ revokedAt: sql`now() - interval '31 days'` })
+			.where(eq(sessions.id, oldRevoked.id));
+		await db
+			.update(sessions)
+			.set({ revokedAt: sql`now() - interval '29 days'` })
+			.where(eq(sessions.id, recentRevoked.id));
+
+		expect(await purgeSessions(db)).toBe(2);
+		const left = await db
+			.select({ id: sessions.id })
+			.from(sessions)
+			.where(eq(sessions.userId, userId));
+		expect(left.map((r) => r.id).sort()).toEqual([live.id, recentRevoked.id].sort());
 	});
 });

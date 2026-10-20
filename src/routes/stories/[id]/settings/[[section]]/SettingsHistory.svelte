@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateTime } from '$lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -19,7 +20,7 @@
 					<span class="t-what">
 						{row.label ?? (row.reason === 'checkpoint' ? 'checkpoint' : (row.reason ?? 'autosave'))}
 					</span>
-					<span class="t-when">{row.createdAt.toLocaleString()}</span>
+					<span class="t-when">{formatDateTime(row.createdAt)}</span>
 				</li>
 			{/each}
 		</ul>

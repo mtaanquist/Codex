@@ -25,6 +25,7 @@ import { reviewMentionData } from '$lib/server/mention-entities';
 import { createAnchorMapper } from '$lib/review-anchor';
 import { rateLimit } from '$lib/server/rate-limit';
 import { notifyReviewActivity } from '$lib/server/notify';
+import { formText } from '$lib/server/validation';
 
 // The guest's door into a review: the magic link. A bad, revoked, or expired
 // link gets a plain message; a fresh guest is asked for a name; after that
@@ -32,6 +33,10 @@ import { notifyReviewActivity } from '$lib/server/notify';
 
 const COMMENT_LIMIT = 30;
 const COMMENT_WINDOW_MS = 5 * 60 * 1000;
+// Each join makes a new reviewer with a fresh comment budget, so joins are
+// capped per client address to keep the per-reviewer limit meaningful.
+const JOIN_IP_LIMIT = 10;
+const JOIN_WINDOW_MS = 60 * 60 * 1000;
 
 const cookieOptions = {
 	path: '/',
@@ -107,13 +112,16 @@ export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 };
 
 export const actions: Actions = {
-	join: async ({ params, request, cookies }) => {
+	join: async ({ params, request, cookies, getClientAddress }) => {
 		const resolved = await invitationByToken(db, params.token);
 		if (resolved.status !== 'ok') return fail(403, { message: 'This link no longer works.' });
+		if (!rateLimit(`review:join:ip:${getClientAddress()}`, JOIN_IP_LIMIT, JOIN_WINDOW_MS).allowed) {
+			return fail(429, { message: 'Slow down a moment, then try again.' });
+		}
 		const data = await request.formData();
 		const reviewer = await ensureReviewer(db, resolved.invitation.id, {
-			displayName: String(data.get('displayName') ?? ''),
-			email: String(data.get('email') ?? '')
+			displayName: formText(data, 'displayName'),
+			email: formText(data, 'email')
 		});
 		if (!reviewer) return fail(400, { message: 'Enter a name to review under.' });
 		cookies.set(REVIEWER_COOKIE, issueReviewerToken(reviewer.id), cookieOptions);
@@ -134,9 +142,9 @@ export const actions: Actions = {
 			Number.isInteger(start) && Number.isInteger(end) && end > start && start >= 0
 				? { start, end }
 				: null;
-		const sceneId = String(data.get('sceneId') ?? '');
+		const sceneId = formText(data, 'sceneId');
 		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
-		const body = String(data.get('body') ?? '');
+		const body = formText(data, 'body');
 		const result = await createThread(db, {
 			storyId: resolved.invitation.storyId,
 			sceneId,
@@ -159,21 +167,23 @@ export const actions: Actions = {
 		if (resolved.status !== 'ok' || !access) {
 			return fail(403, { message: 'This link no longer works.' });
 		}
-		if (!access.invitation.canSuggest) {
+		// The link in the URL decides, as it does for the page: the cookie may
+		// come from an earlier invitation to the same story.
+		if (!resolved.invitation.canSuggest) {
 			return fail(403, { message: 'This review link is for comments only.' });
 		}
 		if (!rateLimit(`review:${access.reviewer.id}`, COMMENT_LIMIT, COMMENT_WINDOW_MS).allowed) {
 			return fail(429, { message: 'Slow down a moment, then try again.' });
 		}
 		const data = await request.formData();
-		const sceneId = String(data.get('sceneId') ?? '');
+		const sceneId = formText(data, 'sceneId');
 		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
 		const result = await createSuggestion(db, {
 			storyId: resolved.invitation.storyId,
 			sceneId,
 			author: { reviewerId: access.reviewer.id },
 			range: { start: Number(data.get('start')), end: Number(data.get('end')) },
-			replacement: String(data.get('replacement') ?? '')
+			replacement: formText(data, 'replacement')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
 		await notifyReviewActivity(
@@ -193,9 +203,9 @@ export const actions: Actions = {
 			return fail(429, { message: 'Slow down a moment, then try again.' });
 		}
 		const data = await request.formData();
-		const threadId = String(data.get('threadId') ?? '');
+		const threadId = formText(data, 'threadId');
 		if (!isUuid(threadId)) return fail(400, { message: 'That thread does not exist.' });
-		const body = String(data.get('body') ?? '');
+		const body = formText(data, 'body');
 		const result = await addComment(db, {
 			storyId: resolved.invitation.storyId,
 			threadId,
@@ -224,14 +234,14 @@ export const actions: Actions = {
 			return fail(429, { message: 'Slow down a moment, then try again.' });
 		}
 		const data = await request.formData();
-		const suggestionId = String(data.get('suggestionId') ?? '');
+		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const thread = await ensureSuggestionThread(db, {
 			storyId: resolved.invitation.storyId,
 			suggestionId
 		});
 		if (!thread.ok) return fail(400, { message: thread.reason });
-		const body = String(data.get('body') ?? '');
+		const body = formText(data, 'body');
 		const result = await addComment(db, {
 			storyId: resolved.invitation.storyId,
 			threadId: thread.threadId,
@@ -255,9 +265,14 @@ export const actions: Actions = {
 			return fail(403, { message: 'This link no longer works.' });
 		}
 		const data = await request.formData();
-		const commentId = String(data.get('commentId') ?? '');
+		const commentId = formText(data, 'commentId');
 		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
-		const result = await deleteComment(db, { reviewerId: access.reviewer.id }, commentId);
+		const result = await deleteComment(
+			db,
+			{ reviewerId: access.reviewer.id },
+			resolved.invitation.storyId,
+			commentId
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { deleted: true };
 	},
@@ -268,9 +283,14 @@ export const actions: Actions = {
 			return fail(403, { message: 'This link no longer works.' });
 		}
 		const data = await request.formData();
-		const suggestionId = String(data.get('suggestionId') ?? '');
+		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await deleteSuggestion(db, { reviewerId: access.reviewer.id }, suggestionId);
+		const result = await deleteSuggestion(
+			db,
+			{ reviewerId: access.reviewer.id },
+			resolved.invitation.storyId,
+			suggestionId
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { deleted: true };
 	}

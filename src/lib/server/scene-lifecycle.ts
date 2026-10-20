@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import {
 	chapters,
 	entityMentions,
+	notes,
 	reviewComments,
 	reviewSuggestions,
 	reviewThreads,
@@ -12,6 +13,7 @@ import {
 	stories
 } from './db/schema';
 import { ownedScene } from './scene-access.ts';
+import { storyIsLive } from './universe-scope.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
 // revisions, markers, and review threads) so restore is instant; only its
@@ -23,7 +25,7 @@ async function ownedChapter(db: Database, userId: string, chapterId: string) {
 		.select({ id: chapters.id, storyId: chapters.storyId, position: chapters.position })
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
-		.where(and(eq(chapters.id, chapterId), eq(stories.ownerId, userId)));
+		.where(and(eq(chapters.id, chapterId), eq(stories.ownerId, userId), storyIsLive()));
 	return row ?? null;
 }
 
@@ -33,7 +35,7 @@ async function ownsStory(db: Database, userId: string, storyId: string): Promise
 	const [row] = await db
 		.select({ id: stories.id })
 		.from(stories)
-		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	return Boolean(row);
 }
 
@@ -143,7 +145,7 @@ export async function restoreScene(
 }
 
 /** Deletes a trashed scene for good: markers, mentions, revisions, review
- * threads and suggestions, then the row. */
+ * threads and suggestions, then the row. Notes on the scene are detached. */
 export async function destroyScene(
 	db: Database,
 	userId: string,
@@ -173,6 +175,8 @@ export async function destroyScene(
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 		await tx.delete(revisions).where(eq(revisions.entityId, scene.id));
+		// Notes on the scene are the writer's own words; keep them as story notes.
+		await tx.update(notes).set({ sceneId: null }).where(eq(notes.sceneId, scene.id));
 		await tx.delete(scenes).where(eq(scenes.id, scene.id));
 	});
 	return true;

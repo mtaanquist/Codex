@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { formatDateTime } from '$lib/format';
+	import { formatDate, formatDateTime } from '$lib/format';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -53,14 +53,6 @@
 		} finally {
 			passkeyBusy = false;
 		}
-	}
-
-	function onDate(date: Date): string {
-		return new Date(date).toLocaleDateString(undefined, {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
 	}
 
 	// The segmented setup code. Each box holds one digit; the joined value posts
@@ -249,11 +241,11 @@
 				</div>
 				<p class="tfa-sub">
 					{#if data.twoFactor.status === 'on'}
-						{#if data.twoFactor.confirmedAt}Enabled {onDate(data.twoFactor.confirmedAt)} -
+						{#if data.twoFactor.confirmedAt}Enabled {formatDate(data.twoFactor.confirmedAt)} -
 						{/if}you'll be asked for a code on new devices. {data.twoFactor.recoveryRemaining} recovery
 						codes remain.
 					{:else if data.twoFactor.status === 'pending'}
-						Scan the code, then enter a code to confirm.
+						Scan the code, then enter a code and your password to confirm.
 					{:else if !data.twoFactor.available}
 						Two-factor authentication is not set up on this instance.
 					{:else}
@@ -363,6 +355,17 @@
 									/>
 								{/each}
 							</div>
+							<div class="field" style="margin-top:var(--space-3);">
+								<label for="totp-password">Confirm your password</label>
+								<input
+									id="totp-password"
+									class="input"
+									type="password"
+									name="password"
+									required
+									autocomplete="current-password"
+								/>
+							</div>
 						</form>
 					</div>
 				</div>
@@ -454,7 +457,7 @@
 							<div class="user-row-identity">
 								<p class="user-row-name">{passkey.name ?? 'Passkey'}</p>
 								<p class="user-row-email">
-									Added {onDate(passkey.createdAt)}{passkey.lastUsedAt
+									Added {formatDate(passkey.createdAt)}{passkey.lastUsedAt
 										? ` - last used ${formatDateTime(passkey.lastUsedAt)}`
 										: ''}
 								</p>
@@ -565,10 +568,20 @@
 	</div>
 	{#if data.sessions.length > 1}
 		<div class="settings-actions">
-			{#if form?.scope === 'sessions' && form.saved}
+			{#if form?.scope === 'sessions' && form.message}
+				<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+			{:else if form?.scope === 'sessions' && form.saved}
 				<span class="field-hint" role="status" style="color:var(--status-final);">Done.</span>
 			{/if}
-			<form method="POST" action="?/revokeOthers">
+			<form method="POST" action="?/revokeOthers" class="tfa-guard">
+				<input
+					type="password"
+					name="password"
+					placeholder="Current password"
+					autocomplete="current-password"
+					aria-label="Current password"
+					required
+				/>
 				<button type="submit" class="btn btn-danger">Sign out all other sessions</button>
 			</form>
 		</div>

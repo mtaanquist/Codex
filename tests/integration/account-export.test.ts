@@ -21,10 +21,11 @@ import {
 	universes,
 	users
 } from '../../src/lib/server/db/schema';
-import { buildAccountExport, type AssetLoader } from '../../src/lib/server/export';
+import { buildAccountExport, inMemoryAsset, type AssetLoader } from '../../src/lib/server/export';
 import { reviewLoader } from '../../src/lib/server/export-reviews';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { zipBytes } from '../../src/lib/server/zip-stream';
 
 let pool: pg.Pool;
 let db: Database;
@@ -34,7 +35,7 @@ const ASSET_ID = '11111111-1111-1111-1111-111111111111';
 const stubLoader: AssetLoader = async (ids) =>
 	ids
 		.filter((id) => id === ASSET_ID)
-		.map((id) => ({ id, contentType: 'image/png', bytes: new Uint8Array([1, 2, 3]) }));
+		.map((id) => inMemoryAsset(id, 'image/png', new Uint8Array([1, 2, 3])));
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -97,7 +98,7 @@ describe('buildAccountExport', () => {
 			bodyMd: 'A picture ![x](/assets/11111111-1111-1111-1111-111111111111) here.'
 		});
 
-		const { bytes } = await buildAccountExport(db, ownerId, stubLoader);
+		const bytes = await zipBytes((await buildAccountExport(db, ownerId, stubLoader)).entries);
 		const zip = entries(bytes);
 
 		expect(zip.text('universes/mythos/universe.md')).toContain('The world.');
@@ -119,7 +120,7 @@ describe('buildAccountExport', () => {
 	});
 
 	it('produces a readable archive for an empty account', async () => {
-		const { bytes } = await buildAccountExport(db, ownerId, stubLoader);
+		const bytes = await zipBytes((await buildAccountExport(db, ownerId, stubLoader)).entries);
 		expect(entries(bytes).names).toEqual(['README.md']);
 	});
 
@@ -144,7 +145,7 @@ describe('buildAccountExport', () => {
 			});
 		}
 
-		const { bytes } = await buildAccountExport(db, ownerId, stubLoader);
+		const bytes = await zipBytes((await buildAccountExport(db, ownerId, stubLoader)).entries);
 		const zip = entries(bytes);
 
 		expect(zip.text('universes/mythos/characters/jon.md')).toContain('The first Jon.');
@@ -242,7 +243,9 @@ describe('buildAccountExport', () => {
 			{ threadId: wholeScene.id, authorUserId: ownerId, bodyMd: 'Will tighten.' }
 		]);
 
-		const { bytes } = await buildAccountExport(db, ownerId, stubLoader, reviewLoader(db));
+		const bytes = await zipBytes(
+			(await buildAccountExport(db, ownerId, stubLoader, reviewLoader(db))).entries
+		);
 		const zip = entries(bytes);
 
 		const note = zip.text('universes/mythos/stories/halden/notes/characters/alice-vane.md');

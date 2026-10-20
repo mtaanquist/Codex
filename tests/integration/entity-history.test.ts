@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, isNull } from 'drizzle-orm';
@@ -52,6 +52,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table revisions, entity_relationships, entity_categories, places, characters, stories, universes, users cascade'
 	);
@@ -98,16 +101,21 @@ afterAll(async () => {
 	await pool.end();
 });
 
+// Alice with an alias, a summary, details and a category, saved once.
+async function settleAlice() {
+	await saveCharacter(db, aliceId, ownerId, {
+		name: 'Alice',
+		aliases: ['Allie'],
+		summaryMd: 'A smuggler with debts.',
+		bodyMd: 'A smuggler.',
+		details: [{ label: 'Status', value: 'Alive' }],
+		categoryId
+	});
+}
+
 describe('saves snapshot the structured fields', () => {
 	it('a details-and-alias change registers without a body change', async () => {
-		await saveCharacter(db, aliceId, ownerId, {
-			name: 'Alice',
-			aliases: ['Allie'],
-			summaryMd: 'A smuggler with debts.',
-			bodyMd: 'A smuggler.',
-			details: [{ label: 'Status', value: 'Alive' }],
-			categoryId
-		});
+		await settleAlice();
 		const [alice] = await db.select().from(characters).where(eq(characters.id, aliceId));
 		expect(alice.details).toEqual([{ label: 'Status', value: 'Alive' }]);
 
@@ -123,15 +131,9 @@ describe('saves snapshot the structured fields', () => {
 	});
 
 	it('an unchanged save records nothing new', async () => {
+		await settleAlice();
 		const before = await listRevisions(db, 'character', aliceId);
-		await saveCharacter(db, aliceId, ownerId, {
-			name: 'Alice',
-			aliases: ['Allie'],
-			summaryMd: 'A smuggler with debts.',
-			bodyMd: 'A smuggler.',
-			details: [{ label: 'Status', value: 'Alive' }],
-			categoryId
-		});
+		await settleAlice();
 		const after = await listRevisions(db, 'character', aliceId);
 		expect(after).toHaveLength(before.length);
 		expect(after[0].id).toBe(before[0].id);
@@ -139,6 +141,7 @@ describe('saves snapshot the structured fields', () => {
 	});
 
 	it('a checkpoint captures the full entity', async () => {
+		await settleAlice();
 		const ok = await createCheckpoint(db, ownerId, 'character', aliceId, 'Cast settled');
 		expect(ok).toMatchObject({ ok: true });
 		const snapshot = await latestSnapshot('character', aliceId);
@@ -169,6 +172,12 @@ describe('relationship changes land on both timelines', () => {
 	});
 
 	it('deleting one records the emptied set on both ends', async () => {
+		await createRelationship(db, ownerId, {
+			fromKind: 'character',
+			fromId: aliceId,
+			relationTypeId: typeId('mentor_of'),
+			toId: bramId
+		});
 		const [row] = await db
 			.select({ id: entityRelationships.id })
 			.from(entityRelationships)
@@ -182,6 +191,7 @@ describe('relationship changes land on both timelines', () => {
 describe('restore returns the whole entity', () => {
 	it('round-trips fields, details, and the relationship set', async () => {
 		// The state to come back to: alias, details, category, one relationship.
+		await settleAlice();
 		await createRelationship(db, ownerId, {
 			fromKind: 'character',
 			fromId: aliceId,
@@ -249,6 +259,13 @@ describe('restore returns the whole entity', () => {
 	it('skips snapshot parts that no longer exist', async () => {
 		// Snapshot Alice while she points at a category and a place that are
 		// both about to be deleted.
+		await settleAlice();
+		await createRelationship(db, ownerId, {
+			fromKind: 'character',
+			fromId: aliceId,
+			relationTypeId: typeId('lives_in'),
+			toId: haldenId
+		});
 		await createCheckpoint(db, ownerId, 'character', aliceId, 'Doomed references');
 		const checkpoint = (await listRevisions(db, 'character', aliceId)).find(
 			(row) => row.label === 'Doomed references'
@@ -274,6 +291,7 @@ describe('restore returns the whole entity', () => {
 	});
 
 	it('restores body-only for revisions from before snapshots existed', async () => {
+		await settleAlice();
 		await db.insert(revisions).values({
 			entityType: 'character',
 			entityId: aliceId,

@@ -100,3 +100,18 @@ describe('mentionSnippet', () => {
 		expect(mentionSnippet('Alice waits.', 0, 5)).toBe('Alice waits.');
 	});
 });
+
+describe('detectMentions matcher reuse', () => {
+	it('reuses one target list across calls and picks up a new one', () => {
+		const first: MentionTarget[] = [{ id: 'a', type: 'character', names: ['Alice'] }];
+		expect(detectMentions('Alice and Bram.', first)).toHaveLength(1);
+		expect(detectMentions('Alice met Alice.', first)).toHaveLength(2);
+		const second: MentionTarget[] = [...first, { id: 'b', type: 'character', names: ['Bram'] }];
+		expect(detectMentions('Alice and Bram.', second).map((m) => m.text)).toEqual(['Alice', 'Bram']);
+	});
+
+	it('offsets positions for a slice of a larger document', () => {
+		const targets: MentionTarget[] = [{ id: 'a', type: 'character', names: ['Alice'] }];
+		expect(detectMentions('Alice', targets, {}, 40)[0].position).toBe(40);
+	});
+});

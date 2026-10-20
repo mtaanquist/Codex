@@ -28,6 +28,7 @@ import { notifySuggestionDiscussion, notifyThreadReviewers } from '$lib/server/n
 import { teaser } from '$lib/notifications';
 import { listTrashedScenes } from '$lib/server/scene-lifecycle';
 import { sceneManageActions } from '$lib/server/scene-manage-actions';
+import { formText } from '$lib/server/validation';
 
 // The author's side of a review: every thread guests have left on the
 // story, against the current text, with reply and resolve.
@@ -117,14 +118,14 @@ export const actions: Actions = {
 			Number.isInteger(start) && Number.isInteger(end) && end > start && start >= 0
 				? { start, end }
 				: null;
-		const sceneId = String(data.get('sceneId') ?? '');
+		const sceneId = formText(data, 'sceneId');
 		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
 		const result = await createThread(db, {
 			storyId: story.id,
 			sceneId,
 			anchor,
 			author: { userId: locals.user!.id },
-			body: String(data.get('body') ?? '')
+			body: formText(data, 'body')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
@@ -134,14 +135,14 @@ export const actions: Actions = {
 	suggest: async ({ params, request, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const sceneId = String(data.get('sceneId') ?? '');
+		const sceneId = formText(data, 'sceneId');
 		if (!isUuid(sceneId)) return fail(400, { message: 'That scene does not exist.' });
 		const result = await createSuggestion(db, {
 			storyId: story.id,
 			sceneId,
 			author: { userId: locals.user!.id },
 			range: { start: Number(data.get('start')), end: Number(data.get('end')) },
-			replacement: String(data.get('replacement') ?? '')
+			replacement: formText(data, 'replacement')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
@@ -149,20 +150,20 @@ export const actions: Actions = {
 	reply: async ({ params, request, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const threadId = String(data.get('threadId') ?? '');
+		const threadId = formText(data, 'threadId');
 		if (!isUuid(threadId)) return fail(400, { message: 'That thread does not exist.' });
 		const result = await addComment(db, {
 			storyId: story.id,
 			threadId,
 			author: { userId: locals.user!.id },
-			body: String(data.get('body') ?? '')
+			body: formText(data, 'body')
 		});
 		if (!result.ok) return fail(400, { message: result.reason });
 		// Reviewers in the thread hear back; their review link is the way in,
 		// so the notification informs without navigating.
 		await notifyThreadReviewers(db, threadId, {
 			title: `${locals.user!.displayName} replied to your comment on "${story.title}"`,
-			detail: teaser(String(data.get('body') ?? ''))
+			detail: teaser(formText(data, 'body'))
 		});
 		return { done: true };
 	},
@@ -172,11 +173,11 @@ export const actions: Actions = {
 	replySuggestion: async ({ params, request, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const suggestionId = String(data.get('suggestionId') ?? '');
+		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const thread = await ensureSuggestionThread(db, { storyId: story.id, suggestionId });
 		if (!thread.ok) return fail(400, { message: thread.reason });
-		const body = String(data.get('body') ?? '');
+		const body = formText(data, 'body');
 		const result = await addComment(db, {
 			storyId: story.id,
 			threadId: thread.threadId,
@@ -197,60 +198,68 @@ export const actions: Actions = {
 		return { done: true, threadId: thread.threadId };
 	},
 	resolve: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const threadId = String(data.get('threadId') ?? '');
-		if (!isUuid(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, true))) {
+		const threadId = formText(data, 'threadId');
+		if (
+			!isUuid(threadId) ||
+			!(await setThreadResolved(db, locals.user!.id, story.id, threadId, true))
+		) {
 			return fail(400, { message: 'That thread could not be resolved.' });
 		}
 		return { done: true };
 	},
 	reopen: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const threadId = String(data.get('threadId') ?? '');
-		if (!isUuid(threadId) || !(await setThreadResolved(db, locals.user!.id, threadId, false))) {
+		const threadId = formText(data, 'threadId');
+		if (
+			!isUuid(threadId) ||
+			!(await setThreadResolved(db, locals.user!.id, story.id, threadId, false))
+		) {
 			return fail(400, { message: 'That thread could not be reopened.' });
 		}
 		return { done: true };
 	},
 	acceptSuggestion: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const suggestionId = String(data.get('suggestionId') ?? '');
+		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await decideSuggestion(db, locals.user!.id, suggestionId, true);
+		const result = await decideSuggestion(db, locals.user!.id, story.id, suggestionId, true);
 		if (!result.ok) return fail(400, { message: result.reason });
 		// The body changed; keep the mention index in step.
 		if (result.sceneId) await queueSceneMentions(result.sceneId);
-		return { done: true };
+		// The editor rebases its save check onto this text, so the accepted
+		// change does not read as an edit from another window.
+		return { done: true, bodyMd: result.bodyMd, baseHash: result.baseHash };
 	},
 	rejectSuggestion: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const suggestionId = String(data.get('suggestionId') ?? '');
+		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await decideSuggestion(db, locals.user!.id, suggestionId, false);
+		const result = await decideSuggestion(db, locals.user!.id, story.id, suggestionId, false);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	},
 	// The author retracting a comment of their own.
 	deleteComment: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const commentId = String(data.get('commentId') ?? '');
+		const commentId = formText(data, 'commentId');
 		if (!isUuid(commentId)) return fail(400, { message: 'That comment does not exist.' });
-		const result = await deleteComment(db, { userId: locals.user!.id }, commentId);
+		const result = await deleteComment(db, { userId: locals.user!.id }, story.id, commentId);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	},
 	// The author retracting a suggestion of their own while it is still pending.
 	deleteSuggestion: async ({ params, request, locals }) => {
-		await ownedStory(params.id, locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const suggestionId = String(data.get('suggestionId') ?? '');
+		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await deleteSuggestion(db, { userId: locals.user!.id }, suggestionId);
+		const result = await deleteSuggestion(db, { userId: locals.user!.id }, story.id, suggestionId);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
 	},

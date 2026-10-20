@@ -11,6 +11,7 @@ import {
 	characterStoryNotes,
 	entityCategories,
 	loreEntries,
+	notes,
 	places,
 	scenes,
 	stories,
@@ -22,6 +23,7 @@ import { parseStoryZip } from '../../src/lib/import-markdown';
 import { previewImport, runImport } from '../../src/lib/server/import-story';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { zipBytes } from '../../src/lib/server/zip-stream';
 
 let pool: pg.Pool;
 let db: Database;
@@ -77,41 +79,44 @@ async function seedStory() {
 		.insert(chapters)
 		.values({ storyId: story.id, title: 'The Toll', position: 2 })
 		.returning();
-	await db.insert(scenes).values([
-		{
-			storyId: story.id,
-			chapterId: one.id,
-			positionInChapter: 1,
-			globalPosition: 1,
-			title: 'Departure',
-			status: 'final',
-			bodyMd: 'The gate opened.'
-		},
-		{
-			storyId: story.id,
-			chapterId: one.id,
-			positionInChapter: 2,
-			globalPosition: 2,
-			title: 'Night',
-			status: 'draft',
-			bodyMd: 'Stars over the road.'
-		},
-		{
-			storyId: story.id,
-			chapterId: two.id,
-			positionInChapter: 1,
-			globalPosition: 3,
-			title: 'Tollgate',
-			status: 'revised',
-			bodyMd: 'They paid in silver.'
-		},
-		{
-			storyId: story.id,
-			globalPosition: 4,
-			title: 'Loose end',
-			bodyMd: 'A stray thought.'
-		}
-	]);
+	const sceneRows = await db
+		.insert(scenes)
+		.values([
+			{
+				storyId: story.id,
+				chapterId: one.id,
+				positionInChapter: 1,
+				globalPosition: 1,
+				title: 'Departure',
+				status: 'final',
+				bodyMd: 'The gate opened.'
+			},
+			{
+				storyId: story.id,
+				chapterId: one.id,
+				positionInChapter: 2,
+				globalPosition: 2,
+				title: 'Night',
+				status: 'draft',
+				bodyMd: 'Stars over the road.'
+			},
+			{
+				storyId: story.id,
+				chapterId: two.id,
+				positionInChapter: 1,
+				globalPosition: 3,
+				title: 'Tollgate',
+				status: 'revised',
+				bodyMd: 'They paid in silver.'
+			},
+			{
+				storyId: story.id,
+				globalPosition: 4,
+				title: 'Loose end',
+				bodyMd: 'A stray thought.'
+			}
+		])
+		.returning();
 	const [alice] = await db
 		.insert(characters)
 		.values({ universeId: universe.id, ownerId, name: 'Alice Vane' })
@@ -119,11 +124,32 @@ async function seedStory() {
 	await db
 		.insert(characterStoryNotes)
 		.values({ characterId: alice.id, storyId: story.id, notesMd: 'Limps in this book.' });
+	await db.insert(notes).values([
+		{
+			ownerId,
+			universeId: universe.id,
+			storyId: story.id,
+			sceneId: sceneRows.find((scene) => scene.title === 'Night')!.id,
+			title: 'Threads',
+			bodyMd: 'Who paid the toll?',
+			pinned: true,
+			createdAt: new Date('2026-01-01T10:00:00Z')
+		},
+		{
+			ownerId,
+			universeId: universe.id,
+			storyId: story.id,
+			bodyMd: 'An untitled idea.',
+			createdAt: new Date('2026-01-02T10:00:00Z')
+		}
+	]);
 	return story;
 }
 
 async function exportPlan(story: Awaited<ReturnType<typeof seedStory>>) {
-	const { bytes } = await buildStoryZip(story, await gatherStory(db, story), noAssets);
+	const bytes = await zipBytes(
+		(await buildStoryZip(story, await gatherStory(db, story), noAssets)).entries
+	);
 	return parseStoryZip(bytes);
 }
 
@@ -140,6 +166,7 @@ describe('previewImport', () => {
 		expect(preview.chapterCount).toBe(2);
 		expect(preview.sceneCount).toBe(4);
 		expect(preview.words).toBeGreaterThan(0);
+		expect(preview.freeformNoteCount).toBe(2);
 		expect(preview.notes).toEqual([
 			{ kind: 'character', name: 'Alice Vane', outcome: 'ambiguous' },
 			{ kind: 'character', name: 'Bram', outcome: 'create' }
@@ -161,6 +188,7 @@ describe('runImport', () => {
 		expect(result.notesAttached).toBe(1);
 		expect(result.entitiesCreated).toBe(0);
 		expect(result.notesSkipped).toBe(0);
+		expect(result.freeformNotesCreated).toBe(2);
 
 		const [imported] = await db.select().from(stories).where(eq(stories.id, result.storyId));
 		expect(imported.title).toBe('Halden');
@@ -206,6 +234,35 @@ describe('runImport', () => {
 			.from(characterStoryMemberships)
 			.where(eq(characterStoryMemberships.storyId, result.storyId));
 		expect(memberships).toEqual([expect.objectContaining({ characterId: alice.id })]);
+
+		const freeform = await db
+			.select()
+			.from(notes)
+			.where(eq(notes.storyId, result.storyId))
+			.orderBy(asc(notes.createdAt));
+		// Freeform notes keep their title, body, pin, scene, and created time.
+		expect(
+			freeform.map((n) => [
+				n.title,
+				n.bodyMd,
+				n.pinned,
+				n.sceneId,
+				n.createdAt.toISOString(),
+				n.universeId,
+				n.ownerId
+			])
+		).toEqual([
+			[
+				'Threads',
+				'Who paid the toll?',
+				true,
+				sceneRows[1].id,
+				'2026-01-01T10:00:00.000Z',
+				universe.id,
+				ownerId
+			],
+			[null, 'An untitled idea.', false, null, '2026-01-02T10:00:00.000Z', universe.id, ownerId]
+		]);
 	});
 
 	it('creates missing entities, skips ambiguous ones, and reports both', async () => {

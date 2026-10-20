@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, notInArray, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { assistantChatMessages, type AssistantChatMeta } from '../db/schema';
 import { estimateTokens } from './context/assemble';
@@ -52,7 +52,7 @@ export async function listChat(
 		})
 		.from(assistantChatMessages)
 		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)))
-		.orderBy(asc(assistantChatMessages.createdAt));
+		.orderBy(asc(assistantChatMessages.createdAt), asc(assistantChatMessages.id));
 	return rows;
 }
 
@@ -70,25 +70,23 @@ export async function appendChat(
 		content: message.content,
 		meta: message.meta
 	});
-	// Trim the scrollback: everything older than the newest MAX_TURNS rows.
-	const cutoff = await db
-		.select({ createdAt: assistantChatMessages.createdAt })
+	// Trim the scrollback to the newest MAX_TURNS rows. Rows can share a
+	// created_at, so the cut is by row (id breaks ties), not by timestamp.
+	const keep = db
+		.select({ id: assistantChatMessages.id })
 		.from(assistantChatMessages)
 		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)))
-		.orderBy(sql`${assistantChatMessages.createdAt} desc`)
-		.offset(MAX_TURNS - 1)
-		.limit(1);
-	if (cutoff.length > 0) {
-		await db
-			.delete(assistantChatMessages)
-			.where(
-				and(
-					eq(assistantChatMessages.userId, userId),
-					scopeWhere(scope),
-					lt(assistantChatMessages.createdAt, cutoff[0].createdAt)
-				)
-			);
-	}
+		.orderBy(desc(assistantChatMessages.createdAt), desc(assistantChatMessages.id))
+		.limit(MAX_TURNS);
+	await db
+		.delete(assistantChatMessages)
+		.where(
+			and(
+				eq(assistantChatMessages.userId, userId),
+				scopeWhere(scope),
+				notInArray(assistantChatMessages.id, keep)
+			)
+		);
 }
 
 // Marks a stored split proposal as confirmed (recording what the split
@@ -162,16 +160,4 @@ export async function clearChat(db: Database, userId: string, scope: ChatScope):
 	await db
 		.delete(assistantChatMessages)
 		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)));
-}
-
-// The delete cascades reach for these: a story's transcripts go with the
-// story (every user's, not just the owner's - the rows are story-bound), and
-// an account purge clears the user's transcripts everywhere.
-export async function deleteChatForStories(db: Database, storyIds: string[]): Promise<void> {
-	if (storyIds.length === 0) return;
-	await db.delete(assistantChatMessages).where(inArray(assistantChatMessages.storyId, storyIds));
-}
-
-export async function deleteChatForUser(db: Database, userId: string): Promise<void> {
-	await db.delete(assistantChatMessages).where(eq(assistantChatMessages.userId, userId));
 }

@@ -67,45 +67,80 @@ function attribute(
 	return ordered.map((entry) => entry.target);
 }
 
-// Finds non-overlapping, word-bounded, case-sensitive occurrences. Longer
-// names win where they overlap ("Alice Vane" beats "Alice" at the same spot).
-// Single-character names are ignored.
-export function detectMentions(
-	body: string,
-	targets: MentionTarget[],
-	context: MentionContext = {}
-): MentionMatch[] {
-	const names: { name: string; target: MentionTarget }[] = [];
+type Candidate = { name: string; target: MentionTarget };
+
+type Matcher = {
+	pattern: RegExp;
+	// Matched text -> the distinct entities carrying it. One entity can carry
+	// the same string as both name and alias; that is not an ambiguity.
+	byName: Map<string, Candidate[]>;
+};
+
+// Building the alternation of every name is the expensive part, so it is
+// done once per target list. The editor and the worker pass the same array on
+// every call; a new array (an edited entity) builds a new matcher, so a
+// target list is never changed in place once it has been scanned with.
+const matchers = new WeakMap<MentionTarget[], Matcher | null>();
+
+function compileMatcher(targets: MentionTarget[]): Matcher | null {
+	const byName = new Map<string, Candidate[]>();
 	for (const target of targets) {
 		for (const raw of target.names) {
 			const name = raw.trim();
-			if (name.length > 1) names.push({ name, target });
+			if (name.length <= 1) continue;
+			const entries = byName.get(name) ?? [];
+			if (!entries.some((entry) => entry.target.id === target.id)) {
+				entries.push({ name, target });
+			}
+			byName.set(name, entries);
 		}
 	}
-	if (names.length === 0) return [];
-
+	if (byName.size === 0) return null;
 	// Longest first, so the alternation prefers the longer overlapping name.
-	names.sort((a, b) => b.name.length - a.name.length);
+	const names = [...byName.keys()].sort((a, b) => b.length - a.length);
 	const pattern = new RegExp(
-		`(?<![\\p{L}\\p{N}_])(${names.map((n) => escapeRegExp(n.name)).join('|')})(?![\\p{L}\\p{N}_])`,
+		`(?<![\\p{L}\\p{N}_])(${names.map(escapeRegExp).join('|')})(?![\\p{L}\\p{N}_])`,
 		'gu'
 	);
+	return { pattern, byName };
+}
+
+function matcherFor(targets: MentionTarget[]): Matcher | null {
+	let matcher = matchers.get(targets);
+	if (matcher === undefined) {
+		matcher = compileMatcher(targets);
+		matchers.set(targets, matcher);
+	}
+	return matcher;
+}
+
+// Finds non-overlapping, word-bounded, case-sensitive occurrences. Longer
+// names win where they overlap ("Alice Vane" beats "Alice" at the same spot).
+// Single-character names are ignored. offset is added to every position, for
+// a caller scanning a slice of a larger document.
+export function detectMentions(
+	body: string,
+	targets: MentionTarget[],
+	context: MentionContext = {},
+	offset = 0
+): MentionMatch[] {
+	const matcher = matcherFor(targets);
+	if (!matcher) return [];
+	// The cached pattern is shared, so this call keeps its own cursor.
+	const pattern = new RegExp(matcher.pattern);
 
 	const matches: MentionMatch[] = [];
 	let match;
 	while ((match = pattern.exec(body)) !== null) {
 		const text = match[1];
-		const candidates = names.filter((entry) => entry.name === text);
-		if (candidates.length === 0) continue;
-		// One entity can carry the same string as both name and alias; that
-		// is not an ambiguity.
-		const distinct = [...new Map(candidates.map((entry) => [entry.target.id, entry])).values()];
-		const ordered = attribute(distinct, text, context);
+		const candidates = matcher.byName.get(text);
+		if (!candidates) continue;
+		const ordered = attribute(candidates, text, context);
 		const winner = ordered[0];
 		matches.push({
 			targetType: winner.type,
 			targetId: winner.id,
-			position: match.index,
+			position: match.index + offset,
 			length: text.length,
 			text,
 			...(ordered.length > 1

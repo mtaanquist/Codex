@@ -120,9 +120,26 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		'Untitled scene'
 	);
 	await page.reload();
+	await waitForHydration(page);
 	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
 		'Untitled scene'
 	);
+
+	// Issue #626: a refused reorder says so, and the order stays as saved.
+	await page.route('**/scene-order', (route) =>
+		route.fulfill({ status: 429, json: { message: 'Too many requests. Try again shortly.' } })
+	);
+	await page
+		.locator('.scene-row')
+		.nth(1)
+		.dragTo(page.locator('.scene-row').nth(0), { targetPosition: { x: 60, y: 4 } });
+	await expect(page.locator('.outline-error [role="alert"]')).toHaveText(
+		'Too many requests. Try again shortly.'
+	);
+	await expect(page.locator('.scene-row').nth(0).locator('.scene-name')).toHaveText(
+		'Untitled scene'
+	);
+	await page.unroute('**/scene-order');
 
 	// The whole story reads as one continuous document with jump navigation.
 	const sceneUrl = page.url();
@@ -417,6 +434,12 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// TODO markers: a TODO: line highlights in the prose and lands in the
 	// To do panel.
 	await page.getByRole('tab', { name: 'Reference' }).click();
+	// A save refreshes only what it changes, not the whole page load.
+	const pageLoads: string[] = [];
+	const countPageLoads = (request: { url(): string }) => {
+		if (request.url().includes('__data.json')) pageLoads.push(request.url());
+	};
+	page.on('request', countPageLoads);
 	const todoSave = page.waitForResponse(
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
@@ -427,6 +450,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await todoSave;
 	await expect(page.locator('.cm-line.todo-line')).toHaveCount(1);
 	await expect(page.locator('.todo-text').first()).toContainText('tighten the toll scene');
+	page.off('request', countPageLoads);
+	expect(pageLoads).toEqual([]);
 
 	// A marked selection gets a checkable entry and a highlight.
 	const markerCreate = page.waitForResponse(
@@ -695,13 +720,20 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Corvin is not a member yet; he shows only in the open universe list.
 	await expect(page.locator('.ent-row:not(.uni-row)', { hasText: 'Corvin' })).toHaveCount(0);
 
-	// Deleting a story that has chapters, scenes, markers, revisions, and a
-	// published edition succeeds rather than 500ing on the foreign keys, and
-	// lands back on the universe.
+	// Deleting a story moves it to the library's deleted list and lands back
+	// on the universe; restoring it brings it back under its universe.
 	await gotoReady(page, `${proseSceneUrl.split('?')[0]}/settings/danger`);
+	page.once('dialog', (dialog) => dialog.accept());
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
+	await page.getByRole('link', { name: 'Codex, your library' }).click();
+	const deletedStories = page.locator('section', { hasText: 'Deleted stories' });
+	await expect(deletedStories.getByText('Book of Ash')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
+	await deletedStories.getByRole('button', { name: 'Restore' }).click();
+	await expect(deletedStories).toHaveCount(0);
+	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
 });
 
 // A signed-out browser of its own: the shared session would bounce off

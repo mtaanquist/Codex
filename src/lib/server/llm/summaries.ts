@@ -1,10 +1,13 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
+import { errorFields, logEvent } from '../log.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
-import type { SpendMeter } from './spend.ts';
+import { resolveLlmConfig } from './config.ts';
+import { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { storyIsLive } from '../universe-scope.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
@@ -21,8 +24,12 @@ export type SummaryResult = {
 	chapters: number;
 	failed: number;
 	// Set when a run's spend ceiling was reached and the rest of the pass was
-	// left for a later run.
+	// left for a later run, with what it had spent by then.
 	capped?: boolean;
+	spentUsd?: number;
+	// Why a cap that was set could not be enforced. Only reported when the run
+	// metered itself; a caller that passed its own meter reads it from that.
+	capNotApplied?: string;
 };
 
 function blank(value: string | null): boolean {
@@ -71,17 +78,28 @@ async function generate(
 	return result.content.trim();
 }
 
+async function storyMeter(db: Database, userId: string, storyId: string): Promise<SpendMeter> {
+	const resolved = await resolveLlmConfig(db, userId, storyId);
+	return new SpendMeter({
+		pricing: resolved.config.modelPricing,
+		capUsd: resolved.config.spendCapUsd
+	});
+}
+
 // Draft and refresh the summaries for a whole story's scenes, then its chapters
 // (chapter summaries draw on the scene summaries, so scenes go first). Owner
-// scoped through the story. Per-item errors are caught so one unreachable turn
-// does not abandon the rest; the result reports how many summaries were written
-// and how many failed.
+// scoped through the story. A review passes the meter it shares across its
+// phases; called on its own, the run meters itself against the account's cap.
+// Per-item errors are caught so one unreachable turn does not abandon the rest;
+// the result reports how many summaries were written and how many failed.
 export async function summariseStory(
 	db: Database,
 	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<SummaryResult> {
-	const { userId, storyId, meter, signal } = opts;
+	const { userId, storyId, signal } = opts;
+	const ownMeter = !opts.meter;
+	const meter = opts.meter ?? (await storyMeter(db, userId, storyId));
 	let written = 0;
 	let chaptersWritten = 0;
 	let failed = 0;
@@ -102,12 +120,19 @@ export async function summariseStory(
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
-		.where(and(eq(scenes.storyId, storyId), eq(stories.ownerId, userId), isNull(scenes.deletedAt)))
+		.where(
+			and(
+				eq(scenes.storyId, storyId),
+				eq(stories.ownerId, userId),
+				storyIsLive(),
+				isNull(scenes.deletedAt)
+			)
+		)
 		.orderBy(asc(scenes.globalPosition));
 
 	for (const scene of sceneRows) {
 		// Between summaries is the boundary where stopping leaves nothing partial.
-		if (meter?.capReached) {
+		if (meter.capReached) {
 			capped = true;
 			break;
 		}
@@ -146,7 +171,7 @@ export async function summariseStory(
 			written += 1;
 			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {
-			console.error(`summaries: scene ${scene.id} failed:`, err);
+			logEvent('error', 'summaries.scene_failed', { sceneId: scene.id, ...errorFields(err) });
 			failed += 1;
 		}
 	}
@@ -161,22 +186,41 @@ export async function summariseStory(
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
-		.where(and(eq(chapters.storyId, storyId), eq(stories.ownerId, userId)))
+		.where(and(eq(chapters.storyId, storyId), eq(stories.ownerId, userId), storyIsLive()))
 		.orderBy(asc(chapters.position));
 
+	// Every chapter's scene summaries in one read, read after the scene pass so
+	// the summaries it just wrote are included.
+	const summariesByChapter = new Map<string, string[]>();
+	if (chapterRows.length > 0) {
+		const sceneSummaries = await db
+			.select({ chapterId: scenes.chapterId, summaryMd: scenes.summaryMd })
+			.from(scenes)
+			.where(
+				and(
+					inArray(
+						scenes.chapterId,
+						chapterRows.map((c) => c.id)
+					),
+					isNull(scenes.deletedAt)
+				)
+			)
+			.orderBy(asc(scenes.globalPosition));
+		for (const row of sceneSummaries) {
+			const summary = row.summaryMd?.trim();
+			if (!row.chapterId || !summary) continue;
+			const list = summariesByChapter.get(row.chapterId) ?? [];
+			list.push(summary);
+			summariesByChapter.set(row.chapterId, list);
+		}
+	}
+
 	for (const chapter of chapterRows) {
-		if (meter?.capReached) {
+		if (meter.capReached) {
 			capped = true;
 			break;
 		}
-		const sceneSummaries = await db
-			.select({ summaryMd: scenes.summaryMd })
-			.from(scenes)
-			.where(and(eq(scenes.chapterId, chapter.id), isNull(scenes.deletedAt)))
-			.orderBy(asc(scenes.globalPosition));
-		const summaries = sceneSummaries
-			.map((s) => s.summaryMd?.trim())
-			.filter((s): s is string => !!s);
+		const summaries = summariesByChapter.get(chapter.id) ?? [];
 		if (summaries.length === 0) continue;
 
 		const changedSince =
@@ -212,7 +256,7 @@ export async function summariseStory(
 				.where(eq(chapters.id, chapter.id));
 			chaptersWritten += 1;
 		} catch (err) {
-			console.error(`summaries: chapter ${chapter.id} failed:`, err);
+			logEvent('error', 'summaries.chapter_failed', { chapterId: chapter.id, ...errorFields(err) });
 			failed += 1;
 		}
 	}
@@ -221,6 +265,7 @@ export async function summariseStory(
 		scenes: written,
 		chapters: chaptersWritten,
 		failed,
-		...(capped ? { capped: true } : {})
+		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(ownMeter && meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }

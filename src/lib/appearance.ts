@@ -9,7 +9,6 @@ export type ConcreteTheme = 'light' | 'warm' | 'dark';
 // resolve through the two mappings below.
 export type Theme = 'system' | ConcreteTheme;
 
-export const THEMES: Theme[] = ['system', 'light', 'warm', 'dark'];
 export const DEFAULT_THEME: Theme = 'system';
 
 // The concrete palettes offered for each side of the system preference.

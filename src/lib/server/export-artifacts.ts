@@ -4,14 +4,18 @@ import type { Database } from './auth.ts';
 import { exportArtifacts, publications, stories } from './db/schema.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import {
+	asBuffer,
 	bucketAssetLoader,
 	buildStoryZip,
+	cachedAssetLoader,
+	readAssets,
 	type AssetLoader,
 	type ExportAsset,
 	type ExportStory,
 	type StoryContent
 } from './export.ts';
 import { slugify } from '../slug.ts';
+import { uploadZip, type ZipArchive } from './zip-stream.ts';
 import { buildEpub } from './epub.ts';
 import type { EditionContent } from './publish.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
@@ -21,8 +25,7 @@ import { storyPageSetup } from './page-setup.ts';
 // Stored export artifacts: when an edition publishes, the worker generates
 // its markdown zip, EPUB, and PDF from the frozen content and keeps them in
 // the asset bucket, the way a release carries assets. Everything here is
-// derived data; regeneration overwrites in place. Runs in the worker, so
-// relative value imports carry explicit .ts extensions.
+// derived data; regeneration overwrites in place. Runs in the worker.
 
 export type ArtifactFormat = 'markdown' | 'epub' | 'pdf';
 
@@ -63,7 +66,7 @@ function escapeHtml(text: string): string {
 // page setup ($lib/page-setup builds the stylesheet the browser print route
 // shares). Page geometry rides the pdf options instead of an @page rule,
 // since Chromium's header/footer layer needs it there. Images are inlined
-// as data URIs so the headless browser never needs the network.
+// as data URIs; any other image URL is blocked by the renderer (isolatePage).
 export function buildEditionHtml(
 	meta: { title: string; author: string | null },
 	content: StoryContent,
@@ -109,7 +112,7 @@ ${sections.join('\n')}
 </html>`;
 }
 
-function chromiumPath(): string | null {
+export function chromiumPath(): string | null {
 	if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
 	for (const path of ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']) {
 		if (existsSync(path)) return path;
@@ -117,9 +120,32 @@ function chromiumPath(): string | null {
 	return null;
 }
 
+type IsolatablePage = {
+	setJavaScriptEnabled(enabled: boolean): Promise<void>;
+	setRequestInterception(enabled: boolean): Promise<void>;
+	on(
+		event: 'request',
+		handler: (request: { url(): string; continue(): Promise<void>; abort(): Promise<void> }) => void
+	): unknown;
+};
+
+// The rendered HTML carries author content, and markdown still turns an
+// external image URL into an <img>. Every request other than an inlined
+// data: URI is aborted, so the worker's browser never reaches the network
+// it runs in (internal services, cloud metadata endpoints). Scripts are off
+// as well; nothing in the document needs them.
+export async function isolatePage(page: IsolatablePage): Promise<void> {
+	await page.setJavaScriptEnabled(false);
+	await page.setRequestInterception(true);
+	page.on('request', (request) => {
+		if (request.url().startsWith('data:')) void request.continue();
+		else void request.abort();
+	});
+}
+
 // Renders the document with headless Chromium via puppeteer-core, driving
-// the system browser (installed in the Docker image; CHROMIUM_PATH points
-// elsewhere when needed). Loaded lazily so nothing outside the worker's PDF
+// the system browser (installed in the Docker image and found by
+// chromiumPath; CHROMIUM_PATH points elsewhere when needed). Loaded lazily so nothing outside the worker's PDF
 // path pays for it.
 export async function renderEditionPdf(
 	html: string,
@@ -135,12 +161,26 @@ export async function renderEditionPdf(
 	const { launch } = await import('puppeteer-core');
 	const browser = await launch({
 		executablePath,
+		// Puppeteer gives up after 30s by default, and a cold start on a busy
+		// host (a CI runner mid-suite) has run past that.
+		timeout: 90_000,
 		// Sandboxing is off because the container already isolates the process,
-		// and the rendered HTML is built from author prose with raw HTML escaped.
-		args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+		// the rendered HTML is built from author prose with raw HTML escaped, and
+		// isolatePage blocks scripts and every network request. The dead proxy
+		// (loopback included) backs that up for fetches interception does not
+		// see, such as <link rel=prefetch>.
+		args: [
+			'--no-sandbox',
+			'--disable-setuid-sandbox',
+			'--disable-dev-shm-usage',
+			'--disable-gpu',
+			'--proxy-server=127.0.0.1:9',
+			'--proxy-bypass-list=<-loopback>'
+		]
 	});
 	try {
 		const page = await browser.newPage();
+		await isolatePage(page);
 		await page.setContent(html, { waitUntil: 'load' });
 		const pdf = await page.pdf(options);
 		return new Uint8Array(pdf);
@@ -209,27 +249,28 @@ export async function generateEditionArtifacts(
 		descriptionMd: edition.descriptionMd
 	};
 	const content = editionStoryContent(edition.content as EditionContent);
-	const loadAssets = deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId);
+	// The three formats share one set of images, fetched from the bucket once.
+	const loadAssets = cachedAssetLoader(deps.loadAssets ?? bucketAssetLoader(db, edition.ownerId));
 	const renderPdf = deps.renderPdf ?? renderEditionPdf;
 	const slug = slugify(edition.title, 'story');
 
-	const builders: {
-		format: ArtifactFormat;
-		build: () => Promise<{ filename: string; bytes: Uint8Array; contentType: string }>;
-	}[] = [
+	// The zip and EPUB stream into the bucket as they are written; the PDF
+	// comes back from the browser whole.
+	type Built = { contentType: string } & (ZipArchive | { filename: string; bytes: Uint8Array });
+	const builders: { format: ArtifactFormat; build: () => Promise<Built> }[] = [
 		{
 			format: 'markdown',
-			build: async () => {
-				const zip = await buildStoryZip(story, content, loadAssets);
-				return { ...zip, contentType: 'application/zip' };
-			}
+			build: async () => ({
+				...(await buildStoryZip(story, content, loadAssets)),
+				contentType: 'application/zip'
+			})
 		},
 		{
 			format: 'epub',
-			build: async () => {
-				const epub = await buildEpub(story, content, loadAssets, edition.coverAssetId, setup);
-				return { ...epub, contentType: 'application/epub+zip' };
-			}
+			build: async () => ({
+				...(await buildEpub(story, content, loadAssets, edition.coverAssetId, setup)),
+				contentType: 'application/epub+zip'
+			})
 		},
 		{
 			format: 'pdf',
@@ -237,7 +278,8 @@ export async function generateEditionArtifacts(
 				const referenced = [
 					...new Set(content.scenes.flatMap((scene) => findAssetReferences(scene.bodyMd)))
 				];
-				const images = new Map((await loadAssets(referenced)).map((asset) => [asset.id, asset]));
+				const loaded = await readAssets(await loadAssets(referenced));
+				const images = new Map(loaded.map((asset) => [asset.id, asset]));
 				const html = buildEditionHtml(
 					{ title: edition.title, author: edition.author },
 					content,
@@ -259,7 +301,13 @@ export async function generateEditionArtifacts(
 		try {
 			const artifact = await build();
 			const storageKey = `${prefix}/exports/${publicationId}/${format}`;
-			await store.put(storageKey, Buffer.from(artifact.bytes), artifact.contentType);
+			let byteSize: number;
+			if ('entries' in artifact) {
+				byteSize = await uploadZip(store, storageKey, artifact.entries, artifact.contentType);
+			} else {
+				await store.put(storageKey, asBuffer(artifact.bytes), artifact.contentType);
+				byteSize = artifact.bytes.byteLength;
+			}
 			await db
 				.insert(exportArtifacts)
 				.values({
@@ -268,7 +316,7 @@ export async function generateEditionArtifacts(
 					storageKey,
 					filename: artifact.filename,
 					contentType: artifact.contentType,
-					byteSize: artifact.bytes.byteLength
+					byteSize
 				})
 				.onConflictDoUpdate({
 					target: [exportArtifacts.publicationId, exportArtifacts.format],
@@ -276,7 +324,7 @@ export async function generateEditionArtifacts(
 						storageKey,
 						filename: artifact.filename,
 						contentType: artifact.contentType,
-						byteSize: artifact.bytes.byteLength,
+						byteSize,
 						createdAt: sql`now()`
 					}
 				});
@@ -330,7 +378,8 @@ export async function artifactForDownload(db: Database, artifactId: string, user
 			isCurrent: publications.isCurrent,
 			removedAt: publications.removedAt,
 			downloadsPublic: publications.downloadsPublic,
-			visibility: stories.visibility
+			visibility: stories.visibility,
+			storyDeletedAt: stories.deletedAt
 		})
 		.from(exportArtifacts)
 		.innerJoin(publications, eq(exportArtifacts.publicationId, publications.id))
@@ -339,7 +388,11 @@ export async function artifactForDownload(db: Database, artifactId: string, user
 	if (!row) return null;
 	if (userId && userId === row.ownerId) return row.artifact;
 	const readable =
-		row.isCurrent && !row.removedAt && row.visibility !== 'private' && row.downloadsPublic;
+		row.isCurrent &&
+		!row.removedAt &&
+		!row.storyDeletedAt &&
+		row.visibility !== 'private' &&
+		row.downloadsPublic;
 	if (readable && row.artifact.format !== 'markdown') return row.artifact;
 	return null;
 }

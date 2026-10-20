@@ -1,5 +1,6 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { errorFields, logEvent } from './log.ts';
 import { stories, universes, userExports } from './db/schema.ts';
 import type { AssetObjectStore } from './assets.ts';
 import {
@@ -12,11 +13,12 @@ import {
 import { buildEpub } from './epub.ts';
 import { reviewLoader } from './export-reviews.ts';
 import { storyPageSetup } from './page-setup.ts';
+import { uploadZip, type ZipArchive } from './zip-stream.ts';
 
 // User-requested exports (account, story, or universe archive, or a story
-// EPUB). The heavy in-memory build and zip run in the worker, never on the web
-// request path, so one large export cannot freeze the instance. The finished
-// file lands in the asset bucket and the owner downloads it from /exports/[id].
+// EPUB). The build runs in the worker, never on the web request path, and
+// streams into the asset bucket as it is written, so one large export cannot
+// freeze the instance. The owner downloads it from /exports/[id].
 
 export type ExportScope = 'account' | 'story' | 'universe';
 export type ExportFormat = 'zip' | 'epub';
@@ -26,6 +28,10 @@ export const EXPORT_TTL_HOURS = 24;
 // At most this many exports per owner survive; requesting another sweeps the
 // oldest, so stored archives never accumulate.
 const MAX_EXPORTS_PER_OWNER = 10;
+// A build still pending after this long is taken as dead: a worker killed
+// mid-build (out of memory, say) never reaches the code that marks it failed,
+// and pg-boss has long since used up its retries by then.
+export const STALE_EXPORT_HOURS = 2;
 
 export type ExportRow = typeof userExports.$inferSelect;
 
@@ -104,20 +110,40 @@ export async function markExportFailed(
 		.where(and(eq(userExports.id, exportId), eq(userExports.status, 'pending')));
 }
 
+// Fails exports left pending past STALE_EXPORT_HOURS, for one owner or all.
+// Returns how many it failed.
+export async function failStaleExports(db: Database, ownerId?: string): Promise<number> {
+	const cutoff = new Date(Date.now() - STALE_EXPORT_HOURS * 3_600_000);
+	const conditions = [eq(userExports.status, 'pending'), lt(userExports.createdAt, cutoff)];
+	if (ownerId) conditions.push(eq(userExports.ownerId, ownerId));
+	const failed = await db
+		.update(userExports)
+		.set({ status: 'failed', error: 'The export did not finish. Try again.' })
+		.where(and(...conditions))
+		.returning({ id: userExports.id });
+	return failed.length;
+}
+
 // Builds the requested export and stores it in the bucket, run by the worker.
-// Returns the owner id on success so the caller can notify them.
+// Returns the owner id on success so the caller can notify them. A null store
+// (asset storage not configured) fails the row rather than leaving it pending.
 export async function runUserExport(
 	db: Database,
 	exportId: string,
-	store: AssetObjectStore
+	store: AssetObjectStore | null
 ): Promise<{ ok: true; ownerId: string } | { ok: false; reason: string }> {
 	const [row] = await db.select().from(userExports).where(eq(userExports.id, exportId));
 	if (!row) return { ok: false, reason: 'export not found' };
 	if (row.status !== 'pending') return { ok: false, reason: 'export already handled' };
+	if (!store) {
+		const reason = 'asset storage is not configured';
+		await markExportFailed(db, row.id, reason);
+		return { ok: false, reason };
+	}
 
 	try {
 		const loadAssets = bucketAssetLoader(db, row.ownerId);
-		let built: { filename: string; bytes: Uint8Array };
+		let built: ZipArchive;
 
 		if (row.scope === 'account') {
 			built = await buildAccountExport(db, row.ownerId, loadAssets, reviewLoader(db));
@@ -149,15 +175,17 @@ export async function runUserExport(
 
 		const contentType = CONTENT_TYPE[row.format];
 		const storageKey = `exports/${row.ownerId}/${row.id}.${row.format}`;
-		await store.put(storageKey, Buffer.from(built.bytes), contentType);
+		const byteSize = await uploadZip(store, storageKey, built.entries, contentType);
 		await db
 			.update(userExports)
 			.set({
 				status: 'ready',
+				// Clears a stale sweep's note when a slow build finishes after all.
+				error: null,
 				storageKey,
 				filename: built.filename,
 				contentType,
-				byteSize: built.bytes.byteLength
+				byteSize
 			})
 			.where(eq(userExports.id, row.id));
 		return { ok: true, ownerId: row.ownerId };
@@ -193,12 +221,14 @@ export async function exportForDownload(
 }
 
 // The owner's recent exports for one scope (and target), newest first, for the
-// page that requests them.
+// page that requests them. Stale pending rows are failed first, so the page
+// never shows a build that will not finish as still running.
 export async function listUserExports(
 	db: Database,
 	ownerId: string,
 	filter: { scope: ExportScope; targetId?: string | null }
 ): Promise<ExportRow[]> {
+	await failStaleExports(db, ownerId);
 	const conditions = [eq(userExports.ownerId, ownerId), eq(userExports.scope, filter.scope)];
 	conditions.push(
 		filter.targetId ? eq(userExports.targetId, filter.targetId) : isNull(userExports.targetId)
@@ -237,7 +267,7 @@ export async function pruneOwnerExports(
 			try {
 				await store.remove(row.storageKey);
 			} catch (error) {
-				console.error(`pruning export object ${row.storageKey} failed:`, error);
+				logEvent('error', 'export.prune_failed', { key: row.storageKey, ...errorFields(error) });
 			}
 		}
 		await db.delete(userExports).where(eq(userExports.id, row.id));

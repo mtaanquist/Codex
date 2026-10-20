@@ -3,6 +3,8 @@
 	import { CATEGORY_COLORS } from '$lib/entity-color';
 	import { dismiss } from '$lib/dismiss';
 	import EntityBadge from './EntityBadge.svelte';
+	import FormStatus from './FormStatus.svelte';
+	import { del, put, upload } from '$lib/api';
 
 	// The entity badge and its little menu: palette swatches and the image
 	// actions. Colour and image post straight to the badge endpoint (not the
@@ -34,15 +36,29 @@
 	// svelte-ignore state_referenced_locally
 	let badgeAssetId = $state(initialBadgeAssetId);
 	let menuOpen = $state(false);
+	// A refused change reopens the menu with the reason, so it is not lost.
+	let error = $state<string | null>(null);
+
+	function fail(message: string) {
+		error = message;
+		menuOpen = true;
+	}
 
 	async function pickColour(color: string | null) {
+		const previous = badgeColor;
 		badgeColor = color;
 		menuOpen = false;
-		await fetch(`/api/entities/${entityId}/badge`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ color })
-		}).catch(() => {});
+		error = null;
+		const result = await put(
+			`/api/entities/${entityId}/badge`,
+			{ color },
+			'Could not change the colour. Try again.'
+		);
+		if (!result.ok) {
+			badgeColor = previous;
+			fail(result.message);
+			return;
+		}
 		await invalidateAll();
 	}
 
@@ -52,22 +68,29 @@
 		input.value = '';
 		if (!file) return;
 		menuOpen = false;
+		error = null;
 		const data = new FormData();
 		data.set('file', file);
-		const response = await fetch(`/api/entities/${entityId}/badge`, { method: 'POST', body: data });
-		if (response.ok) {
-			badgeAssetId = (await response.json()).id;
-			await invalidateAll();
-		}
+		const result = await upload<{ id: string }>(
+			`/api/entities/${entityId}/badge`,
+			data,
+			'Could not upload the image. Try again.'
+		);
+		if (!result.ok) return fail(result.message);
+		badgeAssetId = result.id;
+		await invalidateAll();
 	}
 
 	async function removeImage() {
 		menuOpen = false;
-		const response = await fetch(`/api/entities/${entityId}/badge`, { method: 'DELETE' });
-		if (response.ok) {
-			badgeAssetId = null;
-			await invalidateAll();
-		}
+		error = null;
+		const result = await del(
+			`/api/entities/${entityId}/badge`,
+			'Could not remove the image. Try again.'
+		);
+		if (!result.ok) return fail(result.message);
+		badgeAssetId = null;
+		await invalidateAll();
 	}
 </script>
 
@@ -78,12 +101,18 @@
 		aria-haspopup="menu"
 		aria-expanded={menuOpen}
 		title="Change the badge colour or image"
-		onclick={() => (menuOpen = !menuOpen)}
+		onclick={() => {
+			menuOpen = !menuOpen;
+			error = null;
+		}}
 	>
 		<EntityBadge {name} {badgeColor} {badgeAssetId} {categoryColor} size="lg" />
 	</button>
 	{#if menuOpen}
 		<div class="badge-menu" role="menu">
+			{#if error}
+				<div class="badge-error"><FormStatus block {error} /></div>
+			{/if}
 			{#if badgeAssetId}
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 				<a class="badge-menu-item" role="menuitem" href="/assets/{badgeAssetId}" download>
@@ -159,6 +188,12 @@
 		border: 1px solid var(--border);
 		border-radius: 10px;
 		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+	}
+	.badge-error {
+		max-width: 220px;
+	}
+	.badge-error :global(.field-hint) {
+		margin: 0 0 8px;
 	}
 	.badge-swatches {
 		display: grid;

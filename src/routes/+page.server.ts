@@ -13,8 +13,9 @@ import {
 	listTrashedUniverses,
 	restoreUniverse
 } from '$lib/server/universe-lifecycle';
-import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
+import { destroyStory, listTrashedStories, restoreStory } from '$lib/server/story-lifecycle';
 import { signupMode } from '$lib/server/settings';
+import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page. The page checks the layout's
@@ -26,6 +27,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			universes: [],
 			stories: [],
 			trashedUniverses: [],
+			trashedStories: [],
 			// The mode, not a boolean: the landing page offers a sign-up only
 			// where a visitor without an invite code can finish one.
 			signupMode: await signupMode(db)
@@ -38,6 +40,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.where(and(eq(universes.ownerId, user.id), isNull(universes.deletedAt)))
 		.orderBy(desc(universes.updatedAt));
 	const trashedUniverses = await listTrashedUniverses(db, user.id);
+	const trashedStories = await listTrashedStories(db, user.id);
 
 	// One row per story with everything its card shows: chapter and word
 	// totals, scene status counts for the pill, and when anything in it
@@ -56,7 +59,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		from stories st
 		join universes u on u.id = st.universe_id and u.deleted_at is null
 		left join scenes s on s.story_id = st.id and s.deleted_at is null
-		where st.owner_id = ${user.id}
+		where st.owner_id = ${user.id} and st.deleted_at is null
 		group by st.id
 		order by st.position_in_series asc nulls last, st.created_at asc
 	`);
@@ -103,7 +106,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		universes: list,
 		stories: storyList,
-		trashedUniverses
+		trashedUniverses,
+		trashedStories
 	};
 };
 
@@ -112,7 +116,7 @@ export const actions: Actions = {
 		// The route is public for the landing page; the action is not.
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const name = String(data.get('name') ?? '').trim();
+		const name = formText(data, 'name').trim();
 		if (!name) {
 			return fail(400, { scope: 'universe', message: 'Give the universe a name.' });
 		}
@@ -144,8 +148,8 @@ export const actions: Actions = {
 	createStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const universeId = String(data.get('universeId') ?? '');
-		const title = String(data.get('title') ?? '').trim();
+		const universeId = formText(data, 'universeId');
+		const title = formText(data, 'title').trim();
 		if (!title) {
 			return fail(400, { scope: 'story', universeId, message: 'Give the story a title.' });
 		}
@@ -167,7 +171,7 @@ export const actions: Actions = {
 	// lazily created "Standalone stories" universe.
 	createStandaloneStory: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
-		const title = String((await request.formData()).get('title') ?? '').trim();
+		const title = formText(await request.formData(), 'title').trim();
 		if (!title) {
 			return fail(400, { scope: 'standalone', message: 'Give the story a title.' });
 		}
@@ -178,7 +182,7 @@ export const actions: Actions = {
 	restoreUniverse: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const universeId = String(data.get('universeId') ?? '');
+		const universeId = formText(data, 'universeId');
 		if (!isUuid(universeId)) {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
@@ -189,7 +193,7 @@ export const actions: Actions = {
 	destroyUniverse: async ({ request, locals }) => {
 		if (!locals.user) redirect(303, '/login');
 		const data = await request.formData();
-		const universeId = String(data.get('universeId') ?? '');
+		const universeId = formText(data, 'universeId');
 		if (!isUuid(universeId)) {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
@@ -197,12 +201,24 @@ export const actions: Actions = {
 		if (!result.ok) {
 			return fail(404, { scope: 'trash', message: 'That universe is not in the trash.' });
 		}
-		// Best-effort object sweep; an orphaned image is never a blocker.
-		const config = await effectiveAssetConfig(db);
-		if (config) {
-			const store = s3AssetStore(config);
-			for (const key of result.assetKeys) await store.remove(key).catch(() => {});
-		}
 		return { scope: 'trash', destroyed: true };
+	},
+	restoreStory: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const storyId = formText(data, 'storyId');
+		if (!isUuid(storyId) || !(await restoreStory(db, locals.user.id, storyId))) {
+			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
+		}
+		return { scope: 'story-trash', restored: true };
+	},
+	destroyStory: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const data = await request.formData();
+		const storyId = formText(data, 'storyId');
+		if (!isUuid(storyId) || !(await destroyStory(db, locals.user.id, storyId))) {
+			return fail(404, { scope: 'story-trash', message: 'That story is not in the trash.' });
+		}
+		return { scope: 'story-trash', destroyed: true };
 	}
 };

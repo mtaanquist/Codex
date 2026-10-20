@@ -1,7 +1,9 @@
 import { PgBoss } from 'pg-boss';
 import { env } from '$env/dynamic/private';
-import type { EmailMessage } from './email';
+import type { EmailJob } from './token-email';
 import type { ReviewCategory } from '../review-shape';
+import { db } from './db';
+import { markUniverseMentionsChanged } from './mentions.ts';
 
 // Send-only pg-boss handle for the app; the worker process owns the handlers.
 // Queueing is best-effort: a failed enqueue logs and never breaks a save. A
@@ -37,9 +39,11 @@ import {
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
-	ASSISTANT_JOB_EXPIRY_SECONDS
+	ASSISTANT_JOB_EXPIRY_SECONDS,
+	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
+import { errorFields, logEvent, redactEmail } from './log.ts';
 import type { ReviewRunState } from './db/schema.ts';
 
 let starting: Promise<PgBoss> | null = null;
@@ -47,7 +51,7 @@ let starting: Promise<PgBoss> | null = null;
 function getBoss(): Promise<PgBoss> {
 	starting ??= (async () => {
 		const boss = new PgBoss(env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex');
-		boss.on('error', (error) => console.error('pg-boss error:', error));
+		boss.on('error', (error) => logEvent('error', 'pgboss.error', errorFields(error)));
 		await boss.start();
 		await boss.createQueue(MENTIONS_SCENE_QUEUE);
 		await boss.createQueue(MENTIONS_UNIVERSE_QUEUE);
@@ -78,7 +82,11 @@ export async function queueNotificationDigest(userId: string): Promise<void> {
 			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: userId }
 		);
 	} catch (error) {
-		console.error('queueing notification digest failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: NOTIFICATION_DIGEST_QUEUE,
+			userId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -92,7 +100,11 @@ export async function queueReviewerDigest(reviewerId: string): Promise<void> {
 			{ startAfter: DIGEST_DELAY_SECONDS, singletonKey: reviewerId }
 		);
 	} catch (error) {
-		console.error('queueing reviewer digest failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: REVIEWER_DIGEST_QUEUE,
+			reviewerId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -108,11 +120,22 @@ export async function queueSceneMentions(sceneId: string): Promise<void> {
 			{ singletonKey: sceneId, singletonSeconds: 2, singletonNextSlot: true }
 		);
 	} catch (error) {
-		console.error('queueing scene mention rebuild failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: MENTIONS_SCENE_QUEUE,
+			sceneId,
+			...errorFields(error)
+		});
 	}
 }
 
+// Call after any change to what the universe's scenes can mention. The flag
+// is what lets the reconcile sweep catch a dropped job, so it is set first.
 export async function queueUniverseMentions(universeId: string): Promise<void> {
+	try {
+		await markUniverseMentionsChanged(db, universeId);
+	} catch (error) {
+		logEvent('error', 'mentions.flag_failed', { universeId, ...errorFields(error) });
+	}
 	try {
 		const boss = await getBoss();
 		await boss.send(
@@ -121,7 +144,11 @@ export async function queueUniverseMentions(universeId: string): Promise<void> {
 			{ singletonKey: universeId, singletonSeconds: 5, singletonNextSlot: true }
 		);
 	} catch (error) {
-		console.error('queueing universe mention rebuild failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: MENTIONS_UNIVERSE_QUEUE,
+			universeId,
+			...errorFields(error)
+		});
 	}
 }
 
@@ -137,12 +164,13 @@ const EMAIL_RETRY = {
 	retryDelayMax: 3600
 } as const;
 
-// Queues a transactional email (verification, password reset). Best-effort
-// enqueue, like the mention queues: a failed enqueue logs rather than breaking
-// the request, and the caller shows the same neutral "check your email" either
-// way. Once queued, the retry policy above keeps the send alive through an
-// outage.
-export async function queueEmail(message: EmailMessage): Promise<void> {
+// Queues a transactional email (verification, password reset). A link email
+// is queued by token id, never with the raw token; the worker builds it (see
+// token-email.ts). Best-effort enqueue, like the mention queues: a failed
+// enqueue logs rather than breaking the request, and the caller shows the same
+// neutral "check your email" either way. Once queued, the retry policy above
+// keeps the send alive through an outage.
+export async function queueEmail(message: EmailJob): Promise<void> {
 	try {
 		const boss = await getBoss();
 		await boss.send(EMAIL_QUEUE, message, {
@@ -150,7 +178,11 @@ export async function queueEmail(message: EmailMessage): Promise<void> {
 			deadLetter: EMAIL_DEAD_LETTER_QUEUE
 		});
 	} catch (error) {
-		console.error('queueing email failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: EMAIL_QUEUE,
+			to: redactEmail(message.to),
+			...errorFields(error)
+		});
 	}
 }
 
@@ -169,11 +201,20 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 		const id = await boss.send(
 			EXPORT_ARTIFACTS_QUEUE,
 			{ publicationId },
-			{ singletonKey: publicationId, singletonSeconds: 300, singletonNextSlot: true }
+			{
+				singletonKey: publicationId,
+				singletonSeconds: 300,
+				singletonNextSlot: true,
+				heartbeatSeconds: JOB_HEARTBEAT_SECONDS
+			}
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing export artifacts failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: EXPORT_ARTIFACTS_QUEUE,
+			publicationId,
+			...errorFields(error)
+		});
 		return false;
 	}
 }
@@ -185,23 +226,36 @@ export async function queueExportArtifacts(publicationId: string): Promise<boole
 export async function queueUserExport(exportId: string): Promise<boolean> {
 	try {
 		const boss = await getBoss();
-		const id = await boss.send(USER_EXPORT_QUEUE, { exportId }, { singletonKey: exportId });
+		const id = await boss.send(
+			USER_EXPORT_QUEUE,
+			{ exportId },
+			{ singletonKey: exportId, heartbeatSeconds: JOB_HEARTBEAT_SECONDS }
+		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing user export failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: USER_EXPORT_QUEUE,
+			exportId,
+			...errorFields(error)
+		});
 		return false;
 	}
 }
 
 // An Assistant run talks to a model for as long as the story is big, so the
 // 15-minute default expiry would hand the job out again mid-run. The generous
-// expiry is what keeps one run from executing twice; the retry limit is stated
-// rather than left to the default so a run whose worker died is still picked up
-// again once the expiry passes.
-const ASSISTANT_SEND_OPTIONS = {
-	expireInSeconds: ASSISTANT_JOB_EXPIRY_SECONDS,
-	retryLimit: 2
-} as const;
+// expiry is the outer limit on one run; the heartbeat is what notices a worker
+// that died, so its job is retried within a minute or two instead of hours. The
+// group is the writer: the worker runs one job per writer at a time, so one
+// slow endpoint holds up only its own writer's queue.
+function assistantSendOptions(userId: string) {
+	return {
+		expireInSeconds: ASSISTANT_JOB_EXPIRY_SECONDS,
+		heartbeatSeconds: JOB_HEARTBEAT_SECONDS,
+		retryLimit: 2,
+		group: { id: userId }
+	};
+}
 
 // Queues a background Assistant review. Three shapes share the queue: a
 // whole-story or single-chapter copyedit (storyId, the default 'full' mode), a
@@ -226,14 +280,18 @@ export async function queueAssistantReview(input: {
 		const boss = await getBoss();
 		const jobId = await boss.send(ASSISTANT_REVIEW_QUEUE, input, {
 			singletonKey: reviewScopeKey(input),
-			...ASSISTANT_SEND_OPTIONS
+			...assistantSendOptions(input.userId)
 		});
 		// pg-boss returns null when the singleton key coalesced this request into
 		// a review that is already queued or running; the endpoint tells the
 		// writer that, rather than reporting a failure.
 		return jobId ?? 'coalesced';
 	} catch (error) {
-		console.error('queueing assistant review failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_REVIEW_QUEUE,
+			userId: input.userId,
+			...errorFields(error)
+		});
 		return null;
 	}
 }
@@ -250,10 +308,14 @@ export async function queueAssistantSummaries(input: {
 		return await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
 			singletonKey: input.storyId,
 			singletonSeconds: 30,
-			...ASSISTANT_SEND_OPTIONS
+			...assistantSendOptions(input.userId)
 		});
 	} catch (error) {
-		console.error('queueing assistant summaries failed:', error);
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_SUMMARIES_QUEUE,
+			storyId: input.storyId,
+			...errorFields(error)
+		});
 		return null;
 	}
 }
@@ -289,7 +351,7 @@ export async function getAssistantJobState(
 		if (job.state === 'completed') return 'done';
 		return 'running';
 	} catch (error) {
-		console.error('reading assistant job state failed:', error);
+		logEvent('error', 'job.state_failed', { queue, jobId: id, ...errorFields(error) });
 		return 'done';
 	}
 }
@@ -306,7 +368,7 @@ export async function queueAssetMigration(): Promise<boolean> {
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing asset migration failed:', error);
+		logEvent('error', 'job.queue_failed', { queue: MIGRATE_ASSETS_QUEUE, ...errorFields(error) });
 		return false;
 	}
 }
@@ -320,7 +382,7 @@ export async function applyBackupSchedule(cron: string | null): Promise<void> {
 		if (cron) await boss.schedule(BACKUP_QUEUE, cron, { trigger: 'scheduled' }, { tz: 'UTC' });
 		else await boss.unschedule(BACKUP_QUEUE);
 	} catch (error) {
-		console.error('applying the backup schedule failed:', error);
+		logEvent('error', 'backup.schedule_failed', { cron, ...errorFields(error) });
 	}
 }
 
@@ -337,7 +399,7 @@ export async function queueBackup(): Promise<boolean> {
 		);
 		return id !== null;
 	} catch (error) {
-		console.error('queueing backup failed:', error);
+		logEvent('error', 'job.queue_failed', { queue: BACKUP_QUEUE, ...errorFields(error) });
 		return false;
 	}
 }

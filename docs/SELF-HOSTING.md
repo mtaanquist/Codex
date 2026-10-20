@@ -38,8 +38,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The app container applies pending database migrations on every start, so there
-is no separate migration step. Watch for it to come up:
+The app and worker containers apply pending database migrations on every start
+(one at a time, so each migration runs once), so there is no separate migration
+step. Watch for it to come up:
 
 ```bash
 docker compose logs -f app   # wait for "Migrations applied." then the server
@@ -80,17 +81,18 @@ seed.
 | ------------------- | ---------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`      | yes              | dev local db            | PostgreSQL connection string. The bundled stack builds it from `POSTGRES_PASSWORD`.                                                                                                                                                                                                                             |
 | `POSTGRES_PASSWORD` | yes (bundled db) | `codex`                 | Database password for the bundled `db` service. Set something strong.                                                                                                                                                                                                                                           |
-| `ORIGIN`            | yes (prod)       | `http://localhost:3000` | The public URL, scheme and any non-standard port included. Form posts that do not match it are rejected.                                                                                                                                                                                                        |
+| `ORIGIN`            | yes (prod)       | `http://localhost:3000` | The public URL, scheme and any non-standard port included. Form posts that do not match it are rejected, and emailed links use it. The app and worker will not start without it (the bundled compose file sets the default for both).                                                                           |
 | `APP_SECRET`        | recommended      | unset                   | Encrypts secrets at rest (SMTP password, two-factor secrets) and signs two-factor and passkey challenges. Keep it stable; changing it makes stored secrets unreadable and breaks two-factor until re-enrolled. Without it, two-factor and passkeys are unavailable and the panel cannot store an SMTP password. |
 | `APP_PORT`          | no               | `3000`                  | Host port the app publishes. The container always listens on 3000.                                                                                                                                                                                                                                              |
+| `APP_BIND`          | no               | `127.0.0.1`             | Host address the app port is published on. Loopback lets only a proxy on the same host reach it. Change it only for a proxy on another machine, to an address that proxy alone can reach.                                                                                                                       |
 | `BODY_SIZE_LIMIT`   | no               | `15M`                   | Upload cap for the Node adapter. Images are capped at 10 MB regardless.                                                                                                                                                                                                                                         |
 
 ### Reverse proxy
 
-| Variable         | Default           | Notes                                                                                                                      |
-| ---------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `ADDRESS_HEADER` | `x-forwarded-for` | Header to read the client address from, for rate limiting. Set empty if no proxy is in front, so a client cannot spoof it. |
-| `XFF_DEPTH`      | `1`               | Number of proxies in front of the app. With one proxy, the default is correct.                                             |
+| Variable         | Default           | Notes                                                                                                                                                                                            |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ADDRESS_HEADER` | `x-forwarded-for` | Header to read the client address from, for rate limiting. Only safe when clients cannot reach the app except through the proxy. Set empty if no proxy is in front, so a client cannot spoof it. |
+| `XFF_DEPTH`      | `1`               | Number of proxies in front of the app. With one proxy, the default is correct.                                                                                                                   |
 
 ### Email (SMTP)
 
@@ -169,6 +171,23 @@ address (`x-forwarded-for` by default) and `XFF_DEPTH` to the number of proxies.
 Without it, every request looks like it comes from the proxy, and the per-address
 sign-in rate limit collapses into one shared counter that enough failed
 attempts can trip for everyone at once.
+
+Trusting that header is only safe when the proxy is the one thing that can
+reach the app. Anyone who can connect to the app port directly can send their
+own `X-Forwarded-For` and get a fresh address on every request, which slips
+past the per-address limits on sign-in, sign-up, and password reset. The
+bundled `compose.yaml` publishes the app port on `127.0.0.1` only (`APP_BIND`),
+so a proxy on the same host reaches it and nothing else does; the bundled Caddy
+and a Traefik on the same Docker network reach the app over that network
+instead. If the proxy runs on another machine, set `APP_BIND` to an address only
+it can reach, or firewall the port. If you run the app with no proxy at all,
+set `APP_BIND=0.0.0.0` and `ADDRESS_HEADER` empty.
+
+The app sets its own security headers (`Content-Security-Policy`,
+`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`), so the proxy
+does not need to add them. When `ORIGIN` starts with `https://` it also sends
+`Strict-Transport-Security` for one year, after which browsers refuse plain
+HTTP for that host.
 
 ### Bundled Caddy
 
@@ -260,8 +279,16 @@ take a fresh dump first if there is anything live worth keeping.
    docker compose run --rm app node scripts/restore-backup.ts latest
    ```
 
-   This streams the dump from the bucket into `pg_restore` against
-   `DATABASE_URL`, dropping and recreating objects as it goes.
+   This downloads the dump from the bucket, then replaces the application
+   data in `DATABASE_URL` with it in one transaction: if anything fails, the
+   database is left as it was. Tables from a newer version of Codex than the
+   dump are removed too, so the app's migrations bring the schema up to date
+   on the next start. The backup
+   history on the admin page starts empty after a restore, and the next
+   backup uploads in full. The database user in `DATABASE_URL` must own the
+   `public` schema (the bundled Postgres does); on a managed database where it
+   does not, the restore stops with "must be owner of schema public" and
+   changes nothing.
 
 3. Bring the stack back:
 
@@ -270,16 +297,43 @@ take a fresh dump first if there is anything live worth keeping.
    ```
 
 The dump excludes the job-queue tables, so any jobs that were pending at dump
-time are not restored; the worker simply carries on with new ones. Uploaded
-images live in the asset bucket, not the database, so they are unaffected by a
-restore as long as that bucket is intact (the reason to keep it separate).
+time are not restored; the worker simply carries on with new ones.
+
+Uploaded images live in the asset bucket, not the database, and **the backups
+do not copy them**. Deleting or replacing an image removes its database row at
+once, but the worker only removes the stored file once it is older than the
+oldest kept backup: one day longer than `BACKUP_KEEP_DAYS` or
+`BACKUP_KEEP_RECENT_HOURS`, whichever reaches further back, or one day when
+backups are off. Restoring any kept dump therefore still finds every image it
+points at. If you switch backups off later, the dumps already in the bucket
+stay there but the wait drops to one day, so images deleted after that are
+missing if you restore one of those older dumps.
+If the asset bucket itself is lost, though, the images are gone: turn on
+versioning or replication for that bucket at your storage provider, or copy it
+somewhere else on a schedule. The bundled RustFS bucket lives in a Docker
+volume on the same host, so back that volume up too. Deleting an account
+removes its images straight away, without the wait.
 
 ## Health checks and monitoring
 
 `GET /healthz` is public and runs a `select 1`. It returns `200` with
 `{"status":"ok"}` when the database is reachable and `503` with
-`{"status":"error"}` when it is not. Point an uptime monitor or an orchestrator
-liveness and readiness probe at it.
+`{"status":"error"}` when it is not, or when the check takes longer than 3
+seconds. Point an uptime monitor or an orchestrator liveness and readiness
+probe at it.
+
+The README example and `compose.yaml` give the app service a healthcheck that
+calls `/healthz` every 30 seconds, so `docker compose ps` shows the app as
+`healthy` or `unhealthy`, and the bundled Caddy waits for a healthy app before
+it starts. If you use your own compose file, copy the app's `healthcheck`
+block into it. The worker has no web port, so it has no healthcheck. Docker
+Compose does not restart a container just because it is unhealthy; use an
+orchestrator or a watchdog if you want that.
+
+If the database restarts, the app and worker log a `db.pool_error` line and
+reconnect on their own. A single database query that runs longer than 30
+seconds in the app (5 minutes in the worker) is cancelled and that request or
+job fails instead of holding a connection.
 
 The worker logs one line per job to stdout; collect those if you want
 visibility into indexing, email, exports, and backups. A failed backup is
@@ -288,8 +342,9 @@ logged there and shown in the admin panel's run history.
 ## Updating
 
 Change the image tag (or pull `latest`) and run `docker compose up -d`. Pending
-migrations apply when the app container starts. Migrations are forward-only, so
-take a backup before updating if you are not running the scheduled ones; with
+migrations apply when the app or worker container starts. Migrations are
+forward-only, so take a backup before updating if you are not running the
+scheduled ones; with
 `BACKUP_S3_*` set the worker already keeps hourly dumps, and
 `node scripts/restore-backup.ts latest` brings the newest one back.
 
@@ -348,6 +403,9 @@ in place yet.
 - **Sign-in rate limit seems global, or locks everyone out.** A proxy is in
   front but `ADDRESS_HEADER` is unset or wrong, so every request shares the
   proxy's address. Set it (`x-forwarded-for` for most proxies) and `XFF_DEPTH`.
+- **The app port does not answer from another machine.** It is published on
+  `127.0.0.1` only. Point a proxy on the same host at it, or see
+  `APP_BIND` under Reverse proxy and TLS.
 - **No emails arrive.** SMTP is not configured; check the worker log for the
   message body, then set the `SMTP_*` variables or the admin Email relay
   section and send a test.

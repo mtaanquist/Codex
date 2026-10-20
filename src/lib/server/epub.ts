@@ -1,8 +1,8 @@
-import { strToU8, zipSync, type Zippable } from 'fflate';
 import { slugify } from '../slug.ts';
 import { findAssetReferences, renderMarkdown, rewriteAssetReferences } from '../markdown.ts';
 import { cssEscape, DEFAULT_PAGE_SETUP, lineHeightCss, type PageSetup } from '../page-setup.ts';
-import type { AssetLoader, ExportAsset, ExportStory, StoryContent } from './export.ts';
+import type { AssetLoader, AssetRef, ExportStory, StoryContent } from './export.ts';
+import { assetEntry, textEntry, type ZipArchive, type ZipEntry } from './zip-stream.ts';
 import { extensionFor } from './media-types.ts';
 
 // A minimal EPUB 3 by hand: it is a zip whose first entry is the literal
@@ -60,13 +60,13 @@ export async function buildEpub(
 	loadAssets: AssetLoader,
 	coverAssetId: string | null,
 	setup: PageSetup = DEFAULT_PAGE_SETUP
-): Promise<{ filename: string; bytes: Uint8Array }> {
+): Promise<ZipArchive> {
 	const { chapters: chapterList, scenes: sceneList } = content;
 
 	const referenced = sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd));
 	const wanted = [...new Set([...referenced, ...(coverAssetId ? [coverAssetId] : [])])];
 	const loaded = await loadAssets(wanted);
-	const images = new Map<string, ExportAsset>(loaded.map((asset) => [asset.id, asset]));
+	const images = new Map<string, AssetRef>(loaded.map((asset) => [asset.id, asset]));
 	const imageFile = (id: string) =>
 		`images/${id}.${extensionFor(images.get(id)?.contentType ?? '')}`;
 
@@ -142,28 +142,33 @@ ${spineItems.join('\n')}
 			.join('')}</ol></nav>`
 	);
 
-	const files: Zippable = {
+	const entries: ZipEntry[] = [
 		// Per the spec: first entry, exactly this name, stored uncompressed.
-		mimetype: [strToU8('application/epub+zip'), { level: 0 }],
-		'META-INF/container.xml': strToU8(`<?xml version="1.0" encoding="utf-8"?>
+		{ ...textEntry('mimetype', 'application/epub+zip'), stored: true },
+		textEntry(
+			'META-INF/container.xml',
+			`<?xml version="1.0" encoding="utf-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
 <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
-</container>`),
-		'OEBPS/content.opf': strToU8(opf),
-		'OEBPS/nav.xhtml': strToU8(nav),
-		'OEBPS/style.css': strToU8(epubStyle(setup))
-	};
+</container>`
+		),
+		textEntry('OEBPS/content.opf', opf),
+		textEntry('OEBPS/nav.xhtml', nav),
+		textEntry('OEBPS/style.css', epubStyle(setup))
+	];
 	for (const section of sections) {
-		files[`OEBPS/${section.id}.xhtml`] = strToU8(xhtmlDocument(section.title, section.html));
+		entries.push(
+			textEntry(`OEBPS/${section.id}.xhtml`, xhtmlDocument(section.title, section.html))
+		);
 	}
 	for (const asset of images.values()) {
-		files[`OEBPS/${imageFile(asset.id)}`] = asset.bytes;
+		entries.push(assetEntry(`OEBPS/${imageFile(asset.id)}`, asset));
 	}
 
 	return {
 		// Slugify like the zip and PDF paths, so a non-ASCII title yields a clean
 		// ASCII filename instead of a mangled one.
 		filename: `${slugify(story.title, 'story')}.epub`,
-		bytes: zipSync(files)
+		entries
 	};
 }

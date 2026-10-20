@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, eq } from 'drizzle-orm';
@@ -27,6 +27,9 @@ beforeAll(async () => {
 	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
 	db = drizzle(pool, { schema });
 	await migrate(db, { migrationsFolder: 'drizzle' });
+});
+
+beforeEach(async () => {
 	await pool.query(
 		'truncate table character_story_notes, characters, stories, universes, users cascade'
 	);
@@ -86,7 +89,7 @@ describe('saveCharacter', () => {
 			storyId: '00000000-0000-0000-0000-000000000000',
 			storyNotesMd: 'never lands'
 		});
-		expect(result).toEqual({ ok: false, reason: 'story not found' });
+		expect(result).toMatchObject({ ok: false, code: 'not_found' });
 		const [after] = await db.select().from(characters).where(eq(characters.id, characterId));
 		expect(after.name).toBe(before.name);
 	});
@@ -108,7 +111,7 @@ describe('saveCharacter', () => {
 			storyId: foreign.id,
 			storyNotesMd: 'cross-universe'
 		});
-		expect(result).toEqual({ ok: false, reason: 'story not found' });
+		expect(result).toMatchObject({ ok: false, code: 'not_found' });
 		const notes = await db
 			.select()
 			.from(characterStoryNotes)
