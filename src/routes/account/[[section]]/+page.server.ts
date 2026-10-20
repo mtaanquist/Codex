@@ -52,6 +52,7 @@ import {
 	PROVIDER_PRESETS,
 	type ProviderId
 } from '$lib/server/llm/providers/presets';
+import { MODEL_GUIDE, ROLE_TIER } from '$lib/server/llm/providers/model-guide';
 import { recentAssistantUsage } from '$lib/server/llm/usage';
 import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
@@ -159,6 +160,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 			keyHint: p.keyHint,
 			docsUrl: p.docsUrl
 		})),
+		// Which model to suggest for each role, on every provider.
+		modelGuide: { tiers: ROLE_TIER, providers: MODEL_GUIDE },
 		personas: PERSONAS.map((p) => ({ id: p.id, label: p.label, description: p.description })),
 		sessions: await listSessions(db, user.id, sessionId),
 		graceDays: DELETION_GRACE_DAYS,

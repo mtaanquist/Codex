@@ -4,12 +4,14 @@ import { stories, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
+import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
 import {
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
 	MAX_REPLY_TOKENS,
 	MAX_TEMPERATURE,
+	resolveRoleModel,
 	type AssistantRole,
 	type EffortLevel,
 	type ExtraParams,
@@ -423,9 +425,9 @@ export async function resolveLlmConfig(
 	};
 }
 
-// The model a role runs on: its own, else the chat model, else whatever is set.
+// The model a role runs on; see resolveRoleModel for the order.
 export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
-	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
+	return resolveRoleModel(config.models, role, suggestedModel(config.provider, role));
 }
 
 // The context window of the model this role runs on, in tokens; undefined when

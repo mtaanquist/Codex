@@ -91,9 +91,11 @@ contacts a model on its own.
   are Rubber duck (the side panel), Co-author (passages you can insert),
   Continuation (inline suggestions), Reviewer (suggested edits on a draft), and
   Background work (scene and chapter summaries, suggested entity details, and the
-  story recap). Roles with no model chosen fall back to the model you picked for
-  Rubber duck, or to the endpoint's default. A single story can
-  override these too. When the list is long, type part of a name in the filter box
+  story recap). Under each role's name is a suggested model for the provider you
+  picked; see the list below. Roles with no model chosen fall back to the model
+  you picked for Rubber duck. With Claude, a role uses its suggested model when
+  neither it nor Rubber duck has one picked, so Test connection works as soon as
+  the key is in. A single story can override these too. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
   tokens sent and received. Next to each role, Tune opens a window holding the
@@ -172,29 +174,37 @@ Your words are sent only to the endpoint you set here.
 ### Which model to pick for each role
 
 The roles want different things, so a single model for all five is rarely the
-best you can do. Each role's Tune window shows a short suggestion; here is the
-longer version.
+best you can do. Continuation and Background work want speed above
+all: Continuation runs while you type, and a suggestion that arrives after you
+have written the next line is worthless, while Background work runs summaries,
+entity details, and recaps in bulk. The Reviewer wants the strongest model you
+can run, since it reads a whole draft and has to be right about what it quotes.
+Rubber duck and Co-author sit in between: pick a model whose writing you enjoy.
 
-Continuation, Co-author, and Background work want speed above all. Continuation
-runs while you type, and a suggestion that arrives after you have written the
-next line is worthless. Background work runs summaries, entity details, and
-recaps in bulk. Hosted, Claude Haiku is the cheap fast choice. On your own
-machine, look for a mixture-of-experts instruct model such as Qwen3 30B A3B
-(search for "MoE instruct GGUF"). A mixture-of-experts model holds many
-parameters but uses only a small slice of them per word, so it answers far
-faster than its size suggests, as long as it fits in memory. Turn thinking off
-for all three.
+What that means on each provider, for the fast roles, the in-between roles, and
+the Reviewer in that order:
 
-The Reviewer wants the strongest model you can run, since it reads a whole draft
-and has to be right about what it quotes. Hosted, Claude Sonnet. On your own
-machine, a dense 32B instruct model such as Qwen3 32B (search for "32B instruct
-GGUF"). Dense means every parameter is used for every word: slower than a
-mixture-of-experts model of the same size, but steadier at close reading. Set a
+- **Claude**: Claude Haiku 5.5, Claude Sonnet 5.5, Claude Opus 5.5.
+- **ChatGPT, Gemini, DeepSeek, and OpenRouter**: a small, fast, low-cost
+  model for the fast roles (names often include mini, lite, or flash), a
+  mid-sized general model that writes well for the in-between roles, and the
+  most capable model you can afford for the Reviewer.
+- **Your own machine**: Qwen3 30B A3B (a mixture-of-experts model) for the fast
+  and in-between roles, and Qwen3 32B (a dense model) for the Reviewer.
+
+Providers other than Claude rename their models often, so select Discover
+models and pick the newest one of the kind described.
+
+Turn thinking off for Continuation and Background work. For the Reviewer, set a
 low temperature so it quotes your text faithfully instead of paraphrasing it;
-thinking is worth turning on here if you can afford the wait.
+thinking is worth turning on if you can afford the wait.
 
-Rubber duck is the one role with no technical requirement. Pick whichever model
-you enjoy talking to.
+On your own machine, search for "MoE instruct GGUF" to find mixture-of-experts
+models. They hold many parameters but use only a small slice of them per word,
+so they answer far faster than their size suggests, as long as they fit in
+memory. A dense model (search for "32B instruct GGUF") uses every parameter for
+every word: slower than a mixture-of-experts model of the same size, but
+steadier at close reading.
 
 ## Display
 
