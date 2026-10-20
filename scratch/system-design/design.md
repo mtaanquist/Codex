@@ -155,7 +155,7 @@ Later phases grew surfaces the narrative above predates. What each one is for, a
 - **Goals.** A per-story target word count and deadline, an account-level daily word goal, and an optional streak, surfaced in the **Writing sessions** section of Insights. Deliberately hideable; not everyone wants scorekeeping.
 - **Notifications.** An in-app bell plus an email digest, with a per-kind channel matrix in account settings. The Assistant's long-running jobs surface separately as activity cards, so progress and news do not mix.
 - **Print and page setup.** Page geometry and paragraph style set once at the account level, overridable per story, and honoured the same way by the print view, the PDF, and the EPUB. Good means what the writer proofs is what a reader downloads.
-- **Import.** A document import, plus re-import of Codex's own story export, so an existing manuscript moves in without retyping. Entity matching stays conservative: no match creates a minimal entity, ambiguity is flagged rather than guessed.
+- **Import.** A document import, plus re-import of Codex's own story export, so an existing manuscript moves in without retyping. An EPUB downloaded from Archive of Our Own is recognised by its publisher field and mapped onto Codex's fields (summary, rating, chapter summaries) with the tags and author's notes as story notes; Codex never fetches from AO3 itself (#718). Entity matching stays conservative: no match creates a minimal entity, ambiguity is flagged rather than guessed.
 - **Admin.** The operator console: accounts and the sign-up mode, the Assistant egress policy, usage and cost, published-edition takedown, backups, and an audit log. Sized for one operator and their friends, not a fleet.
 
 ## Accounts and access

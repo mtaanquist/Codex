@@ -191,6 +191,192 @@ describe('parseDocument (epub)', () => {
 	});
 });
 
+// --- AO3 fixtures ---
+
+// The shape of an AO3 EPUB download as Calibre writes it: a preface split
+// across two files, one file per chapter under a repeated #chapters wrapper,
+// renamed classes, and an afterword. Placeholder text only.
+function ao3Preface(rating: string): string[] {
+	return [
+		`<div id="preface" class="calibre1">
+  <h2 class="toc-heading">Preface</h2>
+  <p class="message"><b class="calibre2">The Test Work</b><br class="calibre1"/>
+    Posted originally on the <a href="https://archiveofourown.org/">Archive of Our Own</a> at <a href="https://archiveofourown.org/works/123">https://archiveofourown.org/works/123</a>.</p>
+  <div class="calibre1"><dl class="tags">
+    <dt class="calibre3">Rating:</dt><dd class="calibre4"><a href="https://archiveofourown.org/tags/x">${rating}</a></dd>
+    <dt class="calibre3">Fandom:</dt><dd class="calibre4"><a href="#">Some Fandom</a></dd>
+    <dt class="calibre3">Additional Tags:</dt><dd class="calibre4"><a href="#">Tag One</a>, <a href="#">Tag &amp; Two</a></dd>
+    <dt class="calibre3">Series:</dt><dd class="calibre4">Part 1 of <a href="#">The Series</a></dd>
+    <dt class="calibre3">Stats:</dt><dd class="calibre5">Published: 2020-01-01 Words: 100 Chapters: 2/2</dd>
+  </dl></div>
+</div>`,
+		`<div id="preface" class="calibre1"><div class="calibre1">
+  <h1 class="calibre6">The Test Work</h1>
+  <div class="byline">by <a href="#" rel="author">tester</a></div>
+  <p class="calibre7">Summary</p>
+  <blockquote class="userstuff"><p class="calibre7">A short summary.</p></blockquote>
+  <p class="calibre7">Notes</p>
+  <blockquote class="userstuff"><p class="calibre7">A work note.</p></blockquote>
+</div></div>
+<div class="userstuff1" id="chapters"><div class="calibre1"><div class="calibre8"></div></div></div>`
+	];
+}
+
+const AO3_CHAPTERS = [
+	`<div class="userstuff1" id="chapters">
+<div class="calibre1">
+  <h2 class="heading">
+    Chapter 1: The Start
+  </h2>
+  <p class="calibre7">Chapter Summary</p>
+  <blockquote class="userstuff"><p class="calibre7">Chapter one summary.</p></blockquote>
+  <p class="calibre7">Chapter Notes</p>
+  <blockquote class="userstuff"><p class="calibre7">Chapter one note.</p></blockquote>
+</div>
+<div class="userstuff2"><hr class="calibre8"/><p class="calibre7">First scene.</p><p class="calibre7">***</p><p class="calibre7">Second scene.</p></div>
+<div class="calibre1"><div class="calibre11"></div></div>
+</div>`,
+	`<div class="userstuff1" id="chapters">
+<div class="calibre1">
+  <h2 class="heading">Chapter 2</h2>
+  <p class="calibre7">Chapter Notes</p>
+  <div class="endnote-link">See the end of the chapter for <a href="#endnotes2">notes</a></div>
+</div>
+<div class="userstuff2"><p class="calibre7">Only scene.</p></div>
+<div class="calibre1" id="endnotes2">
+  <p class="calibre7">Chapter End Notes</p>
+  <blockquote class="userstuff"><p class="calibre7">Chapter two end note.</p></blockquote>
+</div>
+</div>`
+];
+
+const AO3_AFTERWORD = `<div id="afterword" class="calibre1">
+  <h2 class="toc-heading">Afterword</h2>
+  <p class="calibre7">End Notes</p>
+  <blockquote class="userstuff"><p class="calibre7">A work end note.</p></blockquote>
+  <div class="calibre1"><dl class="calibre7"><dt class="calibre1">Works inspired by this one</dt><dd><a href="#">Another Work</a> by someone</dd></dl></div>
+  <p class="message">Please <a href="#">drop by the Archive and comment</a> to let the creator know if you enjoyed their work!</p>
+</div>`;
+
+function buildAo3Epub(bodies: string[], publisher = 'Archive of Our Own'): Uint8Array {
+	const manifest = bodies
+		.map(
+			(_, i) => `<item id="h${i}" href="w_split_${i}.xhtml" media-type="application/xhtml+xml"/>`
+		)
+		.join('');
+	const spine = bodies.map((_, i) => `<itemref idref="h${i}"/>`).join('');
+	const files: Record<string, string> = {
+		mimetype: 'application/epub+zip',
+		'META-INF/container.xml': `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>`,
+		'content.opf': `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>The Test Work</dc:title>
+    <dc:creator>tester</dc:creator>
+    <dc:publisher>${publisher}</dc:publisher>
+  </metadata>
+  <manifest>${manifest}</manifest>
+  <spine>${spine}</spine>
+</package>`
+	};
+	bodies.forEach((body, i) => {
+		files[`w_split_${i}.xhtml`] =
+			`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head><body class="calibre">${body}</body></html>`;
+	});
+	return zip(files);
+}
+
+describe('parseDocument (AO3 epub)', () => {
+	const fullWork = (rating = 'Explicit') =>
+		buildAo3Epub([...ao3Preface(rating), ...AO3_CHAPTERS, AO3_AFTERWORD]);
+
+	it('keeps the preface and afterword out of the chapters', async () => {
+		const plan = await parseDocument(fullWork(), 'w.epub');
+		expect(plan.story.title).toBe('The Test Work');
+		expect(plan.story.author).toBe('tester');
+		expect(plan.chapters.map((c) => c.title)).toEqual(['The Start', null]);
+		const prose = plan.chapters.flatMap((c) => c.scenes.map((s) => s.bodyMd)).join('\n');
+		expect(prose).not.toMatch(/Archive of Our Own|Notes|Summary|Works inspired|drop by/);
+	});
+
+	it('splits each chapter into scenes on its scene breaks', async () => {
+		const plan = await parseDocument(fullWork(), 'w.epub');
+		expect(plan.chapters[0].scenes.map((s) => s.bodyMd)).toEqual(['First scene.', 'Second scene.']);
+		expect(plan.chapters[1].scenes.map((s) => s.bodyMd)).toEqual(['Only scene.']);
+	});
+
+	it('maps the summary, rating, and chapter summaries onto the story', async () => {
+		const plan = await parseDocument(fullWork(), 'w.epub');
+		expect(plan.story.descriptionMd).toBe('A short summary.');
+		expect(plan.story.isAdult).toBe(true);
+		expect(plan.chapters[0].summaryMd).toBe('Chapter one summary.');
+		expect(plan.chapters[1].summaryMd).toBeNull();
+		expect(plan.problems).toEqual([]);
+	});
+
+	it('flags Mature works adult and leaves other ratings alone', async () => {
+		expect((await parseDocument(fullWork('Mature'), 'w.epub')).story.isAdult).toBe(true);
+		expect((await parseDocument(fullWork('Teen And Up Audiences'), 'w.epub')).story.isAdult).toBe(
+			false
+		);
+	});
+
+	it('turns the tag list and every note into story notes', async () => {
+		const plan = await parseDocument(fullWork(), 'w.epub');
+		const notes = plan.freeformNotes ?? [];
+		expect(notes.map((n) => [n.title, n.scene, n.pinned])).toEqual([
+			['Archive of Our Own details', null, true],
+			['Notes', null, false],
+			['Chapter 1: The Start notes', { chapter: 0, index: 0 }, false],
+			['Chapter 2 end notes', { chapter: 1, index: 0 }, false],
+			['End notes', null, false]
+		]);
+		expect(notes[0].bodyMd).toBe(
+			[
+				'Imported from https://archiveofourown.org/works/123',
+				'',
+				'- **Rating:** Explicit',
+				'- **Fandom:** Some Fandom',
+				'- **Additional Tags:** Tag One, Tag & Two',
+				'- **Series:** Part 1 of The Series'
+			].join('\n')
+		);
+		expect(notes.map((n) => n.bodyMd).slice(1)).toEqual([
+			'A work note.',
+			'Chapter one note.',
+			'Chapter two end note.',
+			'A work end note.'
+		]);
+	});
+
+	it('reads a one-chapter work with no chapter heading', async () => {
+		const oneShot = `<div id="chapters" class="userstuff1"><div class="userstuff2"><p class="calibre7">The whole story.</p></div></div>`;
+		const plan = await parseDocument(
+			buildAo3Epub([...ao3Preface('General Audiences'), oneShot]),
+			'w.epub'
+		);
+		expect(plan.chapters).toEqual([
+			{
+				title: null,
+				summaryMd: null,
+				scenes: [{ title: null, status: null, bodyMd: 'The whole story.' }]
+			}
+		]);
+	});
+
+	it('reads the same markup the ordinary way when the publisher is not AO3', async () => {
+		const plan = await parseDocument(
+			buildAo3Epub([...ao3Preface('Explicit'), ...AO3_CHAPTERS], 'Someone Else'),
+			'w.epub'
+		);
+		expect(plan.story.isAdult).toBeUndefined();
+		expect(plan.chapters[0].title).toBe('Preface');
+	});
+});
+
 // Rewrite the uncompressed size a zip declares for one entry, in both the
 // central directory and the local header, to model an archive that lies about
 // how large its contents are.
