@@ -198,6 +198,41 @@
 	// Extra request settings only reach an OpenAI-compatible endpoint; the Claude
 	// provider has its own controls and ignores them, so the boxes stay hidden.
 	const extraParamsShown = $derived(!anthropicShown);
+	// A switch clears the saved key and the model picks on the server, so it
+	// asks first when there is something to lose. The key box is emptied before
+	// the form saves: a key typed for the old provider must not be saved as the
+	// new one's.
+	let apiKeyField = $state<HTMLInputElement>();
+	function switchProvider(event: Event & { currentTarget: HTMLSelectElement }) {
+		const select = event.currentTarget;
+		if (select.value === data.assistant.provider) return;
+		const hasPicks = Object.values(savedModels).some(Boolean);
+		if (
+			(data.assistant.hasKey || hasPicks) &&
+			!confirm(
+				'Switch provider? Your saved API key and the models picked for each role are cleared.'
+			)
+		) {
+			event.stopPropagation();
+			selectedProvider = data.assistant.provider;
+			return;
+		}
+		if (apiKeyField) apiKeyField.value = '';
+		// The old preset's URL is still in the box; a custom endpoint starts empty.
+		const endpointField = select.form?.elements.namedItem('endpoint');
+		if (endpointField instanceof HTMLInputElement) endpointField.value = '';
+		discoveredModels = [];
+	}
+	// Once a key is saved the box empties, so it is never resent with a later
+	// switch; the placeholder then says a key is saved.
+	$effect(() => {
+		if (
+			(form?.scope === 'assistant-endpoint' && 'saved' in form && form.saved) ||
+			form?.scope === 'assistant-test'
+		) {
+			if (apiKeyField) apiKeyField.value = '';
+		}
+	});
 	function paramsText(params: Record<string, unknown> | undefined): string {
 		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';
 	}
@@ -401,6 +436,7 @@
 						name="provider"
 						class="select"
 						bind:value={selectedProvider}
+						onchange={switchProvider}
 					>
 						{#each data.providers as preset (preset.id)}
 							<option value={preset.id}>{preset.label}</option>
@@ -448,6 +484,7 @@
 				<div class="field">
 					<label for="api_key">API key</label>
 					<input
+						bind:this={apiKeyField}
 						id="api_key"
 						name="apiKey"
 						type="password"

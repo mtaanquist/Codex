@@ -16,6 +16,7 @@ const storedConfig = {
 	modelContextManual: {} as Record<string, number>
 };
 const savedInputs: {
+	provider?: string;
 	tuning?: Record<string, unknown>;
 	models?: Record<string, string>;
 	modelContextManual?: Record<string, number>;
@@ -39,8 +40,19 @@ vi.mock('$lib/server/llm/config', async (importActual) => ({
 		modelContextManual: storedConfig.modelContextManual
 	})),
 	saveAccountLlmConfig: vi.fn(async (_db: unknown, _userId: string, input: unknown) => {
+		calls.push('save');
 		savedInputs.push(input as (typeof savedInputs)[number]);
 		return { ok: true };
+	})
+}));
+
+// Test connection must run after its own save, so the stub records the order.
+const calls: string[] = [];
+vi.mock('$lib/server/llm/models', () => ({
+	discoverModels: vi.fn(async () => ({ ok: true, models: [] })),
+	testAccountConnection: vi.fn(async () => {
+		calls.push('test');
+		return { ok: true, reply: 'Hello.' };
 	})
 }));
 
@@ -142,12 +154,15 @@ describe('saveAssistantModels context windows', () => {
 	});
 });
 
-function saveEndpoint(fields: Record<string, string>) {
+function saveEndpoint(
+	fields: Record<string, string>,
+	action: 'saveAssistantEndpoint' | 'testAssistant' = 'saveAssistantEndpoint'
+) {
 	const form = new FormData();
 	form.set('provider', 'custom');
 	form.set('endpoint', 'http://local/v1');
 	for (const [key, value] of Object.entries(fields)) form.set(key, value);
-	const call = actions.saveAssistantEndpoint as (event: unknown) => Promise<unknown>;
+	const call = actions[action] as (event: unknown) => Promise<unknown>;
 	return call({
 		request: { formData: async () => form },
 		locals: { user: { id: 'spend-test-user' } }
@@ -186,6 +201,44 @@ describe('saveAssistantEndpoint spend fields', () => {
 		const result = (await saveEndpoint({ spendWarnUsd: '-5' })) as { status?: number };
 		expect(result.status).toBe(400);
 		expect(savedInputs).toHaveLength(0);
+	});
+});
+
+describe('which saves carry the provider', () => {
+	beforeEach(() => {
+		savedInputs.length = 0;
+	});
+
+	it('the endpoint form sends the picked provider', async () => {
+		await saveEndpoint({ provider: 'anthropic' });
+		expect(savedInputs[0]).toMatchObject({ provider: 'anthropic' });
+	});
+
+	it('other forms leave it out, so they cannot undo a switch', async () => {
+		await saveModels({ chat: 'some-model' });
+		expect(savedInputs[0].provider).toBeUndefined();
+	});
+});
+
+describe('testAssistant', () => {
+	beforeEach(() => {
+		savedInputs.length = 0;
+		calls.length = 0;
+	});
+
+	it('saves the form before testing, so a key typed just now is used', async () => {
+		const result = await saveEndpoint({ apiKey: 'sk-new' }, 'testAssistant');
+		expect(calls).toEqual(['save', 'test']);
+		expect(savedInputs[0]).toMatchObject({ apiKey: 'sk-new' });
+		expect(result).toEqual({ scope: 'assistant-test', reply: 'Hello.' });
+	});
+
+	it('does not test when the save is refused', async () => {
+		const result = (await saveEndpoint({ spendCapUsd: 'abc' }, 'testAssistant')) as {
+			status?: number;
+		};
+		expect(result.status).toBe(400);
+		expect(calls).toEqual([]);
 	});
 });
 
