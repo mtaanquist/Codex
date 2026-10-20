@@ -5,14 +5,7 @@ per line; details live in the roadmap. Cross off as things merge to main.
 
 ## Open
 
-Next up (as of 2026-10-19, after v3.19.0).
-
-In flight: Assistant fixes on `staging/assistant-fixes`, merged to `main` in one
-PR when done. Provider switch and Test connection (#649), per-role model
-guidance (#655), Claude context windows from the API (#683), context budgets
-from the model window (#685), summarising older chat turns (#686).
-
-Then pick from:
+Next up (as of 2026-10-20, after v3.20.0). Nothing is in flight; pick from:
 
 - [ ] Phase 9 leftovers: whole-universe background enrichment and character
       arc summaries (see Phase 9 below).
@@ -44,6 +37,14 @@ before the app; worker logs are JSON events (`worker.started` replaces
 "Worker started"); the worker container is capped at 2 GB by default
 (`WORKER_MEM_LIMIT`); SimpleWebAuthn 14 needs one manual passkey check on a real
 authenticator before release.
+
+Assistant fixes and codebase review (v3.20.0, 2026-10-20, PR #716 and #646):
+a provider switch now clears the old key and models and Test connection saves
+before it tests (#649); each role suggests a model for Claude and hints at the
+kind of model for other providers (#655); Claude context windows come from the
+API (#683); the chat and world context budgets scale with the model window,
+capped for cost (#685); older side panel turns are summarised on the utility
+role instead of dropped (#686). Ships with the 2026-10-19 codebase review fixes.
 
 Assistant settings, per-role tuning (2026-08-26, author-scoped, branch
 `claude/llm-assistant-work-paths-puxtka`): the five tuning controls added with
