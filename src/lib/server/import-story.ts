@@ -182,6 +182,7 @@ export async function runImport(
 				author: plan.story.author,
 				brief: plan.story.brief,
 				descriptionMd: rewrite(plan.story.descriptionMd) || null,
+				isAdult: plan.story.isAdult ?? false,
 				slug
 			})
 			.returning({ id: stories.id, slug: stories.slug });
@@ -217,7 +218,12 @@ export async function runImport(
 		for (const [chapterIndex, chapter] of plan.chapters.entries()) {
 			const [row] = await tx
 				.insert(chapters)
-				.values({ storyId: story.id, title: chapter.title, position: chapterIndex + 1 })
+				.values({
+					storyId: story.id,
+					title: chapter.title,
+					summaryMd: chapter.summaryMd ? rewrite(chapter.summaryMd) : null,
+					position: chapterIndex + 1
+				})
 				.returning({ id: chapters.id });
 			const ids: string[] = [];
 			for (const [sceneIndex, scene] of chapter.scenes.entries()) {

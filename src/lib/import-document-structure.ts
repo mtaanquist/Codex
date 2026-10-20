@@ -175,6 +175,28 @@ export function detectStructure(blocks: DocBlock[]): DetectedStructure {
 	return { chapters: kept, problems };
 }
 
+// Splits blocks into scenes on scene-break glyphs alone, keeping headings as
+// prose. For sources whose chapters are already known (an AO3 download), where
+// detectStructure would read a repeated "Chapter 3" line as a boundary and
+// drop it. Always returns at least one scene.
+export function splitScenes(blocks: DocBlock[]): ImportedScene[] {
+	const scenes: ImportedScene[] = [];
+	let parts: string[] = [];
+	const flush = () => {
+		if (parts.length > 0) scenes.push({ title: null, status: null, bodyMd: parts.join('\n\n') });
+		parts = [];
+	};
+	for (const block of blocks) {
+		if (block.kind === 'para' && isSceneBreak(block.md)) flush();
+		else {
+			const md = blockToMarkdown(block);
+			if (md !== '') parts.push(md);
+		}
+	}
+	flush();
+	return scenes.length > 0 ? scenes : [{ title: null, status: null, bodyMd: '' }];
+}
+
 // Splits a markdown string into blocks: ATX heading lines become heading
 // blocks, blank-line separated runs become paragraph blocks (lists and
 // blockquotes ride along unchanged as paragraph content). The shared bridge

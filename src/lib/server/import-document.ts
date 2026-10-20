@@ -2,9 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { unzipSync, zipSync, strFromU8 } from 'fflate';
 import TurndownService from 'turndown';
 import mammoth from 'mammoth';
-import { detectStructure, markdownToBlocks, type DocBlock } from '../import-document-structure';
-import type { ImportedAsset, ImportPlan } from '../import-markdown';
+import {
+	detectStructure,
+	markdownToBlocks,
+	splitScenes,
+	type DocBlock
+} from '../import-document-structure';
+import type { ImportedAsset, ImportedFreeformNote, ImportPlan } from '../import-markdown';
 import { extensionFor } from './media-types';
+import { parseAo3Bodies, type Ao3Work } from './import-ao3';
 
 // Builds an ImportPlan from a Word (.docx) or EPUB (.epub) manuscript: convert
 // the document to markdown blocks, let detectStructure guess chapters and
@@ -152,6 +158,7 @@ async function parseEpub(bytes: Uint8Array, filename: string): Promise<ImportPla
 
 	const assets: ImportedAsset[] = [];
 	const files: { title: string | null; blocks: DocBlock[] }[] = [];
+	const bodies: string[] = [];
 	for (const idref of spine) {
 		const href = manifest.get(idref);
 		if (!href) continue;
@@ -159,7 +166,9 @@ async function parseEpub(bytes: Uint8Array, filename: string): Promise<ImportPla
 		const data = entries[path];
 		if (!data || !/\.x?html?$/i.test(path)) continue;
 		const rewritten = rewriteEpubImages(strFromU8(data), path, entries, assets);
-		const blocks = htmlToBlocks(extractBody(rewritten));
+		const body = extractBody(rewritten);
+		bodies.push(body);
+		const blocks = htmlToBlocks(body);
 		if (blocks.length === 0) continue;
 		const firstHeading = blocks.find((b) => b.kind === 'heading');
 		files.push({
@@ -170,6 +179,11 @@ async function parseEpub(bytes: Uint8Array, filename: string): Promise<ImportPla
 
 	const title = tagText(opf, 'dc:title') ?? fileStem(filename);
 	const author = tagText(opf, 'dc:creator');
+
+	if (tagText(opf, 'dc:publisher') === 'Archive of Our Own') {
+		const work = parseAo3Bodies(bodies);
+		if (work && work.chapters.length > 0) return buildAo3Plan(title, author, work, assets);
+	}
 
 	// Headings win when the book marks chapters with them. Otherwise fall back to
 	// the EPUB's own file split: one spine document per chapter, the convention
@@ -184,6 +198,54 @@ async function parseEpub(bytes: Uint8Array, filename: string): Promise<ImportPla
 		scenes: detectStructure(file.blocks).chapters.flatMap((chapter) => chapter.scenes)
 	}));
 	return buildPlan(title, author, chapters, assets, []);
+}
+
+// An AO3 download maps onto Codex's own fields: the summary becomes the
+// description, an Explicit or Mature rating flags the story adult, chapter
+// summaries land on the chapter, and the tag list and every author's note
+// become story notes rather than prose.
+function buildAo3Plan(
+	title: string,
+	author: string | null,
+	work: Ao3Work,
+	assets: ImportedAsset[]
+): ImportPlan {
+	const md = (html: string | null) => (html ? htmlToMarkdown(html).trim() : '');
+	const notes: ImportedFreeformNote[] = [];
+	const addNote = (
+		noteTitle: string,
+		bodyMd: string,
+		scene: ImportedFreeformNote['scene'] = null,
+		pinned = false
+	) => {
+		if (bodyMd !== '') notes.push({ title: noteTitle, bodyMd, pinned, scene, createdAt: null });
+	};
+
+	const details = work.tags
+		.filter(([label]) => label !== 'Stats')
+		.map(([label, values]) => `- **${label}:** ${values.join(', ')}`);
+	if (work.sourceUrl) details.unshift(`Imported from ${work.sourceUrl}`, '');
+	addNote('Archive of Our Own details', details.join('\n'), null, true);
+	addNote('Notes', md(work.notesHtml));
+
+	const chapters = work.chapters.map((chapter, index) => {
+		const scenes = splitScenes(htmlToBlocks(chapter.proseHtml));
+		const name = chapter.title ? `Chapter ${index + 1}: ${chapter.title}` : `Chapter ${index + 1}`;
+		addNote(`${name} notes`, md(chapter.notesHtml), { chapter: index, index: 0 });
+		addNote(`${name} end notes`, md(chapter.endNotesHtml), {
+			chapter: index,
+			index: scenes.length - 1
+		});
+		return { title: chapter.title, summaryMd: md(chapter.summaryHtml) || null, scenes };
+	});
+	addNote('End notes', md(work.endNotesHtml));
+
+	const rating = work.tags.find(([label]) => label === 'Rating')?.[1] ?? [];
+	const plan = buildPlan(title, author, chapters, assets, []);
+	plan.story.descriptionMd = md(work.summaryHtml);
+	plan.story.isAdult = rating.some((value) => value === 'Explicit' || value === 'Mature');
+	plan.freeformNotes = notes;
+	return plan;
 }
 
 function rewriteEpubImages(

@@ -298,4 +298,44 @@ describe('runImport', () => {
 		const titles = await db.select({ title: stories.title }).from(stories);
 		expect(titles.filter((row) => row.title === 'Halden')).toHaveLength(3);
 	});
+
+	it('writes the adult flag and chapter summaries a document plan carries', async () => {
+		const result = await runImport(db, universe, {
+			story: {
+				title: 'Rated',
+				author: null,
+				brief: null,
+				descriptionMd: 'Summary.',
+				isAdult: true
+			},
+			chapters: [
+				{
+					title: 'One',
+					summaryMd: 'What happens.',
+					scenes: [{ title: null, status: null, bodyMd: 'Prose.' }]
+				}
+			],
+			unfiled: [],
+			notes: [],
+			freeformNotes: [
+				{
+					title: 'Chapter 1 notes',
+					bodyMd: 'A note.',
+					pinned: false,
+					scene: { chapter: 0, index: 0 },
+					createdAt: null
+				}
+			],
+			assets: [],
+			problems: []
+		});
+		const [story] = await db.select().from(stories).where(eq(stories.id, result.storyId));
+		expect(story.isAdult).toBe(true);
+		expect(story.descriptionMd).toBe('Summary.');
+		const [chapter] = await db.select().from(chapters).where(eq(chapters.storyId, story.id));
+		expect(chapter.summaryMd).toBe('What happens.');
+		const [scene] = await db.select().from(scenes).where(eq(scenes.storyId, story.id));
+		const [note] = await db.select().from(notes).where(eq(notes.storyId, story.id));
+		expect(note.sceneId).toBe(scene.id);
+	});
 });

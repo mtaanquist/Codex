@@ -8,7 +8,12 @@ import { UUID_BODY } from './slug';
 // have (no chapter.md, say) but strict about being a story export at all.
 
 export type ImportedScene = { title: string | null; status: SceneStatus | null; bodyMd: string };
-export type ImportedChapter = { title: string | null; scenes: ImportedScene[] };
+export type ImportedChapter = {
+	title: string | null;
+	// Only document imports that carry chapter summaries (AO3) set this.
+	summaryMd?: string | null;
+	scenes: ImportedScene[];
+};
 export type ImportedNote = {
 	kind: 'character' | 'place' | 'lore';
 	name: string;
@@ -26,7 +31,14 @@ export type ImportedFreeformNote = {
 };
 export type ImportedAsset = { id: string; path: string; bytes: Uint8Array };
 export type ImportPlan = {
-	story: { title: string; author: string | null; brief: string | null; descriptionMd: string };
+	story: {
+		title: string;
+		author: string | null;
+		brief: string | null;
+		descriptionMd: string;
+		// Absent unless the source carries a rating (AO3).
+		isAdult?: boolean;
+	};
 	chapters: ImportedChapter[];
 	unfiled: ImportedScene[];
 	notes: ImportedNote[];
