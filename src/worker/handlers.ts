@@ -49,7 +49,6 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
-import { thinRevisions } from '../lib/server/revisions.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
@@ -576,11 +575,6 @@ export function createHandlers(deps: WorkerDeps) {
 		async purgeReviewRuns() {
 			const deleted = await purgeReviewRuns(db);
 			if (deleted > 0) logEvent('info', 'purge.review_runs', { deleted });
-		},
-
-		async thinRevisions() {
-			const removed = await thinRevisions(db);
-			if (removed > 0) logEvent('info', 'revisions.thinned', { removed });
 		},
 
 		async purgeSessions() {

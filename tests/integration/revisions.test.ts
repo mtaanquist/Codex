@@ -7,7 +7,6 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	characters,
-	reviewThreads,
 	revisions,
 	scenes,
 	stories,
@@ -21,12 +20,10 @@ import {
 	recordRevision,
 	restoreRevision,
 	storyTimeline,
-	thinRevisions,
 	universeRevisionCount,
 	universeTimeline
 } from '../../src/lib/server/revisions';
 import { saveCharacter } from '../../src/lib/server/characters';
-import { writingActivity } from '../../src/lib/server/insights';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -338,148 +335,5 @@ describe('universe timeline limits', () => {
 		).rows;
 		expect(total).toBe(3);
 		expect(await universeRevisionCount(db, universeId)).toBe(total);
-	});
-});
-
-describe('thinRevisions', () => {
-	it('keeps recent history, checkpoints, pinned bases and the first and last autosave of each old day', async () => {
-		const [scene] = await db
-			.insert(scenes)
-			.values({ storyId, globalPosition: 60, title: 'Old', bodyMd: '' })
-			.returning();
-		const day = 24 * 60 * 60 * 1000;
-		const old = new Date(Date.now() - 200 * day);
-		old.setUTCHours(10, 0, 0, 0);
-		const at = (offsetMs: number) => new Date(old.getTime() + offsetMs);
-		const minute = 60 * 1000;
-		const recentDay = new Date(Date.now() - 2 * day);
-		const rows = await db
-			.insert(revisions)
-			.values([
-				// An old day: four autosaves, a checkpoint, and a pinned autosave.
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'a1',
-					reason: 'autosave',
-					createdAt: at(0)
-				},
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'a2',
-					reason: 'autosave',
-					createdAt: at(10 * minute)
-				},
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'a2b',
-					reason: 'autosave',
-					createdAt: at(15 * minute)
-				},
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'pin',
-					reason: 'autosave',
-					createdAt: at(20 * minute)
-				},
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'cp',
-					reason: 'checkpoint',
-					createdAt: at(30 * minute)
-				},
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'a3',
-					reason: 'autosave',
-					createdAt: at(40 * minute)
-				},
-				// The next old day: a single autosave.
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'b1',
-					reason: 'autosave',
-					createdAt: at(day)
-				},
-				// Recent: every autosave stays.
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'r1',
-					reason: 'autosave',
-					createdAt: recentDay
-				},
-				{
-					entityType: 'scene',
-					entityId: scene.id,
-					bodyMd: 'r2',
-					reason: 'autosave',
-					createdAt: new Date(recentDay.getTime() + minute)
-				}
-			])
-			.returning({ id: revisions.id, bodyMd: revisions.bodyMd });
-		const pinned = rows.find((row) => row.bodyMd === 'pin')!;
-		await db
-			.insert(reviewThreads)
-			.values({ storyId, sceneId: scene.id, baseRevisionId: pinned.id });
-
-		expect(await thinRevisions(db)).toBe(2);
-		const left = await db
-			.select({ bodyMd: revisions.bodyMd })
-			.from(revisions)
-			.where(eq(revisions.entityId, scene.id));
-		expect(left.map((row) => row.bodyMd).sort()).toEqual(
-			['a1', 'a3', 'b1', 'cp', 'pin', 'r1', 'r2'].sort()
-		);
-		// A second run finds nothing more to do.
-		expect(await thinRevisions(db)).toBe(0);
-	});
-
-	it('keeps every local writing day in a timezone far from UTC', async () => {
-		const timezone = 'Australia/Sydney';
-		const [universe] = await db.insert(universes).values({ ownerId, name: 'Sydney' }).returning();
-		const [story] = await db
-			.insert(stories)
-			.values({ universeId: universe.id, ownerId, title: 'Down under' })
-			.returning();
-		const [scene] = await db
-			.insert(scenes)
-			.values({ storyId: story.id, globalPosition: 1, title: 'Night', bodyMd: '' })
-			.returning();
-		// Local 20:00 and 23:00 on one day and 08:00 the next, 120 days back:
-		// all three fall on the same UTC day.
-		const { rows } = await pool.query(
-			`select (d + time '20:00') at time zone $1 as evening,
-				(d + time '23:00') at time zone $1 as late,
-				(d + 1 + time '08:00') at time zone $1 as morning
-			from (select (now() at time zone $1)::date - 120 as d) x`,
-			[timezone]
-		);
-		const { evening, late, morning } = rows[0] as { evening: Date; late: Date; morning: Date };
-		expect(evening.toISOString().slice(0, 10)).toBe(morning.toISOString().slice(0, 10));
-		await db.insert(revisions).values(
-			[evening, late, morning].map((createdAt, i) => ({
-				entityType: 'scene' as const,
-				entityId: scene.id,
-				bodyMd: `draft ${i}`,
-				wordCount: 2,
-				reason: 'autosave',
-				createdAt
-			}))
-		);
-		expect((await writingActivity(db, universe.id, timezone)).streak.longest).toBe(2);
-		await thinRevisions(db);
-		const left = await db
-			.select({ bodyMd: revisions.bodyMd })
-			.from(revisions)
-			.where(eq(revisions.entityId, scene.id));
-		expect(left.map((row) => row.bodyMd).sort()).toEqual(['draft 0', 'draft 2']);
-		expect((await writingActivity(db, universe.id, timezone)).streak.longest).toBe(2);
 	});
 });
