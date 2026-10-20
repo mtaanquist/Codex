@@ -519,6 +519,13 @@
 			"when": 1792438442230,
 			"tag": "0073_story-trash",
 			"breakpoints": true
+		},
+		{
+			"idx": 74,
+			"version": "7",
+			"when": 1792482309464,
+			"tag": "0074_assistant_chat_summaries",
+			"breakpoints": true
 		}
 	]
 }

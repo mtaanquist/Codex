@@ -4,12 +4,14 @@ import { stories, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
+import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
 import {
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
 	MAX_REPLY_TOKENS,
 	MAX_TEMPERATURE,
+	resolveRoleModel,
 	type AssistantRole,
 	type EffortLevel,
 	type ExtraParams,
@@ -423,9 +425,9 @@ export async function resolveLlmConfig(
 	};
 }
 
-// The model a role runs on: its own, else the chat model, else whatever is set.
+// The model a role runs on; see resolveRoleModel for the order.
 export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
-	return config.models[role] || config.models.chat || Object.values(config.models)[0] || '';
+	return resolveRoleModel(config.models, role, suggestedModel(config.provider, role));
 }
 
 // The context window of the model this role runs on, in tokens; undefined when
@@ -514,7 +516,8 @@ export type SaveAccountInput = {
 	enabled: boolean;
 	assistantName: string;
 	persona: Persona;
-	// Defaults to 'custom' (a bring-your-own endpoint) when absent.
+	// Absent keeps the stored provider, which is 'custom' (a bring-your-own
+	// endpoint) for an account that has never picked one.
 	provider?: ProviderId;
 	endpoint: string;
 	// Blank keeps the stored key, so the writer can edit other fields without
@@ -540,6 +543,30 @@ export type SaveAccountInput = {
 	supportsTools?: boolean;
 };
 
+// On a switch, only what the caller carried over from the stored config is
+// reset; a value it sent deliberately for the new provider is kept.
+function carried(sent: unknown, stored: unknown): boolean {
+	return JSON.stringify(sent) === JSON.stringify(stored);
+}
+
+function originOf(endpoint: string): string {
+	try {
+		return new URL(endpoint).origin;
+	} catch {
+		return endpoint;
+	}
+}
+
+function withoutExtraParams(tuning: TuningMap): TuningMap {
+	const out: TuningMap = {};
+	for (const [role, own] of Object.entries(tuning) as [AssistantRole, RoleTuning][]) {
+		const rest = { ...own };
+		delete rest.extraParams;
+		if (Object.keys(rest).length > 0) out[role] = rest;
+	}
+	return out;
+}
+
 export type SaveResult = { ok: true } | { ok: false; reason: string };
 
 export async function saveAccountLlmConfig(
@@ -547,7 +574,10 @@ export async function saveAccountLlmConfig(
 	userId: string,
 	input: SaveAccountInput
 ): Promise<SaveResult> {
-	const provider = normaliseProviderId(input.provider);
+	const existing = await accountLlmConfig(db, userId);
+	// Absent keeps the stored provider (the partial-save pattern).
+	const provider =
+		input.provider === undefined ? existing.provider : normaliseProviderId(input.provider);
 	// A preset owns its endpoint: the stored URL comes from the preset table, not
 	// the form, so a stale or tampered field cannot point a preset elsewhere.
 	const preset = providerPreset(provider);
@@ -581,8 +611,17 @@ export async function saveAccountLlmConfig(
 		};
 	}
 
-	const existing = await accountLlmConfig(db, userId);
-	let apiKeyEnc = existing.apiKeyEnc;
+	// A key belongs to the provider and endpoint it was saved for, so a switch
+	// never carries it over: it would be sent somewhere new. The discovered
+	// snapshots describe the old endpoint too. A preset's URL is fixed, so only a
+	// custom endpoint is compared, by host, and a first URL typed after the key
+	// is not a switch. A provider switch also starts the model picks and the extra request
+	// settings over, since they name the old provider's models and parameters.
+	const providerChanged = provider !== existing.provider;
+	const connectionChanged =
+		providerChanged ||
+		(!preset && !!existing.endpoint && originOf(endpoint) !== originOf(existing.endpoint));
+	let apiKeyEnc = connectionChanged ? null : existing.apiKeyEnc;
 	if (input.apiKey) {
 		if (!secretsAvailable()) {
 			return { ok: false, reason: 'Set APP_SECRET on the server before storing an API key.' };
@@ -594,6 +633,10 @@ export async function saveAccountLlmConfig(
 	// carries a manual opt-out that would disable surfaces.
 	const supportsStreaming = preset?.adapter === 'anthropic' ? true : input.supportsStreaming;
 	const supportsTools = preset?.adapter === 'anthropic' ? true : input.supportsTools;
+	const tuning = input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning);
+	const models = normaliseModels(input.models);
+	const extraParams =
+		input.extraParams === undefined ? undefined : (normaliseExtraParams(input.extraParams) ?? {});
 	const value: StoredAccountConfig = {
 		enabled: input.enabled,
 		assistantName: normaliseAssistantName(input.assistantName),
@@ -601,13 +644,17 @@ export async function saveAccountLlmConfig(
 		provider,
 		endpoint,
 		apiKeyEnc,
-		models: normaliseModels(input.models),
+		models: providerChanged && carried(models, existing.models) ? {} : models,
 		// Absent means "not part of this form", keeping the stored map (the
 		// blank-api-key pattern); pass {} to clear it.
-		tuning: input.tuning === undefined ? existing.tuning : normaliseTuning(input.tuning),
-		...(input.extraParams === undefined
-			? {}
-			: { extraParams: normaliseExtraParams(input.extraParams) ?? {} }),
+		tuning:
+			providerChanged && carried(tuning, existing.tuning) ? withoutExtraParams(tuning) : tuning,
+		...(providerChanged &&
+		(extraParams === undefined || carried(extraParams, existing.extraParams ?? {}))
+			? { extraParams: {} }
+			: extraParams === undefined
+				? {}
+				: { extraParams }),
 		webSearch: input.webSearch === undefined ? existing.webSearch : input.webSearch === true,
 		toolCallBudget: normaliseBudget(input.toolCallBudget),
 		toolProfile:
@@ -627,8 +674,10 @@ export async function saveAccountLlmConfig(
 	if (input.spendWarnUsd !== undefined) {
 		spend.spendWarnUsd = normaliseUsd(input.spendWarnUsd) ?? null;
 	}
+	// What the last discovery reported describes the old provider's models.
+	const snapshots = connectionChanged ? { modelPricing: {}, modelContext: {} } : {};
 	// A jsonb merge, so any unknown keys (a future config field) survive.
-	const stored: Record<string, unknown> = { ...value, ...spend };
+	const stored: Record<string, unknown> = { ...value, ...spend, ...snapshots };
 	await db
 		.update(users)
 		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })

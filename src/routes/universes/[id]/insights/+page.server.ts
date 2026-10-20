@@ -11,6 +11,7 @@ import {
 import { userPreferences } from '$lib/server/preferences';
 import { assistantLayout } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { hasChatSummary } from '$lib/server/llm/chat-summary';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -37,6 +38,9 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const assistantChat = assistant.tabEnabled
 		? await listChat(db, locals.user!.id, { universeId: universe.id })
 		: [];
+	const assistantChatSummarised =
+		assistant.tabEnabled &&
+		(await hasChatSummary(db, locals.user!.id, { universeId: universe.id }));
 	return {
 		universe,
 		timezone,
@@ -46,6 +50,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 		web,
 		assistant,
 		assistantChat,
+		assistantChatSummarised,
 		dailyGoal: preferences.dailyWordGoal,
 		showStreak: preferences.sessionStreak === 'shown'
 	};

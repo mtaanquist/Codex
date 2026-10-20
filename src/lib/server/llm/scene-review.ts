@@ -23,9 +23,9 @@ import {
 	assembleSceneDelta,
 	assembleStoryFrame,
 	buildSystemMessage,
-	type AssembledContext,
-	DEFAULT_BUDGET_TOKENS
+	type AssembledContext
 } from './context/assemble.ts';
+import { DEFAULT_BUDGET_TOKENS, windowBudget } from './context/budgets.ts';
 import {
 	buildConfirmMessage,
 	buildReviewMessage,
@@ -85,8 +85,7 @@ const CONFIRM_TOOL_BUDGET = 6;
 const CONFIRM_TOOL_NAMES = ['leave_comment', 'suggest_edit'];
 
 export function surveyBudgetTokens(contextWindow: number | undefined): number {
-	if (!contextWindow) return DEFAULT_BUDGET_TOKENS;
-	return Math.max(1000, Math.floor(contextWindow * SURVEY_WINDOW_SHARE));
+	return windowBudget(contextWindow, SURVEY_WINDOW_SHARE, DEFAULT_BUDGET_TOKENS);
 }
 
 function confirmBodyChars(budgetTokens: number): number {

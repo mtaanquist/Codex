@@ -5,7 +5,14 @@ per line; details live in the roadmap. Cross off as things merge to main.
 
 ## Open
 
-Next up (as of 2026-10-19, after v3.19.0). Nothing is in flight; pick from:
+Next up (as of 2026-10-19, after v3.19.0).
+
+In flight: Assistant fixes on `staging/assistant-fixes`, merged to `main` in one
+PR when done. Provider switch and Test connection (#649), per-role model
+guidance (#655), Claude context windows from the API (#683), context budgets
+from the model window (#685), summarising older chat turns (#686).
+
+Then pick from:
 
 - [ ] Phase 9 leftovers: whole-universe background enrichment and character
       arc summaries (see Phase 9 below).

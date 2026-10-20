@@ -117,7 +117,9 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Margin');
 
 	// A provider preset prefills and locks the base URL, and picking one saves
-	// at once.
+	// at once. Switching asks first whenever a key or model picks are saved, as
+	// they are on a repeated run; accept every time.
+	page.on('dialog', (dialog) => dialog.accept());
 	await page.getByLabel('Provider', { exact: true }).selectOption('anthropic');
 	const presetUrl = page.getByLabel('Base URL', { exact: true });
 	await expect(presetUrl).toHaveValue('https://api.anthropic.com');
@@ -129,12 +131,27 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 		'https://api.anthropic.com'
 	);
 
+	// A key saved for Claude empties the box, and switching away asks first and
+	// never sends that key along as the next provider's.
+	const keyField = page.getByLabel('API key', { exact: true });
+	const keySaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantEndpoint') && response.request().method() === 'POST'
+	);
+	await keyField.fill('sk-ant-e2e');
+	await keyField.blur();
+	await keySaved;
+	await expect(keyField).toHaveValue('');
+	const switchSaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantEndpoint') && response.request().method() === 'POST'
+	);
+
 	// Back to a custom endpoint: switching the provider saves at once (with an
 	// empty URL), then typing the URL and leaving the field saves again. The
-	// reload below must not race that second save, so wait for its response;
-	// the "Saved." from the provider switch is already on screen.
+	// reload below must not race that second save, so wait for its response.
 	await page.getByLabel('Provider', { exact: true }).selectOption('custom');
-	await expect(page.getByRole('status')).toContainText('Saved');
+	expect((await switchSaved).request().postData()).not.toContain('sk-ant-e2e');
 	const urlField = page.getByLabel('Base URL', { exact: true });
 	await urlField.fill('http://ollama.local:11434/v1');
 	const endpointSaved = page.waitForResponse(
@@ -282,6 +299,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// only when absent, since an unchanged field fires no change event.
 	const urlField = page.getByLabel('Base URL', { exact: true });
 	if ((await urlField.inputValue()) !== 'http://ollama.local:11434/v1') {
+		page.once('dialog', (dialog) => dialog.accept());
 		await page.getByLabel('Provider', { exact: true }).selectOption('custom');
 		await urlField.fill('http://ollama.local:11434/v1');
 		await urlField.blur();

@@ -3,7 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
-	import type { AssistantRole } from '$lib/assistant-tuning';
+	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -14,41 +14,38 @@
 	const assistantOff = $derived(!data.assistant.enabled);
 
 	// Per-role model rows. The ids match the Assistant roles the gateway resolves
-	// a model for; the copy is presentational. Model names live here and in the
-	// help article, and nowhere else, so there are two places to refresh.
-	const FAST_SUGGESTION =
-		'Wants a fast model: hosted, Claude Haiku; on your own machine, a mixture-of-experts instruct model such as Qwen3 30B A3B (search for MoE instruct GGUF). Turn thinking off.';
+	// a model for; the copy is presentational. Which model to pick comes from the
+	// provider's guide in the page data; tip is advice that holds on any model.
 	const ROLE_META = [
 		{
 			id: 'chat',
 			name: 'Rubber duck',
 			hint: 'Conversational side panel. Best with a smart, chatty model.',
-			suggestion: 'Any model you like talking to.'
+			tip: ''
 		},
 		{
 			id: 'coauthor',
 			name: 'Co-author',
 			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.',
-			suggestion: FAST_SUGGESTION
+			tip: ''
 		},
 		{
 			id: 'continuation',
 			name: 'Continuation',
 			hint: 'Inline ghost-text suggestions. Fast and light is what matters.',
-			suggestion: FAST_SUGGESTION
+			tip: 'Turn thinking off.'
 		},
 		{
 			id: 'reviewer',
 			name: 'Reviewer',
 			hint: 'Reads a draft and leaves suggested edits in your name.',
-			suggestion:
-				'Wants the strongest model you can run: hosted, Claude Sonnet; on your own machine, a dense 32B instruct model such as Qwen3 32B (search for 32B instruct GGUF). Set a low temperature; thinking is optional.'
+			tip: 'Set a low temperature; thinking is optional.'
 		},
 		{
 			id: 'utility',
 			name: 'Background work',
 			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.',
-			suggestion: 'Use the same fast models as Continuation, with thinking off.'
+			tip: 'Turn thinking off.'
 		}
 	] as const;
 
@@ -120,7 +117,17 @@
 		const ids = discoveredModels
 			.map((m) => m.id)
 			.filter((id) => !filter || id.toLowerCase().includes(filter));
-		return [...new Set([...ids, ...Object.values(savedModels).filter((m): m is string => !!m)])];
+		// A provider with verified ids offers them before any discovery.
+		const suggested = Object.values(data.modelGuide.providers[selectedProvider])
+			.map((tier) => tier.id)
+			.filter((id): id is string => !!id && (!filter || id.toLowerCase().includes(filter)));
+		return [
+			...new Set([
+				...ids,
+				...suggested,
+				...Object.values(savedModels).filter((m): m is string => !!m)
+			])
+		];
 	});
 	// Per-token prices, from the last saved discovery snapshot overlaid with the
 	// one just run; absent for endpoints that report none.
@@ -198,6 +205,65 @@
 	// Extra request settings only reach an OpenAI-compatible endpoint; the Claude
 	// provider has its own controls and ignores them, so the boxes stay hidden.
 	const extraParamsShown = $derived(!anthropicShown);
+	// A switch clears the saved key and the model picks on the server, so it
+	// asks first when there is something to lose. The key box is emptied before
+	// the form saves: a key typed for the old provider must not be saved as the
+	// new one's.
+	let apiKeyField = $state<HTMLInputElement>();
+	function switchProvider(event: Event & { currentTarget: HTMLSelectElement }) {
+		const select = event.currentTarget;
+		if (select.value === data.assistant.provider) return;
+		const hasPicks = Object.values(savedModels).some(Boolean);
+		if (
+			(data.assistant.hasKey || hasPicks) &&
+			!confirm(
+				'Switch provider? Your saved API key and the models picked for each role are cleared.'
+			)
+		) {
+			event.stopPropagation();
+			selectedProvider = data.assistant.provider;
+			return;
+		}
+		if (apiKeyField) apiKeyField.value = '';
+		// The old preset's URL is still in the box; a custom endpoint starts empty.
+		const endpointField = select.form?.elements.namedItem('endpoint');
+		if (endpointField instanceof HTMLInputElement) endpointField.value = '';
+		discoveredModels = [];
+	}
+	// Once a key is saved the box empties, so it is never resent with a later
+	// switch; the placeholder then says a key is saved.
+	$effect(() => {
+		if (
+			(form?.scope === 'assistant-endpoint' && 'saved' in form && form.saved) ||
+			form?.scope === 'assistant-test'
+		) {
+			if (apiKeyField) apiKeyField.value = '';
+		}
+		// A refused save leaves the stored provider in place; show it again.
+		if (form?.scope === 'assistant-endpoint' && form.message) {
+			selectedProvider = data.assistant.provider;
+		}
+	});
+	// The guide follows the live select, like the provider-specific controls.
+	function suggestion(role: AssistantRole) {
+		return data.modelGuide.providers[selectedProvider][data.modelGuide.tiers[role]];
+	}
+	function suggestionLine(role: AssistantRole): string {
+		const { id, text } = suggestion(role);
+		return id ? `${text} (${id})` : text;
+	}
+	// What a role runs on with nothing picked. This follows the saved provider,
+	// not the live select, since that is what the server runs until a switch
+	// lands.
+	function unpickedLabel(role: AssistantRole): string {
+		const saved = data.modelGuide.providers[data.assistant.provider];
+		const suggested = saved[data.modelGuide.tiers[role]].id ?? '';
+		const runs = resolveRoleModel(savedModels, role, suggested);
+		if (!runs) return 'Pick a model';
+		if (runs === suggested) return `Suggested: ${runs}`;
+		if (runs === savedModels.chat) return 'Same as Rubber duck';
+		return `Same as ${runs}`;
+	}
 	function paramsText(params: Record<string, unknown> | undefined): string {
 		return params && Object.keys(params).length > 0 ? JSON.stringify(params) : '';
 	}
@@ -401,6 +467,7 @@
 						name="provider"
 						class="select"
 						bind:value={selectedProvider}
+						onchange={switchProvider}
 					>
 						{#each data.providers as preset (preset.id)}
 							<option value={preset.id}>{preset.label}</option>
@@ -448,6 +515,7 @@
 				<div class="field">
 					<label for="api_key">API key</label>
 					<input
+						bind:this={apiKeyField}
 						id="api_key"
 						name="apiKey"
 						type="password"
@@ -608,10 +676,12 @@
 							<div class="role-row-label">
 								<div class="role-row-name">{role.name}</div>
 								<div class="role-row-hint">{role.hint}</div>
+								<div class="role-row-hint">Suggested: {suggestionLine(role.id)}.</div>
 							</div>
 							<div class="role-row-controls">
 								<select class="select" name={role.id}>
-									<option value="" selected={!savedModels[role.id]}>Use endpoint default</option>
+									<option value="" selected={!savedModels[role.id]}>{unpickedLabel(role.id)}</option
+									>
 									{#each modelOptions as model (model)}
 										<option value={model} selected={savedModels[role.id] === model}
 											>{modelLabel(model)}</option
@@ -634,8 +704,8 @@
 					{/each}
 				</div>
 				<p class="field-hint">
-					Pick a model for each role, or leave it on the endpoint default. Tune opens that role's
-					thinking, temperature, and reply length.
+					Pick a model for each role; the suggestion under each name is a good place to start for
+					the provider you picked. Tune opens that role's thinking, temperature, and reply length.
 				</p>
 				{#if tuningRole}
 					<!-- Rendered inside the form so its fields save with the table. Only the
@@ -643,6 +713,7 @@
 					{#key tuningRole.id}
 						<RoleTuningModal
 							role={tuningRole}
+							suggestion={suggestionLine(tuningRole.id)}
 							saved={savedTuning[tuningRole.id] ?? {}}
 							anthropic={anthropicShown}
 							contextWindow={savedModels[tuningRole.id]

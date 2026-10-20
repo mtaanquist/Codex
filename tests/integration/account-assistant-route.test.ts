@@ -18,6 +18,22 @@ vi.mock('$lib/server/db', async () => {
 	return { db: drizzle(testPool, { schema: schemaModule }), pool: testPool };
 });
 
+// Saving a key encrypts it with APP_SECRET.
+process.env.APP_SECRET = process.env.APP_SECRET || 'account-assistant-route-secret';
+
+// Test connection must run after its own save; the stub records what was
+// stored at the moment it ran.
+const testedWith: { hasKey: boolean }[] = [];
+vi.mock('$lib/server/llm/models', () => ({
+	discoverModels: vi.fn(async () => ({ ok: true, models: [] })),
+	testAccountConnection: vi.fn(async (_db: unknown, id: string) => {
+		const { accountLlmView: view } = await import('$lib/server/llm/config');
+		const { db: testDb } = (await import('$lib/server/db')) as unknown as { db: Database };
+		testedWith.push({ hasKey: (await view(testDb, id)).hasKey });
+		return { ok: true, reply: 'Hello.' };
+	})
+}));
+
 const { db, pool } = (await import('$lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
@@ -193,5 +209,44 @@ describe('saveAssistantEndpoint spend fields', () => {
 		const result = (await saveEndpoint({ spendWarnUsd: '-5' })) as { status?: number };
 		expect(result.status).toBe(400);
 		expect((await stored()).spendWarnUsd).toBe(1.5);
+	});
+});
+
+describe('which saves carry the provider', () => {
+	it('the endpoint form switches to the picked provider', async () => {
+		await saveEndpoint({ provider: 'anthropic' });
+		expect((await stored()).provider).toBe('anthropic');
+	});
+
+	it('other forms leave it out, so they cannot undo a switch', async () => {
+		await storeConfig({ provider: 'anthropic' });
+		await saveModels({ chat: 'some-model' });
+		expect((await stored()).provider).toBe('anthropic');
+	});
+});
+
+describe('testAssistant', () => {
+	beforeEach(() => {
+		testedWith.length = 0;
+	});
+
+	it('saves the form before testing, so a key typed just now is used', async () => {
+		const form = new FormData();
+		form.set('provider', 'custom');
+		form.set('endpoint', 'http://local/v1');
+		form.set('apiKey', 'sk-new');
+		const result = await call('testAssistant', form);
+		expect(testedWith).toEqual([{ hasKey: true }]);
+		expect(result).toEqual({ scope: 'assistant-test', reply: 'Hello.' });
+	});
+
+	it('does not test when the save is refused', async () => {
+		const form = new FormData();
+		form.set('provider', 'custom');
+		form.set('endpoint', 'http://local/v1');
+		form.set('spendCapUsd', 'abc');
+		const result = (await call('testAssistant', form)) as { status?: number };
+		expect(result.status).toBe(400);
+		expect(testedWith).toEqual([]);
 	});
 });

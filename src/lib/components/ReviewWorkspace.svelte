@@ -56,6 +56,7 @@
 		editorStyle,
 		assistant = null,
 		assistantChat = [],
+		assistantChatSummarised = false,
 		onSaveStatus = () => {}
 	}: {
 		chapters: { id: string; title: string | null }[];
@@ -105,6 +106,8 @@
 				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			} | null;
 		}[];
+		// Older turns of that conversation were summarised for the model.
+		assistantChatSummarised?: boolean;
 		// The author editor's autosave feedback, surfaced in the page's app bar.
 		onSaveStatus?: (status: SaveStatus) => void;
 	} = $props();
@@ -574,6 +577,7 @@
 									muted={assistant?.muted ?? false}
 									suggestions={assistantSuggestions}
 									initialMessages={assistantChat}
+									summarised={assistantChatSummarised}
 								/>
 							</div>
 						{:else}

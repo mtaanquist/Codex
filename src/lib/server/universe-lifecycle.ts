@@ -7,6 +7,7 @@ import type { Database } from './auth.ts';
 import {
 	assets,
 	assistantChatMessages,
+	assistantChatSummaries,
 	entityCategories,
 	entityRelationships,
 	exportArtifacts,
@@ -147,6 +148,7 @@ export async function purgeUniverseWithin(tx: Tx, universeId: string): Promise<v
 	// Universe-scoped Assistant transcripts (the universe-Plan threads); the
 	// story-scoped ones went with their stories above.
 	await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.universeId, universeId));
+	await tx.delete(assistantChatSummaries).where(eq(assistantChatSummaries.universeId, universeId));
 
 	// Universe-scoped freeform notes (story notes went with their stories) and
 	// their polymorphic revisions.
