@@ -1215,6 +1215,34 @@ export const assistantChatMessages = pgTable(
 	]
 );
 
+// The running summary of the older turns of one chat conversation, kept so the
+// turns that no longer fit the transcript budget still reach the model in
+// condensed form. covered_digest fingerprints the newest turn the summary
+// covers, so the next request can find where the verbatim turns pick up.
+// Cleared with the conversation it summarises.
+export const assistantChatSummaries = pgTable(
+	'assistant_chat_summaries',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id').references(() => stories.id),
+		universeId: uuid('universe_id').references(() => universes.id),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		summary: text('summary').notNull(),
+		coveredDigest: text('covered_digest').notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('assistant_chat_summaries_story_idx').on(table.storyId, table.userId),
+		uniqueIndex('assistant_chat_summaries_universe_idx').on(table.universeId, table.userId),
+		check(
+			'assistant_chat_summaries_scope_ck',
+			sql`(${table.storyId} is null) <> (${table.universeId} is null)`
+		)
+	]
+);
+
 // One row per request the gateway sent to the writer's LLM endpoint: which
 // surface asked, which model answered, and the token counts the endpoint
 // reported (null when it reported none). Metadata only; the prompt text itself

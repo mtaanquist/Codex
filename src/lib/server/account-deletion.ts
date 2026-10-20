@@ -4,6 +4,7 @@ import type { AssetObjectStore } from './assets.ts';
 import {
 	assets,
 	assistantChatMessages,
+	assistantChatSummaries,
 	exportArtifacts,
 	notifications,
 	publications,
@@ -148,6 +149,7 @@ export async function purgeAccount(
 		// transcripts already went with the universes above; this is the
 		// belt-and-braces sweep by user).
 		await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.userId, userId));
+		await tx.delete(assistantChatSummaries).where(eq(assistantChatSummaries.userId, userId));
 
 		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));

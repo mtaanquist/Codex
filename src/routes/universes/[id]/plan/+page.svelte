@@ -207,6 +207,7 @@
 								name={data.assistant.name}
 								suggestions={assistantSuggestions}
 								initialMessages={data.assistantChat}
+								summarised={data.assistantChatSummarised}
 							/>
 						{:else if id === 'history'}
 							{#if data.revisionTarget}

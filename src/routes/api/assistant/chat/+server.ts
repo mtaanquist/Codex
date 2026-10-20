@@ -13,7 +13,8 @@ import {
 	buildSystemMessage,
 	type AssembleOptions
 } from '$lib/server/llm/context/assemble';
-import { appendChat, clearChat, fitChatTurns, type ChatScope } from '$lib/server/llm/chat-history';
+import { appendChat, clearChat, type ChatScope } from '$lib/server/llm/chat-history';
+import { fitChatWithSummary } from '$lib/server/llm/chat-summary';
 import { chatBudgetTokens, contextBudgetTokens } from '$lib/server/llm/context/budgets';
 import { modelContextWindow, resolveLlmConfig } from '$lib/server/llm/config';
 import {
@@ -113,18 +114,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		budgetTokens: contextBudgetTokens(contextWindow)
 	});
 	// Folding a reference grows a turn, so the transcript is fitted to its budget
-	// after the fold. Request shaping only: the stored transcript and the panel's
-	// own scrollback keep every turn.
-	const modelTurns: ChatMessage[] = fitChatTurns(
-		turns.map((turn) => ({
+	// after the fold. Turns that fall out are summarised rather than dropped.
+	// Request shaping only: the stored transcript and the panel's own scrollback
+	// keep every turn.
+	const fitted = await fitChatWithSummary(db, {
+		userId,
+		scope,
+		turns: turns.map((turn) => ({
 			role: turn.role,
 			content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
 		})),
-		chatBudgetTokens(contextWindow)
-	);
+		budgetTokens: chatBudgetTokens(contextWindow),
+		signal: request.signal
+	});
 	const messages: ChatMessage[] = context
-		? [buildSystemMessage(context, { tools: true }), ...modelTurns]
-		: modelTurns;
+		? [buildSystemMessage(context, { tools: true }), ...fitted.messages]
+		: fitted.messages;
 
 	return assistantSseResponse({
 		request,
@@ -133,6 +138,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		role: 'chat',
 		enableTools: true,
 		messages,
+		summarised: fitted.summarised,
 		errorMessage: 'The Assistant could not complete that request.'
 	});
 };

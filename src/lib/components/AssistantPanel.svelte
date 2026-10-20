@@ -16,6 +16,7 @@
 	import { REVIEW_CATEGORIES } from '$lib/review-shape';
 	import { flashActivity } from '$lib/activity.svelte';
 	import { parseSseFrames } from '$lib/assistant-stream';
+	import { CHAT_WINDOW_TURNS } from '$lib/assistant-chat';
 	import { commandsForScope, matchSlash, slashName, slashArgs } from '$lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
@@ -28,6 +29,7 @@
 		muted = false,
 		suggestions = [],
 		initialMessages = [],
+		summarised = false,
 		onConfirmSplit,
 		onRevertSplit,
 		onInsert,
@@ -60,6 +62,8 @@
 				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			} | null;
 		}[];
+		// Older turns of the stored conversation were summarised for the model.
+		summarised?: boolean;
 		// Confirms a proposed scene split; resolves to the created scene pair (the
 		// page navigates to the new scene) or an error message.
 		onConfirmSplit?: (proposal: {
@@ -131,6 +135,8 @@
 	let messages = $state<Message[]>(
 		seeded.length > 0 ? seeded : [{ role: 'assistant', content: opening }]
 	);
+	// svelte-ignore state_referenced_locally
+	let olderSummarised = $state(summarised);
 	let input = $state('');
 	let busy = $state(false);
 	let composer = $state<HTMLTextAreaElement>();
@@ -220,6 +226,7 @@
 				body: JSON.stringify(payload),
 				signal: controller.signal
 			});
+			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			if (!response.ok || !response.body) {
 				appendToReply(
 					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
@@ -285,7 +292,7 @@
 			...scopeBody(),
 			...(isStory ? { sceneId } : {}),
 			messages: turns
-				.slice(-40)
+				.slice(-CHAT_WINDOW_TURNS)
 				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 		});
 	}
@@ -597,6 +604,7 @@
 			}
 			messages = [{ role: 'assistant', content: opening }];
 			reference = null;
+			olderSummarised = false;
 		} finally {
 			clearing = false;
 		}
@@ -684,6 +692,12 @@
 			</div>
 		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
+			{#if olderSummarised}
+				<p class="summary-note">
+					The Assistant now sees the older messages here as a summary, so it may not recall their
+					exact wording. Type /clear to start a fresh conversation.
+				</p>
+			{/if}
 			{#each messages as message, index (index)}
 				{#if message.role === 'user'}
 					<div class="msg user">
@@ -1166,6 +1180,12 @@
 		text-align: center;
 		color: var(--text-muted);
 		font-size: 14px;
+	}
+	.summary-note {
+		font-size: 12px;
+		color: var(--text-faint);
+		text-align: center;
+		margin: 0;
 	}
 	.assistant-muted .muted-hint {
 		font-size: 12.5px;

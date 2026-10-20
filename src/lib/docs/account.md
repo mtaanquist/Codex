@@ -90,8 +90,8 @@ contacts a model on its own.
   models to fill the lists from your endpoint, then choose one per role. The roles
   are Rubber duck (the side panel), Co-author (passages you can insert),
   Continuation (inline suggestions), Reviewer (suggested edits on a draft), and
-  Background work (scene and chapter summaries, suggested entity details, and the
-  story recap). Under each role's name is a suggested model for the provider you
+  Background work (scene and chapter summaries, suggested entity details, the
+  story recap, and the summary of a long conversation). Under each role's name is a suggested model for the provider you
   picked; see the list below. Roles with no model chosen fall back to the model
   you picked for Rubber duck. With Claude, a role uses its suggested model when
   neither it nor Rubber duck has one picked, so Test connection works as soon as

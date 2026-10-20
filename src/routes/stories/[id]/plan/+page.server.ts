@@ -42,6 +42,7 @@ import {
 } from '$lib/server/relationships';
 import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
+import { hasChatSummary } from '$lib/server/llm/chat-summary';
 import { listPendingForEntity, type EntitySuggestion } from '$lib/server/entity-suggestions';
 import type { EntityKind } from '$lib/components/EntityEditor.svelte';
 
@@ -150,6 +151,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const assistantChat = assistant.tabEnabled
 		? await listChat(db, locals.user!.id, { storyId: story.id })
 		: [];
+	const assistantChatSummarised =
+		assistant.tabEnabled && (await hasChatSummary(db, locals.user!.id, { storyId: story.id }));
 	let assistantSuggestions: EntitySuggestion[] = [];
 	if (selected) {
 		assistantSuggestions = await listPendingForEntity(
@@ -234,6 +237,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		assistantEnabled: assistant.surfacesEnabled,
 		assistant,
 		assistantChat,
+		assistantChatSummarised,
 		assistantSuggestions
 	};
 };
