@@ -1,11 +1,11 @@
-FROM node:24.22.0-alpine3.24 AS build
+FROM node:26.12.0-alpine3.24 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
-FROM node:24.22.0-alpine3.24
+FROM node:26.12.0-alpine3.24
 WORKDIR /app
 ENV NODE_ENV=production
 # pg_dump and pg_restore for off-site backups; the major version must be
