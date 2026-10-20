@@ -559,7 +559,7 @@ revisions (
 -- index on (entity_type, entity_id, created_at desc) for timeline queries
 ```
 
-Inserted on debounced save; autosaves within two minutes coalesce into one row. Autosaves older than ninety days are thinned daily to the first and last one per entity per UTC day, never touching checkpoints, restores, suggestions, or revisions pinned as a review base. `word_count` lets Insights read a day's words without re-counting bodies. Later optimisation: snapshot every N revisions, store diffs between snapshots. Don't bother until the table grows large.
+Inserted on debounced save; autosaves within two minutes coalesce into one row. `word_count` lets Insights read a day's words without re-counting bodies. Later optimisation: snapshot every N revisions, store diffs between snapshots. Don't bother until the table grows large.
 
 ---
 

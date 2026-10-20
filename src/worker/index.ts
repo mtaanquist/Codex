@@ -12,7 +12,6 @@ import {
 	PURGE_REVIEW_RUNS_QUEUE,
 	PURGE_SESSIONS_QUEUE,
 	PURGE_UNIVERSES_QUEUE,
-	THIN_REVISIONS_QUEUE,
 	SWEEP_DELETED_OBJECTS_QUEUE,
 	RECONCILE_MENTIONS_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
@@ -65,7 +64,6 @@ await boss.createQueue(PURGE_ACCOUNTS_QUEUE);
 await boss.createQueue(PURGE_UNIVERSES_QUEUE);
 await boss.createQueue(SWEEP_DELETED_OBJECTS_QUEUE);
 await boss.createQueue(PURGE_REVIEW_RUNS_QUEUE);
-await boss.createQueue(THIN_REVISIONS_QUEUE);
 await boss.createQueue(PURGE_SESSIONS_QUEUE);
 await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
@@ -100,7 +98,6 @@ await boss.work(PURGE_ACCOUNTS_QUEUE, handlers.purgeAccounts);
 await boss.work(PURGE_UNIVERSES_QUEUE, handlers.purgeUniverses);
 await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, handlers.sweepDeletedObjects);
 await boss.work(PURGE_REVIEW_RUNS_QUEUE, handlers.purgeReviewRuns);
-await boss.work(THIN_REVISIONS_QUEUE, handlers.thinRevisions);
 await boss.work(PURGE_SESSIONS_QUEUE, handlers.purgeSessions);
 
 // Run the account purge sweep hourly; accounts past their grace window go.
@@ -113,9 +110,6 @@ await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' })
 
 // Old review progress goes once a day; nothing is time critical about it.
 await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
-
-// Old autosave history is thinned once a day, after the review-run sweep.
-await boss.schedule(THIN_REVISIONS_QUEUE, '35 4 * * *', {}, { tz: 'UTC' });
 
 // Expired and long-revoked sessions go once a day.
 await boss.schedule(PURGE_SESSIONS_QUEUE, '50 4 * * *', {}, { tz: 'UTC' });

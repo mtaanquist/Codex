@@ -26,9 +26,6 @@ export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
 // Sweeps the recorded progress of long-finished Assistant runs (see
 // review-runs.ts); the rows are disposable, so nothing is lost with them.
 export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';
-// Thins old autosave history to the first and last revision per entity per
-// UTC day (see thinRevisions in revisions.ts).
-export const THIN_REVISIONS_QUEUE = 'thin-revisions';
 // Deletes expired and long-revoked sessions (see purgeSessions in auth.ts).
 export const PURGE_SESSIONS_QUEUE = 'purge-sessions';
 
