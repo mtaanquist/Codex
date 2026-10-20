@@ -555,8 +555,22 @@ describe('anthropicProvider.listModels', () => {
 			});
 		};
 		const models = await anthropicProvider.listModels(conn, http);
-		expect(calledUrl).toBe('https://api.anthropic.com/v1/models');
+		expect(calledUrl).toBe('https://api.anthropic.com/v1/models?limit=1000');
 		expect(models).toEqual([{ id: 'claude-a' }, { id: 'claude-b' }]);
+	});
+
+	it("reads each model's context window from max_input_tokens", async () => {
+		const http: HttpRequest = async () =>
+			jsonResponse(200, {
+				data: [
+					{ id: 'claude-sonnet-5-5', max_input_tokens: 1000000 },
+					{ id: 'claude-old', max_input_tokens: null }
+				]
+			});
+		expect(await anthropicProvider.listModels(conn, http)).toEqual([
+			{ id: 'claude-old' },
+			{ id: 'claude-sonnet-5-5', contextLength: 1000000 }
+		]);
 	});
 
 	it('throws on a non-2xx status', async () => {
