@@ -1,24 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { browser } from '$app/environment';
-	import { cycleTheme, currentTheme, nextTheme } from '$lib/theme';
 	import { dismiss } from '$lib/dismiss';
 	import { menu } from '$lib/menu';
 	import { authorInitials } from '$lib/review-ui';
 	import Icon from './Icon.svelte';
-	import type { ConcreteTheme } from '$lib/appearance';
+	import ThemePicker from './ThemePicker.svelte';
 
 	type MenuUser = { displayName: string; email: string; isAdmin: boolean };
 	const user = $derived(page.data.user as MenuUser | null);
 
 	let open = $state(false);
 	let trigger = $state<HTMLButtonElement>();
-
-	// The same dark -> light -> warm cycle as the bar's theme tool; accent is
-	// left untouched, and cycleTheme handles the localStorage mirror and the
-	// account persist.
-	let theme = $state<ConcreteTheme>(browser ? currentTheme() : 'dark');
 </script>
 
 {#if user}
@@ -85,19 +78,16 @@
 
 				<div class="avatar-dd-sep"></div>
 				<div class="avatar-dd-group">
-					<button
+					<ThemePicker variant="items" />
+					<a
 						class="avatar-dd-item"
 						role="menuitem"
-						type="button"
-						onclick={() => (theme = cycleTheme(true))}
+						href={resolve('/docs/[topic]', { topic: 'shortcuts' })}
+						onclick={() => (open = false)}
 					>
-						{#if theme === 'dark'}
-							<Icon name="sun" size={16} />
-						{:else}
-							<Icon name="moon" size={16} />
-						{/if}
-						<span class="lbl">Switch to {nextTheme(theme)}</span>
-					</button>
+						<Icon name="book" size={16} />
+						<span class="lbl">Keyboard shortcuts</span>
+					</a>
 				</div>
 
 				<div class="avatar-dd-sep"></div>

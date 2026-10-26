@@ -61,17 +61,33 @@ Surfaces, from back to front:
   they work on any surface.
 
 Text tiers: `--text` (primary), `--text-muted` (secondary), `--text-faint`
-(tertiary and empty states). Borders: `--border` (default), `--border-strong`
+(tertiary and empty states). All three clear WCAG AA (4.5:1) on every solid
+surface of their theme; `src/lib/styles/contrast.test.ts` enforces it, so a new value that
+fails breaks the build. Borders: `--border` (default), `--border-strong`
 (emphasis, scrollbar thumbs).
 
-Accent family: `--accent` (fills), `--accent-contrast` (text on accent
-fills; use this, never `#fff`), `--accent-soft` (selection, focus glow,
-soft fills), `--accent-line` (focused borders).
+Accent family: `--accent` (the user's colour, for borders, focus rings,
+dots and other non-text marks, where 3:1 is the bar), `--accent-fill` (any
+accent fill that carries text: primary buttons, badges, chat bubbles,
+initials avatars; the accent mixed 75% with black), `--accent-ink` (accent
+as text or link colour; the same mix in light and warm, plain `--accent` in
+dark), `--accent-contrast` (text on accent fills; use this, never `#fff`),
+`--accent-soft` (selection, focus glow, soft fills), `--accent-line`
+(focused borders). Never write `color: var(--accent)`: raw accent as text
+falls under 4.5:1 on the light themes for every preset. `src/lib/contrast.ts`
+mirrors the fill mix, and the account page warns when a custom accent still
+leaves white text on the fill, or accent text on a light or dark surface,
+under AA. The review owner colour is `--accent-ink` (its avatar tile takes
+`--accent-fill`).
 
 Assets and contrast:
 
-- `--danger-contrast` - text on a `--danger` fill (`.btn-danger`). The
+- `--danger-fill` - the `.btn-danger` background: `--danger` in light and
+  warm, darkened in dark so white text clears AA.
+- `--danger-contrast` - text on a `--danger-fill` (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
+- `--status-final-ink` - `--status-final` as text (`.btn-accept`,
+  `FormStatus`, the "Saved." hints), darkened in light and warm.
 - `--on-color` - text and icons on any other solid colour tile: universe
   and story colours, author colours, category badges, swatches, the toggle
   knob. Never write `#fff` on a user-chosen colour.
@@ -120,6 +136,15 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
+**Structure every shell carries.** Exactly one `<main id="main">` (the root
+layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where the
+visible title lives elsewhere: Write, Plan, Notes and an empty Review use "{name} - Write"
+and so on), and named side panes: every `aside.pane.left` takes
+`aria-label={LEFT_PANE_LABEL}` and every `aside.pane.right`
+`aria-label={RIGHT_PANE_LABEL}` from `$lib/chrome`. A `nav.side-nav` under a
+`.side-nav-label` is named by it with `aria-labelledby`.
+`e2e/accessibility.spec.ts` runs axe over the main pages to hold this.
+
 The workspace shell is a three-column grid: structure left (`--left-w`),
 work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
 and clamp with the window: left 264px to 320px, right 312px to 380px, so the
@@ -142,6 +167,13 @@ which of those two it is doing; nothing else decides it.
 Every one of them wears the same bar; see Chrome below. Nothing escapes a
 shell any more: docs, print, guest review and the public reader all carry it.
 
+**The settings column.** `SettingsShell.svelte` anchors its content column
+(`.admin-main-inner`, 720px at most) right after the sidebar, so the spare
+width on a wide screen sits to the right. A section that holds a wide table
+or a stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`):
+admin Overview and Users, and universe Details. Two-column setting rows and
+"On this page" links for long sections are deferred (issue #731).
+
 ## Chrome
 
 One navigation bar for every page type, defined in `chrome.css` (imported
@@ -154,7 +186,7 @@ none adds a second bar.
 
 | Shell | Brand | Path | Tools |
 |---|---|---|---|
-| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Theme, Help, Notifications, You |
+| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Help, Notifications, You (the theme picker is in the account menu) |
 | `.appbar.guest` | lockup, not a link | the one story they were sent, plus a "Review only" pill | Theme, Help, "Reviewing as ..." |
 | `.appbar.reader` | links to Codex | the story and its author, as text | Theme, Help |
 | `.appbar.public` | links home | none at all: a signed-out visitor is not anywhere in the library | Theme, Help |
@@ -190,9 +222,14 @@ Tools:
 
 - `.tool-search` is the palette trigger: a labelled button with a `kbd`
   hint, not an icon. Ctrl+K does the same.
-- The theme tool cycles dark -> light -> warm (`$lib/theme.ts`,
-  `cycleTheme`). A signed-in viewer's choice persists through the appearance
-  API; a guest reviewer's and a reader's is kept in localStorage only.
+- The theme is one component, `ThemePicker` (Light / Warm / Dark / System,
+  the current choice checked, applied through `setTheme` in `$lib/theme.ts`).
+  In the author bar it is a radio group inside the account menu
+  (`variant="items"`); the guest, reader and public bars have no account
+  menu, so they carry it as their own small menu button. A signed-in
+  viewer's choice persists through the appearance API (so "System" is stored
+  as a choice, not as a palette); a signed-out viewer's is kept in
+  localStorage only. Focus mode has no theme control.
 - The `?` is a tool that is a place, not a popup: it navigates to the help
   pages, lights up with `aria-current="page"` while you are there, and takes
   you back to where you were when pressed again. There is no help modal.
@@ -279,14 +316,22 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
 - **A count on a tab is a `.seg-count`**, passed as the subject
   (`visiblePanels({ notes: 3 })`); zero still shows the panel, and the badge
   itself only renders above zero.
-- **`.panel-note`** is a panel's one line of help for a first-time reader of
-  that panel, at `--text-meta` and `--text-muted`, at the end of the panel.
+- **No footer note under a panel.** A panel does not end with a line
+  explaining what it is. When a panel needs an instruction, its empty state
+  gives it (the Reference panel's "Mention a character, place, or lore
+  entry from Plan in this scene and it shows up here after the scene
+  saves.").
 
 ## Canonical primitives
 
 The rule for all of them: if the control you need is close to one of these,
 use or extend the primitive; if it is genuinely new, add it to the shared
 CSS with a considered name and add it to this sheet.
+
+Skip link (`primitives.css`):
+
+- `.skip-link` - "Skip to content", the first focusable element on every
+  page (rendered once in the root layout). Off screen until focused.
 
 Forced-state hooks: every state rule in the shared CSS also matches
 `.is-hover`, `.is-active`, or `.is-focus` beside the real pseudo-state.
@@ -323,8 +368,10 @@ primitive's own class too, but do not copy the pattern.
 - Wrapper: `.field` with a `<label>`, optional `.field-hint`, laid out with
   `.field-grid` when two-up. Action row: `.settings-actions`.
 - Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
-  `.slider`. The focus ring (accent border plus `--accent-soft` glow) comes
-  from the shared rule; never redefine it.
+  `.slider`. `.input.short` caps a field for a short value (a display name,
+  a pen name, a handle) at 36ch instead of the full column. The focus ring
+  (accent border plus `--accent-soft` glow) comes from the shared rule;
+  never redefine it.
 - `.slider` (`primitives.css`) is a range input for a bounded value that is
   judged rather than typed exactly: a temperature, a reply length. It is
   always paired with a number field carrying the same value, so an exact
@@ -381,10 +428,18 @@ control is an `.icon-btn.sm`; the primary action sits last in the footer.
 A head can carry a `.modal-search` field instead of a title, with
 `.modal-head.searching`.
 
-The behaviour is the component's, not the CSS's: Esc closes, focus is
-trapped in the panel and returned to the opener, and a backdrop click
-closes only when nothing is unsaved. `CommandPalette` and `ReviewModal` are
-the two reference uses. Help is not one of them: it is a page, not a modal.
+The behaviour belongs to the `use:modal` action (`$lib/modal.ts`), put on
+the `role="dialog"` panel with `aria-modal="true"`: focus moves into the
+panel on open (or to `initialFocus`), Tab and Shift+Tab cycle inside it,
+Esc calls its `close` (stopping there, so a page-level Esc such as leaving
+focus mode does not also fire), and focus returns to the opener on close
+unless something run from the dialog moved it on purpose. A backdrop click
+closes only when nothing is unsaved. Every modal uses the action
+(`CommandPalette`, `ImportStoryModal`, `ReviewModal`, `RoleTuningModal`,
+`PenNamePrompt`); `QuickNote` is a floating card, not a modal, and keeps its
+own focus return. A search modal keeps focus in its box and drives the
+results with `role="combobox"` and `aria-activedescendant` (the options are
+`tabindex="-1"`). Help is not a modal: it is a page.
 
 A modal that edits fields belonging to a form on the page behind it renders
 inside that form, so its controls submit with it (`RoleTuningModal`). Where
@@ -478,11 +533,11 @@ The outward face of the work, built from the same tokens as everything else.
 - Type and colour are tokens: `.reader-prose` is `--font-content` at
   `--text-prose`/1.75 in a 37rem `.reader-col` (`.wide` is 62rem for the
   shelf). A new paragraph is an indent, not a gap.
-- **Body text is `--text` and `--text-muted` only.** `--text-faint` is a
-  chrome colour and measures under 4.5:1 on the dark background, so it is not
-  a reading colour and does not appear on these pages.
+- **Body text is `--text` and `--text-muted` only.** `--text-faint` passes
+  AA, but it is a chrome colour (meta, empty states), not a reading colour,
+  and does not appear on these pages.
 - **Links in reading text are underlined in the body colour**, not accent:
-  accent on the light and warm backgrounds falls short of 4.5:1, and an
+  a custom accent can fall short of 4.5:1 even as `--accent-ink`, and an
   underline is what a book does anyway. Accent is kept for the focus ring,
   where 3:1 is the bar.
 - **A cover is the story's own title**, set in `--font-serif` (`.shelf-cover`),
@@ -500,7 +555,7 @@ The outward face of the work, built from the same tokens as everything else.
 - **The theme is the reader's.** With no choice stored on the device the page
   opens in the theme the system asks for (the pre-paint script in
   `app.html`), and `followSystemTheme()` in the root layout keeps following it
-  while the page is open. The theme tool in the bar overrides and remembers;
+  while the page is open. The theme picker in the bar overrides and remembers;
   an author's account choice carries over, since it is the same key.
 - **The author is named, not addressed.** The path crumb and the footer show
   `users.penName ?? users.displayName` (`$lib/author-name.ts`), never the raw
@@ -648,7 +703,9 @@ shared class inside a component (this still happens for `.btn-sm` and
    fallbacks.
 6. Check dark, light, and warm, plus compact density if the page has rows.
 7. Keyboard: everything reachable, visible focus, `aria-label` on icon-only
-   controls, Escape closes any overlay.
+   controls, Escape closes any overlay. One h1, one `main id="main"`, named
+   side panes; add the page to `e2e/accessibility.spec.ts` if it is a main
+   route.
 8. Empty, loading, and error states use the shared patterns.
 9. UI text follows the writing rules; help articles updated if behaviour
    changed. The word "Session" does not appear in the product.
@@ -773,7 +830,7 @@ once the drag handlers stop swallowing keyboard events.
 ## Component index
 
 Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
-`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemeToggle`, `CrumbMenu`,
+`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemePicker`, `CrumbMenu`,
 `SidebarSearch`, `HelpLink`, `FormStatus`, `ReviewAvatar`, `ReviewReplyForm`,
 `ReviewReplyRow`, `ReviewMarginRail`, `ReviewSelectionToolbar`.
 

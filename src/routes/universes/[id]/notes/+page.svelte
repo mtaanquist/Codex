@@ -14,6 +14,7 @@
 </svelte:head>
 
 <NotesWorkspace
+	title={data.universe.name}
 	crumbs={universePath(data.universe)}
 	notes={data.universeNotes}
 	notesPath={resolve('/universes/[id]/notes', { id: data.universe.slug })}

@@ -55,7 +55,7 @@
 		/>
 	</div>
 
-	<div class="page-body">
+	<main id="main" class="page-body">
 		<div class="print-head page-header no-print">
 			<div>
 				<h1 class="page-title">Print preview</h1>
@@ -79,7 +79,7 @@
 			data-theme="light"
 		>
 			<header class="title-page">
-				<h1>{data.story.title}</h1>
+				<h2 class="book-title">{data.story.title}</h2>
 				{#if data.story.author}<p class="author">{data.story.author}</p>{/if}
 			</header>
 
@@ -109,7 +109,7 @@
 				</section>
 			{/if}
 		</div>
-	</div>
+	</main>
 </div>
 
 <style>
@@ -130,7 +130,9 @@
 		text-align: center;
 		margin: 4rem 0 6rem;
 	}
-	.title-page h1 {
+	/* An h2 under the page's own h1, sized and spaced as the title page's h1 was. */
+	.book-title {
+		margin: 0.67em 0;
 		font-size: 28pt;
 		font-weight: 600;
 	}

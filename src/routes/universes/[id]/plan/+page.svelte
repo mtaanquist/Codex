@@ -10,7 +10,7 @@
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { UNIVERSE_MODE_NOTE, universePath } from '$lib/chrome';
+	import { UNIVERSE_MODE_NOTE, universePath, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -134,7 +134,8 @@
 			boardLabel="Story board"
 			{form}
 		/>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			<h1 class="visually-hidden">{data.universe.name} - Plan</h1>
 			{#if data.selected && data.revisionPreview && data.revisionTarget}
 				<div class="detail">
 					<RevisionPreview
@@ -193,7 +194,7 @@
 			{/if}
 		</main>
 		{#if rightTab}
-			<aside class="pane right">
+			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 				<PanelStrip
 					{panels}
 					active={rightTab}
@@ -252,10 +253,6 @@
 								<a class="btn btn-sm btn-ghost" href={universeNotesPath}>All notes</a>
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
-							<p class="panel-note">
-								The universe's notes, shared by every story in it. Open one, or All notes, to read
-								and edit on the Notes page.
-							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.selected && data.relationships.length > 0}
@@ -319,10 +316,6 @@
 									</div>
 								{/if}
 							</div>
-							<p class="panel-note">
-								Where this entry turns up in the prose of every story here, and who it is connected
-								to.
-							</p>
 						{/if}
 					{/snippet}
 				</PanelStrip>

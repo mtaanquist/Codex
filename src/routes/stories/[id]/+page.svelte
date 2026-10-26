@@ -35,13 +35,12 @@
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { EditorView } from '@codemirror/view';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import PanelStrip from '$lib/components/PanelStrip.svelte';
 	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath as storyCrumbs } from '$lib/chrome';
+	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import type { PageData, Snapshot } from './$types';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
@@ -295,7 +294,8 @@
 	// Opens the review modal for a scene or chapter from the sidebar row menu;
 	// the modal drives the run and reports progress in the activity center.
 	function openReviewFor(request: { sceneId?: string; chapterId?: string }) {
-		rowMenu = null;
+		// Back on the row first, so closing the modal returns focus there.
+		closeRowMenu(true);
 		openReviewModal({
 			level: request.sceneId ? 'scene' : 'chapter',
 			sceneId: request.sceneId,
@@ -605,7 +605,7 @@
 		helpLabel="the editor"
 	/>
 	<div class="body">
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<ModeSwitcher
 					active="write"
@@ -634,7 +634,8 @@
 				/>
 			</div>
 		</aside>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			{#if !inWholeStory}<h1 class="visually-hidden">{data.story.title} - Write</h1>{/if}
 			{#if viewStory}
 				{#snippet docScene(scene: NonNullable<typeof data.storyDoc>[number])}
 					<article class="doc-scene" id="scene-{scene.id}">
@@ -819,7 +820,7 @@
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right">
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 			{#if inspectStack.length > 0}
 				{#if inspectCard}
 					<EntityCard
@@ -917,10 +918,6 @@
 								<a class="btn btn-sm btn-ghost" href={notesPath}>All notes</a>
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
-							<p class="panel-note">
-								The story's notes; ones attached to the open scene lead. Open one, or All notes, to
-								read and edit on the Notes page.
-							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.storyTodos.length > 0}
@@ -984,14 +981,17 @@
 									</div>
 								{:else}
 									<div class="empty-state tight">
-										<p class="empty-state-text">Nothing to show yet.</p>
+										<p class="empty-state-text">
+											{#if data.selectedScene}
+												Mention a character, place, or lore entry from Plan in this scene and it
+												shows up here after the scene saves.
+											{:else}
+												Open a scene to see the Plan entries it mentions.
+											{/if}
+										</p>
 									</div>
 								{/if}
 							</div>
-							<p class="panel-note">
-								Everything the prose in view mentions that also has an entry in Plan. Open one to
-								read or edit it.
-							</p>
 						{/if}
 					{/snippet}
 				</PanelStrip>
@@ -1001,7 +1001,6 @@
 
 	{#if focusMode.on}
 		<div class="focus-controls">
-			<ThemeToggle />
 			<button
 				class="icon-btn"
 				type="button"
@@ -1080,7 +1079,7 @@
 		margin: 0 0 8px;
 	}
 	.doc-scene-mark:hover {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 	/* Read-only preview: prose through the export renderer, styled to read
 	   like the finished book. */

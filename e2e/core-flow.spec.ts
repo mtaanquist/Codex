@@ -624,7 +624,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	await page.getByRole('link', { name: 'open the print view' }).click();
 	await expect(page).toHaveURL(/\/print$/);
-	await expect(page.locator('.title-page h1')).toHaveText('Book of Ash');
+	await expect(page.locator('.title-page .book-title')).toHaveText('Book of Ash');
 	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');
 	await gotoReady(page, proseSceneUrl);
 

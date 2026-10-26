@@ -51,7 +51,7 @@
 		helpLabel="reading pages"
 	/>
 
-	<main class="reader-main">
+	<main id="main" class="reader-main">
 		{#if data.gate}
 			<div class="reader-col">
 				<p class="reader-kicker">A story by <a href={shelfHref}>{data.author}</a></p>

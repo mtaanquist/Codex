@@ -6,6 +6,7 @@
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
 	import { LIBRARY_VIEWS } from '$lib/dashboard';
 	import { applyAppearance } from '$lib/appearance-apply';
+	import { accentProblem } from '$lib/contrast';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -15,14 +16,16 @@
 
 	// Appearance preview: local state seeded from the saved preferences, applied
 	// live as the user edits. Saving persists it; the layout re-applies on load.
-	// svelte-ignore state_referenced_locally
-	let theme = $state(data.preferences.theme);
+	// Follows the saved value, so a pick from the account menu's theme picker
+	// shows here too; editing the select overrides it until the save lands.
+	let theme = $derived(data.preferences.theme);
 	// svelte-ignore state_referenced_locally
 	let systemLightTheme = $state(data.preferences.systemLightTheme);
 	// svelte-ignore state_referenced_locally
 	let systemDarkTheme = $state(data.preferences.systemDarkTheme);
 	// svelte-ignore state_referenced_locally
 	let accent = $state(data.preferences.accent);
+	const accentWarning = $derived(accentProblem(accent));
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
 	});
@@ -138,6 +141,13 @@
 				<p class="field-hint">
 					Tints buttons, links, and highlights. Pick a preset, or choose any colour.
 				</p>
+				{#if accentWarning}
+					<p class="field-hint" role="status">
+						{accentWarning === 'too-light'
+							? 'This colour is too light for button text and links to read clearly. Choose a darker one.'
+							: 'This colour is too dark to read in the dark theme. Choose a lighter one.'}
+					</p>
+				{/if}
 			</div>
 
 			<div class="settings-actions">

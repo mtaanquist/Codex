@@ -50,6 +50,11 @@ export type UniverseAt = 'universe' | 'settings' | 'insights' | 'export' | null;
 // Which story-scoped page is open, so the menu can tick it.
 export type StoryAt = 'story' | 'settings' | 'print' | 'export' | 'reading' | null;
 
+// Accessible names for the workspace side panes. One wording everywhere, so a
+// screen reader user meets the same two landmarks on every workspace page.
+export const LEFT_PANE_LABEL = 'Sidebar';
+export const RIGHT_PANE_LABEL = 'Side panel';
+
 export function libraryCrumb(current = false): Crumb {
 	return current
 		? { kind: 'text', label: 'Library' }

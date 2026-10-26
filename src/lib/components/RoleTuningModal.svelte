@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { modal } from '$lib/modal';
 	import { formatNumber } from '$lib/format';
 	import {
 		EFFORT_LEVELS,
@@ -65,11 +66,9 @@
 		Math.max(Math.min(contextWindow ?? MAX_REPLY_TOKENS, MAX_REPLY_TOKENS), MAX_TOKENS_STEP)
 	);
 
-	// Focus lands on the panel, so the dialog is announced and Escape works
-	// before anything inside has been touched. The page returns focus to the
-	// button that opened it.
+	// Focus lands on the panel (the modal action), so the dialog is announced
+	// and Escape works before anything inside has been touched.
 	let panelEl = $state<HTMLDivElement>();
-	$effect(() => panelEl?.focus());
 
 	let changed = $state(false);
 	let extraEl = $state<HTMLTextAreaElement>();
@@ -95,13 +94,6 @@
 		}
 		onClose(changed);
 	}
-
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			requestClose();
-		}
-	}
 </script>
 
 <div
@@ -110,7 +102,6 @@
 	onclick={(event) => {
 		if (event.target === event.currentTarget) requestClose();
 	}}
-	onkeydown={onKeydown}
 >
 	<div
 		class="modal-panel modal-lg"
@@ -119,6 +110,7 @@
 		role="dialog"
 		aria-modal="true"
 		aria-label="Tune {role.name}"
+		use:modal={{ close: requestClose }}
 		onchange={(event) => {
 			event.stopPropagation();
 			changed = true;

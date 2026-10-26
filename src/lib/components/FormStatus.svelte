@@ -34,6 +34,6 @@
 		color: var(--danger);
 	}
 	.fs-ok {
-		color: var(--status-final);
+		color: var(--status-final-ink);
 	}
 </style>

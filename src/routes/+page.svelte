@@ -207,7 +207,7 @@
 	<div class="page-shell">
 		<AppBar crumbs={[libraryCrumb(true)]} helpTopic="getting-started" helpLabel="the library" />
 
-		<div class="page-body">
+		<main id="main" class="page-body">
 			<div class="page-container">
 				<div class="page-header">
 					<div>
@@ -588,7 +588,7 @@
 					New here? Read the <a href={resolve('/docs')}>help</a>.
 				</p>
 			</div>
-		</div>
+		</main>
 	</div>
 
 	<ImportStoryModal universe={importFor} onClose={() => (importFor = null)} />

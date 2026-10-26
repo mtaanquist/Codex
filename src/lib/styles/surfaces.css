@@ -66,15 +66,6 @@
 	font-size: var(--text-meta);
 	color: var(--text-muted);
 }
-/* A panel's first line of help, for a first-time reader of that panel. */
-.panel-note {
-	margin: 0;
-	padding: var(--space-3) 12px 0;
-	font-size: var(--text-meta);
-	line-height: 1.5;
-	color: var(--text-muted);
-	text-wrap: pretty;
-}
 
 /* ---- 2. a page's own sections, listed in the left pane ---- */
 /* Same treatment as .side-nav, different meaning: .side-nav is routes to
@@ -341,7 +332,7 @@
 	color: var(--text-muted);
 }
 .preview-note a {
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .shelf-head {
 	display: flex;

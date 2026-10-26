@@ -1,7 +1,8 @@
 # Your account
 
-Open your account page from the avatar menu at the top right of any page. It has four
-sections: Profile, Security, Assistant, and Display. Changes save on their own:
+Open your account page from the avatar menu at the top right of any page. Its
+sections are Profile, Security, Assistant, Display, Editor, Notifications, and
+Page setup, plus Invites once an admin has given you invites. Changes save on their own:
 a choice saves as soon as you make it, and a text field saves when you leave it.
 A "Saved." note confirms each save.
 
@@ -219,6 +220,13 @@ colour from the swatches or a custom one. The warm theme is a softer, sunlit
 version of the light one. When you follow your system, two extra choices let you
 set which theme is used while your system is light and which is used while it is
 dark. The change applies across the app right away.
+
+Buttons and links use a darker shade of your accent so they stay readable. If
+you pick a custom colour that is too light or too dark to read in some themes,
+a note under the swatches says so and suggests a darker or lighter one.
+
+To switch the theme without leaving the page you are on, open your account menu
+(your initials in the top right corner) and pick Light, Warm, Dark, or System.
 
 Under Library, choose how the library page shows your stories: Covers shows each
 story as a book cover, No covers shows the same cards without the cover, and
