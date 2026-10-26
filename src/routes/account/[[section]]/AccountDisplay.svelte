@@ -27,6 +27,11 @@
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
 	});
+	// The account menu's theme picker saves the same setting while this section
+	// is mounted; follow it so the select shows what is in effect.
+	$effect(() => {
+		theme = data.preferences.theme;
+	});
 
 	// The accent swatches set state rather than a form value, so saving waits a
 	// tick for the hidden input to catch up before submitting the form.

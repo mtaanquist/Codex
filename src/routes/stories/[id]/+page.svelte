@@ -35,7 +35,6 @@
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { EditorView } from '@codemirror/view';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import PanelStrip from '$lib/components/PanelStrip.svelte';
 	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
@@ -1001,7 +1000,6 @@
 
 	{#if focusMode.on}
 		<div class="focus-controls">
-			<ThemeToggle />
 			<button
 				class="icon-btn"
 				type="button"

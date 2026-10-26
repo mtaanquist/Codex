@@ -42,20 +42,35 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await expect(avatar).toBeFocused();
 	await expect(page.getByRole('menuitem', { name: 'Account settings' })).toHaveCount(0);
 
-	// The avatar-menu theme control walks the same dark -> light -> warm cycle
-	// as the bar's theme tool, and the choice persists across a reload, not
-	// just the current view (regression: it used to write only localStorage, so
-	// the next server-rendered navigation reverted it).
+	// The author bar has no theme button: the theme picker is in the account
+	// menu, and a choice persists across a reload, not just the current view
+	// (regression: it used to write only localStorage, so the next
+	// server-rendered navigation reverted it).
+	await expect(page.getByRole('button', { name: /^Theme/ })).toHaveCount(0);
 	await avatar.click();
-	const CYCLE = ['dark', 'light', 'warm'];
-	const before = (await page.locator('html').getAttribute('data-theme')) ?? 'dark';
-	const next = CYCLE[(CYCLE.indexOf(before) + 1) % CYCLE.length];
+	const warm = page.getByRole('menuitemradio', { name: 'Warm' });
 	const themeSave = page.waitForResponse((r) => r.url().includes('/api/appearance') && r.ok());
-	await page.getByRole('menuitem', { name: `Switch to ${next}` }).click();
+	await warm.click();
 	await themeSave;
-	await expect(page.locator('html')).toHaveAttribute('data-theme', next);
+	await expect(warm).toHaveAttribute('aria-checked', 'true');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'warm');
 	await page.reload();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', next);
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'warm');
+
+	// System follows the device, and keeps following it while the page is open.
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await avatar.click();
+	const systemSave = page.waitForResponse((r) => r.url().includes('/api/appearance') && r.ok());
+	await page.getByRole('menuitemradio', { name: 'System' }).click();
+	await systemSave;
+	await expect(page.getByRole('menuitemradio', { name: 'System' })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+	await page.emulateMedia({ colorScheme: 'light' });
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+	await page.keyboard.press('Escape');
 
 	// Sessions live under Security, on its own page; the signed-in device
 	// shows as current.
@@ -81,6 +96,8 @@ test('account settings: rename and see the current session', async ({ page }) =>
 
 	// Display: a saved theme applies app-wide via the data-theme attribute.
 	await page.getByRole('link', { name: 'Display' }).click();
+	// The account-menu choice above is the same setting.
+	await expect(page.getByLabel('Theme', { exact: true })).toHaveValue('system');
 	await page.getByLabel('Theme', { exact: true }).selectOption('dark');
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
