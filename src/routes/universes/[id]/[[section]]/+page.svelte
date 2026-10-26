@@ -152,7 +152,7 @@
 	<title>{data.universe.name} - Codex</title>
 </svelte:head>
 
-<SettingsShell>
+<SettingsShell wide={active === 'details'}>
 	{#snippet topbar()}
 		<AppBar
 			crumbs={universePath(data.universe, {

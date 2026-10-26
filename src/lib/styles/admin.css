@@ -232,10 +232,15 @@ a.nav-item {
 	z-index: 1;
 	box-shadow: -12px 0 30px -24px var(--pane-shadow);
 }
+/* Anchored next to the sidebar rather than centred, so the spare width on a
+   wide screen sits to the right. Sections with tables or stat grids wear
+   .wide. */
 .admin-main-inner {
-	max-width: 860px;
-	margin: 0 auto;
+	max-width: 720px;
 	padding: 36px 44px 96px;
+}
+.admin-main-inner.wide {
+	max-width: 860px;
 }
 .admin-section {
 	display: none;

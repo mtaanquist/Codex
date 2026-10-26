@@ -36,7 +36,7 @@
 	<title>Site admin - Codex</title>
 </svelte:head>
 
-<SettingsShell>
+<SettingsShell wide={active === 'overview' || active === 'users'}>
 	{#snippet topbar()}
 		<AppBar crumbs={[libraryCrumb(), pageCrumb('Site admin')]} />
 	{/snippet}
