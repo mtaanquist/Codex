@@ -59,6 +59,13 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	await expect(guest.getByRole('button', { name: 'Search and commands' })).toHaveCount(0);
 	await expect(guest.getByRole('button', { name: 'Account menu' })).toHaveCount(0);
 	await expect(guest.locator('.review-prose')).toContainText('opinions about this gate');
+	// On a phone the guest bar fits: the name collapses to the avatar.
+	await guest.setViewportSize({ width: 390, height: 844 });
+	await expect(guest.getByRole('link', { name: 'Help: reviewing' })).toBeInViewport({ ratio: 1 });
+	expect(
+		await guest.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+	).toBe(true);
+	await guest.setViewportSize({ width: 1280, height: 720 });
 
 	// A guest cannot leave review mode: the strip keeps all three modes, two
 	// switched off in place, and one line under it says why.

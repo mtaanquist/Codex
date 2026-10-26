@@ -78,6 +78,8 @@ a.appbar-brand:hover {
 	font-size: var(--text-base);
 }
 .path .crumb {
+	/* A 24px target at least, for touch. */
+	min-height: 24px;
 	max-width: 22em;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -93,6 +95,10 @@ a.appbar-brand:hover {
 }
 .path .crumb.current:hover {
 	background: none;
+}
+/* A wrapper for one crumb and the separator before it; it adds no box. */
+.crumb-item {
+	display: contents;
 }
 .crumb-sep {
 	display: grid;
@@ -319,4 +325,41 @@ a.seg-btn {
 	font-size: var(--text-meta);
 	color: var(--text-muted);
 	margin-top: 1px;
+}
+
+/* ---- narrow windows ----
+   Below 640px the bar keeps the logo, where you are, and the tools: the
+   brand name and the rule go, the path keeps the current place (and its
+   parent when the current crumb is a page), Search becomes its icon, and a
+   guest's "Reviewing as" keeps only the avatar. */
+@media (max-width: 640px) {
+	.appbar {
+		gap: var(--space-2);
+		padding: 0 var(--space-3);
+	}
+	.appbar .brand-name,
+	.appbar-rule,
+	.path .crumb-item.narrow-hide,
+	.path .crumb-item.narrow-first .crumb-sep,
+	.appbar-by,
+	.tool-search-label {
+		display: none;
+	}
+	/* Still read out, so the avatar is not an unexplained pair of letters. */
+	.appbar-who-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.tool-search {
+		width: 32px;
+		padding: 0;
+		justify-content: center;
+	}
+	.appbar-tools {
+		gap: var(--space-1);
+	}
 }
