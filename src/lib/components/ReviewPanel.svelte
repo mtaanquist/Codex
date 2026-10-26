@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import Icon from './Icon.svelte';
 	import ReviewCommentCard from './ReviewCommentCard.svelte';
 	import ReviewSuggestionCard from './ReviewSuggestionCard.svelte';

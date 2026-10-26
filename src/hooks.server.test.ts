@@ -225,6 +225,19 @@ describe('handleError', () => {
 		);
 	});
 
+	it('logs framework refusals other than 404', () => {
+		handleError({
+			kind: 'framework',
+			error: { status: 413, message: 'Payload Too Large' },
+			event
+		} as never);
+		expect(logEvent).toHaveBeenCalledWith(
+			'error',
+			'request.error',
+			expect.objectContaining({ status: 413, message: 'Payload Too Large' })
+		);
+	});
+
 	it('does not log expected errors', () => {
 		handleError({ kind: 'app', error: { status: 403, message: 'Forbidden' }, event } as never);
 		handleError({

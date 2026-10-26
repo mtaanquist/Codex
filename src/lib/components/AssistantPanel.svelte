@@ -4,7 +4,7 @@
 	// the server stores each completed turn and the page load seeds the panel,
 	// so it survives a reload. The server holds the key and endpoint; this only
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import {
 		startSummariesJob,

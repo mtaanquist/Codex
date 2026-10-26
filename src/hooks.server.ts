@@ -44,7 +44,7 @@ const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/', '/docs/'];
 // Set on every response that passes through handle, endpoints included.
 // adapter-node serves the built static files (/_app/immutable and static/)
 // before handle runs, so those do not get them. The Content-Security-Policy for
-// pages (scripts and frame-ancestors) comes from kit.csp in svelte.config.js.
+// pages (scripts and frame-ancestors) comes from the csp option in vite.config.ts.
 // HSTS follows the configured ORIGIN, not the request URL, so a self-hosted
 // install without TLS is never pinned to HTTPS: adapter-node can report https
 // for a plain-HTTP request when no protocol header is set. It skips
@@ -116,14 +116,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 // Server faults are logged as structured events with a request id; the client
 // still gets only SvelteKit's safe message. Kit 3 also passes expected errors
-// here (error() throws, the router's 404s, invalid remote arguments), which are
-// the app working as intended, so only unknown errors are logged.
+// here: error() throws, invalid remote arguments, and the router's 404s are the
+// app working as intended. The framework's other refusals (an upload over
+// BODY_SIZE_LIMIT, a POST with no matching action) stay logged, since they
+// usually point at a setting or a client bug.
 export const handleError: HandleServerError = ({ kind, error, event }) => {
-	if (kind !== 'unknown') return;
+	if (kind === 'app' || kind === 'validation') return;
+	if (kind === 'framework' && error.status === 404) return;
 	logEvent('error', 'request.error', {
 		method: event.request.method,
 		path: event.url.pathname,
-		status: 500,
-		...errorFields(error)
+		...(kind === 'framework'
+			? { status: error.status, message: error.message }
+			: { status: 500, ...errorFields(error) })
 	});
 };

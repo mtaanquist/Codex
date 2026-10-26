@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
 	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
