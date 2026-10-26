@@ -96,6 +96,7 @@ test('account settings: rename and see the current session', async ({ page }) =>
 
 	// Display: a saved theme applies app-wide via the data-theme attribute.
 	await page.getByRole('link', { name: 'Display' }).click();
+	await expect(page).toHaveURL(/\/account\/display$/);
 	// The account-menu choice above is the same setting.
 	await expect(page.getByLabel('Theme', { exact: true })).toHaveValue('system');
 	await page.getByLabel('Theme', { exact: true }).selectOption('dark');
