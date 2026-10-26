@@ -22,6 +22,6 @@ test('an empty Reference panel says how to fill it', async ({ page }) => {
 
 	await page.getByRole('tab', { name: 'Reference' }).click();
 	await expect(page.getByRole('tabpanel')).toContainText(
-		'Name a character, place, or other Plan entry in this scene and it shows up here.'
+		'Mention a character, place, or lore entry from Plan in this scene'
 	);
 });

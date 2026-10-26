@@ -304,8 +304,9 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
   itself only renders above zero.
 - **No footer note under a panel.** A panel does not end with a line
   explaining what it is. When a panel needs an instruction, its empty state
-  gives it (the Reference panel's "Name a character, place, or other Plan
-  entry in this scene and it shows up here.").
+  gives it (the Reference panel's "Mention a character, place, or lore
+  entry from Plan in this scene and it shows up here after the scene
+  saves.").
 
 ## Canonical primitives
 

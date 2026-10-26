@@ -981,8 +981,12 @@
 								{:else}
 									<div class="empty-state tight">
 										<p class="empty-state-text">
-											Name a character, place, or other Plan entry in this scene and it shows up
-											here.
+											{#if data.selectedScene}
+												Mention a character, place, or lore entry from Plan in this scene and it
+												shows up here after the scene saves.
+											{:else}
+												Open a scene to see the Plan entries it mentions.
+											{/if}
 										</p>
 									</div>
 								{/if}
