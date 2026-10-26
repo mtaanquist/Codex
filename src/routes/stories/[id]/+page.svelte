@@ -295,7 +295,8 @@
 	// Opens the review modal for a scene or chapter from the sidebar row menu;
 	// the modal drives the run and reports progress in the activity center.
 	function openReviewFor(request: { sceneId?: string; chapterId?: string }) {
-		rowMenu = null;
+		// Back on the row first, so closing the modal returns focus there.
+		closeRowMenu(true);
 		openReviewModal({
 			level: request.sceneId ? 'scene' : 'chapter',
 			sceneId: request.sceneId,
