@@ -39,6 +39,25 @@ export default defineConfig(
 		}
 	},
 	{
+		// Forms use $lib/enhance, which keeps a result on the submitting page.
+		files: ['src/**'],
+		ignores: ['src/lib/enhance.ts'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{
+							name: '$app/forms',
+							importNames: ['enhance'],
+							message: 'Import enhance from $lib/enhance instead.'
+						}
+					]
+				}
+			]
+		}
+	},
+	{
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {}
