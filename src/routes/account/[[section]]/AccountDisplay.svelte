@@ -5,7 +5,7 @@
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
 	import { applyAppearance } from '$lib/appearance-apply';
-	import { accentFillReadable } from '$lib/contrast';
+	import { accentProblem } from '$lib/contrast';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -23,6 +23,7 @@
 	let systemDarkTheme = $state(data.preferences.systemDarkTheme);
 	// svelte-ignore state_referenced_locally
 	let accent = $state(data.preferences.accent);
+	const accentWarning = $derived(accentProblem(accent));
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
 	});
@@ -136,11 +137,14 @@
 				<p class="field-hint">
 					Tints buttons, links, and highlights. Pick a preset, or choose any colour.
 				</p>
-				{#if !accentFillReadable(accent)}
-					<p class="field-hint" role="status">
-						This colour is too light for white button text to read clearly. Choose a darker one.
-					</p>
-				{/if}
+				<!-- Always present so screen readers announce the note when it appears. -->
+				<p class="field-hint accent-note" role="status">
+					{#if accentWarning === 'too-light'}
+						This colour is too light for button text and links to read clearly. Choose a darker one.
+					{:else if accentWarning === 'too-dark'}
+						This colour is too dark to read in the dark theme. Choose a lighter one.
+					{/if}
+				</p>
 			</div>
 
 			<div class="settings-actions">
@@ -152,3 +156,9 @@
 		</form>
 	</div>
 </div>
+
+<style>
+	.accent-note:empty {
+		margin: 0;
+	}
+</style>

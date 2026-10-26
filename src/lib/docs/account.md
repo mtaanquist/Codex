@@ -220,9 +220,9 @@ version of the light one. When you follow your system, two extra choices let you
 set which theme is used while your system is light and which is used while it is
 dark. The change applies across the app right away.
 
-Buttons use a darker shade of your accent so their white text stays readable.
-If you pick a custom colour that is too light for that, a note under the
-swatches says so; choose a darker colour to fix it.
+Buttons and links use a darker shade of your accent so they stay readable. If
+you pick a custom colour that is too light or too dark to read in some themes,
+a note under the swatches says so and suggests a darker or lighter one.
 
 ## Editor
 

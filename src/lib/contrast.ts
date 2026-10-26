@@ -1,10 +1,17 @@
 // WCAG contrast maths for the accent colour. tokens.css derives the filled
-// accent (`--accent-fill`) with `color-mix(in oklab, var(--accent) 75%, black)`;
-// accentFill() reproduces that mix so the account page can warn when a custom
-// accent still leaves white button text below AA.
+// accent (`--accent-fill`) and, in light and warm, the accent text shade
+// (`--accent-ink`) with `color-mix(in oklab, var(--accent) 75%, black)`; dark
+// uses the raw accent as text. accentFill() reproduces that mix so the account
+// page can warn when a custom accent falls below AA somewhere.
 
 export const AA_TEXT = 4.5;
 const FILL_SHARE = 0.75;
+
+// The hardest solid surface for accent text on each side: the darkest light
+// surface (warm --bg) and the lightest dark one (dark --bg-card). The token
+// test checks these against tokens.css.
+export const LIGHT_TEXT_FLOOR = '#f3eadd';
+export const DARK_TEXT_CEILING = '#17171d';
 
 type Rgb = [number, number, number];
 
@@ -61,7 +68,13 @@ export function accentFill(accent: string): string {
 	return mixWithBlack(accent, FILL_SHARE);
 }
 
-// True when white text on the derived accent fill reaches AA.
-export function accentFillReadable(accent: string): boolean {
-	return contrastRatio('#ffffff', accentFill(accent)) >= AA_TEXT;
+// Why an accent misses AA, or null when it reads everywhere. 'too-light':
+// white button text on the fill, or the darkened accent text on the light
+// themes. 'too-dark': the raw accent as text on the dark theme.
+export function accentProblem(accent: string): 'too-light' | 'too-dark' | null {
+	const fill = accentFill(accent);
+	if (contrastRatio('#ffffff', fill) < AA_TEXT || contrastRatio(fill, LIGHT_TEXT_FLOOR) < AA_TEXT)
+		return 'too-light';
+	if (contrastRatio(accent, DARK_TEXT_CEILING) < AA_TEXT) return 'too-dark';
+	return null;
 }

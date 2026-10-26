@@ -543,7 +543,7 @@
 	border-radius: 99px;
 }
 .rv-status.accepted {
-	color: var(--status-final);
+	color: var(--status-final-ink);
 	background: color-mix(in oklab, var(--status-final) 13%, transparent);
 }
 .rv-status.rejected {

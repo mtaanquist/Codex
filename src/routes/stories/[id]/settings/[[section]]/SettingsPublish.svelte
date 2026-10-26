@@ -50,7 +50,7 @@
 			<p class="form-error" role="alert">{form.message}</p>
 		{/if}
 		{#if form?.action === 'publish' && 'saved' in form && form.saved}
-			<p class="field-hint" role="status" style="color:var(--status-final);">Saved.</p>
+			<p class="field-hint" role="status" style="color:var(--status-final-ink);">Saved.</p>
 		{/if}
 		<div class="field">
 			<label for="st-visibility">Visibility</label>
@@ -73,7 +73,7 @@
 	<form method="POST" action="?/publish" bind:this={publishForm} onsubmit={onPublishSubmit}>
 		<input type="hidden" name="penName" value={chosenPenName} />
 		{#if form?.action === 'publish' && 'published' in form && form.published}
-			<p class="field-hint" role="status" style="color:var(--status-final);">
+			<p class="field-hint" role="status" style="color:var(--status-final-ink);">
 				Edition published. Readers see it at
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (public reader path) -->
 				<a href="/@{data.archive.handle}/{data.story.id}">
@@ -111,7 +111,7 @@
 			</p>
 		{/if}
 		{#if form?.action === 'exports' && 'saved' in form && form.saved}
-			<p class="field-hint" role="status" style="color:var(--status-final);">Saved.</p>
+			<p class="field-hint" role="status" style="color:var(--status-final-ink);">Saved.</p>
 		{/if}
 		{#if data.artifacts.length > 0}
 			<ul class="exports">

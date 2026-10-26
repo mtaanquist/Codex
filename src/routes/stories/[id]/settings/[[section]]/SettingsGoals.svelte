@@ -44,7 +44,7 @@
 			{#if form?.action === 'goals' && form.message}
 				<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
 			{:else if form?.action === 'goals' && form.saved}
-				<span class="field-hint" role="status" style="color:var(--status-final);">Saved.</span>
+				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Saved.</span>
 			{/if}
 		</div>
 	</form>

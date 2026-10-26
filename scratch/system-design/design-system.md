@@ -62,7 +62,7 @@ Surfaces, from back to front:
 
 Text tiers: `--text` (primary), `--text-muted` (secondary), `--text-faint`
 (tertiary and empty states). All three clear WCAG AA (4.5:1) on every solid
-surface of their theme; `tokens.test.ts` enforces it, so a new value that
+surface of their theme; `src/lib/styles/contrast.test.ts` enforces it, so a new value that
 fails breaks the build. Borders: `--border` (default), `--border-strong`
 (emphasis, scrollbar thumbs).
 
@@ -76,7 +76,9 @@ dark), `--accent-contrast` (text on accent fills; use this, never `#fff`),
 (focused borders). Never write `color: var(--accent)`: raw accent as text
 falls under 4.5:1 on the light themes for every preset. `src/lib/contrast.ts`
 mirrors the fill mix, and the account page warns when a custom accent still
-leaves white text on the fill under AA.
+leaves white text on the fill, or accent text on a light or dark surface,
+under AA. The review owner colour is `--accent-ink` (its avatar tile takes
+`--accent-fill`).
 
 Assets and contrast:
 
@@ -84,8 +86,8 @@ Assets and contrast:
   warm, darkened in dark so white text clears AA.
 - `--danger-contrast` - text on a `--danger-fill` (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
-- `--status-final-ink` - `--status-final` as text (`.btn-accept`),
-  darkened in light and warm.
+- `--status-final-ink` - `--status-final` as text (`.btn-accept`,
+  `FormStatus`, the "Saved." hints), darkened in light and warm.
 - `--on-color` - text and icons on any other solid colour tile: universe
   and story colours, author colours, category badges, swatches, the toggle
   knob. Never write `#fff` on a user-chosen colour.

@@ -42,7 +42,7 @@
 		</div>
 		<div class="settings-actions">
 			{#if form?.action === 'cover' && form.saved}
-				<span class="field-hint" role="status" style="color:var(--status-final);">Cover saved.</span
+				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Cover saved.</span
 				>
 			{/if}
 			<button class="btn btn-primary" type="submit">Upload cover</button>

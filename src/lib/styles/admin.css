@@ -378,7 +378,7 @@ a.nav-item {
 	font-weight: 600;
 }
 .delta.up {
-	color: var(--status-final);
+	color: var(--status-final-ink);
 }
 .delta.flat {
 	color: var(--text-muted);
@@ -421,7 +421,7 @@ a.nav-item {
 }
 .attn-ic.ok {
 	background: color-mix(in oklab, var(--status-final) 18%, transparent);
-	color: var(--status-final);
+	color: var(--status-final-ink);
 }
 .attn-body {
 	flex: 1;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { accentFill, accentFillReadable, contrastRatio, mixWithBlack } from './contrast';
+import { ACCENT_PRESETS } from './appearance';
+import { accentFill, accentProblem, contrastRatio, mixWithBlack } from './contrast';
 
 describe('contrastRatio', () => {
 	it('matches the WCAG reference values', () => {
@@ -25,10 +26,23 @@ describe('mixWithBlack', () => {
 	});
 });
 
-describe('accentFillReadable', () => {
-	it('accepts the default accent and rejects a pale custom colour', () => {
-		expect(accentFillReadable('#5b8cff')).toBe(true);
-		expect(accentFillReadable('#ffff66')).toBe(false);
-		expect(accentFillReadable('#f0f0f0')).toBe(false);
+describe('accentProblem', () => {
+	it('passes every preset', () => {
+		for (const { name, value } of ACCENT_PRESETS) expect(accentProblem(value), name).toBeNull();
+	});
+
+	it('flags a pale custom colour as too light', () => {
+		expect(accentProblem('#ffff66')).toBe('too-light');
+		expect(accentProblem('#f0f0f0')).toBe('too-light');
+	});
+
+	it('flags a colour whose button passes but whose text fails on warm paper', () => {
+		// White on its fill is about 5.2, its text shade on warm --bg about 4.3.
+		expect(contrastRatio('#ffffff', accentFill('#7aa0ff'))).toBeGreaterThan(4.5);
+		expect(accentProblem('#7aa0ff')).toBe('too-light');
+	});
+
+	it('flags a deep colour as too dark for the dark theme', () => {
+		expect(accentProblem('#203060')).toBe('too-dark');
 	});
 });
