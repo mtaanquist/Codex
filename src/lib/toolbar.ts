@@ -24,21 +24,37 @@ function toolsOf(bar: HTMLElement): HTMLElement[] {
 export const toolbar: Action<HTMLElement> = (node) => {
 	let current: HTMLElement | null = null;
 	let index = 0;
+	// Whether keyboard focus is on one of the tools. A focused tool that is
+	// removed (it moved into the overflow menu) counts as still focused.
+	let focused = false;
 
 	function sync() {
 		const tools = toolsOf(node);
 		const at = current ? tools.indexOf(current) : -1;
+		// The focused tool moved into the overflow menu (or the menu trigger
+		// went away): keep focus in the bar rather than dropping it on <body>.
+		const lost = at < 0 && focused && document.activeElement === document.body;
 		index = at >= 0 ? at : Math.max(0, Math.min(index, tools.length - 1));
 		current = tools[index] ?? null;
 		tools.forEach((el, i) => (el.tabIndex = i === index ? 0 : -1));
+		if (lost) current?.focus();
 	}
 
 	function onFocusin(event: FocusEvent) {
 		const tools = toolsOf(node);
 		if (tools.includes(event.target as HTMLElement)) {
+			focused = true;
 			current = event.target as HTMLElement;
 			sync();
 		}
+	}
+
+	function onFocusout(event: FocusEvent) {
+		const target = event.target as HTMLElement;
+		queueMicrotask(() => {
+			if (target.isConnected)
+				focused = toolsOf(node).includes(document.activeElement as HTMLElement);
+		});
 	}
 
 	function onKeydown(event: KeyboardEvent) {
@@ -50,6 +66,8 @@ export const toolbar: Action<HTMLElement> = (node) => {
 		const next = nextIndex(at, tools.length, key);
 		if (next === null) return;
 		event.preventDefault();
+		// Moving off a menu trigger closes its menu.
+		if (tools[at].getAttribute('aria-expanded') === 'true') tools[at].click();
 		current = tools[next];
 		sync();
 		current.focus();
@@ -58,6 +76,7 @@ export const toolbar: Action<HTMLElement> = (node) => {
 	const observer = new MutationObserver(sync);
 	observer.observe(node, { childList: true, subtree: true });
 	node.addEventListener('focusin', onFocusin);
+	node.addEventListener('focusout', onFocusout);
 	node.addEventListener('keydown', onKeydown);
 	sync();
 
@@ -65,6 +84,7 @@ export const toolbar: Action<HTMLElement> = (node) => {
 		destroy() {
 			observer.disconnect();
 			node.removeEventListener('focusin', onFocusin);
+			node.removeEventListener('focusout', onFocusout);
 			node.removeEventListener('keydown', onKeydown);
 		}
 	};

@@ -23,6 +23,20 @@ function tagEnd(text: string, from: number): number {
 	return -1;
 }
 
+// What is left of a control's body once tags and Svelte block markers
+// ({#if}, {:else}, {/if}) are gone. An `{expression}` counts as text.
+function visibleText(body: string): string {
+	let out = '';
+	for (let i = 0; i < body.length; i++) {
+		if (body[i] === '<') {
+			const end = tagEnd(body, i);
+			if (end < 0) break;
+			i = end;
+		} else out += body[i];
+	}
+	return out.replace(/\{[#:/@][^}]*\}/g, '').trim();
+}
+
 function unlabelledIconControls(source: string): string[] {
 	const text = source.replace(/<!--[\s\S]*?-->/g, '');
 	const found: string[] = [];
@@ -37,8 +51,7 @@ function unlabelledIconControls(source: string): string[] {
 		const close = text.indexOf(`</${tag}>`, end);
 		if (close < 0) continue;
 		const body = text.slice(end + 1, close);
-		const rest = body.replace(/<Icon\b[\s\S]*?\/>/g, '').trim();
-		if (rest === '' && body.includes('<Icon') && !/\saria-label(ledby)?=/.test(attrs)) {
+		if (visibleText(body) === '' && !/\saria-label(ledby)?=/.test(attrs)) {
 			found.push(attrs.replace(/\s+/g, ' '));
 		}
 	}
@@ -62,10 +75,15 @@ describe('icon-only controls', () => {
 			<a href="/x" title="Story view">
 				<Icon name="book" size={14} />
 			</a>
+			<button title="Mark done" onclick={done}></button>
+			<button title="Badge">{#if image}<img src={image} alt="" />{:else}<EntityBadge {name} />{/if}</button>
+			<button>{item.title}</button>
 			<aside><Icon name="x" /></aside>`;
 		expect(unlabelledIconControls(src)).toEqual([
 			'<button onclick={() => (open = x > 1)} title="Bold">',
-			'<a href="/x" title="Story view">'
+			'<a href="/x" title="Story view">',
+			'<button title="Mark done" onclick={done}>',
+			'<button title="Badge">'
 		]);
 	});
 
