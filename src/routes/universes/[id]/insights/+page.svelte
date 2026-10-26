@@ -714,8 +714,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	/* Muted text loses AA on the strongest accent tints, so only cold tiles,
+	   which sit on the plain surface, use it. */
 	.heat-tile-meta {
 		font-size: 11.5px;
+		color: var(--text);
+	}
+	.heat-tile.cold .heat-tile-meta {
 		color: var(--text-muted);
 	}
 </style>

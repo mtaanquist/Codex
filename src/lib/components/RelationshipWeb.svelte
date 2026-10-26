@@ -157,7 +157,7 @@
 	}
 	.web-filters .chip.active {
 		border-color: var(--accent);
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 	.web-focus {
 		margin-left: auto;

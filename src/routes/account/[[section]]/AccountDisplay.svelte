@@ -5,6 +5,7 @@
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
 	import { applyAppearance } from '$lib/appearance-apply';
+	import { accentFillReadable } from '$lib/contrast';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -135,6 +136,11 @@
 				<p class="field-hint">
 					Tints buttons, links, and highlights. Pick a preset, or choose any colour.
 				</p>
+				{#if !accentFillReadable(accent)}
+					<p class="field-hint" role="status">
+						This colour is too light for white button text to read clearly. Choose a darker one.
+					</p>
+				{/if}
 			</div>
 
 			<div class="settings-actions">

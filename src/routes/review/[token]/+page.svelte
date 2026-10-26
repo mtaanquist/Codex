@@ -126,7 +126,7 @@
 	.join-go {
 		align-self: flex-start;
 		border: 0;
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--accent-contrast);
 		font-weight: 600;
 		font-size: 14px;

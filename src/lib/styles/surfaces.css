@@ -341,7 +341,7 @@
 	color: var(--text-muted);
 }
 .preview-note a {
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .shelf-head {
 	display: flex;

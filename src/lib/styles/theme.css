@@ -807,7 +807,7 @@
 	padding: 40px var(--pane-pad) 120px;
 }
 .ref-word {
-	color: var(--accent);
+	color: var(--accent-ink);
 	text-decoration: none;
 	border-bottom: 1px solid var(--accent-line);
 	cursor: pointer;
@@ -855,7 +855,7 @@
 /* A pressed view toggle (non-printing marks, hide command markers). */
 .md-tool.is-active {
 	background: var(--bg-hover);
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .md-tool-label {
 	font-family: var(--font-ui);
@@ -997,7 +997,7 @@
 	border-radius: var(--radius-lg);
 }
 .revision-banner-icon {
-	color: var(--accent);
+	color: var(--accent-ink);
 	flex: none;
 	display: grid;
 	place-items: center;
@@ -1090,7 +1090,7 @@
 	border-top: 1px solid var(--border);
 }
 .r-line:hover .r-line-name {
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .r-line-name {
 	font-size: 13.5px;
@@ -1156,7 +1156,7 @@ a.icon-btn {
 }
 .rel-target:hover {
 	background: var(--bg-hover);
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .rel-note {
 	color: var(--text-muted);
