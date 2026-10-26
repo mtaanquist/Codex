@@ -917,10 +917,6 @@
 								<a class="btn btn-sm btn-ghost" href={notesPath}>All notes</a>
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
-							<p class="panel-note">
-								The story's notes; ones attached to the open scene lead. Open one, or All notes, to
-								read and edit on the Notes page.
-							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.storyTodos.length > 0}
@@ -984,14 +980,17 @@
 									</div>
 								{:else}
 									<div class="empty-state tight">
-										<p class="empty-state-text">Nothing to show yet.</p>
+										<p class="empty-state-text">
+											{#if data.selectedScene}
+												Mention a character, place, or lore entry from Plan in this scene and it
+												shows up here after the scene saves.
+											{:else}
+												Open a scene to see the Plan entries it mentions.
+											{/if}
+										</p>
 									</div>
 								{/if}
 							</div>
-							<p class="panel-note">
-								Everything the prose in view mentions that also has an entry in Plan. Open one to
-								read or edit it.
-							</p>
 						{/if}
 					{/snippet}
 				</PanelStrip>

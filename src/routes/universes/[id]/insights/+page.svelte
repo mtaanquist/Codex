@@ -484,10 +484,6 @@
 							initialMessages={data.assistantChat}
 							summarised={data.assistantChatSummarised}
 						/>
-						<p class="panel-note">
-							The only panel that has a subject on this page: the numbers in the middle. Reference,
-							History and Notes belong to a document you are editing, so they are not here.
-						</p>
 					{/snippet}
 				</PanelStrip>
 			</aside>

@@ -302,8 +302,11 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
 - **A count on a tab is a `.seg-count`**, passed as the subject
   (`visiblePanels({ notes: 3 })`); zero still shows the panel, and the badge
   itself only renders above zero.
-- **`.panel-note`** is a panel's one line of help for a first-time reader of
-  that panel, at `--text-meta` and `--text-muted`, at the end of the panel.
+- **No footer note under a panel.** A panel does not end with a line
+  explaining what it is. When a panel needs an instruction, its empty state
+  gives it (the Reference panel's "Mention a character, place, or lore
+  entry from Plan in this scene and it shows up here after the scene
+  saves.").
 
 ## Canonical primitives
 
