@@ -137,14 +137,13 @@
 				<p class="field-hint">
 					Tints buttons, links, and highlights. Pick a preset, or choose any colour.
 				</p>
-				<!-- Always present so screen readers announce the note when it appears. -->
-				<p class="field-hint accent-note" role="status">
-					{#if accentWarning === 'too-light'}
-						This colour is too light for button text and links to read clearly. Choose a darker one.
-					{:else if accentWarning === 'too-dark'}
-						This colour is too dark to read in the dark theme. Choose a lighter one.
-					{/if}
-				</p>
+				{#if accentWarning}
+					<p class="field-hint" role="status">
+						{accentWarning === 'too-light'
+							? 'This colour is too light for button text and links to read clearly. Choose a darker one.'
+							: 'This colour is too dark to read in the dark theme. Choose a lighter one.'}
+					</p>
+				{/if}
 			</div>
 
 			<div class="settings-actions">
@@ -156,9 +155,3 @@
 		</form>
 	</div>
 </div>
-
-<style>
-	.accent-note:empty {
-		margin: 0;
-	}
-</style>
