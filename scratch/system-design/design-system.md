@@ -346,7 +346,9 @@ primitive's own class too, but do not copy the pattern.
 - Every `role="menu"` renders only while open (`{#if open}`), takes
   `use:menu` (`$lib/menu.ts`) for the keyboard and `use:dismiss` with a
   `refocus` for Escape and outside clicks. `use:menu` focuses the first item
-  on open, moves with the arrow keys (wrapping) and Home/End, closes on Tab,
+  on open (the editor's own menus only when opened from the keyboard, so a
+  mouse open does not blur the editor), moves with the arrow keys (wrapping)
+  and Home/End, closes on Tab after handing focus back to the trigger,
   and opens and closes a submenu with ArrowRight/ArrowLeft. Escape returns
   focus to the trigger, or to the editor for the editor's own menus.
 - A popover that is not a list of actions (the entity badge picker's swatches

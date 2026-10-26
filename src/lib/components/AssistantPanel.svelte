@@ -829,7 +829,10 @@
 					<div
 						class="composer-menu popover"
 						role="menu"
-						use:menu={{ close: () => (actionsOpen = false) }}
+						use:menu={{
+							close: () => (actionsOpen = false),
+							refocus: () => actionsTrigger?.focus()
+						}}
 					>
 						{#if isStory}
 							<button

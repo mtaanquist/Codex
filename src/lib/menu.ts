@@ -39,6 +39,12 @@ function submenuOf(trigger: HTMLElement): HTMLElement | null {
 export type MenuParams = {
 	// Closes the menu; Tab calls it so focus moves on to the next control.
 	close: () => void;
+	// Where focus goes before Tab closes the menu (the trigger, the editor),
+	// so Tab carries on from there instead of from the removed menu.
+	refocus?: () => void;
+	// False leaves focus where it is on open: a menu opened with the mouse
+	// over the editor must not blur it. Defaults to true.
+	focusFirst?: boolean;
 };
 
 // Keyboard behaviour for a role="menu" element that renders only while open:
@@ -50,7 +56,7 @@ export type MenuParams = {
 export const menu: Action<HTMLElement, MenuParams> = (node, params) => {
 	let current = params;
 
-	itemsOf(node)[0]?.focus();
+	if (current.focusFirst !== false) itemsOf(node)[0]?.focus();
 
 	async function openSubmenu(trigger: HTMLElement) {
 		if (trigger.getAttribute('aria-expanded') !== 'true') {
@@ -63,6 +69,7 @@ export const menu: Action<HTMLElement, MenuParams> = (node, params) => {
 
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Tab') {
+			current.refocus?.();
 			current.close();
 			return;
 		}

@@ -71,7 +71,7 @@
 	class="row-menu popover"
 	role="menu"
 	use:dismiss={{ close: () => onClose(), refocus: () => onClose(true) }}
-	use:menuKeys={{ close: () => onClose() }}
+	use:menuKeys={{ close: () => onClose(), refocus: () => onClose(true) }}
 	style="left: {menu.x}px; top: {menu.y}px;"
 >
 	{#if target.kind === 'chapter'}
@@ -88,7 +88,10 @@
 				class="row-sub"
 				role="presentation"
 				onmouseenter={() => (subOpen = true)}
-				onmouseleave={() => (subOpen = false)}
+				onmouseleave={(event) => {
+					// Keyboard focus inside the flyout keeps it open.
+					if (!event.currentTarget.contains(document.activeElement)) subOpen = false;
+				}}
 			>
 				<button
 					class="menu-item row-sub-trigger"
@@ -173,7 +176,10 @@
 				class="row-sub"
 				role="presentation"
 				onmouseenter={() => (subOpen = true)}
-				onmouseleave={() => (subOpen = false)}
+				onmouseleave={(event) => {
+					// Keyboard focus inside the flyout keeps it open.
+					if (!event.currentTarget.contains(document.activeElement)) subOpen = false;
+				}}
 			>
 				<button
 					class="menu-item row-sub-trigger"

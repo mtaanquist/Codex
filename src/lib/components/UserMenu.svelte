@@ -45,7 +45,11 @@
 		</button>
 
 		{#if open}
-			<div class="avatar-dropdown" role="menu" use:menu={{ close: () => (open = false) }}>
+			<div
+				class="avatar-dropdown"
+				role="menu"
+				use:menu={{ close: () => (open = false), refocus: () => trigger?.focus() }}
+			>
 				<div class="avatar-dd-head">
 					<span class="avatar-dd-pic">{authorInitials(user.displayName)}</span>
 					<div>

@@ -46,7 +46,11 @@
 	</button>
 	{#if open}
 		<!-- eslint-disable svelte/no-navigation-without-resolve (chrome.ts resolves every href) -->
-		<div class="popover crumb-pop" role="menu" use:menu={{ close }}>
+		<div
+			class="popover crumb-pop"
+			role="menu"
+			use:menu={{ close, refocus: () => trigger?.focus() }}
+		>
 			{#each groups as items, group (group)}
 				{#if group > 0}<div class="crumb-pop-sep"></div>{/if}
 				{#each items as item (item.href)}

@@ -41,11 +41,19 @@ test('library menus: keyboard open, arrows, Escape and Tab', async ({ page }) =>
 	await expect(newMenu).toBeFocused();
 	await expect(page.getByRole('menu')).toHaveCount(0);
 
-	// Tab leaves the menu and closes it.
+	// Tab closes the menu and carries on from the trigger, not from <body>.
 	await openWithKeyboard(newMenu);
 	await page.keyboard.press('Tab');
 	await expect(newMenu).toHaveAttribute('aria-expanded', 'false');
 	await expect(page.getByRole('menu')).toHaveCount(0);
+	expect(
+		await page.evaluate(() => {
+			const active = document.activeElement;
+			return !!active && active !== document.body && !active.closest('[role="menu"]');
+		})
+	).toBe(true);
+	await page.keyboard.press('Shift+Tab');
+	await expect(newMenu).toBeFocused();
 
 	// The account menu follows the same contract.
 	const avatar = page.getByRole('button', { name: 'Account menu' });
@@ -88,15 +96,29 @@ test('story menus: crumb menu and the toolbar overflow', async ({ page }) => {
 	await page.setViewportSize({ width: 900, height: 800 });
 	const more = page.getByRole('button', { name: 'More tools' });
 	await expect(more).toBeVisible();
-	await openWithKeyboard(more);
+	// Opened with the mouse, the overflow leaves focus in the editor.
+	await page.locator('.cm-content').click();
+	await more.click();
 	const overflow = page.locator('.md-menu');
+	await expect(overflow).toBeVisible();
+	await expect(page.locator('.cm-content')).toBeFocused();
+	await more.click();
+	await expect(overflow).toHaveCount(0);
+
+	// Opened from the keyboard, focus moves to the first item.
+	await openWithKeyboard(more);
 	await expect(overflow.locator('[role^="menuitem"]').first()).toBeFocused();
-	// A toggle hands focus back to the editor so typing carries on.
+	// A toggle from the keyboard closes the menu and hands focus to the editor.
 	const toggle = overflow.getByRole('menuitemcheckbox').first();
+	const toggleName = (await toggle.textContent())?.trim() ?? '';
 	await toggle.focus();
 	await page.keyboard.press('Enter');
+	await expect(overflow).toHaveCount(0);
 	await expect(page.locator('.cm-content')).toBeFocused();
-	await toggle.click();
+	// Flip it back.
+	await openWithKeyboard(more);
+	await overflow.getByRole('menuitemcheckbox', { name: toggleName }).click();
+	await expect(page.locator('.cm-content')).toBeFocused();
 
 	// Escape from inside the overflow returns to the editor too.
 	await overflow.locator('[role^="menuitem"]').first().focus();

@@ -38,6 +38,18 @@
 	let menuOpen = $state(false);
 	let trigger = $state<HTMLButtonElement>();
 	let fileInput = $state<HTMLInputElement>();
+	let dialogEl = $state<HTMLDivElement>();
+
+	// Focus moves into the picker on open, onto the colour in effect.
+	$effect(() => {
+		dialogEl?.querySelector<HTMLElement>('.swatch.active, button, a')?.focus();
+	});
+
+	// A choice closes the picker; focus goes back to the badge.
+	function closePicker() {
+		menuOpen = false;
+		trigger?.focus();
+	}
 	// A refused change reopens the menu with the reason, so it is not lost.
 	let error = $state<string | null>(null);
 
@@ -49,7 +61,7 @@
 	async function pickColour(color: string | null) {
 		const previous = badgeColor;
 		badgeColor = color;
-		menuOpen = false;
+		closePicker();
 		error = null;
 		const result = await put(
 			`/api/entities/${entityId}/badge`,
@@ -69,7 +81,7 @@
 		const file = input.files?.[0];
 		input.value = '';
 		if (!file) return;
-		menuOpen = false;
+		closePicker();
 		error = null;
 		const data = new FormData();
 		data.set('file', file);
@@ -84,7 +96,7 @@
 	}
 
 	async function removeImage() {
-		menuOpen = false;
+		closePicker();
 		error = null;
 		const result = await del(
 			`/api/entities/${entityId}/badge`,
@@ -119,7 +131,7 @@
 		<EntityBadge {name} {badgeColor} {badgeAssetId} {categoryColor} size="lg" />
 	</button>
 	{#if menuOpen}
-		<div class="badge-menu" role="dialog" aria-label="Badge colour and image">
+		<div class="badge-menu" role="dialog" aria-label="Badge colour and image" bind:this={dialogEl}>
 			{#if error}
 				<div class="badge-error"><FormStatus block {error} /></div>
 			{/if}
@@ -132,6 +144,7 @@
 					<button
 						class="swatch swatch-default"
 						class:active={!badgeColor}
+						aria-pressed={!badgeColor}
 						type="button"
 						title="Default colour"
 						aria-label="Default colour"
@@ -141,6 +154,7 @@
 						<button
 							class="swatch"
 							class:active={badgeColor === choice.token}
+							aria-pressed={badgeColor === choice.token}
 							type="button"
 							style="background: {choice.token}"
 							title={choice.label}

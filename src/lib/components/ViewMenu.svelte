@@ -45,7 +45,11 @@
 	</button>
 	{#if open}
 		<!-- eslint-disable svelte/no-navigation-without-resolve (the caller resolves each href) -->
-		<div class="md-view-menu popover" role="menu" use:menu={{ close: () => (open = false) }}>
+		<div
+			class="md-view-menu popover"
+			role="menu"
+			use:menu={{ close: () => (open = false), refocus: () => trigger?.focus() }}
+		>
 			{#each items as item (item.id)}
 				{#if item.href}
 					<a

@@ -69,7 +69,7 @@
 	</button>
 	{#if open}
 		<!-- eslint-disable svelte/no-navigation-without-resolve (callers resolve every href) -->
-		<div class="popover" role="menu" use:menu={{ close }}>
+		<div class="popover" role="menu" use:menu={{ close, refocus: () => trigger?.focus() }}>
 			{#each items as item (item.label)}
 				{#if item.href}
 					<a class="menu-item" role="menuitem" href={item.href} onclick={close}>{item.label}</a>
