@@ -819,6 +819,7 @@
 					class="menu-btn"
 					type="button"
 					title="More actions"
+					aria-label="More actions"
 					aria-haspopup="menu"
 					aria-expanded={actionsOpen}
 					onclick={() => (actionsOpen = !actionsOpen)}
@@ -870,7 +871,13 @@
 				{/if}
 			</div>
 			{#if busy}
-				<button class="icon-btn" type="button" title="Stop generating" onclick={stop}>
+				<button
+					class="icon-btn"
+					type="button"
+					title="Stop generating"
+					aria-label="Stop generating"
+					onclick={stop}
+				>
 					<span class="stop-glyph"></span>
 				</button>
 			{:else}
@@ -879,6 +886,7 @@
 					type="button"
 					disabled={!input.trim()}
 					title="Send"
+					aria-label="Send"
 					onclick={() => send()}
 				>
 					<Icon name="send" size={16} />

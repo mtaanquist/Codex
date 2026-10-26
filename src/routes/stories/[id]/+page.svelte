@@ -930,6 +930,7 @@
 														class="todo-check"
 														type="button"
 														title="Mark done"
+														aria-label="Mark done"
 														onclick={async () => {
 															await fetch(`/api/markers/${todo.markerId}`, {
 																method: 'PUT',
@@ -1005,6 +1006,7 @@
 				class="icon-btn"
 				type="button"
 				title="Exit focus (Esc)"
+				aria-label="Exit focus (Esc)"
 				onclick={() => (focusMode.on = false)}
 			>
 				<Icon name="compress" />

@@ -93,6 +93,7 @@
 			type="button"
 			role="menuitem"
 			title={`Bold (${mod}+B)`}
+			aria-label={`Bold (${mod}+B)`}
 			onclick={() => runFormat(toggleBold)}
 		>
 			<Icon name="bold" size={15} />
@@ -102,6 +103,7 @@
 			type="button"
 			role="menuitem"
 			title={`Italic (${mod}+I)`}
+			aria-label={`Italic (${mod}+I)`}
 			onclick={() => runFormat(toggleItalic)}
 		>
 			<Icon name="italic" size={15} />
@@ -111,6 +113,7 @@
 			type="button"
 			role="menuitem"
 			title="Quote"
+			aria-label="Quote"
 			onclick={() => runFormat(toggleQuote)}
 		>
 			<Icon name="quote" size={15} />
@@ -120,6 +123,7 @@
 			type="button"
 			role="menuitem"
 			title="Bullet list"
+			aria-label="Bullet list"
 			onclick={() => runFormat(toggleBulletList)}
 		>
 			<Icon name="list" size={15} />

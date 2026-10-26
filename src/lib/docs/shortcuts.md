@@ -17,6 +17,8 @@ Option on a Mac, Ctrl and Alt everywhere else.
 - **Ctrl+B**: bold the selection.
 - **Ctrl+I**: italicise the selection.
 - **Ctrl+F**: find and replace within the scene.
+- **Arrow keys** on the formatting bar move between its tools, and Home and End
+  jump to the first and last. Tab moves on to the text.
 - **Ctrl+Alt+M**: mark the selected text as a TODO. A line that begins with
   `TODO:` becomes one on its own, no shortcut needed.
 - **Ctrl+Z** and **Ctrl+Shift+Z**: undo and redo.

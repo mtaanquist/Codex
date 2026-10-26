@@ -123,6 +123,7 @@
 		aria-haspopup="dialog"
 		aria-expanded={menuOpen}
 		title="Change the badge colour or image"
+		aria-label="Change the badge colour or image"
 		onclick={() => {
 			menuOpen = !menuOpen;
 			error = null;
