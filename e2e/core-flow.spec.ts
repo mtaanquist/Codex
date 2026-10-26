@@ -190,6 +190,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByPlaceholder('New character name').fill('Alice');
 	await page.getByRole('button', { name: 'Add character' }).click();
 	await expect(page).toHaveURL(/entity=/);
+	// The form posts without JavaScript, so this is a fresh page load. Filling
+	// the name before hydration loses the selection when Svelte binds the
+	// field, and the new text lands after the old name.
+	await waitForHydration(page);
 	const characterSave = page.waitForResponse(
 		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
 	);

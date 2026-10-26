@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoReady } from './navigate';
+import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { toggleView, viewChecked } from './toolbar';
 
@@ -45,11 +45,17 @@ test('Enter makes a paragraph; the view toggles show marks and persist', async (
 
 	// Command markers are also off by default; click to show.
 	expect(await viewChecked(page, /command markers/)).toBe(false);
+	// Wait for the setting to be stored, or the reload below can beat it.
+	const markersSaved = page.waitForResponse(
+		(r) => r.url().includes('/api/editor-view') && r.request().method() === 'POST' && r.ok()
+	);
 	await toggleView(page, /command markers/);
+	await markersSaved;
 
 	// Both settings are remembered across a reload: the marks still show, and
 	// the toggles read as on.
 	await page.reload();
+	await waitForHydration(page);
 	await expect(page.locator('.cm-np-para')).toHaveCount(2);
 	expect(await viewChecked(page, /non-printing characters/)).toBe(true);
 	expect(await viewChecked(page, /command markers/)).toBe(true);
