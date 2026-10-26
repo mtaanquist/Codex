@@ -39,8 +39,10 @@ async function violations(page: Page) {
 
 // Sets the palette on the page once it has hydrated, after the layout has
 // applied the account's own theme. Saving a theme instead would change the
-// shared e2e user that other specs run as in parallel.
+// shared e2e user that other specs run as in parallel. Transitions are cut so
+// axe reads the new colours, not a fade between the two palettes.
 async function useTheme(page: Page, theme: 'light' | 'dark') {
+	await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' });
 	await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
 }
 
