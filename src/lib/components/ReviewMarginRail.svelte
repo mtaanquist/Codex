@@ -25,6 +25,7 @@
 			type="button"
 			onclick={() => setFocused(marker.id)}
 			title="Jump to this note"
+			aria-label="Jump to this note"
 		>
 			<Icon name={marker.kind === 'comment' ? 'comment' : 'suggest'} size={13} />
 		</button>

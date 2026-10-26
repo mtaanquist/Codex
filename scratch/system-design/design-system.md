@@ -136,6 +136,11 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
+**Narrow windows.** The workspace grid keeps its side columns at any width,
+since the editor is not a phone surface; help is the exception (`DocsShell`
+adds `.docs`), stacking the topic list above the article below 760px so the
+page scrolls as one. The library grid drops to one column below 560px.
+
 **Structure every shell carries.** Exactly one `<main id="main">` (the root
 layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where the
 visible title lives elsewhere: Write, Plan, Notes and an empty Review use "{name} - Write"
@@ -213,6 +218,14 @@ The path and its crumb menus:
 - Paths are built by `$lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
   `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
   spells the same destinations the same way. Do not hand-roll a path.
+
+**Narrow windows.** Below 640px the bar drops the brand name, the rule and
+the byline, and keeps only the current place in the path, plus its parent
+when the current crumb is a page (plain text), so there is still a way up.
+`AppBar` marks the crumbs with `.narrow-hide` and `.narrow-first`. Search
+shows only its icon (the button keeps its `aria-label`), and the guest's
+"Reviewing as" keeps only the avatar, with the name visually hidden. The
+current crumb ellipsises. Crumbs keep a 24px minimum height for touch.
 
 Page actions are not bar actions. Anything that acts on the page (Print,
 Page setup, Save, New universe) lives in the page header under the bar,
@@ -361,13 +374,17 @@ primitive's own class too, but do not copy the pattern.
   styles `a.icon-btn`. There are two icon sizes and no third.
 - Scoped exceptions that stay: `.md-tool` (editor toolbar), `.seg-btn`
   (segmented strips).
-- An icon-only button always carries an `aria-label`.
+- An icon-only button always carries an `aria-label` (`src/lib/icon-buttons.test.ts`
+  fails the build on one without). The formatting bar is a `role="toolbar"`
+  with one tab stop and arrow keys between tools (`$lib/toolbar`).
 
 ### Forms
 
 - Wrapper: `.field` with a `<label>`, optional `.field-hint`, laid out with
   `.field-grid` when two-up. Action row: `.settings-actions`.
-- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
+- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`
+  (its checkbox has no visible label of its own, so give it an `aria-label`
+  matching the row title),
   `.slider`. `.input.short` caps a field for a short value (a display name,
   a pen name, a handle) at 36ch instead of the full column. The focus ring
   (accent border plus `--accent-soft` glow) comes from the shared rule;
@@ -440,6 +457,21 @@ closes only when nothing is unsaved. Every modal uses the action
 own focus return. A search modal keeps focus in its box and drives the
 results with `role="combobox"` and `aria-activedescendant` (the options are
 `tabindex="-1"`). Help is not a modal: it is a page.
+
+Asking before a destructive or irreversible step is `ConfirmDialog`, mounted
+once in the root layout and driven by `$lib/confirm.svelte.ts`: an
+`alertdialog` with a title, an optional line of body, Cancel, and a button
+named by its verb ("Delete scene", never "OK"), red (`.btn-danger`) when the
+step destroys something, in which case Cancel takes the focus. A plain form
+uses `onsubmit={confirmSubmit({...})}` (it holds the submit, asks, then
+submits again with the same button); a form with `use:enhance` passes
+`confirmEnhance({...})` as its enhance callback, since `enhance` does not
+honour a prevented submit; anything else awaits `askConfirm({...})`. Never
+call the browser's `window.confirm`. A menu whose item opens the prompt stays
+open underneath it (`dismiss` ignores clicks on the prompt, marked
+`data-over-menus`, and Escape inside any modal above it), so the form inside
+the menu is still there to submit. The prompt has no backdrop click: it waits
+for Cancel, Esc or the verb, and it cancels itself when the page navigates.
 
 A modal that edits fields belonging to a form on the page behind it renders
 inside that form, so its controls submit with it (`RoleTuningModal`). Where

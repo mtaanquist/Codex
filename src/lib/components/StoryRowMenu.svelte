@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { enhance } from '$lib/enhance';
 	import Icon from './Icon.svelte';
@@ -142,9 +143,12 @@
 		<form
 			method="POST"
 			action="?/deleteChapter"
-			onsubmit={(e) => {
-				if (!confirm('Delete this chapter? Its scenes move to Unfiled scenes.')) e.preventDefault();
-			}}
+			onsubmit={confirmSubmit({
+				title: 'Delete this chapter?',
+				body: 'Its scenes move to Unfiled scenes.',
+				confirmLabel: 'Delete chapter',
+				danger: true
+			})}
 		>
 			<input type="hidden" name="chapterId" value={target.id} />
 			{@render openSceneField()}

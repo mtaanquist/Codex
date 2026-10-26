@@ -6,8 +6,6 @@ import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 // note that persists, pin it, and confirm a story note shows under the
 // universe view's reach via the "From the universe" peek.
 test('write, persist, and pin a story note', async ({ page }) => {
-	page.on('dialog', (dialog) => dialog.accept());
-
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
@@ -33,7 +31,7 @@ test('write, persist, and pin a story note', async ({ page }) => {
 	await expect(page.locator('.mode-note')).toContainText('Notes sit beside every mode');
 
 	await page.getByPlaceholder('Untitled note').fill('Table talk');
-	await page.locator('.cm-content').click();
+	await page.getByRole('textbox', { name: 'Note text' }).click();
 	await page.keyboard.type('The party met at the Broken Crown.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 

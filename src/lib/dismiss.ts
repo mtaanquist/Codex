@@ -19,16 +19,23 @@ export type DismissParams = {
 // menu) does not also fire on the same press.
 export const dismiss: Action<HTMLElement, DismissParams> = (node, params) => {
 	let current = params;
+	// A modal opened over this menu owns its own Escape. Clicks are ignored
+	// only on the confirm prompt (backdrop included, `data-over-menus`), which a
+	// menu item opens and whose answer submits a form inside the menu; a click
+	// in any other modal still closes the menu.
+	function inside(target: EventTarget | null, selector: string): boolean {
+		const above = (target as Element | null)?.closest?.(selector);
+		return !!above && !above.contains(node);
+	}
 	function onPointerDown(event: PointerEvent) {
 		if (current.enabled === false) return;
+		if (inside(event.target, '[data-over-menus]')) return;
 		if (!node.contains(event.target as Node)) current.close();
 	}
 	function onKeydown(event: KeyboardEvent) {
 		if (current.enabled === false) return;
 		if (event.key !== 'Escape') return;
-		// A modal opened over this menu takes its own Escape.
-		const modal = (event.target as Element | null)?.closest?.('[aria-modal="true"]');
-		if (modal && !modal.contains(node)) return;
+		if (inside(event.target, '[aria-modal="true"]')) return;
 		event.preventDefault();
 		event.stopPropagation();
 		current.refocus?.();

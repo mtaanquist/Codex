@@ -343,6 +343,7 @@
 				doc: scene.bodyMd,
 				extensions: [
 					...proseExtensions({
+						label: 'Scene text',
 						placeholder: 'This scene has not been drafted yet.',
 						onDocChanged: () => {
 							scheduleSave();

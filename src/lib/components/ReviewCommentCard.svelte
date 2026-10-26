@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$lib/enhance';
+	import { confirmEnhance } from '$lib/confirm.svelte';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import ReviewReplyRow from './ReviewReplyRow.svelte';
@@ -46,9 +47,12 @@
 	// turn, with a waiting note until the fresh thread loads in.
 	const assistantAnswers = $derived(Boolean(assistant && onAssistantReply && root?.isAssistant));
 
-	function confirmRetract(e: SubmitEvent) {
-		if (!confirm('Delete your comment? This cannot be undone.')) e.preventDefault();
-	}
+	const confirmRetract = confirmEnhance({
+		title: 'Delete your comment?',
+		body: 'This cannot be undone.',
+		confirmLabel: 'Delete comment',
+		danger: true
+	});
 </script>
 
 <!-- The card jumps to its passage in the manuscript; the label keeps its
@@ -112,7 +116,7 @@
 	{#if replies.length > 0}
 		<div class="rv-replies">
 			{#each replies as reply (reply.id)}
-				<ReviewReplyRow {reply} retractAction="?/deleteComment" onConfirmRetract={confirmRetract} />
+				<ReviewReplyRow {reply} retractAction="?/deleteComment" />
 			{/each}
 		</div>
 	{/if}
@@ -131,7 +135,7 @@
 			/>
 			{#if canDeleteThread}
 				<div class="rv-actions">
-					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
+					<form method="POST" action="?/deleteComment" use:enhance={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
 						<button
 							class="icon-btn sm danger"
@@ -156,7 +160,7 @@
 					</form>
 				{/if}
 				{#if canDeleteThread}
-					<form method="POST" action="?/deleteComment" use:enhance onsubmit={confirmRetract}>
+					<form method="POST" action="?/deleteComment" use:enhance={confirmRetract}>
 						<input type="hidden" name="commentId" value={root.id} />
 						<button
 							class="icon-btn sm danger"

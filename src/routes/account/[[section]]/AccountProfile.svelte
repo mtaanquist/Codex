@@ -219,7 +219,12 @@
 						</div>
 					</div>
 					<label class="toggle">
-						<input type="checkbox" name="profilePublic" checked={data.profile.profilePublic} />
+						<input
+							type="checkbox"
+							name="profilePublic"
+							aria-label="List my page publicly"
+							checked={data.profile.profilePublic}
+						/>
 						<span class="toggle-track"></span>
 					</label>
 				</div>
@@ -313,6 +318,7 @@
 							<input
 								type="checkbox"
 								name="commissionsOpen"
+								aria-label="Open for commissions"
 								checked={data.profile.commissionsOpen}
 							/>
 							<span class="toggle-track"></span>

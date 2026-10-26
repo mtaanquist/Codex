@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$lib/enhance';
+	import { confirmEnhance } from '$lib/confirm.svelte';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import { formatDateTime } from '$lib/format';
@@ -9,8 +10,7 @@
 	// own reply; null hides the control.
 	let {
 		reply,
-		retractAction = null,
-		onConfirmRetract = () => {}
+		retractAction = null
 	}: {
 		reply: {
 			id: string;
@@ -22,7 +22,6 @@
 			createdAt: Date | string;
 		};
 		retractAction?: string | null;
-		onConfirmRetract?: (e: SubmitEvent) => void;
 	} = $props();
 </script>
 
@@ -40,8 +39,12 @@
 					method="POST"
 					action={retractAction}
 					class="rv-reply-del"
-					use:enhance
-					onsubmit={onConfirmRetract}
+					use:enhance={confirmEnhance({
+						title: 'Delete your reply?',
+						body: 'This cannot be undone.',
+						confirmLabel: 'Delete reply',
+						danger: true
+					})}
 				>
 					<input type="hidden" name="commentId" value={reply.id} />
 					<button type="submit" title="Delete your reply" aria-label="Delete your reply">

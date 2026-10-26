@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { RIGHT_PANE_LABEL } from '$lib/chrome';
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { ComponentProps } from 'svelte';
 	import NotesSidebar from './NotesSidebar.svelte';
 	import NoteEditor from './NoteEditor.svelte';
@@ -106,9 +107,12 @@
 						<form
 							method="POST"
 							action="?/deleteNote"
-							onsubmit={(e) => {
-								if (!confirm('Delete this note? This cannot be undone.')) e.preventDefault();
-							}}
+							onsubmit={confirmSubmit({
+								title: 'Delete this note?',
+								body: 'This cannot be undone.',
+								confirmLabel: 'Delete note',
+								danger: true
+							})}
 						>
 							<input type="hidden" name="noteId" value={selected.id} />
 							<button class="note-tool danger" type="submit">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { PageData, ActionData } from './$types';
 	import { formatDate } from '$lib/format';
 	import { authorInitials } from '$lib/review-ui';
@@ -252,14 +253,11 @@
 										<form
 											method="POST"
 											action="?/cancelDeletion"
-											onsubmit={(event) => {
-												if (
-													!confirm(
-														`Cancel the scheduled deletion of ${account.email}? The account becomes active again.`
-													)
-												)
-													event.preventDefault();
-											}}
+											onsubmit={confirmSubmit({
+												title: `Cancel the scheduled deletion of ${account.email}?`,
+												body: 'The account becomes active again.',
+												confirmLabel: 'Cancel deletion'
+											})}
 										>
 											<input type="hidden" name="userId" value={account.id} />
 											<button type="submit" class="btn btn-ghost btn-sm">Cancel deletion</button>
@@ -284,14 +282,12 @@
 										<form
 											method="POST"
 											action="?/resetTotp"
-											onsubmit={(event) => {
-												if (
-													!confirm(
-														`Turn off two-factor authentication for ${account.email}? They will sign in with their password alone until they set it up again.`
-													)
-												)
-													event.preventDefault();
-											}}
+											onsubmit={confirmSubmit({
+												title: `Turn off two-factor authentication for ${account.email}?`,
+												body: 'They will sign in with their password alone until they set it up again.',
+												confirmLabel: 'Reset 2FA',
+												danger: true
+											})}
 										>
 											<input type="hidden" name="userId" value={account.id} />
 											<button type="submit" class="btn btn-ghost btn-sm">Reset 2FA</button>
@@ -300,10 +296,12 @@
 									<form
 										method="POST"
 										action="?/deleteAccount"
-										onsubmit={(event) => {
-											if (!confirm(`Permanently delete ${account.email} and all their work?`))
-												event.preventDefault();
-										}}
+										onsubmit={confirmSubmit({
+											title: `Permanently delete ${account.email} and all their work?`,
+											body: 'This cannot be undone.',
+											confirmLabel: 'Delete account',
+											danger: true
+										})}
 									>
 										<input type="hidden" name="userId" value={account.id} />
 										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"

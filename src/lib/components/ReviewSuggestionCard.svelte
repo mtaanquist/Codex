@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$lib/enhance';
+	import { confirmEnhance } from '$lib/confirm.svelte';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import ReviewReplyRow from './ReviewReplyRow.svelte';
@@ -51,9 +52,12 @@
 	// The author works an open suggestion straight from the card corner.
 	const canDecide = $derived(role === 'author' && pending);
 
-	function confirmRetract(e: SubmitEvent) {
-		if (!confirm('Delete your suggested edit? This cannot be undone.')) e.preventDefault();
-	}
+	const confirmRetract = confirmEnhance({
+		title: 'Delete your suggested edit?',
+		body: 'This cannot be undone.',
+		confirmLabel: 'Delete suggestion',
+		danger: true
+	});
 
 	// The discussion on this suggestion: every comment of its lazily created
 	// thread (it has no opening comment of its own).
@@ -177,7 +181,7 @@
 			/>
 			{#if suggestion.mine}
 				<div class="rv-actions">
-					<form method="POST" action="?/deleteSuggestion" use:enhance onsubmit={confirmRetract}>
+					<form method="POST" action="?/deleteSuggestion" use:enhance={confirmRetract}>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
 						<button
 							class="icon-btn sm danger"

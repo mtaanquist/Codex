@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { openRowMenu } from './context-menu';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { acceptPrompts, confirmPrompt } from './confirm';
 
 test('account settings: rename and see the current session', async ({ page }) => {
 	await gotoReady(page, '/');
@@ -151,7 +152,7 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	// A provider preset prefills and locks the base URL, and picking one saves
 	// at once. Switching asks first whenever a key or model picks are saved, as
 	// they are on a repeated run; accept every time.
-	page.on('dialog', (dialog) => dialog.accept());
+	await acceptPrompts(page);
 	await page.getByLabel('Provider', { exact: true }).selectOption('anthropic');
 	const presetUrl = page.getByLabel('Base URL', { exact: true });
 	await expect(presetUrl).toHaveValue('https://api.anthropic.com');
@@ -182,7 +183,10 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 	// Back to a custom endpoint: switching the provider saves at once (with an
 	// empty URL), then typing the URL and leaving the field saves again. The
 	// reload below must not race that second save, so wait for its response.
+	// A key is saved, so this switch always asks.
+	await page.removeLocatorHandler(page.getByRole('alertdialog'));
 	await page.getByLabel('Provider', { exact: true }).selectOption('custom');
+	await confirmPrompt(page, 'Switch provider');
 	expect((await switchSaved).request().postData()).not.toContain('sk-ant-e2e');
 	const urlField = page.getByLabel('Base URL', { exact: true });
 	await urlField.fill('http://ollama.local:11434/v1');
@@ -331,7 +335,7 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	// only when absent, since an unchanged field fires no change event.
 	const urlField = page.getByLabel('Base URL', { exact: true });
 	if ((await urlField.inputValue()) !== 'http://ollama.local:11434/v1') {
-		page.once('dialog', (dialog) => dialog.accept());
+		await acceptPrompts(page);
 		await page.getByLabel('Provider', { exact: true }).selectOption('custom');
 		await urlField.fill('http://ollama.local:11434/v1');
 		await urlField.blur();

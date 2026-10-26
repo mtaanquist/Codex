@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
+	import { askConfirm } from '$lib/confirm.svelte';
 	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
 	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
 	import FormStatus from '$lib/components/FormStatus.svelte';
@@ -210,25 +211,35 @@
 	// the form saves: a key typed for the old provider must not be saved as the
 	// new one's.
 	let apiKeyField = $state<HTMLInputElement>();
-	function switchProvider(event: Event & { currentTarget: HTMLSelectElement }) {
+	async function switchProvider(event: Event & { currentTarget: HTMLSelectElement }) {
 		const select = event.currentTarget;
 		if (select.value === data.assistant.provider) return;
 		const hasPicks = Object.values(savedModels).some(Boolean);
-		if (
-			(data.assistant.hasKey || hasPicks) &&
-			!confirm(
-				'Switch provider? Your saved API key and the models picked for each role are cleared.'
-			)
-		) {
-			event.stopPropagation();
+		const ask = data.assistant.hasKey || hasPicks;
+		// Hold the form's autosave until the answer; a yes saves it below.
+		if (ask) event.stopPropagation();
+		const go =
+			!ask ||
+			(await askConfirm({
+				title: 'Switch provider?',
+				body: 'Your saved API key and the models picked for each role are cleared.',
+				confirmLabel: 'Switch provider'
+			}));
+		if (!go) {
 			selectedProvider = data.assistant.provider;
 			return;
 		}
 		if (apiKeyField) apiKeyField.value = '';
-		// The old preset's URL is still in the box; a custom endpoint starts empty.
+		discoveredModels = [];
+		if (ask) {
+			select.form?.requestSubmit();
+			return;
+		}
+		// The old preset's URL is still in the box; a custom endpoint starts
+		// empty. After a prompt the box has already re-rendered for the new
+		// provider, so clearing it then would wipe the new preset's URL.
 		const endpointField = select.form?.elements.namedItem('endpoint');
 		if (endpointField instanceof HTMLInputElement) endpointField.value = '';
-		discoveredModels = [];
 	}
 	// Once a key is saved the box empties, so it is never resent with a later
 	// switch; the placeholder then says a key is saved.

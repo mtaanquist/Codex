@@ -28,6 +28,7 @@
 	import { applyAppearance } from '$lib/appearance-apply';
 	import { followSystemTheme } from '$lib/theme';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -78,6 +79,7 @@
 
 <a class="skip-link" href="#main" onclick={skipToMain}>Skip to content</a>
 {@render children()}
+<ConfirmDialog />
 {#if data.user}
 	<CommandPalette />
 	<ActivityCenter />
