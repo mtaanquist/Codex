@@ -340,7 +340,8 @@ primitive's own class too, but do not copy the pattern.
   `.is-current`). Defined in `menus.css`, which documents the intent. Used
   by the row menu and view menu; every new dropdown uses it.
 - The avatar dropdown (`.avatar-dropdown`) is deliberately its own richer
-  skin. That exception does not license others.
+  skin. That exception does not license others. Like every other menu, it is
+  rendered only while open, never hidden with opacity.
 
 ### Modals
 
