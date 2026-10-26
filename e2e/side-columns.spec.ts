@@ -15,10 +15,12 @@ test('side columns grow on wide screens; panel tabs fit their labels', async ({ 
 	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
 	await gotoReady(page, '/');
 	await startStoryInUniverse(page, universeName);
 	await page.getByLabel('New story').fill('Wide');
 	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Wide');
 	await page.getByRole('button', { name: 'New chapter' }).click();
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page).toHaveURL(/scene=/);

@@ -123,8 +123,8 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 The workspace shell is a three-column grid: structure left (`--left-w`),
 work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
 and clamp with the window: left 264px to 320px, right 312px to 380px, so the
-columns keep their old fixed widths until about 1650px and take the extra
-space from the gutters on wider screens. The prose column keeps its reading
+right column grows from about 1640px and the left from about 1760px, taking
+the extra space from the gutters. The prose column keeps its reading
 width. The settings shell reads the same `--left-w`. Drag-to-resize is
 deferred. Focus mode (`.app.focus-mode`) hides both
 sidebars with `visibility: hidden` so the prose column does not shift. Add

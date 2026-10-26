@@ -31,7 +31,7 @@
 	--content-max: 720px;
 
 	/* Side columns of the workspace and settings shells. The floors are the
-	   old fixed widths, so only windows wider than about 1650px see them grow. */
+	   old fixed widths, so the right grows from about 1640px and the left from about 1760px. */
 	--left-w: clamp(264px, 15vw, 320px);
 	--right-w: clamp(312px, 19vw, 380px);
 
