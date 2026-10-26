@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { modal } from '$lib/modal';
 	// Asked once, at the first step into public: claiming a handle or
 	// publishing an edition with no pen name set. The public pages name the
 	// author by pen name and fall back to the display name, so this makes
@@ -24,13 +25,6 @@
 		if (open && !lastOpen) penName = displayName;
 		lastOpen = open;
 	});
-
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onCancel();
-		}
-	}
 </script>
 
 {#if open}
@@ -40,9 +34,14 @@
 		onclick={(event) => {
 			if (event.target === event.currentTarget) onCancel();
 		}}
-		onkeydown={onKeydown}
 	>
-		<div class="modal-panel" role="dialog" aria-modal="true" aria-label="Choose your author name">
+		<div
+			class="modal-panel"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Choose your author name"
+			use:modal={{ close: onCancel }}
+		>
 			<div class="modal-head">
 				<div class="modal-head-main">
 					<h2 class="modal-title">What name goes on the page?</h2>

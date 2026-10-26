@@ -612,6 +612,10 @@
 	outline: none;
 	transition: border-color 0.12s;
 }
+/* A field for a short value (a name, a handle) stops short of the column. */
+.input.short {
+	max-width: 36ch;
+}
 .input::placeholder,
 .textarea::placeholder {
 	color: var(--text-faint);

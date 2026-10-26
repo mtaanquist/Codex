@@ -121,7 +121,7 @@
 				<label for="display-name">Display name</label>
 				<input
 					id="display-name"
-					class="input"
+					class="input short"
 					type="text"
 					name="displayName"
 					value={data.displayName}
@@ -134,11 +134,11 @@
 				<label for="pen-name">Pen name <span class="lbl-opt">optional</span></label>
 				<input
 					id="pen-name"
-					class="input"
+					class="input short"
 					type="text"
 					name="penName"
 					value={data.profile.penName ?? ''}
-					placeholder="A name to publish under, if different from your own"
+					placeholder="A name to publish under"
 				/>
 				<p class="field-hint">Used as the author name on stories and your public page when set.</p>
 			</div>
@@ -184,7 +184,7 @@
 					<label for="handle">Claim your handle</label>
 					<input
 						id="handle"
-						class="input"
+						class="input short"
 						type="text"
 						name="handle"
 						placeholder="your-name"
