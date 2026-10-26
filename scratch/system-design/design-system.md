@@ -397,10 +397,18 @@ control is an `.icon-btn.sm`; the primary action sits last in the footer.
 A head can carry a `.modal-search` field instead of a title, with
 `.modal-head.searching`.
 
-The behaviour is the component's, not the CSS's: Esc closes, focus is
-trapped in the panel and returned to the opener, and a backdrop click
-closes only when nothing is unsaved. `CommandPalette` and `ReviewModal` are
-the two reference uses. Help is not one of them: it is a page, not a modal.
+The behaviour belongs to the `use:modal` action (`$lib/modal.ts`), put on
+the `role="dialog"` panel with `aria-modal="true"`: focus moves into the
+panel on open (or to `initialFocus`), Tab and Shift+Tab cycle inside it,
+Esc calls its `close` (stopping there, so a page-level Esc such as leaving
+focus mode does not also fire), and focus returns to the opener on close
+unless something run from the dialog moved it on purpose. A backdrop click
+closes only when nothing is unsaved. Every modal uses the action
+(`CommandPalette`, `ImportStoryModal`, `ReviewModal`, `RoleTuningModal`,
+`PenNamePrompt`); `QuickNote` is a floating card, not a modal, and keeps its
+own focus return. A search modal keeps focus in its box and drives the
+results with `role="combobox"` and `aria-activedescendant` (the options are
+`tabindex="-1"`). Help is not a modal: it is a page.
 
 A modal that edits fields belonging to a form on the page behind it renders
 inside that form, so its controls submit with it (`RoleTuningModal`). Where
