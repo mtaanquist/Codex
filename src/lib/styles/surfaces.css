@@ -32,7 +32,10 @@
 }
 /* PanelStrip.svelte keeps .active and aria-selected in step, so the selected
    tab wears the one .seg-btn.active skin and nothing depends on a second rule. */
-.panel-strip .seg-btn {
+/* Tabs size to their labels, so "Reference" gets more room than "Notes".
+   The mode strip keeps its equal slots; only the panel strip differs. */
+.seg.full.panel-strip .seg-btn {
+	flex: auto;
 	cursor: pointer;
 }
 [role='tabpanel'][hidden] {

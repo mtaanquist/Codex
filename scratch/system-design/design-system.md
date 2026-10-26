@@ -92,7 +92,8 @@ Meaning colours:
 
 Geometry: `--radius-sm` (6px), `--radius`/`--radius-md` (9px), `--radius-lg`
 (14px); spacing scale `--space-1` through `--space-10` (4 to 44px);
-`--row-h` for list rows; `--content-max` for the prose column.
+`--row-h` for list rows; `--content-max` for the prose column; `--left-w` and
+`--right-w` for the shell side columns.
 
 Rules:
 
@@ -119,9 +120,13 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, and every email-flow page |
 
-The workspace shell is a three-column grid: structure left (fixed 240px),
-work centre, reference right (fixed 280px). Sidebar widths are a settled
-decision; resize is deferred. Focus mode (`.app.focus-mode`) hides both
+The workspace shell is a three-column grid: structure left (`--left-w`),
+work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
+and clamp with the window: left 264px to 320px, right 312px to 380px, so the
+right column grows from about 1640px and the left from about 1760px, taking
+the extra space from the gutters. The prose column keeps its reading
+width. The settings shell reads the same `--left-w`. Drag-to-resize is
+deferred. Focus mode (`.app.focus-mode`) hides both
 sidebars with `visibility: hidden` so the prose column does not shift. Add
 `.body.no-right` when no panel has a subject, so the centre takes the space
 instead of a fixed empty column.
@@ -191,7 +196,7 @@ Tools:
   pages, lights up with `aria-current="page"` while you are there, and takes
   you back to where you were when pressed again. There is no help modal.
 
-The left slot is always 240px, whatever fills it:
+The left slot is always `--left-w`, whatever fills it:
 
 - **The mode strip is always four.** Write, Plan, Notes, Review, same order,
   same width, wherever it appears; it never resizes silently.
@@ -267,6 +272,9 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
   `.seg` inside the panel, under the strip and under the panel's own
   `.panel-head`, so the two segmented controls in that pane are never
   mistaken for one another.
+- **Tabs size to their labels.** The panel strip's buttons are `flex: auto`,
+  so a long label like "Reference" gets more room than "Notes". The mode
+  strip keeps its equal slots.
 - **A count on a tab is a `.seg-count`**, passed as the subject
   (`visiblePanels({ notes: 3 })`); zero still shows the panel, and the badge
   itself only renders above zero.

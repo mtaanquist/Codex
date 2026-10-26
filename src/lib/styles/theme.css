@@ -97,11 +97,11 @@
 /* ---- Body 3-pane ---- */
 .body {
 	display: grid;
-	grid-template-columns: var(--left-w, 264px) 1fr var(--right-w, 312px);
+	grid-template-columns: var(--left-w) 1fr var(--right-w);
 	min-height: 0;
 }
 .body.no-right {
-	grid-template-columns: var(--left-w, 264px) 1fr;
+	grid-template-columns: var(--left-w) 1fr;
 }
 
 .pane {
