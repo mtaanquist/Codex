@@ -139,15 +139,15 @@ strip at the top of the left pane, the page's own sections as the contents
 below it, the standard right pane. The question to ask of a new page is
 which of those two it is doing; nothing else decides it.
 
+Every one of them wears the same bar; see Chrome below. Nothing escapes a
+shell any more: docs, print, guest review and the public reader all carry it.
+
 **The settings column.** `SettingsShell.svelte` anchors its content column
 (`.admin-main-inner`, 720px at most) right after the sidebar, so the spare
 width on a wide screen sits to the right. A section that holds a wide table
 or a stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`):
 admin Overview and Users, and universe Details. Two-column setting rows and
 "On this page" links for long sections are deferred (issue #731).
-
-Every one of them wears the same bar; see Chrome below. Nothing escapes a
-shell any more: docs, print, guest review and the public reader all carry it.
 
 ## Chrome
 
