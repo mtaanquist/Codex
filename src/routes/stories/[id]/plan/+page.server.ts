@@ -258,12 +258,15 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const kind = formText(data, 'kind');
 		const entityId = formText(data, 'entityId');
-		if ((kind !== 'character' && kind !== 'place') || !isUuid(entityId)) {
+		if (kind !== 'character' && kind !== 'place') {
 			return fail(400, { kind: 'member', message: 'Pick an entity to add.' });
+		}
+		if (!isUuid(entityId)) {
+			return fail(400, { kind: 'member', memberKind: kind, message: 'Pick an entity to add.' });
 		}
 		const result = await declareMembership(db, locals.user!.id, kind, entityId, story.id);
 		if (!result.ok) {
-			return fail(400, { kind: 'member', message: result.reason });
+			return fail(400, { kind: 'member', memberKind: kind, message: result.reason });
 		}
 		redirect(303, `/stories/${story.slug}/plan?entity=${entityId}`);
 	},
