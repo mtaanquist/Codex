@@ -46,7 +46,7 @@ users (
   password_hash       text not null,
   role                text not null,        -- 'admin' | 'user'
   llm_config          jsonb not null default '{}',  -- Assistant config; '{}' until configured
-  preferences         jsonb not null default '{}',  -- theme, content width, autocomplete mode, entity underline toggle, etc.
+  preferences         jsonb not null default '{}',  -- theme, content width, autocomplete mode, entity underline toggle, library view, etc.
   plan_id             uuid references plans(id),    -- null falls back to the default plan; see Plans and entitlements
   storage_used_bytes  bigint not null default 0,    -- reserved for quota enforcement; not maintained in v1
   created_at          timestamptz not null,

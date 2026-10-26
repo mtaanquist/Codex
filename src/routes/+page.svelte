@@ -7,7 +7,8 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
-	import { recentStories } from '$lib/dashboard';
+	import { enhance } from '$app/forms';
+	import { LIBRARY_VIEWS, recentStories } from '$lib/dashboard';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -29,6 +30,7 @@
 	type Story = (typeof data.stories)[number];
 
 	const recent = $derived(recentStories(data.stories));
+	const view = $derived(data.libraryView ?? 'covers');
 
 	const totalWords = $derived(data.stories.reduce((sum, story) => sum + story.words, 0));
 
@@ -87,7 +89,9 @@
 		<!-- The published shelf's cover pattern: the uploaded artwork, or the
 		     story's own title set on a cover tinted in its colour. Hidden from
 		     readers; the heading below names the story. -->
-		{#if story.coverAssetId}
+		{#if view === 'compact'}
+			<!-- No covers: the card starts at its title. -->
+		{:else if story.coverAssetId}
 			<span class="shelf-cover story-card-cover" aria-hidden="true">
 				<img src="/assets/{story.coverAssetId}" alt="" />
 			</span>
@@ -107,7 +111,7 @@
 			<h3
 				class="story-card-title"
 				class:story-card-empty={story.words === 0}
-				class:visually-hidden={!story.coverAssetId}
+				class:visually-hidden={view === 'covers' && !story.coverAssetId}
 			>
 				{story.title}
 			</h3>
@@ -125,6 +129,64 @@
 			<span>edited {story.editedLabel}</span>
 		</div>
 	</a>
+{/snippet}
+
+{#snippet storyTable(stories: Story[], label: string)}
+	<div class="admin-card tight library-table-card">
+		<table class="admin-table library-table" aria-label={label}>
+			<thead>
+				<tr>
+					<th>Title</th>
+					<th>Status</th>
+					<th class="num">Words</th>
+					<th class="num">Chapters</th>
+					<th>Last edited</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each stories as story (story.id)}
+					<tr>
+						<td>
+							<a
+								class="library-table-title"
+								class:story-card-empty={story.words === 0}
+								href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a
+							>
+						</td>
+						<td>
+							<span class="story-card-status">
+								<span class="scene-dot" style="background: var(--status-{story.status.token});"
+								></span>
+								{story.status.label}
+							</span>
+						</td>
+						<td class="num">{formatNumber(story.words)}</td>
+						<td class="num">{formatNumber(story.chapters)}</td>
+						<td class="cell-muted">{story.editedLabel}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/snippet}
+
+{#snippet viewSwitch()}
+	<form method="POST" action="?/setLibraryView" use:enhance>
+		<div class="seg" role="group" aria-label="Library view">
+			{#each LIBRARY_VIEWS as option (option.value)}
+				<button
+					class="seg-btn"
+					class:active={view === option.value}
+					type="submit"
+					name="libraryView"
+					value={option.value}
+					aria-pressed={view === option.value}
+				>
+					{option.label}
+				</button>
+			{/each}
+		</div>
+	</form>
 {/snippet}
 
 {#snippet library()}
@@ -145,6 +207,7 @@
 						</p>
 					</div>
 					<div class="page-actions">
+						{#if data.stories.length > 0}{@render viewSwitch()}{/if}
 						{#if creatingUniverse}
 							<form class="new-inline" method="POST" action="?/createUniverse">
 								<!-- svelte-ignore a11y_autofocus (the field only appears on the menu choice) -->
@@ -205,11 +268,15 @@
 				{#if recent.length > 0}
 					<section class="universe-section">
 						<h2 class="universe-mark recent-mark">Recent</h2>
-						<div class="recent-row">
-							{#each recent as story (story.id)}
-								{@render storyCard(story)}
-							{/each}
-						</div>
+						{#if view === 'table'}
+							{@render storyTable(recent, 'Recent')}
+						{:else}
+							<div class="recent-row">
+								{#each recent as story (story.id)}
+									{@render storyCard(story)}
+								{/each}
+							</div>
+						{/if}
 					</section>
 				{/if}
 
@@ -269,10 +336,15 @@
 								/>
 							</div>
 						</header>
+						{#if view === 'table' && universeStories(universe.id).length > 0}
+							{@render storyTable(universeStories(universe.id), universe.name)}
+						{/if}
 						<div class="story-grid">
-							{#each universeStories(universe.id) as story (story.id)}
-								{@render storyCard(story)}
-							{/each}
+							{#if view !== 'table'}
+								{#each universeStories(universe.id) as story (story.id)}
+									{@render storyCard(story)}
+								{/each}
+							{/if}
 							{#if newStoryFor === universe.id}
 								<form class="card-add card-add-form" method="POST" action="?/createStory">
 									<input type="hidden" name="universeId" value={universe.id} />
@@ -513,6 +585,23 @@
 		min-width: 0;
 		display: block;
 		margin-bottom: var(--space-4, 16px);
+	}
+	.library-table-card {
+		margin-bottom: var(--space-4, 16px);
+	}
+	.library-table .num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.library-table-title {
+		font-family: var(--font-serif);
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--text);
+		text-decoration: none;
+	}
+	.library-table-title:hover {
+		text-decoration: underline;
 	}
 	.new-inline {
 		display: flex;
