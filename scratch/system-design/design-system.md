@@ -141,10 +141,10 @@ which of those two it is doing; nothing else decides it.
 
 **The settings column.** `SettingsShell.svelte` anchors its content column
 (`.admin-main-inner`, 720px at most) right after the sidebar, so the spare
-width on a wide screen sits to the right. A section that holds tables or a
-stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`); in
-admin that is Overview and Users. Two-column setting rows and "On this page"
-links for long sections are deferred (issue #731).
+width on a wide screen sits to the right. A section that holds a wide table
+or a stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`):
+admin Overview and Users, and universe Details. Two-column setting rows and
+"On this page" links for long sections are deferred (issue #731).
 
 Every one of them wears the same bar; see Chrome below. Nothing escapes a
 shell any more: docs, print, guest review and the public reader all carry it.
@@ -330,8 +330,9 @@ primitive's own class too, but do not copy the pattern.
   `.field-grid` when two-up. Action row: `.settings-actions`.
 - Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
   `.slider`. `.input.short` caps a field for a short value (a display name,
-  a pen name, a handle) at 36ch instead of the full column. The focus ring (accent border plus `--accent-soft` glow) comes
-  from the shared rule; never redefine it.
+  a pen name, a handle) at 36ch instead of the full column. The focus ring
+  (accent border plus `--accent-soft` glow) comes from the shared rule;
+  never redefine it.
 - `.slider` (`primitives.css`) is a range input for a bounded value that is
   judged rather than typed exactly: a temperature, a reply length. It is
   always paired with a number field carrying the same value, so an exact
