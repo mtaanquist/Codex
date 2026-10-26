@@ -6,7 +6,7 @@ import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 // row depends on how many stories the library holds.
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test('library: tinted placeholder covers, the cover colour, and the Recent row', async ({
+test('library: tinted covers, the cover colour, the Recent row, and the view setting', async ({
 	page
 }) => {
 	await gotoReady(page, '/login');
@@ -64,4 +64,30 @@ test('library: tinted placeholder covers, the cover colour, and the Recent row',
 	await expect(page.getByRole('heading', { name: 'Recent' })).toBeVisible();
 	await expect(page.locator('.recent-row .story-card')).toHaveCount(3);
 	await expect(page.locator('.recent-row .story-card').first()).toContainText('Tinted Four');
+
+	// The view switch: Table lists the stories in rows, and the choice sticks.
+	const switcher = page.getByRole('group', { name: 'Library view' });
+	await switcher.getByRole('button', { name: 'Table' }).click();
+	await expect(switcher.getByRole('button', { name: 'Table' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const coverdale = page.getByRole('table', { name: 'Coverdale' });
+	await expect(coverdale.getByRole('row')).toHaveCount(5);
+	await expect(coverdale.getByRole('link', { name: 'Tinted One' })).toBeVisible();
+	await expect(page.locator('.story-card')).toHaveCount(0);
+	await page.reload();
+	await expect(page.getByRole('table', { name: 'Coverdale' })).toBeVisible();
+
+	// The account page holds the same setting; No covers keeps the cards but
+	// drops the cover, so the title shows as the card's heading.
+	await gotoReady(page, '/account/display');
+	await expect(page.getByLabel('Library view')).toHaveValue('table');
+	await page.getByLabel('Library view').selectOption({ label: 'No covers' });
+	await expect(page.getByText('Saved.')).toBeVisible();
+	await gotoReady(page, '/');
+	const plain = page.locator('.story-grid .story-card', { hasText: 'Tinted One' });
+	await expect(plain).toHaveCount(1);
+	await expect(plain.locator('.shelf-cover')).toHaveCount(0);
+	await expect(plain.getByRole('heading', { name: 'Tinted One' })).toBeVisible();
 });

@@ -15,6 +15,7 @@ import {
 	type Theme
 } from '$lib/appearance';
 import { NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
+import { isLibraryView, type LibraryView } from '$lib/dashboard';
 import {
 	clampLineSpacingCm,
 	isLineSpacing,
@@ -69,6 +70,8 @@ export type UserPreferences = {
 	systemLightTheme: ConcreteTheme;
 	systemDarkTheme: ConcreteTheme;
 	accent: string;
+	// How the library lays out its stories.
+	libraryView: LibraryView;
 };
 
 // The editor-behaviour keys a story may override. Theme and accent stay
@@ -123,7 +126,8 @@ function normalise(raw: Record<string, unknown>): UserPreferences {
 		systemDarkTheme: isConcreteTheme(raw.systemDarkTheme)
 			? raw.systemDarkTheme
 			: DEFAULT_SYSTEM_DARK,
-		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent)
+		accent: raw.accent === undefined ? DEFAULT_ACCENT : normaliseAccent(raw.accent),
+		libraryView: isLibraryView(raw.libraryView) ? raw.libraryView : 'covers'
 	};
 }
 
@@ -216,4 +220,16 @@ export async function saveStoryPreferences(
 		.update(stories)
 		.set({ preferences: jsonbMergePatch(stories.preferences, filtered) })
 		.where(eq(stories.id, storyId));
+}
+
+// The library view, saved from the account page or the library's own switch.
+// False when the value is not one of the views.
+export async function saveLibraryView(
+	db: Database,
+	userId: string,
+	view: unknown
+): Promise<boolean> {
+	if (!isLibraryView(view)) return false;
+	await savePreferences(db, userId, { libraryView: view });
+	return true;
 }

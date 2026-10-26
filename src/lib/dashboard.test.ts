@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { recentStories, relativeTime, storyStatus } from './dashboard';
+import { isLibraryView, recentStories, relativeTime, storyStatus } from './dashboard';
 
 const base = { sceneCount: 4, words: 1000, outline: 0, draft: 0, revised: 0, final: 0 };
 
@@ -65,5 +65,14 @@ describe('recentStories', () => {
 		const input = [story('a', at), story('b', at), story('c', at), story('d', at)];
 		expect(recentStories(input).map((s) => s.id)).toEqual(['a', 'b', 'c']);
 		expect(input.map((s) => s.id)).toEqual(['a', 'b', 'c', 'd']);
+	});
+});
+
+describe('isLibraryView', () => {
+	it('accepts the three views and nothing else', () => {
+		for (const view of ['covers', 'compact', 'table']) expect(isLibraryView(view)).toBe(true);
+		for (const bad of ['', 'list', 'Covers', null, undefined, 1]) {
+			expect(isLibraryView(bad)).toBe(false);
+		}
 	});
 });

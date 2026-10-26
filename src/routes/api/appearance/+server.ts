@@ -5,8 +5,8 @@ import { savePreferences } from '$lib/server/preferences';
 import { readJson } from '$lib/server/validation';
 import { isTheme } from '$lib/appearance';
 
-// Persists the colour theme for the signed-in user. The avatar-menu toggle
-// posts here so a theme change survives the next navigation, where the root
+// Persists the colour theme for the signed-in user. The theme picker posts
+// here so a theme change survives the next navigation, where the root
 // layout re-applies the saved preference. Accent stays with the account
 // Display section; this only touches the theme, and savePreferences merges.
 export const POST: RequestHandler = async ({ request, locals }) => {
