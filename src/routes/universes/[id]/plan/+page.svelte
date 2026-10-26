@@ -119,6 +119,10 @@
 	/>
 	<div class="body" class:no-right={panels.length === 0}>
 		<PlanSidebar
+			categoriesHref={resolve('/universes/[id]/[[section]]', {
+				id: data.universe.slug,
+				section: 'categories'
+			})}
 			characters={data.characters}
 			places={data.places}
 			categories={data.categories}

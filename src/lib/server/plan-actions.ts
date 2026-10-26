@@ -1,9 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from './db';
 import { queueUniverseMentions } from './jobs';
-import { isCategoryColor } from '$lib/entity-color';
-import { CATEGORY_NAME_MAX } from './categories';
 import {
 	characters,
 	characterStoryMemberships,
@@ -83,7 +81,7 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 			const title = formText(data, 'name').trim();
 			const categoryId = formText(data, 'categoryId');
 			if (!title) {
-				return fail(400, { kind: 'lore', message: 'Give the entry a title.' });
+				return fail(400, { kind: 'lore', categoryId, message: 'Give the entry a title.' });
 			}
 			const [category] = await db
 				.select({ id: entityCategories.id })
@@ -95,7 +93,7 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 					)
 				);
 			if (!category) {
-				return fail(400, { kind: 'lore', message: 'That category does not exist.' });
+				return fail(400, { kind: 'lore', categoryId, message: 'That category does not exist.' });
 			}
 			const [entry] = await db
 				.insert(loreEntries)
@@ -104,33 +102,6 @@ export function planActions(resolveScope: (event: PlanEvent) => Promise<PlanScop
 			// The new name may already appear in existing scenes.
 			await queueUniverseMentions(scope.universeId);
 			redirect(303, `${scope.planPath}?entity=${entry.id}`);
-		},
-		createCategory: async (event: PlanEvent) => {
-			const scope = await resolveScope(event);
-			const data = await event.request.formData();
-			const name = formText(data, 'name').trim();
-			const color = formText(data, 'color') || null;
-			if (!name) {
-				return fail(400, { kind: 'category', message: 'Give the category a name.' });
-			}
-			if (name.length > CATEGORY_NAME_MAX) {
-				return fail(400, {
-					kind: 'category',
-					message: 'Category names can be at most 60 characters.'
-				});
-			}
-			if (!isCategoryColor(color)) {
-				return fail(400, { kind: 'category', message: 'Pick a colour from the list.' });
-			}
-			await db.insert(entityCategories).values({
-				universeId: scope.universeId,
-				ownerId: scope.ownerId,
-				name,
-				color,
-				// Computed inside the insert so concurrent creates cannot collide.
-				sortOrder: sql<number>`(select coalesce(max(${entityCategories.sortOrder}), 0) + 1 from ${entityCategories} where ${entityCategories.universeId} = ${scope.universeId})`
-			});
-			return { kind: 'category', created: true };
 		}
 	};
 }

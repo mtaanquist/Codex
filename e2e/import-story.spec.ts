@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 // The story import round trip: write a story, download its export zip, and
 // import the zip back through the library's import modal preview flow.
@@ -37,8 +38,7 @@ test('story import: preview and import a story export zip', async ({ page }) => 
 	await save;
 
 	await gotoReady(page, `/stories/${storySlug}/plan`);
-	await page.getByPlaceholder('New character name').fill('Bram');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Bram');
 	const noteSave = page.waitForResponse(
 		(response) =>
 			response.url().includes('/api/characters/') &&

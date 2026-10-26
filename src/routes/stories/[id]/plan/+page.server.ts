@@ -263,7 +263,7 @@ export const actions: Actions = {
 		}
 		const result = await declareMembership(db, locals.user!.id, kind, entityId, story.id);
 		if (!result.ok) {
-			return fail(400, { kind: 'member', message: result.reason });
+			return fail(400, { kind: 'member', memberKind: kind, message: result.reason });
 		}
 		redirect(303, `/stories/${story.slug}/plan?entity=${entityId}`);
 	},
