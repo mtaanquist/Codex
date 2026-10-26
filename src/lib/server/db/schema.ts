@@ -121,9 +121,10 @@ export const universes = pgTable(
 			.notNull(),
 		name: text('name').notNull(),
 		// URL slug, unique within the owner's account. Generated from the name
-		// at creation; renames leave it alone, editable in settings. Routes
-		// accept the id too, so old links never break. The random default only
-		// backstops direct inserts; the app always supplies a real slug.
+		// and regenerated on a rename, so a rename moves the URL and the old
+		// slug link stops working. Routes accept the id too, so links by id
+		// survive. The random default only backstops direct inserts; the app
+		// always supplies a real slug.
 		slug: text('slug')
 			.notNull()
 			.default(sql`substr(md5(random()::text), 1, 12)`),
