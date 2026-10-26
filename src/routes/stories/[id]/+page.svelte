@@ -1080,7 +1080,7 @@
 		margin: 0 0 8px;
 	}
 	.doc-scene-mark:hover {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 	/* Read-only preview: prose through the export renderer, styled to read
 	   like the finished book. */

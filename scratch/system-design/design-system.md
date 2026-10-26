@@ -61,17 +61,33 @@ Surfaces, from back to front:
   they work on any surface.
 
 Text tiers: `--text` (primary), `--text-muted` (secondary), `--text-faint`
-(tertiary and empty states). Borders: `--border` (default), `--border-strong`
+(tertiary and empty states). All three clear WCAG AA (4.5:1) on every solid
+surface of their theme; `src/lib/styles/contrast.test.ts` enforces it, so a new value that
+fails breaks the build. Borders: `--border` (default), `--border-strong`
 (emphasis, scrollbar thumbs).
 
-Accent family: `--accent` (fills), `--accent-contrast` (text on accent
-fills; use this, never `#fff`), `--accent-soft` (selection, focus glow,
-soft fills), `--accent-line` (focused borders).
+Accent family: `--accent` (the user's colour, for borders, focus rings,
+dots and other non-text marks, where 3:1 is the bar), `--accent-fill` (any
+accent fill that carries text: primary buttons, badges, chat bubbles,
+initials avatars; the accent mixed 75% with black), `--accent-ink` (accent
+as text or link colour; the same mix in light and warm, plain `--accent` in
+dark), `--accent-contrast` (text on accent fills; use this, never `#fff`),
+`--accent-soft` (selection, focus glow, soft fills), `--accent-line`
+(focused borders). Never write `color: var(--accent)`: raw accent as text
+falls under 4.5:1 on the light themes for every preset. `src/lib/contrast.ts`
+mirrors the fill mix, and the account page warns when a custom accent still
+leaves white text on the fill, or accent text on a light or dark surface,
+under AA. The review owner colour is `--accent-ink` (its avatar tile takes
+`--accent-fill`).
 
 Assets and contrast:
 
-- `--danger-contrast` - text on a `--danger` fill (`.btn-danger`). The
+- `--danger-fill` - the `.btn-danger` background: `--danger` in light and
+  warm, darkened in dark so white text clears AA.
+- `--danger-contrast` - text on a `--danger-fill` (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
+- `--status-final-ink` - `--status-final` as text (`.btn-accept`,
+  `FormStatus`, the "Saved." hints), darkened in light and warm.
 - `--on-color` - text and icons on any other solid colour tile: universe
   and story colours, author colours, category badges, swatches, the toggle
   knob. Never write `#fff` on a user-chosen colour.
@@ -475,11 +491,11 @@ The outward face of the work, built from the same tokens as everything else.
 - Type and colour are tokens: `.reader-prose` is `--font-content` at
   `--text-prose`/1.75 in a 37rem `.reader-col` (`.wide` is 62rem for the
   shelf). A new paragraph is an indent, not a gap.
-- **Body text is `--text` and `--text-muted` only.** `--text-faint` is a
-  chrome colour and measures under 4.5:1 on the dark background, so it is not
-  a reading colour and does not appear on these pages.
+- **Body text is `--text` and `--text-muted` only.** `--text-faint` passes
+  AA, but it is a chrome colour (meta, empty states), not a reading colour,
+  and does not appear on these pages.
 - **Links in reading text are underlined in the body colour**, not accent:
-  accent on the light and warm backgrounds falls short of 4.5:1, and an
+  a custom accent can fall short of 4.5:1 even as `--accent-ink`, and an
   underline is what a book does anyway. Accent is kept for the focus ring,
   where 3:1 is the bar.
 - **A cover is the story's own title**, set in `--font-serif` (`.shelf-cover`),

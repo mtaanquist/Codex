@@ -108,6 +108,6 @@
 		min-width: 168px;
 	}
 	.menu-item.is-current {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 </style>

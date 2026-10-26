@@ -210,7 +210,7 @@
 		color: var(--text-muted);
 	}
 	.qn-saved a {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 	.qn-dismiss {
 		margin-left: auto;

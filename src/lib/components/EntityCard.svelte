@@ -192,7 +192,7 @@
 		color: var(--text);
 	}
 	.insp-rel:hover .insp-rel-name {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 	.insp-fields {
 		display: grid;
@@ -225,7 +225,7 @@
 		margin-top: 22px;
 		font-size: 12.5px;
 		font-weight: 600;
-		color: var(--accent);
+		color: var(--accent-ink);
 		text-decoration: none;
 		white-space: nowrap;
 	}

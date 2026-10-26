@@ -131,7 +131,7 @@
 		height: 15px;
 		padding: 0 3px;
 		border-radius: 8px;
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--accent-contrast);
 		font-size: 10px;
 		font-weight: 700;
@@ -168,7 +168,7 @@
 	.bell-mark-all {
 		border: 0;
 		background: none;
-		color: var(--accent);
+		color: var(--accent-ink);
 		font-size: 12px;
 		cursor: pointer;
 		padding: 0;
