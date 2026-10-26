@@ -328,9 +328,10 @@ a.seg-btn {
 }
 
 /* ---- narrow windows ----
-   Below 640px the bar keeps the logo, the page you are on, and the tools:
-   the brand name, the rule and the parent crumbs go, and Search becomes its
-   icon. The parents are still one step away from the page itself. */
+   Below 640px the bar keeps the logo, where you are, and the tools: the
+   brand name and the rule go, the path keeps the current place (and its
+   parent when the current crumb is a page), Search becomes its icon, and a
+   guest's "Reviewing as" keeps only the avatar. */
 @media (max-width: 640px) {
 	.appbar {
 		gap: var(--space-2);
@@ -338,11 +339,20 @@ a.seg-btn {
 	}
 	.appbar .brand-name,
 	.appbar-rule,
-	.path .crumb-item:not(.last),
-	.path .crumb-item.last .crumb-sep,
+	.path .crumb-item.narrow-hide,
+	.path .crumb-item.narrow-first .crumb-sep,
 	.appbar-by,
 	.tool-search-label {
 		display: none;
+	}
+	/* Still read out, so the avatar is not an unexplained pair of letters. */
+	.appbar-who-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.tool-search {
 		width: 32px;

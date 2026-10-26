@@ -85,7 +85,7 @@
 			min-height: 100vh;
 			grid-template-rows: auto 1fr;
 		}
-		.body {
+		.app.docs .body {
 			grid-template-columns: 1fr;
 		}
 		.pane {

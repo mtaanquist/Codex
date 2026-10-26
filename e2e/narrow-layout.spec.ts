@@ -33,7 +33,10 @@ test.describe('at phone width', () => {
 		}
 		// The bar keeps the page you are on and a Search icon.
 		await gotoReady(page, '/docs/getting-started');
-		await expect(page.locator('.path .crumb-item.last')).toBeVisible();
+		await expect(page.locator('.path .crumb.current')).toHaveText('Getting started');
+		await expect(page.locator('.path a.crumb', { hasText: 'Help' })).toBeVisible();
+		await gotoReady(page, '/');
+		await expect(page.locator('.path .crumb.current')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Search and commands' })).toBeVisible();
 	});
 

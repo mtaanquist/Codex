@@ -220,10 +220,12 @@ The path and its crumb menus:
   spells the same destinations the same way. Do not hand-roll a path.
 
 **Narrow windows.** Below 640px the bar drops the brand name, the rule and
-every crumb but the last (each crumb sits in a `.crumb-item`, the last one
-`.last`), and `.tool-search` shows only its icon; the button keeps its
-`aria-label`. The page you are on stays in the bar, ellipsised. Crumbs keep a
-24px minimum height for touch.
+the byline, and keeps only the current place in the path, plus its parent
+when the current crumb is a page (plain text), so there is still a way up.
+`AppBar` marks the crumbs with `.narrow-hide` and `.narrow-first`. Search
+shows only its icon (the button keeps its `aria-label`), and the guest's
+"Reviewing as" keeps only the avatar, with the name visually hidden. The
+current crumb ellipsises. Crumbs keep a 24px minimum height for touch.
 
 Page actions are not bar actions. Anything that acts on the page (Print,
 Page setup, Save, New universe) lives in the page header under the bar,
