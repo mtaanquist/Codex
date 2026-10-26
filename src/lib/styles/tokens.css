@@ -30,6 +30,11 @@
 	--pane-pad: 22px;
 	--content-max: 720px;
 
+	/* Side columns of the workspace and settings shells. The floors are the
+	   old fixed widths, so only windows wider than about 1650px see them grow. */
+	--left-w: clamp(264px, 15vw, 320px);
+	--right-w: clamp(312px, 19vw, 380px);
+
 	--radius-sm: 6px;
 	--radius-md: 9px;
 	--radius: 9px;

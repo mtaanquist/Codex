@@ -7,7 +7,7 @@
 	display: grid;
 	/* The same rail width as the editor's left pane, so moving between
 	   the writing screens and these pages does not feel like a shift. */
-	grid-template-columns: var(--left-w, 264px) 1fr;
+	grid-template-columns: var(--left-w) 1fr;
 	flex: 1;
 	min-height: 0;
 }
