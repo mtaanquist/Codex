@@ -1,7 +1,8 @@
 # Your account
 
-Open your account page from the avatar menu at the top right of any page. It has four
-sections: Profile, Security, Assistant, and Display. Changes save on their own:
+Open your account page from the avatar menu at the top right of any page. Its
+sections are Profile, Security, Assistant, Display, Editor, Notifications, and
+Page setup, plus Invites once an admin has given you invites. Changes save on their own:
 a choice saves as soon as you make it, and a text field saves when you leave it.
 A "Saved." note confirms each save.
 

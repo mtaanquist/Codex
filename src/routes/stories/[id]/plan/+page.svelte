@@ -215,9 +215,6 @@
 								<a class="btn btn-sm btn-ghost" href={storyNotesPath}>All notes</a>
 								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
-							<p class="panel-note">
-								The story's notes. Open one, or All notes, to read and edit on the Notes page.
-							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.selected && data.relationships.length > 0}
@@ -276,9 +273,6 @@
 									</div>
 								{/if}
 							</div>
-							<p class="panel-note">
-								Where this entry turns up in the prose, and who it is connected to.
-							</p>
 						{/if}
 					{/snippet}
 				</PanelStrip>
