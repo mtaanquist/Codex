@@ -3,7 +3,7 @@ import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // The library dashboard: universe sections with story cards, the per-universe
-// New story menu, the Recent row, and the status pill.
+// New story menu, and the status pill.
 test('dashboard: universe sections, story cards, and the New story menu', async ({ page }) => {
 	await gotoReady(page, '/');
 
@@ -24,17 +24,15 @@ test('dashboard: universe sections, story cards, and the New story menu', async 
 	await page.getByRole('button', { name: 'Create story' }).click();
 	await expect(page).toHaveURL(`/stories/shelved-${stamp}`);
 
-	// Its card shows up in the section and in Recent, outlining with no prose.
+	// Its card shows up in the section, outlining with no prose. (The Recent
+	// row has its own spec, library-covers, on an account of its own.)
 	await gotoReady(page, '/');
 	const card = section.locator('.story-card', { hasText: `Shelved ${stamp}` });
 	await expect(card).toHaveCount(1);
 	await expect(card.locator('.story-card-status')).toHaveText(/Outlining/);
 	await expect(card.locator('.story-card-meta')).toContainText('edited just now');
-	// With no artwork uploaded, the cover blank carries the title.
+	// With no artwork uploaded, the tinted cover blank carries the title.
 	await expect(card.locator('.story-card-cover')).toContainText(`Shelved ${stamp}`);
-	await expect(
-		page.locator('.recent-row .story-card', { hasText: `Shelved ${stamp}` })
-	).toHaveCount(1);
 
 	// One creation pattern: nothing says "import" until a New menu is open, and a
 	// populated grid has no dashed add tile.

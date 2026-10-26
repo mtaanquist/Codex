@@ -46,6 +46,7 @@ import { ownedStory } from '$lib/server/story-access';
 import { uniqueSlug } from '$lib/server/slugs';
 import { assistantLayout } from '$lib/server/llm/config';
 import { formText } from '$lib/server/validation';
+import { isCoverColor } from '$lib/entity-color';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {
@@ -176,12 +177,18 @@ export const actions: Actions = {
 		if (!title) {
 			return fail(400, { action: 'update', message: 'The story needs a title.' });
 		}
+		// The colour field only shows while the story has no artwork; a form
+		// without it leaves the stored colour alone.
+		const coverColor = data.has('coverColor') ? data.get('coverColor') : story.coverColor;
+		if (coverColor !== null && !isCoverColor(coverColor)) {
+			return fail(400, { action: 'update', message: 'Pick a cover colour from the list.' });
+		}
 		// The slug follows the title: a rename moves the story's URL, an
 		// unchanged title leaves it alone.
 		const save = async (slug: string) => {
 			await db
 				.update(stories)
-				.set({ title, slug, author, brief, descriptionMd, styleNotes })
+				.set({ title, slug, author, brief, descriptionMd, styleNotes, coverColor })
 				.where(eq(stories.id, story.id));
 			return slug;
 		};

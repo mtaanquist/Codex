@@ -140,7 +140,7 @@ The Write view can also show the whole story as one continuous document: scenes 
 
 ### Images
 
-Codex is a markdown editor, so an image is just a markdown image. What Codex adds is storage: an image dropped or pasted into the editor is uploaded and kept as an asset, and the markdown points at a path Codex serves rather than at someone else's server. This keeps a universe self-contained, lets images show up in exports, and stops links from rotting. Pasting an external image URL still works when that is what you want; it simply is not stored. Each story can also carry a cover image; on the public shelf a book without one gets a generated default cover built from its title, so the shelf never looks broken. Image files live on disk for self-host and in object storage for the hosted service; only their metadata is in the database. See `schema.md` for the `assets` table.
+Codex is a markdown editor, so an image is just a markdown image. What Codex adds is storage: an image dropped or pasted into the editor is uploaded and kept as an asset, and the markdown points at a path Codex serves rather than at someone else's server. This keeps a universe self-contained, lets images show up in exports, and stops links from rotting. Pasting an external image URL still works when that is what you want; it simply is not stored. Each story can also carry a cover image; in the library and on the public shelf a book without one gets a generated default cover built from its title on a colour the author can change, so the shelf never looks broken. Image files live on disk for self-host and in object storage for the hosted service; only their metadata is in the database. See `schema.md` for the `assets` table.
 
 ### TODO markers
 

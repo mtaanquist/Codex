@@ -422,7 +422,9 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 
 ### Cards
 
-`.story-card` (library), `.admin-card` (settings/admin sections, also used
+`.story-card` (library; it always leads with a cover, and when the cover is
+the tinted blank the card's `h3` is `.visually-hidden` so the title shows
+once), `.admin-card` (settings/admin sections, also used
 well outside admin), `.r-card` (right-pane reference blocks), `.rv-card`
 (review threads). New reference-pane content should compose `.r-card`;
 new settings content composes `.admin-card`.
@@ -467,8 +469,13 @@ The outward face of the work, built from the same tokens as everything else.
   accent on the light and warm backgrounds falls short of 4.5:1, and an
   underline is what a book does anyway. Accent is kept for the focus ring,
   where 3:1 is the bar.
-- **A cover is the story's own title**, set in `--font-serif` on `--bg-inset`
-  (`.shelf-cover`), until an author uploads artwork.
+- **A cover is the story's own title**, set in `--font-serif` (`.shelf-cover`),
+  until an author uploads artwork. Without artwork it is tinted in the story's
+  colour (`.shelf-cover-tinted` with `--cover-tint` set inline to the
+  `stories.cover_color` palette token, resolved by `storyCoverColor()`): a
+  spine in the full colour, the page mixed 30% into `--bg-card`, the title in
+  `--text`. The library card, the public shelf and the story settings preview
+  all draw the same blank, so a book looks the same everywhere.
 - **One footer, on both pages:** the mark and "Written in Codex", who
   published it, and three links (Reading in Codex, About Codex, Write your
   own). "Write your own" targets the app root - the library for a signed-in
@@ -527,6 +534,12 @@ Everything a signed-out visitor sees, in `public.css`, loaded last.
   invite-mode text still links the page in prose ("Have a code already?") for
   someone who was handed a code without a link. Render conditionally from the
   mode; there is no `[data-signup]` attribute switch.
+
+### Visually hidden
+
+`.visually-hidden` (`primitives.css`) keeps text for assistive technology
+without drawing it: a heading whose visible twin is decorative, such as the
+library card title on a tinted cover. Do not use it to hide controls.
 
 ### Empty states
 

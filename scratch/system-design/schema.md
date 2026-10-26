@@ -158,6 +158,7 @@ stories (
   visibility          text not null default 'private',  -- 'private' | 'unlisted' | 'public'
   is_adult            boolean not null default false,   -- author-flagged adult content; readers avoid it by default
   cover_asset_id      uuid references assets(id),       -- null renders a default cover from title and author
+  cover_color         text,                             -- palette token tinting the default cover; random on insert, null on rows from before it
   llm_config          jsonb not null default '{}',  -- Assistant config; '{}' until configured
   deleted_at          timestamptz,      -- set while in the trash; null means live
   created_at          timestamptz not null,
@@ -606,7 +607,7 @@ assets (
 )
 ```
 
-- **Covers.** `stories.cover_asset_id` points at a cover image. When it is null, the app renders a default cover from the title and author, so every book on a shelf has one.
+- **Covers.** `stories.cover_asset_id` points at a cover image. When it is null, the app renders a default cover from the title, tinted in `stories.cover_color` (a category palette token picked at random when the story is made and changeable in story settings; older rows without one get a stable pick from the story id), so every book on a shelf has one.
 - **Inline images.** The markdown editor inserts an uploaded image as a normal markdown image whose URL is an app-served asset path (for example `/assets/{id}`). Pasting an external image URL is also allowed, but only uploaded assets are stored, exported, and guaranteed not to rot.
 - **Export.** A markdown export writes referenced assets into an `assets/` folder in the zip and rewrites the links, keeping the archive self-contained and Obsidian-friendly.
 

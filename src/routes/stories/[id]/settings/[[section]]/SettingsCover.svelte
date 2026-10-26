@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { entityColor } from '$lib/entity-color';
+	import { storyCoverColor } from '$lib/entity-color';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	const coverColor = $derived(entityColor(data.story.title));
+	const coverColor = $derived(storyCoverColor(data.story));
 </script>
 
 <div class="admin-block-head">
@@ -15,19 +15,15 @@
 	{#if data.story.coverAssetId}
 		<img class="cover" src="/assets/{data.story.coverAssetId}" alt="Story cover" />
 	{:else}
-		<svg class="cover" viewBox="0 0 200 300" role="img" aria-label="Default cover">
-			<rect width="200" height="300" rx="6" style="fill: {coverColor}" />
-			<text
-				x="100"
-				y="150"
-				text-anchor="middle"
-				style="fill: var(--on-color)"
-				font-size="16"
-				font-family="serif"
-			>
-				{data.story.title.slice(0, 18)}
-			</text>
-		</svg>
+		<!-- The same placeholder the library and public shelf draw. -->
+		<span
+			class="cover shelf-cover shelf-cover-tinted"
+			style="--cover-tint: {coverColor}"
+			role="img"
+			aria-label="Default cover"
+		>
+			{data.story.title}
+		</span>
 	{/if}
 	<form method="POST" action="?/setCover" enctype="multipart/form-data">
 		{#if form?.action === 'cover' && form.message}
@@ -58,9 +54,14 @@
 	.cover {
 		width: 120px;
 		height: 180px;
-		object-fit: cover;
 		border-radius: 6px;
-		display: block;
 		margin-bottom: 12px;
+	}
+	img.cover {
+		display: block;
+		object-fit: cover;
+	}
+	span.cover {
+		font-size: 14px;
 	}
 </style>

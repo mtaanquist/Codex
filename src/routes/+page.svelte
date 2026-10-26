@@ -7,6 +7,7 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
+	import { recentStories } from '$lib/dashboard';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -27,11 +28,7 @@
 
 	type Story = (typeof data.stories)[number];
 
-	const recent = $derived(
-		[...data.stories]
-			.sort((a, b) => new Date(b.editedAt).getTime() - new Date(a.editedAt).getTime())
-			.slice(0, 3)
-	);
+	const recent = $derived(recentStories(data.stories));
 
 	const totalWords = $derived(data.stories.reduce((sum, story) => sum + story.words, 0));
 
@@ -88,17 +85,32 @@
 {#snippet storyCard(story: Story)}
 	<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
 		<!-- The published shelf's cover pattern: the uploaded artwork, or the
-		     story's own title set on the cover blank. Hidden from readers
-		     because the title repeats right below. -->
-		<span class="shelf-cover story-card-cover" aria-hidden="true">
-			{#if story.coverAssetId}
+		     story's own title set on a cover tinted in its colour. Hidden from
+		     readers; the heading below names the story. -->
+		{#if story.coverAssetId}
+			<span class="shelf-cover story-card-cover" aria-hidden="true">
 				<img src="/assets/{story.coverAssetId}" alt="" />
-			{:else}
+			</span>
+		{:else}
+			<span
+				class="shelf-cover shelf-cover-tinted story-card-cover"
+				class:story-card-empty={story.words === 0}
+				style="--cover-tint: {story.coverColor}"
+				aria-hidden="true"
+			>
 				{story.title}
-			{/if}
-		</span>
+			</span>
+		{/if}
 		<div class="story-card-header">
-			<h3 class="story-card-title" class:story-card-empty={story.words === 0}>{story.title}</h3>
+			<!-- A blank cover already shows the title, so the heading is only
+			     for assistive technology there. -->
+			<h3
+				class="story-card-title"
+				class:story-card-empty={story.words === 0}
+				class:visually-hidden={!story.coverAssetId}
+			>
+				{story.title}
+			</h3>
 			<span class="story-card-status">
 				<span class="scene-dot" style="background: var(--status-{story.status.token});"></span>
 				{story.status.label}

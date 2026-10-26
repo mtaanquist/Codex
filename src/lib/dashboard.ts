@@ -55,3 +55,13 @@ export function relativeTime(then: Date, now: Date): string {
 	const years = Math.floor(elapsed / (365 * DAY));
 	return years === 1 ? 'last year' : `${years} years ago`;
 }
+
+// The library's Recent strip: the most recently edited stories, newest first.
+// Empty unless there are more stories than the strip holds, since a library
+// that fits in the strip would only show every card twice.
+export function recentStories<T extends { editedAt: string }>(stories: T[], size = 3): T[] {
+	if (stories.length <= size) return [];
+	return [...stories]
+		.sort((a, b) => new Date(b.editedAt).getTime() - new Date(a.editedAt).getTime())
+		.slice(0, size);
+}
