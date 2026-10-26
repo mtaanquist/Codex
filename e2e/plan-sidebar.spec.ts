@@ -43,9 +43,27 @@ test('plan sidebar add rows open one field at a time', async ({ page }) => {
 	await expect(sidebar.getByRole('alert')).toHaveText('Give the character a name.');
 	await expect(sidebar.getByLabel('Character name')).toBeVisible();
 
+	// Escape works from the submit button too, and reopening drops the old message.
+	await sidebar.getByRole('button', { name: 'Add character' }).last().focus();
+	await page.keyboard.press('Escape');
+	await expect(sidebar.locator('form.new-entity')).toHaveCount(0);
+	await sidebar.getByRole('button', { name: 'Add character' }).click();
+	await expect(sidebar.getByRole('alert')).toHaveCount(0);
+
 	// A real name creates the entry.
 	await sidebar.getByLabel('Character name').fill('Maren');
 	await sidebar.getByLabel('Character name').press('Enter');
 	await expect(page).toHaveURL(/entity=/);
 	await expect(sidebar.locator('.ent-row', { hasText: 'Maren' })).toHaveCount(1);
+
+	// The message and its field are in the server render, so they show
+	// before scripts load.
+	const planUrl = new URL(page.url());
+	const response = await page.request.post(`${planUrl.pathname}?/createCharacter`, {
+		form: { name: '   ' },
+		headers: { origin: planUrl.origin, accept: 'text/html' }
+	});
+	const html = await response.text();
+	expect(html).toContain('Give the character a name.');
+	expect(html).toContain('id="add-character"');
 });

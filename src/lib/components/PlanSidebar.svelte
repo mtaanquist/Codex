@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { LEFT_PANE_LABEL } from '$lib/chrome';
 	import Icon from './Icon.svelte';
 	import FormStatus from './FormStatus.svelte';
@@ -106,31 +106,32 @@
 	// that would shift the rows under a click on the next one. One open at a
 	// time, keyed 'character', 'place', 'lore:<categoryId>' or
 	// 'member:<kind>'.
-	let adding = $state<string | null>(null);
-
-	// A failed submit reloads the page; reopen the form it came from so the
-	// message shows beside the field.
-	$effect(() => {
-		if (!form?.message) return;
-		if (form.kind === 'character' || form.kind === 'place') adding = form.kind;
-		if (form.kind === 'lore' && form.categoryId) adding = `lore:${form.categoryId}`;
-		if (form.kind === 'member' && form.memberKind) adding = `member:${form.memberKind}`;
-	});
+	function keyOf(result: typeof form): string | null {
+		if (!result?.message) return null;
+		if (result.kind === 'lore') return `lore:${result.categoryId}`;
+		if (result.kind === 'member') return `member:${result.memberKind}`;
+		return result.kind ?? null;
+	}
+	// A failed submit reloads the page; open the form it came from so the
+	// message renders beside the field. Closing that form drops the message.
+	const failedKey = untrack(() => keyOf(form));
+	let adding = $state<string | null>(failedKey);
+	let errorKey = $state<string | null>(failedKey);
 
 	function errorFor(key: string): string | null {
-		if (!form?.message) return null;
-		const formKey =
-			form.kind === 'lore'
-				? `lore:${form.categoryId}`
-				: form.kind === 'member'
-					? `member:${form.memberKind}`
-					: form.kind;
-		return formKey === key ? form.message : null;
+		return errorKey === key ? (form?.message ?? null) : null;
 	}
+	// A lore failure for a category deleted in the meantime has no row to sit on.
+	const orphanError = $derived(
+		form?.message && form.kind === 'lore' && !categories.some((c) => c.id === form.categoryId)
+			? form.message
+			: null
+	);
 
 	// Escape closes the field and puts focus back on its Add row.
 	async function closeAdd(key: string) {
 		adding = null;
+		errorKey = null;
 		await tick();
 		document.querySelector<HTMLElement>(`[data-add="${key}"]`)?.focus();
 	}
@@ -156,8 +157,10 @@
 		class="outline-add add-row"
 		type="button"
 		data-add={key}
-		aria-expanded="false"
-		onclick={() => (adding = key)}
+		onclick={() => {
+			adding = key;
+			errorKey = null;
+		}}
 	>
 		<Icon name="plus" size={13} />
 		{label}
@@ -173,7 +176,8 @@
 	categoryId?: string
 )}
 	{#if adding === key}
-		<form method="POST" {action} class="new-entity">
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions (catches Escape bubbling from the field and its button) -->
+		<form method="POST" {action} class="new-entity" onkeydown={(event) => onAddKeydown(event, key)}>
 			{#if categoryId}<input type="hidden" name="categoryId" value={categoryId} />{/if}
 			<label class="visually-hidden" for="add-{key}">{fieldLabel}</label>
 			<!-- svelte-ignore a11y_autofocus (the field only appears on the Add row's click) -->
@@ -185,7 +189,6 @@
 				{placeholder}
 				required
 				autofocus
-				onkeydown={(event) => onAddKeydown(event, key)}
 			/>
 			<FormStatus error={errorFor(key)} block />
 			<button class="outline-add" type="submit">
@@ -201,18 +204,17 @@
 {#snippet addMember(kind: 'character' | 'place', candidates: Entity[])}
 	{@const key = `member:${kind}`}
 	{#if adding === key}
-		<form method="POST" action="?/declareMember" class="new-entity">
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions (catches Escape bubbling from the field and its button) -->
+		<form
+			method="POST"
+			action="?/declareMember"
+			class="new-entity"
+			onkeydown={(event) => onAddKeydown(event, key)}
+		>
 			<input type="hidden" name="kind" value={kind} />
 			<label class="visually-hidden" for="add-{key}">A {kind} from the universe</label>
 			<!-- svelte-ignore a11y_autofocus (the field only appears on the Add row's click) -->
-			<select
-				id="add-{key}"
-				class="select"
-				name="entityId"
-				required
-				autofocus
-				onkeydown={(event) => onAddKeydown(event, key)}
-			>
+			<select id="add-{key}" class="select" name="entityId" required autofocus>
 				<option value="">From the universe...</option>
 				{#each candidates as candidate (candidate.id)}
 					<option value={candidate.id}>{candidate.name}</option>
@@ -415,6 +417,7 @@
 				<p class="empty-state-text">Nothing matches.</p>
 			</div>
 		{/if}
+		<FormStatus error={orphanError} block />
 		{#if q === ''}
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 			<a class="outline-add manage-categories" href={categoriesHref}>
