@@ -15,6 +15,7 @@
 	import { ALIGNMENTS } from '$lib/alignment';
 	import { modLabel } from '$lib/keys';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 	import ViewMenu, { type ViewItem } from './ViewMenu.svelte';
 
 	// The formatting bar above a prose editor: headings, bold, italic, quote,
@@ -235,6 +236,9 @@
 
 	// The "more" menu. Closes on an outside press or Escape.
 	let menuOpen = $state(false);
+	// Opened with Enter or Space (a click with no pointer): focus moves into the
+	// menu. A mouse open leaves focus in the editor.
+	let menuByKeyboard = $state(false);
 	// A vanished overflow (the bar grew) must not leave a stale open menu.
 	$effect(() => {
 		if (overflow.length === 0) menuOpen = false;
@@ -297,7 +301,14 @@
 
 	{#if overflow.length > 0}
 		<span class="md-sep"></span>
-		<div class="md-overflow" use:dismiss={{ enabled: menuOpen, close: () => (menuOpen = false) }}>
+		<div
+			class="md-overflow"
+			use:dismiss={{
+				enabled: menuOpen,
+				close: () => (menuOpen = false),
+				refocus: () => view()?.focus()
+			}}
+		>
 			<button
 				class="md-tool"
 				class:is-active={menuOpen}
@@ -307,12 +318,23 @@
 				aria-haspopup="menu"
 				aria-expanded={menuOpen}
 				onmousedown={(event) => event.preventDefault()}
-				onclick={() => (menuOpen = !menuOpen)}
+				onclick={(event) => {
+					menuByKeyboard = event.detail === 0;
+					menuOpen = !menuOpen;
+				}}
 			>
 				<Icon name="more" size={16} />
 			</button>
 			{#if menuOpen}
-				<div class="md-menu" role="menu">
+				<div
+					class="md-menu"
+					role="menu"
+					use:menu={{
+						close: () => (menuOpen = false),
+						refocus: () => view()?.focus(),
+						focusFirst: menuByKeyboard
+					}}
+				>
 					{#each overflow as item (item.id)}
 						{#if item.kind === 'cmd'}
 							<button
@@ -337,7 +359,13 @@
 								role="menuitemcheckbox"
 								aria-checked={item.active}
 								onmousedown={(event) => event.preventDefault()}
-								onclick={() => item.toggle()}
+								onclick={(event) => {
+									item.toggle();
+									// From the keyboard, a toggle is done with the menu; a mouse
+									// user may flip several, so it stays open for them.
+									if (event.detail === 0) menuOpen = false;
+									view()?.focus();
+								}}
 							>
 								<span class="md-menu-check">{item.active ? '✓' : ''}</span>
 								{item.menuLabel}

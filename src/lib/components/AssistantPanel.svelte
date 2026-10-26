@@ -21,6 +21,7 @@
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 
 	let {
 		scope,
@@ -613,6 +614,7 @@
 	// The actions menu next to the send button; closes like the other inline
 	// menus, on an outside press or Escape.
 	let actionsOpen = $state(false);
+	let actionsTrigger = $state<HTMLButtonElement>();
 
 	function runAction(action: () => void) {
 		actionsOpen = false;
@@ -806,9 +808,14 @@
 				onkeydown={onKeydown}></textarea>
 			<div
 				class="composer-menu-wrap"
-				use:dismiss={{ enabled: actionsOpen, close: () => (actionsOpen = false) }}
+				use:dismiss={{
+					enabled: actionsOpen,
+					close: () => (actionsOpen = false),
+					refocus: () => actionsTrigger?.focus()
+				}}
 			>
 				<button
+					bind:this={actionsTrigger}
 					class="menu-btn"
 					type="button"
 					title="More actions"
@@ -819,7 +826,14 @@
 					<Icon name="more" size={16} />
 				</button>
 				{#if actionsOpen}
-					<div class="composer-menu popover" role="menu">
+					<div
+						class="composer-menu popover"
+						role="menu"
+						use:menu={{
+							close: () => (actionsOpen = false),
+							refocus: () => actionsTrigger?.focus()
+						}}
+					>
 						{#if isStory}
 							<button
 								class="menu-item"

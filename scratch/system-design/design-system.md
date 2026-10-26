@@ -176,7 +176,8 @@ The path and its crumb menus:
 - Menus compose the shared `.popover`/`.menu-item` skin, carry
   `aria-haspopup`/`aria-expanded`, tick the current page with
   `aria-current="page"`, and close on outside pointerdown or Escape through
-  the shared `dismiss` action.
+  the shared `dismiss` action. Keyboard behaviour comes from `use:menu`
+  (see Menus and popovers).
 - Paths are built by `$lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
   `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
   spells the same destinations the same way. Do not hand-roll a path.
@@ -350,6 +351,17 @@ primitive's own class too, but do not copy the pattern.
 - The avatar dropdown (`.avatar-dropdown`) is deliberately its own richer
   skin. That exception does not license others. Like every other menu, it is
   rendered only while open, never hidden with opacity.
+- Every `role="menu"` renders only while open (`{#if open}`), takes
+  `use:menu` (`$lib/menu.ts`) for the keyboard and `use:dismiss` with a
+  `refocus` for Escape and outside clicks. `use:menu` focuses the first item
+  on open (the editor's own menus only when opened from the keyboard, so a
+  mouse open does not blur the editor), moves with the arrow keys (wrapping)
+  and Home/End, closes on Tab after handing focus back to the trigger,
+  and opens and closes a submenu with ArrowRight/ArrowLeft. Escape returns
+  focus to the trigger, or to the editor for the editor's own menus.
+- A popover that is not a list of actions (the entity badge picker's swatches
+  and image buttons) is not a menu: it uses `aria-haspopup="dialog"` and
+  `role="dialog"`, plain buttons, and `dismiss` only.
 
 ### Modals
 
@@ -438,8 +450,9 @@ shared `.popover`/`.menu-item` skin inside a `.menu-host`, carries
 `aria-haspopup`/`aria-expanded`, and closes on outside pointerdown or Escape
 through the shared `dismiss` action.
 
-- `.menu-host` positions the popover under its trigger; `.open` shows it, and
-  `.start` opens it from the left edge for a button on the left of its row.
+- `.menu-host` positions the popover under its trigger (rendered only while
+  open), and `.start` opens it from the left edge for a button on the left of
+  its row.
 - `.menu-sep` is the rule between making and importing; `.menu-note` is the
   one help line; `.new-caret` is the 11px caret in the trigger's label.
 - `.row-actions` is the action cluster a row's controls sit in (a universe row:
