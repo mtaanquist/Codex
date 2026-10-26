@@ -26,6 +26,23 @@ export function isCategoryColor(color: string | null): boolean {
 
 const PALETTE = CATEGORY_PALETTE;
 
+// A story's cover colour must be a palette token; unlike a category it cannot
+// be cleared.
+export function isCoverColor(color: unknown): color is string {
+	return typeof color === 'string' && PALETTE.includes(color);
+}
+
+// The colour a new story's placeholder cover starts with.
+export function randomCoverColor(): string {
+	return PALETTE[Math.floor(Math.random() * PALETTE.length)];
+}
+
+// The tint behind a story's placeholder cover. Stories made before colours
+// existed have none stored, so they get a stable pick from their id.
+export function storyCoverColor(story: { id: string; coverColor: string | null }): string {
+	return story.coverColor ?? entityColor(story.id);
+}
+
 // Deterministic badge colour for an entity name, drawn from the category
 // tint tokens.
 export function entityColor(name: string): string {

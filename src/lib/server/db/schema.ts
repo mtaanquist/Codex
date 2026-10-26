@@ -18,6 +18,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
+import { randomCoverColor } from '../../entity-color.ts';
 import { NOTIFICATION_KINDS, type NotificationPayload } from '../../notifications.ts';
 import { SCENE_STATUSES } from '../../scene-status.ts';
 
@@ -194,6 +195,10 @@ export const stories = pgTable(
 		// References assets(id); null renders a generated default cover on the
 		// public shelf.
 		coverAssetId: uuid('cover_asset_id'),
+		// Palette token (var(--cat-...)) tinting the placeholder cover while
+		// there is no artwork. Every insert picks one at random; rows from
+		// before the column have null, and render a pick from their id.
+		coverColor: text('cover_color').$defaultFn(randomCoverColor),
 		// Per-story Assistant overrides (the mute, model choices); merged over
 		// users.llm_config in $lib/server/llm/config.ts.
 		llmConfig: jsonb('llm_config').notNull().default({}),

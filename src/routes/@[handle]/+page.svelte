@@ -112,15 +112,20 @@
 									story: book.storyId
 								})}
 							>
-								<!-- A cover is the story's own title, set, until an author
-								     uploads artwork. -->
-								<span class="shelf-cover">
-									{#if book.coverAssetId}
+								<!-- A cover is the story's own title, set on the story's
+								     colour, until an author uploads artwork. -->
+								{#if book.coverAssetId}
+									<span class="shelf-cover">
 										<img src="/assets/{book.coverAssetId}" alt="" />
-									{:else}
+									</span>
+								{:else}
+									<span
+										class="shelf-cover shelf-cover-tinted"
+										style="--cover-tint: {book.coverColor}"
+									>
 										{book.title}
-									{/if}
-								</span>
+									</span>
+								{/if}
 								<span class="shelf-item-title">{book.title}</span>
 								<span class="shelf-item-meta">
 									{formatLongDate(book.publishedAt)}{#if book.isAdult}

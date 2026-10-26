@@ -1,7 +1,12 @@
 <script lang="ts">
+	import { CATEGORY_COLORS, storyCoverColor } from '$lib/entity-color';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Follows the select before saving, so the swatch previews the choice.
+	// svelte-ignore state_referenced_locally (seeded once; a save reloads the page)
+	let coverColor = $state(storyCoverColor(data.story));
 </script>
 
 <div class="admin-block-head">
@@ -48,6 +53,23 @@
 				>{data.story.descriptionMd ?? ''}</textarea
 			>
 		</div>
+		{#if !data.story.coverAssetId}
+			<div class="field">
+				<label for="st-cover-color">Cover colour</label>
+				<div class="cover-color-row">
+					<span class="cover-color-dot" style="background: {coverColor}"></span>
+					<select id="st-cover-color" class="input" name="coverColor" bind:value={coverColor}>
+						{#each CATEGORY_COLORS as choice (choice.token)}
+							<option value={choice.token}>{choice.label}</option>
+						{/each}
+					</select>
+				</div>
+				<span class="field-hint">
+					The colour of the cover in your library and on your public shelf. Uploading a cover image
+					replaces it.
+				</span>
+			</div>
+		{/if}
 		<div class="field">
 			<label for="st-style-notes">Genre and style</label>
 			<textarea id="st-style-notes" class="input" name="styleNotes" rows="2"
@@ -68,3 +90,20 @@
 		</div>
 	</form>
 </div>
+
+<style>
+	.cover-color-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.cover-color-row .input {
+		width: auto;
+	}
+	.cover-color-dot {
+		width: 14px;
+		height: 14px;
+		border-radius: 99px;
+		flex: none;
+	}
+</style>

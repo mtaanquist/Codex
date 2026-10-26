@@ -483,7 +483,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		await page.getByRole('menuitem', { name: 'Story settings' }).click();
 		await page.getByRole('link', { name: 'Cover' }).click();
 		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
-		await expect(page.locator('svg.cover')).toBeVisible();
+		await expect(page.getByRole('img', { name: 'Default cover' })).toBeVisible();
 		await page.getByLabel('Cover image').setInputFiles({
 			name: 'cover.png',
 			mimeType: 'image/png',
@@ -495,6 +495,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		const served = await page.request.get(coverSrc!);
 		expect(served.status()).toBe(200);
 		expect(served.headers()['content-type']).toBe('image/png');
+		// Artwork replaces the placeholder, so its colour is no longer offered.
+		await page.getByRole('link', { name: 'Details' }).click();
+		await expect(page.getByLabel('Title', { exact: true })).toBeVisible();
+		await expect(page.getByLabel('Cover colour')).toHaveCount(0);
 
 		await gotoReady(page, proseSceneUrl);
 		await page.locator('.cm-content').click();

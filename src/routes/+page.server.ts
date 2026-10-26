@@ -8,6 +8,7 @@ import { uniqueSlug } from '$lib/server/slugs';
 import { isUuid } from '$lib/slug';
 import { createStoryInUniverse, standaloneUniverse } from '$lib/server/story-create';
 import { relativeTime, storyStatus } from '$lib/dashboard';
+import { storyCoverColor } from '$lib/entity-color';
 import {
 	destroyUniverse,
 	listTrashedUniverses,
@@ -47,7 +48,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// was last touched.
 	const result = await db.execute(sql`
 		select st.id, st.slug, st.title, st.brief, st.universe_id,
-			st.cover_asset_id, st.position_in_series, st.created_at,
+			st.cover_asset_id, st.cover_color, st.position_in_series, st.created_at,
 			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
 			count(s.id)::int as scene_count,
 			coalesce(sum(s.word_count), 0)::int as words,
@@ -71,6 +72,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			brief: string | null;
 			universe_id: string;
 			cover_asset_id: string | null;
+			cover_color: string | null;
 			chapters: number;
 			scene_count: number;
 			words: number;
@@ -88,6 +90,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			brief: r.brief,
 			universeId: r.universe_id,
 			coverAssetId: r.cover_asset_id,
+			coverColor: storyCoverColor({ id: r.id, coverColor: r.cover_color }),
 			chapters: r.chapters,
 			words: r.words,
 			editedAt: editedAt.toISOString(),

@@ -427,11 +427,16 @@
 	opacity: 0.6;
 }
 /* The card leads with a cover: the uploaded artwork, or the title set on the
-   cover blank (the reader shelf's pattern, reused). Sized down a step from
-   the reader shelf, since the real title sits right below. */
+   tinted cover blank (the reader shelf's pattern, reused). Sized down a step
+   from the reader shelf when artwork leaves the real title below it; a blank
+   cover is the card's visible title, so it takes the title's size. */
 .story-card-cover {
 	flex: none;
 	font-size: 15px;
+}
+.story-card-cover.shelf-cover-tinted {
+	font-size: 19px;
+	font-weight: 600;
 }
 
 .universe-section {

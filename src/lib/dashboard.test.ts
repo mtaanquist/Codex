@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { relativeTime, storyStatus } from './dashboard';
+import { recentStories, relativeTime, storyStatus } from './dashboard';
 
 const base = { sceneCount: 4, words: 1000, outline: 0, draft: 0, revised: 0, final: 0 };
 
@@ -39,5 +39,31 @@ describe('relativeTime', () => {
 		expect(ago(100 * 86_400_000)).toBe('3 months ago');
 		expect(ago(400 * 86_400_000)).toBe('last year');
 		expect(ago(800 * 86_400_000)).toBe('2 years ago');
+	});
+});
+
+describe('recentStories', () => {
+	const story = (id: string, editedAt: string) => ({ id, editedAt });
+	const many = (n: number) =>
+		Array.from({ length: n }, (_, i) =>
+			story(`s${i}`, new Date(Date.UTC(2026, 0, 1 + i)).toISOString())
+		);
+
+	it('is empty while every story fits in the strip', () => {
+		expect(recentStories([])).toEqual([]);
+		expect(recentStories(many(1))).toEqual([]);
+		expect(recentStories(many(3))).toEqual([]);
+	});
+
+	it('takes the most recently edited stories, newest first', () => {
+		expect(recentStories(many(4)).map((s) => s.id)).toEqual(['s3', 's2', 's1']);
+		expect(recentStories(many(10)).map((s) => s.id)).toEqual(['s9', 's8', 's7']);
+	});
+
+	it('keeps the input order for ties and leaves the input alone', () => {
+		const at = '2026-01-01T00:00:00.000Z';
+		const input = [story('a', at), story('b', at), story('c', at), story('d', at)];
+		expect(recentStories(input).map((s) => s.id)).toEqual(['a', 'b', 'c']);
+		expect(input.map((s) => s.id)).toEqual(['a', 'b', 'c', 'd']);
 	});
 });
