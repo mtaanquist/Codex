@@ -10,7 +10,7 @@
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { UNIVERSE_MODE_NOTE, universePath } from '$lib/chrome';
+	import { UNIVERSE_MODE_NOTE, universePath, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -134,7 +134,8 @@
 			boardLabel="Story board"
 			{form}
 		/>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			<h1 class="visually-hidden">{data.universe.name} - Plan</h1>
 			{#if data.selected && data.revisionPreview && data.revisionTarget}
 				<div class="detail">
 					<RevisionPreview
@@ -193,7 +194,7 @@
 			{/if}
 		</main>
 		{#if rightTab}
-			<aside class="pane right">
+			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 				<PanelStrip
 					{panels}
 					active={rightTab}

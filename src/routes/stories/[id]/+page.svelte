@@ -41,7 +41,7 @@
 	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath as storyCrumbs } from '$lib/chrome';
+	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import type { PageData, Snapshot } from './$types';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
@@ -605,7 +605,7 @@
 		helpLabel="the editor"
 	/>
 	<div class="body">
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<ModeSwitcher
 					active="write"
@@ -634,7 +634,8 @@
 				/>
 			</div>
 		</aside>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			{#if !inWholeStory}<h1 class="visually-hidden">{data.story.title} - Write</h1>{/if}
 			{#if viewStory}
 				{#snippet docScene(scene: NonNullable<typeof data.storyDoc>[number])}
 					<article class="doc-scene" id="scene-{scene.id}">
@@ -819,7 +820,7 @@
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right">
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 			{#if inspectStack.length > 0}
 				{#if inspectCard}
 					<EntityCard

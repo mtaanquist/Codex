@@ -173,16 +173,16 @@
 			</div>
 		</div>
 		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-		<div class="side-nav-label">Universe settings</div>
-		<nav class="side-nav">
+		<div class="side-nav-label" id="universe-settings-label">Universe settings</div>
+		<nav class="side-nav" aria-labelledby="universe-settings-label">
 			{#each NAV as item (item.id)}
 				<a href={sectionHref(item.id)} aria-current={active === item.id ? 'page' : undefined}>
 					{item.label}
 				</a>
 			{/each}
 		</nav>
-		<div class="side-nav-label">Back to the universe</div>
-		<nav class="side-nav">
+		<div class="side-nav-label" id="universe-back-label">Back to the universe</div>
+		<nav class="side-nav" aria-labelledby="universe-back-label">
 			<a href={resolve('/universes/[id]/plan', { id: data.universe.slug })}>Plan</a>
 			<a href={resolve('/universes/[id]/insights', { id: data.universe.slug })}>Insights</a>
 		</nav>

@@ -3,7 +3,7 @@
 	import SidebarSearch from './SidebarSearch.svelte';
 	import type { NoteListItem } from '$lib/wire-types';
 	import ModeSwitcher from './ModeSwitcher.svelte';
-	import { NOTES_MODE_NOTE } from '$lib/chrome';
+	import { NOTES_MODE_NOTE, LEFT_PANE_LABEL } from '$lib/chrome';
 
 	// The left pane of a Notes view, shared by the story and universe scopes.
 	// Note links keep the current page and swap the ?note= query; the new-note
@@ -48,7 +48,7 @@
 	const shownUniverse = $derived(q === '' ? universeNotes : universeNotes.filter(matches));
 </script>
 
-<aside class="pane left">
+<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 	<div class="left-head">
 		<!-- The Notes page sits beside the modes, so nothing is lit and one
 		     line says how you got here. -->

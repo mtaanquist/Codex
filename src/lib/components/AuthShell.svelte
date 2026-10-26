@@ -26,7 +26,7 @@
 <div class="public-surface">
 	<AppBar shell="public" />
 
-	<main class="auth-main">
+	<main id="main" class="auth-main">
 		<div>
 			<div class="auth-card">
 				<h1 class="auth-title">{title}</h1>

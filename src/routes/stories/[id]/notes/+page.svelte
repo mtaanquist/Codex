@@ -12,6 +12,7 @@
 </svelte:head>
 
 <NotesWorkspace
+	title={data.story.title}
 	crumbs={storyPath(data.universe, { ...data.story, reading: data.reading })}
 	notes={data.storyNotes}
 	universeNotes={data.universeNotes}
