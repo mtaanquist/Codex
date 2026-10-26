@@ -8,7 +8,7 @@
 	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
 	import { enhance } from '$app/forms';
-	import { LIBRARY_VIEWS, recentStories } from '$lib/dashboard';
+	import { LIBRARY_VIEWS, recentStories, type LibraryView } from '$lib/dashboard';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -30,7 +30,10 @@
 	type Story = (typeof data.stories)[number];
 
 	const recent = $derived(recentStories(data.stories));
-	const view = $derived(data.libraryView ?? 'covers');
+	// The switch sets this as it submits so the page changes at once; the
+	// reloaded data then agrees with it.
+	let pickedView = $state<LibraryView | null>(null);
+	const view = $derived(pickedView ?? data.libraryView ?? 'covers');
 
 	const totalWords = $derived(data.stories.reduce((sum, story) => sum + story.words, 0));
 
@@ -171,7 +174,18 @@
 {/snippet}
 
 {#snippet viewSwitch()}
-	<form method="POST" action="?/setLibraryView" use:enhance>
+	<form
+		method="POST"
+		action="?/setLibraryView"
+		use:enhance={({ submitter }) => {
+			const previous = pickedView;
+			pickedView = (submitter?.getAttribute('value') as LibraryView | null) ?? null;
+			return async ({ result, update }) => {
+				if (result.type !== 'success') pickedView = previous;
+				await update();
+			};
+		}}
+	>
 		<div class="seg" role="group" aria-label="Library view">
 			{#each LIBRARY_VIEWS as option (option.value)}
 				<button
@@ -588,6 +602,13 @@
 	}
 	.library-table-card {
 		margin-bottom: var(--space-4, 16px);
+		overflow-x: auto;
+	}
+	@media (max-width: 640px) {
+		.page-header,
+		.page-actions {
+			flex-wrap: wrap;
+		}
 	}
 	.library-table .num {
 		text-align: right;
