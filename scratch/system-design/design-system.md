@@ -167,6 +167,13 @@ which of those two it is doing; nothing else decides it.
 Every one of them wears the same bar; see Chrome below. Nothing escapes a
 shell any more: docs, print, guest review and the public reader all carry it.
 
+**The settings column.** `SettingsShell.svelte` anchors its content column
+(`.admin-main-inner`, 720px at most) right after the sidebar, so the spare
+width on a wide screen sits to the right. A section that holds a wide table
+or a stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`):
+admin Overview and Users, and universe Details. Two-column setting rows and
+"On this page" links for long sections are deferred (issue #731).
+
 ## Chrome
 
 One navigation bar for every page type, defined in `chrome.css` (imported
@@ -304,8 +311,11 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
 - **A count on a tab is a `.seg-count`**, passed as the subject
   (`visiblePanels({ notes: 3 })`); zero still shows the panel, and the badge
   itself only renders above zero.
-- **`.panel-note`** is a panel's one line of help for a first-time reader of
-  that panel, at `--text-meta` and `--text-muted`, at the end of the panel.
+- **No footer note under a panel.** A panel does not end with a line
+  explaining what it is. When a panel needs an instruction, its empty state
+  gives it (the Reference panel's "Mention a character, place, or lore
+  entry from Plan in this scene and it shows up here after the scene
+  saves.").
 
 ## Canonical primitives
 
@@ -353,8 +363,10 @@ primitive's own class too, but do not copy the pattern.
 - Wrapper: `.field` with a `<label>`, optional `.field-hint`, laid out with
   `.field-grid` when two-up. Action row: `.settings-actions`.
 - Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
-  `.slider`. The focus ring (accent border plus `--accent-soft` glow) comes
-  from the shared rule; never redefine it.
+  `.slider`. `.input.short` caps a field for a short value (a display name,
+  a pen name, a handle) at 36ch instead of the full column. The focus ring
+  (accent border plus `--accent-soft` glow) comes from the shared rule;
+  never redefine it.
 - `.slider` (`primitives.css`) is a range input for a bounded value that is
   judged rather than typed exactly: a temperature, a reply length. It is
   always paired with a number field carrying the same value, so an exact
@@ -411,10 +423,18 @@ control is an `.icon-btn.sm`; the primary action sits last in the footer.
 A head can carry a `.modal-search` field instead of a title, with
 `.modal-head.searching`.
 
-The behaviour is the component's, not the CSS's: Esc closes, focus is
-trapped in the panel and returned to the opener, and a backdrop click
-closes only when nothing is unsaved. `CommandPalette` and `ReviewModal` are
-the two reference uses. Help is not one of them: it is a page, not a modal.
+The behaviour belongs to the `use:modal` action (`$lib/modal.ts`), put on
+the `role="dialog"` panel with `aria-modal="true"`: focus moves into the
+panel on open (or to `initialFocus`), Tab and Shift+Tab cycle inside it,
+Esc calls its `close` (stopping there, so a page-level Esc such as leaving
+focus mode does not also fire), and focus returns to the opener on close
+unless something run from the dialog moved it on purpose. A backdrop click
+closes only when nothing is unsaved. Every modal uses the action
+(`CommandPalette`, `ImportStoryModal`, `ReviewModal`, `RoleTuningModal`,
+`PenNamePrompt`); `QuickNote` is a floating card, not a modal, and keeps its
+own focus return. A search modal keeps focus in its box and drives the
+results with `role="combobox"` and `aria-activedescendant` (the options are
+`tabindex="-1"`). Help is not a modal: it is a page.
 
 A modal that edits fields belonging to a form on the page behind it renders
 inside that form, so its controls submit with it (`RoleTuningModal`). Where
