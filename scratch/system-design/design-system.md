@@ -491,7 +491,10 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 
 `.story-card` (library; it always leads with a cover, and when the cover is
 the tinted blank the card's `h3` is `.visually-hidden` so the title shows
-once), `.admin-card` (settings/admin sections, also used
+once). The per-user library view (`users.preferences.libraryView`: covers,
+compact, table) drops the cover in compact, and in table renders each
+collection as an `.admin-table` inside `.admin-card.tight` instead of cards.
+`.admin-card` (settings/admin sections, also used
 well outside admin), `.r-card` (right-pane reference blocks), `.rv-card`
 (review threads). New reference-pane content should compose `.r-card`;
 new settings content composes `.admin-card`.

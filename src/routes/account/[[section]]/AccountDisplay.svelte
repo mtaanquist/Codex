@@ -4,6 +4,7 @@
 	import { enhance } from '$app/forms';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
+	import { LIBRARY_VIEWS } from '$lib/dashboard';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import { accentProblem } from '$lib/contrast';
 	import FormStatus from '$lib/components/FormStatus.svelte';
@@ -42,7 +43,9 @@
 <div class="admin-head">
 	<p class="admin-eyebrow">Account</p>
 	<h1 class="admin-title">Display</h1>
-	<p class="admin-lede">The colour theme and accent used across the app.</p>
+	<p class="admin-lede">
+		The colour theme and accent used across the app, and how your library looks.
+	</p>
 </div>
 
 <div class="admin-block">
@@ -151,6 +154,45 @@
 				<FormStatus
 					error={form?.scope === 'appearance' && form.message ? form.message : null}
 					success={form?.scope === 'appearance' && form.saved ? 'Saved.' : null}
+				/>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div class="admin-block">
+	<div class="admin-block-head">
+		<h2 class="admin-block-title">Library</h2>
+		<p class="admin-block-sub">How the library page shows your stories.</p>
+	</div>
+	<div class="settings-group">
+		<form
+			method="POST"
+			action="?/saveLibraryView"
+			use:enhance={autosaveSubmit}
+			onchange={autosubmitForm}
+		>
+			<div class="field" style="margin-bottom:0;">
+				<label for="library-view">Library view</label>
+				<select
+					id="library-view"
+					class="select"
+					name="libraryView"
+					value={data.preferences.libraryView}
+				>
+					{#each LIBRARY_VIEWS as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+				<p class="field-hint">
+					Covers shows each story as a book cover. No covers shows the same cards without the cover.
+					Table lists your stories in rows. You can also switch on the library page.
+				</p>
+			</div>
+			<div class="settings-actions">
+				<FormStatus
+					error={form?.scope === 'library' && form.message ? form.message : null}
+					success={form?.scope === 'library' && form.saved ? 'Saved.' : null}
 				/>
 			</div>
 		</form>

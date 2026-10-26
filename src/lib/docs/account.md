@@ -228,6 +228,12 @@ a note under the swatches says so and suggests a darker or lighter one.
 To switch the theme without leaving the page you are on, open your account menu
 (your initials in the top right corner) and pick Light, Warm, Dark, or System.
 
+Under Library, choose how the library page shows your stories: Covers shows each
+story as a book cover, No covers shows the same cards without the cover, and
+Table lists your stories in rows with their status, word count, chapters, and
+when you last edited them. The switch above the stories on the library page
+changes the same setting.
+
 ## Editor
 
 How the writing area works, as your personal defaults.

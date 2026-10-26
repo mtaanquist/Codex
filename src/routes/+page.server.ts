@@ -16,6 +16,7 @@ import {
 } from '$lib/server/universe-lifecycle';
 import { destroyStory, listTrashedStories, restoreStory } from '$lib/server/story-lifecycle';
 import { signupMode } from '$lib/server/settings';
+import { saveLibraryView, userPreferences } from '$lib/server/preferences';
 import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -107,6 +108,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	});
 
 	return {
+		libraryView: (await userPreferences(db, user.id)).libraryView,
 		universes: list,
 		stories: storyList,
 		trashedUniverses,
@@ -115,6 +117,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
+	// The view switch above the stories; the same setting as on the account page.
+	setLibraryView: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const view = (await request.formData()).get('libraryView');
+		if (!(await saveLibraryView(db, locals.user.id, view))) {
+			return fail(400, { scope: 'view', message: 'Pick a library view.' });
+		}
+		return { scope: 'view', saved: true };
+	},
 	createUniverse: async ({ request, locals }) => {
 		// The route is public for the landing page; the action is not.
 		if (!locals.user) redirect(303, '/login');

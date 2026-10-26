@@ -65,3 +65,16 @@ export function recentStories<T extends { editedAt: string }>(stories: T[], size
 		.sort((a, b) => new Date(b.editedAt).getTime() - new Date(a.editedAt).getTime())
 		.slice(0, size);
 }
+
+// How the library lays out its stories: cover cards, the same cards without
+// covers, or a table. A per-user preference.
+export const LIBRARY_VIEWS = [
+	{ value: 'covers', label: 'Covers' },
+	{ value: 'compact', label: 'No covers' },
+	{ value: 'table', label: 'Table' }
+] as const;
+export type LibraryView = (typeof LIBRARY_VIEWS)[number]['value'];
+
+export function isLibraryView(value: unknown): value is LibraryView {
+	return LIBRARY_VIEWS.some((view) => view.value === value);
+}

@@ -12,7 +12,7 @@ Codex organises your writing into three layers.
 2. Back on the library, open the "New story" menu on the universe's own row and choose "New story in ..." to create a story. A universe with no stories yet offers the same menu in the space its stories will fill.
 3. Open the story and add a scene. The scene editor is where your prose goes.
 
-Each story on the library shows a cover. Until you upload cover art, the cover is the story's title on a colour picked for it when you created it; change the colour under "Cover colour" in the story's settings. Once you have more than three stories, a "Recent" row at the top of the library shows the three you edited last.
+Each story on the library shows a cover. Until you upload cover art, the cover is the story's title on a colour picked for it when you created it; change the colour under "Cover colour" in the story's settings. Once you have more than three stories, a "Recent" row at the top of the library shows the three you edited last. If you do not use covers, switch the library to "No covers" or "Table" with the buttons at the top of the library page, or under Display on your account page.
 
 For a story that does not belong to any world, choose "New standalone story" from either the library's "New" menu or the "Standalone stories" section's own menu instead. That universe is created for you the first time you add a story there, and the story works like any other.
 
