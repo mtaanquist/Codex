@@ -166,7 +166,7 @@ and `node scripts/restore-backup.ts latest` restores the newest.
 
 ## Develop
 
-You need Node 24 and Docker.
+You need Node 26 and Docker.
 
 ```
 npm install

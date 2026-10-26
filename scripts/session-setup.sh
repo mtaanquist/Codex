@@ -32,8 +32,8 @@ fi
 # Without Node every step below fails, and under `set -e` the first one ends the
 # script with no clue why. Say so instead.
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node is not on the PATH; install Node 24 and start a new session." >&2
-  echo "  macOS:  brew install node@24" >&2
+  echo "Node is not on the PATH; install Node 26 and start a new session." >&2
+  echo "  macOS:  brew install node@26" >&2
   exit 1
 fi
 
