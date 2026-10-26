@@ -94,6 +94,7 @@
 		{:else}
 			<span
 				class="shelf-cover shelf-cover-tinted story-card-cover"
+				class:story-card-empty={story.words === 0}
 				style="--cover-tint: {story.coverColor}"
 				aria-hidden="true"
 			>

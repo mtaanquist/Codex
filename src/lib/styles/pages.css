@@ -438,6 +438,11 @@
 	font-size: 19px;
 	font-weight: 600;
 }
+/* A story with no prose yet: italic, as the card title would be. The colour
+   stays --text so it keeps its contrast on the tint. */
+.story-card-cover.shelf-cover-tinted.story-card-empty {
+	color: var(--text);
+}
 
 .universe-section {
 	margin-top: var(--space-10);

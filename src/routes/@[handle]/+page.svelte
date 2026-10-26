@@ -113,7 +113,8 @@
 								})}
 							>
 								<!-- A cover is the story's own title, set on the story's
-								     colour, until an author uploads artwork. -->
+								     colour, until an author uploads artwork. Hidden from
+								     readers because the title repeats right below. -->
 								{#if book.coverAssetId}
 									<span class="shelf-cover">
 										<img src="/assets/{book.coverAssetId}" alt="" />
@@ -122,6 +123,7 @@
 									<span
 										class="shelf-cover shelf-cover-tinted"
 										style="--cover-tint: {book.coverColor}"
+										aria-hidden="true"
 									>
 										{book.title}
 									</span>

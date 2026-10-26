@@ -4,9 +4,9 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// Follows the select before saving, so the swatch previews the choice.
-	// svelte-ignore state_referenced_locally (seeded once; a save reloads the page)
-	let coverColor = $state(storyCoverColor(data.story));
+	// The select overrides it so the swatch previews the choice; it resets to
+	// the stored colour whenever the story's data changes.
+	let coverColor = $derived(storyCoverColor(data.story));
 </script>
 
 <div class="admin-block-head">
