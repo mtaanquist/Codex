@@ -136,6 +136,15 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
+**Structure every shell carries.** Exactly one `<main id="main">` (the root
+layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where the
+visible title lives elsewhere: Write, Plan, Notes and an empty Review use "{name} - Write"
+and so on), and named side panes: every `aside.pane.left` takes
+`aria-label={LEFT_PANE_LABEL}` and every `aside.pane.right`
+`aria-label={RIGHT_PANE_LABEL}` from `$lib/chrome`. A `nav.side-nav` under a
+`.side-nav-label` is named by it with `aria-labelledby`.
+`e2e/accessibility.spec.ts` runs axe over the main pages to hold this.
+
 The workspace shell is a three-column grid: structure left (`--left-w`),
 work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
 and clamp with the window: left 264px to 320px, right 312px to 380px, so the
@@ -313,6 +322,11 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
 The rule for all of them: if the control you need is close to one of these,
 use or extend the primitive; if it is genuinely new, add it to the shared
 CSS with a considered name and add it to this sheet.
+
+Skip link (`primitives.css`):
+
+- `.skip-link` - "Skip to content", the first focusable element on every
+  page (rendered once in the root layout). Off screen until focused.
 
 Forced-state hooks: every state rule in the shared CSS also matches
 `.is-hover`, `.is-active`, or `.is-focus` beside the real pseudo-state.
@@ -681,7 +695,9 @@ shared class inside a component (this still happens for `.btn-sm` and
    fallbacks.
 6. Check dark, light, and warm, plus compact density if the page has rows.
 7. Keyboard: everything reachable, visible focus, `aria-label` on icon-only
-   controls, Escape closes any overlay.
+   controls, Escape closes any overlay. One h1, one `main id="main"`, named
+   side panes; add the page to `e2e/accessibility.spec.ts` if it is a main
+   route.
 8. Empty, loading, and error states use the shared patterns.
 9. UI text follows the writing rules; help articles updated if behaviour
    changed. The word "Session" does not appear in the product.

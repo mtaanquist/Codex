@@ -6,7 +6,7 @@
 	import { daysMetGoal, daysUntil } from '$lib/insights';
 	import { formatNumber } from '$lib/format';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { INSIGHTS_MODE_NOTE, universePath } from '$lib/chrome';
+	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import PanelStrip from '$lib/components/PanelStrip.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
@@ -143,7 +143,7 @@
 		helpLabel="insights"
 	/>
 	<div class="body" class:no-right={panels.length === 0}>
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<!-- Insights is not one of the three modes, so none of them is lit and
 				     one line says why. -->
@@ -167,7 +167,7 @@
 				</nav>
 			</div>
 		</aside>
-		<main class="pane center">
+		<main id="main" class="pane center">
 			<div class="insights-body">
 				<div class="page-header">
 					<div>
@@ -474,7 +474,7 @@
 			</div>
 		</main>
 		{#if panels.length > 0}
-			<aside class="pane right">
+			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 				<PanelStrip {panels} active="assistant" onSelect={() => {}} sub="this universe">
 					{#snippet panel()}
 						<AssistantPanel

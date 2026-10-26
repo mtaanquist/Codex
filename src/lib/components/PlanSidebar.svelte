@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LEFT_PANE_LABEL } from '$lib/chrome';
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import EntityBadge from './EntityBadge.svelte';
@@ -101,7 +102,7 @@
 	);
 </script>
 
-<aside class="pane left">
+<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 	<div class="left-head">
 		<ModeSwitcher active="plan" hrefs={{ write: writeHref, review: reviewHref }} note={modeNote} />
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
@@ -343,9 +344,11 @@
 			</form>
 		{/if}
 		{#if insightsHref}
-			<div class="side-nav-label">Across the universe</div>
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-			<nav class="side-nav"><a href={insightsHref}>Insights</a></nav>
+			<div class="side-nav-label" id="plan-across-label">Across the universe</div>
+			<nav class="side-nav" aria-labelledby="plan-across-label">
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+				<a href={insightsHref}>Insights</a>
+			</nav>
 		{/if}
 	</div>
 </aside>

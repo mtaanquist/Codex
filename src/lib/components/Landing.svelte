@@ -57,7 +57,7 @@
 <div class="public-surface">
 	<AppBar shell="public" />
 
-	<main class="public-main">
+	<main id="main" class="public-main">
 		<div class="public-in">
 			<section class="hero">
 				<h1 class="hero-title">Write the story. Keep <em>the world it comes from.</em></h1>

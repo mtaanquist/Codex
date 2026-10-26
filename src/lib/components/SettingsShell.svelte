@@ -30,7 +30,7 @@
 		<aside class="admin-sidebar">
 			{@render sidebar()}
 		</aside>
-		<main class="admin-main page-body">
+		<main id="main" class="admin-main page-body">
 			<div class="admin-main-inner" class:wide>
 				{@render children()}
 			</div>

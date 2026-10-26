@@ -43,7 +43,7 @@
 		helpLabel="reading pages"
 	/>
 
-	<main class="reader-main">
+	<main id="main" class="reader-main">
 		<div class="reader-col wide">
 			{#if data.preview}
 				<p class="preview-note" role="status">

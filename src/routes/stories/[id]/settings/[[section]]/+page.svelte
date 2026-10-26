@@ -102,8 +102,8 @@
 			</div>
 		</div>
 		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-		<div class="side-nav-label">Story settings</div>
-		<nav class="side-nav">
+		<div class="side-nav-label" id="story-settings-label">Story settings</div>
+		<nav class="side-nav" aria-labelledby="story-settings-label">
 			{#each NAV as item (item.id)}
 				<a href={sectionHref(item.id)} aria-current={active === item.id ? 'page' : undefined}>
 					{item.label}

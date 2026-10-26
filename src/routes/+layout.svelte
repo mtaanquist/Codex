@@ -34,6 +34,17 @@
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
 
+	// Every page has one main with id="main", which the link targets. Moving
+	// focus by hand puts the next Tab inside main in every browser; tabindex
+	// lets a non-control take focus.
+	function skipToMain(event: MouseEvent) {
+		const main = document.getElementById('main');
+		if (!main) return;
+		event.preventDefault();
+		if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+		main.focus();
+	}
+
 	// Marks the document once the client has taken over. Server-rendered markup
 	// is clickable before its handlers are attached, so a test that clicks
 	// straight after a navigation can hit a button that does nothing; this gives
@@ -65,6 +76,7 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
+<a class="skip-link" href="#main" onclick={skipToMain}>Skip to content</a>
 {@render children()}
 {#if data.user}
 	<CommandPalette />
