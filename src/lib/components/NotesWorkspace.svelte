@@ -131,10 +131,6 @@
 							previewId={revisionPreview?.id}
 							previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
 						/>
-						<p class="panel-note">
-							A note has versions like anything else you type here. Codex autosaves; name a
-							checkpoint when you want to find your way back to this wording.
-						</p>
 					{/snippet}
 				</PanelStrip>
 			</aside>

@@ -282,10 +282,6 @@
 				{/if}
 			{/each}
 
-			<p class="panel-note">
-				Every comment and suggestion on this scene, from you and from anyone you invited. Select a
-				run of prose in the middle to add one.
-			</p>
 		</div>
 	{/if}
 </div>
