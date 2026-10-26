@@ -26,6 +26,9 @@ export const dismiss: Action<HTMLElement, DismissParams> = (node, params) => {
 	function onKeydown(event: KeyboardEvent) {
 		if (current.enabled === false) return;
 		if (event.key !== 'Escape') return;
+		// A modal opened over this menu takes its own Escape.
+		const modal = (event.target as Element | null)?.closest?.('[aria-modal="true"]');
+		if (modal && !modal.contains(node)) return;
 		event.preventDefault();
 		event.stopPropagation();
 		current.refocus?.();

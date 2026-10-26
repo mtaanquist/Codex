@@ -299,6 +299,8 @@
 
 	function search() {
 		clearTimeout(searchTimer);
+		// The matching commands change as you type, so the highlight starts over.
+		selected = 0;
 		const value = query.trim();
 		if (value === '') {
 			searchSeq++;
@@ -331,7 +333,7 @@
 	function onPaletteKey(event: KeyboardEvent) {
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
-			selected = Math.min(selected + 1, items.length - 1);
+			selected = Math.max(Math.min(selected + 1, items.length - 1), 0);
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
 			selected = Math.max(selected - 1, 0);

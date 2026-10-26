@@ -45,6 +45,8 @@
 
 	function choose(item: NewMenuItem) {
 		close();
+		// Focus the trigger first, so a modal the item opens returns focus here.
+		trigger?.focus();
 		item.onSelect?.();
 	}
 </script>

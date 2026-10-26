@@ -29,9 +29,27 @@ export type ModalParams = {
 	initialFocus?: string;
 };
 
+// A radio group is one tab stop: its checked radio, or its first when none is
+// checked. Listing every radio would let the browser's own move leave the panel.
+function radioStop(radio: HTMLInputElement, all: HTMLElement[]): boolean {
+	const group = all.filter(
+		(el): el is HTMLInputElement =>
+			el instanceof HTMLInputElement &&
+			el.type === 'radio' &&
+			el.name === radio.name &&
+			el.form === radio.form
+	);
+	const checked = group.find((el) => el.checked);
+	return radio === (checked ?? group[0]);
+}
+
 function tabbables(node: HTMLElement): HTMLElement[] {
-	return [...node.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+	const all = [...node.querySelectorAll<HTMLElement>(TABBABLE)].filter(
 		(el) => el.tabIndex >= 0 && el.getClientRects().length > 0
+	);
+	return all.filter(
+		(el) =>
+			!(el instanceof HTMLInputElement && el.type === 'radio' && el.name) || radioStop(el, all)
 	);
 }
 
@@ -47,6 +65,10 @@ export const modal: Action<HTMLElement, ModalParams> = (node, params) => {
 	(first ?? node).focus();
 
 	function onKeydown(event: KeyboardEvent) {
+		// Keys from inside the panel, or from <body> when the focused control was
+		// removed or disabled under it; anything else belongs to someone else.
+		const target = event.target as Node;
+		if (target !== document.body && !node.contains(target)) return;
 		if (event.key === 'Escape') {
 			// Stop here so a page-level Escape (leaving focus mode) does not
 			// also fire.
@@ -68,13 +90,14 @@ export const modal: Action<HTMLElement, ModalParams> = (node, params) => {
 		list[to].focus();
 	}
 
-	node.addEventListener('keydown', onKeydown);
+	// On the document, not the panel, so focus lost to <body> is still caught.
+	document.addEventListener('keydown', onKeydown);
 	return {
 		update(next: ModalParams) {
 			current = next;
 		},
 		destroy() {
-			node.removeEventListener('keydown', onKeydown);
+			document.removeEventListener('keydown', onKeydown);
 			// Return focus only if it is still in the dialog (or lost): a
 			// command run from the dialog may have moved it on purpose.
 			const active = document.activeElement;

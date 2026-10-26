@@ -398,10 +398,24 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await page.keyboard.press('ControlOrMeta+k');
 	await expect(page.locator('.modal-panel')).toBeVisible();
 	await expect(page.locator('.modal-panel .menu-item', { hasText: 'Catch me up' })).toBeVisible();
-	await expect(
-		page.locator('.modal-panel .menu-item', { hasText: 'Review with the Assistant' })
-	).toBeVisible();
+	await page.locator('.modal-panel .menu-item', { hasText: 'Review with the Assistant' }).click();
+
+	// The review modal keeps keyboard focus inside it both ways, its level
+	// radios counting as one stop, and Escape closes it.
+	const review = page.getByRole('dialog', { name: 'Review with the Assistant' });
+	await expect(review).toBeVisible();
+	// Start from the last level, so Shift+Tab has the rest of the group behind it.
+	await review.getByRole('radio').last().check();
+	const focusInside = () =>
+		page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'));
+	for (const key of ['Shift+Tab', 'Tab']) {
+		for (let i = 0; i < 12; i++) {
+			await page.keyboard.press(key);
+			expect(await focusInside()).toBe(true);
+		}
+	}
 	await page.keyboard.press('Escape');
+	await expect(review).toHaveCount(0);
 
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
 	await page.getByRole('button', { name: 'Mute for this story' }).click();
