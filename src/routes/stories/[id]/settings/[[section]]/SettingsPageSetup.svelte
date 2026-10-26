@@ -261,7 +261,7 @@
 		</div>
 		<div class="settings-actions">
 			{#if form?.action === 'pagesetup' && form.saved}
-				<span class="field-hint" role="status" style="color:var(--status-final);">Saved.</span>
+				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Saved.</span>
 			{/if}
 		</div>
 	</form>

@@ -472,7 +472,7 @@
 		justify-content: center;
 		width: 1.2em;
 		flex: none;
-		color: var(--accent);
+		color: var(--accent-ink);
 		font-weight: 700;
 	}
 	.md-menu-ic {
@@ -492,6 +492,6 @@
 	}
 	.md-coauthor:hover,
 	.md-coauthor.is-active {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 </style>

@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { deserialize } from '$app/forms';
 	import { closePalette, openPalette, palette } from '$lib/palette.svelte';
+	import { modal } from '$lib/modal';
 	import { focusMode } from '$lib/focus-mode.svelte';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import { openReviewModal } from '$lib/review-modal.svelte';
@@ -298,6 +299,8 @@
 
 	function search() {
 		clearTimeout(searchTimer);
+		// The matching commands change as you type, so the highlight starts over.
+		selected = 0;
 		const value = query.trim();
 		if (value === '') {
 			searchSeq++;
@@ -328,12 +331,9 @@
 	}
 
 	function onPaletteKey(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+		if (event.key === 'ArrowDown') {
 			event.preventDefault();
-			closePalette();
-		} else if (event.key === 'ArrowDown') {
-			event.preventDefault();
-			selected = Math.min(selected + 1, items.length - 1);
+			selected = Math.max(Math.min(selected + 1, items.length - 1), 0);
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
 			selected = Math.max(selected - 1, 0);
@@ -370,7 +370,13 @@
 			if (event.target === event.currentTarget) closePalette();
 		}}
 	>
-		<div class="modal-panel modal-lg" role="dialog" aria-label="Command palette">
+		<div
+			class="modal-panel modal-lg"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Command palette"
+			use:modal={{ close: closePalette, initialFocus: '.modal-search' }}
+		>
 			<div class="modal-head searching">
 				<input
 					bind:this={inputEl}
@@ -381,15 +387,27 @@
 					type="text"
 					placeholder="Search, or type a command..."
 					aria-label="Search everything"
+					role="combobox"
+					aria-expanded="true"
+					aria-controls="palette-results"
+					aria-activedescendant={items.length > 0 ? `palette-option-${selected}` : undefined}
 				/>
 			</div>
-			<div class="modal-body rows" role="listbox" aria-label="Results" bind:this={listEl}>
+			<div
+				class="modal-body rows"
+				id="palette-results"
+				role="listbox"
+				aria-label="Results"
+				bind:this={listEl}
+			>
 				{#each items as item, index (index)}
 					<button
 						class="menu-item"
 						class:active={index === selected}
+						id="palette-option-{index}"
 						role="option"
 						aria-selected={index === selected}
+						tabindex="-1"
 						type="button"
 						onmouseenter={() => (selected = index)}
 						onclick={() => void item.run()}

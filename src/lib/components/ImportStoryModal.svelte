@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { modal } from '$lib/modal';
 	import { enhance } from '$lib/enhance';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -126,13 +127,6 @@
 		dragOver = false;
 		takeFile(event.dataTransfer?.files?.[0]);
 	}
-
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onClose();
-		}
-	}
 </script>
 
 {#if universe}
@@ -142,9 +136,14 @@
 		onclick={(event) => {
 			if (event.target === event.currentTarget) onClose();
 		}}
-		onkeydown={onKeydown}
 	>
-		<div class="modal-panel modal-lg" role="dialog" aria-modal="true" aria-label="Import a story">
+		<div
+			class="modal-panel modal-lg"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Import a story"
+			use:modal={{ close: onClose }}
+		>
 			<div class="modal-head">
 				<div class="modal-head-main">
 					<h2 class="modal-title">Import a story</h2>

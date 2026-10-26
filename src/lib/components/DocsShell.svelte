@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import AppBar from './AppBar.svelte';
 	import { helpFrom } from '$lib/help.svelte';
-	import { pageCrumb, type Crumb } from '$lib/chrome';
+	import { pageCrumb, type Crumb, LEFT_PANE_LABEL } from '$lib/chrome';
 	import type { DocTopic } from '$lib/docs';
 
 	// Help is one presentation: a page inside the chrome, with the article list
@@ -34,7 +34,7 @@
 <div class="app">
 	<AppBar {crumbs} helpTopic={active?.slug} helpLabel="Codex" />
 	<div class="body no-right">
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="side-head">
 				<div>
 					<div class="side-head-title">Help</div>
@@ -53,9 +53,9 @@
 					{/each}
 				</nav>
 				{#if back || page.data.user}
-					<div class="side-nav-label">Back to your work</div>
+					<div class="side-nav-label" id="docs-back-label">Back to your work</div>
 					<!-- eslint-disable svelte/no-navigation-without-resolve (the remembered location is an app path) -->
-					<nav class="side-nav">
+					<nav class="side-nav" aria-labelledby="docs-back-label">
 						{#if back}<a href={back}>Where you were</a>{/if}
 						{#if page.data.user}<a href={resolve('/')}>Your library</a>{/if}
 					</nav>
@@ -63,7 +63,7 @@
 				{/if}
 			</div>
 		</aside>
-		<main class="pane center">
+		<main id="main" class="pane center">
 			<div class="docs-body">
 				{@render children()}
 			</div>

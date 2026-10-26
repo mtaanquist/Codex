@@ -946,7 +946,7 @@
 	}
 	.msg.user {
 		align-self: flex-end;
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--accent-contrast);
 		padding: 9px 13px;
 		border-radius: 13px 13px 4px 13px;
@@ -1107,7 +1107,7 @@
 		cursor: pointer;
 	}
 	.msg-insert:hover {
-		color: var(--accent);
+		color: var(--accent-ink);
 		text-decoration: underline;
 	}
 	.msg-ref {

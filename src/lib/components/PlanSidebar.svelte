@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { tick, untrack } from 'svelte';
+	import { LEFT_PANE_LABEL } from '$lib/chrome';
 	import Icon from './Icon.svelte';
+	import FormStatus from './FormStatus.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import EntityBadge from './EntityBadge.svelte';
-	import { CATEGORY_COLORS } from '$lib/entity-color';
 	import ModeSwitcher from './ModeSwitcher.svelte';
 
 	// A character or place row: its category colour plus any per-entity badge
@@ -29,6 +31,7 @@
 		reviewHref,
 		modeNote,
 		insightsHref,
+		categoriesHref,
 		boardHref,
 		boardActive = false,
 		boardLabel = 'Scene board',
@@ -57,12 +60,19 @@
 		// Universe scope only: insights covers the whole universe, so it sits
 		// at the foot of the sidebar rather than beside a single story.
 		insightsHref?: string;
+		// The universe settings section where categories are made and edited.
+		categoriesHref: string;
 		// Returns to the board after something else filled the centre: the
 		// scene board at story scope, the story board at universe scope.
 		boardHref?: string;
 		boardActive?: boolean;
 		boardLabel?: string;
-		form: { kind?: string; message?: string } | null;
+		form: {
+			kind?: string;
+			message?: string;
+			categoryId?: string;
+			memberKind?: string;
+		} | null;
 		// Universe entities not in the story yet: browsable below the members,
 		// and picking one in the select declares it a member. Story scope only.
 		availableCharacters?: Entity[];
@@ -91,6 +101,47 @@
 	const visibleAvailablePlaces = $derived(
 		q === '' ? availablePlaces : availablePlaces.filter((row) => nameMatch(row.name))
 	);
+	// Each group shows one "Add" row; picking it swaps in that group's field.
+	// Escape or opening another row closes it. It does not close on blur:
+	// that would shift the rows under a click on the next one. One open at a
+	// time, keyed 'character', 'place', 'lore:<categoryId>' or
+	// 'member:<kind>'.
+	function keyOf(result: typeof form): string | null {
+		if (!result?.message) return null;
+		if (result.kind === 'lore') return `lore:${result.categoryId}`;
+		if (result.kind === 'member') return `member:${result.memberKind}`;
+		return result.kind ?? null;
+	}
+	// A failed submit reloads the page; open the form it came from so the
+	// message renders beside the field. Closing that form drops the message.
+	const failedKey = untrack(() => keyOf(form));
+	let adding = $state<string | null>(failedKey);
+	let errorKey = $state<string | null>(failedKey);
+
+	function errorFor(key: string): string | null {
+		return errorKey === key ? (form?.message ?? null) : null;
+	}
+	// A lore failure for a category deleted in the meantime has no row to sit on.
+	const orphanError = $derived(
+		form?.message && form.kind === 'lore' && !categories.some((c) => c.id === form.categoryId)
+			? form.message
+			: null
+	);
+
+	// Escape closes the field and puts focus back on its Add row.
+	async function closeAdd(key: string) {
+		adding = null;
+		errorKey = null;
+		await tick();
+		document.querySelector<HTMLElement>(`[data-add="${key}"]`)?.focus();
+	}
+	function onAddKeydown(event: KeyboardEvent, key: string) {
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			closeAdd(key);
+		}
+	}
+
 	const anyMatch = $derived(
 		q === '' ||
 			visibleCharacters.length > 0 ||
@@ -101,7 +152,85 @@
 	);
 </script>
 
-<aside class="pane left">
+{#snippet addToggle(key: string, label: string)}
+	<button
+		class="outline-add add-row"
+		type="button"
+		data-add={key}
+		onclick={() => {
+			adding = key;
+			errorKey = null;
+		}}
+	>
+		<Icon name="plus" size={13} />
+		{label}
+	</button>
+{/snippet}
+
+{#snippet addName(
+	key: string,
+	action: string,
+	label: string,
+	fieldLabel: string,
+	placeholder: string,
+	categoryId?: string
+)}
+	{#if adding === key}
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions (catches Escape bubbling from the field and its button) -->
+		<form method="POST" {action} class="new-entity" onkeydown={(event) => onAddKeydown(event, key)}>
+			{#if categoryId}<input type="hidden" name="categoryId" value={categoryId} />{/if}
+			<label class="visually-hidden" for="add-{key}">{fieldLabel}</label>
+			<!-- svelte-ignore a11y_autofocus (the field only appears on the Add row's click) -->
+			<input
+				id="add-{key}"
+				class="input"
+				type="text"
+				name="name"
+				{placeholder}
+				required
+				autofocus
+			/>
+			<FormStatus error={errorFor(key)} block />
+			<button class="outline-add" type="submit">
+				<Icon name="plus" size={13} />
+				{label}
+			</button>
+		</form>
+	{:else}
+		{@render addToggle(key, label)}
+	{/if}
+{/snippet}
+
+{#snippet addMember(kind: 'character' | 'place', candidates: Entity[])}
+	{@const key = `member:${kind}`}
+	{#if adding === key}
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions (catches Escape bubbling from the field and its button) -->
+		<form
+			method="POST"
+			action="?/declareMember"
+			class="new-entity"
+			onkeydown={(event) => onAddKeydown(event, key)}
+		>
+			<input type="hidden" name="kind" value={kind} />
+			<label class="visually-hidden" for="add-{key}">A {kind} from the universe</label>
+			<!-- svelte-ignore a11y_autofocus (the field only appears on the Add row's click) -->
+			<select id="add-{key}" class="select" name="entityId" required autofocus>
+				<option value="">From the universe...</option>
+				{#each candidates as candidate (candidate.id)}
+					<option value={candidate.id}>{candidate.name}</option>
+				{/each}
+			</select>
+			<FormStatus error={errorFor(key)} block />
+			<button class="outline-add" type="submit">
+				<Icon name="plus" size={13} /> Add to this story
+			</button>
+		</form>
+	{:else}
+		{@render addToggle(key, `Add a ${kind} from the universe`)}
+	{/if}
+{/snippet}
+
+<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 	<div class="left-head">
 		<ModeSwitcher active="plan" hrefs={{ write: writeHref, review: reviewHref }} note={modeNote} />
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
@@ -136,15 +265,13 @@
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
 		{#if q === ''}
-			<form method="POST" action="?/createCharacter" class="new-entity">
-				{#if form?.kind === 'character' && form.message}
-					<p class="error" role="alert">{form.message}</p>
-				{/if}
-				<input type="text" name="name" placeholder="New character name" required />
-				<button class="outline-add" type="submit">
-					<Icon name="plus" size={13} /> Add character
-				</button>
-			</form>
+			{@render addName(
+				'character',
+				'?/createCharacter',
+				'Add character',
+				'Character name',
+				'New character name'
+			)}
 		{/if}
 		{#if visibleAvailableCharacters.length > 0}
 			<button
@@ -178,18 +305,7 @@
 				{/each}
 			{/if}
 			{#if q === ''}
-				<form method="POST" action="?/declareMember" class="new-entity">
-					<input type="hidden" name="kind" value="character" />
-					<select name="entityId" aria-label="Add an existing character" required>
-						<option value="">From the universe...</option>
-						{#each availableCharacters as candidate (candidate.id)}
-							<option value={candidate.id}>{candidate.name}</option>
-						{/each}
-					</select>
-					<button class="outline-add" type="submit">
-						<Icon name="plus" size={13} /> Add to this story
-					</button>
-				</form>
+				{@render addMember('character', availableCharacters)}
 			{/if}
 		{/if}
 
@@ -215,15 +331,7 @@
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
 		{#if q === ''}
-			<form method="POST" action="?/createPlace" class="new-entity">
-				{#if form?.kind === 'place' && form.message}
-					<p class="error" role="alert">{form.message}</p>
-				{/if}
-				<input type="text" name="name" placeholder="New place name" required />
-				<button class="outline-add" type="submit">
-					<Icon name="plus" size={13} /> Add place
-				</button>
-			</form>
+			{@render addName('place', '?/createPlace', 'Add place', 'Place name', 'New place name')}
 		{/if}
 		{#if visibleAvailablePlaces.length > 0}
 			<button
@@ -257,22 +365,8 @@
 				{/each}
 			{/if}
 			{#if q === ''}
-				<form method="POST" action="?/declareMember" class="new-entity">
-					<input type="hidden" name="kind" value="place" />
-					<select name="entityId" aria-label="Add an existing place" required>
-						<option value="">From the universe...</option>
-						{#each availablePlaces as candidate (candidate.id)}
-							<option value={candidate.id}>{candidate.name}</option>
-						{/each}
-					</select>
-					<button class="outline-add" type="submit">
-						<Icon name="plus" size={13} /> Add to this story
-					</button>
-				</form>
+				{@render addMember('place', availablePlaces)}
 			{/if}
-		{/if}
-		{#if form?.kind === 'member' && form.message}
-			<p class="error new-entity" role="alert">{form.message}</p>
 		{/if}
 
 		{#each categories as category (category.id)}
@@ -306,46 +400,36 @@
 					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
 				{#if q === ''}
-					<form method="POST" action="?/createLoreEntry" class="new-entity">
-						<input type="hidden" name="categoryId" value={category.id} />
-						<input type="text" name="name" placeholder="New {category.name} entry" required />
-						<button class="outline-add" type="submit">
-							<Icon name="plus" size={13} /> Add entry
-						</button>
-					</form>
+					{@render addName(
+						`lore:${category.id}`,
+						'?/createLoreEntry',
+						`Add ${category.name} entry`,
+						`${category.name} entry name`,
+						`New ${category.name} entry`,
+						category.id
+					)}
 				{/if}
 			{/if}
 		{/each}
-		{#if form?.kind === 'lore' && form.message}
-			<p class="error new-entity" role="alert">{form.message}</p>
-		{/if}
 
 		{#if !anyMatch}
 			<div class="empty-state tight">
 				<p class="empty-state-text">Nothing matches.</p>
 			</div>
 		{/if}
+		<FormStatus error={orphanError} block />
 		{#if q === ''}
-			<form method="POST" action="?/createCategory" class="new-entity">
-				{#if form?.kind === 'category' && form.message}
-					<p class="error" role="alert">{form.message}</p>
-				{/if}
-				<input type="text" name="name" placeholder="New category name" required />
-				<select name="color">
-					<option value="">No colour</option>
-					{#each CATEGORY_COLORS as choice (choice.token)}
-						<option value={choice.token}>{choice.label}</option>
-					{/each}
-				</select>
-				<button class="outline-add" type="submit">
-					<Icon name="plus" size={13} /> Add category
-				</button>
-			</form>
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+			<a class="outline-add manage-categories" href={categoriesHref}>
+				<Icon name="gear" size={13} /> Manage categories
+			</a>
 		{/if}
 		{#if insightsHref}
-			<div class="side-nav-label">Across the universe</div>
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
-			<nav class="side-nav"><a href={insightsHref}>Insights</a></nav>
+			<div class="side-nav-label" id="plan-across-label">Across the universe</div>
+			<nav class="side-nav" aria-labelledby="plan-across-label">
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
+				<a href={insightsHref}>Insights</a>
+			</nav>
 		{/if}
 	</div>
 </aside>
@@ -362,26 +446,12 @@
 		flex-direction: column;
 		gap: 6px;
 	}
-	.new-entity input,
-	.new-entity select {
-		background: var(--bg-inset);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm, 6px);
-		color: var(--text);
-		font-size: 13px;
-		padding: 7px 9px;
-		outline: none;
+	.add-row {
+		margin-top: 4px;
 	}
-	.new-entity input:focus {
-		border-color: var(--accent-line);
-	}
-	.new-entity input::placeholder {
-		color: var(--text-faint);
-	}
-	.error {
-		color: var(--danger);
-		font-size: 12.5px;
-		margin: 0;
+	.manage-categories {
+		margin-top: 14px;
+		text-decoration: none;
 	}
 	.board-row {
 		display: flex;

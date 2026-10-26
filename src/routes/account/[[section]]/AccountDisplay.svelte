@@ -4,7 +4,9 @@
 	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
+	import { LIBRARY_VIEWS } from '$lib/dashboard';
 	import { applyAppearance } from '$lib/appearance-apply';
+	import { accentProblem } from '$lib/contrast';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -14,14 +16,16 @@
 
 	// Appearance preview: local state seeded from the saved preferences, applied
 	// live as the user edits. Saving persists it; the layout re-applies on load.
-	// svelte-ignore state_referenced_locally
-	let theme = $state(data.preferences.theme);
+	// Follows the saved value, so a pick from the account menu's theme picker
+	// shows here too; editing the select overrides it until the save lands.
+	let theme = $derived(data.preferences.theme);
 	// svelte-ignore state_referenced_locally
 	let systemLightTheme = $state(data.preferences.systemLightTheme);
 	// svelte-ignore state_referenced_locally
 	let systemDarkTheme = $state(data.preferences.systemDarkTheme);
 	// svelte-ignore state_referenced_locally
 	let accent = $state(data.preferences.accent);
+	const accentWarning = $derived(accentProblem(accent));
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
 	});
@@ -39,7 +43,9 @@
 <div class="admin-head">
 	<p class="admin-eyebrow">Account</p>
 	<h1 class="admin-title">Display</h1>
-	<p class="admin-lede">The colour theme and accent used across the app.</p>
+	<p class="admin-lede">
+		The colour theme and accent used across the app, and how your library looks.
+	</p>
 </div>
 
 <div class="admin-block">
@@ -135,12 +141,58 @@
 				<p class="field-hint">
 					Tints buttons, links, and highlights. Pick a preset, or choose any colour.
 				</p>
+				{#if accentWarning}
+					<p class="field-hint" role="status">
+						{accentWarning === 'too-light'
+							? 'This colour is too light for button text and links to read clearly. Choose a darker one.'
+							: 'This colour is too dark to read in the dark theme. Choose a lighter one.'}
+					</p>
+				{/if}
 			</div>
 
 			<div class="settings-actions">
 				<FormStatus
 					error={form?.scope === 'appearance' && form.message ? form.message : null}
 					success={form?.scope === 'appearance' && form.saved ? 'Saved.' : null}
+				/>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div class="admin-block">
+	<div class="admin-block-head">
+		<h2 class="admin-block-title">Library</h2>
+		<p class="admin-block-sub">How the library page shows your stories.</p>
+	</div>
+	<div class="settings-group">
+		<form
+			method="POST"
+			action="?/saveLibraryView"
+			use:enhance={autosaveSubmit}
+			onchange={autosubmitForm}
+		>
+			<div class="field" style="margin-bottom:0;">
+				<label for="library-view">Library view</label>
+				<select
+					id="library-view"
+					class="select"
+					name="libraryView"
+					value={data.preferences.libraryView}
+				>
+					{#each LIBRARY_VIEWS as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+				<p class="field-hint">
+					Covers shows each story as a book cover. No covers shows the same cards without the cover.
+					Table lists your stories in rows. You can also switch on the library page.
+				</p>
+			</div>
+			<div class="settings-actions">
+				<FormStatus
+					error={form?.scope === 'library' && form.message ? form.message : null}
+					success={form?.scope === 'library' && form.saved ? 'Saved.' : null}
 				/>
 			</div>
 		</form>

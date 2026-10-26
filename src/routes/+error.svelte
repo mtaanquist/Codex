@@ -24,7 +24,7 @@
 {#if page.data.user}
 	<div class="page-shell">
 		<AppBar crumbs={[libraryCrumb(), pageCrumb(title)]} />
-		<main class="page-body">
+		<main id="main" class="page-body">
 			<div class="page-container">
 				<div class="page-header">
 					<h1 class="page-title">{title}</h1>

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 // Renaming an entity offers to sweep the old name out of the prose: the
 // banner counts what it will touch, Replace rewrites the scenes, and the
@@ -35,8 +36,7 @@ test('a rename offers to replace the old name in the prose', async ({ page }) =>
 
 	// Create the character, then rename it; the banner offers the sweep.
 	await page.getByRole('link', { name: 'Plan' }).click();
-	await page.getByPlaceholder('New character name').fill('Veyra');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Veyra');
 	await expect(page).toHaveURL(/entity=/);
 	await page.getByPlaceholder('Name', { exact: true }).fill('Maren');
 	const offer = page.locator('.rename-offer');

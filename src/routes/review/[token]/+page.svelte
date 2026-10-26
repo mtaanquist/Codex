@@ -39,7 +39,7 @@
 		/>
 	</div>
 {:else}
-	<main class="review-note">
+	<main id="main" class="review-note">
 		{#if data.state === 'unknown'}
 			<h1>This link does not work</h1>
 			<p>Check that the whole link was copied, or ask the author to send a new one.</p>
@@ -126,7 +126,7 @@
 	.join-go {
 		align-self: flex-start;
 		border: 0;
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--accent-contrast);
 		font-weight: 600;
 		font-size: 14px;

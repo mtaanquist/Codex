@@ -84,7 +84,7 @@
 		</div>
 		<div class="settings-actions">
 			{#if form?.action === 'update' && form.saved}
-				<span class="field-hint" role="status" style="color:var(--status-final);">Saved.</span>
+				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Saved.</span>
 			{/if}
 			<button class="btn btn-primary" type="submit">Save</button>
 		</div>
