@@ -42,6 +42,12 @@ type SavedAppearance = {
 	systemDarkTheme: ConcreteTheme;
 };
 
+// Saves run one after another, so the last pick is the one the account keeps,
+// and only the last refreshes the page data (an earlier refresh would put its
+// own choice back on screen while a later save is still on its way).
+let saveQueue: Promise<unknown> = Promise.resolve();
+let latestSave = 0;
+
 // Applies a theme choice. A signed-in viewer (`saved` is their stored
 // appearance) gets it written to the account, then the page data refreshes so
 // the layout and the account Display section agree; without the account write
@@ -50,16 +56,19 @@ type SavedAppearance = {
 export async function setTheme(choice: Theme, saved: SavedAppearance | null): Promise<void> {
 	if (saved) {
 		applyAppearance(choice, saved.accent, saved.systemLightTheme, saved.systemDarkTheme);
-		try {
-			await fetch('/api/appearance', {
+		const mine = ++latestSave;
+		const save = saveQueue.then(() =>
+			fetch('/api/appearance', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ theme: choice })
-			});
-		} catch {
-			/* the optimistic change stands; it just will not survive a reload */
-		}
-		await invalidateAll();
+			}).catch(() => {
+				/* a failed save is undone by the refresh below: the account wins */
+			})
+		);
+		saveQueue = save;
+		await save;
+		if (mine === latestSave) await invalidateAll();
 		return;
 	}
 	applyAppearance(

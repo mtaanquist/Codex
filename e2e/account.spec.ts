@@ -99,6 +99,11 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await expect(page).toHaveURL(/\/account\/display$/);
 	// The account-menu choice above is the same setting.
 	await expect(page.getByLabel('Theme', { exact: true })).toHaveValue('system');
+	// A pick from the account menu shows in the open Display section too.
+	await avatar.click();
+	await page.getByRole('menuitemradio', { name: 'Warm' }).click();
+	await expect(page.locator('#theme-pref')).toHaveValue('warm');
+	await page.keyboard.press('Escape');
 	await page.getByLabel('Theme', { exact: true }).selectOption('dark');
 	await expect(page.getByRole('status')).toContainText('Saved');
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

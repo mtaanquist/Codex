@@ -15,8 +15,9 @@
 
 	// Appearance preview: local state seeded from the saved preferences, applied
 	// live as the user edits. Saving persists it; the layout re-applies on load.
-	// svelte-ignore state_referenced_locally
-	let theme = $state(data.preferences.theme);
+	// Follows the saved value, so a pick from the account menu's theme picker
+	// shows here too; editing the select overrides it until the save lands.
+	let theme = $derived(data.preferences.theme);
 	// svelte-ignore state_referenced_locally
 	let systemLightTheme = $state(data.preferences.systemLightTheme);
 	// svelte-ignore state_referenced_locally
@@ -26,11 +27,6 @@
 	const accentWarning = $derived(accentProblem(accent));
 	$effect(() => {
 		if (browser) applyAppearance(theme, accent, systemLightTheme, systemDarkTheme);
-	});
-	// The account menu's theme picker saves the same setting while this section
-	// is mounted; follow it so the select shows what is in effect.
-	$effect(() => {
-		theme = data.preferences.theme;
 	});
 
 	// The accent swatches set state rather than a form value, so saving waits a

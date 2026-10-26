@@ -28,16 +28,30 @@
 	let picked = $state<Theme | null>(null);
 	const current = $derived(picked ?? (saved ? saved.theme : deviceTheme));
 
-	// The palette on screen, for the bar button's icon.
-	let shown = $state<string>(browser ? (document.documentElement.dataset.theme ?? 'dark') : 'dark');
+	// The palette on screen, for the bar button's icon. It changes under us too
+	// (the system flips while following it, the layout re-applies the account).
+	let shown = $state('dark');
+	$effect(() => {
+		const root = document.documentElement;
+		const read = () => (shown = root.dataset.theme ?? 'dark');
+		read();
+		const watcher = new MutationObserver(read);
+		watcher.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+		return () => watcher.disconnect();
+	});
 
+	let latestPick = 0;
 	async function choose(choice: Theme) {
+		const mine = ++latestPick;
 		picked = choice;
 		if (!saved) deviceTheme = choice;
-		const done = setTheme(choice, saved);
-		shown = document.documentElement.dataset.theme ?? shown;
-		await done;
-		picked = null;
+		try {
+			await setTheme(choice, saved);
+		} catch {
+			/* offline: the page data stays as it was, and so does the choice shown */
+		} finally {
+			if (mine === latestPick) picked = null;
+		}
 	}
 
 	let open = $state(false);
