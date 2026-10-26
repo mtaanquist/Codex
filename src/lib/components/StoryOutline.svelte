@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -450,10 +451,12 @@
 								<form
 									method="POST"
 									action="?/destroyScene"
-									onsubmit={(e) => {
-										if (!confirm('Delete this scene forever? It cannot be restored after this.'))
-											e.preventDefault();
-									}}
+									onsubmit={confirmSubmit({
+										title: 'Delete this scene forever?',
+										body: 'It cannot be restored after this.',
+										confirmLabel: 'Delete scene',
+										danger: true
+									})}
 								>
 									<input type="hidden" name="sceneId" value={scene.id} />
 									{@render openSceneField()}

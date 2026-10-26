@@ -6,8 +6,8 @@ import { consumeToken, reserveToken, revokeTokens } from './tokens';
 import { isUniqueViolation } from './db-errors.ts';
 import { EMAIL_RE } from './signup.ts';
 import { MAX_DISPLAY_NAME } from './validation.ts';
+import { MIN_PASSWORD } from '$lib/password';
 
-const MIN_PASSWORD = 8;
 const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
 
 export type AccountResult = { ok: true } | { ok: false; reason: string };

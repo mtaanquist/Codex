@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -542,14 +543,12 @@
 					<form
 						method="POST"
 						action="?/delete"
-						onsubmit={(e) => {
-							if (
-								!confirm(
-									`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
-								)
-							)
-								e.preventDefault();
-						}}
+						onsubmit={confirmSubmit({
+							title: 'Delete this universe and everything in it?',
+							body: `You can restore it from the library for ${data.trashDays} days.`,
+							confirmLabel: 'Delete universe',
+							danger: true
+						})}
 					>
 						<button class="btn btn-danger" type="submit">Delete universe</button>
 					</form>

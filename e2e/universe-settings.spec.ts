@@ -2,13 +2,13 @@ import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu } from './library';
 import { addEntity } from './plan';
+import { confirmPrompt } from './confirm';
 
 // The universe settings page: contents tiles, the category manager, the
 // history panel, the export download, and the trash round trip.
 test('universe settings: contents, categories, history, export, and the trash', async ({
 	page
 }) => {
-	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
@@ -84,6 +84,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	// The trash round trip: delete, restore from the library, delete forever.
 	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
+	await confirmPrompt(page, 'Delete universe');
 	await expect(page).toHaveURL('/');
 	const trashRow = page.locator('.trash-uni', { hasText: name });
 	await expect(trashRow).toBeVisible();
@@ -96,11 +97,13 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	await gotoReady(page, `/universes/settle-${stamp}`);
 	await page.getByRole('link', { name: 'Import and export' }).click();
 	await page.getByRole('button', { name: 'Delete universe' }).click();
+	await confirmPrompt(page, 'Delete universe');
 	await expect(page).toHaveURL('/');
 	await page
 		.locator('.trash-uni', { hasText: name })
 		.getByRole('button', { name: 'Delete forever' })
 		.click();
+	await confirmPrompt(page, 'Delete forever');
 	await expect(page.locator('.trash-uni', { hasText: name })).toHaveCount(0);
 	const gone = await gotoReady(page, `/universes/settle-${stamp}`);
 	expect(gone!.status()).toBe(404);

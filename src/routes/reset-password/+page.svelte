@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { MIN_PASSWORD } from '$lib/password';
 	import { resolve } from '$app/paths';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -31,9 +32,13 @@
 					type="password"
 					name="password"
 					required
-					minlength="8"
+					minlength={MIN_PASSWORD}
+					aria-describedby="reset-password-hint"
 					autocomplete="new-password"
 				/>
+				<span class="field-hint" id="reset-password-hint">
+					At least {MIN_PASSWORD} characters.
+				</span>
 			</div>
 			<div class="auth-actions">
 				<button class="btn btn-primary" type="submit">Update password</button>

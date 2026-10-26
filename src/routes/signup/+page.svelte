@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { MIN_PASSWORD } from '$lib/password';
 	import { resolve } from '$app/paths';
 	import AuthShell from '$lib/components/AuthShell.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -81,9 +82,13 @@
 					type="password"
 					name="password"
 					required
-					minlength="8"
+					minlength={MIN_PASSWORD}
+					aria-describedby="signup-password-hint"
 					autocomplete="new-password"
 				/>
+				<span class="field-hint" id="signup-password-hint">
+					At least {MIN_PASSWORD} characters.
+				</span>
 			</div>
 			{#if data.mode !== 'open'}
 				<div class="field">

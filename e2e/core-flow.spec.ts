@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { addEntity } from './plan';
+import { confirmPrompt } from './confirm';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	// A long journey that waits on the async worker twice; the default 30s
@@ -83,6 +84,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Focus mode hides the chrome; Esc brings it back. It lives in the View
 	// menu on the editor's formatting bar, so it needs a scene open.
+	// The trigger names the view in effect for a screen reader.
+	await expect(page.getByRole('button', { name: 'View: Edit' })).toBeVisible();
 	await page.getByTitle('Switch view').click();
 	await page.getByRole('menuitem', { name: 'Focus' }).click();
 	await expect(page.locator('.appbar')).toBeHidden();
@@ -735,8 +738,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Deleting a story moves it to the library's deleted list and lands back
 	// on the universe; restoring it brings it back under its universe.
 	await gotoReady(page, `${proseSceneUrl.split('?')[0]}/settings/danger`);
-	page.once('dialog', (dialog) => dialog.accept());
 	await page.getByRole('button', { name: 'Delete story' }).click();
+	await confirmPrompt(page, 'Delete story');
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
 	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
 	await page.getByRole('link', { name: 'Codex, your library' }).click();

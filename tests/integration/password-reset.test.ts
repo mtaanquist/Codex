@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
+import { MIN_PASSWORD } from '../../src/lib/password';
 import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import { requestPasswordReset, resetPassword } from '../../src/lib/server/password-reset';
@@ -95,6 +96,7 @@ describe('resetPassword', () => {
 	it('refuses a too-short password without consuming the token', async () => {
 		const token = await sentReset();
 		expect((await resetPassword(db, token, 'short')).ok).toBe(false);
+		expect((await resetPassword(db, token, 'x'.repeat(MIN_PASSWORD - 1))).ok).toBe(false);
 		// The link still works for a valid attempt afterwards.
 		expect((await resetPassword(db, token, 'a-good-password')).ok).toBe(true);
 	});
