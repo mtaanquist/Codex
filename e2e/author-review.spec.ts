@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { confirmPrompt } from './confirm';
 
 // #301: the author opens their own story in review mode and leaves their own
 // comment and a suggested edit, then accepts the suggestion - the same surface
 // guests use, now driven by the logged-in author on the three-column workspace.
 test('the author can comment and suggest in their own review mode', async ({ page }) => {
 	// Retracting a comment asks for confirmation.
-	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await pickFromLibraryMenu(page, 'New universe');
@@ -60,6 +60,7 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 
 	// The author retracts their own comment from its card.
 	await card.getByRole('button', { name: 'Delete your comment' }).click();
+	await confirmPrompt(page, 'Delete comment');
 	await expect(card).toHaveCount(0);
 
 	// Select again and suggest a replacement.
@@ -113,7 +114,6 @@ test('the author can comment and suggest in their own review mode', async ({ pag
 // Accepting the last note in a scene must not yank the view to the next active
 // scene: the author should stay on the change to keep editing it.
 test('accepting the last suggestion in a scene keeps the view on that scene', async ({ page }) => {
-	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await pickFromLibraryMenu(page, 'New universe');
@@ -184,7 +184,6 @@ test('accepting the last suggestion in a scene keeps the view on that scene', as
 // text is folded into the live editor the moment the server confirms it, so an
 // autosave of the in-flight typing can never revert the accept.
 test('typing immediately after an accept keeps the accepted text', async ({ page }) => {
-	page.on('dialog', (dialog) => dialog.accept());
 	await gotoReady(page, '/');
 	const stamp = Date.now();
 	await pickFromLibraryMenu(page, 'New universe');

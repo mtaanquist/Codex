@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	let { trashDays }: { trashDays: number } = $props();
 </script>
 
@@ -14,10 +15,12 @@
 	<form
 		method="POST"
 		action="?/delete"
-		onsubmit={(e) => {
-			if (!confirm(`Delete this story? You can restore it from the library for ${trashDays} days.`))
-				e.preventDefault();
-		}}
+		onsubmit={confirmSubmit({
+			title: 'Delete this story?',
+			body: `You can restore it from the library for ${trashDays} days.`,
+			confirmLabel: 'Delete story',
+			danger: true
+		})}
 	>
 		<div class="settings-actions">
 			<button type="submit" class="btn btn-danger">Delete story</button>

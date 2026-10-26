@@ -441,6 +441,21 @@ own focus return. A search modal keeps focus in its box and drives the
 results with `role="combobox"` and `aria-activedescendant` (the options are
 `tabindex="-1"`). Help is not a modal: it is a page.
 
+Asking before a destructive or irreversible step is `ConfirmDialog`, mounted
+once in the root layout and driven by `$lib/confirm.svelte.ts`: an
+`alertdialog` with a title, an optional line of body, Cancel, and a button
+named by its verb ("Delete scene", never "OK"), red (`.btn-danger`) when the
+step destroys something, in which case Cancel takes the focus. A plain form
+uses `onsubmit={confirmSubmit({...})}` (it holds the submit, asks, then
+submits again with the same button); a form with `use:enhance` passes
+`confirmEnhance({...})` as its enhance callback, since `enhance` does not
+honour a prevented submit; anything else awaits `askConfirm({...})`. Never
+call the browser's `window.confirm`. A menu whose item opens the prompt stays
+open underneath it (`dismiss` ignores clicks on the prompt, marked
+`data-over-menus`, and Escape inside any modal above it), so the form inside
+the menu is still there to submit. The prompt has no backdrop click: it waits
+for Cancel, Esc or the verb, and it cancels itself when the page navigates.
+
 A modal that edits fields belonging to a form on the page behind it renders
 inside that form, so its controls submit with it (`RoleTuningModal`). Where
 the page saves on change, the modal does not: a slider passes through dozens

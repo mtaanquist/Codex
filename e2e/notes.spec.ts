@@ -6,8 +6,6 @@ import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 // note that persists, pin it, and confirm a story note shows under the
 // universe view's reach via the "From the universe" peek.
 test('write, persist, and pin a story note', async ({ page }) => {
-	page.on('dialog', (dialog) => dialog.accept());
-
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();

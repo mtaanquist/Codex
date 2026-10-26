@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { MIN_PASSWORD } from '$lib/password';
 	import { invalidateAll } from '$app/navigation';
 	import { formatDate, formatDateTime } from '$lib/format';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
@@ -174,9 +175,13 @@
 					type="password"
 					name="newPassword"
 					required
-					minlength="8"
+					minlength={MIN_PASSWORD}
+					aria-describedby="new-password-hint"
 					autocomplete="new-password"
 				/>
+				<span class="field-hint" id="new-password-hint">
+					At least {MIN_PASSWORD} characters.
+				</span>
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'password' && form.message}

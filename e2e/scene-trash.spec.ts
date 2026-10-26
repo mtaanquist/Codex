@@ -2,13 +2,12 @@ import { expect, test } from '@playwright/test';
 import { openRowMenu } from './context-menu';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { confirmPrompt } from './confirm';
 
 // Chapter management and the scene trash: rename and reorder chapters from
 // the sidebar, delete a scene into the trash, restore it, delete it forever,
 // and drop a chapter's scenes to the unfiled list.
 test('scene trash and chapter tools', async ({ page }) => {
-	page.on('dialog', (dialog) => dialog.accept());
-
 	await gotoReady(page, '/');
 
 	const stamp = Date.now();
@@ -58,7 +57,18 @@ test('scene trash and chapter tools', async ({ page }) => {
 		.getByRole('menuitem', { name: 'Delete scene' })
 		.click();
 	await page.getByRole('button', { name: 'Deleted scenes' }).click();
-	await page.getByTitle('Delete forever').click();
+	// It asks first, in the app's own prompt: Cancel has the focus, and Esc
+	// backs out with nothing deleted and focus back on the button.
+	const forever = page.getByTitle('Delete forever');
+	await forever.click();
+	const prompt = page.getByRole('alertdialog', { name: 'Delete this scene forever?' });
+	await expect(prompt).toBeVisible();
+	await expect(prompt.getByRole('button', { name: 'Cancel' })).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(prompt).toHaveCount(0);
+	await expect(forever).toBeFocused();
+	await forever.click();
+	await confirmPrompt(page, 'Delete scene');
 	await expect(page.locator('.trash')).toHaveCount(0);
 	await expect(page.locator('.scene-row')).toHaveCount(0);
 
@@ -69,6 +79,7 @@ test('scene trash and chapter tools', async ({ page }) => {
 	)
 		.getByRole('menuitem', { name: 'Delete chapter' })
 		.click();
+	await confirmPrompt(page, 'Delete chapter');
 	await expect(page.locator('.chapter-name', { hasText: 'Act One' })).toHaveCount(0);
 	await expect(page.locator('.unfiled-head .chapter-name')).toHaveText('Unfiled scenes');
 	await expect(page.locator('.scene-row')).toHaveCount(1);
