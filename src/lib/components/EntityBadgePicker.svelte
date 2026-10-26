@@ -36,6 +36,20 @@
 	// svelte-ignore state_referenced_locally
 	let badgeAssetId = $state(initialBadgeAssetId);
 	let menuOpen = $state(false);
+	let trigger = $state<HTMLButtonElement>();
+	let fileInput = $state<HTMLInputElement>();
+	let dialogEl = $state<HTMLDivElement>();
+
+	// Focus moves into the picker on open, onto the colour in effect.
+	$effect(() => {
+		dialogEl?.querySelector<HTMLElement>('.swatch.active, button, a')?.focus();
+	});
+
+	// A choice closes the picker; focus goes back to the badge.
+	function closePicker() {
+		menuOpen = false;
+		trigger?.focus();
+	}
 	// A refused change reopens the menu with the reason, so it is not lost.
 	let error = $state<string | null>(null);
 
@@ -47,7 +61,7 @@
 	async function pickColour(color: string | null) {
 		const previous = badgeColor;
 		badgeColor = color;
-		menuOpen = false;
+		closePicker();
 		error = null;
 		const result = await put(
 			`/api/entities/${entityId}/badge`,
@@ -67,7 +81,7 @@
 		const file = input.files?.[0];
 		input.value = '';
 		if (!file) return;
-		menuOpen = false;
+		closePicker();
 		error = null;
 		const data = new FormData();
 		data.set('file', file);
@@ -82,7 +96,7 @@
 	}
 
 	async function removeImage() {
-		menuOpen = false;
+		closePicker();
 		error = null;
 		const result = await del(
 			`/api/entities/${entityId}/badge`,
@@ -94,11 +108,19 @@
 	}
 </script>
 
-<div class="badge-pick" use:dismiss={{ enabled: menuOpen, close: () => (menuOpen = false) }}>
+<div
+	class="badge-pick"
+	use:dismiss={{
+		enabled: menuOpen,
+		close: () => (menuOpen = false),
+		refocus: () => trigger?.focus()
+	}}
+>
 	<button
+		bind:this={trigger}
 		class="badge-pick-btn"
 		type="button"
-		aria-haspopup="menu"
+		aria-haspopup="dialog"
 		aria-expanded={menuOpen}
 		title="Change the badge colour or image"
 		onclick={() => {
@@ -109,23 +131,20 @@
 		<EntityBadge {name} {badgeColor} {badgeAssetId} {categoryColor} size="lg" />
 	</button>
 	{#if menuOpen}
-		<div class="badge-menu" role="menu">
+		<div class="badge-menu" role="dialog" aria-label="Badge colour and image" bind:this={dialogEl}>
 			{#if error}
 				<div class="badge-error"><FormStatus block {error} /></div>
 			{/if}
 			{#if badgeAssetId}
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-				<a class="badge-menu-item" role="menuitem" href="/assets/{badgeAssetId}" download>
-					Download image
-				</a>
-				<button class="badge-menu-item" type="button" role="menuitem" onclick={removeImage}>
-					Remove image
-				</button>
+				<a class="badge-menu-item" href="/assets/{badgeAssetId}" download> Download image </a>
+				<button class="badge-menu-item" type="button" onclick={removeImage}> Remove image </button>
 			{:else}
 				<div class="badge-swatches">
 					<button
 						class="swatch swatch-default"
 						class:active={!badgeColor}
+						aria-pressed={!badgeColor}
 						type="button"
 						title="Default colour"
 						aria-label="Default colour"
@@ -135,6 +154,7 @@
 						<button
 							class="swatch"
 							class:active={badgeColor === choice.token}
+							aria-pressed={badgeColor === choice.token}
 							type="button"
 							style="background: {choice.token}"
 							title={choice.label}
@@ -144,15 +164,16 @@
 					{/each}
 				</div>
 				{#if assetsConfigured}
-					<label class="badge-menu-item badge-upload">
+					<button class="badge-menu-item" type="button" onclick={() => fileInput?.click()}>
 						Upload image
-						<input
-							type="file"
-							accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-							onchange={uploadImage}
-							hidden
-						/>
-					</label>
+					</button>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+						onchange={uploadImage}
+						hidden
+					/>
 				{/if}
 			{/if}
 		</div>
@@ -238,8 +259,5 @@
 	}
 	.badge-menu-item:hover {
 		background: var(--bg-hover);
-	}
-	.badge-upload {
-		cursor: pointer;
 	}
 </style>

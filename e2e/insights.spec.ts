@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 // The universe Insights view: progress stats and the world heatmap render
 // from a fresh universe's first words.
@@ -37,15 +38,13 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 
 	// A character no scene mentions, for the cold end of the heatmap.
 	await gotoReady(page, `/universes/${universeId}/plan`);
-	await page.getByPlaceholder('New character name').fill('Heimdall');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Heimdall');
 	await expect(page.locator('.ent-row', { hasText: 'Heimdall' })).toBeVisible();
 
 	// A sibling pair, for the relationship web. Wait for Freya to land before
 	// opening the relationship form: its entity list is built from what the page
 	// knows, so getting there first leaves a dropdown with no Freya in it.
-	await page.getByPlaceholder('New character name').fill('Freya');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Freya');
 	await expect(page.locator('.ent-row', { hasText: 'Freya' })).toBeVisible();
 	await page.locator('.ent-row', { hasText: 'Heimdall' }).click();
 	// The editor is keyed on the selected entity, so it remounts when the

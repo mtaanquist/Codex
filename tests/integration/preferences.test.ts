@@ -6,6 +6,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { stories, universes, users } from '../../src/lib/server/db/schema';
 import {
+	saveLibraryView,
 	savePreferences,
 	saveStoryPreferences,
 	storyPreferenceOverrides,
@@ -89,6 +90,29 @@ describe('appearance preferences', () => {
 		const prefs = await userPreferences(db, userId);
 		expect(prefs.theme).toBe('system');
 		expect(prefs.accent).toBe('#5b8cff');
+	});
+});
+
+describe('library view preference', () => {
+	it('defaults to covers and round-trips a saved view', async () => {
+		expect((await userPreferences(db, userId)).libraryView).toBe('covers');
+		expect(await saveLibraryView(db, userId, 'table')).toBe(true);
+		expect((await userPreferences(db, userId)).libraryView).toBe('table');
+	});
+
+	it('refuses an unknown view and leaves the stored one alone', async () => {
+		await saveLibraryView(db, userId, 'compact');
+		expect(await saveLibraryView(db, userId, 'shelves')).toBe(false);
+		expect(await saveLibraryView(db, userId, null)).toBe(false);
+		expect((await userPreferences(db, userId)).libraryView).toBe('compact');
+	});
+
+	it('falls back to covers when a stored value is unrecognised', async () => {
+		await db
+			.update(users)
+			.set({ preferences: { libraryView: 'carousel' } })
+			.where(eq(users.id, userId));
+		expect((await userPreferences(db, userId)).libraryView).toBe('covers');
 	});
 });
 

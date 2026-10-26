@@ -4,7 +4,9 @@
 
 	let { author, size = 26 }: { author: AuthorRef; size?: number } = $props();
 
-	const color = $derived(authorColor(author));
+	// The owner's tile carries white initials, so it takes the darker accent
+	// fill rather than the accent text shade, which is the raw accent in dark.
+	const color = $derived(author.isOwner ? 'var(--accent-fill)' : authorColor(author));
 	const role = $derived(roleLabel(author));
 </script>
 

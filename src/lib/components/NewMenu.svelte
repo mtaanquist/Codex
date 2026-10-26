@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 
 	// One creation control, used by every collection: a button, a popover of
 	// rows, then a rule and the import row, then one line of help. Import is a
@@ -44,18 +45,9 @@
 
 	function choose(item: NewMenuItem) {
 		close();
+		// Focus the trigger first, so a modal the item opens returns focus here.
+		trigger?.focus();
 		item.onSelect?.();
-	}
-
-	let menuEl = $state<HTMLDivElement>();
-
-	function onMenuKey(event: KeyboardEvent) {
-		if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-		const rows = [...(menuEl?.querySelectorAll<HTMLElement>('.menu-item') ?? [])];
-		const at = rows.indexOf(document.activeElement as HTMLElement);
-		event.preventDefault();
-		if (event.key === 'ArrowDown') rows[Math.min(at + 1, rows.length - 1)]?.focus();
-		else rows[Math.max(at - 1, 0)]?.focus();
 	}
 </script>
 
@@ -77,32 +69,39 @@
 		{label}
 		<span class="new-caret"><Icon name="caret" /></span>
 	</button>
-	<!-- eslint-disable svelte/no-navigation-without-resolve (callers resolve every href) -->
-	<div class="popover" role="menu" tabindex="-1" bind:this={menuEl} onkeydown={onMenuKey}>
-		{#each items as item (item.label)}
-			{#if item.href}
-				<a class="menu-item" role="menuitem" href={item.href} onclick={close}>{item.label}</a>
-			{:else}
-				<button class="menu-item" role="menuitem" type="button" onclick={() => choose(item)}>
-					{item.label}
-				</button>
+	{#if open}
+		<!-- eslint-disable svelte/no-navigation-without-resolve (callers resolve every href) -->
+		<div class="popover" role="menu" use:menu={{ close, refocus: () => trigger?.focus() }}>
+			{#each items as item (item.label)}
+				{#if item.href}
+					<a class="menu-item" role="menuitem" href={item.href} onclick={close}>{item.label}</a>
+				{:else}
+					<button class="menu-item" role="menuitem" type="button" onclick={() => choose(item)}>
+						{item.label}
+					</button>
+				{/if}
+			{/each}
+			{#if importItem}
+				<div class="menu-sep"></div>
+				{#if importItem.href}
+					<a class="menu-item" role="menuitem" href={importItem.href} onclick={close}>
+						{importItem.label}
+					</a>
+				{:else}
+					<button
+						class="menu-item"
+						role="menuitem"
+						type="button"
+						onclick={() => choose(importItem)}
+					>
+						{importItem.label}
+					</button>
+				{/if}
 			{/if}
-		{/each}
-		{#if importItem}
-			<div class="menu-sep"></div>
-			{#if importItem.href}
-				<a class="menu-item" role="menuitem" href={importItem.href} onclick={close}>
-					{importItem.label}
-				</a>
-			{:else}
-				<button class="menu-item" role="menuitem" type="button" onclick={() => choose(importItem)}>
-					{importItem.label}
-				</button>
-			{/if}
-		{/if}
-		<p class="menu-note">{note}</p>
-	</div>
-	<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			<p class="menu-note">{note}</p>
+		</div>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{/if}
 </span>
 
 <style>

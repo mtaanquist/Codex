@@ -3,6 +3,7 @@ import type { Database } from './auth.ts';
 import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
 import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
+import { storyCoverColor } from '$lib/entity-color';
 import { isUniqueViolation } from './db-errors.ts';
 import { storyIsLive } from './universe-scope.ts';
 
@@ -137,7 +138,7 @@ export async function readingPageRef(
 // The author shelf: current, non-removed editions of stories the author
 // has set public. Unlisted stories stay reachable by direct link only.
 export async function publicShelf(db: Database, handle: string) {
-	return await db
+	const rows = await db
 		.select({
 			storyId: publications.storyId,
 			title: publications.title,
@@ -145,7 +146,8 @@ export async function publicShelf(db: Database, handle: string) {
 			descriptionMd: publications.descriptionMd,
 			isAdult: publications.isAdult,
 			publishedAt: publications.publishedAt,
-			coverAssetId: stories.coverAssetId
+			coverAssetId: stories.coverAssetId,
+			coverColor: stories.coverColor
 		})
 		.from(publications)
 		.innerJoin(stories, eq(publications.storyId, stories.id))
@@ -159,6 +161,10 @@ export async function publicShelf(db: Database, handle: string) {
 			)
 		)
 		.orderBy(desc(publications.publishedAt));
+	return rows.map((row) => ({
+		...row,
+		coverColor: storyCoverColor({ id: row.storyId, coverColor: row.coverColor })
+	}));
 }
 
 // The author's public profile for the shelf header: identity, bio, links, and

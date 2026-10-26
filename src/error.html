@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Something went wrong - Codex</title>
+		<!-- Shown only when the app itself cannot render a page, so it carries its
+		     own few styles instead of the app's stylesheets. -->
+		<style>
+			body {
+				margin: 0;
+				font-family: system-ui, sans-serif;
+				background: #f7f7f5;
+				color: #1c1c22;
+			}
+			main {
+				max-width: 32rem;
+				margin: 20vh auto 0;
+				padding: 0 24px;
+			}
+			h1 {
+				font-size: 24px;
+				margin: 0 0 12px;
+			}
+			p {
+				color: #55555e;
+				line-height: 1.5;
+			}
+			a {
+				color: inherit;
+			}
+			@media (prefers-color-scheme: dark) {
+				body {
+					background: #0d0d10;
+					color: #e9e9ec;
+				}
+				p {
+					color: #a0a0a8;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Something went wrong</h1>
+			<p>Codex could not load this page (error %sveltekit.status%). Try again in a moment.</p>
+			<p><a href="/">Go to Codex</a></p>
+		</main>
+	</body>
+</html>

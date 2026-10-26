@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { RIGHT_PANE_LABEL } from '$lib/chrome';
 	import type { ComponentProps } from 'svelte';
 	import NotesSidebar from './NotesSidebar.svelte';
 	import NoteEditor from './NoteEditor.svelte';
@@ -16,6 +17,7 @@
 	// The Notes view, shared by the story and universe scopes. The pages load
 	// the notes and pass in the scope's crumbs and mode-strip links.
 	let {
+		title,
 		crumbs,
 		notes,
 		universeNotes,
@@ -30,6 +32,8 @@
 		revisionPreview,
 		form
 	}: {
+		// The story or universe name, for the page heading.
+		title: string;
 		crumbs: Crumb[];
 		notes: SidebarProps['notes'];
 		universeNotes?: SidebarProps['universeNotes'];
@@ -76,7 +80,8 @@
 			{modeNote}
 			{form}
 		/>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			<h1 class="visually-hidden">{title} - Notes</h1>
 			{#if revisionPreview && selected}
 				<div class="detail">
 					<RevisionPreview
@@ -121,7 +126,7 @@
 		</main>
 		{#if selected}
 			{@const openNote = selected}
-			<aside class="pane right">
+			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 				<PanelStrip {panels} active="history" onSelect={() => {}} sub="this note">
 					{#snippet panel()}
 						<RevisionHistory
@@ -131,10 +136,6 @@
 							previewId={revisionPreview?.id}
 							previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
 						/>
-						<p class="panel-note">
-							A note has versions like anything else you type here. Codex autosaves; name a
-							checkpoint when you want to find your way back to this wording.
-						</p>
 					{/snippet}
 				</PanelStrip>
 			</aside>

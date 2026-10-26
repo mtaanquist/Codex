@@ -79,7 +79,7 @@
 	text-align: left;
 	border: 0;
 	background: none;
-	color: var(--accent);
+	color: var(--accent-ink);
 	font-family: var(--font-ui);
 	font-size: 12.5px;
 	padding: 3px 0;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { modal } from '$lib/modal';
 	import { formatNumber } from '$lib/format';
 	import { reviewModal, closeReviewModal } from '$lib/review-modal.svelte';
 	import {
@@ -277,13 +278,6 @@
 			});
 		}
 	}
-
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			close();
-		}
-	}
 </script>
 
 {#if reviewModal.open}
@@ -293,13 +287,13 @@
 		onclick={(event) => {
 			if (event.target === event.currentTarget) close();
 		}}
-		onkeydown={onKeydown}
 	>
 		<div
 			class="modal-panel modal-lg"
 			role="dialog"
 			aria-modal="true"
 			aria-label="Review with the Assistant"
+			use:modal={{ close }}
 		>
 			<div class="modal-head">
 				<div class="modal-head-main">

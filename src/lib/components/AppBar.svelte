@@ -5,7 +5,7 @@
 	import CrumbMenu from './CrumbMenu.svelte';
 	import NotificationBell from './NotificationBell.svelte';
 	import UserMenu from './UserMenu.svelte';
-	import ThemeToggle from './ThemeToggle.svelte';
+	import ThemePicker from './ThemePicker.svelte';
 	import { openPalette } from '$lib/palette.svelte';
 	import { helpReturn, rememberLocation } from '$lib/help.svelte';
 	import { authorInitials } from '$lib/review-ui';
@@ -137,7 +137,11 @@
 				Search <kbd>{mod} K</kbd>
 			</button>
 		{/if}
-		<ThemeToggle />
+		<!-- The author's theme lives in the account menu; the other bars have
+		     no account menu, so they keep a picker of their own. -->
+		{#if shell !== 'author'}
+			<ThemePicker />
+		{/if}
 		<!-- A tool that is a place, not a popup: resolve() covers the help
 		     pages, and the way back is a location this app already visited. -->
 		<!-- eslint-disable svelte/no-navigation-without-resolve -->

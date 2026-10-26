@@ -81,6 +81,15 @@ export default async function globalSetup() {
 		 on conflict (email) do update set password_hash = excluded.password_hash`,
 		['tfa-e2e@example.com', passwordHash]
 	);
+	// A separate account for the library spec, whose assertions depend on how
+	// many stories the library holds and which view it is set to; the truncate
+	// above empties it and its preferences reset each run.
+	await pool.query(
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at)
+		 values ($1, 'Library Tester', $2, 'user', now(), now())
+		 on conflict (email) do update set password_hash = excluded.password_hash, preferences = '{}'`,
+		['library-e2e@example.com', passwordHash]
+	);
 	// A separate account for the passkey journey, kept clean of credentials so
 	// the register-then-sign-in flow starts fresh every run.
 	await pool.query(

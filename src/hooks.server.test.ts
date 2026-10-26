@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isRedirect } from '@sveltejs/kit';
 
 // The hook only touches the database to validate a session cookie; these
@@ -8,6 +8,8 @@ vi.mock('$lib/server/auth', () => ({
 	SESSION_COOKIE: 'session',
 	validateSession: vi.fn(async () => null)
 }));
+// Read the live process env so vi.stubEnv can set ORIGIN per test.
+vi.mock('$env/dynamic/private', () => ({ env: process.env }));
 vi.mock('$lib/server/log', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/server/log')>()),
 	logEvent: vi.fn()
@@ -173,11 +175,32 @@ describe('security headers', () => {
 		expect(response.headers.get('set-cookie')).toBeNull();
 	});
 
-	it('sends HSTS over HTTPS only', async () => {
-		expect((await headersFor('/')).get('strict-transport-security')).toBeNull();
-		expect((await headersFor('/', 'https://codex.example')).get('strict-transport-security')).toBe(
-			'max-age=31536000'
-		);
+	describe('HSTS', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('is sent when ORIGIN is https, whatever the request protocol', async () => {
+			vi.stubEnv('ORIGIN', 'https://codex.example');
+			expect((await headersFor('/', 'http://codex.example')).get('strict-transport-security')).toBe(
+				'max-age=31536000'
+			);
+			expect(
+				(await headersFor('/', 'https://codex.example')).get('strict-transport-security')
+			).toBe('max-age=31536000');
+		});
+
+		// adapter-node 6 reports https for a plain-HTTP request when no protocol
+		// header is configured; HSTS there would pin the browser for a year.
+		it('is not sent when ORIGIN is http, even if the request looks like https', async () => {
+			vi.stubEnv('ORIGIN', 'http://localhost:3000');
+			expect(
+				(await headersFor('/', 'https://localhost:3000')).get('strict-transport-security')
+			).toBeNull();
+			expect(
+				(await headersFor('/', 'http://localhost:3000')).get('strict-transport-security')
+			).toBeNull();
+		});
 	});
 });
 

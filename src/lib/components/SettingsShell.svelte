@@ -9,7 +9,8 @@
 	let {
 		topbar,
 		sidebar,
-		children
+		children,
+		wide = false
 	}: {
 		// The AppBar for this page, rendered above the shell.
 		topbar: Snippet;
@@ -17,6 +18,8 @@
 		sidebar: Snippet;
 		// The main column content.
 		children: Snippet;
+		// A wider column, for sections that hold tables.
+		wide?: boolean;
 	} = $props();
 </script>
 
@@ -27,8 +30,8 @@
 		<aside class="admin-sidebar">
 			{@render sidebar()}
 		</aside>
-		<main class="admin-main page-body">
-			<div class="admin-main-inner">
+		<main id="main" class="admin-main page-body">
+			<div class="admin-main-inner" class:wide>
 				{@render children()}
 			</div>
 		</main>

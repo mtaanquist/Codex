@@ -55,3 +55,26 @@ export function relativeTime(then: Date, now: Date): string {
 	const years = Math.floor(elapsed / (365 * DAY));
 	return years === 1 ? 'last year' : `${years} years ago`;
 }
+
+// The library's Recent strip: the most recently edited stories, newest first.
+// Empty unless there are more stories than the strip holds, since a library
+// that fits in the strip would only show every card twice.
+export function recentStories<T extends { editedAt: string }>(stories: T[], size = 3): T[] {
+	if (stories.length <= size) return [];
+	return [...stories]
+		.sort((a, b) => new Date(b.editedAt).getTime() - new Date(a.editedAt).getTime())
+		.slice(0, size);
+}
+
+// How the library lays out its stories: cover cards, the same cards without
+// covers, or a table. A per-user preference.
+export const LIBRARY_VIEWS = [
+	{ value: 'covers', label: 'Covers' },
+	{ value: 'compact', label: 'No covers' },
+	{ value: 'table', label: 'Table' }
+] as const;
+export type LibraryView = (typeof LIBRARY_VIEWS)[number]['value'];
+
+export function isLibraryView(value: unknown): value is LibraryView {
+	return LIBRARY_VIEWS.some((view) => view.value === value);
+}

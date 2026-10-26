@@ -39,6 +39,12 @@ test('command palette: search jumps to a story, commands create a scene', async 
 	await page.getByLabel('Search everything').fill('focus');
 	await page.getByRole('option', { name: 'Command Focus mode' }).click();
 	await expect(page.locator('.app.focus-mode')).toHaveCount(1);
+	// Escape in the palette closes only the palette, not focus mode.
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(page.getByLabel('Search everything')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByLabel('Search everything')).not.toBeVisible();
+	await expect(page.locator('.app.focus-mode')).toHaveCount(1);
 	await page.keyboard.press('Escape');
 	await expect(page.locator('.app.focus-mode')).toHaveCount(0);
 
@@ -47,4 +53,36 @@ test('command palette: search jumps to a story, commands create a scene', async 
 	await expect(page.getByLabel('Search everything')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByLabel('Search everything')).not.toBeVisible();
+});
+
+// The palette is a modal: focus stays inside it, only the search box is a tab
+// stop, the highlighted result is announced, and closing returns focus.
+test('command palette: keyboard focus stays inside and returns on close', async ({ page }) => {
+	await gotoReady(page, '/');
+	const opener = page.getByRole('button', { name: /Search and commands/ });
+	await opener.focus();
+	await page.keyboard.press('Enter');
+	const dialog = page.getByRole('dialog', { name: 'Command palette' });
+	const input = page.getByLabel('Search everything');
+	await expect(dialog).toHaveAttribute('aria-modal', 'true');
+	await expect(input).toBeFocused();
+
+	for (let i = 0; i < 6; i++) {
+		await page.keyboard.press('Tab');
+		expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))).toBe(
+			true
+		);
+	}
+	// The results are not tab stops, so focus has nowhere to go but the box.
+	await expect(input).toBeFocused();
+
+	await expect(page.getByRole('option').first()).toBeVisible();
+	await expect(input).toHaveAttribute('aria-activedescendant', 'palette-option-0');
+	await page.keyboard.press('ArrowDown');
+	await expect(input).toHaveAttribute('aria-activedescendant', 'palette-option-1');
+
+	await page.keyboard.press('Shift+Tab');
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(opener).toBeFocused();
 });

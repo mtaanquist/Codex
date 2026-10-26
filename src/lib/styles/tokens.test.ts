@@ -34,4 +34,12 @@ describe('design tokens', () => {
 	it('has no hard-coded white outside tokens.css', () => {
 		expect(offences(/#fff(fff)?\b/i)).toEqual([]);
 	});
+
+	it('defines the side column widths', () => {
+		// The shells read these without a fallback, so a missing token would
+		// collapse the columns.
+		const tokens = readFileSync(join(root, 'lib/styles/tokens.css'), 'utf8');
+		expect(tokens).toMatch(/--left-w:\s*clamp\(/);
+		expect(tokens).toMatch(/--right-w:\s*clamp\(/);
+	});
 });

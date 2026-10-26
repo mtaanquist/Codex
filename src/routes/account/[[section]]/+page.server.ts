@@ -30,7 +30,7 @@ import { users } from '$lib/server/db/schema';
 import { queueEmail, queueUserExport } from '$lib/server/jobs';
 import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
 import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
-import { savePreferences, userPreferences } from '$lib/server/preferences';
+import { saveLibraryView, savePreferences, userPreferences } from '$lib/server/preferences';
 import { createUserInvite, deleteUserInviteCode, listUserInviteCodes } from '$lib/server/invites';
 import {
 	accountLlmView,
@@ -630,6 +630,13 @@ export const actions: Actions = {
 			accent: normaliseAccent(accent)
 		});
 		return { scope: 'appearance', saved: true };
+	},
+	saveLibraryView: async ({ request, locals }) => {
+		const view = (await request.formData()).get('libraryView');
+		if (!(await saveLibraryView(db, locals.user!.id, view))) {
+			return fail(400, { scope: 'library', message: 'Pick a library view.' });
+		}
+		return { scope: 'library', saved: true };
 	},
 	startTotp: async ({ locals }) => {
 		if (!secretsAvailable()) {

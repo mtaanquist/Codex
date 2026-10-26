@@ -526,6 +526,13 @@
 			"when": 1792482309464,
 			"tag": "0074_assistant_chat_summaries",
 			"breakpoints": true
+		},
+		{
+			"idx": 75,
+			"version": "7",
+			"when": 1793007451321,
+			"tag": "0075_story-cover-color",
+			"breakpoints": true
 		}
 	]
 }

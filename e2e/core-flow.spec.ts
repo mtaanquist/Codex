@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
 	// A long journey that waits on the async worker twice; the default 30s
@@ -187,8 +188,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.getByRole('region', { name: 'Draft scenes' })).toBeVisible();
 
 	// Create a character, fill the editor, and it persists.
-	await page.getByPlaceholder('New character name').fill('Alice');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Alice');
 	await expect(page).toHaveURL(/entity=/);
 	const characterSave = page.waitForResponse(
 		(r) => r.url().includes('/api/characters/') && r.request().method() === 'PUT' && r.ok()
@@ -238,16 +238,13 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByLabel('Detail label').press('Escape');
 
 	// Places follow the same pattern.
-	await page.getByPlaceholder('New place name').fill('Halden');
-	await page.getByRole('button', { name: 'Add place' }).click();
+	await addEntity(page, 'Add place', 'Halden');
 	await expect(page).toHaveURL(/entity=/);
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Halden');
 
 	// Lore entries live under their category; each seeded category ("Lore",
-	// "Faction") has its own add form, so scope to the Lore one.
-	const loreForm = page.locator('form', { has: page.getByPlaceholder('New Lore entry') });
-	await loreForm.getByPlaceholder('New Lore entry').fill('Toll-pass');
-	await loreForm.getByRole('button', { name: 'Add entry' }).click();
+	// "Faction") has its own Add row, named for it.
+	await addEntity(page, 'Add Lore entry', 'Toll-pass');
 	await expect(page).toHaveURL(/entity=/);
 	const loreSave = page.waitForResponse(
 		(r) => r.url().includes('/api/lore/') && r.request().method() === 'PUT' && r.ok()
@@ -257,11 +254,22 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByLabel('Add keyword').press('Enter');
 	await loreSave;
 
-	// A coloured category groups the cast: create one, assign Alice to it,
-	// and her badge takes the colour.
-	await page.getByPlaceholder('New category name').fill('Factions');
-	await page.locator('select[name="color"]').selectOption('var(--cat-rose)');
+	// A coloured category groups the cast: create one in universe settings
+	// (the sidebar links there), assign Alice to it, and her badge takes the
+	// colour.
+	const planUrl = page.url();
+	await page.getByRole('link', { name: 'Manage categories' }).click();
+	await expect(page).toHaveURL(/\/categories$/);
+	await waitForHydration(page);
 	await page.getByRole('button', { name: 'Add category' }).click();
+	await page.getByLabel('Category name').last().fill('Factions');
+	await page.getByLabel('Category colour').last().selectOption('var(--cat-rose)');
+	const categoriesSaved = page.waitForResponse(
+		(r) => r.request().method() === 'POST' && r.url().includes('/categories') && r.ok()
+	);
+	await page.getByRole('button', { name: 'Save categories' }).click();
+	await categoriesSaved;
+	await gotoReady(page, planUrl);
 	await expect(page.locator('.group-label', { hasText: 'Factions' })).toBeVisible();
 	await page.locator('.ent-row', { hasText: 'Alice Vane' }).click();
 	const categorySave = page.waitForResponse(
@@ -483,7 +491,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		await page.getByRole('menuitem', { name: 'Story settings' }).click();
 		await page.getByRole('link', { name: 'Cover' }).click();
 		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
-		await expect(page.locator('svg.cover')).toBeVisible();
+		await expect(page.getByRole('img', { name: 'Default cover' })).toBeVisible();
 		await page.getByLabel('Cover image').setInputFiles({
 			name: 'cover.png',
 			mimeType: 'image/png',
@@ -495,6 +503,10 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		const served = await page.request.get(coverSrc!);
 		expect(served.status()).toBe(200);
 		expect(served.headers()['content-type']).toBe('image/png');
+		// Artwork replaces the placeholder, so its colour is no longer offered.
+		await page.getByRole('link', { name: 'Details' }).click();
+		await expect(page.getByLabel('Title', { exact: true })).toBeVisible();
+		await expect(page.getByLabel('Cover colour')).toHaveCount(0);
 
 		await gotoReady(page, proseSceneUrl);
 		await page.locator('.cm-content').click();
@@ -620,7 +632,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	await page.getByRole('link', { name: 'open the print view' }).click();
 	await expect(page).toHaveURL(/\/print$/);
-	await expect(page.locator('.title-page h1')).toHaveText('Book of Ash');
+	await expect(page.locator('.title-page .book-title')).toHaveText('Book of Ash');
 	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');
 	await gotoReady(page, proseSceneUrl);
 
@@ -689,8 +701,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.rel-row')).toHaveCount(0);
 
 	// A character created at universe scope belongs to no story yet.
-	await page.getByPlaceholder('New character name').fill('Corvin');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Corvin');
 	await expect(page.getByPlaceholder('Name', { exact: true })).toHaveValue('Corvin');
 
 	// The dashboard reaches the story directly, under its universe. The brand
@@ -707,7 +718,8 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.ent-row', { hasText: 'Alice Vane' })).toHaveCount(1);
 	// Corvin is not a member yet; he shows only in the open universe list.
 	await expect(page.locator('.ent-row:not(.uni-row)', { hasText: 'Corvin' })).toHaveCount(0);
-	await page.getByLabel('Add an existing character').selectOption({ label: 'Corvin' });
+	await page.getByRole('button', { name: 'Add a character from the universe' }).click();
+	await page.getByLabel('A character from the universe').selectOption({ label: 'Corvin' });
 	await page.getByRole('button', { name: 'Add to this story' }).click();
 	await expect(page).toHaveURL(/entity=/);
 	await expect(page.locator('.ent-row', { hasText: 'Corvin' })).toHaveCount(1);

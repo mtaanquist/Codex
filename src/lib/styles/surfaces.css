@@ -32,7 +32,10 @@
 }
 /* PanelStrip.svelte keeps .active and aria-selected in step, so the selected
    tab wears the one .seg-btn.active skin and nothing depends on a second rule. */
-.panel-strip .seg-btn {
+/* Tabs size to their labels, so "Reference" gets more room than "Notes".
+   The mode strip keeps its equal slots; only the panel strip differs. */
+.seg.full.panel-strip .seg-btn {
+	flex: auto;
 	cursor: pointer;
 }
 [role='tabpanel'][hidden] {
@@ -62,15 +65,6 @@
 	margin-left: auto;
 	font-size: var(--text-meta);
 	color: var(--text-muted);
-}
-/* A panel's first line of help, for a first-time reader of that panel. */
-.panel-note {
-	margin: 0;
-	padding: var(--space-3) 12px 0;
-	font-size: var(--text-meta);
-	line-height: 1.5;
-	color: var(--text-muted);
-	text-wrap: pretty;
 }
 
 /* ---- 2. a page's own sections, listed in the left pane ---- */
@@ -122,11 +116,7 @@
 	top: calc(100% + 6px);
 	right: 0;
 	min-width: 244px;
-	display: none;
 	z-index: 40;
-}
-.menu-host.open > .popover {
-	display: block;
 }
 .menu-host.start > .popover {
 	left: 0;
@@ -342,7 +332,7 @@
 	color: var(--text-muted);
 }
 .preview-note a {
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .shelf-head {
 	display: flex;
@@ -454,6 +444,16 @@
 	color: var(--text-muted);
 	text-wrap: balance;
 	overflow: hidden;
+}
+/* Without artwork the blank takes the story's own palette colour: a spine in
+   the full colour, a page mixed 30% into the card, and the title in --text,
+   which clears 8:1 on every tint in every theme. --cover-tint is set inline
+   from a palette token. */
+.shelf-cover-tinted {
+	background: color-mix(in oklab, var(--cover-tint) 30%, var(--bg-card));
+	border-color: color-mix(in oklab, var(--cover-tint) 45%, transparent);
+	border-left: 6px solid var(--cover-tint);
+	color: var(--text);
 }
 .shelf-cover img {
 	width: 100%;

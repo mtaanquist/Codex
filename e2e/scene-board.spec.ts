@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 // The scene board: a story's plan shows its scenes in status lanes, and
 // moving a card changes the scene's status for good.
@@ -78,8 +79,7 @@ test('scene board: a card moves along the status ladder and stays there', async 
 	// showing there is no right pane at all, and opening an entry brings it back.
 	await gotoReady(page, `/stories/${storyId}/plan`);
 	await expect(page.locator('.pane.right')).toHaveCount(0);
-	await page.getByPlaceholder('New character name').fill('Ferry');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Ferry');
 	await expect(page).toHaveURL(/entity=/);
 	await expect(page.locator('.board')).toHaveCount(0);
 	await expect(page.getByRole('tab', { name: 'Reference' })).toBeVisible();

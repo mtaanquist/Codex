@@ -10,6 +10,7 @@
 	import { enhance } from '$app/forms';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import { menu as menuKeys } from '$lib/menu';
 
 	let {
 		menu,
@@ -50,29 +51,8 @@
 		onClose();
 	};
 
-	let menuEl = $state<HTMLDivElement>();
 	// The Assistant flyout inside the menu.
 	let subOpen = $state(false);
-
-	function onMenuKey(event: KeyboardEvent) {
-		const items = menuEl ? [...menuEl.querySelectorAll<HTMLButtonElement>('.menu-item')] : [];
-		const current = items.indexOf(document.activeElement as HTMLButtonElement);
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onClose(true);
-		} else if (event.key === 'ArrowDown') {
-			event.preventDefault();
-			items[Math.min(current + 1, items.length - 1)]?.focus();
-		} else if (event.key === 'ArrowUp') {
-			event.preventDefault();
-			items[Math.max(current - 1, 0)]?.focus();
-		}
-	}
-
-	// Move focus into the menu when it opens, so keyboard users can act on it.
-	$effect(() => {
-		if (menuEl) menuEl.querySelector<HTMLButtonElement>('.menu-item')?.focus();
-	});
 
 	function toggleMergeSelection(sceneId: string) {
 		if (mergeSelection.has(sceneId)) mergeSelection.delete(sceneId);
@@ -90,10 +70,8 @@
 <div
 	class="row-menu popover"
 	role="menu"
-	tabindex="-1"
-	bind:this={menuEl}
-	use:dismiss={{ close: () => onClose() }}
-	onkeydown={onMenuKey}
+	use:dismiss={{ close: () => onClose(), refocus: () => onClose(true) }}
+	use:menuKeys={{ close: () => onClose(), refocus: () => onClose(true) }}
 	style="left: {menu.x}px; top: {menu.y}px;"
 >
 	{#if target.kind === 'chapter'}
@@ -110,7 +88,10 @@
 				class="row-sub"
 				role="presentation"
 				onmouseenter={() => (subOpen = true)}
-				onmouseleave={() => (subOpen = false)}
+				onmouseleave={(event) => {
+					// Keyboard focus inside the flyout keeps it open.
+					if (!event.currentTarget.contains(document.activeElement)) subOpen = false;
+				}}
 			>
 				<button
 					class="menu-item row-sub-trigger"
@@ -195,7 +176,10 @@
 				class="row-sub"
 				role="presentation"
 				onmouseenter={() => (subOpen = true)}
-				onmouseleave={() => (subOpen = false)}
+				onmouseleave={(event) => {
+					// Keyboard focus inside the flyout keeps it open.
+					if (!event.currentTarget.contains(document.activeElement)) subOpen = false;
+				}}
 			>
 				<button
 					class="menu-item row-sub-trigger"

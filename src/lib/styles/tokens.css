@@ -14,8 +14,11 @@
 
 	/* accent (the editor overrides this inline via tweak) */
 	--accent: #5b8cff;
-	/* Text on accent fills (primary buttons). White reads on the accent presets
-	   and any reasonable custom colour; dark text was illegible on the blues. */
+	/* The accent darkened for fills that carry text (primary buttons, badges).
+	   Raw --accent stays for borders, rings and dots, which only need 3:1.
+	   contrast.ts mirrors this mix to warn about too-light custom accents. */
+	--accent-fill: color-mix(in oklab, var(--accent) 75%, black);
+	/* Text on accent fills. White clears AA on every preset's --accent-fill. */
 	--accent-contrast: #ffffff;
 	--danger-contrast: #ffffff;
 	/* Text and icons on any other solid colour tile: universe and story
@@ -29,6 +32,11 @@
 	--row-h: 36px;
 	--pane-pad: 22px;
 	--content-max: 720px;
+
+	/* Side columns of the workspace and settings shells. The floors are the
+	   old fixed widths, so the right grows from about 1640px and the left from about 1760px. */
+	--left-w: clamp(264px, 15vw, 320px);
+	--right-w: clamp(312px, 19vw, 380px);
 
 	--radius-sm: 6px;
 	--radius-md: 9px;
@@ -76,24 +84,27 @@
 	--border: rgba(255, 255, 255, 0.07);
 	--border-strong: rgba(255, 255, 255, 0.12);
 	--text: #e9e9ec;
-	--text-muted: #8b8b94;
-	--text-faint: #62626b;
+	--text-muted: #a0a0a8;
+	--text-faint: #85858e;
 	--shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
 	--pane-shadow: rgba(0, 0, 0, 0.55);
 	--accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 40%, transparent);
+	--accent-ink: var(--accent);
 
 	--status-draft: #c8924a;
 	--status-revised: #9b7bff;
 	--status-final: #2fae8c;
+	--status-final-ink: var(--status-final);
 	--status-outline: #7d8aa3;
 	--danger: #e2687c;
+	--danger-fill: color-mix(in oklab, var(--danger) 75%, black);
 	--danger-soft: color-mix(in oklab, var(--danger) 16%, transparent);
 
 	/* The select caret. A data URL cannot read a custom property, so the one
 	   caret asset is declared per theme carrying that theme's faint text
 	   colour; .select is the only consumer. */
-	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%2362626b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
+	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%2385858e' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
 
 	/* category tints (lore/factions/etc.) */
 	--cat-violet: #9b7bff;
@@ -122,19 +133,22 @@
 	--border: rgba(15, 15, 20, 0.09);
 	--border-strong: rgba(15, 15, 20, 0.16);
 	--text: #1c1c22;
-	--text-muted: #6a6a73;
-	--text-faint: #9a9aa2;
+	--text-muted: #55555e;
+	--text-faint: #6e6e76;
 	--shadow: 0 18px 44px -24px rgba(20, 20, 40, 0.28);
 	--pane-shadow: rgba(20, 20, 45, 0.13);
-	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%239a9aa2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
+	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%236e6e76' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
 	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
+	--accent-ink: color-mix(in oklab, var(--accent) 75%, black);
 
 	--status-draft: #b07b34;
 	--status-revised: #7d5fe0;
 	--status-final: #1f8a5b;
+	--status-final-ink: #12623f;
 	--status-outline: #8a8a93;
 	--danger: #c8384f;
+	--danger-fill: var(--danger);
 	--danger-soft: color-mix(in oklab, var(--danger) 9%, transparent);
 
 	--cat-violet: #7d5fe0;
@@ -163,19 +177,22 @@
 	--border: rgba(74, 52, 28, 0.11);
 	--border-strong: rgba(74, 52, 28, 0.19);
 	--text: #2b241d;
-	--text-muted: #756a59;
-	--text-faint: #a89a83;
+	--text-muted: #5f5545;
+	--text-faint: #6b604f;
 	--shadow: 0 18px 44px -24px rgba(70, 50, 25, 0.3);
 	--pane-shadow: rgba(70, 50, 25, 0.15);
-	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23a89a83' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
+	--select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%236b604f' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>");
 	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
+	--accent-ink: color-mix(in oklab, var(--accent) 75%, black);
 
 	--status-draft: #b07b34;
 	--status-revised: #7d5fe0;
 	--status-final: #1f8a5b;
+	--status-final-ink: #12623f;
 	--status-outline: #8a8a93;
 	--danger: #c8384f;
+	--danger-fill: var(--danger);
 	--danger-soft: color-mix(in oklab, var(--danger) 9%, transparent);
 
 	--cat-violet: #7d5fe0;

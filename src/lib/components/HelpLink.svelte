@@ -36,6 +36,6 @@
 	}
 	.help-link:hover {
 		border-color: var(--accent-line);
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 </style>

@@ -409,7 +409,13 @@
 	// browser's spelling suggestions stay reachable on a plain caret click.
 	// The handler sits on the pane wrapper rather than the prose column, so
 	// the margins around the centered text behave like the text itself.
-	let selectionMenu = $state<{ x: number; y: number; name: string; raw: string } | null>(null);
+	let selectionMenu = $state<{
+		x: number;
+		y: number;
+		name: string;
+		raw: string;
+		keyboard: boolean;
+	} | null>(null);
 
 	function onPaneContextMenu(event: MouseEvent) {
 		if (view) openSelectionMenu(event, view);
@@ -426,7 +432,9 @@
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
 			name,
-			raw
+			raw,
+			// The menu key fires contextmenu at (0, 0).
+			keyboard: event.clientX === 0 && event.clientY === 0
 		};
 		return true;
 	}

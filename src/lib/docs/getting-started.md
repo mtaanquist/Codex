@@ -12,6 +12,8 @@ Codex organises your writing into three layers.
 2. Back on the library, open the "New story" menu on the universe's own row and choose "New story in ..." to create a story. A universe with no stories yet offers the same menu in the space its stories will fill.
 3. Open the story and add a scene. The scene editor is where your prose goes.
 
+Each story on the library shows a cover. Until you upload cover art, the cover is the story's title on a colour picked for it when you created it; change the colour under "Cover colour" in the story's settings. Once you have more than three stories, a "Recent" row at the top of the library shows the three you edited last. If you do not use covers, switch the library to "No covers" or "Table" with the buttons at the top of the library page, or under Display on your account page.
+
 For a story that does not belong to any world, choose "New standalone story" from either the library's "New" menu or the "Standalone stories" section's own menu instead. That universe is created for you the first time you add a story there, and the story works like any other.
 
 That is enough to start writing. When you are ready, the planning tools help you keep track of who and what is in your world, and publishing turns a finished story into a public reading page.
@@ -40,4 +42,4 @@ Opening a story without picking a scene resumes the scene you edited last.
 
 ## Web addresses
 
-Universes and stories get readable addresses made from their names, such as /universes/ardenfall or /stories/the-toll, so you can edit the address bar to move around. The address follows the name: renaming a universe or story in its settings moves it to a new address, and the old one stops working.
+Universes and stories get readable addresses made from their names, such as /universes/ardenfall or /stories/the-toll, so you can edit the address bar to move around. The address follows the name: renaming a universe or story in its settings moves it to a new address, and the old one stops working. Following an old link shows a "Page not found" page with a way back to your library, where you can open it again.

@@ -47,7 +47,11 @@
 	border: 0;
 	text-decoration: none;
 	cursor: pointer;
-	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
+	background: linear-gradient(
+		140deg,
+		var(--accent-fill),
+		color-mix(in oklab, var(--accent) 55%, #000)
+	);
 	color: var(--accent-contrast);
 	display: grid;
 	place-items: center;
@@ -82,18 +86,6 @@
 	border-radius: var(--radius-lg);
 	box-shadow: var(--shadow);
 	padding: 6px;
-	opacity: 0;
-	transform: translateY(-4px) scale(0.98);
-	transform-origin: top right;
-	pointer-events: none;
-	transition:
-		opacity 0.13s ease,
-		transform 0.13s ease;
-}
-.avatar-menu.open .avatar-dropdown {
-	opacity: 1;
-	transform: none;
-	pointer-events: auto;
 }
 .avatar-dd-head {
 	display: flex;
@@ -108,7 +100,11 @@
 	flex: none;
 	display: grid;
 	place-items: center;
-	background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
+	background: linear-gradient(
+		140deg,
+		var(--accent-fill),
+		color-mix(in oklab, var(--accent) 55%, #000)
+	);
 	color: var(--accent-contrast);
 	font-size: 13px;
 	font-weight: 700;
@@ -272,16 +268,16 @@
 	cursor: default;
 }
 .btn-primary {
-	background: var(--accent);
+	background: var(--accent-fill);
 	color: var(--accent-contrast);
 }
 .btn-primary:hover:not(:disabled),
 .btn-primary.is-hover {
-	background: color-mix(in oklab, var(--accent) 88%, var(--accent-contrast));
+	background: color-mix(in oklab, var(--accent) 68%, black);
 }
 .btn-primary:active:not(:disabled),
 .btn-primary.is-active {
-	background: color-mix(in oklab, var(--accent) 86%, #000);
+	background: color-mix(in oklab, var(--accent) 62%, black);
 }
 .btn-secondary {
 	background: var(--bg-inset);
@@ -313,23 +309,23 @@
 	color: var(--text);
 }
 .btn-danger {
-	background: var(--danger);
+	background: var(--danger-fill);
 	color: var(--danger-contrast);
 }
 .btn-danger:hover:not(:disabled),
 .btn-danger.is-hover {
-	background: color-mix(in oklab, var(--danger) 88%, #000);
+	background: color-mix(in oklab, var(--danger-fill) 88%, #000);
 }
 .btn-danger:active:not(:disabled),
 .btn-danger.is-active {
-	background: color-mix(in oklab, var(--danger) 78%, #000);
+	background: color-mix(in oklab, var(--danger-fill) 78%, #000);
 }
 /* The affirmative decision (accept a suggestion, approve a pass). Replaces the
    review surface's rv-btn.accept; it is a variant, not a second family. */
 .btn-accept {
 	background: color-mix(in oklab, var(--status-final) 12%, transparent);
 	border-color: color-mix(in oklab, var(--status-final) 38%, transparent);
-	color: var(--status-final);
+	color: var(--status-final-ink);
 }
 .btn-accept:hover:not(:disabled),
 .btn-accept.is-hover {
@@ -427,11 +423,21 @@
 	opacity: 0.6;
 }
 /* The card leads with a cover: the uploaded artwork, or the title set on the
-   cover blank (the reader shelf's pattern, reused). Sized down a step from
-   the reader shelf, since the real title sits right below. */
+   tinted cover blank (the reader shelf's pattern, reused). Sized down a step
+   from the reader shelf when artwork leaves the real title below it; a blank
+   cover is the card's visible title, so it takes the title's size. */
 .story-card-cover {
 	flex: none;
 	font-size: 15px;
+}
+.story-card-cover.shelf-cover-tinted {
+	font-size: 19px;
+	font-weight: 600;
+}
+/* A story with no prose yet: italic, as the card title would be. The colour
+   stays --text so it keeps its contrast on the tint. */
+.story-card-cover.shelf-cover-tinted.story-card-empty {
+	color: var(--text);
 }
 
 .universe-section {
@@ -483,7 +489,7 @@
 	letter-spacing: -0.01em;
 }
 .universe-name-link:hover .universe-name {
-	color: var(--accent);
+	color: var(--accent-ink);
 }
 .universe-description {
 	color: var(--text-muted);
@@ -605,6 +611,10 @@
 	font-size: var(--text-base);
 	outline: none;
 	transition: border-color 0.12s;
+}
+/* A field for a short value (a name, a handle) stops short of the column. */
+.input.short {
+	max-width: 36ch;
 }
 .input::placeholder,
 .textarea::placeholder {
@@ -1042,7 +1052,11 @@
 	font-size: 12.5px;
 	font-weight: 700;
 	letter-spacing: 0.02em;
-	background: linear-gradient(150deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #000));
+	background: linear-gradient(
+		150deg,
+		var(--accent-fill),
+		color-mix(in oklab, var(--accent) 55%, #000)
+	);
 	color: var(--accent-contrast);
 }
 .user-row-identity {
