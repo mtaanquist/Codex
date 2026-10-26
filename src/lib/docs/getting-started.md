@@ -40,4 +40,4 @@ Opening a story without picking a scene resumes the scene you edited last.
 
 ## Web addresses
 
-Universes and stories get readable addresses made from their names, such as /universes/ardenfall or /stories/the-toll, so you can edit the address bar to move around. The address follows the name: renaming a universe or story in its settings moves it to a new address, and the old one stops working.
+Universes and stories get readable addresses made from their names, such as /universes/ardenfall or /stories/the-toll, so you can edit the address bar to move around. The address follows the name: renaming a universe or story in its settings moves it to a new address, and the old one stops working. Following an old link shows a "Page not found" page with a way back to your library, where you can open it again.

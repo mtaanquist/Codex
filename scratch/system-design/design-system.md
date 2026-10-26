@@ -115,10 +115,10 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Shell | Component(s) | Used by |
 |---|---|---|
 | Workspace | `.app` grid + `AppBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes, Insights (universe scope); help; guest review |
-| Page | `.page-shell` + `AppBar.svelte` | Library, print preview |
+| Page | `.page-shell` + `AppBar.svelte` | Library, print preview, the error page when signed in |
 | Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings |
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
-| Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, and every email-flow page |
+| Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
 The workspace shell is a three-column grid: structure left (`--left-w`),
 work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
