@@ -78,6 +78,8 @@ a.appbar-brand:hover {
 	font-size: var(--text-base);
 }
 .path .crumb {
+	/* A 24px target at least, for touch. */
+	min-height: 24px;
 	max-width: 22em;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -93,6 +95,10 @@ a.appbar-brand:hover {
 }
 .path .crumb.current:hover {
 	background: none;
+}
+/* A wrapper for one crumb and the separator before it; it adds no box. */
+.crumb-item {
+	display: contents;
 }
 .crumb-sep {
 	display: grid;
@@ -319,4 +325,31 @@ a.seg-btn {
 	font-size: var(--text-meta);
 	color: var(--text-muted);
 	margin-top: 1px;
+}
+
+/* ---- narrow windows ----
+   Below 640px the bar keeps the logo, the page you are on, and the tools:
+   the brand name, the rule and the parent crumbs go, and Search becomes its
+   icon. The parents are still one step away from the page itself. */
+@media (max-width: 640px) {
+	.appbar {
+		gap: var(--space-2);
+		padding: 0 var(--space-3);
+	}
+	.appbar .brand-name,
+	.appbar-rule,
+	.path .crumb-item:not(.last),
+	.path .crumb-item.last .crumb-sep,
+	.appbar-by,
+	.tool-search-label {
+		display: none;
+	}
+	.tool-search {
+		width: 32px;
+		padding: 0;
+		justify-content: center;
+	}
+	.appbar-tools {
+		gap: var(--space-1);
+	}
 }

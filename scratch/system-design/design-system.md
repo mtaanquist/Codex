@@ -136,6 +136,11 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
+**Narrow windows.** The workspace grid keeps its side columns at any width,
+since the editor is not a phone surface; help is the exception (`DocsShell`
+adds `.docs`), stacking the topic list above the article below 760px so the
+page scrolls as one. The library grid drops to one column below 560px.
+
 **Structure every shell carries.** Exactly one `<main id="main">` (the root
 layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where the
 visible title lives elsewhere: Write, Plan, Notes and an empty Review use "{name} - Write"
@@ -213,6 +218,12 @@ The path and its crumb menus:
 - Paths are built by `$lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
   `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
   spells the same destinations the same way. Do not hand-roll a path.
+
+**Narrow windows.** Below 640px the bar drops the brand name, the rule and
+every crumb but the last (each crumb sits in a `.crumb-item`, the last one
+`.last`), and `.tool-search` shows only its icon; the button keeps its
+`aria-label`. The page you are on stays in the bar, ellipsised. Crumbs keep a
+24px minimum height for touch.
 
 Page actions are not bar actions. Anything that acts on the page (Print,
 Page setup, Save, New universe) lives in the page header under the bar,
