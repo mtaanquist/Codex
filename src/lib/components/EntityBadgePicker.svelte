@@ -36,6 +36,8 @@
 	// svelte-ignore state_referenced_locally
 	let badgeAssetId = $state(initialBadgeAssetId);
 	let menuOpen = $state(false);
+	let trigger = $state<HTMLButtonElement>();
+	let fileInput = $state<HTMLInputElement>();
 	// A refused change reopens the menu with the reason, so it is not lost.
 	let error = $state<string | null>(null);
 
@@ -94,11 +96,19 @@
 	}
 </script>
 
-<div class="badge-pick" use:dismiss={{ enabled: menuOpen, close: () => (menuOpen = false) }}>
+<div
+	class="badge-pick"
+	use:dismiss={{
+		enabled: menuOpen,
+		close: () => (menuOpen = false),
+		refocus: () => trigger?.focus()
+	}}
+>
 	<button
+		bind:this={trigger}
 		class="badge-pick-btn"
 		type="button"
-		aria-haspopup="menu"
+		aria-haspopup="dialog"
 		aria-expanded={menuOpen}
 		title="Change the badge colour or image"
 		onclick={() => {
@@ -109,18 +119,14 @@
 		<EntityBadge {name} {badgeColor} {badgeAssetId} {categoryColor} size="lg" />
 	</button>
 	{#if menuOpen}
-		<div class="badge-menu" role="menu">
+		<div class="badge-menu" role="dialog" aria-label="Badge colour and image">
 			{#if error}
 				<div class="badge-error"><FormStatus block {error} /></div>
 			{/if}
 			{#if badgeAssetId}
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-				<a class="badge-menu-item" role="menuitem" href="/assets/{badgeAssetId}" download>
-					Download image
-				</a>
-				<button class="badge-menu-item" type="button" role="menuitem" onclick={removeImage}>
-					Remove image
-				</button>
+				<a class="badge-menu-item" href="/assets/{badgeAssetId}" download> Download image </a>
+				<button class="badge-menu-item" type="button" onclick={removeImage}> Remove image </button>
 			{:else}
 				<div class="badge-swatches">
 					<button
@@ -144,15 +150,16 @@
 					{/each}
 				</div>
 				{#if assetsConfigured}
-					<label class="badge-menu-item badge-upload">
+					<button class="badge-menu-item" type="button" onclick={() => fileInput?.click()}>
 						Upload image
-						<input
-							type="file"
-							accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-							onchange={uploadImage}
-							hidden
-						/>
-					</label>
+					</button>
+					<input
+						bind:this={fileInput}
+						type="file"
+						accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+						onchange={uploadImage}
+						hidden
+					/>
 				{/if}
 			{/if}
 		</div>
@@ -238,8 +245,5 @@
 	}
 	.badge-menu-item:hover {
 		background: var(--bg-hover);
-	}
-	.badge-upload {
-		cursor: pointer;
 	}
 </style>

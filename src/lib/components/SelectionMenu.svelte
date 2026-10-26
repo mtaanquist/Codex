@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
 	import { dismiss } from '$lib/dismiss';
+	import { menu as menuKeys } from '$lib/menu';
 	import { modLabel } from '$lib/keys';
 	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import Icon from './Icon.svelte';
@@ -78,6 +79,7 @@
 	class="sel-menu"
 	role="menu"
 	use:dismiss={{ close: onClose, refocus: () => getView()?.focus() }}
+	use:menuKeys={{ close: onClose }}
 	style="left: {menu.x}px; top: {menu.y}px;"
 >
 	<div class="sel-menu-formats">

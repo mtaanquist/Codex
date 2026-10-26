@@ -17,14 +17,20 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 
 	let { items }: { items: ViewItem[] } = $props();
 	let open = $state(false);
+	let trigger = $state<HTMLButtonElement>();
 	const active = $derived(items.find((item) => item.current));
 </script>
 
-<div class="md-view" use:dismiss={{ enabled: open, close: () => (open = false) }}>
+<div
+	class="md-view"
+	use:dismiss={{ enabled: open, close: () => (open = false), refocus: () => trigger?.focus() }}
+>
 	<button
+		bind:this={trigger}
 		class="md-tool md-view-trigger"
 		class:is-active={open}
 		type="button"
@@ -39,7 +45,7 @@
 	</button>
 	{#if open}
 		<!-- eslint-disable svelte/no-navigation-without-resolve (the caller resolves each href) -->
-		<div class="md-view-menu popover" role="menu">
+		<div class="md-view-menu popover" role="menu" use:menu={{ close: () => (open = false) }}>
 			{#each items as item (item.id)}
 				{#if item.href}
 					<a

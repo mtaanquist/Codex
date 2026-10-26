@@ -122,11 +122,7 @@
 	top: calc(100% + 6px);
 	right: 0;
 	min-width: 244px;
-	display: none;
 	z-index: 40;
-}
-.menu-host.open > .popover {
-	display: block;
 }
 .menu-host.start > .popover {
 	left: 0;

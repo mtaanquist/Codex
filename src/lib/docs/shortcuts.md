@@ -9,6 +9,8 @@ Option on a Mac, Ctrl and Alt everywhere else.
   entity, or run a command (new scene, switch view, focus mode, and more).
 - **Ctrl+Alt+N**: on a story's Write page, open the quick-note card to jot a
   note without leaving the editor. Ctrl+Enter saves it, Esc closes it.
+- **Arrow keys** move through any open menu, and Home and End jump to its first
+  and last item. Esc closes the menu.
 
 ## In the editor
 

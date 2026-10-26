@@ -4,6 +4,7 @@
 	import { browser } from '$app/environment';
 	import { cycleTheme, currentTheme, nextTheme } from '$lib/theme';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 	import { authorInitials } from '$lib/review-ui';
 	import Icon from './Icon.svelte';
 	import type { ConcreteTheme } from '$lib/appearance';
@@ -44,7 +45,7 @@
 		</button>
 
 		{#if open}
-			<div class="avatar-dropdown" role="menu">
+			<div class="avatar-dropdown" role="menu" use:menu={{ close: () => (open = false) }}>
 				<div class="avatar-dd-head">
 					<span class="avatar-dd-pic">{authorInitials(user.displayName)}</span>
 					<div>

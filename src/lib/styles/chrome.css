@@ -156,11 +156,7 @@ a.appbar-brand:hover {
 	left: 0;
 	min-width: 216px;
 	padding: 5px;
-	display: none;
 	z-index: 40;
-}
-.crumb-place.open .crumb-pop {
-	display: block;
 }
 .crumb-pop .menu-item {
 	width: 100%;

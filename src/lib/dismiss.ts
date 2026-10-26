@@ -7,7 +7,8 @@ export type DismissParams = {
 	// sits on an always-rendered container. Defaults to true, for elements
 	// that only exist while open.
 	enabled?: boolean;
-	// Where focus returns on Escape (the editor, the trigger button).
+	// Where focus returns on Escape (the editor, the trigger button). Runs
+	// before close, while the menu is still rendered.
 	refocus?: () => void;
 };
 
@@ -27,8 +28,8 @@ export const dismiss: Action<HTMLElement, DismissParams> = (node, params) => {
 		if (event.key !== 'Escape') return;
 		event.preventDefault();
 		event.stopPropagation();
-		current.close();
 		current.refocus?.();
+		current.close();
 	}
 	document.addEventListener('pointerdown', onPointerDown, true);
 	document.addEventListener('keydown', onKeydown, true);

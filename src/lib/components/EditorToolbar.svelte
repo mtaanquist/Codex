@@ -15,6 +15,7 @@
 	import { ALIGNMENTS } from '$lib/alignment';
 	import { modLabel } from '$lib/keys';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 	import ViewMenu, { type ViewItem } from './ViewMenu.svelte';
 
 	// The formatting bar above a prose editor: headings, bold, italic, quote,
@@ -297,7 +298,14 @@
 
 	{#if overflow.length > 0}
 		<span class="md-sep"></span>
-		<div class="md-overflow" use:dismiss={{ enabled: menuOpen, close: () => (menuOpen = false) }}>
+		<div
+			class="md-overflow"
+			use:dismiss={{
+				enabled: menuOpen,
+				close: () => (menuOpen = false),
+				refocus: () => view()?.focus()
+			}}
+		>
 			<button
 				class="md-tool"
 				class:is-active={menuOpen}
@@ -312,7 +320,7 @@
 				<Icon name="more" size={16} />
 			</button>
 			{#if menuOpen}
-				<div class="md-menu" role="menu">
+				<div class="md-menu" role="menu" use:menu={{ close: () => (menuOpen = false) }}>
 					{#each overflow as item (item.id)}
 						{#if item.kind === 'cmd'}
 							<button
@@ -337,7 +345,10 @@
 								role="menuitemcheckbox"
 								aria-checked={item.active}
 								onmousedown={(event) => event.preventDefault()}
-								onclick={() => item.toggle()}
+								onclick={() => {
+									item.toggle();
+									view()?.focus();
+								}}
 							>
 								<span class="md-menu-check">{item.active ? '✓' : ''}</span>
 								{item.menuLabel}
