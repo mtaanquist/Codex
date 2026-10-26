@@ -82,18 +82,6 @@
 	border-radius: var(--radius-lg);
 	box-shadow: var(--shadow);
 	padding: 6px;
-	opacity: 0;
-	transform: translateY(-4px) scale(0.98);
-	transform-origin: top right;
-	pointer-events: none;
-	transition:
-		opacity 0.13s ease,
-		transform 0.13s ease;
-}
-.avatar-menu.open .avatar-dropdown {
-	opacity: 1;
-	transform: none;
-	pointer-events: auto;
 }
 .avatar-dd-head {
 	display: flex;
