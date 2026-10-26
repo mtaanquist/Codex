@@ -8,7 +8,7 @@ import {
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 import { errorFields, logEvent } from '$lib/server/log';
-import { assertOriginConfigured } from '$lib/server/origin';
+import { assertOriginConfigured, publicOrigin } from '$lib/server/origin';
 
 export const init: ServerInit = () => {
 	assertOriginConfigured();
@@ -50,14 +50,18 @@ const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/', '/docs/'];
 // adapter-node serves the built static files (/_app/immutable and static/)
 // before handle runs, so those do not get them. The Content-Security-Policy for
 // pages (scripts and frame-ancestors) comes from kit.csp in svelte.config.js.
-// HSTS is left off plain HTTP so a self-hosted install without TLS is not
-// pinned to HTTPS. It skips includeSubDomains because sibling hosts on a
-// self-hoster's domain may not serve HTTPS.
+// HSTS follows the configured ORIGIN, not the request URL, so a self-hosted
+// install without TLS is never pinned to HTTPS: adapter-node can report https
+// for a plain-HTTP request when no protocol header is set. It skips
+// includeSubDomains because sibling hosts on a self-hoster's domain may not
+// serve HTTPS.
 function setSecurityHeaders(headers: Headers, url: URL) {
 	headers.set('X-Content-Type-Options', 'nosniff');
 	headers.set('Referrer-Policy', 'same-origin');
 	headers.set('X-Frame-Options', 'DENY');
-	if (url.protocol === 'https:') headers.set('Strict-Transport-Security', 'max-age=31536000');
+	if (new URL(publicOrigin(url)).protocol === 'https:') {
+		headers.set('Strict-Transport-Security', 'max-age=31536000');
+	}
 }
 
 // A redirect thrown from handle bypasses resolve, so it would leave without
