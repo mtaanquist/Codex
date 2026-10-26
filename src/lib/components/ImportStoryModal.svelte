@@ -98,7 +98,7 @@
 	const submit = () => {
 		busy = true;
 		busyLabel = preview ? 'Importing...' : 'Reading the file...';
-		return async ({ result }: { result: import('@sveltejs/kit').ActionResult }) => {
+		return async ({ result }: { result: import('$app/forms').ActionResult }) => {
 			busy = false;
 			if (result.type === 'success') {
 				const data = result.data as

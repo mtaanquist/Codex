@@ -17,6 +17,8 @@ RUN apk add --no-cache postgresql18-client chromium font-liberation ttf-dejavu
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/build build
 COPY --from=build /app/package.json package.json
+# Runtime entry that feeds ORIGIN to adapter-node (see server.js).
+COPY --from=build /app/server.js server.js
 # Migrations (applied on app start) and operational scripts (seed-admin).
 COPY --from=build /app/drizzle drizzle
 COPY --from=build /app/scripts scripts

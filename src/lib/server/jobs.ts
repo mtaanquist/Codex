@@ -1,5 +1,5 @@
 import { PgBoss } from 'pg-boss';
-import { env } from '$env/dynamic/private';
+import { DATABASE_URL } from '$app/env/private';
 import type { EmailJob } from './token-email';
 import type { ReviewCategory } from '../review-shape';
 import { db } from './db';
@@ -50,7 +50,7 @@ let starting: Promise<PgBoss> | null = null;
 
 function getBoss(): Promise<PgBoss> {
 	starting ??= (async () => {
-		const boss = new PgBoss(env.DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex');
+		const boss = new PgBoss(DATABASE_URL ?? 'postgres://codex:codex@localhost:5432/codex');
 		boss.on('error', (error) => logEvent('error', 'pgboss.error', errorFields(error)));
 		await boss.start();
 		await boss.createQueue(MENTIONS_SCENE_QUEUE);

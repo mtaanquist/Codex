@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { enhance } from '$app/forms';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';

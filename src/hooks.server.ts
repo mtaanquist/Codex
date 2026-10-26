@@ -1,10 +1,5 @@
-import {
-	redirect,
-	type Handle,
-	type HandleServerError,
-	type RequestEvent,
-	type ServerInit
-} from '@sveltejs/kit';
+import { redirect, type RequestEvent } from '@sveltejs/kit';
+import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { db } from '$lib/server/db';
 import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
 import { errorFields, logEvent } from '$lib/server/log';
@@ -120,15 +115,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 };
 
 // Server faults are logged as structured events with a request id; the client
-// still gets only SvelteKit's safe message. Expected 404s are left as noise.
-export const handleError: HandleServerError = ({ error, event, status, message }) => {
-	if (status !== 404) {
-		logEvent('error', 'request.error', {
-			method: event.request.method,
-			path: event.url.pathname,
-			status,
-			...errorFields(error)
-		});
-	}
-	return { message };
+// still gets only SvelteKit's safe message. Kit 3 also passes expected errors
+// here (error() throws, the router's 404s, invalid remote arguments), which are
+// the app working as intended, so only unknown errors are logged.
+export const handleError: HandleServerError = ({ kind, error, event }) => {
+	if (kind !== 'unknown') return;
+	logEvent('error', 'request.error', {
+		method: event.request.method,
+		path: event.url.pathname,
+		status: 500,
+		...errorFields(error)
+	});
 };

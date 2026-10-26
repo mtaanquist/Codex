@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { cycleTheme, currentTheme, nextTheme } from '$lib/theme';
 	import { dismiss } from '$lib/dismiss';
 	import { menu } from '$lib/menu';

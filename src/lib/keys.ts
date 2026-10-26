@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 // Whether a platform string names an Apple device, where the command
 // modifier is Cmd rather than Ctrl.

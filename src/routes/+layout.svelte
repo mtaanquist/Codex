@@ -24,7 +24,7 @@
 	// footer and the shared primitives and then set their own type on top.
 	import '$lib/styles/public.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import { followSystemTheme } from '$lib/theme';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';

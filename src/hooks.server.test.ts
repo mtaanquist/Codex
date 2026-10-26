@@ -8,8 +8,12 @@ vi.mock('$lib/server/auth', () => ({
 	SESSION_COOKIE: 'session',
 	validateSession: vi.fn(async () => null)
 }));
-// Read the live process env so vi.stubEnv can set ORIGIN per test.
-vi.mock('$env/dynamic/private', () => ({ env: process.env }));
+// Read ORIGIN live so vi.stubEnv can set it per test.
+vi.mock('$app/env/private', () => ({
+	get ORIGIN() {
+		return process.env.ORIGIN || undefined;
+	}
+}));
 vi.mock('$lib/server/log', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/server/log')>()),
 	logEvent: vi.fn()
@@ -207,13 +211,33 @@ describe('security headers', () => {
 describe('handleError', () => {
 	const event = { request: { method: 'GET' }, url: new URL('http://localhost/stories/x') };
 
+	beforeEach(() => {
+		vi.mocked(logEvent).mockClear();
+	});
+
 	it('logs the stack of a server fault', () => {
 		const error = new Error('boom');
-		handleError({ error, event, status: 500, message: 'Internal Error' } as never);
+		handleError({ kind: 'unknown', error, event } as never);
 		expect(logEvent).toHaveBeenCalledWith(
 			'error',
 			'request.error',
-			expect.objectContaining({ message: 'boom', stack: error.stack })
+			expect.objectContaining({ status: 500, message: 'boom', stack: error.stack })
 		);
+	});
+
+	it('does not log expected errors', () => {
+		handleError({ kind: 'app', error: { status: 403, message: 'Forbidden' }, event } as never);
+		handleError({
+			kind: 'framework',
+			error: { status: 404, message: 'Not Found' },
+			event
+		} as never);
+		handleError({
+			kind: 'validation',
+			error: { status: 400, message: 'Bad Request' },
+			issues: [],
+			event
+		} as never);
+		expect(logEvent).not.toHaveBeenCalled();
 	});
 });
