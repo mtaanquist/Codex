@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu } from './library';
+import { addEntity } from './plan';
 
 // The universe settings page: contents tiles, the category manager, the
 // history panel, the export download, and the trash round trip.
@@ -45,8 +46,7 @@ test('universe settings: contents, categories, history, export, and the trash', 
 	// History: a worldbuilding change shows up with its kind chip. Creating
 	// alone records nothing; the first edit does.
 	await gotoReady(page, `/universes/settle-${stamp}/plan`);
-	await page.getByPlaceholder('New character name').fill('Histor');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Histor');
 	await expect(page.locator('.ent-row', { hasText: 'Histor' })).toBeVisible();
 	const entitySave = page.waitForResponse(
 		(response) =>

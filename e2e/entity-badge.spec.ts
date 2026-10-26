@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu } from './library';
+import { addEntity } from './plan';
 
 // Issue #305: clicking an entity's badge opens a menu to pick a colour (or
 // upload an image, when storage is configured). The colour path always works
@@ -14,8 +15,7 @@ test('an entity badge can be given a colour from its menu, and it sticks', async
 	await expect(page).toHaveURL(`/universes/badges-${stamp}`);
 
 	await gotoReady(page, `/universes/badges-${stamp}/plan`);
-	await page.getByPlaceholder('New character name').fill('Aria');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Aria');
 
 	// Open the character; its editor carries the large badge.
 	await page.locator('.ent-row', { hasText: 'Aria' }).first().click();
@@ -48,8 +48,7 @@ test('a refused badge colour change shows the reason and is undone', async ({ pa
 	await expect(page).toHaveURL(`/universes/refused-badges-${stamp}`);
 
 	await gotoReady(page, `/universes/refused-badges-${stamp}/plan`);
-	await page.getByPlaceholder('New character name').fill('Bram');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Bram');
 	await page.locator('.ent-row', { hasText: 'Bram' }).first().click();
 	await expect(page).toHaveURL(/\?entity=/);
 	const badge = page.locator('.detail-head .badge.lg');

@@ -4,9 +4,11 @@ The planning view holds everything your stories draw on: characters, places, and
 
 ## Characters, places, and lore
 
-Create an entry and give it a name and a short summary. The summary is what shows when someone hovers a mention in the editor. Add longer notes in the body. The field at the top of the sidebar filters every list by name as you type.
+To create an entry, select the Add row under its group in the sidebar ("Add character", "Add place", or "Add" followed by a lore category's name, such as "Add Lore entry"), type a name, and press Enter. Press Escape to close the field without creating anything. Give the new entry a short summary. The summary is what shows when someone hovers a mention in the editor. Add longer notes in the body. The field at the top of the sidebar filters every list by name as you type. While it has text in it, the Add rows and "Manage categories" are hidden, so clear it to add an entry.
 
-Lore entries are grouped into categories you define, such as "Factions" or "Magic". A category's colour is the colour its entries are underlined in. Manage categories in the universe settings: rename them, pick their colours, reorder them, and add or delete them. A category can only be deleted once nothing uses it.
+In a story's planning view, characters and places from the rest of the universe are listed under "In the universe". To bring one into the story, select "Add a character from the universe" (or "Add a place from the universe"), pick it, and select "Add to this story".
+
+Lore entries are grouped into categories you define, such as "Factions" or "Magic". A category's colour is the colour its entries are underlined in. Select "Manage categories" at the foot of the sidebar to open them in the universe settings, where you can rename them, pick their colours, reorder them, and add or delete them. A category can only be deleted once nothing uses it.
 
 ## The entity badge
 

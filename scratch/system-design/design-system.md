@@ -523,6 +523,13 @@ through the shared `dismiss` action.
 - **`.card-add` is legacy in a populated grid.** A dashed tile beside real
   cards was a third affordance for the same act. It survives only as the skin
   of the inline title form the menu swaps in.
+- **A sidebar group adds with one `.outline-add` row.** Write has "New
+  scene" and "New chapter"; the Plan sidebar has "Add character", "Add
+  place", "Add <category> entry" and, at story scope, "Add a character from
+  the universe". Where the new thing needs a name, the row swaps in a small
+  form (a labelled `.input` or `.select` and the same row as its submit), one
+  open at a time; Escape closes it. Never leave a field open for every group.
+  Categories are not made in the sidebar: it links to universe settings.
 
 ### The reading pages
 

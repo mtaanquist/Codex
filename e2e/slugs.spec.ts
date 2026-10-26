@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 // Readable URLs: universes and stories get slugs generated from their
 // names, and a rename in settings moves the address along with it.
@@ -35,13 +36,11 @@ test('slugs: created things get readable addresses that follow renames', async (
 
 	// Plan actions redirect back to the slug address, not the id.
 	await gotoReady(page, `/stories/toll-${stamp}/plan`);
-	await page.getByPlaceholder('New character name').fill('Slug Tester');
-	await page.getByRole('button', { name: 'Add character' }).click();
+	await addEntity(page, 'Add character', 'Slug Tester');
 	await expect(page).toHaveURL(new RegExp(`/stories/toll-${stamp}/plan\\?entity=`));
 
 	await gotoReady(page, `/universes/slugfall-${stamp}/plan`);
-	await page.getByPlaceholder('New place name').fill('Sluggate');
-	await page.getByRole('button', { name: 'Add place' }).click();
+	await addEntity(page, 'Add place', 'Sluggate');
 	await expect(page).toHaveURL(new RegExp(`/universes/slugfall-${stamp}/plan\\?entity=`));
 
 	// Renaming the universe moves its address too.
