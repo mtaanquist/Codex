@@ -356,13 +356,17 @@ primitive's own class too, but do not copy the pattern.
   styles `a.icon-btn`. There are two icon sizes and no third.
 - Scoped exceptions that stay: `.md-tool` (editor toolbar), `.seg-btn`
   (segmented strips).
-- An icon-only button always carries an `aria-label`.
+- An icon-only button always carries an `aria-label` (`src/lib/icon-buttons.test.ts`
+  fails the build on one without). The formatting bar is a `role="toolbar"`
+  with one tab stop and arrow keys between tools (`$lib/toolbar`).
 
 ### Forms
 
 - Wrapper: `.field` with a `<label>`, optional `.field-hint`, laid out with
   `.field-grid` when two-up. Action row: `.settings-actions`.
-- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
+- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`
+  (its checkbox has no visible label of its own, so give it an `aria-label`
+  matching the row title),
   `.slider`. `.input.short` caps a field for a short value (a display name,
   a pen name, a handle) at 36ch instead of the full column. The focus ring
   (accent border plus `--accent-soft` glow) comes from the shared rule;

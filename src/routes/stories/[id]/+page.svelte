@@ -1007,6 +1007,7 @@
 				class="icon-btn"
 				type="button"
 				title="Exit focus (Esc)"
+				aria-label="Exit focus (Esc)"
 				onclick={() => (focusMode.on = false)}
 			>
 				<Icon name="compress" />

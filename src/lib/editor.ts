@@ -30,6 +30,8 @@ export function nonPrintingFor(nonPrintingMarks: MarkVisibility): Extension {
 // document stays markdown.
 export function proseExtensions(opts: {
 	placeholder: string;
+	// The editor's accessible name ("Scene text", "Note text", ...).
+	label: string;
 	onDocChanged: () => void;
 	editingMode?: EditingMode;
 	// Plain prose: no markdown styling and no formatting shortcuts; entity
@@ -76,6 +78,7 @@ export function proseExtensions(opts: {
 					...(opts.spellCheck.language ? { lang: opts.spellCheck.language } : {})
 				})
 			: [],
+		EditorView.contentAttributes.of({ 'aria-label': opts.label }),
 		placeholder(opts.placeholder),
 		EditorView.lineWrapping,
 		EditorView.updateListener.of((update) => {

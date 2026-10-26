@@ -90,7 +90,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.locator('.appbar')).toBeVisible();
 
 	// Write prose: the autosave chip confirms, and a reload preserves it.
-	await page.locator('.cm-content').click();
+	await page.getByRole('textbox', { name: 'Scene text' }).click();
 	await page.keyboard.type('The gate of Halden opened the way it always did.');
 	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
 	const titleSave = page.waitForResponse(

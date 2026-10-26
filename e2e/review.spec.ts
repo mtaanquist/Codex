@@ -148,9 +148,9 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 	// author's editable prose updates in place.
 	await expect(page.locator('.rv-diff-ins')).toHaveText('reservations');
 	await page.getByRole('button', { name: 'Accept suggestion' }).click();
-	await expect(page.locator('.review-edit .cm-content')).toContainText(
-		'The reviewer will have reservations about this gate.'
-	);
+	await expect(
+		page.locator('.review-edit').getByRole('textbox', { name: 'Scene text' })
+	).toContainText('The reviewer will have reservations about this gate.');
 
 	// Resolve the thread, then the Done filter shows both outcomes.
 	await page.getByRole('button', { name: 'Resolve comment' }).click();

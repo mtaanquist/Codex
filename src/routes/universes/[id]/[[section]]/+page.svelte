@@ -309,6 +309,7 @@
 									class="icon-btn sm turn-up"
 									type="button"
 									title="Move category up"
+									aria-label="Move category up"
 									disabled={index === 0}
 									onclick={() => moveDraft(index, -1)}
 								>
@@ -318,6 +319,7 @@
 									class="icon-btn sm turn-down"
 									type="button"
 									title="Move category down"
+									aria-label="Move category down"
 									disabled={index === drafts.length - 1}
 									onclick={() => moveDraft(index, 1)}
 								>
@@ -356,6 +358,7 @@
 								class="category-delete"
 								type="button"
 								title={draft.entries > 0 ? 'Move or delete its entries first' : 'Delete category'}
+								aria-label="Delete category"
 								disabled={draft.entries > 0}
 								onclick={() => (drafts = drafts.filter((row) => row !== draft))}
 							>

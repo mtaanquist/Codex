@@ -454,6 +454,7 @@
 				doc: body,
 				extensions: [
 					...proseExtensions({
+						label: 'Scene text',
 						placeholder: 'Start writing...',
 						onDocChanged: scheduleSave,
 						editingMode,

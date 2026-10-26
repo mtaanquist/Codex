@@ -59,13 +59,19 @@
 		</a>
 		<div class="md-right">
 			<span class="md-hint">Preview</span>
-			<a class="md-tool" href={toggleHref} title="Back to the scene editor">
+			<a
+				class="md-tool"
+				href={toggleHref}
+				title="Back to the scene editor"
+				aria-label="Back to the scene editor"
+			>
 				<Icon name="scene" size={16} />
 			</a>
 			<button
 				class="md-tool"
 				type="button"
 				title="Focus mode"
+				aria-label="Focus mode"
 				onclick={() => (focusMode.on = true)}
 			>
 				<Icon name="expand" size={16} />
