@@ -55,12 +55,22 @@
 
 				<div class="avatar-dd-sep"></div>
 				<div class="avatar-dd-group">
-					<a class="avatar-dd-item" role="menuitem" href={resolve('/account/[[section]]', {})}>
+					<a
+						class="avatar-dd-item"
+						role="menuitem"
+						href={resolve('/account/[[section]]', {})}
+						onclick={() => (open = false)}
+					>
 						<Icon name="gear" size={16} />
 						<span class="lbl">Account settings</span>
 					</a>
 					{#if user.isAdmin}
-						<a class="avatar-dd-item" role="menuitem" href={resolve('/admin/[[section]]', {})}>
+						<a
+							class="avatar-dd-item"
+							role="menuitem"
+							href={resolve('/admin/[[section]]', {})}
+							onclick={() => (open = false)}
+						>
 							<Icon name="shield" size={16} />
 							<span class="lbl">Admin panel</span>
 							<span class="avatar-dd-tag">Admin</span>

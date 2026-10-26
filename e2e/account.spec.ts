@@ -36,6 +36,7 @@ test('account settings: rename and see the current session', async ({ page }) =>
 	await expect(avatar).toHaveAttribute('aria-expanded', 'true');
 	await expect(page.getByRole('menuitem', { name: 'Account settings' })).toBeVisible();
 	await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+	await page.getByRole('menuitem', { name: 'Account settings' }).focus();
 	await page.keyboard.press('Escape');
 	await expect(avatar).toHaveAttribute('aria-expanded', 'false');
 	await expect(avatar).toBeFocused();
