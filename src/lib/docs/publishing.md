@@ -48,7 +48,7 @@ The reading pages are the outward face of your work, so they are plain and quiet
 
 Both pages name you the way you asked to be named: your pen name if you set one on your account page, otherwise your display name. The first time you claim a handle or publish with no pen name set, a dialog asks which name should go on the page, offering your display name to keep; what you choose becomes your pen name, and you can change it on your account page. Your handle stays the address in the link.
 
-A reader gets two controls in the bar: the theme, which starts in whichever of light or dark their device asks for and remembers a change they make, and the question mark, which opens these pages. At the end of both pages a footer says the work was written in Codex, who published it, and offers a link for a reader who wants to write something of their own.
+A reader gets two controls in the bar: the theme, which starts in whichever of light or dark their device asks for and remembers a choice they make from its menu (Light, Warm, Dark, or System), and the question mark, which opens these pages. At the end of both pages a footer says the work was written in Codex, who published it, and offers a link for a reader who wants to write something of their own.
 
 ## Taking something down
 

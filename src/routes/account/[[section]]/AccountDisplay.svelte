@@ -15,8 +15,9 @@
 
 	// Appearance preview: local state seeded from the saved preferences, applied
 	// live as the user edits. Saving persists it; the layout re-applies on load.
-	// svelte-ignore state_referenced_locally
-	let theme = $state(data.preferences.theme);
+	// Follows the saved value, so a pick from the account menu's theme picker
+	// shows here too; editing the select overrides it until the save lands.
+	let theme = $derived(data.preferences.theme);
 	// svelte-ignore state_referenced_locally
 	let systemLightTheme = $state(data.preferences.systemLightTheme);
 	// svelte-ignore state_referenced_locally

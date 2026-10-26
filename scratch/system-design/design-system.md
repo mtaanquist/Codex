@@ -186,7 +186,7 @@ none adds a second bar.
 
 | Shell | Brand | Path | Tools |
 |---|---|---|---|
-| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Theme, Help, Notifications, You |
+| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Help, Notifications, You (the theme picker is in the account menu) |
 | `.appbar.guest` | lockup, not a link | the one story they were sent, plus a "Review only" pill | Theme, Help, "Reviewing as ..." |
 | `.appbar.reader` | links to Codex | the story and its author, as text | Theme, Help |
 | `.appbar.public` | links home | none at all: a signed-out visitor is not anywhere in the library | Theme, Help |
@@ -222,9 +222,14 @@ Tools:
 
 - `.tool-search` is the palette trigger: a labelled button with a `kbd`
   hint, not an icon. Ctrl+K does the same.
-- The theme tool cycles dark -> light -> warm (`$lib/theme.ts`,
-  `cycleTheme`). A signed-in viewer's choice persists through the appearance
-  API; a guest reviewer's and a reader's is kept in localStorage only.
+- The theme is one component, `ThemePicker` (Light / Warm / Dark / System,
+  the current choice checked, applied through `setTheme` in `$lib/theme.ts`).
+  In the author bar it is a radio group inside the account menu
+  (`variant="items"`); the guest, reader and public bars have no account
+  menu, so they carry it as their own small menu button. A signed-in
+  viewer's choice persists through the appearance API (so "System" is stored
+  as a choice, not as a palette); a signed-out viewer's is kept in
+  localStorage only. Focus mode has no theme control.
 - The `?` is a tool that is a place, not a popup: it navigates to the help
   pages, lights up with `aria-current="page"` while you are there, and takes
   you back to where you were when pressed again. There is no help modal.
@@ -547,7 +552,7 @@ The outward face of the work, built from the same tokens as everything else.
 - **The theme is the reader's.** With no choice stored on the device the page
   opens in the theme the system asks for (the pre-paint script in
   `app.html`), and `followSystemTheme()` in the root layout keeps following it
-  while the page is open. The theme tool in the bar overrides and remembers;
+  while the page is open. The theme picker in the bar overrides and remembers;
   an author's account choice carries over, since it is the same key.
 - **The author is named, not addressed.** The path crumb and the footer show
   `users.penName ?? users.displayName` (`$lib/author-name.ts`), never the raw
@@ -822,7 +827,7 @@ once the drag handlers stop swallowing keyboard events.
 ## Component index
 
 Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
-`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemeToggle`, `CrumbMenu`,
+`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemePicker`, `CrumbMenu`,
 `SidebarSearch`, `HelpLink`, `FormStatus`, `ReviewAvatar`, `ReviewReplyForm`,
 `ReviewReplyRow`, `ReviewMarginRail`, `ReviewSelectionToolbar`.
 
