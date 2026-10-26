@@ -10,7 +10,7 @@
 	const notFound = $derived(page.status === 404);
 	const title = $derived(notFound ? 'Page not found' : 'Something went wrong');
 	const text = $derived.by(() => {
-		if (!notFound) return 'Something went wrong. Try again in a moment.';
+		if (!notFound) return 'Try again in a moment.';
 		return page.data.user
 			? 'This page does not exist. If a story or universe was renamed, open it from your library.'
 			: 'This page does not exist.';
