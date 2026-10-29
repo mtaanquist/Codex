@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -80,12 +82,12 @@
 		book?: { title: string; subtitle: string | null } | null;
 		canSuggest?: boolean;
 		// The mode switcher links, shown on the author side only.
-		seg?: { writeHref: string; planHref: string } | null;
+		seg?: { writeHref: ResolvedPathname; planHref: ResolvedPathname } | null;
 		// Entity mention data for the centre's highlights and quick cards.
 		entities?: MentionEntity[];
 		mentionMembers?: string[];
 		mentionPins?: Record<string, string>;
-		entityHref?: ((entity: MentionEntity) => string) | null;
+		entityHref?: ((entity: MentionEntity) => ResolvedPathname) | null;
 		// The author editor's view toggles, persisted per user.
 		nonPrintingMarks?: MarkVisibility;
 		commandMarkers?: MarkVisibility;
@@ -253,19 +255,26 @@
 	// The View dropdown for the editable centre, the same control as the Write
 	// toolbar: Edit (here), Preview and Print (the export views), and a
 	// distraction-free Focus that hides the side panes.
-	const storyHref = $derived(storySlug ? resolve('/stories/[id]', { id: storySlug }) : '');
 	const viewMenu = $derived<ViewItem[]>(
-		storyHref
+		storySlug
 			? [
 					{ id: 'edit', label: 'Edit', icon: 'pencil', current: true },
 					{
 						id: 'preview',
 						label: 'Preview',
 						icon: 'book',
-						href: `${storyHref}?view=preview&scene=${selectedSceneId}`
+						href: withQuery(resolve('/stories/[id]', { id: storySlug }), {
+							view: 'preview',
+							scene: selectedSceneId
+						})
 					},
 					{ id: 'focus', label: 'Focus', icon: 'expand', onSelect: () => (focusMode.on = true) },
-					{ id: 'print', label: 'Print', icon: 'print', href: `${storyHref}/print` }
+					{
+						id: 'print',
+						label: 'Print',
+						icon: 'print',
+						href: resolve('/stories/[id]/print', { id: storySlug })
+					}
 				]
 			: []
 	);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	// The right pane's Assistant tab: a chat with the writing Assistant,
 	// grounded in the open story. The conversation is kept per story and user:
 	// the server stores each completed turn and the page load seeds the panel,
@@ -89,7 +90,7 @@
 		getSelection?: () => string | null;
 		// The story's review page, for /copyedit to open when notes are staged.
 		// Story surfaces pass it; the universe surface does not.
-		reviewHref?: string;
+		reviewHref?: ResolvedPathname;
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };

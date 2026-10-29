@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
 	import { CATEGORY_COLORS } from '$lib/entity-color';
 	import { dismiss } from '$lib/dismiss';
@@ -137,8 +138,13 @@
 				<div class="badge-error"><FormStatus block {error} /></div>
 			{/if}
 			{#if badgeAssetId}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-				<a class="badge-menu-item" href="/assets/{badgeAssetId}" download> Download image </a>
+				<a
+					class="badge-menu-item"
+					href={resolve('/assets/[id=uuid]', { id: badgeAssetId })}
+					download
+				>
+					Download image
+				</a>
 				<button class="badge-menu-item" type="button" onclick={removeImage}> Remove image </button>
 			{:else}
 				<div class="badge-swatches">

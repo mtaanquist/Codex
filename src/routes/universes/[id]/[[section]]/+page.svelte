@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
 	import { confirmSubmit } from '$lib/confirm.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -27,7 +29,7 @@
 	];
 	let active: Section = $derived((page.params.section as Section) ?? 'details');
 
-	function sectionHref(section: Section): string {
+	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/universes/[id]/[[section]]', {
 			id: data.universe.slug,
 			section: section === 'details' ? undefined : section
@@ -118,11 +120,17 @@
 		return formatTime(row.createdAt);
 	}
 
-	function previewHref(row: (typeof data.timeline)[number]): string {
+	function previewHref(row: (typeof data.timeline)[number]): ResolvedPathname {
 		if (row.entityType === 'scene' && row.storySlug) {
-			return `/stories/${row.storySlug}?scene=${row.entityId}&revision=${row.id}`;
+			return withQuery(resolve('/stories/[id]', { id: row.storySlug }), {
+				scene: row.entityId,
+				revision: row.id
+			});
 		}
-		return `/universes/${data.universe.slug}/plan?entity=${row.entityId}&revision=${row.id}`;
+		return withQuery(resolve('/universes/[id]/plan', { id: data.universe.slug }), {
+			entity: row.entityId,
+			revision: row.id
+		});
 	}
 
 	let restoring = $state<string | null>(null);
@@ -165,7 +173,6 @@
 				<div class="st">Universe</div>
 			</div>
 		</div>
-		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 		<div class="side-nav-label" id="universe-settings-label">Universe settings</div>
 		<nav class="side-nav" aria-labelledby="universe-settings-label">
 			{#each NAV as item (item.id)}
@@ -179,7 +186,6 @@
 			<a href={resolve('/universes/[id]/plan', { id: data.universe.slug })}>Plan</a>
 			<a href={resolve('/universes/[id]/insights', { id: data.universe.slug })}>Insights</a>
 		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/snippet}
 
 	<div class="admin-head">
@@ -444,9 +450,7 @@
 									</div>
 									{#if row.reason === 'checkpoint'}
 										<div class="revision-actions">
-											<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
 											<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 											<button
 												class="btn btn-secondary btn-sm"
 												type="button"

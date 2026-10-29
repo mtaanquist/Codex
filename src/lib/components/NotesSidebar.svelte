@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import type { NoteListItem } from '$lib/wire-types';
@@ -22,18 +24,18 @@
 	}: {
 		notes: NoteListItem[];
 		selectedId?: string;
-		notesPath: string;
-		planHref: string;
+		notesPath: ResolvedPathname;
+		planHref: ResolvedPathname;
 		// At universe scope both point at the universe's own story list, which
 		// is where you pick the story to write in or review.
-		writeHref?: string;
-		reviewHref?: string;
+		writeHref?: ResolvedPathname;
+		reviewHref?: ResolvedPathname;
 		// The line under the mode strip, when the strip needs explaining.
 		modeNote?: string;
 		// Universe notes shown read-only at story scope, linking to the universe
 		// Notes view to edit. Empty at universe scope.
 		universeNotes?: NoteListItem[];
-		universeNotesPath?: string;
+		universeNotesPath?: ResolvedPathname;
 		form: { scope?: string; message?: string } | null;
 	} = $props();
 
@@ -75,17 +77,15 @@
 				<span class="count">{pinned.length}</span>
 			</div>
 			{#each pinned as note (note.id)}
-				<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 				<a
 					class="note-row"
 					class:active={note.id === selectedId}
-					href={`${notesPath}?note=${note.id}`}
+					href={withQuery(notesPath, { note: note.id })}
 				>
 					<Icon name="pin" size={12} />
 					<span class="note-name" class:untitled={!note.title}>{note.title || 'Untitled note'}</span
 					>
 				</a>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{/each}
 		{/if}
 
@@ -95,17 +95,15 @@
 				<span class="count">{recent.length}</span>
 			</div>
 			{#each recent as note (note.id)}
-				<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 				<a
 					class="note-row"
 					class:active={note.id === selectedId}
-					href={`${notesPath}?note=${note.id}`}
+					href={withQuery(notesPath, { note: note.id })}
 				>
 					<Icon name="note" size={12} />
 					<span class="note-name" class:untitled={!note.title}>{note.title || 'Untitled note'}</span
 					>
 				</a>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{/each}
 		{/if}
 
@@ -123,8 +121,7 @@
 				<span class="count">{shownUniverse.length}</span>
 			</div>
 			{#each shownUniverse as note (note.id)}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-				<a class="note-row" href={`${universeNotesPath}?note=${note.id}`}>
+				<a class="note-row" href={withQuery(universeNotesPath, { note: note.id })}>
 					<Icon name="universe" size={12} />
 					<span class="note-name" class:untitled={!note.title}>{note.title || 'Untitled note'}</span
 					>

@@ -54,12 +54,10 @@
 				</nav>
 				{#if back || page.data.user}
 					<div class="side-nav-label" id="docs-back-label">Back to your work</div>
-					<!-- eslint-disable svelte/no-navigation-without-resolve (the remembered location is an app path) -->
 					<nav class="side-nav" aria-labelledby="docs-back-label">
 						{#if back}<a href={back}>Where you were</a>{/if}
 						{#if page.data.user}<a href={resolve('/')}>Your library</a>{/if}
 					</nav>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/if}
 			</div>
 		</aside>

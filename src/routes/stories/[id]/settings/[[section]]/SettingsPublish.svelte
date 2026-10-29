@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { formatDateTime } from '$lib/format';
 	import { tick } from 'svelte';
 	import HelpLink from '$lib/components/HelpLink.svelte';
@@ -72,11 +73,15 @@
 	</form>
 	<form method="POST" action="?/publish" bind:this={publishForm} onsubmit={onPublishSubmit}>
 		<input type="hidden" name="penName" value={chosenPenName} />
-		{#if form?.action === 'publish' && 'published' in form && form.published}
+		{#if form?.action === 'publish' && 'published' in form && form.published && data.archive.handle}
 			<p class="field-hint" role="status" style="color:var(--status-final-ink);">
 				Edition published. Readers see it at
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (public reader path) -->
-				<a href="/@{data.archive.handle}/{data.story.id}">
+				<a
+					href={resolve('/@[handle]/[story=uuid]', {
+						handle: data.archive.handle,
+						story: data.story.id
+					})}
+				>
 					/@{data.archive.handle}/{data.story.id}
 				</a>.
 			</p>
@@ -117,8 +122,7 @@
 			<ul class="exports">
 				{#each data.artifacts as artifact (artifact.id)}
 					<li>
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (file download) -->
-						<a href="/artifacts/{artifact.id}" download>
+						<a href={resolve('/artifacts/[id=uuid]', { id: artifact.id })} download>
 							{FORMAT_LABELS[artifact.format] ?? artifact.format}
 						</a>
 						- {formatBytes(artifact.byteSize)}, generated {formatDateTime(artifact.createdAt)}

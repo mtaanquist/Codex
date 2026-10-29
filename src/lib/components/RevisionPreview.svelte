@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { formatDateTime } from '$lib/format';
 	import { diffLines } from 'diff';
 	import { goto } from '$app/navigation';
@@ -28,7 +29,7 @@
 		currentBody: string;
 		entityType: string;
 		entityId: string;
-		exitHref: string;
+		exitHref: ResolvedPathname;
 	} = $props();
 
 	const snapshot = $derived(revision.snapshot ?? null);
@@ -50,7 +51,6 @@
 				'Could not restore this revision.'
 			);
 			if (result.ok) {
-				// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
 				await goto(exitHref, { invalidateAll: true });
 			} else {
 				alert(result.message);
@@ -75,9 +75,7 @@
 		<button class="btn btn-sm btn-secondary" type="button" onclick={() => (showDiff = !showDiff)}>
 			{showDiff ? 'Show text' : 'Show changes'}
 		</button>
-		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 		<a class="btn btn-sm btn-secondary" href={exitHref}>Exit preview</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		<button class="btn btn-sm btn-primary" type="button" disabled={restoring} onclick={restore}>
 			Restore this version
 		</button>

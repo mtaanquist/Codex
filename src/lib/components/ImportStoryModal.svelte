@@ -274,8 +274,9 @@
 				<div class="modal-foot-note"></div>
 				{#if imported}
 					<button class="btn btn-sm btn-secondary" type="button" onclick={onClose}>Done</button>
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (slug known at runtime) -->
-					<a class="btn btn-sm btn-primary" href="/stories/{imported.slug}">Open the story</a>
+					<a class="btn btn-sm btn-primary" href={resolve('/stories/[id]', { id: imported.slug })}
+						>Open the story</a
+					>
 				{:else}
 					<button class="btn btn-sm btn-secondary" type="button" onclick={onClose}>Cancel</button>
 					<button

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { renderMarkdown } from '$lib/markdown';
 	import Icon from './Icon.svelte';
 	import EntityBadge from './EntityBadge.svelte';
@@ -18,7 +19,7 @@
 		// Walks the card stack; from the first card it returns to the tabs.
 		onBack: () => void;
 		onOpen: (entityId: string) => void;
-		planHref: string;
+		planHref: ResolvedPathname;
 	} = $props();
 
 	const kindLabel = $derived(
@@ -91,9 +92,7 @@
 			</div>
 		{/if}
 
-		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 		<a class="insp-open" href={planHref}>Open in Plan view &#8599;</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>
 </div>
 

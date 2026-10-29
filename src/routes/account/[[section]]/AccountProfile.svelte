@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
 	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
@@ -59,6 +60,9 @@
 	}
 
 	const handleUrl = $derived(data.profile.handle ? `${data.origin}/@${data.profile.handle}` : '');
+	const handlePath = $derived(
+		data.profile.handle ? resolve('/@[handle]', { handle: data.profile.handle }) : null
+	);
 </script>
 
 <div class="admin-head">
@@ -236,9 +240,8 @@
 					</div>
 					<p class="field-hint">
 						Where your page lives.
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (absolute URL on this origin) -->
-						<a href={handleUrl}>Open your page</a> - until visibility is on, it shows a preview only you
-						can see. Publish stories from their settings page.
+						<a href={handlePath}>Open your page</a> - until visibility is on, it shows a preview only
+						you can see. Publish stories from their settings page.
 					</p>
 				</div>
 

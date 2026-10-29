@@ -3,6 +3,7 @@
 // once. Server-side gating is re-checked by every endpoint; these just drive the
 // requests and report progress through the activity center.
 import { goto } from '$app/navigation';
+import type { ResolvedPathname } from '$app/types';
 import { apiErrorMessage, pluralSuffix } from '$lib/format';
 import { flashActivity, resolveActivity, startActivity, trackJob } from '$lib/activity.svelte';
 import type { ReviewCategory } from '$lib/review-shape';
@@ -13,7 +14,7 @@ import type { ReviewCategory } from '$lib/review-shape';
 // categories.
 export async function reviewSceneWithAssistant(
 	sceneId: string,
-	reviewHref: string,
+	reviewHref: ResolvedPathname,
 	categories: ReviewCategory[] = [],
 	label = 'this scene'
 ): Promise<void> {
@@ -49,7 +50,7 @@ export async function reviewSceneWithAssistant(
 			detail: 'Open the review page to read them.',
 			href: reviewHref
 		});
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from a slug
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- callers pass a resolve() path; lint has no type information in .ts files
 		await goto(reviewHref);
 	} else {
 		resolveActivity(activityId, {

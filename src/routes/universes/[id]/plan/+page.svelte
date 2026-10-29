@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
 	import EntityEditor from '$lib/components/EntityEditor.svelte';
 	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
@@ -58,7 +59,9 @@
 	const universeNotesPath = $derived(resolve('/universes/[id]/notes', { id: data.universe.slug }));
 	let chosenPanel = $state<PanelId | null>('reference');
 	const rightTab = $derived(activePanel(panels, chosenPanel));
-	const itemHref = $derived(data.selected ? `${planPath}?entity=${data.selected.id}` : planPath);
+	const itemHref = $derived(
+		data.selected ? withQuery(planPath, { entity: data.selected.id }) : planPath
+	);
 
 	// Appearances arrive flat and ordered; the panel shows them story by
 	// story, scene by scene.
@@ -98,14 +101,15 @@
 			<button class="btn btn-secondary" type="button" onclick={() => (creatingStory = true)}>
 				New story
 			</button>
-			<!-- eslint-disable svelte/no-navigation-without-resolve (resolve() plus a static hash) -->
 			<a
 				class="btn btn-ghost"
-				href={`${resolve('/universes/[id]/[[section]]', { id: data.universe.slug, section: 'export' })}#import-story`}
+				href={resolve('/universes/[id]/[[section]]#import-story', {
+					id: data.universe.slug,
+					section: 'export'
+				})}
 			>
 				Import story
 			</a>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</div>
 	{/if}
 {/snippet}
@@ -164,7 +168,7 @@
 							place: data.places,
 							lore_entry: data.lore
 						}}
-						entityHref={(id) => `${planPath}?entity=${id}`}
+						entityHref={(id) => withQuery(planPath, { entity: id })}
 						universeRef={data.universe.slug}
 						onStatus={(status) => (saveStatus = status)}
 					/>
@@ -221,7 +225,7 @@
 									entityId={data.revisionTarget.id}
 									revisions={data.revisionRows}
 									previewId={data.revisionPreview?.id}
-									previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+									previewHref={(revisionId) => withQuery(itemHref, { revision: revisionId })}
 								/>
 							{:else}
 								<div class="right-scroll">
@@ -236,13 +240,11 @@
 									<div class="r-card">
 										<h5>In this universe</h5>
 										{#each data.universeNotes as note (note.id)}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-											<a class="r-line" href={`${universeNotesPath}?note=${note.id}`}>
+											<a class="r-line" href={withQuery(universeNotesPath, { note: note.id })}>
 												<span class="r-line-left">
 													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
 												</span>
 											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
 									</div>
 								{:else}
@@ -250,12 +252,10 @@
 										<p class="empty-state-text">No notes in this universe yet.</p>
 									</div>
 								{/if}
-								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path) -->
 								<form method="POST" action="{universeNotesPath}?/createNote">
 									<button class="btn btn-sm btn-secondary" type="submit">New note</button>
 								</form>
 								<a class="btn btn-sm btn-ghost" href={universeNotesPath}>All notes</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
 						{:else}
 							<div class="right-scroll">
@@ -263,14 +263,15 @@
 									<div class="r-card">
 										<h5>Relationships</h5>
 										{#each data.relationships as relationship (relationship.id)}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-											<a class="r-line" href={`${planPath}?entity=${relationship.otherId}`}>
+											<a
+												class="r-line"
+												href={withQuery(planPath, { entity: relationship.otherId })}
+											>
 												<span class="r-line-left">
 													<span class="rel-label">{relationship.label}</span>
 													<span class="r-line-name">{relationship.otherName}</span>
 												</span>
 											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
 									</div>
 								{/if}
@@ -282,10 +283,11 @@
 											<h5>Appears in {storyRef.storyTitle}</h5>
 											{#each scenesSeen as sceneRef (sceneRef.sceneId)}
 												{@const mentions = inStory.filter((m) => m.sceneId === sceneRef.sceneId)}
-												<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 												<a
 													class="r-line"
-													href={`${resolve('/stories/[id]', { id: storyRef.storyId })}?scene=${sceneRef.sceneId}`}
+													href={withQuery(resolve('/stories/[id]', { id: storyRef.storyId }), {
+														scene: sceneRef.sceneId
+													})}
 												>
 													<span class="r-line-left">
 														<span class="r-line-name">
@@ -297,12 +299,14 @@
 												{#each mentions as mention, mi (mi)}
 													<a
 														class="snippet"
-														href={`${resolve('/stories/[id]', { id: storyRef.storyId })}?scene=${sceneRef.sceneId}&at=${mention.position}`}
+														href={withQuery(resolve('/stories/[id]', { id: storyRef.storyId }), {
+															scene: sceneRef.sceneId,
+															at: mention.position
+														})}
 													>
 														{mention.snippet}
 													</a>
 												{/each}
-												<!-- eslint-enable svelte/no-navigation-without-resolve -->
 											{/each}
 										</div>
 									{/each}
