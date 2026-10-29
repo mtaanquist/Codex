@@ -89,7 +89,7 @@ Assets and contrast:
   danger twin of `--accent-contrast`; never write `#fff` on danger.
 - `--status-final-ink`, `--status-draft-ink`, `--status-revised-ink`,
   `--danger-ink` - the status and danger colours as text (`.btn-accept`,
-  `FormStatus`, error and "Saved." hints, draft badges), darkened in light
+  `FormStatus`, error and "Saved." hints, warning icons and to-do counts), darkened in light
   and warm, the plain token in dark. Never write `color: var(--danger)` or
   `color: var(--status-*)`; the plain tokens are for dots, borders and fills.
 - `--ink-share` - how much of a per-element colour survives when it is

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ACCENT_PRESETS } from '$lib/appearance';
@@ -48,7 +48,30 @@ const CATS = Object.keys(themes[0].tokens).filter((t) => t.startsWith('--cat-'))
 // written, so a change to either is a change here too.
 const AUTHOR_FILL_SHARE = 65;
 
+// Raw colour tokens that miss AA as text in some theme. Text takes the -ink
+// twin (or, for a per-element colour, the --ink-share mix) instead.
+const RAW_TEXT = /(?<![-\w])color:\s*var\(--(accent|danger|status-[a-z]+|cat-[a-z]+|auth)\)/;
+
+function sourceFiles(dir: string): string[] {
+	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) return sourceFiles(path);
+		return /\.(css|svelte)$/.test(entry.name) ? [path] : [];
+	});
+}
+
 describe('token contrast', () => {
+	it('never uses a raw status, danger, accent or author colour as text', () => {
+		const offenders = sourceFiles(join(process.cwd(), 'src')).flatMap((file) =>
+			readFileSync(file, 'utf8')
+				.split('\n')
+				.map((line, index) => ({ line, index }))
+				.filter(({ line }) => RAW_TEXT.test(line))
+				.map(({ index }) => `${file.slice(process.cwd().length + 1)}:${index + 1}`)
+		);
+		expect(offenders).toEqual([]);
+	});
+
 	it('uses one author fill share wherever white sits on an author colour', () => {
 		const avatar = readFileSync(
 			join(process.cwd(), 'src/lib/components/ReviewAvatar.svelte'),
