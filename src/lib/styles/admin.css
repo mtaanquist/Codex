@@ -256,6 +256,8 @@ a.nav-item {
 .admin-main-inner {
 	max-width: 720px;
 	padding: 36px 44px 96px;
+	/* The setting rows in pages.css switch on this column's width. */
+	container-type: inline-size;
 }
 .admin-main-inner.wide {
 	max-width: 860px;

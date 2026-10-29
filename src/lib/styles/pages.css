@@ -594,10 +594,8 @@
    column would stretch. Narrower, it stacks as above. A check-row label is
    the control itself, so it stays on the right. Two-up .field-grid pairs
    become one row each. Fields in a modal, or set side by side in a flex row
-   (the admin invite form), keep the stacked layout. */
-.admin-main-inner {
-	container-type: inline-size;
-}
+   (the admin invite form), keep the stacked layout. The container is
+   .admin-main-inner (admin.css). */
 @container (min-width: 600px) {
 	.admin-main-inner .field:not(.modal-panel *, .invite-create *) {
 		display: grid;
