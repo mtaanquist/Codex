@@ -35,9 +35,9 @@ const envShim = new URL('./env-shim.js', import.meta.url).href;
 /**
  * @param {string} specifier
  * @param {{ parentURL?: string }} context
- * @param {(specifier: string, context: object) => Promise<{ url: string }>} nextResolve
+ * @param {(specifier: string, context: object) => { url: string }} nextResolve
  */
-export async function resolve(specifier, context, nextResolve) {
+export function resolve(specifier, context, nextResolve) {
 	if (specifier === '$app/env/private') {
 		return { url: envShim, shortCircuit: true };
 	}
