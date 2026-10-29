@@ -603,32 +603,7 @@
 	flex: 1;
 	min-height: 0;
 }
-/* The tab bar exists for narrow screens only; the media query brings it back. */
-.review-shell > .seg {
-	display: none;
-}
-
 @media (max-width: 820px) {
-	.review-shell > .seg {
-		display: flex;
-		margin: 8px 10px 0;
-	}
-	.review-shell .body {
-		grid-template-columns: 1fr;
-	}
-	/* Only the pane for the active tab is shown; each restores its own display. */
-	.review-shell .body > .pane {
-		display: none;
-	}
-	.review-shell .body[data-mtab='nav'] > .left {
-		display: flex;
-	}
-	.review-shell .body[data-mtab='read'] > .center {
-		display: block;
-	}
-	.review-shell .body[data-mtab='notes'] > .right {
-		display: flex;
-	}
 	/* Give the manuscript the full width: no margin rail, tighter gutters. */
 	.review-doc {
 		padding: 28px 20px 120px;

@@ -8,6 +8,8 @@ If the same scene changed in another tab or on another device since you opened i
 
 The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
+On a narrow window, such as a phone or a zoomed-in browser, the editor shows one area at a time. Use the tabs under the top bar to switch between Scenes (the chapter and scene list), Writing, and Side panel. Picking a scene from the list takes you back to the writing.
+
 ## Scenes and chapters
 
 A scene holds one stretch of prose. Chapters group scenes in order. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".

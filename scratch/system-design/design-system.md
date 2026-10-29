@@ -146,10 +146,15 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
-**Narrow windows.** The workspace grid keeps its side columns at any width,
-since the editor is not a phone surface; help is the exception (`DocsShell`
-adds `.docs`), stacking the topic list above the article below 760px so the
-page scrolls as one. The library grid drops to one column below 560px.
+**Narrow windows.** Below 820px the story editor and the guest review shell
+show one pane at a time: a `<nav class="seg full pane-tabs">` sits between
+the bar and the `.body`, and the body carries the active pane as `data-mtab`
+(`nav` for the left column, `read` for the centre, `notes` for the right).
+`theme.css` owns the rules; a page only renders the bar and sets the
+attribute. Following a link to a scene shows the writing, and opening an
+entity card shows the side panel. The Plan and Notes workspaces keep their
+side columns. Help stacks instead (`DocsShell` adds `.docs`), with the topic
+list above the article below 760px so the page scrolls as one. The library grid drops to one column below 560px.
 
 **Structure every shell carries.** Exactly one `<main id="main">` (the root
 layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where the
