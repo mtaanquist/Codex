@@ -2,10 +2,10 @@ import { error } from '@sveltejs/kit';
 import { Readable } from 'node:stream';
 import { eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { assets } from '$lib/server/db/schema';
-import { effectiveAssetConfig, getObjectOrNull, openAsset, s3AssetStore } from '$lib/server/assets';
-import { isPublicAsset, isPublicAvatar } from '$lib/server/publish';
+import { db } from '#lib/server/db';
+import { assets } from '#lib/server/db/schema';
+import { effectiveAssetConfig, getObjectOrNull, openAsset, s3AssetStore } from '#lib/server/assets';
+import { isPublicAsset, isPublicAvatar } from '#lib/server/publish';
 
 // Streams an uploaded asset: to its owner always, and to anyone when it
 // belongs to a publicly readable edition (cover or inline image).

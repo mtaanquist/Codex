@@ -1,8 +1,8 @@
 import { fail } from '@sveltejs/kit';
-import { isUuid } from '$lib/slug';
+import { isUuid } from '#lib/slug';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { stories } from '$lib/server/db/schema';
+import { db } from '#lib/server/db';
+import { stories } from '#lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import {
 	addComment,
@@ -19,13 +19,13 @@ import {
 	readReviewerToken,
 	reviewerAccess,
 	REVIEWER_COOKIE
-} from '$lib/server/review';
-import { gatherStory } from '$lib/server/export';
-import { reviewMentionData } from '$lib/server/mention-entities';
-import { createAnchorMapper } from '$lib/review-anchor';
-import { rateLimit } from '$lib/server/rate-limit';
-import { notifyReviewActivity } from '$lib/server/notify';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/review';
+import { gatherStory } from '#lib/server/export';
+import { reviewMentionData } from '#lib/server/mention-entities';
+import { createAnchorMapper } from '#lib/review-anchor';
+import { rateLimit } from '#lib/server/rate-limit';
+import { notifyReviewActivity } from '#lib/server/notify';
+import { formText } from '#lib/server/validation';
 
 // The guest's door into a review: the magic link. A bad, revoked, or expired
 // link gets a plain message; a fresh guest is asked for a name; after that

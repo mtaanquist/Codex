@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { storyCoverColor } from '$lib/entity-color';
+	import { storyCoverColor } from '#lib/entity-color';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

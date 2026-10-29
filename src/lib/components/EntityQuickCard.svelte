@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import EntityBadge from './EntityBadge.svelte';
-	import type { MentionEntity } from '$lib/editor-mentions';
-	import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '$lib/quick-card';
+	import type { MentionEntity } from '#lib/editor-mentions';
+	import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '#lib/quick-card';
 
 	// The read-only quick card shown when a mention is clicked in the review
 	// surface - the same fields the editor's hover card shows, never the full

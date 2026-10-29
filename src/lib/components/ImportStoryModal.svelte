@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { modal } from '$lib/modal';
-	import { enhance } from '$lib/enhance';
+	import { modal } from '#lib/modal';
+	import { enhance } from '#lib/enhance';
 	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { formatNumber } from '$lib/format';
+	import { formatNumber } from '#lib/format';
 
 	// The two-step story import (upload, preview the collisions, confirm) in a
 	// modal, opened from the library's New menus and from the universe settings

@@ -5,24 +5,24 @@
 	// the server stores each completed turn and the page load seeds the panel,
 	// so it survives a reload. The server holds the key and endpoint; this only
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
-	import { enhance } from '$lib/enhance';
-	import { assistantIntent } from '$lib/assistant.svelte';
+	import { enhance } from '#lib/enhance';
+	import { assistantIntent } from '#lib/assistant.svelte';
 	import {
 		startSummariesJob,
 		reviewSceneWithAssistant,
 		startBackgroundReview,
 		startContinuityReview
-	} from '$lib/assistant-actions';
-	import { openReviewModal } from '$lib/review-modal.svelte';
-	import { REVIEW_CATEGORIES } from '$lib/review-shape';
-	import { flashActivity } from '$lib/activity.svelte';
-	import { parseSseFrames } from '$lib/assistant-stream';
-	import { CHAT_WINDOW_TURNS } from '$lib/assistant-chat';
-	import { commandsForScope, matchSlash, slashName, slashArgs } from '$lib/assistant-slash';
+	} from '#lib/assistant-actions';
+	import { openReviewModal } from '#lib/review-modal.svelte';
+	import { REVIEW_CATEGORIES } from '#lib/review-shape';
+	import { flashActivity } from '#lib/activity.svelte';
+	import { parseSseFrames } from '#lib/assistant-stream';
+	import { CHAT_WINDOW_TURNS } from '#lib/assistant-chat';
+	import { commandsForScope, matchSlash, slashName, slashArgs } from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
 
 	let {
 		scope,

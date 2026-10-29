@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { refreshAll } from '$app/navigation';
-	import { CATEGORY_COLORS } from '$lib/entity-color';
-	import { dismiss } from '$lib/dismiss';
+	import { CATEGORY_COLORS } from '#lib/entity-color';
+	import { dismiss } from '#lib/dismiss';
 	import EntityBadge from './EntityBadge.svelte';
 	import FormStatus from './FormStatus.svelte';
-	import { del, put, upload } from '$lib/api';
+	import { del, put, upload } from '#lib/api';
 
 	// The entity badge and its little menu: palette swatches and the image
 	// actions. Colour and image post straight to the badge endpoint (not the

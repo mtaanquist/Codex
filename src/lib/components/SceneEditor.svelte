@@ -1,14 +1,14 @@
 <script lang="ts" module>
 	// Re-exported from the shared autosave queue so existing imports stand.
-	import type { SaveStatus as AutosaveStatus } from '$lib/autosave';
+	import type { SaveStatus as AutosaveStatus } from '#lib/autosave';
 	export type SaveStatus = AutosaveStatus;
 </script>
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
-	import { createAutosave } from '$lib/autosave';
-	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
+	import { createAutosave } from '#lib/autosave';
+	import { createSceneSaver, type SceneConflict } from '#lib/scene-saver';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -18,12 +18,12 @@
 		nonPrintingFor,
 		type EditingMode,
 		type MarkVisibility
-	} from '$lib/editor';
-	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
-	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
-	import { continuationExtensions } from '$lib/editor-continuation';
-	import { imageUploadExtension } from '$lib/editor-images';
-	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
+	} from '#lib/editor';
+	import { mentionExtensions, type MentionEntity, type MentionOptions } from '#lib/editor-mentions';
+	import { autocompleteExtensions, type AutocompleteMode } from '#lib/editor-autocomplete';
+	import { continuationExtensions } from '#lib/editor-continuation';
+	import { imageUploadExtension } from '#lib/editor-images';
+	import { markerExtensions, type MarkerHandle, type SceneMarker } from '#lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
 	import SceneConflictBanner from './SceneConflictBanner.svelte';

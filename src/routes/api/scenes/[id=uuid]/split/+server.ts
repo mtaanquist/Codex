@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { locateSplitInStory, splitScene } from '$lib/server/scene-split-merge';
-import { queueSceneMentions } from '$lib/server/jobs';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { locateSplitInStory, splitScene } from '#lib/server/scene-split-merge';
+import { queueSceneMentions } from '#lib/server/jobs';
+import { readJson } from '#lib/server/validation';
 
 // Splits the scene either at a character offset (the editor flushes its
 // pending save first so the offset is against the stored text) or at the

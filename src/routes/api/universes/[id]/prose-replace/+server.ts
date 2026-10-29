@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { ownedUniverse } from '$lib/server/universe-access';
-import { countProseMatches, replaceProse } from '$lib/server/prose-replace';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { ownedUniverse } from '#lib/server/universe-access';
+import { countProseMatches, replaceProse } from '#lib/server/prose-replace';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 // The rename sweep behind the entity editor's offer: GET counts what a
 // replacement would touch, POST performs it.

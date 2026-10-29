@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AuthShell from '$lib/components/AuthShell.svelte';
+	import AuthShell from '#lib/components/AuthShell.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();

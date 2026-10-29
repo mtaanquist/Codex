@@ -5,33 +5,33 @@
 	import '@fontsource/spectral/500.css';
 	import '@fontsource/spectral/600.css';
 	import '@fontsource-variable/jetbrains-mono/index.css';
-	import '$lib/styles/tokens.css';
-	import '$lib/styles/theme.css';
-	import '$lib/styles/board.css';
-	import '$lib/styles/pages.css';
-	import '$lib/styles/admin.css';
-	import '$lib/styles/editor.css';
-	import '$lib/styles/review.css';
-	import '$lib/styles/menus.css';
+	import '#lib/styles/tokens.css';
+	import '#lib/styles/theme.css';
+	import '#lib/styles/board.css';
+	import '#lib/styles/pages.css';
+	import '#lib/styles/admin.css';
+	import '#lib/styles/editor.css';
+	import '#lib/styles/review.css';
+	import '#lib/styles/menus.css';
 	// Late, so the consolidated primitives win over any screen-local skin.
-	import '$lib/styles/primitives.css';
+	import '#lib/styles/primitives.css';
 	// Late: the one navigation bar, which beats the bars it replaces.
-	import '$lib/styles/chrome.css';
+	import '#lib/styles/chrome.css';
 	// Last of all: the secondary surfaces (right-pane panels, the reader, the
 	// creation menus), so they beat any screen-local skin they replace.
-	import '$lib/styles/surfaces.css';
+	import '#lib/styles/surfaces.css';
 	// After the surfaces, because the signed-out pages reuse the reading pages'
 	// footer and the shared primitives and then set their own type on top.
-	import '$lib/styles/public.css';
-	import favicon from '$lib/assets/favicon.svg';
+	import '#lib/styles/public.css';
+	import favicon from '#lib/assets/favicon.svg';
 	import { browser } from '$app/env';
-	import { applyAppearance } from '$lib/appearance-apply';
-	import { followSystemTheme } from '$lib/theme';
-	import { TIMEZONE_COOKIE, browserTimeZone } from '$lib/timezone';
+	import { applyAppearance } from '#lib/appearance-apply';
+	import { followSystemTheme } from '#lib/theme';
+	import { TIMEZONE_COOKIE, browserTimeZone } from '#lib/timezone';
 	import { refreshAll } from '$app/navigation';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
+	import CommandPalette from '#lib/components/CommandPalette.svelte';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import ActivityCenter from '#lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 

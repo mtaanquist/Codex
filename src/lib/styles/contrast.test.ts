@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ACCENT_PRESETS } from '$lib/appearance';
+import { ACCENT_PRESETS } from '#lib/appearance';
 import {
 	AA_TEXT,
 	DARK_TEXT_CEILING,
@@ -10,7 +10,7 @@ import {
 	contrastRatio,
 	mixWithBlack,
 	relativeLuminance
-} from '$lib/contrast';
+} from '#lib/contrast';
 
 // Holds the token values in tokens.css to WCAG AA so a palette tweak cannot
 // quietly drop text below 4.5:1 in any theme.

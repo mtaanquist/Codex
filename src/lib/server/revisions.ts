@@ -11,12 +11,12 @@ import {
 	scenes,
 	stories
 } from './db/schema.ts';
-import { wordCount } from '$lib/word-count';
+import { wordCount } from '#lib/word-count';
 import {
 	snapshotsEqual,
 	type EntitySnapshot,
 	type SnapshotRelationship
-} from '$lib/entity-snapshot';
+} from '#lib/entity-snapshot';
 import {
 	ENTITY_TYPES,
 	entityAliasColumn,

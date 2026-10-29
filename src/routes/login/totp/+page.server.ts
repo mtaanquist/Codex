@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { createSession, SESSION_COOKIE } from '$lib/server/auth';
+import { db } from '#lib/server/db';
+import { createSession, SESSION_COOKIE } from '#lib/server/auth';
 import {
 	consumeRecoveryCode,
 	consumeTotpChallenge,
@@ -9,10 +9,10 @@ import {
 	readTotpChallenge,
 	TOTP_CHALLENGE_COOKIE,
 	verifyUserTotp
-} from '$lib/server/two-factor';
-import { rateLimit } from '$lib/server/rate-limit';
-import { logEvent } from '$lib/server/log';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/two-factor';
+import { rateLimit } from '#lib/server/rate-limit';
+import { logEvent } from '#lib/server/log';
+import { formText } from '#lib/server/validation';
 
 // Keyed by the challenged account, so the six-digit space cannot be brute
 // forced: a handful of tries per window makes guessing infeasible.

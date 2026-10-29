@@ -7,7 +7,7 @@ import {
 	type EntityType
 } from './entity-lookups';
 import { createAsset, deleteAsset, type AssetConfig, type AssetObjectStore } from './assets';
-import { isCategoryColor } from '$lib/entity-color';
+import { isCategoryColor } from '#lib/entity-color';
 import type { ActionFailure } from './action-result';
 
 // The per-entity badge: a palette colour, or an uploaded image (the image

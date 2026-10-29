@@ -10,8 +10,8 @@ import {
 	createThread,
 	updateAssistantSuggestion
 } from '../../review.ts';
-import { locateSplitBefore } from '$lib/scene-split-locate';
-import { locateQuote } from '$lib/quote-locate';
+import { locateSplitBefore } from '#lib/scene-split-locate';
+import { locateQuote } from '#lib/quote-locate';
 import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
 import type { ProviderToolCall, SplitProposal } from '../providers/types.ts';
 import { findTool } from './registry.ts';

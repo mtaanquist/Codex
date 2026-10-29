@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import { tick, untrack } from 'svelte';
-	import { LEFT_PANE_LABEL } from '$lib/chrome';
+	import { LEFT_PANE_LABEL } from '#lib/chrome';
 	import Icon from './Icon.svelte';
 	import FormStatus from './FormStatus.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';

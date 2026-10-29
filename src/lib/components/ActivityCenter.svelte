@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { openHref } from '$lib/open-href';
+	import { openHref } from '#lib/open-href';
 	import Icon from './Icon.svelte';
-	import { activity, dismissActivity, type ActivityItem } from '$lib/activity.svelte';
+	import { activity, dismissActivity, type ActivityItem } from '#lib/activity.svelte';
 
 	// The activity center: a stack of cards in the corner showing the Assistant's
 	// in-progress work (reviews, summary passes). A running task keeps its card

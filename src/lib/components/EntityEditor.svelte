@@ -8,16 +8,16 @@
 	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
-	import { proseExtensions } from '$lib/editor';
+	import { proseExtensions } from '#lib/editor';
 	import TagInput from './TagInput.svelte';
 	import EntityBadgePicker from './EntityBadgePicker.svelte';
 	import EntityRelationships, {
 		type RelationTypeOption,
 		type RelationshipRow
 	} from './EntityRelationships.svelte';
-	import { createAutosave, keepaliveFits, saveFailure } from '$lib/autosave';
-	import type { SaveStatus } from '$lib/autosave';
-	import { apiErrorMessage, pluralSuffix } from '$lib/format';
+	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
+	import type { SaveStatus } from '#lib/autosave';
+	import { apiErrorMessage, pluralSuffix } from '#lib/format';
 
 	let {
 		kind,

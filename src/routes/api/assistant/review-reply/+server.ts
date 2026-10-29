@@ -1,18 +1,18 @@
 import { error } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { reviewComments, reviewThreads } from '$lib/server/db/schema';
-import { ownedStory } from '$lib/server/story-access';
+import { db } from '#lib/server/db';
+import { reviewComments, reviewThreads } from '#lib/server/db/schema';
+import { ownedStory } from '#lib/server/story-access';
 import {
 	readAssistantPayload,
 	requireAssistantGate,
 	throwAssistantError
-} from '$lib/server/llm/assistant-route';
-import { complete } from '$lib/server/llm/gateway';
-import { prepareReviewReply } from '$lib/server/llm/review-reply';
-import { addComment } from '$lib/server/review';
-import { isUuid } from '$lib/slug';
+} from '#lib/server/llm/assistant-route';
+import { complete } from '#lib/server/llm/gateway';
+import { prepareReviewReply } from '#lib/server/llm/review-reply';
+import { addComment } from '#lib/server/review';
+import { isUuid } from '#lib/slug';
 
 // The Assistant answering in a review thread it opened: triggered after the
 // author replies there. It runs with two scoped tools - reply_in_thread, and

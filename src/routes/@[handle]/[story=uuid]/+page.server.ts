@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { publicEdition, type EditionContent } from '$lib/server/publish';
-import { listEditionArtifacts } from '$lib/server/export-artifacts';
-import { authorName } from '$lib/author-name';
-import { wordCount } from '$lib/word-count';
+import { db } from '#lib/server/db';
+import { publicEdition, type EditionContent } from '#lib/server/publish';
+import { listEditionArtifacts } from '#lib/server/export-artifacts';
+import { authorName } from '#lib/author-name';
+import { wordCount } from '#lib/word-count';
 
 // The reader view of one frozen edition. Adult work sits behind a
 // confirmation link; the page then carries noindex either way.

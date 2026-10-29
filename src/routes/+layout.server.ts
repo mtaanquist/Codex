@@ -1,7 +1,7 @@
 import type { LayoutServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { userPreferences } from '$lib/server/preferences';
-import { requestTimeZone } from '$lib/server/timezone';
+import { db } from '#lib/server/db';
+import { userPreferences } from '#lib/server/preferences';
+import { requestTimeZone } from '#lib/server/timezone';
 
 // The signed-in user's appearance, so the layout can apply the saved theme and
 // accent across the app and on a fresh device. Null for guests, who keep the

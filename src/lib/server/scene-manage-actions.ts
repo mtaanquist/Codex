@@ -1,7 +1,7 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import { db } from './db';
 import { ownedStory } from './story-access';
-import { isUuid } from '$lib/slug';
+import { isUuid } from '#lib/slug';
 import { queueSceneMentions } from './jobs';
 import {
 	createChapter,

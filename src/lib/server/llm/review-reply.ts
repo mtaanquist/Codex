@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { scenes } from '../db/schema';
 import { listSuggestions, listThreads } from '../review';
-import { createAnchorMapper } from '$lib/review-anchor';
+import { createAnchorMapper } from '#lib/review-anchor';
 import { assembleReviewReplyContext, buildSystemMessage } from './context/assemble';
 import {
 	buildReviewReplyMessage,

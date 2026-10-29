@@ -1,9 +1,9 @@
 import { redirect, type RequestEvent } from '@sveltejs/kit';
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
-import { db } from '$lib/server/db';
-import { SESSION_COOKIE, validateSession } from '$lib/server/auth';
-import { errorFields, logEvent } from '$lib/server/log';
-import { assertOriginConfigured, publicOrigin } from '$lib/server/origin';
+import { db } from '#lib/server/db';
+import { SESSION_COOKIE, validateSession } from '#lib/server/auth';
+import { errorFields, logEvent } from '#lib/server/log';
+import { assertOriginConfigured, publicOrigin } from '#lib/server/origin';
 
 export const init: ServerInit = () => {
 	assertOriginConfigured();

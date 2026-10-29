@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import type { StoryStatus } from '$lib/dashboard';
-	import { formatNumber, pluralSuffix } from '$lib/format';
+	import type { StoryStatus } from '#lib/dashboard';
+	import { formatNumber, pluralSuffix } from '#lib/format';
 
 	// The universe's stories as cards in status lanes, mirroring the scene
 	// board's look. The status is derived from each story's scenes (the

@@ -1,6 +1,6 @@
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { applyReviewerOptOut, reviewerOptOutTarget } from '$lib/server/notification-digest';
+import { db } from '#lib/server/db';
+import { applyReviewerOptOut, reviewerOptOutTarget } from '#lib/server/notification-digest';
 
 // The GET only checks the link, so a mail scanner's prefetch cannot silently
 // opt the reviewer out; the button's POST does it.

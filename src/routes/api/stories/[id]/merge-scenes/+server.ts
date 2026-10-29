@@ -1,11 +1,11 @@
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { ownedStory } from '$lib/server/story-access';
-import { mergeScenes } from '$lib/server/scene-split-merge';
-import { queueSceneMentions } from '$lib/server/jobs';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { ownedStory } from '#lib/server/story-access';
+import { mergeScenes } from '#lib/server/scene-split-merge';
+import { queueSceneMentions } from '#lib/server/jobs';
+import { readJson } from '#lib/server/validation';
 
 // Merges the named scenes, in story order, into the earliest of them.
 export const POST: RequestHandler = async ({ params, request, locals }) => {

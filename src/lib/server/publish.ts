@@ -2,8 +2,8 @@ import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
 import { gatherStory } from './export.ts';
-import { findAssetReferences } from '$lib/markdown';
-import { storyCoverColor } from '$lib/entity-color';
+import { findAssetReferences } from '#lib/markdown';
+import { storyCoverColor } from '#lib/entity-color';
 import { isUniqueViolation } from './db-errors.ts';
 import { storyIsLive } from './universe-scope.ts';
 

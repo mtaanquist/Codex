@@ -2,7 +2,7 @@
 // cards, in the spirit of assistant-actions.ts: the fetch contracts live
 // once, and the callers decide what to do with the result (navigate, alert,
 // reopen a card). Every endpoint re-checks ownership server-side.
-import { post } from '$lib/api';
+import { post } from '#lib/api';
 
 // Merges the picked scenes into the earliest of them (story order).
 export async function mergeScenes(storyId: string, sceneIds: string[]) {

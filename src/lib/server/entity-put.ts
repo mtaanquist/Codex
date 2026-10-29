@@ -5,7 +5,7 @@ import { saveEntity, type EntitySaveKind } from './entity-save.ts';
 import { queueUniverseMentions } from './jobs';
 import { rateLimitWrites } from './write-guard';
 import { checkProseLength, readJson } from './validation';
-import { cleanDetails } from '$lib/entity-snapshot';
+import { cleanDetails } from '#lib/entity-snapshot';
 
 // The shared body of the character/place/lore PUT autosave endpoints: parse
 // and validate the payload, save through the one entity flow, and queue the

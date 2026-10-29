@@ -1,17 +1,17 @@
 import type { PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { ownedUniverse } from '$lib/server/universe-access';
+import { db } from '#lib/server/db';
+import { ownedUniverse } from '#lib/server/universe-access';
 import {
 	entityHeat,
 	relationshipLinks,
 	storyProgress,
 	writingActivity
-} from '$lib/server/insights';
-import { userPreferences } from '$lib/server/preferences';
-import { requestTimeZone } from '$lib/server/timezone';
-import { assistantLayout } from '$lib/server/llm/config';
-import { listChat } from '$lib/server/llm/chat-history';
-import { hasChatSummary } from '$lib/server/llm/chat-summary';
+} from '#lib/server/insights';
+import { userPreferences } from '#lib/server/preferences';
+import { requestTimeZone } from '#lib/server/timezone';
+import { assistantLayout } from '#lib/server/llm/config';
+import { listChat } from '#lib/server/llm/chat-history';
+import { hasChatSummary } from '#lib/server/llm/chat-summary';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);

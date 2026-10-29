@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { modal } from '$lib/modal';
-	import { formatNumber } from '$lib/format';
+	import { modal } from '#lib/modal';
+	import { formatNumber } from '#lib/format';
 	import {
 		EFFORT_LEVELS,
 		MAX_REPLY_TOKENS,
@@ -9,7 +9,7 @@
 		defaultMaxTokens,
 		type AssistantRole,
 		type RoleTuning
-	} from '$lib/assistant-tuning';
+	} from '#lib/assistant-tuning';
 
 	// Everything one Assistant role can be tuned to, with room for each control
 	// to carry its own explanation. The account page renders this inside the

@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from './auth';
-import { isCategoryColor } from '$lib/entity-color';
+import { isCategoryColor } from '#lib/entity-color';
 import { entityCategories } from './db/schema';
 
 // The universe settings' category manager: list with usage counts, and one

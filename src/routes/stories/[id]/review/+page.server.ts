@@ -1,9 +1,9 @@
 import { fail } from '@sveltejs/kit';
-import { isUuid } from '$lib/slug';
-import { ownedStory } from '$lib/server/story-access';
-import { readingPageRef } from '$lib/server/publish';
+import { isUuid } from '#lib/slug';
+import { ownedStory } from '#lib/server/story-access';
+import { readingPageRef } from '#lib/server/publish';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 import {
 	addComment,
 	createSuggestion,
@@ -15,21 +15,21 @@ import {
 	listSuggestions,
 	listThreads,
 	setThreadResolved
-} from '$lib/server/review';
-import { gatherStory } from '$lib/server/export';
-import { storyPreferences } from '$lib/server/preferences';
-import { storyPageSetup } from '$lib/server/page-setup';
-import { reviewMentionData } from '$lib/server/mention-entities';
-import { createAnchorMapper } from '$lib/review-anchor';
-import { queueSceneMentions } from '$lib/server/jobs';
-import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
-import { listChat } from '$lib/server/llm/chat-history';
-import { hasChatSummary } from '$lib/server/llm/chat-summary';
-import { notifySuggestionDiscussion, notifyThreadReviewers } from '$lib/server/notify';
-import { teaser } from '$lib/notifications';
-import { listTrashedScenes } from '$lib/server/scene-lifecycle';
-import { sceneManageActions } from '$lib/server/scene-manage-actions';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/review';
+import { gatherStory } from '#lib/server/export';
+import { storyPreferences } from '#lib/server/preferences';
+import { storyPageSetup } from '#lib/server/page-setup';
+import { reviewMentionData } from '#lib/server/mention-entities';
+import { createAnchorMapper } from '#lib/review-anchor';
+import { queueSceneMentions } from '#lib/server/jobs';
+import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
+import { listChat } from '#lib/server/llm/chat-history';
+import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { notifySuggestionDiscussion, notifyThreadReviewers } from '#lib/server/notify';
+import { teaser } from '#lib/notifications';
+import { listTrashedScenes } from '#lib/server/scene-lifecycle';
+import { sceneManageActions } from '#lib/server/scene-manage-actions';
+import { formText } from '#lib/server/validation';
 
 // The author's side of a review: every thread guests have left on the
 // story, against the current text, with reply and resolve.

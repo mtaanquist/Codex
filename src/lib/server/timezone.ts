@@ -1,5 +1,5 @@
 import type { Cookies } from '@sveltejs/kit';
-import { TIMEZONE_COOKIE } from '$lib/timezone';
+import { TIMEZONE_COOKIE } from '#lib/timezone';
 
 /** The author's timezone from the cookie, or UTC when it is missing or bad. */
 export function requestTimeZone(cookies: Pick<Cookies, 'get'>): string {

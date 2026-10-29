@@ -29,7 +29,7 @@ import { ensureBuiltInRelationTypes, ensureTestDatabase } from './test-db';
 // which proves the payload would have passed validation.
 
 // The handlers import the app's db; point it at the test database.
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -49,16 +49,16 @@ async function stubFunctions<T extends Record<string, unknown>>(load: () => Prom
 		])
 	);
 }
-vi.mock('$lib/server/jobs', (importOriginal) => stubFunctions(importOriginal));
-vi.mock('$lib/server/email', (importOriginal) => stubFunctions(importOriginal));
-vi.mock('$lib/server/s3-client', (importOriginal) => stubFunctions(importOriginal));
+vi.mock('#lib/server/jobs', (importOriginal) => stubFunctions(importOriginal));
+vi.mock('#lib/server/email', (importOriginal) => stubFunctions(importOriginal));
+vi.mock('#lib/server/s3-client', (importOriginal) => stubFunctions(importOriginal));
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { resetRateLimits } = await import('$lib/server/rate-limit');
-const { ownedScene } = await import('$lib/server/scene-access');
+const { resetRateLimits } = await import('#lib/server/rate-limit');
+const { ownedScene } = await import('#lib/server/scene-access');
 
 const sceneRoute = await import('../../src/routes/api/scenes/[id=uuid]/+server');
 const sceneMarkersRoute = await import('../../src/routes/api/scenes/[id=uuid]/markers/+server');

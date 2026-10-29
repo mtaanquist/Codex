@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { deleteRelationship } from '$lib/server/relationships';
+import { db } from '#lib/server/db';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { deleteRelationship } from '#lib/server/relationships';
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	rateLimitWrites(locals.user!.id);

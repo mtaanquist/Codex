@@ -14,8 +14,8 @@ import {
 } from './entity-lookups.ts';
 import { relatedEntitySummaries } from './relationships.ts';
 import { listMentionPins } from './mention-pins.ts';
-import type { MentionEntity } from '$lib/editor-mentions';
-import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '$lib/quick-card';
+import type { MentionEntity } from '#lib/editor-mentions';
+import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '#lib/quick-card';
 
 export type ReviewMentionData = {
 	entities: MentionEntity[];

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { openHref } from '$lib/open-href';
+	import { openHref } from '#lib/open-href';
 	import Icon from './Icon.svelte';
-	import type { NotificationItem } from '$lib/notifications';
-	import { dismiss } from '$lib/dismiss';
-	import { relativeShort } from '$lib/format';
+	import type { NotificationItem } from '#lib/notifications';
+	import { dismiss } from '#lib/dismiss';
+	import { relativeShort } from '#lib/format';
 
 	// The topbar bell: unread badge, a dropdown of recent notifications,
 	// click marks read and follows the link when there is one.

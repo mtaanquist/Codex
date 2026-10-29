@@ -14,7 +14,7 @@ import { ensureTestDatabase } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'login-route-test-secret';
 
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -23,11 +23,11 @@ vi.mock('$lib/server/db', async () => {
 	return { db: drizzle(testPool, { schema: schemaModule }), pool: testPool };
 });
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { resetRateLimits } = await import('$lib/server/rate-limit');
+const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { beginEnrollment, confirmEnrollment, recoveryCodesRemaining, TOTP_CHALLENGE_COOKIE } =
 	await import('../../src/lib/server/two-factor');
 const loginPage = await import('../../src/routes/login/+page.server');

@@ -16,7 +16,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'assistant-route-test-secret'
 
 const providerSlot = vi.hoisted(() => ({ current: null as Provider | null }));
 
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -31,11 +31,11 @@ vi.mock('../../src/lib/server/llm/providers/index.ts', () => ({
 	}
 }));
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { resetRateLimits } = await import('$lib/server/rate-limit');
+const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const { listChat } = await import('../../src/lib/server/llm/chat-history');

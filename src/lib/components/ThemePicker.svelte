@@ -2,10 +2,10 @@
 	import { browser } from '$app/env';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
-	import { THEME_CHOICES, deviceChoice, setTheme } from '$lib/theme';
-	import type { ConcreteTheme, Theme } from '$lib/appearance';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
+	import { THEME_CHOICES, deviceChoice, setTheme } from '#lib/theme';
+	import type { ConcreteTheme, Theme } from '#lib/appearance';
 
 	// The theme picker: Light, Warm, Dark or System, with the current choice
 	// checked. 'items' renders the four choices as radio items for a menu that

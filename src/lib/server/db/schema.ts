@@ -63,7 +63,7 @@ export const users = pgTable('users', {
 	passwordHash: text('password_hash').notNull(),
 	role: text('role', { enum: ['admin', 'user'] }).notNull(),
 	// The Assistant's BYO endpoint, key (encrypted at rest), and per-role
-	// models; see $lib/server/llm/config.ts.
+	// models; see #lib/server/llm/config.ts.
 	llmConfig: jsonb('llm_config').notNull().default({}),
 	// Theme, content width, autocomplete mode, entity underline toggle, etc.
 	preferences: jsonb('preferences').notNull().default({}),
@@ -201,7 +201,7 @@ export const stories = pgTable(
 		// before the column have null, and render a pick from their id.
 		coverColor: text('cover_color').$defaultFn(randomCoverColor),
 		// Per-story Assistant overrides (the mute, model choices); merged over
-		// users.llm_config in $lib/server/llm/config.ts.
+		// users.llm_config in #lib/server/llm/config.ts.
 		llmConfig: jsonb('llm_config').notNull().default({}),
 		// Per-story overrides of the owner's editor preferences; keys absent
 		// here fall back to users.preferences at load time.

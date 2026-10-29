@@ -1,9 +1,9 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { isUuid } from '$lib/slug';
-import { EMAIL_RE } from '$lib/server/signup';
+import { isUuid } from '#lib/slug';
+import { EMAIL_RE } from '#lib/server/signup';
 import { isSectionSlug } from './sections';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 import {
 	approveUser,
 	confirmUserEmail,
@@ -12,22 +12,22 @@ import {
 	rejectUser,
 	setUserArchive,
 	setUserSuspended
-} from '$lib/server/admin';
+} from '#lib/server/admin';
 import {
 	backupStorageView,
 	effectiveBackupConfig,
 	listRecentBackupRuns,
 	saveBackupStorage
-} from '$lib/server/backups';
-import { applyBackupSchedule, queueAssetMigration, queueBackup } from '$lib/server/jobs';
-import { probeS3 } from '$lib/server/s3-client';
+} from '#lib/server/backups';
+import { applyBackupSchedule, queueAssetMigration, queueBackup } from '#lib/server/jobs';
+import { probeS3 } from '#lib/server/s3-client';
 import {
 	createInviteCode,
 	deleteInviteCode,
 	listInviteCodes,
 	setInviteAllowance
-} from '$lib/server/invites';
-import { listPublications, takedownPublication } from '$lib/server/publish';
+} from '#lib/server/invites';
+import { listPublications, takedownPublication } from '#lib/server/publish';
 import {
 	saveSignupMode,
 	saveSmtp,
@@ -35,12 +35,12 @@ import {
 	signupMode,
 	smtpView,
 	type SignupMode
-} from '$lib/server/settings';
-import { secretsAvailable } from '$lib/server/crypto';
-import { egressPolicy, saveEgressPolicy, type EgressPolicyName } from '$lib/server/llm/egress';
-import { sendEmail } from '$lib/server/email';
-import { adminCancelDeletion, purgeAccount } from '$lib/server/account-deletion';
-import { disableTotp } from '$lib/server/two-factor';
+} from '#lib/server/settings';
+import { secretsAvailable } from '#lib/server/crypto';
+import { egressPolicy, saveEgressPolicy, type EgressPolicyName } from '#lib/server/llm/egress';
+import { sendEmail } from '#lib/server/email';
+import { adminCancelDeletion, purgeAccount } from '#lib/server/account-deletion';
+import { disableTotp } from '#lib/server/two-factor';
 import {
 	assetMigrationResult,
 	assetMigrationSource,
@@ -49,11 +49,11 @@ import {
 	effectiveAssetConfig,
 	s3AssetStore,
 	saveAssetStorage
-} from '$lib/server/assets';
+} from '#lib/server/assets';
 import { eq } from 'drizzle-orm';
-import { users } from '$lib/server/db/schema';
+import { users } from '#lib/server/db/schema';
 import pkg from '../../../../package.json';
-import { formText } from '$lib/server/validation';
+import { formText } from '#lib/server/validation';
 
 // A compact uptime for the sidebar footer: minutes, then hours, then days.
 function formatUptime(seconds: number): string {

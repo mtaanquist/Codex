@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { authorColor, authorInitials, roleLabel, type AuthorRef } from '$lib/review-ui';
+	import { authorColor, authorInitials, roleLabel, type AuthorRef } from '#lib/review-ui';
 
 	let { author, size = 26 }: { author: AuthorRef; size?: number } = $props();
 

@@ -2,8 +2,8 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { refreshAll } from '$app/navigation';
-	import { modLabel } from '$lib/keys';
-	import { quickNote, openQuickNote, closeQuickNote } from '$lib/quick-note.svelte';
+	import { modLabel } from '#lib/keys';
+	import { quickNote, openQuickNote, closeQuickNote } from '#lib/quick-note.svelte';
 
 	// The quick-note jot: a small card floating over the editor, opened with
 	// Ctrl/Cmd+Alt+N or from the command palette, that saves a thought to the

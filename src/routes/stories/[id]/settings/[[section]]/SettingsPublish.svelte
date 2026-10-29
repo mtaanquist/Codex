@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 	import { tick } from 'svelte';
-	import HelpLink from '$lib/components/HelpLink.svelte';
-	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
+	import HelpLink from '#lib/components/HelpLink.svelte';
+	import PenNamePrompt from '#lib/components/PenNamePrompt.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

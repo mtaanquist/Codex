@@ -12,12 +12,12 @@
 		toggleBulletList,
 		toggleItalic,
 		toggleQuote
-	} from '$lib/editor-format';
-	import { ALIGNMENTS } from '$lib/alignment';
-	import { modLabel } from '$lib/keys';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
-	import { toolbar } from '$lib/toolbar';
+	} from '#lib/editor-format';
+	import { ALIGNMENTS } from '#lib/alignment';
+	import { modLabel } from '#lib/keys';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
+	import { toolbar } from '#lib/toolbar';
 	import ViewMenu, { type ViewItem } from './ViewMenu.svelte';
 
 	// The formatting bar above a prose editor: headings, bold, italic, quote,

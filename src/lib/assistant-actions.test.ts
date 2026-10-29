@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // The activity center and navigation are browser-side; the point here is what
 // the caller is told about the job, so both are stubbed out.
 vi.mock('$app/navigation', () => ({ goto: vi.fn(async () => {}) }));
-vi.mock('$lib/activity.svelte', () => ({
+vi.mock('#lib/activity.svelte', () => ({
 	flashActivity: vi.fn(),
 	resolveActivity: vi.fn(),
 	startActivity: vi.fn(() => 'activity-1'),

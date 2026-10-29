@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { formatDate } from '$lib/format';
+	import { formatDate } from '#lib/format';
 	import { resolve } from '$app/paths';
-	import HelpLink from '$lib/components/HelpLink.svelte';
-	import { startBackgroundReview } from '$lib/assistant-actions';
-	import { REVIEW_CATEGORIES } from '$lib/review-shape';
+	import HelpLink from '#lib/components/HelpLink.svelte';
+	import { startBackgroundReview } from '#lib/assistant-actions';
+	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

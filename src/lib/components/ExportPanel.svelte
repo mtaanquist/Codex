@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 	type ExportItem = {
 		id: string;
 		format: 'zip' | 'epub';

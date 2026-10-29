@@ -4,23 +4,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // helper; neither is needed to prove the re-auth guards fire, so stub both. The
 // Assistant forms, which store what they save, are covered against a real
 // database in tests/integration/account-assistant-route.test.ts.
-vi.mock('$lib/server/db', () => ({ db: {} }));
-vi.mock('$lib/server/account', async (importActual) => ({
-	...(await importActual<typeof import('$lib/server/account')>()),
+vi.mock('#lib/server/db', () => ({ db: {} }));
+vi.mock('#lib/server/account', async (importActual) => ({
+	...(await importActual<typeof import('#lib/server/account')>()),
 	changePassword: vi.fn(async () => ({ ok: true })),
 	verifyAccountPassword: vi.fn(
 		async (_db: unknown, _userId: string, password: string) => password === 'right-password'
 	),
 	revokeOtherSessions: vi.fn(async () => {})
 }));
-vi.mock('$lib/server/two-factor', async (importActual) => ({
-	...(await importActual<typeof import('$lib/server/two-factor')>()),
+vi.mock('#lib/server/two-factor', async (importActual) => ({
+	...(await importActual<typeof import('#lib/server/two-factor')>()),
 	confirmEnrollment: vi.fn(async () => ({ ok: true, recoveryCodes: ['code-1'] }))
 }));
 
 const { actions } = await import('./+page.server');
-const { revokeOtherSessions } = await import('$lib/server/account');
-const { confirmEnrollment } = await import('$lib/server/two-factor');
+const { revokeOtherSessions } = await import('#lib/server/account');
+const { confirmEnrollment } = await import('#lib/server/two-factor');
 
 function changePasswordEvent(userId: string) {
 	const form = new FormData();

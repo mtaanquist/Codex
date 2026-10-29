@@ -1,11 +1,11 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
 	requireAssistantStory,
 	throwAssistantError
-} from '$lib/server/llm/assistant-route';
-import { enrichEntity } from '$lib/server/llm/enrich';
+} from '#lib/server/llm/assistant-route';
+import { enrichEntity } from '#lib/server/llm/enrich';
 
 // Inline entity enrichment: from where an entity appears in this story, the
 // Assistant suggests new aliases, quick details, and a summary, staged for the

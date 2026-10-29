@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
-	import { authorInitials } from '$lib/review-ui';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
+	import { authorInitials } from '#lib/review-ui';
 	import Icon from './Icon.svelte';
 	import ThemePicker from './ThemePicker.svelte';
 

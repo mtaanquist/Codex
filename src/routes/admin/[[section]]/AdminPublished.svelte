@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '$lib/format';
+	import { formatDate } from '#lib/format';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 

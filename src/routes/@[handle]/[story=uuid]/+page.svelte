@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import { renderMarkdown } from '$lib/markdown';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import ReaderFooter from '$lib/components/ReaderFooter.svelte';
-	import { pageCrumb } from '$lib/chrome';
-	import { formatLongDate, formatNumber } from '$lib/format';
+	import { renderMarkdown } from '#lib/markdown';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import ReaderFooter from '#lib/components/ReaderFooter.svelte';
+	import { pageCrumb } from '#lib/chrome';
+	import { formatLongDate, formatNumber } from '#lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

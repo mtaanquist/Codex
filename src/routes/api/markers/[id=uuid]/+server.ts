@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { deleteMarker, setMarkerResolved } from '$lib/server/markers';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { deleteMarker, setMarkerResolved } from '#lib/server/markers';
+import { readJson } from '#lib/server/validation';
 
 // Checks a marker off (or back on).
 export const PUT: RequestHandler = async ({ params, request, locals }) => {

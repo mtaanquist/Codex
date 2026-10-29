@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
 	import {
 		LINE_SPACING_CM_MAX,
 		LINE_SPACING_CM_MIN,
 		LINE_SPACINGS,
 		PAGE_FONTS
-	} from '$lib/page-setup';
-	import { WRITING_LANGUAGES } from '$lib/writing-languages';
-	import FormStatus from '$lib/components/FormStatus.svelte';
+	} from '#lib/page-setup';
+	import { WRITING_LANGUAGES } from '#lib/writing-languages';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

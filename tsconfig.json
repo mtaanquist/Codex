@@ -2,6 +2,9 @@
 	"extends": "$app/tsconfig",
 	"compilerOptions": {
 		"rewriteRelativeImportExtensions": true,
+		// TypeScript maps package.json "imports" without trying extensions, so
+		// #lib needs a paths entry too; keep the two in step.
+		"paths": { "#lib/*": ["./src/lib/*"] },
 		"sourceMap": true,
 		"strict": true
 	},

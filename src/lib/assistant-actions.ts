@@ -4,9 +4,9 @@
 // requests and report progress through the activity center.
 import { goto } from '$app/navigation';
 import type { ResolvedPathname } from '$app/types';
-import { apiErrorMessage, pluralSuffix } from '$lib/format';
-import { flashActivity, resolveActivity, startActivity, trackJob } from '$lib/activity.svelte';
-import type { ReviewCategory } from '$lib/review-shape';
+import { apiErrorMessage, pluralSuffix } from '#lib/format';
+import { flashActivity, resolveActivity, startActivity, trackJob } from '#lib/activity.svelte';
+import type { ReviewCategory } from '#lib/review-shape';
 
 // Asks the Assistant to review one scene inline. Stages comments and suggested
 // edits, then opens the review page when anything was staged. An empty category

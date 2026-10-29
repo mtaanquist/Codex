@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { refreshAll } from '$app/navigation';
-	import { relativeShort } from '$lib/format';
+	import { relativeShort } from '#lib/format';
 
 	type Row = { id: string; reason: string | null; label: string | null; createdAt: Date };
 

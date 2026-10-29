@@ -28,7 +28,7 @@ import {
 	type UniverseScope
 } from './sources.ts';
 import { reviewMentionData } from '../../mention-entities.ts';
-import type { MentionEntity } from '$lib/editor-mentions';
+import type { MentionEntity } from '#lib/editor-mentions';
 
 // Assemble the world context for a request, in tiers, against a token budget.
 // The gathering (sources.ts) is settled design; the budget and the order tiers

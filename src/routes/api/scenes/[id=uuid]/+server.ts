@@ -1,13 +1,13 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { ownedScene } from '$lib/server/scene-access';
-import { queueSceneMentions } from '$lib/server/jobs';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { checkProseLength, readJson } from '$lib/server/validation';
-import { saveSceneBody } from '$lib/server/scene-save';
-import { setSceneStatus } from '$lib/server/scene-status';
-import { isSceneStatus } from '$lib/scene-status';
+import { db } from '#lib/server/db';
+import { ownedScene } from '#lib/server/scene-access';
+import { queueSceneMentions } from '#lib/server/jobs';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { checkProseLength, readJson } from '#lib/server/validation';
+import { saveSceneBody } from '#lib/server/scene-save';
+import { setSceneStatus } from '#lib/server/scene-status';
+import { isSceneStatus } from '#lib/scene-status';
 
 // Debounced autosave target for the scene editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {

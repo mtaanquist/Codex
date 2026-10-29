@@ -39,7 +39,7 @@ export default defineConfig(
 		}
 	},
 	{
-		// Forms use $lib/enhance, which keeps a result on the submitting page.
+		// Forms use #lib/enhance, which keeps a result on the submitting page.
 		files: ['src/**'],
 		ignores: ['src/lib/enhance.ts'],
 		rules: {
@@ -50,7 +50,7 @@ export default defineConfig(
 						{
 							name: '$app/forms',
 							importNames: ['enhance'],
-							message: 'Import enhance from $lib/enhance instead.'
+							message: 'Import enhance from #lib/enhance instead.'
 						}
 					]
 				}

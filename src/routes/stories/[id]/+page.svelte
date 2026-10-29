@@ -1,55 +1,55 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { afterNavigate, beforeNavigate, goto, refreshAll, snapshot } from '$app/navigation';
 	import { refreshStoryLive } from './live';
-	import { altLabel, modLabel } from '$lib/keys';
+	import { altLabel, modLabel } from '#lib/keys';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { focusMode } from '$lib/focus-mode.svelte';
-	import { assistantIntent } from '$lib/assistant.svelte';
-	import { openReviewModal } from '$lib/review-modal.svelte';
-	import ReviewModal from '$lib/components/ReviewModal.svelte';
-	import QuickNote from '$lib/components/QuickNote.svelte';
-	import EntityBadge from '$lib/components/EntityBadge.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import StoryPreview from '$lib/components/StoryPreview.svelte';
-	import { editorStyleVars } from '$lib/page-setup';
-	import { nearViewport } from '$lib/near-viewport';
-	import type { ViewItem } from '$lib/components/ViewMenu.svelte';
-	import StoryOutline from '$lib/components/StoryOutline.svelte';
+	import { focusMode } from '#lib/focus-mode.svelte';
+	import { assistantIntent } from '#lib/assistant.svelte';
+	import { openReviewModal } from '#lib/review-modal.svelte';
+	import ReviewModal from '#lib/components/ReviewModal.svelte';
+	import QuickNote from '#lib/components/QuickNote.svelte';
+	import EntityBadge from '#lib/components/EntityBadge.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import StoryPreview from '#lib/components/StoryPreview.svelte';
+	import { editorStyleVars } from '#lib/page-setup';
+	import { nearViewport } from '#lib/near-viewport';
+	import type { ViewItem } from '#lib/components/ViewMenu.svelte';
+	import StoryOutline from '#lib/components/StoryOutline.svelte';
 	import StoryRowMenu, {
 		type RowMenuState,
 		type RowMenuTarget
-	} from '$lib/components/StoryRowMenu.svelte';
+	} from '#lib/components/StoryRowMenu.svelte';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction,
 		persistProposalState,
 		splitScene as splitSceneAction
-	} from '$lib/scene-actions';
-	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
-	import EntityCard from '$lib/components/EntityCard.svelte';
-	import type { EntityCardData } from '$lib/wire-types';
-	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
-	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
+	} from '#lib/scene-actions';
+	import EditorToolbar from '#lib/components/EditorToolbar.svelte';
+	import EntityCard from '#lib/components/EntityCard.svelte';
+	import type { EntityCardData } from '#lib/wire-types';
+	import RevisionHistory from '#lib/components/RevisionHistory.svelte';
+	import RevisionPreview from '#lib/components/RevisionPreview.svelte';
+	import SceneEditor, { type SaveStatus } from '#lib/components/SceneEditor.svelte';
 	import type { EditorView } from '@codemirror/view';
-	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
-	import PanelStrip from '$lib/components/PanelStrip.svelte';
-	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
+	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
+	import PanelStrip from '#lib/components/PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '#lib/panels';
+	import SidebarSearch from '#lib/components/SidebarSearch.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
 	import type { PageData } from './$types';
-	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
-	import { apiErrorMessage } from '$lib/format';
+	import ModeSwitcher from '#lib/components/ModeSwitcher.svelte';
+	import { apiErrorMessage } from '#lib/format';
 	import {
 		toggleCommandMarkers as toggleCommandMarkersView,
 		toggleNonPrintingMarks
-	} from '$lib/editor-view';
+	} from '#lib/editor-view';
 
 	let { data }: { data: PageData } = $props();
 

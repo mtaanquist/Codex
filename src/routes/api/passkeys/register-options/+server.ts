@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
-import { publicOrigin } from '$lib/server/origin';
+import { publicOrigin } from '#lib/server/origin';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { readJson } from '$lib/server/validation';
-import { verifyAccountPassword } from '$lib/server/account';
-import { secretsAvailable } from '$lib/server/crypto';
-import { reauthLimit } from '$lib/server/reauth';
-import { PASSKEY_CHALLENGE_COOKIE, startPasskeyRegistration } from '$lib/server/passkeys';
+import { db } from '#lib/server/db';
+import { readJson } from '#lib/server/validation';
+import { verifyAccountPassword } from '#lib/server/account';
+import { secretsAvailable } from '#lib/server/crypto';
+import { reauthLimit } from '#lib/server/reauth';
+import { PASSKEY_CHALLENGE_COOKIE, startPasskeyRegistration } from '#lib/server/passkeys';
 
 // Step one of adding a passkey: hand the browser its creation options and
 // hold the challenge in a signed, short-lived cookie.

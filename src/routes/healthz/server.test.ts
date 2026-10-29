@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 const execute = vi.fn();
-vi.mock('$lib/server/db', () => ({ db: { execute: (...args: unknown[]) => execute(...args) } }));
+vi.mock('#lib/server/db', () => ({ db: { execute: (...args: unknown[]) => execute(...args) } }));
 
 const { GET } = await import('./+server');
 

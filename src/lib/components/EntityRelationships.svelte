@@ -18,8 +18,8 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { refreshAll } from '$app/navigation';
-	import { entityColor } from '$lib/entity-color';
-	import { post } from '$lib/api';
+	import { entityColor } from '#lib/entity-color';
+	import { post } from '#lib/api';
 	import type { EntityKind } from './EntityEditor.svelte';
 
 	// The typed relationships block: the existing rows and the add form.

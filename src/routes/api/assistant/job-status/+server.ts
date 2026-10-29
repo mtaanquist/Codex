@@ -1,7 +1,7 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { getAssistantJobState, reviewJobState } from '$lib/server/jobs';
-import { loadReviewRun } from '$lib/server/review-runs';
+import { db } from '#lib/server/db';
+import { getAssistantJobState, reviewJobState } from '#lib/server/jobs';
+import { loadReviewRun } from '#lib/server/review-runs';
 
 // Where the activity center and the review modal poll a queued Assistant job
 // (review or summaries) to completion. Job ids are unguessable, and the reply

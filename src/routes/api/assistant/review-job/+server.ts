@@ -3,12 +3,12 @@ import {
 	readAssistantPayload,
 	requireAssistantStory,
 	requireAssistantUniverse
-} from '$lib/server/llm/assistant-route';
-import { queueAssistantReview } from '$lib/server/jobs';
-import { parseCategories } from '$lib/review-shape';
-import { db } from '$lib/server/db';
-import { estimateStoryReview } from '$lib/server/llm/estimate';
-import { AssistantDisabledError } from '$lib/server/llm/gateway';
+} from '#lib/server/llm/assistant-route';
+import { queueAssistantReview } from '#lib/server/jobs';
+import { parseCategories } from '#lib/review-shape';
+import { db } from '#lib/server/db';
+import { estimateStoryReview } from '#lib/server/llm/estimate';
+import { AssistantDisabledError } from '#lib/server/llm/gateway';
 
 // Queues a background Assistant review (it fans over many scenes, too long for a
 // request). The owner is notified when it finishes, and the response carries the

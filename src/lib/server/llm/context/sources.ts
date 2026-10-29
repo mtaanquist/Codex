@@ -14,7 +14,7 @@ import {
 import { entityTable } from '../../entity-lookups.ts';
 import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
-import type { EntityDetail } from '$lib/entity-snapshot';
+import type { EntityDetail } from '#lib/entity-snapshot';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.

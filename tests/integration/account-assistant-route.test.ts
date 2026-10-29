@@ -9,7 +9,7 @@ import { ensureTestDatabase } from './test-db';
 // The Assistant model and endpoint forms, called as the real account actions
 // against the test database, with what they stored read back afterwards.
 
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -24,21 +24,21 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'account-assistant-route-secr
 // Test connection must run after its own save; the stub records what was
 // stored at the moment it ran.
 const testedWith: { hasKey: boolean }[] = [];
-vi.mock('$lib/server/llm/models', () => ({
+vi.mock('#lib/server/llm/models', () => ({
 	discoverModels: vi.fn(async () => ({ ok: true, models: [] })),
 	testAccountConnection: vi.fn(async (_db: unknown, id: string) => {
-		const { accountLlmView: view } = await import('$lib/server/llm/config');
-		const { db: testDb } = (await import('$lib/server/db')) as unknown as { db: Database };
+		const { accountLlmView: view } = await import('#lib/server/llm/config');
+		const { db: testDb } = (await import('#lib/server/db')) as unknown as { db: Database };
 		testedWith.push({ hasKey: (await view(testDb, id)).hasKey });
 		return { ok: true, reply: 'Hello.' };
 	})
 }));
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { accountLlmView } = await import('$lib/server/llm/config');
+const { accountLlmView } = await import('#lib/server/llm/config');
 const { actions } = await import('../../src/routes/account/[[section]]/+page.server');
 
 let userId: string;

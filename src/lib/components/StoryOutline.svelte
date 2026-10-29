@@ -1,18 +1,18 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { withQuery } from '$lib/href';
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { withQuery } from '#lib/href';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import type { Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { enhance } from '$lib/enhance';
+	import { enhance } from '#lib/enhance';
 	import Icon from './Icon.svelte';
 	import FormStatus from './FormStatus.svelte';
-	import { put } from '$lib/api';
-	import { dismiss } from '$lib/dismiss';
-	import { filterChapter, filterOrphanScenes } from '$lib/outline-filter';
-	import { compactCount, pluralSuffix } from '$lib/format';
+	import { put } from '#lib/api';
+	import { dismiss } from '#lib/dismiss';
+	import { filterChapter, filterOrphanScenes } from '#lib/outline-filter';
+	import { compactCount, pluralSuffix } from '#lib/format';
 	import type { RowMenuTarget } from './StoryRowMenu.svelte';
 
 	// The chapter and scene tree shared by the Write and Review sidebars: the book

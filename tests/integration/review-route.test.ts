@@ -17,7 +17,7 @@ import { ensureTestDatabase } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'review-test-secret';
 
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -25,13 +25,13 @@ vi.mock('$lib/server/db', async () => {
 	const testPool = new pgModule.Pool({ connectionString: TEST_DATABASE_URL });
 	return { db: drizzle(testPool, { schema: schemaModule }), pool: testPool };
 });
-vi.mock('$lib/server/notify', () => ({ notifyReviewActivity: vi.fn(async () => undefined) }));
+vi.mock('#lib/server/notify', () => ({ notifyReviewActivity: vi.fn(async () => undefined) }));
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { resetRateLimits } = await import('$lib/server/rate-limit');
+const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { createReviewInvitation, ensureReviewer, issueReviewerToken } =
 	await import('../../src/lib/server/review');
 const page = await import('../../src/routes/review/[token]/+page.server');

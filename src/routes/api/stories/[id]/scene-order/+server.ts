@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { ownedStory } from '$lib/server/story-access';
-import { applySceneOrder, type SceneOrder } from '$lib/server/scene-order';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { ownedStory } from '#lib/server/story-access';
+import { applySceneOrder, type SceneOrder } from '#lib/server/scene-order';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);

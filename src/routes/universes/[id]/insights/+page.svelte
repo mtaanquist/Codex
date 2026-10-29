@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import { entityColor } from '$lib/entity-color';
-	import { daysMetGoal, daysUntil } from '$lib/insights';
-	import { formatNumber, narrowWeekday } from '$lib/format';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
-	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
-	import PanelStrip from '$lib/components/PanelStrip.svelte';
-	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
-	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
-	import { visiblePanels } from '$lib/panels';
+	import { entityColor } from '#lib/entity-color';
+	import { daysMetGoal, daysUntil } from '#lib/insights';
+	import { formatNumber, narrowWeekday } from '#lib/format';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
+	import ModeSwitcher from '#lib/components/ModeSwitcher.svelte';
+	import PanelStrip from '#lib/components/PanelStrip.svelte';
+	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
+	import RelationshipWeb from '#lib/components/RelationshipWeb.svelte';
+	import { visiblePanels } from '#lib/panels';
 	import { page } from '$app/state';
 	import type { PageData } from './$types';
 

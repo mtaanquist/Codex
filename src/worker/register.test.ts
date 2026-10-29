@@ -20,9 +20,9 @@ function runWithHooks(code: string): string {
 }
 
 describe('worker resolve hook', () => {
-	it('resolves $lib, the private env shim and extensionless relative imports', () => {
+	it('resolves #lib, the private env shim and extensionless relative imports', () => {
 		const out = runWithHooks(`
-			const lib = await import('$lib/server/origin-rule');
+			const lib = await import('#lib/server/origin-rule');
 			const env = await import('$app/env/private');
 			const rel = await import('./src/lib/server/origin-rule');
 			console.log(typeof lib.resolveOrigin, 'DATABASE_URL' in env, rel.resolveOrigin === lib.resolveOrigin);
