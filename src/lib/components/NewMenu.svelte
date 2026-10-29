@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
 
 	// One creation control, used by every collection: a button, a popover of
 	// rows, then a rule and the import row, then one line of help. Import is a

@@ -1,4 +1,4 @@
-import type { SearchResult } from '$lib/wire-types';
+import type { SearchResult } from '#lib/wire-types';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { scenes, stories, universes } from './db/schema.ts';
@@ -12,7 +12,7 @@ import {
 // The command palette's search: everything the user owns that has a name,
 // matched by substring, each result carrying the link that opens it.
 
-export type { SearchResult } from '$lib/wire-types';
+export type { SearchResult } from '#lib/wire-types';
 
 const PER_TYPE = 5;
 // Shorter queries match most prose and cannot use a trigram index, so the

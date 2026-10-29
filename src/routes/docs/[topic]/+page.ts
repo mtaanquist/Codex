@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
-import { docArticle, docTopics } from '$lib/docs';
+import { docArticle, docTopics } from '#lib/docs';
 
 export const load: PageLoad = ({ params }) => {
 	const article = docArticle(params.topic);

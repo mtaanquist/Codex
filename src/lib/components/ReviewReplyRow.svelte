@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { enhance } from '$lib/enhance';
-	import { confirmEnhance } from '$lib/confirm.svelte';
+	import { enhance } from '#lib/enhance';
+	import { confirmEnhance } from '#lib/confirm.svelte';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 
 	// One reply in a card's discussion list, shared by the comment and
 	// suggestion cards. retractAction names the form action for deleting your

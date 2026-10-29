@@ -1,9 +1,9 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
-import { publicOrigin } from '$lib/server/origin';
+import { publicOrigin } from '#lib/server/origin';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { isUuid } from '$lib/slug';
+import { db } from '#lib/server/db';
+import { isUuid } from '#lib/slug';
 import {
 	changePassword,
 	claimHandle,
@@ -17,21 +17,21 @@ import {
 	saveIdentity,
 	saveProfile,
 	verifyAccountPassword
-} from '$lib/server/account';
+} from '#lib/server/account';
 import {
 	effectiveAssetConfig,
 	clearUserAvatar,
 	s3AssetStore,
 	setUserAvatar
-} from '$lib/server/assets';
-import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '$lib/server/account-deletion';
-import { SESSION_COOKIE } from '$lib/server/auth';
-import { users } from '$lib/server/db/schema';
-import { queueEmail, queueUserExport } from '$lib/server/jobs';
-import { listUserExports, markExportFailed, requestExport } from '$lib/server/user-exports';
-import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
-import { saveLibraryView, savePreferences, userPreferences } from '$lib/server/preferences';
-import { createUserInvite, deleteUserInviteCode, listUserInviteCodes } from '$lib/server/invites';
+} from '#lib/server/assets';
+import { DELETION_GRACE_DAYS, scheduleAccountDeletion } from '#lib/server/account-deletion';
+import { SESSION_COOKIE } from '#lib/server/auth';
+import { users } from '#lib/server/db/schema';
+import { queueEmail, queueUserExport } from '#lib/server/jobs';
+import { listUserExports, markExportFailed, requestExport } from '#lib/server/user-exports';
+import { exportLimit, uploadLimit } from '#lib/server/rate-limit';
+import { saveLibraryView, savePreferences, userPreferences } from '#lib/server/preferences';
+import { createUserInvite, deleteUserInviteCode, listUserInviteCodes } from '#lib/server/invites';
 import {
 	accountLlmView,
 	ASSISTANT_ROLES,
@@ -45,27 +45,27 @@ import {
 	type SaveResult,
 	TOOL_PROFILES,
 	type ToolProfile
-} from '$lib/server/llm/config';
-import { discoverModels, testAccountConnection } from '$lib/server/llm/models';
+} from '#lib/server/llm/config';
+import { discoverModels, testAccountConnection } from '#lib/server/llm/models';
 import {
 	normaliseProviderId,
 	PROVIDER_PRESETS,
 	type ProviderId
-} from '$lib/server/llm/providers/presets';
-import { MODEL_GUIDE, ROLE_TIER } from '$lib/server/llm/providers/model-guide';
-import { recentAssistantUsage } from '$lib/server/llm/usage';
-import { normalisePersona, PERSONAS } from '$lib/server/llm/prompts/persona';
-import { saveUserPageSetup, userPageSetup } from '$lib/server/page-setup';
+} from '#lib/server/llm/providers/presets';
+import { MODEL_GUIDE, ROLE_TIER } from '#lib/server/llm/providers/model-guide';
+import { recentAssistantUsage } from '#lib/server/llm/usage';
+import { normalisePersona, PERSONAS } from '#lib/server/llm/prompts/persona';
+import { saveUserPageSetup, userPageSetup } from '#lib/server/page-setup';
 import {
 	clampLineSpacingCm,
 	isLineSpacing,
 	isPageFont,
 	normalisePageSetup,
 	sanitiseFontName
-} from '$lib/page-setup';
-import { isAccentColor, isConcreteTheme, isTheme, normaliseAccent } from '$lib/appearance';
-import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
-import { secretsAvailable } from '$lib/server/crypto';
+} from '#lib/page-setup';
+import { isAccentColor, isConcreteTheme, isTheme, normaliseAccent } from '#lib/appearance';
+import { ADMIN_KINDS, NOTIFICATION_KINDS, type NotificationMatrix } from '#lib/notifications';
+import { secretsAvailable } from '#lib/server/crypto';
 import {
 	beginEnrollment,
 	cancelPendingEnrollment,
@@ -75,11 +75,11 @@ import {
 	recoveryCodesRemaining,
 	regenerateRecoveryCodes,
 	totpStatus
-} from '$lib/server/two-factor';
-import { listPasskeys, removePasskey } from '$lib/server/passkeys';
-import { reauthLimit } from '$lib/server/reauth';
+} from '#lib/server/two-factor';
+import { listPasskeys, removePasskey } from '#lib/server/passkeys';
+import { reauthLimit } from '#lib/server/reauth';
 import QRCode from 'qrcode';
-import { formText } from '$lib/server/validation';
+import { formText } from '#lib/server/validation';
 
 // The actions that re-verify the password share one throttle (see reauthLimit),
 // so a borrowed session cannot brute-force the password through them. Passkey

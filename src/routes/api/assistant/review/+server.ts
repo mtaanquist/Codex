@@ -1,15 +1,15 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { scenes, stories } from '$lib/server/db/schema';
+import { db } from '#lib/server/db';
+import { scenes, stories } from '#lib/server/db/schema';
 import {
 	readAssistantPayload,
 	requireAssistantGate,
 	throwAssistantError
-} from '$lib/server/llm/assistant-route';
-import { countAssistantNotes, reviewOneScene } from '$lib/server/llm/scene-review';
-import { parseCategories } from '$lib/review-shape';
-import { storyIsLive } from '$lib/server/universe-scope';
+} from '#lib/server/llm/assistant-route';
+import { countAssistantNotes, reviewOneScene } from '#lib/server/llm/scene-review';
+import { parseCategories } from '#lib/review-shape';
+import { storyIsLive } from '#lib/server/universe-scope';
 
 // A single-scene Assistant review, run inline (one scene is bounded). The model
 // reads the scene and the assembled world, then stages review comments and

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '$lib/format';
-	import { authorInitials } from '$lib/review-ui';
+	import { formatDate } from '#lib/format';
+	import { authorInitials } from '#lib/review-ui';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 

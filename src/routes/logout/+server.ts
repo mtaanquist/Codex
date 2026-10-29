@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { revokeSession, SESSION_COOKIE } from '$lib/server/auth';
+import { db } from '#lib/server/db';
+import { revokeSession, SESSION_COOKIE } from '#lib/server/auth';
 
 // Signing out from anywhere (the avatar menu). Revokes the current session and
 // clears the cookie, then sends the visitor to the sign-in page.

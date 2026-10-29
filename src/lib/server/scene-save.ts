@@ -3,8 +3,8 @@ import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
-import { textHash } from '$lib/text-hash';
-import { wordCount } from '$lib/word-count';
+import { textHash } from '#lib/text-hash';
+import { wordCount } from '#lib/word-count';
 
 export type SceneSave = {
 	title: string | null;

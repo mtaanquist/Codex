@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { entityCategories, entityRelationships, relationTypes } from './db/schema.ts';
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 import {
 	ENTITY_TYPES,
 	entityInUniverse,

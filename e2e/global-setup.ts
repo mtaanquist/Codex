@@ -139,7 +139,7 @@ export default async function globalSetup() {
 	const log = openSync(WORKER_LOG_FILE, 'w');
 	// Start the worker the same way the app does (see package.json) so the
 	// module resolution hook is active; the worker imports app modules that use
-	// the $lib alias and extensionless paths.
+	// the #lib alias and extensionless paths.
 	const worker = spawn(
 		process.execPath,
 		['--import', './src/worker/register.js', 'src/worker/index.ts'],

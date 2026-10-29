@@ -1,37 +1,37 @@
 import { sql } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { isUuid } from '$lib/slug';
-import { effectiveAssetConfig } from '$lib/server/assets';
-import { storyStatus } from '$lib/dashboard';
-import { ownedUniverse } from '$lib/server/universe-access';
-import { planActions } from '$lib/server/plan-actions';
-import { createStoryInUniverse } from '$lib/server/story-create';
+import { db } from '#lib/server/db';
+import { isUuid } from '#lib/slug';
+import { effectiveAssetConfig } from '#lib/server/assets';
+import { storyStatus } from '#lib/dashboard';
+import { ownedUniverse } from '#lib/server/universe-access';
+import { planActions } from '#lib/server/plan-actions';
+import { createStoryInUniverse } from '#lib/server/story-create';
 import {
 	entityAppearances,
 	entityMentionCount,
 	planEntityLists,
 	resolvePlanEntity,
 	type PlanAppearance
-} from '$lib/server/plan-data';
+} from '#lib/server/plan-data';
 import {
 	listEntityRelationships,
 	listRelationTypes,
 	type RelationshipView
-} from '$lib/server/relationships';
+} from '#lib/server/relationships';
 import {
 	getRevision,
 	listRevisions,
 	type RevisionEntityType,
 	type RevisionRow
-} from '$lib/server/revisions';
-import { assistantLayout } from '$lib/server/llm/config';
-import { listChat } from '$lib/server/llm/chat-history';
-import { hasChatSummary } from '$lib/server/llm/chat-summary';
-import { listUniverseNotes } from '$lib/server/notes';
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/revisions';
+import { assistantLayout } from '#lib/server/llm/config';
+import { listChat } from '#lib/server/llm/chat-history';
+import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { listUniverseNotes } from '#lib/server/notes';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
+import { formText } from '#lib/server/validation';
 
 type StoryBoardRow = {
 	id: string;

@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
-	import Icon from '$lib/components/Icon.svelte';
-	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
-	import ExportPanel from '$lib/components/ExportPanel.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { universePath } from '$lib/chrome';
-	import SettingsShell from '$lib/components/SettingsShell.svelte';
-	import { dayKey, formatLongDate, formatNumber, formatTime } from '$lib/format';
+	import { CATEGORY_COLORS, entityColor } from '#lib/entity-color';
+	import Icon from '#lib/components/Icon.svelte';
+	import ImportStoryModal from '#lib/components/ImportStoryModal.svelte';
+	import ExportPanel from '#lib/components/ExportPanel.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { universePath } from '#lib/chrome';
+	import SettingsShell from '#lib/components/SettingsShell.svelte';
+	import { dayKey, formatLongDate, formatNumber, formatTime } from '#lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

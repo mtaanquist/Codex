@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
+	import { enhance } from '#lib/enhance';
 	import Icon from './Icon.svelte';
 	import ReviewCommentCard from './ReviewCommentCard.svelte';
 	import ReviewSuggestionCard from './ReviewSuggestionCard.svelte';
@@ -10,7 +10,7 @@
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
-	} from '$lib/review-ui';
+	} from '#lib/review-ui';
 
 	// A pending comment or edit the reviewer is composing, anchored to a
 	// selection (or to the whole scene when anchored is false).

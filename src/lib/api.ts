@@ -1,7 +1,7 @@
 // Shared client-side request helpers. Every endpoint re-checks ownership and
 // auth server-side; these just shape the request and hand back either the
 // parsed body or a friendly message for the caller to surface.
-import { apiErrorMessage } from '$lib/format';
+import { apiErrorMessage } from '#lib/format';
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; message: string };
 

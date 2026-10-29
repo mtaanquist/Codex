@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { beforeNavigate } from '$app/navigation';
-	import { modal } from '$lib/modal';
-	import { answerConfirm, confirmPrompt } from '$lib/confirm.svelte';
+	import { modal } from '#lib/modal';
+	import { answerConfirm, confirmPrompt } from '#lib/confirm.svelte';
 
-	// The one confirm prompt (see $lib/confirm.svelte.ts), mounted once in the
+	// The one confirm prompt (see #lib/confirm.svelte.ts), mounted once in the
 	// root layout.
 	const pending = $derived(confirmPrompt.pending);
 	// The question belongs to the page it was asked on.

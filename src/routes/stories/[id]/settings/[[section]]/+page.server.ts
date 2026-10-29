@@ -1,36 +1,36 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { isUuid } from '$lib/slug';
+import { isUuid } from '#lib/slug';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { isUniqueViolation } from '$lib/server/db-errors';
-import { stories } from '$lib/server/db/schema';
-import { storyTimeline } from '$lib/server/revisions';
-import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '$lib/server/assets';
-import { publishStory } from '$lib/server/publish';
-import { setPenNameIfUnset } from '$lib/server/account';
-import { listEditionArtifacts, setDownloadsPublic } from '$lib/server/export-artifacts';
+import { db } from '#lib/server/db';
+import { isUniqueViolation } from '#lib/server/db-errors';
+import { stories } from '#lib/server/db/schema';
+import { storyTimeline } from '#lib/server/revisions';
+import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '#lib/server/assets';
+import { publishStory } from '#lib/server/publish';
+import { setPenNameIfUnset } from '#lib/server/account';
+import { listEditionArtifacts, setDownloadsPublic } from '#lib/server/export-artifacts';
 import {
 	createReviewInvitation,
 	listReviewInvitations,
 	revokeReviewInvitation
-} from '$lib/server/review';
-import { queueExportArtifacts, queueUserExport } from '$lib/server/jobs';
+} from '#lib/server/review';
+import { queueExportArtifacts, queueUserExport } from '#lib/server/jobs';
 import {
 	listUserExports,
 	markExportFailed,
 	requestExport,
 	type ExportFormat
-} from '$lib/server/user-exports';
-import { exportLimit, uploadLimit } from '$lib/server/rate-limit';
-import { STORY_TRASH_DAYS, trashStory } from '$lib/server/story-lifecycle';
-import { publications, users } from '$lib/server/db/schema';
+} from '#lib/server/user-exports';
+import { exportLimit, uploadLimit } from '#lib/server/rate-limit';
+import { STORY_TRASH_DAYS, trashStory } from '#lib/server/story-lifecycle';
+import { publications, users } from '#lib/server/db/schema';
 import {
 	saveStoryPreferences,
 	storyPreferenceOverrides,
 	userPreferences
-} from '$lib/server/preferences';
-import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '$lib/server/page-setup';
+} from '#lib/server/preferences';
+import { saveStoryPageSetup, storyPageSetupOverrides, userPageSetup } from '#lib/server/page-setup';
 import {
 	FONT_SIZES,
 	GUTTERS,
@@ -41,12 +41,12 @@ import {
 	PAGE_MARGINS,
 	PAGE_SIZES,
 	TEXT_ALIGNS
-} from '$lib/page-setup';
-import { ownedStory } from '$lib/server/story-access';
-import { uniqueSlug } from '$lib/server/slugs';
-import { assistantLayout } from '$lib/server/llm/config';
-import { formText } from '$lib/server/validation';
-import { isCoverColor } from '$lib/entity-color';
+} from '#lib/page-setup';
+import { ownedStory } from '#lib/server/story-access';
+import { uniqueSlug } from '#lib/server/slugs';
+import { assistantLayout } from '#lib/server/llm/config';
+import { formText } from '#lib/server/validation';
+import { isCoverColor } from '#lib/entity-color';
 
 // The current edition, if the story has been published.
 async function currentEdition(storyId: string) {

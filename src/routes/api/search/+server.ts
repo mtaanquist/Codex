@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { searchAll } from '$lib/server/search';
-import { rateLimit } from '$lib/server/rate-limit';
+import { db } from '#lib/server/db';
+import { searchAll } from '#lib/server/search';
+import { rateLimit } from '#lib/server/rate-limit';
 
 // The command palette's search box. Owner-scoped; an empty query returns
 // nothing rather than everything.

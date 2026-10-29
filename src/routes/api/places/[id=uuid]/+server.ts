@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { handleEntityPut } from '$lib/server/entity-put';
+import { handleEntityPut } from '#lib/server/entity-put';
 
 // Debounced autosave target for the place editor; the shared
 // handler parses, saves, and queues the mention reindex.

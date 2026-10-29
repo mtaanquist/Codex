@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { modal } from '$lib/modal';
+	import { modal } from '#lib/modal';
 	// Asked once, at the first step into public: claiming a handle or
 	// publishing an edition with no pen name set. The public pages name the
 	// author by pen name and fall back to the display name, so this makes

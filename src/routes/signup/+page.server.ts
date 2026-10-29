@@ -1,15 +1,15 @@
 import { fail } from '@sveltejs/kit';
-import { publicOrigin } from '$lib/server/origin';
+import { publicOrigin } from '#lib/server/origin';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { registerUser } from '$lib/server/signup';
-import { signupMode } from '$lib/server/settings';
-import { reserveToken } from '$lib/server/tokens';
-import { queueEmail } from '$lib/server/jobs';
-import { notifyAdmins } from '$lib/server/notify';
-import { rateLimit } from '$lib/server/rate-limit';
-import { logEvent } from '$lib/server/log';
-import { formText } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { registerUser } from '#lib/server/signup';
+import { signupMode } from '#lib/server/settings';
+import { reserveToken } from '#lib/server/tokens';
+import { queueEmail } from '#lib/server/jobs';
+import { notifyAdmins } from '#lib/server/notify';
+import { rateLimit } from '#lib/server/rate-limit';
+import { logEvent } from '#lib/server/log';
+import { formText } from '#lib/server/validation';
 
 const VERIFY_TTL_MINUTES = 60 * 24;
 // Per-address, so repeated sign-ups for one email cannot bomb it with

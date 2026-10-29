@@ -8,7 +8,7 @@ import { CATEGORY_PALETTE } from '../../src/lib/entity-color';
 import { ensureTestDatabase } from './test-db';
 
 // The story settings action reads the app's db; point it at the test database.
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -17,7 +17,7 @@ vi.mock('$lib/server/db', async () => {
 	return { db: drizzle(testPool, { schema: schemaModule }), pool: testPool };
 });
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };

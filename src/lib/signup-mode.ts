@@ -2,7 +2,7 @@
 // from before the setting existed, so a Codex that has never saved one keeps
 // working the same way.
 //
-// The list lives here rather than in $lib/server/settings.ts because the
+// The list lives here rather than in #lib/server/settings.ts because the
 // landing page and the sign-in page render from the mode, and neither may pull
 // a server module into the browser. The setting itself is still read and
 // written server-side.

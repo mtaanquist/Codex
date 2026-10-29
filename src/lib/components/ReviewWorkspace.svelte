@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { refreshAll } from '$app/navigation';
@@ -15,27 +15,27 @@
 	import type { Composer } from './ReviewPanel.svelte';
 	import AssistantPanel from './AssistantPanel.svelte';
 	import type { SplitProposal } from './AssistantProposal.svelte';
-	import type { MentionEntity } from '$lib/editor-mentions';
-	import type { MarkVisibility } from '$lib/editor';
+	import type { MentionEntity } from '#lib/editor-mentions';
+	import type { MarkVisibility } from '#lib/editor';
 	import {
 		suggestionInFilter,
 		threadInFilter,
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
-	} from '$lib/review-ui';
+	} from '#lib/review-ui';
 	import type { SaveStatus } from './SceneEditor.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
 	import PanelStrip from './PanelStrip.svelte';
-	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import { GUEST_MODE_NOTE, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
+	import { activePanel, visiblePanels, type PanelId } from '#lib/panels';
+	import { GUEST_MODE_NOTE, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction
-	} from '$lib/scene-actions';
-	import { focusMode } from '$lib/focus-mode.svelte';
-	import { openReviewModal } from '$lib/review-modal.svelte';
+	} from '#lib/scene-actions';
+	import { focusMode } from '#lib/focus-mode.svelte';
+	import { openReviewModal } from '#lib/review-modal.svelte';
 
 	let {
 		chapters,

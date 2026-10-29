@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '$lib/format';
+	import { formatDate } from '#lib/format';
 	import S3Fields from './S3Fields.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

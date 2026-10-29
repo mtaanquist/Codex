@@ -3,8 +3,8 @@ import { isRedirect } from '@sveltejs/kit';
 
 // The hook only touches the database to validate a session cookie; these
 // requests carry none (or a stale one), so the session check is stubbed.
-vi.mock('$lib/server/db', () => ({ db: {} }));
-vi.mock('$lib/server/auth', () => ({
+vi.mock('#lib/server/db', () => ({ db: {} }));
+vi.mock('#lib/server/auth', () => ({
 	SESSION_COOKIE: 'session',
 	validateSession: vi.fn(async () => null)
 }));
@@ -14,13 +14,13 @@ vi.mock('$app/env/private', () => ({
 		return process.env.ORIGIN || undefined;
 	}
 }));
-vi.mock('$lib/server/log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/server/log')>()),
+vi.mock('#lib/server/log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/server/log')>()),
 	logEvent: vi.fn()
 }));
 
-const { validateSession } = await import('$lib/server/auth');
-const { logEvent } = await import('$lib/server/log');
+const { validateSession } = await import('#lib/server/auth');
+const { logEvent } = await import('#lib/server/log');
 const { handle, handleError } = await import('./hooks.server');
 
 function request(

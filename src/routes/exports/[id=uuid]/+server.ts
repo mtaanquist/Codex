@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import { Readable } from 'node:stream';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { effectiveAssetConfig, getObjectOrNull, s3AssetStore } from '$lib/server/assets';
-import { exportForDownload } from '$lib/server/user-exports';
+import { db } from '#lib/server/db';
+import { effectiveAssetConfig, getObjectOrNull, s3AssetStore } from '#lib/server/assets';
+import { exportForDownload } from '#lib/server/user-exports';
 
 // Streams a finished user export to its owner. The file was built in the
 // worker and stored in the asset bucket; this only checks ownership and

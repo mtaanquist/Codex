@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { libraryCrumb, pageCrumb } from '$lib/chrome';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import AuthShell from '$lib/components/AuthShell.svelte';
+	import { libraryCrumb, pageCrumb } from '#lib/chrome';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import AuthShell from '#lib/components/AuthShell.svelte';
 
 	// Access checks answer 404 for anything the visitor cannot see, so a page
 	// only ever needs two cases: not found, and everything else.

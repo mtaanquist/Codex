@@ -1,14 +1,14 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { entityColor } from '$lib/entity-color';
+	import { entityColor } from '#lib/entity-color';
 	import {
 		buildWeb,
 		layoutWeb,
 		webCategories,
 		type WebEntity,
 		type WebLink
-	} from '$lib/relationship-web';
+	} from '#lib/relationship-web';
 
 	// Force-directed rendering of the universe's relationships. The layout is
 	// computed synchronously per filter change; nodes link into the plan.

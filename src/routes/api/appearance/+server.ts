@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { savePreferences } from '$lib/server/preferences';
-import { readJson } from '$lib/server/validation';
-import { isTheme } from '$lib/appearance';
+import { db } from '#lib/server/db';
+import { savePreferences } from '#lib/server/preferences';
+import { readJson } from '#lib/server/validation';
+import { isTheme } from '#lib/appearance';
 
 // Persists the colour theme for the signed-in user. The theme picker posts
 // here so a theme change survives the next navigation, where the root

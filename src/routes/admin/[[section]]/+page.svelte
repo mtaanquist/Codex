@@ -2,9 +2,9 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { libraryCrumb, pageCrumb } from '$lib/chrome';
-	import SettingsShell from '$lib/components/SettingsShell.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { libraryCrumb, pageCrumb } from '#lib/chrome';
+	import SettingsShell from '#lib/components/SettingsShell.svelte';
 	import type { Section } from './sections';
 	import type { ActionData, PageData } from './$types';
 	import AdminOverview from './AdminOverview.svelte';

@@ -6,12 +6,12 @@
 </script>
 
 <script lang="ts">
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import type { SvelteSet } from 'svelte/reactivity';
-	import { enhance } from '$lib/enhance';
+	import { enhance } from '#lib/enhance';
 	import Icon from './Icon.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu as menuKeys } from '$lib/menu';
+	import { dismiss } from '#lib/dismiss';
+	import { menu as menuKeys } from '#lib/menu';
 
 	let {
 		menu,

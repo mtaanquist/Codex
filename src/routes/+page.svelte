@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import { resolve } from '$app/paths';
-	import Icon from '$lib/components/Icon.svelte';
-	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
-	import Landing from '$lib/components/Landing.svelte';
-	import NewMenu from '$lib/components/NewMenu.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { libraryCrumb } from '$lib/chrome';
-	import { formatNumber } from '$lib/format';
-	import { enhance } from '$lib/enhance';
-	import { LIBRARY_VIEWS, recentStories, type LibraryView } from '$lib/dashboard';
+	import Icon from '#lib/components/Icon.svelte';
+	import ImportStoryModal from '#lib/components/ImportStoryModal.svelte';
+	import Landing from '#lib/components/Landing.svelte';
+	import NewMenu from '#lib/components/NewMenu.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { libraryCrumb } from '#lib/chrome';
+	import { formatNumber } from '#lib/format';
+	import { enhance } from '#lib/enhance';
+	import { LIBRARY_VIEWS, recentStories, type LibraryView } from '#lib/dashboard';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

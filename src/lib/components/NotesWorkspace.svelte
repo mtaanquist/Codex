@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { withQuery } from '$lib/href';
-	import { RIGHT_PANE_LABEL } from '$lib/chrome';
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { withQuery } from '#lib/href';
+	import { RIGHT_PANE_LABEL } from '#lib/chrome';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import type { ComponentProps } from 'svelte';
 	import NotesSidebar from './NotesSidebar.svelte';
 	import NoteEditor from './NoteEditor.svelte';
@@ -12,8 +12,8 @@
 	import AppBar from './AppBar.svelte';
 	import Icon from './Icon.svelte';
 	import type { SaveStatus } from './SceneEditor.svelte';
-	import { visiblePanels } from '$lib/panels';
-	import type { Crumb } from '$lib/chrome';
+	import { visiblePanels } from '#lib/panels';
+	import type { Crumb } from '#lib/chrome';
 
 	type SidebarProps = ComponentProps<typeof NotesSidebar>;
 

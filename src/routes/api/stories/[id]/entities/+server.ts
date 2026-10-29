@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { createStoryEntity } from '$lib/server/create-entity';
-import { queueUniverseMentions } from '$lib/server/jobs';
-import { ownedStory } from '$lib/server/story-access';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { createStoryEntity } from '#lib/server/create-entity';
+import { queueUniverseMentions } from '#lib/server/jobs';
+import { ownedStory } from '#lib/server/story-access';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 const TYPES = ['character', 'place', 'lore_entry'] as const;
 

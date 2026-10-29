@@ -1,7 +1,7 @@
 <script lang="ts">
-	import AppBar from '$lib/components/AppBar.svelte';
-	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
-	import { pageCrumb } from '$lib/chrome';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import ReviewWorkspace from '#lib/components/ReviewWorkspace.svelte';
+	import { pageCrumb } from '#lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

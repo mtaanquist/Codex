@@ -1,11 +1,11 @@
-import { publicOrigin } from '$lib/server/origin';
+import { publicOrigin } from '#lib/server/origin';
 import type { Actions } from './$types';
-import { db } from '$lib/server/db';
-import { requestPasswordReset } from '$lib/server/password-reset';
-import { queueEmail } from '$lib/server/jobs';
-import { rateLimit } from '$lib/server/rate-limit';
-import { logEvent } from '$lib/server/log';
-import { formText } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { requestPasswordReset } from '#lib/server/password-reset';
+import { queueEmail } from '#lib/server/jobs';
+import { rateLimit } from '#lib/server/rate-limit';
+import { logEvent } from '#lib/server/log';
+import { formText } from '#lib/server/validation';
 
 // Per-address, so reset mail to one inbox cannot be triggered repeatedly. The
 // per-IP tier stops one host mass-mailing distinct addresses, the way login is

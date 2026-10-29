@@ -1,17 +1,17 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { ownedUniverse } from '$lib/server/universe-access';
+import { db } from '#lib/server/db';
+import { ownedUniverse } from '#lib/server/universe-access';
 import {
 	createUniverseNote,
 	deleteNote,
 	getNote,
 	listUniverseNotes,
 	setNotePinned
-} from '$lib/server/notes';
-import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
-import { isUuid } from '$lib/slug';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/notes';
+import { getRevision, listRevisions, type RevisionRow } from '#lib/server/revisions';
+import { isUuid } from '#lib/slug';
+import { formText } from '#lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);

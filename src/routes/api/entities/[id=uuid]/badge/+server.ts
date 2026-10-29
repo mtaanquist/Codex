@@ -1,15 +1,15 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
+import { db } from '#lib/server/db';
+import { effectiveAssetConfig, s3AssetStore } from '#lib/server/assets';
 import {
 	clearEntityBadgeImage,
 	setEntityBadgeColor,
 	setEntityBadgeImage
-} from '$lib/server/entity-badge';
-import { rateLimitUploads } from '$lib/server/write-guard';
-import { throwActionError } from '$lib/server/action-result';
-import { readJson } from '$lib/server/validation';
+} from '#lib/server/entity-badge';
+import { rateLimitUploads } from '#lib/server/write-guard';
+import { throwActionError } from '#lib/server/action-result';
+import { readJson } from '#lib/server/validation';
 
 // The entity badge: PUT sets a palette colour (null clears it), POST uploads
 // an image, DELETE removes the image. Owner-scoped inside the helpers, which

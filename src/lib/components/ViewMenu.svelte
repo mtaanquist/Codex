@@ -17,8 +17,8 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
 
 	let { items }: { items: ViewItem[] } = $props();
 	let open = $state(false);

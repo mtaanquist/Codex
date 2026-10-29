@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { entityLetter } from '$lib/entity-color';
-	import { badgeBackground, badgeImageSrc } from '$lib/entity-badge';
+	import { entityLetter } from '#lib/entity-color';
+	import { badgeBackground, badgeImageSrc } from '#lib/entity-badge';
 
 	// One entity badge: an uploaded image when set, otherwise the entity's
 	// letter on its resolved colour. Shared by every badge site so the override

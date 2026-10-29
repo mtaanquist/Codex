@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { renderMarkdown } from '$lib/markdown';
+	import { renderMarkdown } from '#lib/markdown';
 	import Icon from './Icon.svelte';
 	import EntityBadge from './EntityBadge.svelte';
-	import type { EntityCardData } from '$lib/wire-types';
+	import type { EntityCardData } from '#lib/wire-types';
 
 	// The read-only entity card that takes over the editor's right column:
 	// summary, description, typed relationships, details, and a link into the

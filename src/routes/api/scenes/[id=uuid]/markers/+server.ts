@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
-import { throwActionError } from '$lib/server/action-result';
+import { throwActionError } from '#lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { createMarker } from '$lib/server/markers';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { createMarker } from '#lib/server/markers';
+import { readJson } from '#lib/server/validation';
 
 // Turns the editor's current selection into a checkable marker.
 export const POST: RequestHandler = async ({ params, request, locals }) => {

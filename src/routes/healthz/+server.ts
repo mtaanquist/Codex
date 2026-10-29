@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 
 // Shorter than the container healthcheck's own timeout, so the probe always
 // gets an answer rather than being killed.

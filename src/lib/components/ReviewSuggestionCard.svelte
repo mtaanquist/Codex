@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { enhance } from '$lib/enhance';
-	import { confirmEnhance } from '$lib/confirm.svelte';
+	import { enhance } from '#lib/enhance';
+	import { confirmEnhance } from '#lib/confirm.svelte';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import ReviewReplyRow from './ReviewReplyRow.svelte';
 	import ReviewReplyForm from './ReviewReplyForm.svelte';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 	import {
 		roleLabel,
 		authorColor,
@@ -14,7 +14,7 @@
 		suggestionKind,
 		type ReviewSuggestion,
 		type ReviewThread
-	} from '$lib/review-ui';
+	} from '#lib/review-ui';
 
 	let {
 		suggestion,

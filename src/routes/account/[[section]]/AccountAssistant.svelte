@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import { askConfirm } from '$lib/confirm.svelte';
-	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
-	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
-	import FormStatus from '$lib/components/FormStatus.svelte';
-	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import { askConfirm } from '#lib/confirm.svelte';
+	import { formatDateTime, formatNumber, pluralSuffix } from '#lib/format';
+	import { resolveRoleModel, type AssistantRole } from '#lib/assistant-tuning';
+	import FormStatus from '#lib/components/FormStatus.svelte';
+	import RoleTuningModal from '#lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

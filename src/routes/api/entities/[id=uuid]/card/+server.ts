@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { getEntityCard } from '$lib/server/plan-data';
+import { db } from '#lib/server/db';
+import { getEntityCard } from '#lib/server/plan-data';
 
 // The read-only entity card shown in the editor's right column. Owner-scoped:
 // a foreign or unknown id is a 404, never another author's entity.

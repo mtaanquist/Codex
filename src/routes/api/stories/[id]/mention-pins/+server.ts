@@ -1,13 +1,13 @@
 import { error } from '@sveltejs/kit';
-import { throwActionError } from '$lib/server/action-result';
+import { throwActionError } from '#lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { clearMentionPin, setMentionPin } from '$lib/server/mention-pins';
-import { stories } from '$lib/server/db/schema';
-import { queueUniverseMentions } from '$lib/server/jobs';
+import { db } from '#lib/server/db';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { clearMentionPin, setMentionPin } from '#lib/server/mention-pins';
+import { stories } from '#lib/server/db/schema';
+import { queueUniverseMentions } from '#lib/server/jobs';
 import { eq } from 'drizzle-orm';
-import { readJson } from '$lib/server/validation';
+import { readJson } from '#lib/server/validation';
 
 const TYPES = ['character', 'place', 'lore_entry'] as const;
 

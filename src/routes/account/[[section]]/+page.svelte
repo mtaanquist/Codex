@@ -3,10 +3,10 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
-	import { flushFocusedField } from '$lib/autosave-form';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { libraryCrumb, pageCrumb } from '$lib/chrome';
-	import SettingsShell from '$lib/components/SettingsShell.svelte';
+	import { flushFocusedField } from '#lib/autosave-form';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { libraryCrumb, pageCrumb } from '#lib/chrome';
+	import SettingsShell from '#lib/components/SettingsShell.svelte';
 	import AccountProfile from './AccountProfile.svelte';
 	import AccountSecurity from './AccountSecurity.svelte';
 	import AccountInvites from './AccountInvites.svelte';
@@ -20,7 +20,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	// The settings forms save on change instead of with a button; see
-	// $lib/autosave-form. One-shot actions (claim a handle, change the
+	// #lib/autosave-form. One-shot actions (claim a handle, change the
 	// password, test the connection) keep their buttons. Flushing a focused
 	// field before navigation is page-level, across every section.
 	beforeNavigate(flushFocusedField);

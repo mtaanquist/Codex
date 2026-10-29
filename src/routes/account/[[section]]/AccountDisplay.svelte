@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { browser } from '$app/env';
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '$lib/appearance';
-	import { LIBRARY_VIEWS } from '$lib/dashboard';
-	import { applyAppearance } from '$lib/appearance-apply';
-	import { accentProblem } from '$lib/contrast';
-	import FormStatus from '$lib/components/FormStatus.svelte';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import { ACCENT_PRESETS, DARK_THEMES, LIGHT_THEMES } from '#lib/appearance';
+	import { LIBRARY_VIEWS } from '#lib/dashboard';
+	import { applyAppearance } from '#lib/appearance-apply';
+	import { accentProblem } from '#lib/contrast';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

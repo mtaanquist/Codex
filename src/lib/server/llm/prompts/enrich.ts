@@ -1,4 +1,4 @@
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 
 // The enrichment instruction: from where an entity appears in the prose, suggest
 // new aliases, quick details, and (only when it has none) a summary. The reply

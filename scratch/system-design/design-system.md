@@ -161,7 +161,7 @@ layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where t
 visible title lives elsewhere: Write, Plan, Notes and an empty Review use "{name} - Write"
 and so on), and named side panes: every `aside.pane.left` takes
 `aria-label={LEFT_PANE_LABEL}` and every `aside.pane.right`
-`aria-label={RIGHT_PANE_LABEL}` from `$lib/chrome`. A `nav.side-nav` under a
+`aria-label={RIGHT_PANE_LABEL}` from `#lib/chrome`. A `nav.side-nav` under a
 `.side-nav-label` is named by it with `aria-labelledby`.
 `e2e/accessibility.spec.ts` runs axe over the main pages to hold this.
 
@@ -244,7 +244,7 @@ The path and its crumb menus:
   `aria-current="page"`, and close on outside pointerdown or Escape through
   the shared `dismiss` action. Keyboard behaviour comes from `use:menu`
   (see Menus and popovers).
-- Paths are built by `$lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
+- Paths are built by `#lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
   `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
   spells the same destinations the same way. Do not hand-roll a path.
 
@@ -265,7 +265,7 @@ Tools:
 - `.tool-search` is the palette trigger: a labelled button with a `kbd`
   hint, not an icon. Ctrl+K does the same.
 - The theme is one component, `ThemePicker` (Light / Warm / Dark / System,
-  the current choice checked, applied through `setTheme` in `$lib/theme.ts`).
+  the current choice checked, applied through `setTheme` in `#lib/theme.ts`).
   In the author bar it is a radio group inside the account menu
   (`variant="items"`); the guest, reader and public bars have no account
   menu, so they carry it as their own small menu button. A signed-in
@@ -286,7 +286,7 @@ The left slot is always `--left-w`, whatever fills it:
   the modes, not one of them (it left the strip in v3.17.0). Where a mode is unavailable,
   one `.mode-note` line under the strip says why: rendered, not a tooltip,
   so it is readable by keyboard and by screen reader. The two lines live as
-  `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `$lib/chrome.ts`.
+  `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `#lib/chrome.ts`.
 - **The mode strip may have nothing lit.** `ModeSwitcher` takes `active: Mode
   | null`; a universe page that is not one of the three (insights) passes null,
   keeps all three live, and says why in its `.mode-note`
@@ -327,7 +327,7 @@ entry. An entry's own "story notes" field in `EntityEditor` is a different
 thing and stays where it is. Giving Plan a Notes panel needs a migration, so
 it waits for one.
 
-Rules, all of them enforced in one place (`$lib/panels.ts`):
+Rules, all of them enforced in one place (`#lib/panels.ts`):
 
 - **A panel exists where it has a subject, and is hidden where it does not.**
   A route your role forbids is disabled in place, because permission can
@@ -406,7 +406,7 @@ primitive's own class too, but do not copy the pattern.
   (segmented strips).
 - An icon-only button always carries an `aria-label` (`src/lib/icon-buttons.test.ts`
   fails the build on one without). The formatting bar is a `role="toolbar"`
-  with one tab stop and arrow keys between tools (`$lib/toolbar`).
+  with one tab stop and arrow keys between tools (`#lib/toolbar`).
 
 ### Forms
 
@@ -447,7 +447,7 @@ primitive's own class too, but do not copy the pattern.
   skin. That exception does not license others. Like every other menu, it is
   rendered only while open, never hidden with opacity.
 - Every `role="menu"` renders only while open (`{#if open}`), takes
-  `use:menu` (`$lib/menu.ts`) for the keyboard and `use:dismiss` with a
+  `use:menu` (`#lib/menu.ts`) for the keyboard and `use:dismiss` with a
   `refocus` for Escape and outside clicks. `use:menu` focuses the first item
   on open (the editor's own menus only when opened from the keyboard, so a
   mouse open does not blur the editor), moves with the arrow keys (wrapping)
@@ -476,7 +476,7 @@ control is an `.icon-btn.sm`; the primary action sits last in the footer.
 A head can carry a `.modal-search` field instead of a title, with
 `.modal-head.searching`.
 
-The behaviour belongs to the `use:modal` action (`$lib/modal.ts`), put on
+The behaviour belongs to the `use:modal` action (`#lib/modal.ts`), put on
 the `role="dialog"` panel with `aria-modal="true"`: focus moves into the
 panel on open (or to `initialFocus`), Tab and Shift+Tab cycle inside it,
 Esc calls its `close` (stopping there, so a page-level Esc such as leaving
@@ -490,7 +490,7 @@ results with `role="combobox"` and `aria-activedescendant` (the options are
 `tabindex="-1"`). Help is not a modal: it is a page.
 
 Asking before a destructive or irreversible step is `ConfirmDialog`, mounted
-once in the root layout and driven by `$lib/confirm.svelte.ts`: an
+once in the root layout and driven by `#lib/confirm.svelte.ts`: an
 `alertdialog` with a title, an optional line of body, Cancel, and a button
 named by its verb ("Delete scene", never "OK"), red (`.btn-danger`) when the
 step destroys something, in which case Cancel takes the focus. A plain form
@@ -628,7 +628,7 @@ The outward face of the work, built from the same tokens as everything else.
   while the page is open. The theme picker in the bar overrides and remembers;
   an author's account choice carries over, since it is the same key.
 - **The author is named, not addressed.** The path crumb and the footer show
-  `users.penName ?? users.displayName` (`$lib/author-name.ts`), never the raw
+  `users.penName ?? users.displayName` (`#lib/author-name.ts`), never the raw
   handle. The handle keeps appearing where it is an address: the URL, and the
   shelf header's "@handle - N stories published" line.
 
@@ -669,7 +669,7 @@ Everything a signed-out visitor sees, in `public.css`, loaded last.
 - **Prose links are underlined body colour**, as on the reading pages. Accent is
   kept for the focus ring.
 - **What the page offers depends on the sign-up mode, not a boolean.**
-  `signupOffered()` in `$lib/signup-mode.ts` is the one answer: `open` and
+  `signupOffered()` in `#lib/signup-mode.ts` is the one answer: `open` and
   `approval` offer the page (labelled "Create an account" in `open`), `invite`
   and `none` do not, because a visitor with no code cannot finish one. The
   invite-mode text still links the page in prose ("Have a code already?") for
@@ -719,7 +719,7 @@ From CLAUDE.md, repeated here because every screen touches it:
 - No jargon or slang in user-facing text.
 - User-facing functionality changes come with a check of the help articles
   in `src/lib/docs/`.
-- Dates, times and numbers go through the helpers in `$lib/format`, which
+- Dates, times and numbers go through the helpers in `#lib/format`, which
   pass `DISPLAY_LOCALE` (`en-GB`) explicitly so server and browser output
   match. Lint bans `toLocale*` calls and `new Intl.*Format` outside that
   file; add a helper there instead.
@@ -731,7 +731,7 @@ which the `svelte/no-navigation-without-resolve` lint enforces:
 
 - Build a path with a route id and params: `resolve('/stories/[id]', { id })`.
   A static hash can ride on the id: `resolve('/universes/[id]/[[section]]#import-story', ...)`.
-- Add query parameters with `withQuery(path, { scene: id })` from `$lib/href`.
+- Add query parameters with `withQuery(path, { scene: id })` from `#lib/href`.
   It encodes values, drops empty ones, extends an existing query string, and
   keeps the `ResolvedPathname` type. Do not put dynamic values in the route
   id's query string, and do not build `${path}?a=${b}` templates.
@@ -783,7 +783,7 @@ shared class inside a component (this still happens for `.btn-sm` and
 
 1. Pick the shell - workspace if the page reads or changes the work, settings
    if it configures something - and wire `AppBar` with a path built from
-   `$lib/chrome.ts` and the tools cluster that shell provides. A new page adds
+   `#lib/chrome.ts` and the tools cluster that shell provides. A new page adds
    a crumb; it does not add a bar.
 2. Compose from the canonical primitives above; extend shared CSS if a
    variant is genuinely missing.

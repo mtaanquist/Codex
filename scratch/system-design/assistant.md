@@ -243,7 +243,7 @@ split.
 
 "Gateway" is an internal abstraction boundary, not a separate process. The
 stack stays four services. The gateway is a server-only module
-(`$lib/server/llm/`) that:
+(`#lib/server/llm/`) that:
 
 - normalises a completion request to the OpenAI-compatible shape (so the
   future native-Claude adapter is a second implementation behind the same
@@ -628,10 +628,10 @@ Claude path is a second adapter behind the same seam.
 ### Module layout
 
 Everything that touches the key or the endpoint is server-only, under
-`$lib/server/llm/`:
+`#lib/server/llm/`:
 
 ```
-$lib/server/llm/
+#lib/server/llm/
   gateway.ts        - the one public entry: complete(), stream(). Orchestrates
                       config -> context -> provider -> tool loop -> stream.
   config.ts         - read users.llm_config + stories.llm_config, merge

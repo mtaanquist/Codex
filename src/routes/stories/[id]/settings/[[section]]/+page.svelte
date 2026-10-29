@@ -3,11 +3,11 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
-	import { flushFocusedField } from '$lib/autosave-form';
-	import { storyCoverColor } from '$lib/entity-color';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath } from '$lib/chrome';
-	import SettingsShell from '$lib/components/SettingsShell.svelte';
+	import { flushFocusedField } from '#lib/autosave-form';
+	import { storyCoverColor } from '#lib/entity-color';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { storyPath } from '#lib/chrome';
+	import SettingsShell from '#lib/components/SettingsShell.svelte';
 	import SettingsDetails from './SettingsDetails.svelte';
 	import SettingsEditor from './SettingsEditor.svelte';
 	import SettingsPageSetup from './SettingsPageSetup.svelte';
@@ -46,7 +46,7 @@
 	}
 
 	// The settings forms (Editor, Page setup, Goals) save on change instead of
-	// with a button; see $lib/autosave-form.
+	// with a button; see #lib/autosave-form.
 	beforeNavigate(flushFocusedField);
 
 	const coverColor = $derived(storyCoverColor(data.story));

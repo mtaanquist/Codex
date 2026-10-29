@@ -2,8 +2,8 @@
 	import { onMount } from 'svelte';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
-	import { proseExtensions } from '$lib/editor';
-	import { createAutosave, keepaliveFits, saveFailure, type SaveStatus } from '$lib/autosave';
+	import { proseExtensions } from '#lib/editor';
+	import { createAutosave, keepaliveFits, saveFailure, type SaveStatus } from '#lib/autosave';
 
 	let {
 		note,

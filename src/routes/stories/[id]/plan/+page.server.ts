@@ -1,9 +1,9 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { isUuid } from '$lib/slug';
-import { effectiveAssetConfig } from '$lib/server/assets';
+import { db } from '#lib/server/db';
+import { isUuid } from '#lib/slug';
+import { effectiveAssetConfig } from '#lib/server/assets';
 import {
 	chapters,
 	characterStoryNotes,
@@ -11,41 +11,41 @@ import {
 	placeStoryNotes,
 	sceneMarkers,
 	scenes
-} from '$lib/server/db/schema';
-import { ownedStory } from '$lib/server/story-access';
-import { listStoryNotes } from '$lib/server/notes';
-import { readingPageRef } from '$lib/server/publish';
-import { planActions } from '$lib/server/plan-actions';
+} from '#lib/server/db/schema';
+import { ownedStory } from '#lib/server/story-access';
+import { listStoryNotes } from '#lib/server/notes';
+import { readingPageRef } from '#lib/server/publish';
+import { planActions } from '#lib/server/plan-actions';
 import {
 	declareMembership,
 	membershipStatus,
 	storyEntityLists,
 	type MembershipStatus
-} from '$lib/server/membership';
+} from '#lib/server/membership';
 import {
 	getRevision,
 	listRevisions,
 	type RevisionEntityType,
 	type RevisionRow
-} from '$lib/server/revisions';
+} from '#lib/server/revisions';
 import {
 	entityAppearances,
 	entityMentionCount,
 	planEntityLists,
 	resolvePlanEntity,
 	type PlanAppearance
-} from '$lib/server/plan-data';
+} from '#lib/server/plan-data';
 import {
 	listEntityRelationships,
 	listRelationTypes,
 	type RelationshipView
-} from '$lib/server/relationships';
-import { assistantLayout, saveStoryLlmOverride } from '$lib/server/llm/config';
-import { listChat } from '$lib/server/llm/chat-history';
-import { hasChatSummary } from '$lib/server/llm/chat-summary';
-import { listPendingForEntity, type EntitySuggestion } from '$lib/server/entity-suggestions';
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/relationships';
+import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
+import { listChat } from '#lib/server/llm/chat-history';
+import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { listPendingForEntity, type EntitySuggestion } from '#lib/server/entity-suggestions';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
+import { formText } from '#lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);

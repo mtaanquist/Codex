@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
-import { publicOrigin } from '$lib/server/origin';
+import { publicOrigin } from '#lib/server/origin';
 import type { RequestHandler } from './$types';
-import { secretsAvailable } from '$lib/server/crypto';
-import { PASSKEY_CHALLENGE_COOKIE, startPasskeySignIn } from '$lib/server/passkeys';
-import { rateLimit } from '$lib/server/rate-limit';
+import { secretsAvailable } from '#lib/server/crypto';
+import { PASSKEY_CHALLENGE_COOKIE, startPasskeySignIn } from '#lib/server/passkeys';
+import { rateLimit } from '#lib/server/rate-limit';
 
 // Step one of passkey sign-in. Public and usernameless: the options carry no
 // account hints, just a fresh challenge held in a signed cookie.

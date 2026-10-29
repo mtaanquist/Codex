@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	let { trashDays }: { trashDays: number } = $props();
 </script>
 

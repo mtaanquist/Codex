@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { MIN_PASSWORD } from '$lib/password';
+	import { MIN_PASSWORD } from '#lib/password';
 	import { refreshAll } from '$app/navigation';
-	import { formatDate, formatDateTime } from '$lib/format';
-	import ExportPanel from '$lib/components/ExportPanel.svelte';
+	import { formatDate, formatDateTime } from '#lib/format';
+	import ExportPanel from '#lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

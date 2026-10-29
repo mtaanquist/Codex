@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import DocsShell from '$lib/components/DocsShell.svelte';
+	import DocsShell from '#lib/components/DocsShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

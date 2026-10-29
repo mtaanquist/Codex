@@ -1,16 +1,16 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
 	requireAssistantStory,
 	throwAssistantError
-} from '$lib/server/llm/assistant-route';
-import { assembleContext, buildSystemMessage } from '$lib/server/llm/context/assemble';
-import { contextBudgetTokens } from '$lib/server/llm/context/budgets';
-import { modelContextWindow, resolveLlmConfig } from '$lib/server/llm/config';
-import { buildCoauthorMessage, readCoauthorReference } from '$lib/server/llm/prompts/coauthor';
-import { complete } from '$lib/server/llm/gateway';
-import type { ChatMessage } from '$lib/server/llm/providers/types';
+} from '#lib/server/llm/assistant-route';
+import { assembleContext, buildSystemMessage } from '#lib/server/llm/context/assemble';
+import { contextBudgetTokens } from '#lib/server/llm/context/budgets';
+import { modelContextWindow, resolveLlmConfig } from '#lib/server/llm/config';
+import { buildCoauthorMessage, readCoauthorReference } from '#lib/server/llm/prompts/coauthor';
+import { complete } from '#lib/server/llm/gateway';
+import type { ChatMessage } from '#lib/server/llm/providers/types';
 
 // Co-author: the writer gives a brief and the Assistant drafts a passage,
 // grounded in the assembled world and the current scene. The result is returned

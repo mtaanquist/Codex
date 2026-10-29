@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { markNotificationsRead } from '$lib/server/notify';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { markNotificationsRead } from '#lib/server/notify';
+import { readJson } from '#lib/server/validation';
 
 // Marks notifications read: {ids: [...]} for specific ones, {all: true}
 // for everything unread.

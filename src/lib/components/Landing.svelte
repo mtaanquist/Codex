@@ -4,7 +4,7 @@
 	import Icon from './Icon.svelte';
 	import AppBar from './AppBar.svelte';
 	import ReaderFooter from './ReaderFooter.svelte';
-	import { signupOffered, type SignupMode } from '$lib/signup-mode';
+	import { signupOffered, type SignupMode } from '#lib/signup-mode';
 
 	// The signed-out page shows the workspace instead of describing it, and one
 	// switch over that one figure stands in for three audiences.

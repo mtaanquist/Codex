@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { declareMembership, removeMembership } from '$lib/server/membership';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { declareMembership, removeMembership } from '#lib/server/membership';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 // Declares or removes an entity's membership of the story, depending on
 // the boolean in the payload.

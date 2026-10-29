@@ -1,6 +1,6 @@
 import { isRedirect, redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
-import type { StoryLiveResponse } from '$lib/server/story-live';
+import type { StoryLiveResponse } from '#lib/server/story-live';
 import { liveRefresh, STORY_LIVE } from './live';
 
 type Data = Parameters<PageLoad>[0]['data'];
