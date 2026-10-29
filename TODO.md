@@ -245,17 +245,29 @@ Staging branch `staging/issue-review`, merged to main in one PR.
 - [x] Platform: Node 26, HSTS from the configured ORIGIN, SvelteKit 3 and adapter-node 6. (#616, #613)
 - [x] Hygiene: action errors mapped by code, one display locale (en-GB), typed link helper, shipped-work notes moved to history.md. (#627, #735, #736, #630)
 
-Follow-ups (open):
-
-- [ ] Status and danger colours used as text fall below AA in light and warm (#744).
-- [ ] SvelteKit 3: `#lib` imports and the deprecated APIs (#752).
-- [ ] Flaky core-flow mention underline e2e under CI load (#760).
-- [ ] Server-rendered times use the server timezone (#766).
-- [ ] Server-built app links skip the base path (#769).
-- [ ] Settings rows and navigation within long sections, steps 2 and 3 of #731.
-- [ ] Story workspace on narrow windows (#737, not scheduled).
+Follow-ups: all handled in the 2026-10-29 round below (#769 closed as not
+planned).
 
 Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-review-round-2026-10-26).
+
+## Issue review round (2026-10-29)
+
+Staging branch `staging/issue-review-2`, merged to main in one PR.
+
+- [x] Flaky core-flow e2e: own user, unique names, wait for the scene data before typing. (#760)
+- [x] Status, danger and author colours used as text pass AA in every theme (ink twins). (#744)
+- [x] Server-rendered times use the author's timezone (`codex-tz` cookie). (#766)
+- [x] Settings rows and "On this page" links for Security and Assistant, steps 2 and 3. (#731)
+- [x] Story workspace shows one pane at a time below 820px. (#737)
+- [x] SvelteKit 3 cleanup: `refreshAll`, `Response.json`, `snapshot()`, `#lib` subpath imports. (#752)
+
+Follow-ups (open):
+
+- [ ] Scene data landing mid-typing remounts the editor and drops keys (#772).
+- [ ] Entity badge letter contrast (#775).
+- [ ] Focused review mark tint contrast (#776).
+
+Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-review-round-2026-10-29).
 
 ## Feedback backlog
 
