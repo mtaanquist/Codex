@@ -104,7 +104,7 @@
 	<p class="admin-lede">Your email, password, and the devices currently signed in.</p>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-email">
 	<div class="settings-group">
 		<header class="settings-group-header">
 			<h2 class="settings-group-title">Email</h2>
@@ -152,7 +152,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-password">
 	<div class="settings-group">
 		<header class="settings-group-header">
 			<h2 class="settings-group-title">Password</h2>
@@ -202,7 +202,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-two-factor">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Two-factor authentication</h2>
 		<p class="admin-block-sub">
@@ -453,7 +453,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-passkeys">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Passkeys</h2>
 		<p class="admin-block-sub">
@@ -542,7 +542,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-sessions">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Sessions</h2>
 		<p class="admin-block-sub">Devices currently signed in to your account.</p>
@@ -611,7 +611,7 @@
 	{/if}
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-data">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Your data</h2>
 		<p class="admin-block-sub">
@@ -630,7 +630,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-delete">
 	<div class="settings-group danger-group">
 		<header class="settings-group-header">
 			<h2 class="settings-group-title">Delete account</h2>

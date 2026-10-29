@@ -191,8 +191,22 @@ shell any more: docs, print, guest review and the public reader all carry it.
 (`.admin-main-inner`, 720px at most) right after the sidebar, so the spare
 width on a wide screen sits to the right. A section that holds a wide table
 or a stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`):
-admin Overview and Users, and universe Details. Two-column setting rows and
-"On this page" links for long sections are deferred (issue #731).
+admin Overview and Users, and universe Details.
+
+**Setting rows.** When the column is at least 600px wide (a container query
+on `.admin-main-inner`), every `.field` in it lays out as a row: the label on
+the left (13rem), the controls and their `.field-hint` on the right, and a
+`.field-grid` pair as two rows. Narrower, fields stack. This comes from the
+shared `.field` rules in `pages.css`, so a settings page gets it by using
+`.field` with a real `<label for>`; do not build a separate row markup. A
+`label.check-row` is a control and stays on the right.
+
+**"On this page".** A settings section too long for one screen (account
+Security and Assistant) lists its groups as `.contents-nav` anchors in the
+sidebar under the route list, with an `.admin-nav-label` heading that names
+the nav. Each group's `.admin-block` carries the anchor id. Split a section
+into its own sidebar item instead when its groups are independent and it
+keeps growing.
 
 ## Chrome
 
@@ -401,7 +415,8 @@ primitive's own class too, but do not copy the pattern.
 - Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`
   (its checkbox has no visible label of its own, so give it an `aria-label`
   matching the row title),
-  `.slider`. `.input.short` caps a field for a short value (a display name,
+  `.slider`. In a settings column a `.field` is a two-column setting row
+  (see "Setting rows" above). `.input.short` caps a field for a short value (a display name,
   a pen name, a handle) at 36ch instead of the full column. The focus ring
   (accent border plus `--accent-soft` glow) comes from the shared rule;
   never redefine it.
