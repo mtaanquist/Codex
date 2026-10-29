@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { savePreferences } from '$lib/server/preferences';
@@ -14,5 +14,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await readJson<{ theme?: unknown }>(request);
 	if (!isTheme(body.theme)) error(400, 'invalid theme');
 	await savePreferences(db, locals.user.id, { theme: body.theme });
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

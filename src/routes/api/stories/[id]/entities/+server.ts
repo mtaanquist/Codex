@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { throwActionError } from '$lib/server/action-result';
@@ -32,5 +32,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	);
 	if (!result.ok) throwActionError(result);
 	await queueUniverseMentions(universe.id);
-	return json({ ok: true, id: result.id });
+	return Response.json({ ok: true, id: result.id });
 };

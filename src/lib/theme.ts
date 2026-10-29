@@ -1,4 +1,4 @@
-import { invalidateAll } from '$app/navigation';
+import { refreshAll } from '$app/navigation';
 import { applyAppearance } from './appearance-apply';
 import {
 	DEFAULT_ACCENT,
@@ -68,7 +68,7 @@ export async function setTheme(choice: Theme, saved: SavedAppearance | null): Pr
 		);
 		saveQueue = save;
 		await save;
-		if (mine === latestSave) await invalidateAll();
+		if (mine === latestSave) await refreshAll();
 		return;
 	}
 	applyAppearance(

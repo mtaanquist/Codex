@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { withQuery } from '$lib/href';
 	import type { ResolvedPathname } from '$app/types';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { deserialize } from '$app/forms';
@@ -64,9 +64,9 @@
 			const result = deserialize(await response.text());
 			if (result.type === 'redirect') {
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- the action's own redirect
-				await goto(result.location, { invalidateAll: true });
+				await goto(result.location, { refreshAll: true });
 			} else {
-				await invalidateAll();
+				await refreshAll();
 			}
 		};
 	}

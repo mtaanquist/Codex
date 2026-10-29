@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { throwActionError } from '$lib/server/action-result';
@@ -37,5 +37,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	await queueSceneMentions(result.newSceneId);
 	// splitSceneId names the scene that was actually cut, which the locate may
 	// have re-targeted away from the requested one.
-	return json({ ok: true, newSceneId: result.newSceneId, splitSceneId: targetSceneId });
+	return Response.json({ ok: true, newSceneId: result.newSceneId, splitSceneId: targetSceneId });
 };

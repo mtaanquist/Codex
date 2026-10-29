@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { effectiveAssetConfig, s3AssetStore } from '$lib/server/assets';
@@ -21,7 +21,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		error(400, 'Pick one of the colours in the menu.');
 	const result = await setEntityBadgeColor(db, locals.user!.id, params.id, color);
 	if (!result.ok) throwActionError(result);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
@@ -44,11 +44,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		}
 	);
 	if (!result.ok) throwActionError(result);
-	return json({ id: result.id });
+	return Response.json({ id: result.id });
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	const result = await clearEntityBadgeImage(db, locals.user!.id, params.id);
 	if (!result.ok) throwActionError(result);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

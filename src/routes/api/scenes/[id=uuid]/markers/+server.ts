@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
@@ -28,5 +28,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!result.ok) {
 		throwActionError(result);
 	}
-	return json({ id: result.id }, { status: 201 });
+	return Response.json({ id: result.id }, { status: 201 });
 };

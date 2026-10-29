@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { MIN_PASSWORD } from '$lib/password';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { formatDate, formatDateTime } from '$lib/format';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -43,7 +43,7 @@
 			passkeyName = '';
 			passkeyPassword = '';
 			passkeyAdded = true;
-			await invalidateAll();
+			await refreshAll();
 		} catch (err) {
 			// A dismissed browser prompt arrives as NotAllowedError; say it plainly.
 			passkeyError =

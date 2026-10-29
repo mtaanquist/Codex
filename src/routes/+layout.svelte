@@ -28,7 +28,7 @@
 	import { applyAppearance } from '$lib/appearance-apply';
 	import { followSystemTheme } from '$lib/theme';
 	import { TIMEZONE_COOKIE, browserTimeZone } from '$lib/timezone';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
@@ -69,7 +69,7 @@
 		timeZoneSent = true;
 		const secure = location.protocol === 'https:' ? '; secure' : '';
 		document.cookie = `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax${secure}`;
-		void invalidateAll();
+		void refreshAll();
 	});
 
 	// With no theme choice stored on this device, the palette follows the system

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { withQuery } from '$lib/href';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import EntityEditor from '$lib/components/EntityEditor.svelte';
 	import SceneBoard from '$lib/components/SceneBoard.svelte';
@@ -140,7 +140,7 @@
 							{ status },
 							'Could not move the scene. Try again.'
 						);
-						await invalidateAll();
+						await refreshAll();
 						return result.ok ? null : result.message;
 					}}
 				/>

@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
@@ -75,5 +75,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		replied = staged.ok;
 	}
 
-	return json({ replied });
+	return Response.json({ replied });
 };

@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
@@ -36,5 +36,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		{ sceneId: payload.sceneId, before: payload.before },
 		confirmed
 	);
-	return json({ ok: true, matched });
+	return Response.json({ ok: true, matched });
 };

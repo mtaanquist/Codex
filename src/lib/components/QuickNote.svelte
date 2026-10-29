@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { modLabel } from '$lib/keys';
 	import { quickNote, openQuickNote, closeQuickNote } from '$lib/quick-note.svelte';
 
@@ -75,7 +75,7 @@
 			text = '';
 			savedHref = data.href;
 			// The Notes panel behind the card picks up the new note.
-			await invalidateAll();
+			await refreshAll();
 			close();
 		} finally {
 			saving = false;

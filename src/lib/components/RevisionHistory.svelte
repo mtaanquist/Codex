@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { relativeShort } from '$lib/format';
 
 	type Row = { id: string; reason: string | null; label: string | null; createdAt: Date };
@@ -64,7 +64,7 @@
 			});
 			if (response.ok) {
 				label = '';
-				await invalidateAll();
+				await refreshAll();
 			}
 		} finally {
 			// A network-level rejection must not leave the button stuck disabled.

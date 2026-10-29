@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
@@ -52,5 +52,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		bodyMd: payload.bodyMd
 	});
 	if (!result.ok) throwActionError(result);
-	return json({ id: noteId, href: `/stories/${story.slug}/notes?note=${noteId}` });
+	return Response.json({ id: noteId, href: `/stories/${story.slug}/notes?note=${noteId}` });
 };

@@ -17,7 +17,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { entityColor } from '$lib/entity-color';
 	import { post } from '$lib/api';
 	import type { EntityKind } from './EntityEditor.svelte';
@@ -96,12 +96,12 @@
 		relTargetId = '';
 		relNotes = '';
 		addingRel = false;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	async function removeRelationship(relationshipId: string) {
 		const response = await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 </script>
 

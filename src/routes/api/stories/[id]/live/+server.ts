@@ -1,4 +1,3 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
@@ -17,5 +16,5 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		universeId: universe.id,
 		sceneId: sceneMeta ? sceneParam : null
 	});
-	return json({ ...live, sceneMeta } satisfies StoryLiveResponse);
+	return Response.json({ ...live, sceneMeta } satisfies StoryLiveResponse);
 };

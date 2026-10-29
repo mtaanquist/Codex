@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { publicOrigin } from '$lib/server/origin';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import type { RequestHandler } from './$types';
@@ -54,5 +54,5 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, request,
 		sameSite: 'lax',
 		expires: session.expiresAt
 	});
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

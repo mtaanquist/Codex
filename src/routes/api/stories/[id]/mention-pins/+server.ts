@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
@@ -48,7 +48,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throwActionError(result);
 	}
 	await requeue(params.id);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };
 
 export const DELETE: RequestHandler = async ({ params, request, locals }) => {
@@ -58,5 +58,5 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 	const removed = await clearMentionPin(db, locals.user!.id, params.id, payload.name);
 	if (!removed) error(404, 'pin not found');
 	await requeue(params.id);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

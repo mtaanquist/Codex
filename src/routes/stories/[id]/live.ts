@@ -1,7 +1,7 @@
 import { invalidate } from '$app/navigation';
 
 // Set just before invalidating the live slice, so +page.ts knows to fetch it.
-// Any other rerun (a navigation, invalidateAll) takes the server data as is.
+// Any other rerun (a navigation, refreshAll) takes the server data as is.
 export const liveRefresh = { pending: false };
 
 export const STORY_LIVE = 'story:live';
