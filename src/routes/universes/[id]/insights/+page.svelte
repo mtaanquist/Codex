@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { withQuery } from '$lib/href';
-	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import { daysMetGoal, daysUntil } from '$lib/insights';
@@ -17,19 +15,6 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-
-	// Day boundaries follow the author's clock. The server reads the timezone
-	// cookie; on the first visit (or a changed clock) set it and reload the
-	// data once.
-	onMount(() => {
-		// Reads the browser's timezone, not display formatting.
-		// eslint-disable-next-line no-restricted-syntax
-		const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-		if (timezone && timezone !== data.timezone) {
-			document.cookie = `codex-tz=${encodeURIComponent(timezone)}; path=/; max-age=31536000; samesite=lax`;
-			invalidateAll();
-		}
-	});
 
 	// The left pane below the mode strip is always the contents of the centre;
 	// here that is this page's own sections. Its own class, not .side-nav, which

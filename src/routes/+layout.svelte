@@ -27,6 +27,8 @@
 	import { browser } from '$app/env';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import { followSystemTheme } from '$lib/theme';
+	import { TIMEZONE_COOKIE, browserTimeZone } from '$lib/timezone';
+	import { invalidateAll } from '$app/navigation';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
@@ -53,6 +55,20 @@
 	// browser, and only once the component tree is mounted.
 	$effect(() => {
 		document.documentElement.dataset.hydrated = 'true';
+	});
+
+	// Times render on the author's clock. The server learns it from a cookie;
+	// on the first visit (or a changed clock) set it and reload the data once,
+	// so every time on the page re-renders in the right zone.
+	// Once per page load: a zone the server does not know comes back as UTC,
+	// and asking again would reload forever.
+	let timeZoneSent = false;
+	$effect(() => {
+		const timeZone = browserTimeZone();
+		if (timeZoneSent || !timeZone || timeZone === data.timeZone) return;
+		timeZoneSent = true;
+		document.cookie = `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax`;
+		void invalidateAll();
 	});
 
 	// With no theme choice stored on this device, the palette follows the system

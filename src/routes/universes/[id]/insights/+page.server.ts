@@ -3,28 +3,21 @@ import { db } from '$lib/server/db';
 import { ownedUniverse } from '$lib/server/universe-access';
 import {
 	entityHeat,
-	isValidTimezone,
 	relationshipLinks,
 	storyProgress,
 	writingActivity
 } from '$lib/server/insights';
 import { userPreferences } from '$lib/server/preferences';
+import { requestTimeZone } from '$lib/server/timezone';
 import { assistantLayout } from '$lib/server/llm/config';
 import { listChat } from '$lib/server/llm/chat-history';
 import { hasChatSummary } from '$lib/server/llm/chat-summary';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
-	// Day boundaries follow the author's clock. The page sets this cookie on
-	// first visit and reloads the data once; until then days bucket as UTC. A
-	// malformed cookie (bad percent-escape) must fall back to UTC, not 500.
-	let requested: string;
-	try {
-		requested = decodeURIComponent(cookies.get('codex-tz') ?? '');
-	} catch {
-		requested = '';
-	}
-	const timezone = requested && isValidTimezone(requested) ? requested : 'UTC';
+	// Day boundaries follow the author's clock. The root layout sets the cookie
+	// on first visit and reloads the data once; until then days bucket as UTC.
+	const timezone = requestTimeZone(cookies);
 	const [stories, heat, activity, web, preferences, assistant] = await Promise.all([
 		storyProgress(db, universe.id),
 		entityHeat(db, universe.id),
@@ -43,7 +36,6 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 		(await hasChatSummary(db, locals.user!.id, { universeId: universe.id }));
 	return {
 		universe,
-		timezone,
 		stories,
 		heat,
 		activity,

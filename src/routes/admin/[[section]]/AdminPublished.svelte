@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { PageData, ActionData } from './$types';
 	import { formatDate } from '$lib/format';
 
@@ -40,7 +41,9 @@
 								<span class="pill">{edition.isCurrent ? 'current' : 'superseded'}</span>
 								{#if edition.isAdult}<span class="pill">adult</span>{/if}
 							</div>
-							<div class="list-sub">published {formatDate(edition.publishedAt)}</div>
+							<div class="list-sub">
+								published {formatDate(edition.publishedAt, page.data.timeZone)}
+							</div>
 						</div>
 						<div class="list-actions">
 							<form method="POST" action="?/takedown">

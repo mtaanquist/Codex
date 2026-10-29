@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
@@ -77,7 +78,7 @@
 				<p class="reader-byline">
 					{chapters.length}
 					{chapters.length === 1 ? 'chapter' : 'chapters'} - {formatNumber(data.words)} words - published
-					{formatLongDate(data.publishedAt)}{#if data.versionLabel}
+					{formatLongDate(data.publishedAt, page.data.timeZone)}{#if data.versionLabel}
 						- {data.versionLabel}{/if}
 				</p>
 

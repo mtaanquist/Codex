@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatDateTime } from '$lib/format';
 	import { diffLines } from 'diff';
@@ -68,7 +69,9 @@
 	<div class="revision-banner-main">
 		<div class="revision-banner-title">Viewing a past revision</div>
 		<div class="revision-banner-sub">
-			{formatDateTime(revision.createdAt)}{revision.label ? ` - ${revision.label}` : ''}
+			{formatDateTime(revision.createdAt, page.data.timeZone)}{revision.label
+				? ` - ${revision.label}`
+				: ''}
 		</div>
 	</div>
 	<div class="revision-banner-actions">

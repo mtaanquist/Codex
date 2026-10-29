@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { formatDateTime } from '$lib/format';
 	import { tick } from 'svelte';
@@ -125,7 +126,10 @@
 						<a href={resolve('/artifacts/[id=uuid]', { id: artifact.id })} download>
 							{FORMAT_LABELS[artifact.format] ?? artifact.format}
 						</a>
-						- {formatBytes(artifact.byteSize)}, generated {formatDateTime(artifact.createdAt)}
+						- {formatBytes(artifact.byteSize)}, generated {formatDateTime(
+							artifact.createdAt,
+							page.data.timeZone
+						)}
 					</li>
 				{/each}
 			</ul>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
@@ -830,7 +831,7 @@
 							<div class="list-main">
 								<div class="list-title">{entry.model}</div>
 								<div class="list-sub">
-									{formatDateTime(entry.createdAt)} - {entry.role}
+									{formatDateTime(entry.createdAt, page.data.timeZone)} - {entry.role}
 									{#if entry.promptTokens !== null || entry.completionTokens !== null}
 										- {formatNumber(entry.promptTokens ?? 0)} in / {formatNumber(
 											entry.completionTokens ?? 0

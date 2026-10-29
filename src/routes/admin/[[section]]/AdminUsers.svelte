@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { PageData, ActionData } from './$types';
 	import { formatDate } from '$lib/format';
@@ -147,9 +148,10 @@
 						<div class="user-row-identity">
 							<p class="user-row-name">{account.displayName}</p>
 							<p class="user-row-email">
-								{account.email} - requested {formatDate(account.createdAt)}{account.emailVerifiedAt
-									? ''
-									: ' - email unconfirmed'}
+								{account.email} - requested {formatDate(
+									account.createdAt,
+									page.data.timeZone
+								)}{account.emailVerifiedAt ? '' : ' - email unconfirmed'}
 							</p>
 						</div>
 						<div class="user-row-actions">
@@ -213,7 +215,7 @@
 						<td class="cell-muted">
 							{userStatus(account)}{account.publicArchiveEnabled ? ', can publish' : ''}
 						</td>
-						<td class="cell-muted">{formatDate(account.createdAt)}</td>
+						<td class="cell-muted">{formatDate(account.createdAt, page.data.timeZone)}</td>
 						<td class="cell-actions">
 							<div class="cell-actions-inner">
 								<form method="POST" action="?/setInviteAllowance" class="allowance-form">
@@ -396,7 +398,7 @@
 							<td class="cell-muted">{code.usedCount}/{code.maxUses}</td>
 							<td class="cell-muted">
 								{inviteStatus(code)}{code.expiresAt && inviteStatus(code) === 'Active'
-									? `, expires ${formatDate(code.expiresAt)}`
+									? `, expires ${formatDate(code.expiresAt, page.data.timeZone)}`
 									: ''}
 							</td>
 							<td class="cell-actions">

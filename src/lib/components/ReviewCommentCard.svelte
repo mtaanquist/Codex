@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { enhance } from '$lib/enhance';
 	import { confirmEnhance } from '$lib/confirm.svelte';
 	import Icon from './Icon.svelte';
@@ -79,7 +80,7 @@
 		<ReviewAvatar {author} />
 		<div class="rv-who">
 			<div class="rv-who-name">{root.authorName} <span class="rv-role">{byline}</span></div>
-			<div class="rv-when">{formatDateTime(root.createdAt)}</div>
+			<div class="rv-when">{formatDateTime(root.createdAt, page.data.timeZone)}</div>
 		</div>
 		{#if open && role === 'author'}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->

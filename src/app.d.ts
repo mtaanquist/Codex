@@ -9,7 +9,11 @@ declare global {
 			user: SessionUser | null;
 			session: { id: string; expiresAt: Date } | null;
 		}
-		// interface PageData {}
+		interface PageData {
+			// The author's timezone, from the root layout; pass it to the date
+			// helpers in $lib/format.
+			timeZone: string;
+		}
 		// interface PageState {}
 		// interface Platform {}
 	}

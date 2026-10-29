@@ -8,7 +8,8 @@ import {
 	formatDateTime,
 	formatTime,
 	narrowWeekday,
-	relativeShort
+	relativeShort,
+	dayKey
 } from './format';
 
 // Local-time dates, so the output does not depend on the runner's timezone.
@@ -34,6 +35,27 @@ describe('fixed display locale', () => {
 
 	it('falls back to the short date after a week', () => {
 		expect(relativeShort(june11)).toBe('11 Jun 2026');
+	});
+});
+
+// One instant, 23:30 UTC on 11 June: already 12 June in Auckland, still
+// 11 June in New York. A server and a browser in different zones must agree
+// when both are given the author's zone (#766).
+const lateUtc = new Date(Date.UTC(2026, 5, 11, 23, 30));
+
+describe('author timezone', () => {
+	it('formats in the given zone, wherever the code runs', () => {
+		expect(formatDateTime(lateUtc, 'UTC')).toBe('11 Jun 2026, 23:30');
+		expect(formatDateTime(lateUtc, 'Pacific/Auckland')).toBe('12 Jun 2026, 11:30');
+		expect(formatTime(lateUtc, 'America/New_York')).toBe('19:30');
+		expect(formatDate(lateUtc, 'Pacific/Auckland')).toBe('12 Jun 2026');
+		expect(formatLongDate(lateUtc, 'Pacific/Auckland')).toBe('12 June 2026');
+	});
+
+	it('keys a calendar day in the given zone', () => {
+		expect(dayKey(lateUtc, 'UTC')).toBe('2026-06-11');
+		expect(dayKey(lateUtc, 'Pacific/Auckland')).toBe('2026-06-12');
+		expect(dayKey(lateUtc, 'America/New_York')).toBe('2026-06-11');
 	});
 });
 

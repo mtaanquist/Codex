@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { formatDate } from '$lib/format';
 	import { resolve } from '$app/paths';
 	import HelpLink from '$lib/components/HelpLink.svelte';
@@ -124,7 +125,8 @@
 				<li>
 					<span>
 						{invitation.email ?? 'Review link'} - {inviteStatus(invitation)}, created {formatDate(
-							invitation.createdAt
+							invitation.createdAt,
+							page.data.timeZone
 						)}{invitation.guests.length > 0
 							? ` - joined: ${invitation.guests.map((guest) => guest.displayName).join(', ')}`
 							: ''}
