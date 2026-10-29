@@ -21,6 +21,8 @@
 	// cookie; on the first visit (or a changed clock) set it and reload the
 	// data once.
 	onMount(() => {
+		// Reads the browser's timezone, not display formatting.
+		// eslint-disable-next-line no-restricted-syntax
 		const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 		if (timezone && timezone !== data.timezone) {
 			document.cookie = `codex-tz=${encodeURIComponent(timezone)}; path=/; max-age=31536000; samesite=lax`;

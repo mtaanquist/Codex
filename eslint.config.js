@@ -71,7 +71,7 @@ export default defineConfig(
 				},
 				{
 					selector:
-						"NewExpression[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|NumberFormat|RelativeTimeFormat)$/]",
+						":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|NumberFormat|RelativeTimeFormat|ListFormat|PluralRules)$/]",
 					message: 'Use a $lib/format helper so the display locale stays fixed.'
 				}
 			]
