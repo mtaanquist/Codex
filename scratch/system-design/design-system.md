@@ -693,6 +693,26 @@ From CLAUDE.md, repeated here because every screen touches it:
   match. Lint bans `toLocale*` calls and `new Intl.*Format` outside that
   file; add a helper there instead.
 
+## Links
+
+Every internal link and `goto()` goes through `resolve()` from `$app/paths`,
+which the `svelte/no-navigation-without-resolve` lint enforces:
+
+- Build a path with a route id and params: `resolve('/stories/[id]', { id })`.
+  A static hash can ride on the id: `resolve('/universes/[id]/[[section]]#import-story', ...)`.
+- Add query parameters with `withQuery(path, { scene: id })` from `$lib/href`.
+  It encodes values, drops empty ones, extends an existing query string, and
+  keeps the `ResolvedPathname` type. Do not put dynamic values in the route
+  id's query string, and do not build `${path}?a=${b}` templates.
+- Type every prop, field and return value that carries an app path as
+  `ResolvedPathname` (from `$app/types`), so the lint can follow it through
+  components. A `string` breaks the chain.
+- External links carry `rel="external"`. An href that arrives as data (a
+  search result, a notification) is cast to `ResolvedPathname` at the
+  boundary with a comment saying where it came from.
+- The lint has no type information in plain `.ts` files, so a `goto()` there
+  on a typed path still needs a disable with a reason.
+
 ## CSS file map
 
 Load order in `src/routes/+layout.svelte`: `tokens.css`, `theme.css`, `board.css`,

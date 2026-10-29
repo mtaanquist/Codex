@@ -45,7 +45,6 @@
 		<Icon name="caret" />
 	</button>
 	{#if open}
-		<!-- eslint-disable svelte/no-navigation-without-resolve (chrome.ts resolves every href) -->
 		<div
 			class="popover crumb-pop"
 			role="menu"
@@ -66,6 +65,5 @@
 				{/each}
 			{/each}
 		</div>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 </span>

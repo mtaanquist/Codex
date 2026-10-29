@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { modal } from '$lib/modal';
 	import { formatNumber } from '$lib/format';
 	import { reviewModal, closeReviewModal } from '$lib/review-modal.svelte';
@@ -30,7 +31,7 @@
 		defaultSceneId?: string | null;
 	} = $props();
 
-	const reviewHref = $derived(`/stories/${storySlug}/review`);
+	const reviewHref = $derived(resolve('/stories/[id]/review', { id: storySlug }));
 
 	// The scene and chapter the review can target, from the request or the page.
 	const sceneId = $derived(reviewModal.request.sceneId ?? defaultSceneId ?? null);

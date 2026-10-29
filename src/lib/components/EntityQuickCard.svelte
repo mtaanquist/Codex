@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import EntityBadge from './EntityBadge.svelte';
 	import type { MentionEntity } from '$lib/editor-mentions';
 	import { QUICK_CARD_DETAILS, QUICK_CARD_RELATED } from '$lib/quick-card';
@@ -7,7 +8,7 @@
 	// surface - the same fields the editor's hover card shows, never the full
 	// entity. The "Open full details" link appears only when a href is given
 	// (the author's own review); a guest never gets one.
-	let { entity, href = null }: { entity: MentionEntity; href?: string | null } = $props();
+	let { entity, href = null }: { entity: MentionEntity; href?: ResolvedPathname | null } = $props();
 
 	const KIND_LABELS = { character: 'Character', place: 'Place', lore_entry: 'Lore' } as const;
 	const kind = $derived(
@@ -55,7 +56,6 @@
 		</div>
 	{/if}
 	{#if href}
-		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 		<a class="btn btn-primary" {href}>Open full details</a>
 	{/if}
 </div>

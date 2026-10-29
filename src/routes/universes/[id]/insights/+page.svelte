@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -419,12 +420,11 @@
 									</h3>
 									<div class="heat-grid">
 										{#each group as entity (entity.id)}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 											<a
 												class="heat-tile"
 												class:cold={entity.mentionCount === 0}
 												style="--heat: {heatStrength(entity.mentionCount)}%;"
-												href={`${planPath}?entity=${entity.id}`}
+												href={withQuery(planPath, { entity: entity.id })}
 												title={heatTitle(entity)}
 											>
 												<span class="heat-tile-head">
@@ -447,7 +447,6 @@
 													{/if}
 												</span>
 											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
 									</div>
 								</div>
@@ -467,7 +466,7 @@
 					<RelationshipWeb
 						entities={data.heat}
 						links={data.web}
-						entityHref={(id) => `${planPath}?entity=${id}`}
+						entityHref={(id) => withQuery(planPath, { entity: id })}
 					/>
 				</div>
 			</div>

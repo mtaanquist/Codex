@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 	import { menu } from '$lib/menu';
@@ -10,7 +11,7 @@
 		label: string;
 		// A button that starts an inline form here, or a link to another page.
 		onSelect?: () => void;
-		href?: string;
+		href?: ResolvedPathname;
 	};
 
 	let {
@@ -70,7 +71,6 @@
 		<span class="new-caret"><Icon name="caret" /></span>
 	</button>
 	{#if open}
-		<!-- eslint-disable svelte/no-navigation-without-resolve (callers resolve every href) -->
 		<div class="popover" role="menu" use:menu={{ close, refocus: () => trigger?.focus() }}>
 			{#each items as item (item.label)}
 				{#if item.href}
@@ -100,7 +100,6 @@
 			{/if}
 			<p class="menu-note">{note}</p>
 		</div>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 </span>
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
 	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
@@ -188,9 +190,9 @@
 	});
 
 	// The usage log pages through ?usage=N on the assistant section.
-	function usagePageHref(n: number): string {
+	function usagePageHref(n: number): ResolvedPathname {
 		const base = resolve('/account/[[section]]', { section: 'assistant' });
-		return n > 0 ? `${base}?usage=${n}` : base;
+		return n > 0 ? withQuery(base, { usage: n }) : base;
 	}
 
 	// The provider picker: a preset prefills and locks the endpoint URL (the
@@ -487,8 +489,7 @@
 					</select>
 					{#if activePreset}
 						<p class="field-hint">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external provider docs -->
-							<a href={activePreset.docsUrl} target="_blank" rel="noopener noreferrer"
+							<a href={activePreset.docsUrl} target="_blank" rel="external noopener noreferrer"
 								>Get an API key</a
 							>
 							from {activePreset.label}.
@@ -847,14 +848,12 @@
 				</div>
 				{#if data.assistantUsage.page > 0 || data.assistantUsage.hasMore}
 					<div class="settings-actions">
-						<!-- eslint-disable svelte/no-navigation-without-resolve (usagePageHref resolves the section path) -->
 						{#if data.assistantUsage.page > 0}
 							<a class="btn btn-ghost" href={usagePageHref(data.assistantUsage.page - 1)}>Newer</a>
 						{/if}
 						{#if data.assistantUsage.hasMore}
 							<a class="btn btn-ghost" href={usagePageHref(data.assistantUsage.page + 1)}>Older</a>
 						{/if}
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					</div>
 				{/if}
 			{/if}

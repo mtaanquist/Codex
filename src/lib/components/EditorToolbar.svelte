@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
 	import Icon, { type IconName } from './Icon.svelte';
@@ -42,7 +43,7 @@
 		// bar when set, the same on the Write and Review toolbars.
 		viewMenu?: ViewItem[];
 		// The scene <-> whole-story toggle, shown at the end of the bar.
-		storyView?: { active: boolean; toggleHref: string };
+		storyView?: { active: boolean; toggleHref: ResolvedPathname };
 		// The view toggles: show non-printing characters, and hide the command
 		// markers (\center and friends). Each button appears only when its
 		// toggle callback is set; active marks the toggle as on.
@@ -398,11 +399,9 @@
 			</button>
 		{/if}
 		{#if storyView}
-			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 			<a class="md-tool" href={storyView.toggleHref} title={storyLabel} aria-label={storyLabel}>
 				<Icon name={storyView.active ? 'scene' : 'chapter'} size={16} />
 			</a>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/if}
 		{#if viewMenu}
 			<ViewMenu items={viewMenu} />

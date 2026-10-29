@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { entityColor } from '$lib/entity-color';
 	import {
@@ -18,7 +19,7 @@
 	}: {
 		entities: WebEntity[];
 		links: WebLink[];
-		entityHref: (id: string) => string;
+		entityHref: (id: string) => ResolvedPathname;
 	} = $props();
 
 	const WIDTH = 800;
@@ -119,7 +120,6 @@
 				{/if}
 			{/each}
 			{#each placed.nodes as node (node.id)}
-				<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the path) -->
 				<a
 					href={entityHref(node.id)}
 					onmouseenter={() => (hoveredId = node.id)}
@@ -141,7 +141,6 @@
 						>
 					</g>
 				</a>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{/each}
 		</svg>
 	{/if}

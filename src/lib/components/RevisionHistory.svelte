@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { invalidateAll } from '$app/navigation';
 	import { relativeShort } from '$lib/format';
 
@@ -19,7 +20,7 @@
 		revisions?: Row[];
 		previewId?: string;
 		// Builds the link that opens a revision in the centre column.
-		previewHref: (revisionId: string) => string;
+		previewHref: (revisionId: string) => ResolvedPathname;
 	} = $props();
 
 	let label = $state('');
@@ -95,9 +96,7 @@
 					</div>
 					{#if row.id !== previewId}
 						<div class="hist-actions">
-							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 							<a class="btn btn-sm btn-secondary" href={previewHref(row.id)}>Preview</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						</div>
 					{/if}
 				</div>

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
 	import { tick, untrack } from 'svelte';
 	import { LEFT_PANE_LABEL } from '$lib/chrome';
 	import Icon from './Icon.svelte';
@@ -50,21 +52,21 @@
 			badgeAssetId: string | null;
 		}[];
 		selectedId?: string;
-		planPath: string;
+		planPath: ResolvedPathname;
 		// At universe scope both point at the universe's own story list, which
 		// is where you pick the story to write in or review.
-		writeHref?: string;
-		reviewHref?: string;
+		writeHref?: ResolvedPathname;
+		reviewHref?: ResolvedPathname;
 		// The line under the mode strip, when the strip needs explaining.
 		modeNote?: string;
 		// Universe scope only: insights covers the whole universe, so it sits
 		// at the foot of the sidebar rather than beside a single story.
-		insightsHref?: string;
+		insightsHref?: ResolvedPathname;
 		// The universe settings section where categories are made and edited.
-		categoriesHref: string;
+		categoriesHref: ResolvedPathname;
 		// Returns to the board after something else filled the centre: the
 		// scene board at story scope, the story board at universe scope.
-		boardHref?: string;
+		boardHref?: ResolvedPathname;
 		boardActive?: boolean;
 		boardLabel?: string;
 		form: {
@@ -237,7 +239,6 @@
 	</div>
 	<div class="left-scroll">
 		{#if boardHref}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 			<a class="board-row" class:active={boardActive} href={boardHref}>
 				<Icon name="chapter" size={13} />
 				{boardLabel}
@@ -248,11 +249,10 @@
 			<span class="count">{visibleCharacters.length}</span>
 		</div>
 		{#each visibleCharacters as character (character.id)}
-			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 			<a
 				class="ent-row"
 				class:active={character.id === selectedId}
-				href={`${planPath}?entity=${character.id}`}
+				href={withQuery(planPath, { entity: character.id })}
 			>
 				<EntityBadge
 					name={character.name}
@@ -262,7 +262,6 @@
 				/>
 				<span class="name">{character.name}</span>
 			</a>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
 		{#if q === ''}
 			{@render addName(
@@ -287,11 +286,10 @@
 			</button>
 			{#if q !== '' || showUniverseCharacters}
 				{#each visibleAvailableCharacters as candidate (candidate.id)}
-					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 					<a
 						class="ent-row uni-row"
 						class:active={candidate.id === selectedId}
-						href={`${planPath}?entity=${candidate.id}`}
+						href={withQuery(planPath, { entity: candidate.id })}
 					>
 						<EntityBadge
 							name={candidate.name}
@@ -301,7 +299,6 @@
 						/>
 						<span class="name">{candidate.name}</span>
 					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
 			{/if}
 			{#if q === ''}
@@ -314,11 +311,10 @@
 			<span class="count">{visiblePlaces.length}</span>
 		</div>
 		{#each visiblePlaces as place (place.id)}
-			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 			<a
 				class="ent-row"
 				class:active={place.id === selectedId}
-				href={`${planPath}?entity=${place.id}`}
+				href={withQuery(planPath, { entity: place.id })}
 			>
 				<EntityBadge
 					name={place.name}
@@ -328,7 +324,6 @@
 				/>
 				<span class="name">{place.name}</span>
 			</a>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/each}
 		{#if q === ''}
 			{@render addName('place', '?/createPlace', 'Add place', 'Place name', 'New place name')}
@@ -347,11 +342,10 @@
 			</button>
 			{#if q !== '' || showUniversePlaces}
 				{#each visibleAvailablePlaces as candidate (candidate.id)}
-					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 					<a
 						class="ent-row uni-row"
 						class:active={candidate.id === selectedId}
-						href={`${planPath}?entity=${candidate.id}`}
+						href={withQuery(planPath, { entity: candidate.id })}
 					>
 						<EntityBadge
 							name={candidate.name}
@@ -361,7 +355,6 @@
 						/>
 						<span class="name">{candidate.name}</span>
 					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
 			{/if}
 			{#if q === ''}
@@ -383,11 +376,10 @@
 					<span class="count">{entries.length}</span>
 				</div>
 				{#each entries as entry (entry.id)}
-					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 					<a
 						class="ent-row"
 						class:active={entry.id === selectedId}
-						href={`${planPath}?entity=${entry.id}`}
+						href={withQuery(planPath, { entity: entry.id })}
 					>
 						<EntityBadge
 							name={entry.name}
@@ -397,7 +389,6 @@
 						/>
 						<span class="name">{entry.name}</span>
 					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/each}
 				{#if q === ''}
 					{@render addName(
@@ -419,7 +410,6 @@
 		{/if}
 		<FormStatus error={orphanError} block />
 		{#if q === ''}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 			<a class="outline-add manage-categories" href={categoriesHref}>
 				<Icon name="gear" size={13} /> Manage categories
 			</a>
@@ -427,7 +417,6 @@
 		{#if insightsHref}
 			<div class="side-nav-label" id="plan-across-label">Across the universe</div>
 			<nav class="side-nav" aria-labelledby="plan-across-label">
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the path) -->
 				<a href={insightsHref}>Insights</a>
 			</nav>
 		{/if}

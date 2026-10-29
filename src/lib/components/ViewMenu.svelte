@@ -8,13 +8,14 @@
 		id: string;
 		label: string;
 		icon: IconName;
-		href?: string;
+		href?: ResolvedPathname;
 		onSelect?: () => void;
 		current?: boolean;
 	};
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 	import { menu } from '$lib/menu';
@@ -45,7 +46,6 @@
 		<Icon name="caret" size={11} />
 	</button>
 	{#if open}
-		<!-- eslint-disable svelte/no-navigation-without-resolve (the caller resolves each href) -->
 		<div
 			class="md-view-menu popover"
 			role="menu"
@@ -80,7 +80,6 @@
 				{/if}
 			{/each}
 		</div>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 </div>
 

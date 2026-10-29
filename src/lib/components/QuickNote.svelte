@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { modLabel } from '$lib/keys';
@@ -26,7 +27,7 @@
 	let text = $state('');
 	let saving = $state(false);
 	let message = $state<string | null>(null);
-	let savedHref = $state<string | null>(null);
+	let savedHref = $state<ResolvedPathname | null>(null);
 	let textarea = $state<HTMLTextAreaElement>();
 	let restoreTo: HTMLElement | null = null;
 
@@ -70,7 +71,7 @@
 				message = 'Could not save the note. Try again.';
 				return;
 			}
-			const data = (await response.json()) as { href: string };
+			const data = (await response.json()) as { href: ResolvedPathname };
 			text = '';
 			savedHref = data.href;
 			// The Notes panel behind the card picks up the new note.
@@ -135,7 +136,6 @@
 	</section>
 {:else if savedHref}
 	<div class="quick-note qn-saved" role="status">
-		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (href from the server) -->
 		Saved. <a href={savedHref}>Open the note</a>
 		<button class="qn-dismiss" type="button" aria-label="Dismiss" onclick={() => (savedHref = null)}
 			>&times;</button

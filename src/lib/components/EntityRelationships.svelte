@@ -16,6 +16,7 @@
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { invalidateAll } from '$app/navigation';
 	import { entityColor } from '$lib/entity-color';
 	import { post } from '$lib/api';
@@ -39,7 +40,7 @@
 		// Entities a relationship can point at, keyed by entity type.
 		targets?: Record<string, { id: string; name: string }[]>;
 		// Builds the Plan link for a related entity, scoped to story or universe.
-		entityHref?: (entityId: string) => string;
+		entityHref?: (entityId: string) => ResolvedPathname;
 	} = $props();
 
 	// svelte-ignore state_referenced_locally
@@ -112,7 +113,6 @@
 				<div class="rel-row">
 					<span class="rel-type">{relationship.label}</span>
 					{#if entityHref}
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller passes a resolved Plan path plus a query string) -->
 						<a class="rel-target" href={entityHref(relationship.otherId)}>
 							<span class="badge dot" style="background: {entityColor(relationship.otherName)}"
 							></span>

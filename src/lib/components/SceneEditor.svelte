@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { createAutosave } from '$lib/autosave';
 	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
@@ -115,7 +116,7 @@
 		// editor last took focus; this reports that.
 		onFocus?: () => void;
 		// Editor-view controls carried on the formatting bar.
-		storyView?: { active: boolean; toggleHref: string };
+		storyView?: { active: boolean; toggleHref: ResolvedPathname };
 		// The View dropdown (Edit, Preview, Focus, Print) on the formatting bar.
 		viewMenu?: ViewItem[];
 		// The prose-view toggles, shared across every editor in the story. The

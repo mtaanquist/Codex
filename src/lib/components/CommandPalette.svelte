@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { deserialize } from '$app/forms';
 	import { closePalette, openPalette, palette } from '$lib/palette.svelte';
@@ -41,10 +44,9 @@
 		passage: 'In the text'
 	};
 
-	function navigate(href: string): () => Promise<void> {
+	function navigate(href: ResolvedPathname): () => Promise<void> {
 		return async () => {
 			closePalette();
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths built from owned refs (slug or id) and fixed routes
 			await goto(href);
 		};
 	}
@@ -61,7 +63,7 @@
 			});
 			const result = deserialize(await response.text());
 			if (result.type === 'redirect') {
-				// eslint-disable-next-line svelte/no-navigation-without-resolve -- the action's own redirect target
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- the action's own redirect
 				await goto(result.location, { invalidateAll: true });
 			} else {
 				await invalidateAll();
@@ -160,42 +162,47 @@
 					kind: 'Command',
 					run: storyAction(storyRef, 'createChapter')
 				},
-				{ label: 'Write', sublabel: null, kind: 'Go to', run: navigate(`/stories/${storyRef}`) },
+				{
+					label: 'Write',
+					sublabel: null,
+					kind: 'Go to',
+					run: navigate(resolve('/stories/[id]', { id: storyRef }))
+				},
 				{
 					label: 'Read the whole story',
 					sublabel: 'Every scene as one continuous document',
 					kind: 'Go to',
-					run: navigate(`/stories/${storyRef}?view=story`)
+					run: navigate(withQuery(resolve('/stories/[id]', { id: storyRef }), { view: 'story' }))
 				},
 				{
 					label: 'Preview the story',
 					sublabel: 'See how it will look when exported',
 					kind: 'Go to',
-					run: navigate(`/stories/${storyRef}?view=preview`)
+					run: navigate(withQuery(resolve('/stories/[id]', { id: storyRef }), { view: 'preview' }))
 				},
 				{
 					label: 'Plan this story',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyRef}/plan`)
+					run: navigate(resolve('/stories/[id]/plan', { id: storyRef }))
 				},
 				{
 					label: 'Story notes',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyRef}/notes`)
+					run: navigate(resolve('/stories/[id]/notes', { id: storyRef }))
 				},
 				{
 					label: 'Story settings',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyRef}/settings`)
+					run: navigate(resolve('/stories/[id]/settings/[[section]]', { id: storyRef }))
 				},
 				{
 					label: 'Review feedback',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/stories/${storyRef}/review`)
+					run: navigate(resolve('/stories/[id]/review', { id: storyRef }))
 				}
 			);
 		}
@@ -206,32 +213,37 @@
 					label: 'Plan this universe',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeRef}/plan`)
+					run: navigate(resolve('/universes/[id]/plan', { id: universeRef }))
 				},
 				{
 					label: 'Universe notes',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeRef}/notes`)
+					run: navigate(resolve('/universes/[id]/notes', { id: universeRef }))
 				},
 				{
 					label: 'Universe insights',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeRef}/insights`)
+					run: navigate(resolve('/universes/[id]/insights', { id: universeRef }))
 				},
 				{
 					label: 'Universe settings',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate(`/universes/${universeRef}`)
+					run: navigate(resolve('/universes/[id]/[[section]]', { id: universeRef }))
 				}
 			);
 		}
 		list.push(
-			{ label: 'Library', sublabel: null, kind: 'Go to', run: navigate('/') },
-			{ label: 'Account settings', sublabel: null, kind: 'Go to', run: navigate('/account') },
-			{ label: 'Help', sublabel: null, kind: 'Go to', run: navigate('/docs') }
+			{ label: 'Library', sublabel: null, kind: 'Go to', run: navigate(resolve('/')) },
+			{
+				label: 'Account settings',
+				sublabel: null,
+				kind: 'Go to',
+				run: navigate(resolve('/account/[[section]]', {}))
+			},
+			{ label: 'Help', sublabel: null, kind: 'Go to', run: navigate(resolve('/docs')) }
 		);
 		// The admin sections, for the people who run the instance.
 		if (page.data.user?.isAdmin) {
@@ -240,37 +252,37 @@
 					label: 'Admin: overview',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin')
+					run: navigate(resolve('/admin/[[section]]', {}))
 				},
 				{
 					label: 'Admin: users & access',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin/users')
+					run: navigate(resolve('/admin/[[section]]', { section: 'users' }))
 				},
 				{
 					label: 'Admin: published',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin/published')
+					run: navigate(resolve('/admin/[[section]]', { section: 'published' }))
 				},
 				{
 					label: 'Admin: usage & storage',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin/usage')
+					run: navigate(resolve('/admin/[[section]]', { section: 'usage' }))
 				},
 				{
 					label: 'Admin: backups',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin/backups')
+					run: navigate(resolve('/admin/[[section]]', { section: 'backups' }))
 				},
 				{
 					label: 'Admin: email relay',
 					sublabel: null,
 					kind: 'Go to',
-					run: navigate('/admin/instance')
+					run: navigate(resolve('/admin/[[section]]', { section: 'instance' }))
 				}
 			);
 		}
@@ -289,10 +301,11 @@
 			kind: TYPE_LABELS[result.type] ?? result.type,
 			// A text match carries the search along, so the editor can select
 			// the occurrence it lands on.
+			// The search endpoint builds each href as an app path.
 			run: navigate(
 				result.type === 'passage'
-					? `${result.href}&find=${encodeURIComponent(query.trim())}`
-					: result.href
+					? withQuery(result.href as ResolvedPathname, { find: query.trim() })
+					: (result.href as ResolvedPathname)
 			)
 		}))
 	]);

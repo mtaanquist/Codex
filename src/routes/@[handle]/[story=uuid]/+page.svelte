@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
 	import AppBar from '$lib/components/AppBar.svelte';
@@ -58,13 +59,14 @@
 				<h1 class="reader-title">{data.title}</h1>
 				<p class="reader-byline">The author marked this story as adult content.</p>
 				<p class="reader-byline">
-					<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 					<a
-						href={`${resolve('/@[handle]/[story=uuid]', { handle: data.handle, story: data.storyId })}?adult=ok`}
+						href={withQuery(
+							resolve('/@[handle]/[story=uuid]', { handle: data.handle, story: data.storyId }),
+							{ adult: 'ok' }
+						)}
 					>
 						I am an adult; show the story
 					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				</p>
 				<p class="reader-byline"><a href={shelfHref}>Back to the shelf</a></p>
 			</div>
@@ -89,8 +91,7 @@
 					<p class="reader-byline">
 						Download:
 						{#each data.downloads as artifact (artifact.id)}
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (file download) -->
-							<a href="/artifacts/{artifact.id}" download>
+							<a href={resolve('/artifacts/[id=uuid]', { id: artifact.id })} download>
 								{artifact.format === 'epub' ? 'EPUB' : 'PDF'}
 							</a>
 						{/each}

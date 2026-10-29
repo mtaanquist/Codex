@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
 	import CrumbMenu from './CrumbMenu.svelte';
@@ -74,7 +75,8 @@
 
 	// Remember where the question mark should bring you back to.
 	$effect(() => {
-		if (!onHelp) rememberLocation(page.url.pathname + page.url.search);
+		// The current page's own URL, so it already carries the base path.
+		if (!onHelp) rememberLocation((page.url.pathname + page.url.search) as ResolvedPathname);
 	});
 
 	// SSR cannot know the platform, so the modifier label settles after mount.
@@ -109,7 +111,6 @@
 	{#if shell !== 'public'}
 		<span class="appbar-rule"></span>
 
-		<!-- eslint-disable svelte/no-navigation-without-resolve (chrome.ts resolves every href) -->
 		<nav class="path" aria-label={pathLabel}>
 			{#each crumbs as crumb, index (index)}
 				<!-- Marked so a narrow bar can drop the crumbs before narrowFrom. -->
@@ -133,7 +134,6 @@
 			{#if pill}<span class="pill">{pill}</span>{/if}
 			{#if byline}<span class="appbar-by">{byline}</span>{/if}
 		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 
 	<div class="appbar-tools">
@@ -159,7 +159,6 @@
 		{/if}
 		<!-- A tool that is a place, not a popup: resolve() covers the help
 		     pages, and the way back is a location this app already visited. -->
-		<!-- eslint-disable svelte/no-navigation-without-resolve -->
 		<a
 			class="icon-btn help"
 			href={helpHref}
@@ -169,7 +168,6 @@
 		>
 			?
 		</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{#if shell === 'author'}
 			<NotificationBell />
 			<UserMenu />

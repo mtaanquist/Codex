@@ -5,7 +5,7 @@ import { goto } from '$app/navigation';
 // download is an endpoint), so those get a full load, as a plain link would.
 export async function openHref(href: string): Promise<void> {
 	try {
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path built server-side
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- an app path stored with the data
 		await goto(href);
 	} catch {
 		location.assign(href);

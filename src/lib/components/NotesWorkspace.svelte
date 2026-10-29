@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+	import { withQuery } from '$lib/href';
 	import { RIGHT_PANE_LABEL } from '$lib/chrome';
 	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { ComponentProps } from 'svelte';
@@ -38,11 +40,11 @@
 		crumbs: Crumb[];
 		notes: SidebarProps['notes'];
 		universeNotes?: SidebarProps['universeNotes'];
-		universeNotesPath?: string;
-		notesPath: string;
-		planHref: string;
-		writeHref?: string;
-		reviewHref?: string;
+		universeNotesPath?: ResolvedPathname;
+		notesPath: ResolvedPathname;
+		planHref: ResolvedPathname;
+		writeHref?: ResolvedPathname;
+		reviewHref?: ResolvedPathname;
 		modeNote?: string;
 		selected: (ComponentProps<typeof NoteEditor>['note'] & { pinned: boolean }) | null;
 		revisionRows: ComponentProps<typeof RevisionHistory>['revisions'];
@@ -57,7 +59,7 @@
 		saveStatus = 'idle';
 	});
 
-	const itemHref = $derived(selected ? `${notesPath}?note=${selected.id}` : notesPath);
+	const itemHref = $derived(selected ? withQuery(notesPath, { note: selected.id }) : notesPath);
 	const currentBody = $derived(selected?.bodyMd ?? '');
 
 	// A note mentions nothing, has no comments and no notes of its own, so
@@ -138,7 +140,7 @@
 							entityId={openNote.id}
 							revisions={revisionRows}
 							previewId={revisionPreview?.id}
-							previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+							previewHref={(revisionId) => withQuery(itemHref, { revision: revisionId })}
 						/>
 					{/snippet}
 				</PanelStrip>
