@@ -200,9 +200,10 @@ test('the formatting bar is one tab stop with arrow keys between tools', async (
 	await expect(bar.locator(':focus')).toHaveCount(0);
 
 	// A focused tool that moves into "More tools" as the bar narrows leaves
-	// focus in the bar.
+	// focus in the bar. (Below 820px the writing takes the full width, so it
+	// takes a phone width to crowd the bar.)
 	await bar.getByRole('button', { name: 'Split scene at cursor' }).focus();
-	await page.setViewportSize({ width: 800, height: 900 });
+	await page.setViewportSize({ width: 390, height: 900 });
 	await expect(bar.getByRole('button', { name: 'Split scene at cursor' })).toHaveCount(0);
 	await expect(bar.locator(':focus')).toHaveCount(1);
 });

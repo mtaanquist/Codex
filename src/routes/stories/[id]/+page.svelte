@@ -3,7 +3,7 @@
 	import { withQuery } from '$lib/href';
 	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto, invalidateAll } from '$app/navigation';
 	import { refreshStoryLive } from './live';
 	import { altLabel, modLabel } from '$lib/keys';
 	import { resolve } from '$app/paths';
@@ -164,7 +164,24 @@
 		inspectCard = (await response.json()) as EntityCardData;
 	}
 
+	// On a narrow window one pane shows at a time (the .pane-tabs bar).
+	// Opening a scene shows the writing; opening a card shows the side panel.
+	type PaneTab = 'nav' | 'read' | 'notes';
+	const PANE_TABS: { id: PaneTab; label: string }[] = [
+		{ id: 'nav', label: 'Scenes' },
+		{ id: 'read', label: 'Writing' },
+		{ id: 'notes', label: 'Side panel' }
+	];
+	let paneTab = $state<PaneTab>('read');
+	afterNavigate(({ from, to, type }) => {
+		// A followed link (even to the scene already open) or a different scene,
+		// view or anchor; not a data refresh of this one.
+		if (type === 'link' || from?.url.search !== to?.url.search || from?.url.hash !== to?.url.hash)
+			paneTab = 'read';
+	});
+
 	function openCard(entityId: string) {
+		paneTab = 'notes';
 		inspectStack = [...inspectStack, entityId];
 		void loadCard(entityId);
 	}
@@ -609,7 +626,20 @@
 		helpTopic="editor"
 		helpLabel="the editor"
 	/>
-	<div class="body">
+	<nav class="seg full pane-tabs" aria-label="Story panes">
+		{#each PANE_TABS as tab (tab.id)}
+			<button
+				class="seg-btn"
+				class:active={paneTab === tab.id}
+				type="button"
+				aria-pressed={paneTab === tab.id}
+				onclick={() => (paneTab = tab.id)}
+			>
+				{tab.label}
+			</button>
+		{/each}
+	</nav>
+	<div class="body" data-mtab={paneTab}>
 		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<ModeSwitcher

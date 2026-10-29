@@ -5,6 +5,9 @@
 	height: 100vh;
 	display: grid;
 	grid-template-rows: 52px 1fr;
+	/* An explicit column, so wide content scrolls inside its pane instead of
+	   widening the whole page. */
+	grid-template-columns: minmax(0, 1fr);
 	background: var(--bg);
 }
 
@@ -102,6 +105,40 @@
 }
 .body.no-right {
 	grid-template-columns: var(--left-w) 1fr;
+}
+
+/* Narrow windows: the two side columns and the centre cannot sit side by
+   side, so a .pane-tabs bar (a .seg) above the .body shows one pane at a
+   time. The body carries the choice as data-mtab: nav (left), read (centre)
+   or notes (right). Used by the story editor and the guest review shell. */
+/* Outweighs .seg.full, which sets its own display further down. */
+.seg.full.pane-tabs {
+	display: none;
+}
+@media (max-width: 820px) {
+	.seg.full.pane-tabs {
+		display: flex;
+		margin: 8px 10px 0;
+	}
+	.app:has(> .pane-tabs) {
+		grid-template-rows: 52px auto 1fr;
+	}
+	.body[data-mtab] {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	/* Only the pane for the active tab is shown; each restores its own display. */
+	.body[data-mtab] > .pane {
+		display: none;
+	}
+	.body[data-mtab='nav'] > .left {
+		display: flex;
+	}
+	.body[data-mtab='read'] > .center {
+		display: block;
+	}
+	.body[data-mtab='notes'] > .right {
+		display: flex;
+	}
 }
 
 .pane {
@@ -886,7 +923,8 @@
 .app.focus-mode {
 	grid-template-rows: 1fr;
 }
-.app.focus-mode .appbar {
+.app.focus-mode .appbar,
+.app.focus-mode .pane-tabs {
 	display: none;
 }
 .app.focus-mode .body {
@@ -895,6 +933,10 @@
 .app.focus-mode .left,
 .app.focus-mode .right {
 	display: none;
+}
+/* Focus mode always shows the writing, whichever narrow-window tab was open. */
+.app.focus-mode .body > .center {
+	display: block;
 }
 .app.focus-mode .center {
 	background: var(--bg);

@@ -410,7 +410,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="review-shell">
-	<nav class="seg full" aria-label="Review sections">
+	<nav class="seg full pane-tabs" aria-label="Review sections">
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'nav'}
