@@ -20,7 +20,6 @@ import {
 } from '../../src/lib/server/db/schema';
 import {
 	entityHeat,
-	isValidTimezone,
 	relationshipLinks,
 	storyProgress,
 	WORDS_SQL,
@@ -341,15 +340,6 @@ describe('relationshipLinks', () => {
 
 	it('another universe sees nothing', async () => {
 		expect(await relationshipLinks(db, '00000000-0000-0000-0000-000000000000')).toEqual([]);
-	});
-});
-
-describe('isValidTimezone', () => {
-	it('accepts IANA names and rejects junk', () => {
-		expect(isValidTimezone('Europe/Copenhagen')).toBe(true);
-		expect(isValidTimezone('UTC')).toBe(true);
-		expect(isValidTimezone('Not/AZone')).toBe(false);
-		expect(isValidTimezone('')).toBe(false);
 	});
 });
 

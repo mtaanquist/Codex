@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { enhance } from '$lib/enhance';
 	import { confirmEnhance } from '$lib/confirm.svelte';
 	import Icon from './Icon.svelte';
@@ -94,7 +95,7 @@
 			<div class="rv-who-name">
 				{suggestion.reviewerName} <span class="rv-role">{byline}</span>
 			</div>
-			<div class="rv-when">{formatDateTime(suggestion.createdAt)}</div>
+			<div class="rv-when">{formatDateTime(suggestion.createdAt, page.data.timeZone)}</div>
 		</div>
 		{#if canDecide}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->

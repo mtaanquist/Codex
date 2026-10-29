@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { enhance } from '$lib/enhance';
 	import { confirmEnhance } from '$lib/confirm.svelte';
 	import Icon from './Icon.svelte';
@@ -33,7 +34,7 @@
 	<div class="rv-reply-main">
 		<div class="rv-reply-head">
 			<span class="rv-reply-name">{reply.authorName}</span>
-			<span class="rv-reply-when">{formatDateTime(reply.createdAt)}</span>
+			<span class="rv-reply-when">{formatDateTime(reply.createdAt, page.data.timeZone)}</span>
 			{#if reply.mine && retractAction}
 				<form
 					method="POST"

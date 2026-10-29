@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { openHref } from '$lib/open-href';
 	import Icon from './Icon.svelte';
 	import type { NotificationItem } from '$lib/notifications';
@@ -105,7 +106,7 @@
 										<span class="bell-item-detail">{item.detail}</span>
 									{/if}
 								</span>
-								<span class="bell-age">{relativeShort(item.createdAt)}</span>
+								<span class="bell-age">{relativeShort(item.createdAt, page.data.timeZone)}</span>
 							</button>
 						</li>
 					{/each}

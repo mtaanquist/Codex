@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { MIN_PASSWORD } from '$lib/password';
 	import { invalidateAll } from '$app/navigation';
 	import { formatDate, formatDateTime } from '$lib/format';
@@ -250,7 +251,10 @@
 				</div>
 				<p class="tfa-sub">
 					{#if data.twoFactor.status === 'on'}
-						{#if data.twoFactor.confirmedAt}Enabled {formatDate(data.twoFactor.confirmedAt)} -
+						{#if data.twoFactor.confirmedAt}Enabled {formatDate(
+								data.twoFactor.confirmedAt,
+								page.data.timeZone
+							)} -
 						{/if}you'll be asked for a code on new devices. {data.twoFactor.recoveryRemaining} recovery
 						codes remain.
 					{:else if data.twoFactor.status === 'pending'}
@@ -470,8 +474,8 @@
 							<div class="user-row-identity">
 								<p class="user-row-name">{passkey.name ?? 'Passkey'}</p>
 								<p class="user-row-email">
-									Added {formatDate(passkey.createdAt)}{passkey.lastUsedAt
-										? ` - last used ${formatDateTime(passkey.lastUsedAt)}`
+									Added {formatDate(passkey.createdAt, page.data.timeZone)}{passkey.lastUsedAt
+										? ` - last used ${formatDateTime(passkey.lastUsedAt, page.data.timeZone)}`
 										: ''}
 								</p>
 							</div>
@@ -567,7 +571,9 @@
 					</div>
 					<div class="user-row-identity">
 						<p class="user-row-name">{session.userAgent ?? 'Unknown device'}</p>
-						<p class="user-row-email">Last active {formatDateTime(session.lastSeenAt)}</p>
+						<p class="user-row-email">
+							Last active {formatDateTime(session.lastSeenAt, page.data.timeZone)}
+						</p>
 					</div>
 					<div class="user-row-actions">
 						{#if session.current}

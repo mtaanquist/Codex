@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { invalidateAll } from '$app/navigation';
 	import { relativeShort } from '$lib/format';
@@ -89,7 +90,7 @@
 				<div class="hist-main">
 					<div class="hist-label">{rowTitle(row)}</div>
 					<div class="hist-meta">
-						<span>{relativeShort(row.createdAt)}</span>
+						<span>{relativeShort(row.createdAt, page.data.timeZone)}</span>
 						{#if row.label && row.reason !== 'checkpoint'}
 							<span class="hist-note">{row.label}</span>
 						{/if}

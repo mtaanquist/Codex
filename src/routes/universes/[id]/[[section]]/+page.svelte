@@ -12,7 +12,7 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { universePath } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
-	import { formatLongDate, formatNumber, formatTime } from '$lib/format';
+	import { dayKey, formatLongDate, formatNumber, formatTime } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -103,12 +103,17 @@
 	// Rows grouped under Today / Yesterday / the day's date.
 	const timelineGroups = $derived.by(() => {
 		const groups: { label: string; rows: typeof data.timeline }[] = [];
-		const today = new Date().toDateString();
-		const yesterday = new Date(Date.now() - 86_400_000).toDateString();
+		const timeZone = page.data.timeZone;
+		const today = dayKey(new Date(), timeZone);
+		const yesterday = dayKey(new Date(Date.now() - 86_400_000), timeZone);
 		for (const row of filteredTimeline) {
-			const day = row.createdAt.toDateString();
+			const day = dayKey(row.createdAt, timeZone);
 			const label =
-				day === today ? 'Today' : day === yesterday ? 'Yesterday' : formatLongDate(row.createdAt);
+				day === today
+					? 'Today'
+					: day === yesterday
+						? 'Yesterday'
+						: formatLongDate(row.createdAt, timeZone);
 			const last = groups[groups.length - 1];
 			if (last && last.label === label) last.rows.push(row);
 			else groups.push({ label, rows: [row] });
@@ -117,7 +122,7 @@
 	});
 
 	function entryTime(row: (typeof data.timeline)[number]): string {
-		return formatTime(row.createdAt);
+		return formatTime(row.createdAt, page.data.timeZone);
 	}
 
 	function previewHref(row: (typeof data.timeline)[number]): ResolvedPathname {
