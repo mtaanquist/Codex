@@ -3,13 +3,8 @@ import { TIMEZONE_COOKIE } from '$lib/timezone';
 
 /** The author's timezone from the cookie, or UTC when it is missing or bad. */
 export function requestTimeZone(cookies: Pick<Cookies, 'get'>): string {
-	let requested: string;
-	try {
-		requested = decodeURIComponent(cookies.get(TIMEZONE_COOKIE) ?? '');
-	} catch {
-		// A malformed percent-escape must fall back, not 500.
-		requested = '';
-	}
+	// cookies.get has already decoded the value.
+	const requested = cookies.get(TIMEZONE_COOKIE) ?? '';
 	return requested && isValidTimezone(requested) ? requested : 'UTC';
 }
 

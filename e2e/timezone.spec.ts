@@ -16,26 +16,35 @@ test('server-rendered times use the browser timezone once it is known', async ({
 		.poll(async () => (await context.cookies()).find((c) => c.name === 'codex-tz')?.value)
 		.toBe(encodeURIComponent('Pacific/Auckland'));
 
-	// The server's HTML now carries the Auckland time, and the page, first
-	// rendered before the zone was known, re-renders to match it.
-	const html = await (await page.request.get('/account/security')).text();
-	const rendered = html.match(/Last active ([^<]+)</)?.[1].trim();
-	expect(rendered).toBeTruthy();
-	await expect(page.locator('.user-row-email', { hasText: 'Last active' }).first()).toHaveText(
-		`Last active ${rendered}`
-	);
-
-	// And it is the zone that moved it: the same page rendered for UTC shows a
-	// different time.
-	const session = (await context.cookies()).filter((c) => c.name !== 'codex-tz');
-	const utcHtml = await (
-		await page.request.get('/account/security', {
-			headers: {
-				cookie: [...session.map((c) => `${c.name}=${c.value}`), 'codex-tz=UTC'].join('; ')
-			}
+	// The server's HTML now carries the Auckland times, and the page, first
+	// rendered before the zone was known, re-renders to match them. Compared
+	// as sets, re-fetched until they settle: another spec signing in as this
+	// user adds a session row, and the last-seen refresh moves one.
+	const domTimes = page.locator('.user-row-email', { hasText: 'Last active' });
+	const lastActive = (html: string) =>
+		[...html.matchAll(/Last active ([^<]+)</g)].map((m) => m[1].trim());
+	let auckland: string[] = [];
+	await expect
+		.poll(async () => {
+			auckland = lastActive(await (await page.request.get('/account/security')).text());
+			const shown = (await domTimes.allTextContents()).map((t) =>
+				t.replace('Last active', '').trim()
+			);
+			return shown.length > 0 && shown.every((time) => auckland.includes(time));
 		})
-	).text();
-	const utcRendered = utcHtml.match(/Last active ([^<]+)</)?.[1].trim();
-	expect(utcRendered).toBeTruthy();
-	expect(utcRendered).not.toBe(rendered);
+		.toBe(true);
+
+	// And it is the zone that moved them: rendered for UTC, every time differs.
+	const session = (await context.cookies()).filter((c) => c.name !== 'codex-tz');
+	const utc = lastActive(
+		await (
+			await page.request.get('/account/security', {
+				headers: {
+					cookie: [...session.map((c) => `${c.name}=${c.value}`), 'codex-tz=UTC'].join('; ')
+				}
+			})
+		).text()
+	);
+	expect(utc.length).toBeGreaterThan(0);
+	expect(utc.filter((time) => auckland.includes(time))).toEqual([]);
 });

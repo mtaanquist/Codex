@@ -5,12 +5,12 @@ const jar = (value?: string) => ({ get: () => value });
 
 describe('requestTimeZone', () => {
 	it('reads a valid zone from the cookie', () => {
-		expect(requestTimeZone(jar('Pacific%2FAuckland'))).toBe('Pacific/Auckland');
+		expect(requestTimeZone(jar('Pacific/Auckland'))).toBe('Pacific/Auckland');
 	});
 
-	it('falls back to UTC when the cookie is missing, unknown or malformed', () => {
+	it('falls back to UTC when the cookie is missing or unknown', () => {
 		expect(requestTimeZone(jar())).toBe('UTC');
-		expect(requestTimeZone(jar('Mars%2FOlympus'))).toBe('UTC');
+		expect(requestTimeZone(jar('Mars/Olympus'))).toBe('UTC');
 		expect(requestTimeZone(jar('%E0%A4%A'))).toBe('UTC');
 	});
 });

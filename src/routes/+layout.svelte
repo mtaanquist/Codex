@@ -67,7 +67,8 @@
 		const timeZone = browserTimeZone();
 		if (timeZoneSent || !timeZone || timeZone === data.timeZone) return;
 		timeZoneSent = true;
-		document.cookie = `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax`;
+		const secure = location.protocol === 'https:' ? '; secure' : '';
+		document.cookie = `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax${secure}`;
 		void invalidateAll();
 	});
 
