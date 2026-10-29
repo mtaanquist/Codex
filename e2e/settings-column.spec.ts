@@ -73,6 +73,10 @@ test('security lists its groups under "On this page"', async ({ page }) => {
 		'true'
 	);
 
+	// Where the sidebar stacks above the content, the list is left out.
+	await page.setViewportSize({ width: 760, height: 900 });
+	await expect(contents).toBeHidden();
+
 	// Sections short enough for one screen have no such list.
 	await gotoReady(page, '/account/editor');
 	await expect(page.getByRole('navigation', { name: 'On this page' })).toHaveCount(0);

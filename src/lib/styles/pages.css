@@ -593,30 +593,29 @@
    control because many hints run to several lines, which a narrow label
    column would stretch. Narrower, it stacks as above. A check-row label is
    the control itself, so it stays on the right. Two-up .field-grid pairs
-   become one row each. */
+   become one row each. Fields in a modal, or set side by side in a flex row
+   (the admin invite form), keep the stacked layout. */
 .admin-main-inner {
 	container-type: inline-size;
 }
 @container (min-width: 600px) {
-	.admin-main-inner .field {
+	.admin-main-inner .field:not(.modal-panel *, .invite-create *) {
 		display: grid;
 		grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
 		column-gap: var(--space-5);
 		align-items: start;
 	}
-	.admin-main-inner .field > * {
+	.admin-main-inner .field:not(.modal-panel *, .invite-create *) > * {
 		grid-column: 2;
 	}
-	.admin-main-inner .field > label:not(.check-row) {
+	.admin-main-inner .field:not(.modal-panel *, .invite-create *) > label:not(.check-row) {
 		grid-column: 1;
 		grid-row: 1 / span 9;
-	}
-	.admin-main-inner .field > label:not(.check-row) {
 		/* Level with the first line of a control's text. */
 		padding-top: 8px;
 		margin-bottom: 0;
 	}
-	.admin-main-inner .field-grid {
+	.admin-main-inner .field-grid:not(.modal-panel *) {
 		display: block;
 	}
 }
