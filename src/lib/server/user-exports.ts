@@ -133,10 +133,10 @@ export async function runUserExport(
 	store: AssetObjectStore | null
 ): Promise<{ ok: true; ownerId: string } | { ok: false; reason: string }> {
 	const [row] = await db.select().from(userExports).where(eq(userExports.id, exportId));
-	if (!row) return { ok: false, reason: 'export not found' };
-	if (row.status !== 'pending') return { ok: false, reason: 'export already handled' };
+	if (!row) return { ok: false, reason: 'That export no longer exists.' };
+	if (row.status !== 'pending') return { ok: false, reason: 'That export has already run.' };
 	if (!store) {
-		const reason = 'asset storage is not configured';
+		const reason = 'File storage is not set up on this server.';
 		await markExportFailed(db, row.id, reason);
 		return { ok: false, reason };
 	}

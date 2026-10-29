@@ -26,14 +26,15 @@ export async function publishStory(
 		.from(users)
 		.where(eq(users.id, userId));
 	if (!user?.enabled) {
-		return { ok: false, reason: 'the site admin has not enabled your public archive' };
+		return { ok: false, reason: 'The site admin has not turned on your public archive yet.' };
 	}
-	if (!user.handle) return { ok: false, reason: 'claim a public handle first' };
+	if (!user.handle)
+		return { ok: false, reason: 'Claim a public handle on your account page first.' };
 	const [story] = await db
 		.select()
 		.from(stories)
 		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
-	if (!story) return { ok: false, reason: 'story not found' };
+	if (!story) return { ok: false, reason: 'That story no longer exists.' };
 
 	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
 	const content: EditionContent = {
@@ -50,7 +51,7 @@ export async function publishStory(
 			.map((scene) => ({ title: scene.title, bodyMd: scene.bodyMd }))
 	};
 	if (content.chapters.length === 0 && content.unfiled.length === 0) {
-		return { ok: false, reason: 'there is nothing to publish yet' };
+		return { ok: false, reason: 'There is nothing to publish yet.' };
 	}
 
 	// Inline images the frozen prose points at, so the reader can serve them
@@ -109,7 +110,7 @@ export async function publishStory(
 		// The partial unique index caught a concurrent publish of the same
 		// story; the loser rolls back rather than leaving two current rows.
 		if (isUniqueViolation(error)) {
-			return { ok: false, reason: 'another publish just happened; reload and try again' };
+			return { ok: false, reason: 'Another publish just finished. Reload the page and try again.' };
 		}
 		throw error;
 	}

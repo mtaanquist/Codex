@@ -170,7 +170,7 @@ describe('runBackup', () => {
 
 	it('refuses politely when unconfigured', async () => {
 		const result = await runBackup(db, 'manual', { config: null });
-		expect(result).toMatchObject({ ok: false, reason: 'backups are not configured' });
+		expect(result).toMatchObject({ ok: false, reason: 'Backups are not set up.' });
 	});
 });
 

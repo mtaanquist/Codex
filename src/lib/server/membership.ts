@@ -1,4 +1,5 @@
 import { and, asc, eq, exists, or } from 'drizzle-orm';
+import type { ActionFailure } from './action-result.ts';
 import type { Database } from './auth.ts';
 import {
 	characterStoryMemberships,
@@ -40,9 +41,14 @@ export async function declareMembership(
 	kind: MemberKind,
 	entityId: string,
 	storyId: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const scope = await ownedStoryEntity(db, userId, kind, entityId, storyId);
-	if (!scope) return { ok: false, reason: 'entity or story not found' };
+	if (!scope)
+		return {
+			ok: false,
+			code: 'not_found',
+			reason: 'That character, place or story no longer exists.'
+		};
 	if (kind === 'character') {
 		await db
 			.insert(characterStoryMemberships)
@@ -63,9 +69,14 @@ export async function removeMembership(
 	kind: MemberKind,
 	entityId: string,
 	storyId: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const scope = await ownedStoryEntity(db, userId, kind, entityId, storyId);
-	if (!scope) return { ok: false, reason: 'entity or story not found' };
+	if (!scope)
+		return {
+			ok: false,
+			code: 'not_found',
+			reason: 'That character, place or story no longer exists.'
+		};
 	if (kind === 'character') {
 		await db
 			.delete(characterStoryMemberships)

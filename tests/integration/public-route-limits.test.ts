@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { isHttpError } from '@sveltejs/kit';
 import type pg from 'pg';
 import { users } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
@@ -80,15 +81,21 @@ const signup = (email: string, ip?: string) =>
 		formEvent('/signup', { email, password: 'long enough password', displayName: 'L' }, ip)
 	);
 
-const options = async (ip: string) =>
-	(
-		(await signinOptions.POST(
-			jsonEvent('/api/passkeys/signin-options', {}, ip) as never
-		)) as Response
-	).status;
+// The status a handler answered with, whether it returned a Response or threw.
+async function statusOf(run: () => Promise<unknown>): Promise<number> {
+	try {
+		return ((await run()) as Response).status;
+	} catch (err) {
+		if (isHttpError(err)) return err.status;
+		throw err;
+	}
+}
 
-const finish = async (ip: string) =>
-	((await signin.POST(jsonEvent('/api/passkeys/signin', {}, ip) as never)) as Response).status;
+const options = (ip: string) =>
+	statusOf(() => signinOptions.POST(jsonEvent('/api/passkeys/signin-options', {}, ip) as never));
+
+const finish = (ip: string) =>
+	statusOf(() => signin.POST(jsonEvent('/api/passkeys/signin', {}, ip) as never));
 
 beforeAll(async () => {
 	await ensureTestDatabase();

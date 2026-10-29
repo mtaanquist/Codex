@@ -1,7 +1,9 @@
-import { json } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { publicOrigin } from '$lib/server/origin';
+import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { readJson } from '$lib/server/validation';
 import { createSession, SESSION_COOKIE } from '$lib/server/auth';
 import { finishPasskeySignIn, PASSKEY_CHALLENGE_COOKIE } from '$lib/server/passkeys';
 import { rateLimit } from '$lib/server/rate-limit';
@@ -12,11 +14,11 @@ import { logEvent } from '$lib/server/log';
 // already proves possession plus a local check, so no TOTP step follows.
 export const POST: RequestHandler = async ({ cookies, getClientAddress, request, url }) => {
 	if (!rateLimit(`passkey:${getClientAddress()}`, 30, 5 * 60 * 1000).allowed) {
-		return json({ message: 'Too many attempts. Wait a few minutes.' }, { status: 429 });
+		error(429, 'Too many attempts. Wait a few minutes.');
 	}
-	const body = await request.json().catch(() => null);
-	if (!body?.response?.id) {
-		return json({ message: 'That passkey was not recognised.' }, { status: 400 });
+	const body = await readJson<{ response?: AuthenticationResponseJSON }>(request);
+	if (!body.response?.id) {
+		error(400, 'That passkey was not recognised.');
 	}
 	const origin = publicOrigin(url);
 	const result = await finishPasskeySignIn(
@@ -29,16 +31,16 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, request,
 
 	if (result.status === 'invalid') {
 		logEvent('info', 'login.passkey_failed', { ip: getClientAddress() });
-		return json({ message: 'That passkey was not recognised.' }, { status: 400 });
+		error(400, 'That passkey was not recognised.');
 	}
 	if (result.status === 'unverified') {
-		return json({ message: 'Confirm your email address before signing in.' }, { status: 403 });
+		error(403, 'Confirm your email address before signing in.');
 	}
 	if (result.status === 'unapproved') {
-		return json({ message: 'Your account is awaiting approval.' }, { status: 403 });
+		error(403, 'Your account is awaiting approval.');
 	}
 	if (result.status === 'suspended') {
-		return json({ message: 'This account has been suspended.' }, { status: 403 });
+		error(403, 'This account has been suspended.');
 	}
 
 	const session = await createSession(db, result.user.id, {

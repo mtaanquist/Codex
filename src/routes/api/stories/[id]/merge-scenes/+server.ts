@@ -1,6 +1,7 @@
-import { error, json } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { ownedStory } from '$lib/server/story-access';
 import { mergeScenes } from '$lib/server/scene-split-merge';
@@ -16,7 +17,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		? payload.sceneIds.filter((id): id is string => typeof id === 'string')
 		: [];
 	const result = await mergeScenes(db, locals.user!.id, story.id, sceneIds);
-	if (!result.ok) error(400, result.reason);
+	if (!result.ok) throwActionError(result);
 	await queueSceneMentions(result.targetSceneId);
 	return json({ ok: true, targetSceneId: result.targetSceneId });
 };
