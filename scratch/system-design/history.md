@@ -981,6 +981,49 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Issue review round (2026-10-29)
+
+Second open issue review (2026-10-29): seven open issues, each with a review
+comment; the owner settled the decisions on the issues. Six lanes ran in order
+on `staging/issue-review-2`, lane commits saying "Refs" for partial work so the
+staging squash closes only finished issues. #769 (base path in server-built
+links) was closed as not planned: no base path is configured or planned.
+
+- #760: a Playwright trace showed the cause was not the retry collision the
+  issue guessed. The scene's navigation data landed while the test was typing,
+  the editor remounted, and keys were lost. The spec now runs as its own user
+  with run-unique names and waits for the scene data before typing; the
+  product-side race is #772.
+- #744: `-ink` twins (`--danger-ink`, `--status-draft-ink`,
+  `--status-revised-ink`) darkened in light and warm and plain in dark, and
+  author text mixes `--auth` towards black by `--ink-share`. The owner's
+  author colour is `--accent`. `contrast.test.ts` checks the pairs and scans
+  src for raw text uses of the plain colours. Badge letters (#775) and the
+  focused mark tint (#776) were split out.
+- #766: the cookie route. The root layout sets `codex-tz` and refreshes once
+  per page load; the server reads it (`requestTimeZone`) into
+  `page.data.timeZone`, and the format helpers take it, so server HTML and the
+  hydrated page agree. Rendering times only in the browser was rejected: it
+  flashes empty timestamps.
+- #731: setting rows are a container query on `.admin-main-inner`, so fields
+  in modals and the admin invite row keep the stacked layout. Step 3 became
+  `.contents-nav` "On this page" links rather than new sidebar items, hidden
+  on narrow screens.
+- #737: the review shell's narrow tab bar moved to `theme.css` as the shared
+  `.pane-tabs` plus `data-mtab` pattern and the story editor uses it. `.app`
+  got an explicit `minmax(0, 1fr)` column; without it the formatting toolbar
+  widened the page at 720px. A review pass caught Assistant actions opening a
+  hidden panel and focus dropping to the page on a pane switch; both fixed.
+- #752 in two PRs. `refreshAll` keeps `page.state`, which nothing reads, so it
+  is a straight swap. The `#lib` codemod was a regex over quoted specifiers,
+  not `sv migrate`, to avoid reprinting `.svelte` files. TypeScript maps
+  package.json `imports` without trying extensions, so `tsconfig.json` keeps
+  a matching `paths` entry, and the worker loader adds extensions for `#lib`
+  as Node does not.
+
+Under parallel load a few e2e specs (notes, import-story, two-factor,
+author-review) fail about once a run on staging as well; not chased this round.
+
 ## Issue review round (2026-10-26)
 
 Open issue review (2026-10-26): all 20 open issues got a review and fix plan
