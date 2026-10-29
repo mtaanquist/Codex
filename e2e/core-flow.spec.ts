@@ -1,14 +1,27 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { gotoReady, waitForHydration } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { addEntity } from './plan';
 import { confirmPrompt } from './confirm';
 
-test('sign in, create a universe and a story, and open it', async ({ page, browser }) => {
+// The journey signs in as an account of its own (seeded by global-setup), so
+// the preferences it changes cannot race the specs on the shared e2e account.
+test.describe('core flow', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test('sign in, create a universe and a story, and open it', journey);
+});
+
+async function journey({ page, browser }: { page: Page; browser: Browser }) {
 	// A long journey that waits on the async worker twice; the default 30s
 	// budget is too tight on a loaded CI runner and was silently capping the
 	// 60s indexing wait below. Tripling it to 90s gives that wait its room.
 	test.slow();
+	await gotoReady(page, '/login');
+	await page.getByLabel('Email').fill('core-flow-e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+	await expect(page).toHaveURL('/');
 	await gotoReady(page, '/');
 
 	// Repeated runs share the seeded user, so pin the preferences to their
@@ -25,8 +38,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	// Backups belong to the site admin; a regular account sees no panel.
 	await expect(page.getByRole('heading', { name: 'Backups' })).toHaveCount(0);
 
-	// Unique name so repeated local runs do not collide.
-	const universeName = `Testverse ${Date.now()}`;
+	// Unique names, so a retry or a repeated local run never meets the
+	// stories an earlier attempt left in this account's library.
+	const runId = Date.now();
+	const universeName = `Testverse ${runId}`;
+	const storyTitle = `Book of Ash ${runId}`;
 	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
@@ -34,16 +50,16 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	await gotoReady(page, '/');
 	await startStoryInUniverse(page, universeName);
-	await page.getByLabel('New story').fill('Book of Ash');
+	await page.getByLabel('New story').fill(storyTitle);
 	await page.getByRole('button', { name: 'Create story' }).click();
 
 	// Opening a story lands in the editor shell: the path and the sidebar both
 	// carry the story title, and the story crumb is the menu of everything that
 	// belongs to the story, starting with going there.
 	const path = page.getByRole('navigation', { name: 'Where you are' });
-	const storyCrumb = path.getByRole('button', { name: 'Book of Ash' });
+	const storyCrumb = path.getByRole('button', { name: storyTitle });
 	await expect(storyCrumb).toHaveAttribute('aria-current', 'page');
-	await expect(page.locator('.story-title')).toHaveText('Book of Ash');
+	await expect(page.locator('.story-title')).toHaveText(storyTitle);
 
 	// The create-story submit navigated, so the crumb is on screen before its
 	// handler is attached; a click landing in that window opens nothing.
@@ -296,7 +312,15 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Mentions: typing a known alias underlines it live; hovering shows the
 	// character's summary.
+	// The scene may already be open, so its text proves nothing: wait for the
+	// navigation the click starts to land, or the editor it remounts swallows
+	// the keys typed into the old one (#760).
+	const sceneLoaded = page.waitForResponse(
+		(r) => r.url().includes('__data.json') && r.url().includes('scene=') && r.ok()
+	);
 	await page.locator('.scene-row').nth(1).click();
+	await sceneLoaded;
+	await expect(page).toHaveURL(/scene=/);
 	await expect(page.locator('.cm-content')).toContainText('The gate of Halden');
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('ControlOrMeta+End');
@@ -306,6 +330,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		(r) => r.url().includes('/api/scenes/') && r.request().method() === 'PUT' && r.ok()
 	);
 	await page.keyboard.type(' Mrs. Fenwick waited.');
+	await expect(page.locator('.cm-content')).toContainText('Mrs. Fenwick waited.');
 	// The body mentions the lore keyword "gate", the place "Halden", and the
 	// alias: all three underline. Hovering opens the entity card with the
 	// kind line, the summary, and the way to the full page.
@@ -494,7 +519,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 	if (process.env.ASSET_S3_BUCKET) {
 		// Settings sits behind the story's own name in the path.
-		await path.getByRole('button', { name: 'Book of Ash' }).click();
+		await path.getByRole('button', { name: storyTitle }).click();
 		await page.getByRole('menuitem', { name: 'Story settings' }).click();
 		await page.getByRole('link', { name: 'Cover' }).click();
 		await expect(page.getByRole('heading', { name: 'Cover' })).toBeVisible();
@@ -550,7 +575,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	// Publishing: set the story public, freeze an edition, and read it
 	// back anonymously on the public pages.
-	await path.getByRole('button', { name: 'Book of Ash' }).click();
+	await path.getByRole('button', { name: storyTitle }).click();
 	await page.getByRole('menuitem', { name: 'Story settings' }).click();
 	await page.getByRole('link', { name: 'Publish' }).click();
 	await expect(page.getByRole('heading', { name: 'Publish' })).toBeVisible();
@@ -570,7 +595,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const reader = await anonymous.newPage();
-	await gotoReady(reader, '/@e2e-tester');
+	await gotoReady(reader, '/@core-flow-tester');
 	// The shelf names the author - the pen name if the account has one, else the
 	// display name, never the raw handle - and keeps the handle as the address
 	// under it. Which of the two names it is depends on whether the account spec
@@ -578,14 +603,14 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	const shelfName = reader.locator('.shelf-name');
 	await expect(shelfName).toContainText('Tester');
 	await expect(shelfName).not.toContainText('@');
-	await expect(reader.locator('.shelf-handle')).toContainText('@e2e-tester');
+	await expect(reader.locator('.shelf-handle')).toContainText('@core-flow-tester');
 	// A cover is the story's own title, set, until an author uploads artwork -
 	// which this journey does when image storage is configured.
 	const cover = reader.locator('.shelf-cover').first();
 	await expect(cover).toBeVisible();
-	if (!process.env.ASSET_S3_BUCKET) await expect(cover).toContainText('Book of Ash');
-	await reader.getByRole('link', { name: 'Book of Ash' }).first().click();
-	await expect(reader.getByRole('heading', { level: 1, name: 'Book of Ash' })).toBeVisible();
+	if (!process.env.ASSET_S3_BUCKET) await expect(cover).toContainText(storyTitle);
+	await reader.getByRole('link', { name: storyTitle }).first().click();
+	await expect(reader.getByRole('heading', { level: 1, name: storyTitle })).toBeVisible();
 	// main.reader-main is the prose; .appbar.reader above it is the chrome shell.
 	await expect(reader.locator('main.reader-main')).toContainText('The gate of Halden');
 	// One footer, on both pages: the mark, who published it, and three links.
@@ -602,7 +627,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 		expect(served.status()).toBe(200);
 	}
 	// A mistyped story id under a real handle is a clean 404, not a 500.
-	const notFound = await reader.request.get('/@e2e-tester/not-a-uuid');
+	const notFound = await reader.request.get('/@core-flow-tester/not-a-uuid');
 	expect(notFound.status()).toBe(404);
 	await anonymous.close();
 
@@ -623,7 +648,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	}).toPass({ timeout: 60_000 });
 	const zipDownload = page.waitForEvent('download');
 	await zipLink.click();
-	expect((await zipDownload).suggestedFilename()).toBe('book-of-ash.zip');
+	expect((await zipDownload).suggestedFilename()).toBe(`book-of-ash-${runId}.zip`);
 
 	await page.getByRole('button', { name: 'Prepare EPUB' }).click();
 	const epubLink = page
@@ -639,7 +664,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 
 	await page.getByRole('link', { name: 'open the print view' }).click();
 	await expect(page).toHaveURL(/\/print$/);
-	await expect(page.locator('.title-page .book-title')).toHaveText('Book of Ash');
+	await expect(page.locator('.title-page .book-title')).toHaveText(storyTitle);
 	await expect(page.locator('.chapter').first()).toContainText('The gate of Halden');
 	await gotoReady(page, proseSceneUrl);
 
@@ -663,7 +688,7 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await expect(page.getByPlaceholder('Notes that apply only to this story.')).toHaveCount(0);
 
 	// Appearances group under the story they come from.
-	await expect(page.locator('.r-card h5')).toHaveText('Appears in Book of Ash');
+	await expect(page.locator('.r-card h5')).toHaveText(`Appears in ${storyTitle}`);
 	await expect(page.locator('.r-line-name')).toHaveText('Departure from Halden');
 
 	// An edit made at universe scope persists.
@@ -716,11 +741,11 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('link', { name: 'Codex, your library' }).click();
 	await expect(page).toHaveURL('/');
 	const universeSection = page.locator('section', { hasText: universeName });
-	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
+	await expect(universeSection.getByRole('link', { name: storyTitle })).toBeVisible();
 
 	// Membership: the story's cast does not list Corvin until he is added
 	// to the story; removing the declaration drops him again.
-	await universeSection.getByRole('link', { name: 'Book of Ash' }).click();
+	await universeSection.getByRole('link', { name: storyTitle }).click();
 	await page.getByRole('link', { name: 'Plan' }).click();
 	await expect(page.locator('.ent-row', { hasText: 'Alice Vane' })).toHaveCount(1);
 	// Corvin is not a member yet; he shows only in the open universe list.
@@ -745,15 +770,20 @@ test('sign in, create a universe and a story, and open it', async ({ page, brows
 	await page.getByRole('button', { name: 'Delete story' }).click();
 	await confirmPrompt(page, 'Delete story');
 	await expect(page).toHaveURL(/\/universes\/[^/]+$/);
-	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: storyTitle })).toHaveCount(0);
 	await page.getByRole('link', { name: 'Codex, your library' }).click();
 	const deletedStories = page.locator('section', { hasText: 'Deleted stories' });
-	await expect(deletedStories.getByText('Book of Ash')).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Book of Ash' })).toHaveCount(0);
-	await deletedStories.getByRole('button', { name: 'Restore' }).click();
-	await expect(deletedStories).toHaveCount(0);
-	await expect(universeSection.getByRole('link', { name: 'Book of Ash' })).toBeVisible();
-});
+	await expect(deletedStories.getByText(storyTitle)).toBeVisible();
+	await expect(page.getByRole('link', { name: storyTitle })).toHaveCount(0);
+	// Scoped to this run's row: a failed earlier attempt may have left its own
+	// deleted story in the list.
+	await deletedStories
+		.locator('.trash-uni', { hasText: storyTitle })
+		.getByRole('button', { name: 'Restore' })
+		.click();
+	await expect(deletedStories.getByText(storyTitle)).toHaveCount(0);
+	await expect(universeSection.getByRole('link', { name: storyTitle })).toBeVisible();
+}
 
 // A signed-out browser of its own: the shared session would bounce off
 // /login before the form ever rendered.
