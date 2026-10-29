@@ -234,6 +234,29 @@ Notes on the shipped steps: [history.md](scratch/system-design/history.md#design
 
 Notes on the shipped steps: [history.md](scratch/system-design/history.md#click-through-feedback-2026-06-06).
 
+## Issue review round (2026-10-26)
+
+Staging branch `staging/issue-review`, merged to main in one PR.
+
+- [x] Accessibility: account menu focus, focus trap and restore in modals, shared menu keyboard behaviour, WCAG AA contrast in every theme, named controls, skip link and page landmarks, branded error pages. (#720, #722, #723, #721, #725, #726, #724)
+- [x] Layout: side columns grow on wide screens, settings column anchored next to the sidebar (step 1 of #731), narrow app bar, help and library. (#733, #731, #727)
+- [x] Library and plan: tinted placeholder covers, library view setting (covers, no covers, table), one Add row per Plan sidebar group. (#728, #738, #729)
+- [x] Controls: theme picker in the account menu, app confirm prompt, view menu name, password hint, no explanatory notes under side panels. (#732, #730, #734)
+- [x] Platform: Node 26, HSTS from the configured ORIGIN, SvelteKit 3 and adapter-node 6. (#616, #613)
+- [x] Hygiene: action errors mapped by code, one display locale (en-GB), typed link helper, shipped-work notes moved to history.md. (#627, #735, #736, #630)
+
+Follow-ups (open):
+
+- [ ] Status and danger colours used as text fall below AA in light and warm (#744).
+- [ ] SvelteKit 3: `#lib` imports and the deprecated APIs (#752).
+- [ ] Flaky core-flow mention underline e2e under CI load (#760).
+- [ ] Server-rendered times use the server timezone (#766).
+- [ ] Server-built app links skip the base path (#769).
+- [ ] Settings rows and navigation within long sections, steps 2 and 3 of #731.
+- [ ] Story workspace on narrow windows (#737, not scheduled).
+
+Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-review-round-2026-10-26).
+
 ## Feedback backlog
 
 From the design pass click-throughs (2026-07-30):

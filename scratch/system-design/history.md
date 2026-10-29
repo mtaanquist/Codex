@@ -981,6 +981,24 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Issue review round (2026-10-26)
+
+Open issue review (2026-10-26): all 20 open issues got a review and fix plan
+comment, and the decisions were settled with the owner on each issue. Work ran
+in five parallel lanes, each PR targeting `staging/issue-review`, then a final
+thread for #735, #736 and #630. Decisions worth keeping: runtime `ORIGIN` stays
+via the custom server entry (`server.js`) on SvelteKit 3; Node 26 landed before
+the kit upgrade; three text tiers stay, with a warning when a custom accent
+fails contrast; tooltips no longer open on focus; one axe spec covers the main
+pages; coverless stories get a random palette colour (nullable
+`stories.cover_color`); the Plan sidebar's new-category form became a "Manage
+categories" link; "View: Edit" is only the accessible name; #731 shipped step 1
+only (anchored, capped settings column with a wide variant for admin tables),
+with setting rows and in-section navigation deferred; guest, reader and public
+bars keep a small theme picker and focus mode drops its control. The story
+workspace reflow was split out to #737 and is not scheduled. Follow-ups filed
+along the way: #744, #752, #760, #766, #769.
+
 ## Phase 1 - Foundations
 
 * [x] 1. Scaffold SvelteKit + TypeScript on adapter-node, with test harness
