@@ -41,5 +41,5 @@
 	background: var(--bg-hover);
 }
 .menu-item.danger:hover:not(:disabled) {
-	color: var(--danger);
+	color: var(--danger-ink);
 }

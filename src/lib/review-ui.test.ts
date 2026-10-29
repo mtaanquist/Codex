@@ -49,7 +49,7 @@ function suggestion(
 
 describe('authorColor / authorKey / authorInitials', () => {
 	it('gives the owner the accent and the assistant a fixed tint', () => {
-		expect(authorColor(OWNER)).toBe('var(--accent-ink)');
+		expect(authorColor(OWNER)).toBe('var(--accent)');
 		expect(authorColor(ASSISTANT)).toBe('var(--cat-violet)');
 		expect(authorKey(OWNER)).toBe('owner');
 		expect(authorKey(ASSISTANT)).toBe('assistant');

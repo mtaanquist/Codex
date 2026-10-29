@@ -222,7 +222,7 @@
 		margin-top: 10px;
 	}
 	.rel-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 		font-size: 12.5px;
 		margin: 0;
 	}

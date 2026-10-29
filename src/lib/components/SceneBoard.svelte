@@ -173,7 +173,7 @@
 		color: var(--text-faint);
 	}
 	.card-todos {
-		color: var(--cat-amber);
+		color: var(--status-draft-ink);
 		font-weight: 600;
 	}
 	.card-tools {

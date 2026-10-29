@@ -136,7 +136,7 @@
 			</p>
 		{/if}
 		{#if data.edition.artifactErrors.length > 0}
-			<p class="field-hint" style="color:var(--danger);">
+			<p class="field-hint" style="color:var(--danger-ink);">
 				Some downloads could not be built on the last run:
 				{data.edition.artifactErrors
 					.map((e) => `${e.format.toUpperCase()} (${e.error})`)

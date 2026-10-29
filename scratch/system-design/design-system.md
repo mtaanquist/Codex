@@ -77,7 +77,8 @@ dark), `--accent-contrast` (text on accent fills; use this, never `#fff`),
 falls under 4.5:1 on the light themes for every preset. `src/lib/contrast.ts`
 mirrors the fill mix, and the account page warns when a custom accent still
 leaves white text on the fill, or accent text on a light or dark surface,
-under AA. The review owner colour is `--accent-ink` (its avatar tile takes
+under AA. The review owner colour is `--accent` like every other author
+colour, darkened for text by `--ink-share` (its avatar tile takes
 `--accent-fill`).
 
 Assets and contrast:
@@ -86,8 +87,17 @@ Assets and contrast:
   warm, darkened in dark so white text clears AA.
 - `--danger-contrast` - text on a `--danger-fill` (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
-- `--status-final-ink` - `--status-final` as text (`.btn-accept`,
-  `FormStatus`, the "Saved." hints), darkened in light and warm.
+- `--status-final-ink`, `--status-draft-ink`, `--status-revised-ink`,
+  `--danger-ink` - the status and danger colours as text (`.btn-accept`,
+  `FormStatus`, error and "Saved." hints, warning icons and to-do counts), darkened in light
+  and warm, the plain token in dark. Never write `color: var(--danger)` or
+  `color: var(--status-*)`; the plain tokens are for dots, borders and fills.
+- `--ink-share` - how much of a per-element colour survives when it is
+  darkened for text: `color-mix(in oklab, var(--auth) var(--ink-share), black)`
+  for review author colours (75% in light and warm, 100% in dark). Author
+  colours under white text (avatars, the focused margin marker) mix to 65%
+  in every theme. `contrast.test.ts` checks both against every category
+  colour.
 - `--on-color` - text and icons on any other solid colour tile: universe
   and story colours, author colours, category badges, swatches, the toggle
   knob. Never write `#fff` on a user-chosen colour.

@@ -45,7 +45,7 @@
 						<div class="list-actions">
 							<form method="POST" action="?/takedown">
 								<input type="hidden" name="publicationId" value={edition.id} />
-								<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
+								<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger-ink);"
 									>Take down</button
 								>
 							</form>

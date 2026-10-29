@@ -315,7 +315,7 @@
 					everything stops at once.
 				</div>
 				{#if form?.scope === 'assistant-kill' && form.message}
-					<div class="ks-sub" role="alert" style="color:var(--danger);">
+					<div class="ks-sub" role="alert" style="color:var(--danger-ink);">
 						{form.message}
 					</div>
 				{/if}

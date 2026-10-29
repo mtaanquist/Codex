@@ -274,7 +274,7 @@
 											<button
 												type="submit"
 												class="btn btn-ghost btn-sm"
-												style="color:var(--danger);">Suspend</button
+												style="color:var(--danger-ink);">Suspend</button
 											>
 										</form>
 									{/if}
@@ -304,8 +304,10 @@
 										})}
 									>
 										<input type="hidden" name="userId" value={account.id} />
-										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
-											>Delete</button
+										<button
+											type="submit"
+											class="btn btn-ghost btn-sm"
+											style="color:var(--danger-ink);">Delete</button
 										>
 									</form>
 								{/if}
@@ -410,8 +412,10 @@
 									</button>
 									<form method="POST" action="?/deleteInvite">
 										<input type="hidden" name="inviteId" value={code.id} />
-										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
-											>Delete</button
+										<button
+											type="submit"
+											class="btn btn-ghost btn-sm"
+											style="color:var(--danger-ink);">Delete</button
 										>
 									</form>
 								</div>

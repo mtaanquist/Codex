@@ -31,7 +31,7 @@
 
 <style>
 	.fs-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 	.fs-ok {
 		color: var(--status-final-ink);

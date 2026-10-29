@@ -85,7 +85,7 @@ main:focus {
 .chip-x:hover,
 .chip-x.is-hover {
 	background: var(--bg-active);
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 a.chip {
 	text-decoration: none;

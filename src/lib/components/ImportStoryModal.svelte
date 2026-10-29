@@ -323,7 +323,7 @@
 		max-width: 36ch;
 	}
 	.import-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 		font-size: var(--text-sm);
 		margin: 10px 0 0;
 	}

@@ -163,10 +163,10 @@
 	color: var(--text);
 }
 .avatar-dd-item.danger {
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 .avatar-dd-item.danger svg {
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 .avatar-dd-item.danger:hover {
 	background: var(--danger-soft);
@@ -590,7 +590,7 @@
 /* Form status lines on the settings pages. Success is deliberately quiet: the
    app confirms, it does not celebrate. */
 .form-error {
-	color: var(--danger);
+	color: var(--danger-ink);
 	font-size: var(--text-base);
 	margin: 0 0 10px;
 }
@@ -823,7 +823,7 @@
 }
 .category-delete:hover {
 	background: var(--danger-soft);
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 
 /* role table */
