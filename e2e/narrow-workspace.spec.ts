@@ -62,10 +62,13 @@ test('the story editor shows one pane at a time on narrow windows', async ({ pag
 		);
 		await expectNoSidewaysScroll(page);
 
-		// Picking a scene from the list goes back to the writing.
-		await page.locator('.scene-row').first().click();
+		// Picking a scene from the list goes back to the writing, and keyboard
+		// focus follows it there instead of dropping to the top of the page.
+		await page.locator('.scene-row').first().focus();
+		await page.keyboard.press('Enter');
 		await expect(editor).toBeVisible();
 		await expect(sidebar).toBeHidden();
+		await expect(page.locator('#main')).toBeFocused();
 	}
 
 	// The editor still saves at phone width.

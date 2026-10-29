@@ -145,6 +145,11 @@
 	min-height: 0;
 	overflow: auto;
 }
+/* A pane takes focus only when a narrow-window tab switch hid the focused
+   control; the pane is a landing spot, not a control, so no ring. */
+.pane[tabindex='-1']:focus {
+	outline: none;
+}
 .left {
 	border-right: 1px solid var(--border);
 	background: var(--bg);

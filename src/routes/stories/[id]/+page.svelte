@@ -173,15 +173,44 @@
 		{ id: 'notes', label: 'Side panel' }
 	];
 	let paneTab = $state<PaneTab>('read');
+	const paneEls: Partial<Record<PaneTab, HTMLElement>> = {};
+	let paneTabsEl = $state<HTMLElement>();
+	// Switches pane without the tab bar. On a narrow window, if that hid the
+	// focused control (or a navigation reset focus to the page), focus moves
+	// to the pane now shown so the next Tab starts there.
+	async function showPane(tab: PaneTab) {
+		if (paneTab === tab) return;
+		paneTab = tab;
+		await tick();
+		if (!paneTabsEl?.checkVisibility()) return;
+		const focused = document.activeElement;
+		if (
+			!(focused instanceof HTMLElement) ||
+			focused === document.body ||
+			!focused.checkVisibility()
+		)
+			paneEls[tab]?.focus({ preventScroll: true });
+	}
+	// Set while an Assistant proposal card changes scene, so the chat stays open.
+	let keepPaneOnNavigate = false;
 	afterNavigate(({ from, to, type }) => {
+		if (keepPaneOnNavigate) return;
 		// A followed link (even to the scene already open) or a different scene,
 		// view or anchor; not a data refresh of this one.
 		if (type === 'link' || from?.url.search !== to?.url.search || from?.url.hash !== to?.url.hash)
-			paneTab = 'read';
+			void showPane('read');
 	});
+	async function openSceneKeepingPane(sceneId: string) {
+		keepPaneOnNavigate = true;
+		try {
+			await goto(withQuery(storyPath, { scene: sceneId }), { invalidateAll: true });
+		} finally {
+			keepPaneOnNavigate = false;
+		}
+	}
 
 	function openCard(entityId: string) {
-		paneTab = 'notes';
+		void showPane('notes');
 		inspectStack = [...inspectStack, entityId];
 		void loadCard(entityId);
 	}
@@ -359,7 +388,7 @@
 		if (!result.ok) return { error: result.message };
 		const { newSceneId, splitSceneId } = result;
 		persistProposalState(data.story.id, proposal, { splitSceneId, newSceneId });
-		await goto(withQuery(storyPath, { scene: newSceneId }), { invalidateAll: true });
+		await openSceneKeepingPane(newSceneId);
 		return { splitSceneId, newSceneId };
 	}
 
@@ -380,7 +409,7 @@
 		]);
 		if (!result.ok) return result.message;
 		persistProposalState(data.story.id, proposal, null);
-		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { invalidateAll: true });
+		await openSceneKeepingPane(result.targetSceneId);
 		editorNonce++;
 		return null;
 	}
@@ -500,7 +529,10 @@
 	// An Assistant intent (from a menu here or the command palette) opens the
 	// panel; the panel consumes the intent itself once it renders.
 	$effect(() => {
-		if (assistantIntent.pending && data.assistant.tabEnabled) chosenPanel = 'assistant';
+		if (assistantIntent.pending && data.assistant.tabEnabled) {
+			chosenPanel = 'assistant';
+			untrack(() => showPane('notes'));
+		}
 	});
 
 	// "Ask the Assistant about this" on an editor selection: the passage goes
@@ -626,7 +658,7 @@
 		helpTopic="editor"
 		helpLabel="the editor"
 	/>
-	<nav class="seg full pane-tabs" aria-label="Story panes">
+	<nav class="seg full pane-tabs" aria-label="Story panes" bind:this={paneTabsEl}>
 		{#each PANE_TABS as tab (tab.id)}
 			<button
 				class="seg-btn"
@@ -640,7 +672,7 @@
 		{/each}
 	</nav>
 	<div class="body" data-mtab={paneTab}>
-		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL} tabindex="-1" bind:this={paneEls.nav}>
 			<div class="left-head">
 				<ModeSwitcher
 					active="write"
@@ -669,7 +701,7 @@
 				/>
 			</div>
 		</aside>
-		<main id="main" class="pane center">
+		<main id="main" class="pane center" tabindex="-1" bind:this={paneEls.read}>
 			{#if !inWholeStory}<h1 class="visually-hidden">{data.story.title} - Write</h1>{/if}
 			{#if viewStory}
 				{#snippet docScene(scene: NonNullable<typeof data.storyDoc>[number])}
@@ -853,7 +885,7 @@
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL} tabindex="-1" bind:this={paneEls.notes}>
 			{#if inspectStack.length > 0}
 				{#if inspectCard}
 					<EntityCard
