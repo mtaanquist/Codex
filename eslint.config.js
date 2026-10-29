@@ -58,6 +58,26 @@ export default defineConfig(
 		}
 	},
 	{
+		// Display formatting goes through $lib/format so the locale stays fixed.
+		files: ['src/**'],
+		ignores: ['src/lib/format.ts'],
+		rules: {
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector:
+						'CallExpression[callee.property.name=/^toLocale(String|DateString|TimeString)$/]',
+					message: 'Use a $lib/format helper so the display locale stays fixed.'
+				},
+				{
+					selector:
+						":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|NumberFormat|RelativeTimeFormat|ListFormat|PluralRules)$/]",
+					message: 'Use a $lib/format helper so the display locale stays fixed.'
+				}
+			]
+		}
+	},
+	{
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {}

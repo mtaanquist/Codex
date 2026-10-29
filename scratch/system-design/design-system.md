@@ -688,6 +688,10 @@ From CLAUDE.md, repeated here because every screen touches it:
 - No jargon or slang in user-facing text.
 - User-facing functionality changes come with a check of the help articles
   in `src/lib/docs/`.
+- Dates, times and numbers go through the helpers in `$lib/format`, which
+  pass `DISPLAY_LOCALE` (`en-GB`) explicitly so server and browser output
+  match. Lint bans `toLocale*` calls and `new Intl.*Format` outside that
+  file; add a helper there instead.
 
 ## CSS file map
 

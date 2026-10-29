@@ -1,5 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { pluralSuffix, formatNumber, compactCount, formatLongDate } from './format';
+import {
+	pluralSuffix,
+	formatNumber,
+	compactCount,
+	formatLongDate,
+	formatDate,
+	formatDateTime,
+	formatTime,
+	narrowWeekday,
+	relativeShort
+} from './format';
+
+// Local-time dates, so the output does not depend on the runner's timezone.
+const june11 = new Date(2026, 5, 11, 9, 41);
+
+describe('fixed display locale', () => {
+	it('formats timestamps day first with a 24-hour clock', () => {
+		expect(formatDateTime(june11)).toBe('11 Jun 2026, 09:41');
+	});
+
+	it('formats short dates day first', () => {
+		expect(formatDate(june11)).toBe('11 Jun 2026');
+	});
+
+	it('formats the time of day', () => {
+		expect(formatTime(june11)).toBe('09:41');
+	});
+
+	it('names the weekday of a calendar day by one letter', () => {
+		expect(narrowWeekday('2026-06-11')).toBe('T');
+		expect(narrowWeekday('2026-06-14')).toBe('S');
+	});
+
+	it('falls back to the short date after a week', () => {
+		expect(relativeShort(june11)).toBe('11 Jun 2026');
+	});
+});
 
 describe('formatLongDate', () => {
 	it('writes the day, the full month and the year', () => {
