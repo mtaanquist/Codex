@@ -249,17 +249,18 @@ Tools:
 
 The left slot is always `--left-w`, whatever fills it:
 
-- **The mode strip is always four.** Write, Plan, Notes, Review, same order,
+- **The mode strip is always three.** Write, Plan, Review, same order,
   same width, wherever it appears; it never resizes silently.
   `ModeSwitcher.svelte` is the only implementation. At universe scope Write
-  and Review stay live and open the universe's story list. For a guest,
-  three are `aria-disabled` and stay in place. Where a mode is unavailable,
+  and Review stay live and open the universe's story list. For a guest, the
+  other two are `aria-disabled` and stay in place. Notes is a page beside
+  the modes, not one of them (it left the strip in v3.17.0). Where a mode is unavailable,
   one `.mode-note` line under the strip says why: rendered, not a tooltip,
   so it is readable by keyboard and by screen reader. The two lines live as
   `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `$lib/chrome.ts`.
 - **The mode strip may have nothing lit.** `ModeSwitcher` takes `active: Mode
-  | null`; a universe page that is not one of the four (insights) passes null,
-  keeps all four live, and says why in its `.mode-note`
+  | null`; a universe page that is not one of the three (insights) passes null,
+  keeps all three live, and says why in its `.mode-note`
   (`INSIGHTS_MODE_NOTE`). A strip that lies about where you are is worse than
   a strip with nothing lit.
 - Where there is no mode at all (settings, print, help) the same slot holds
