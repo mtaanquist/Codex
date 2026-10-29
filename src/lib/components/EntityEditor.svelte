@@ -349,6 +349,7 @@
 			state: EditorState.create({
 				doc: entity.bodyMd,
 				extensions: proseExtensions({
+					label: 'Description',
 					placeholder: BODY_PLACEHOLDER,
 					onDocChanged: scheduleSave,
 					// Descriptions are notes, not manuscript: plain prose with no

@@ -45,6 +45,14 @@
 		who?: string;
 	} = $props();
 
+	// A narrow bar keeps the current place, plus its parent when the current
+	// crumb is a page (plain text) and so leads nowhere on its own.
+	const narrowFrom = $derived(
+		crumbs.length > 1 && crumbs[crumbs.length - 1].kind === 'text'
+			? crumbs.length - 2
+			: crumbs.length - 1
+	);
+
 	const SAVE_LABEL = {
 		idle: '',
 		saving: 'Saving...',
@@ -104,16 +112,23 @@
 		<!-- eslint-disable svelte/no-navigation-without-resolve (chrome.ts resolves every href) -->
 		<nav class="path" aria-label={pathLabel}>
 			{#each crumbs as crumb, index (index)}
-				{#if index > 0}
-					<span class="crumb-sep" aria-hidden="true"><Icon name="chevron" /></span>
-				{/if}
-				{#if crumb.kind === 'link'}
-					<a class="crumb" href={crumb.href}>{crumb.label}</a>
-				{:else if crumb.kind === 'text'}
-					<span class="crumb current" aria-current="page">{crumb.label}</span>
-				{:else}
-					<CrumbMenu label={crumb.label} current={crumb.current} groups={crumb.groups} />
-				{/if}
+				<!-- Marked so a narrow bar can drop the crumbs before narrowFrom. -->
+				<span
+					class="crumb-item"
+					class:narrow-hide={index < narrowFrom}
+					class:narrow-first={index === narrowFrom}
+				>
+					{#if index > 0}
+						<span class="crumb-sep" aria-hidden="true"><Icon name="chevron" /></span>
+					{/if}
+					{#if crumb.kind === 'link'}
+						<a class="crumb" href={crumb.href}>{crumb.label}</a>
+					{:else if crumb.kind === 'text'}
+						<span class="crumb current" aria-current="page">{crumb.label}</span>
+					{:else}
+						<CrumbMenu label={crumb.label} current={crumb.current} groups={crumb.groups} />
+					{/if}
+				</span>
 			{/each}
 			{#if pill}<span class="pill">{pill}</span>{/if}
 			{#if byline}<span class="appbar-by">{byline}</span>{/if}
@@ -134,7 +149,7 @@
 				onclick={openPalette}
 			>
 				<Icon name="search" />
-				Search <kbd>{mod} K</kbd>
+				<span class="tool-search-label">Search <kbd>{mod} K</kbd></span>
 			</button>
 		{/if}
 		<!-- The author's theme lives in the account menu; the other bars have
@@ -162,7 +177,7 @@
 		{#if who}
 			<span class="appbar-who">
 				<span class="avatar">{authorInitials(who)}</span>
-				Reviewing as {who}
+				<span class="appbar-who-label">Reviewing as {who}</span>
 			</span>
 		{/if}
 	</div>

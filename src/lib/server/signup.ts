@@ -6,6 +6,7 @@ import { consumeToken } from './tokens.ts';
 import { redeemInviteCode } from './invites.ts';
 import type { SignupMode } from './settings.ts';
 import { isUniqueViolation } from './db-errors.ts';
+import { MIN_PASSWORD } from '$lib/password';
 
 export type RegisterResult =
 	// invited: a valid invite code was spent. approved: the account skipped
@@ -21,7 +22,6 @@ export const INVITE_REQUIRED = 'An invite code is needed to create an account he
 export const SIGNUPS_CLOSED = 'This Codex is not taking new accounts.';
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD = 8;
 
 export async function registerUser(
 	db: Database,

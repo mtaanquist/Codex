@@ -69,7 +69,12 @@
 
 			<div class="toggle-row" style="margin-bottom:var(--space-4);">
 				<label class="toggle">
-					<input type="checkbox" name="secure" checked={data.smtp.secure} />
+					<input
+						type="checkbox"
+						name="secure"
+						aria-label="Use TLS on connect"
+						checked={data.smtp.secure}
+					/>
 					<span class="toggle-track"></span>
 				</label>
 				<div style="flex:1;">

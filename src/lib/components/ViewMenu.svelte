@@ -35,13 +35,14 @@
 		class:is-active={open}
 		type="button"
 		title="Switch view"
+		aria-label={active ? `View: ${active.label}` : 'Switch view'}
 		aria-haspopup="menu"
 		aria-expanded={open}
 		onclick={() => (open = !open)}
 	>
 		<Icon name={active?.icon ?? 'book'} size={15} />
 		<span class="md-tool-label">{active?.label ?? 'View'}</span>
-		<Icon name="chevron" size={11} />
+		<Icon name="caret" size={11} />
 	</button>
 	{#if open}
 		<!-- eslint-disable svelte/no-navigation-without-resolve (the caller resolves each href) -->

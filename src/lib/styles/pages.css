@@ -1030,6 +1030,12 @@
 		grid-template-columns: 1fr;
 	}
 }
+@media (max-width: 560px) {
+	.recent-row,
+	.story-grid {
+		grid-template-columns: 1fr;
+	}
+}
 
 /* ============ USER ROWS (account: sessions, admin) ============ */
 .user-row {

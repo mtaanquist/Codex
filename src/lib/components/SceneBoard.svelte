@@ -187,11 +187,16 @@
 	.card:focus-within .card-tools {
 		opacity: 1;
 	}
+	/* 24px square so a finger can hit it; the icon stays small. */
 	.card-tools button {
+		display: inline-grid;
+		place-items: center;
+		min-width: 24px;
+		min-height: 24px;
 		border: 0;
 		background: none;
 		color: var(--text-muted);
-		padding: 1px 3px;
+		padding: 0;
 		cursor: pointer;
 		border-radius: 4px;
 	}

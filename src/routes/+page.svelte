@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
 	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
@@ -521,14 +522,12 @@
 									<form
 										method="POST"
 										action="?/destroyUniverse"
-										onsubmit={(e) => {
-											if (
-												!confirm(
-													`Delete "${item.name}" forever? Everything in it goes and cannot be restored after this.`
-												)
-											)
-												e.preventDefault();
-										}}
+										onsubmit={confirmSubmit({
+											title: `Delete "${item.name}" forever?`,
+											body: 'Everything in it goes and cannot be restored after this.',
+											confirmLabel: 'Delete forever',
+											danger: true
+										})}
 									>
 										<input type="hidden" name="universeId" value={item.id} />
 										<button class="btn btn-ghost btn-sm trash-forever" type="submit">
@@ -564,14 +563,12 @@
 									<form
 										method="POST"
 										action="?/destroyStory"
-										onsubmit={(e) => {
-											if (
-												!confirm(
-													`Delete "${item.title}" forever? Its chapters, scenes, and history go and cannot be restored after this.`
-												)
-											)
-												e.preventDefault();
-										}}
+										onsubmit={confirmSubmit({
+											title: `Delete "${item.title}" forever?`,
+											body: 'Its chapters, scenes, and history go and cannot be restored after this.',
+											confirmLabel: 'Delete forever',
+											danger: true
+										})}
 									>
 										<input type="hidden" name="storyId" value={item.id} />
 										<button class="btn btn-ghost btn-sm trash-forever" type="submit">

@@ -16,6 +16,7 @@
 	import { modLabel } from '$lib/keys';
 	import { dismiss } from '$lib/dismiss';
 	import { menu } from '$lib/menu';
+	import { toolbar } from '$lib/toolbar';
 	import ViewMenu, { type ViewItem } from './ViewMenu.svelte';
 
 	// The formatting bar above a prose editor: headings, bold, italic, quote,
@@ -234,6 +235,10 @@
 		recompute();
 	});
 
+	const storyLabel = $derived(
+		storyView?.active ? 'Back to the scene editor' : 'Read the whole story'
+	);
+
 	// The "more" menu. Closes on an outside press or Escape.
 	let menuOpen = $state(false);
 	// Opened with Enter or Space (a click with no pointer): focus moves into the
@@ -245,7 +250,7 @@
 	});
 </script>
 
-<div class="md-toolbar" bind:this={barEl}>
+<div class="md-toolbar" role="toolbar" aria-label="Formatting" bind:this={barEl} use:toolbar>
 	<!-- Off-screen full-width copy used only to measure each tool's natural size.
 	     The zero-size clip keeps the wide row from ever adding a scrollbar. -->
 	<div class="md-measure-clip" aria-hidden="true">
@@ -275,6 +280,7 @@
 				class="md-tool"
 				type="button"
 				title={item.title}
+				aria-label={item.title}
 				onmousedown={(event) => event.preventDefault()}
 				onclick={item.act}
 			>
@@ -290,6 +296,7 @@
 				class:is-active={item.active}
 				type="button"
 				title={item.title}
+				aria-label={item.title}
 				aria-pressed={item.active}
 				onmousedown={(event) => event.preventDefault()}
 				onclick={item.toggle}
@@ -392,11 +399,7 @@
 		{/if}
 		{#if storyView}
 			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-			<a
-				class="md-tool"
-				href={storyView.toggleHref}
-				title={storyView.active ? 'Back to the scene editor' : 'Read the whole story'}
-			>
+			<a class="md-tool" href={storyView.toggleHref} title={storyLabel} aria-label={storyLabel}>
 				<Icon name={storyView.active ? 'scene' : 'chapter'} size={16} />
 			</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->

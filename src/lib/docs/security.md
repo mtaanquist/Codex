@@ -7,7 +7,7 @@ your work out or close the account.
 ## Password and email
 
 Change your password by entering your current one and the new one; this signs
-out your other sessions. Changing your email sends a confirmation link to the
+out your other sessions. A password needs at least 8 characters. Changing your email sends a confirmation link to the
 new address, and the change only takes effect once you follow that link, so a
 typo can never lock you out.
 

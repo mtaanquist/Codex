@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
+import { addEntity } from './plan';
 
 // An axe pass over the main pages in light and dark. It fails only on the
 // rules the accessibility fixes have brought to zero, so a regression in one
@@ -20,7 +21,13 @@ const RULES = [
 	'landmark-unique',
 	'region',
 	// Hidden menus stay out of the tab order (#720).
-	'aria-hidden-focus'
+	'aria-hidden-focus',
+	// Control names (#725).
+	'aria-input-field-name',
+	'button-name',
+	'label',
+	'link-name',
+	'select-name'
 ];
 
 async function violations(page: Page) {
@@ -42,6 +49,7 @@ async function useTheme(page: Page, theme: 'light' | 'dark') {
 test.describe.configure({ mode: 'serial' });
 
 let storyPath = '';
+let universePlanPath = '';
 let readingPath = '';
 
 test.beforeAll(async ({ browser }) => {
@@ -53,6 +61,11 @@ test.beforeAll(async ({ browser }) => {
 	await page.getByLabel('New universe').fill(universeName);
 	await page.getByRole('button', { name: 'Create universe' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
+	universePlanPath = `${new URL(page.url()).pathname}/plan`;
+	await gotoReady(page, universePlanPath);
+	await addEntity(page, 'Add character', 'Maren');
+	await expect(page).toHaveURL(/entity=/);
+	universePlanPath = new URL(page.url()).pathname + new URL(page.url()).search;
 
 	await gotoReady(page, '/');
 	await startStoryInUniverse(page, universeName);
@@ -157,4 +170,39 @@ test('print preview has one main and one banner', async ({ page }) => {
 	await gotoReady(page, `${storyPath}/print`);
 	await expect(page.getByRole('main')).toHaveCount(1);
 	await expect(page.getByRole('banner')).toHaveCount(1);
+});
+
+test('editors are named', async ({ page }) => {
+	await gotoReady(page, storyPath);
+	await expect(page.getByRole('textbox', { name: 'Scene text' })).toBeVisible();
+	await gotoReady(page, universePlanPath);
+	await expect(page.getByRole('textbox', { name: 'Description' })).toBeVisible();
+});
+
+test('the formatting bar is one tab stop with arrow keys between tools', async ({ page }) => {
+	await page.setViewportSize({ width: 1600, height: 900 });
+	await gotoReady(page, storyPath);
+	const bar = page.getByRole('toolbar', { name: 'Formatting' });
+	const tools = bar.locator('button:visible, a[href]:visible');
+	await expect(bar.locator('[tabindex="0"]')).toHaveCount(1);
+
+	await tools.first().focus();
+	await page.keyboard.press('ArrowRight');
+	await expect(tools.nth(1)).toBeFocused();
+	await page.keyboard.press('ArrowLeft');
+	await page.keyboard.press('ArrowLeft');
+	await expect(tools.last()).toBeFocused();
+	await page.keyboard.press('Home');
+	await expect(tools.first()).toBeFocused();
+
+	// Tab leaves the bar instead of walking through every tool.
+	await page.keyboard.press('Tab');
+	await expect(bar.locator(':focus')).toHaveCount(0);
+
+	// A focused tool that moves into "More tools" as the bar narrows leaves
+	// focus in the bar.
+	await bar.getByRole('button', { name: 'Split scene at cursor' }).focus();
+	await page.setViewportSize({ width: 800, height: 900 });
+	await expect(bar.getByRole('button', { name: 'Split scene at cursor' })).toHaveCount(0);
+	await expect(bar.locator(':focus')).toHaveCount(1);
 });

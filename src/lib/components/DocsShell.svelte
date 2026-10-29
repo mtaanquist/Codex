@@ -31,7 +31,7 @@
 	const back = $derived(helpFrom());
 </script>
 
-<div class="app">
+<div class="app docs">
 	<AppBar {crumbs} helpTopic={active?.slug} helpLabel="Codex" />
 	<div class="body no-right">
 		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
@@ -76,5 +76,27 @@
 		max-width: 44rem;
 		margin: 0 auto;
 		padding: var(--space-8) var(--space-8) 90px;
+	}
+	/* On a phone the topic list sits above the article and the page scrolls
+	   as one, instead of two side-by-side scrolling columns. */
+	@media (max-width: 760px) {
+		.app.docs {
+			height: auto;
+			min-height: 100vh;
+			grid-template-rows: auto 1fr;
+		}
+		.app.docs .body {
+			grid-template-columns: 1fr;
+		}
+		.pane {
+			overflow: visible;
+		}
+		.pane.left {
+			border-right: 0;
+			border-bottom: 1px solid var(--border);
+		}
+		.docs-body {
+			padding: var(--space-6) var(--space-4) 60px;
+		}
 	}
 </style>
