@@ -167,7 +167,7 @@
 		font-style: italic;
 	}
 	.note-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 		font-size: 12.5px;
 		margin: 0 0 8px;
 	}

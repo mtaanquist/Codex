@@ -137,7 +137,9 @@
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'email' && form.message}
-					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+					<span class="field-hint" role="alert" style="color:var(--danger-ink);"
+						>{form.message}</span
+					>
 				{:else if form?.scope === 'email' && form.sent}
 					<span class="field-hint" role="status" style="color:var(--status-final-ink);"
 						>Check your new inbox for a confirmation link.</span
@@ -185,7 +187,9 @@
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'password' && form.message}
-					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+					<span class="field-hint" role="alert" style="color:var(--danger-ink);"
+						>{form.message}</span
+					>
 				{:else if form?.scope === 'password' && form.saved}
 					<span class="field-hint" role="status" style="color:var(--status-final-ink);"
 						>Password changed. Other devices were signed out.</span
@@ -281,7 +285,7 @@
 								aria-label="Current password"
 								required
 							/>
-							<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
+							<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger-ink);"
 								>Turn off</button
 							>
 						</form>
@@ -299,7 +303,11 @@
 		</div>
 
 		{#if form?.scope === 'totp' && form.message}
-			<p class="field-hint" role="alert" style="color:var(--danger); margin-top:var(--space-2);">
+			<p
+				class="field-hint"
+				role="alert"
+				style="color:var(--danger-ink); margin-top:var(--space-2);"
+			>
 				{form.message}
 			</p>
 		{/if}
@@ -486,14 +494,14 @@
 				</div>
 			{/if}
 			{#if form?.scope === 'passkeys' && form.message}
-				<p class="field-hint" role="alert" style="color:var(--danger);">{form.message}</p>
+				<p class="field-hint" role="alert" style="color:var(--danger-ink);">{form.message}</p>
 			{:else if form?.scope === 'passkeys' && 'removed' in form && form.removed}
 				<p class="field-hint" role="status" style="color:var(--status-final-ink);">
 					Passkey removed.
 				</p>
 			{/if}
 			{#if passkeyError}
-				<p class="field-hint" role="alert" style="color:var(--danger);">{passkeyError}</p>
+				<p class="field-hint" role="alert" style="color:var(--danger-ink);">{passkeyError}</p>
 			{:else if passkeyAdded}
 				<p class="field-hint" role="status" style="color:var(--status-final-ink);">
 					Passkey added.
@@ -578,7 +586,7 @@
 	{#if data.sessions.length > 1}
 		<div class="settings-actions">
 			{#if form?.scope === 'sessions' && form.message}
-				<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+				<span class="field-hint" role="alert" style="color:var(--danger-ink);">{form.message}</span>
 			{:else if form?.scope === 'sessions' && form.saved}
 				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Done.</span>
 			{/if}
@@ -640,7 +648,9 @@
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'delete' && form.message}
-					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+					<span class="field-hint" role="alert" style="color:var(--danger-ink);"
+						>{form.message}</span
+					>
 				{/if}
 				<button type="submit" class="btn btn-danger">Delete my account</button>
 			</div>

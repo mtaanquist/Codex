@@ -88,7 +88,7 @@
 		color: var(--accent, var(--text));
 	}
 	.activity-card.failed .activity-glyph {
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 	.spinner {
 		width: 14px;

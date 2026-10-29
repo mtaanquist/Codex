@@ -42,8 +42,24 @@ const themes = ['light', 'warm', 'dark'].map((name) => ({
 }));
 const SURFACES = ['--bg', '--bg-elevated', '--bg-panel', '--bg-card', '--bg-canvas'];
 const MIX = 'color-mix(in oklab, var(--accent) 75%, black)';
+const CATS = Object.keys(themes[0].tokens).filter((t) => t.startsWith('--cat-'));
+// The share review avatars and the focused margin marker keep when darkening
+// an author colour under white text. Checked against the two places it is
+// written, so a change to either is a change here too.
+const AUTHOR_FILL_SHARE = 65;
 
 describe('token contrast', () => {
+	it('uses one author fill share wherever white sits on an author colour', () => {
+		const avatar = readFileSync(
+			join(process.cwd(), 'src/lib/components/ReviewAvatar.svelte'),
+			'utf8'
+		);
+		const review = readFileSync(join(process.cwd(), 'src/lib/styles/review.css'), 'utf8');
+		expect(avatar).toContain(`${AUTHOR_FILL_SHARE}%, black)`);
+		expect(review).toContain(`var(--auth) ${AUTHOR_FILL_SHARE}%, black)`);
+		expect(CATS.length).toBeGreaterThan(0);
+	});
+
 	it('derives the accent fill with the mix contrast.ts mirrors', () => {
 		expect(root['--accent-fill']).toBe(MIX);
 		expect(root['--accent-contrast']).toBe('#ffffff');
@@ -117,13 +133,39 @@ describe('token contrast', () => {
 				expect(contrastRatio('#ffffff', shade!)).toBeGreaterThanOrEqual(AA_TEXT);
 			});
 
-			it('keeps the accept text at AA', () => {
-				const ink =
-					tokens['--status-final-ink'] === 'var(--status-final)'
-						? hex(tokens, '--status-final')
-						: hex(tokens, '--status-final-ink');
-				for (const [surface, bg] of surfaces) {
-					expect(contrastRatio(ink, bg), surface).toBeGreaterThanOrEqual(AA_TEXT);
+			// Status and danger colours used as text go through their -ink twin,
+			// the plain token where it already reads, a darker hex where not.
+			it('keeps status and danger text at AA', () => {
+				for (const base of ['--status-final', '--status-draft', '--status-revised', '--danger']) {
+					const value = tokens[`${base}-ink`];
+					const ink = value === `var(${base})` ? hex(tokens, base) : hex(tokens, `${base}-ink`);
+					for (const [surface, bg] of surfaces) {
+						expect(contrastRatio(ink, bg), `${base}-ink on ${surface}`).toBeGreaterThanOrEqual(
+							AA_TEXT
+						);
+					}
+				}
+			});
+
+			// Review marks set --auth per author and darken it for text by
+			// --ink-share (review.css); the owner's --auth is the raw accent, so
+			// the share must match the accent text mix.
+			it('keeps every author colour at AA as text', () => {
+				const share = tokens['--ink-share'];
+				expect(share).toBe(tokens['--accent-ink'] === MIX ? '75%' : '100%');
+				const factor = parseFloat(share) / 100;
+				for (const cat of CATS) {
+					const ink = mixWithBlack(hex(tokens, cat), factor);
+					for (const [surface, bg] of surfaces) {
+						expect(contrastRatio(ink, bg), `${cat} on ${surface}`).toBeGreaterThanOrEqual(AA_TEXT);
+					}
+				}
+			});
+
+			it('gives white initials AA on every author fill', () => {
+				for (const cat of CATS) {
+					const fill = mixWithBlack(hex(tokens, cat), AUTHOR_FILL_SHARE / 100);
+					expect(contrastRatio('#ffffff', fill), cat).toBeGreaterThanOrEqual(AA_TEXT);
 				}
 			});
 		});

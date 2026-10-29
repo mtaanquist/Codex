@@ -173,7 +173,7 @@
 		border-color: var(--accent-line);
 	}
 	.note-tool.danger:hover {
-		color: var(--danger);
+		color: var(--danger-ink);
 		border-color: var(--danger);
 	}
 </style>

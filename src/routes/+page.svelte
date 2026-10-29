@@ -666,7 +666,7 @@
 		font-size: 12.5px;
 	}
 	.trash-forever:hover {
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 	.lib-foot {
 		color: var(--text-faint);

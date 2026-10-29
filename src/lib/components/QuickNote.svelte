@@ -191,7 +191,7 @@
 	.qn-error {
 		margin: 0;
 		font-size: var(--text-meta);
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 	.qn-foot {
 		display: flex;

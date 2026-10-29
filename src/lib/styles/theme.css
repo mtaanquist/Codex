@@ -91,7 +91,7 @@
 .icon-btn.danger:hover:not(:disabled),
 .icon-btn.danger.is-hover {
 	background: var(--danger-soft);
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 
 /* ---- Body 3-pane ---- */

@@ -422,7 +422,7 @@ a.nav-item {
 }
 .attn-ic.warn {
 	background: color-mix(in oklab, var(--status-draft) 18%, transparent);
-	color: var(--status-draft);
+	color: var(--status-draft-ink);
 }
 .attn-ic.ok {
 	background: color-mix(in oklab, var(--status-final) 18%, transparent);
@@ -877,7 +877,7 @@ a.nav-item {
 }
 .link-row .link-del:hover {
 	background: var(--bg-hover);
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 .link-row .link-del svg {
 	width: 15px;
@@ -1193,7 +1193,7 @@ a.nav-item {
 	width: 16px;
 	height: 16px;
 	flex: none;
-	color: var(--status-draft);
+	color: var(--status-draft-ink);
 	margin-top: 1px;
 }
 .recovery-grid {

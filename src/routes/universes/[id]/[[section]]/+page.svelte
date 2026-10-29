@@ -616,7 +616,7 @@
 		transform: rotate(45deg);
 	}
 	.category-delete:hover:not(:disabled) {
-		color: var(--danger);
+		color: var(--danger-ink);
 		background: var(--bg-hover);
 	}
 	.category-delete:disabled {

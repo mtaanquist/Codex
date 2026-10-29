@@ -145,7 +145,7 @@
 			raw.push({
 				id,
 				kind: node.dataset.kind === 'suggest' ? 'suggest' : 'comment',
-				color: node.style.getPropertyValue('--auth') || 'var(--accent-ink)',
+				color: node.style.getPropertyValue('--auth') || 'var(--accent)',
 				top: node.offsetTop
 			});
 		}

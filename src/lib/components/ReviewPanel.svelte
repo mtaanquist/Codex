@@ -144,7 +144,7 @@
 				method="POST"
 				action={composer.mode === 'suggest' ? '?/suggest' : '?/comment'}
 				class="rv-card is-draft"
-				style="--auth: var(--accent-ink);"
+				style="--auth: var(--accent);"
 				use:enhance={() =>
 					({ update }) => {
 						onCloseComposer();
@@ -191,7 +191,7 @@
 					</div>
 				{:else}
 					{#if composer.anchored}
-						<div class="rv-quote" style="--auth: var(--accent-ink);">"{composer.text}"</div>
+						<div class="rv-quote" style="--auth: var(--accent);">"{composer.text}"</div>
 					{/if}
 					<textarea
 						name="body"

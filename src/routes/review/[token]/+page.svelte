@@ -135,6 +135,6 @@
 		cursor: pointer;
 	}
 	.note-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 </style>

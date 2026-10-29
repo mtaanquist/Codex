@@ -569,7 +569,7 @@
 /* .auth-note is the muted body colour, so an error that is also a note has to
    say danger louder than the class beside it. */
 .auth-card .form-error {
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 /* A second action under the first (the passkey button under Sign in) sits
    closer than the gap that lifts the first off the fields. */

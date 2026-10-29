@@ -103,6 +103,6 @@
 		font-size: 0.9em;
 	}
 	.export-failed {
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 </style>
