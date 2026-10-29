@@ -44,6 +44,7 @@
 			state: EditorState.create({
 				doc: note.bodyMd,
 				extensions: proseExtensions({
+					label: 'Note text',
 					placeholder: 'Jot anything: ideas, threads to pull, things to remember...',
 					onDocChanged: scheduleSave
 				})

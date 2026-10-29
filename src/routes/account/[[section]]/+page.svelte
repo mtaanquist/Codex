@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
@@ -43,7 +44,7 @@
 	// on, so an action result lands where it belongs without any bookkeeping.
 	let active: Section = $derived((page.params.section as Section) ?? 'profile');
 
-	function sectionHref(section: Section): string {
+	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/account/[[section]]', {
 			section: section === 'profile' ? undefined : section
 		});
@@ -76,7 +77,7 @@
 		<div class="admin-sidebar-title">
 			<span
 				class="ic"
-				style="background:linear-gradient(140deg,var(--accent),color-mix(in oklab,var(--accent) 55%,#000));color:var(--accent-contrast);font-weight:700;font-size:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.2);"
+				style="background:linear-gradient(140deg,var(--accent-fill),color-mix(in oklab,var(--accent) 55%,#000));color:var(--accent-contrast);font-weight:700;font-size:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.2);"
 				>{initials(data.displayName)}</span
 			>
 			<div>
@@ -85,7 +86,6 @@
 			</div>
 		</div>
 
-		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 		<nav class="admin-nav">
 			<div class="admin-nav-label">You</div>
 			<a class="nav-item" class:active={active === 'profile'} href={sectionHref('profile')}>
@@ -237,7 +237,6 @@
 				</a>
 			{/if}
 		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 
 		<div
 			class="admin-health"

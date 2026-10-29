@@ -8,38 +8,49 @@
 		id: string;
 		label: string;
 		icon: IconName;
-		href?: string;
+		href?: ResolvedPathname;
 		onSelect?: () => void;
 		current?: boolean;
 	};
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 
 	let { items }: { items: ViewItem[] } = $props();
 	let open = $state(false);
+	let trigger = $state<HTMLButtonElement>();
 	const active = $derived(items.find((item) => item.current));
 </script>
 
-<div class="md-view" use:dismiss={{ enabled: open, close: () => (open = false) }}>
+<div
+	class="md-view"
+	use:dismiss={{ enabled: open, close: () => (open = false), refocus: () => trigger?.focus() }}
+>
 	<button
+		bind:this={trigger}
 		class="md-tool md-view-trigger"
 		class:is-active={open}
 		type="button"
 		title="Switch view"
+		aria-label={active ? `View: ${active.label}` : 'Switch view'}
 		aria-haspopup="menu"
 		aria-expanded={open}
 		onclick={() => (open = !open)}
 	>
 		<Icon name={active?.icon ?? 'book'} size={15} />
 		<span class="md-tool-label">{active?.label ?? 'View'}</span>
-		<Icon name="chevron" size={11} />
+		<Icon name="caret" size={11} />
 	</button>
 	{#if open}
-		<!-- eslint-disable svelte/no-navigation-without-resolve (the caller resolves each href) -->
-		<div class="md-view-menu popover" role="menu">
+		<div
+			class="md-view-menu popover"
+			role="menu"
+			use:menu={{ close: () => (open = false), refocus: () => trigger?.focus() }}
+		>
 			{#each items as item (item.id)}
 				{#if item.href}
 					<a
@@ -69,7 +80,6 @@
 				{/if}
 			{/each}
 		</div>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 </div>
 
@@ -98,6 +108,6 @@
 		min-width: 168px;
 	}
 	.menu-item.is-current {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 </style>

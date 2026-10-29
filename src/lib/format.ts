@@ -1,14 +1,19 @@
 // Shared display formatting for dates and API errors, so each component does
 // not re-implement its own variant.
 
-/** "Jun 11, 2026, 9:41 AM": timestamps on cards, lists, and settings rows. */
+// Every date and number shown in the UI uses this locale, passed explicitly so
+// server-rendered and browser-rendered output match. Lint bans toLocale* and
+// Intl formatters outside this file.
+export const DISPLAY_LOCALE = 'en-GB';
+
+/** "11 Jun 2026, 09:41": timestamps on cards, lists, and settings rows. */
 export function formatDateTime(date: Date | string): string {
-	return new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+	return new Date(date).toLocaleString(DISPLAY_LOCALE, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-/** "Jun 11, 2026": date-only rows (admin lists). */
+/** "11 Jun 2026": date-only rows (admin lists). */
 export function formatDate(date: Date | string): string {
-	return new Date(date).toLocaleDateString(undefined, {
+	return new Date(date).toLocaleDateString(DISPLAY_LOCALE, {
 		year: 'numeric',
 		month: 'short',
 		day: 'numeric'
@@ -17,7 +22,7 @@ export function formatDate(date: Date | string): string {
 
 /** "11 June 2026": publication dates on the public shelf and book pages. */
 export function formatLongDate(date: Date | string): string {
-	return new Date(date).toLocaleDateString('en-GB', {
+	return new Date(date).toLocaleDateString(DISPLAY_LOCALE, {
 		day: 'numeric',
 		month: 'long',
 		year: 'numeric'
@@ -34,7 +39,20 @@ export function relativeShort(date: Date | string): string {
 	if (hours < 24) return `${hours}h`;
 	const days = Math.floor(hours / 24);
 	if (days < 7) return `${days}d`;
-	return then.toLocaleDateString();
+	return formatDate(then);
+}
+
+/** "09:41": time of day for rows already grouped under a date. */
+export function formatTime(date: Date | string): string {
+	return new Date(date).toLocaleTimeString(DISPLAY_LOCALE, { hour: '2-digit', minute: '2-digit' });
+}
+
+/** "W" for a "YYYY-MM-DD" calendar day: single-letter weekday strips. */
+export function narrowWeekday(day: string): string {
+	return new Date(`${day}T00:00:00Z`).toLocaleDateString(DISPLAY_LOCALE, {
+		weekday: 'narrow',
+		timeZone: 'UTC'
+	});
 }
 
 /** "" for exactly one, "s" otherwise: `${n} scene${pluralSuffix(n)}`. */
@@ -44,7 +62,7 @@ export function pluralSuffix(n: number): string {
 
 /** "1,234": grouped integers for counts shown in the UI. */
 export function formatNumber(n: number): string {
-	return n.toLocaleString('en-US');
+	return n.toLocaleString(DISPLAY_LOCALE);
 }
 
 /** "950", "1.2k": compact counts for tight rows. Empty for non-positive. */

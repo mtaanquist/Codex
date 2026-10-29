@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+	import { withQuery } from '$lib/href';
 	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
@@ -35,13 +37,12 @@
 	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
 	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
 	import type { EditorView } from '@codemirror/view';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
 	import PanelStrip from '$lib/components/PanelStrip.svelte';
 	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath as storyCrumbs } from '$lib/chrome';
+	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import type { PageData, Snapshot } from './$types';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
@@ -108,7 +109,7 @@
 		const url = nav.to.url;
 		void sceneEditor.flushSave().finally(() => {
 			flushingNav = false;
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- replaying the cancelled navigation's own resolved URL
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the URL this navigation was already heading to
 			void goto(url);
 		});
 	});
@@ -274,8 +275,7 @@
 			return;
 		}
 		mergeSelection.clear();
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
-		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { invalidateAll: true });
 		editorNonce++;
 	}
 
@@ -288,14 +288,14 @@
 			alert(result.message);
 			return;
 		}
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
-		await goto(`${storyPath}?scene=${result.newSceneId}`, { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.newSceneId }), { invalidateAll: true });
 	}
 
 	// Opens the review modal for a scene or chapter from the sidebar row menu;
 	// the modal drives the run and reports progress in the activity center.
 	function openReviewFor(request: { sceneId?: string; chapterId?: string }) {
-		rowMenu = null;
+		// Back on the row first, so closing the modal returns focus there.
+		closeRowMenu(true);
 		openReviewModal({
 			level: request.sceneId ? 'scene' : 'chapter',
 			sceneId: request.sceneId,
@@ -320,8 +320,7 @@
 			alert(result.message);
 			return;
 		}
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
-		await goto(`${storyPath}?scene=${result.newSceneId}`, { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.newSceneId }), { invalidateAll: true });
 	}
 
 	// Records a proposal card's outcome on its stored chat turn, so the card
@@ -343,8 +342,7 @@
 		if (!result.ok) return { error: result.message };
 		const { newSceneId, splitSceneId } = result;
 		persistProposalState(data.story.id, proposal, { splitSceneId, newSceneId });
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
-		await goto(`${storyPath}?scene=${newSceneId}`, { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: newSceneId }), { invalidateAll: true });
 		return { splitSceneId, newSceneId };
 	}
 
@@ -365,8 +363,7 @@
 		]);
 		if (!result.ok) return result.message;
 		persistProposalState(data.story.id, proposal, null);
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved path plus a query string
-		await goto(`${storyPath}?scene=${result.targetSceneId}`, { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { invalidateAll: true });
 		editorNonce++;
 		return null;
 	}
@@ -424,32 +421,40 @@
 	const toggleHref = $derived(
 		inWholeStory
 			? data.returnSceneId
-				? `${storyPath}?scene=${data.returnSceneId}`
+				? withQuery(storyPath, { scene: data.returnSceneId })
 				: storyPath
 			: data.selectedScene
-				? `${storyPath}?view=story&scene=${data.selectedScene.id}`
-				: `${storyPath}?view=story`
+				? withQuery(storyPath, { view: 'story', scene: data.selectedScene.id })
+				: withQuery(storyPath, { view: 'story' })
 	);
 
 	// The scene to return to is carried between the editor and preview so
 	// leaving either lands on the scene that was open.
-	const returnScenePart = $derived(data.returnSceneId ? `&scene=${data.returnSceneId}` : '');
-	const previewHref = $derived(`${storyPath}?view=preview${returnScenePart}`);
-	const editStoryHref = $derived(`${storyPath}?view=story${returnScenePart}`);
+	const previewHref = $derived(
+		withQuery(storyPath, { view: 'preview', scene: data.returnSceneId })
+	);
+	const editStoryHref = $derived(
+		withQuery(storyPath, { view: 'story', scene: data.returnSceneId })
+	);
 
 	// The default scene-editor URL, the Edit target from the scene toolbar.
 	const sceneEditHref = $derived(
-		data.returnSceneId ? `${storyPath}?scene=${data.returnSceneId}` : storyPath
+		data.returnSceneId ? withQuery(storyPath, { scene: data.returnSceneId }) : storyPath
 	);
 	// The View dropdown shared by every toolbar: Edit, Preview, Focus, Print.
 	// The Edit and Preview targets differ by scope (whole story vs the open
 	// scene), so they are passed in.
-	function viewItems(editTarget: string, previewTarget: string): ViewItem[] {
+	function viewItems(editTarget: ResolvedPathname, previewTarget: ResolvedPathname): ViewItem[] {
 		return [
 			{ id: 'edit', label: 'Edit', icon: 'pencil', href: editTarget, current: !viewPreview },
 			{ id: 'preview', label: 'Preview', icon: 'book', href: previewTarget, current: viewPreview },
 			{ id: 'focus', label: 'Focus', icon: 'expand', onSelect: () => (focusMode.on = true) },
-			{ id: 'print', label: 'Print', icon: 'print', href: `${storyPath}/print` }
+			{
+				id: 'print',
+				label: 'Print',
+				icon: 'print',
+				href: resolve('/stories/[id]/print', { id: data.story.slug })
+			}
 		];
 	}
 
@@ -509,7 +514,7 @@
 		{ kind: 'lore', label: 'Lore' }
 	] as const;
 	const sceneHref = $derived(
-		data.selectedScene ? `${storyPath}?scene=${data.selectedScene.id}` : storyPath
+		data.selectedScene ? withQuery(storyPath, { scene: data.selectedScene.id }) : storyPath
 	);
 
 	// The sidebar filter: a matching chapter keeps all its scenes, otherwise
@@ -605,7 +610,7 @@
 		helpLabel="the editor"
 	/>
 	<div class="body">
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<ModeSwitcher
 					active="write"
@@ -634,20 +639,19 @@
 				/>
 			</div>
 		</aside>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			{#if !inWholeStory}<h1 class="visually-hidden">{data.story.title} - Write</h1>{/if}
 			{#if viewStory}
 				{#snippet docScene(scene: NonNullable<typeof data.storyDoc>[number])}
 					<article class="doc-scene" id="scene-{scene.id}">
 						{#if data.preferences.continuousSceneMarks === 'shown'}
-							<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 							<a
 								class="doc-scene-mark"
-								href={`${storyPath}?scene=${scene.id}`}
+								href={withQuery(storyPath, { scene: scene.id })}
 								title="Edit this scene alone"
 							>
 								{scene.title ?? 'Untitled scene'}
 							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{/if}
 						{#if mountedDocScenes.has(scene.id)}
 							<SceneEditor
@@ -771,7 +775,7 @@
 						storyView={{ active: inWholeStory, toggleHref }}
 						viewMenu={viewItems(
 							sceneEditHref,
-							`${storyPath}?view=preview&scene=${data.selectedScene.id}`
+							withQuery(storyPath, { view: 'preview', scene: data.selectedScene.id })
 						)}
 						{nonPrintingMarks}
 						{commandMarkers}
@@ -819,14 +823,16 @@
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right">
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 			{#if inspectStack.length > 0}
 				{#if inspectCard}
 					<EntityCard
 						card={inspectCard}
 						onBack={backCard}
 						onOpen={openCard}
-						planHref={`${resolve('/stories/[id]/plan', { id: data.story.slug })}?entity=${inspectCard.id}`}
+						planHref={withQuery(resolve('/stories/[id]/plan', { id: data.story.slug }), {
+							entity: inspectCard.id
+						})}
 					/>
 				{:else}
 					<div class="empty-state tight"><p class="empty-state-text">Loading...</p></div>
@@ -867,18 +873,17 @@
 								entityId={data.selectedScene.id}
 								revisions={data.sceneRevisions}
 								previewId={data.revisionPreview?.id}
-								previewHref={(revisionId) => `${sceneHref}&revision=${revisionId}`}
+								previewHref={(revisionId) => withQuery(sceneHref, { revision: revisionId })}
 							/>
 						{:else if id === 'notes'}
 							{@const onScene = new Set(data.sceneNotes.map((note) => note.id))}
 							{@const otherNotes = data.storyNotes.filter((note) => !onScene.has(note.id))}
 							<div class="right-scroll">
-								<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 								{#if data.selectedScene && data.sceneNotes.length > 0}
 									<div class="r-card">
 										<h5>On this scene</h5>
 										{#each data.sceneNotes as note (note.id)}
-											<a class="r-line" href={`${notesPath}?note=${note.id}`}>
+											<a class="r-line" href={withQuery(notesPath, { note: note.id })}>
 												<span class="r-line-left">
 													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
 												</span>
@@ -890,7 +895,7 @@
 									<div class="r-card">
 										<h5>In this story</h5>
 										{#each otherNotes as note (note.id)}
-											<a class="r-line" href={`${notesPath}?note=${note.id}`}>
+											<a class="r-line" href={withQuery(notesPath, { note: note.id })}>
 												<span class="r-line-left">
 													<span class="r-line-name">{note.title ?? 'Untitled note'}</span>
 												</span>
@@ -915,12 +920,7 @@
 									</form>
 								{/if}
 								<a class="btn btn-sm btn-ghost" href={notesPath}>All notes</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</div>
-							<p class="panel-note">
-								The story's notes; ones attached to the open scene lead. Open one, or All notes, to
-								read and edit on the Notes page.
-							</p>
 						{:else}
 							<div class="right-scroll">
 								{#if data.storyTodos.length > 0}
@@ -933,6 +933,7 @@
 														class="todo-check"
 														type="button"
 														title="Mark done"
+														aria-label="Mark done"
 														onclick={async () => {
 															await fetch(`/api/markers/${todo.markerId}`, {
 																method: 'PUT',
@@ -945,12 +946,10 @@
 												{:else}
 													<span class="todo-dot" title="A TODO: line; delete it when done"></span>
 												{/if}
-												<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-												<a class="todo-text" href={`${storyPath}?scene=${todo.sceneId}`}>
+												<a class="todo-text" href={withQuery(storyPath, { scene: todo.sceneId })}>
 													{todo.text}
 													<span class="todo-scene">{todo.sceneTitle ?? 'Untitled scene'}</span>
 												</a>
-												<!-- eslint-enable svelte/no-navigation-without-resolve -->
 											</div>
 										{/each}
 										<div class="todo-hint">
@@ -984,14 +983,17 @@
 									</div>
 								{:else}
 									<div class="empty-state tight">
-										<p class="empty-state-text">Nothing to show yet.</p>
+										<p class="empty-state-text">
+											{#if data.selectedScene}
+												Mention a character, place, or lore entry from Plan in this scene and it
+												shows up here after the scene saves.
+											{:else}
+												Open a scene to see the Plan entries it mentions.
+											{/if}
+										</p>
 									</div>
 								{/if}
 							</div>
-							<p class="panel-note">
-								Everything the prose in view mentions that also has an entry in Plan. Open one to
-								read or edit it.
-							</p>
 						{/if}
 					{/snippet}
 				</PanelStrip>
@@ -1001,11 +1003,11 @@
 
 	{#if focusMode.on}
 		<div class="focus-controls">
-			<ThemeToggle />
 			<button
 				class="icon-btn"
 				type="button"
 				title="Exit focus (Esc)"
+				aria-label="Exit focus (Esc)"
 				onclick={() => (focusMode.on = false)}
 			>
 				<Icon name="compress" />
@@ -1080,7 +1082,7 @@
 		margin: 0 0 8px;
 	}
 	.doc-scene-mark:hover {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 	/* Read-only preview: prose through the export renderer, styled to read
 	   like the finished book. */

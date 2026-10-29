@@ -43,7 +43,7 @@
 		helpLabel="reading pages"
 	/>
 
-	<main class="reader-main">
+	<main id="main" class="reader-main">
 		<div class="reader-col wide">
 			{#if data.preview}
 				<p class="preview-note" role="status">
@@ -88,8 +88,9 @@
 						<li>
 							{#if linkHref(link.url)}
 								<!-- An external author link, not an app route; resolve() does not apply. -->
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-								<a href={linkHref(link.url)} rel="nofollow noopener">{link.label || link.url}</a>
+								<a href={linkHref(link.url)} rel="external nofollow noopener"
+									>{link.label || link.url}</a
+								>
 							{:else}
 								{link.label ? `${link.label}: ${link.url}` : link.url}
 							{/if}
@@ -112,15 +113,22 @@
 									story: book.storyId
 								})}
 							>
-								<!-- A cover is the story's own title, set, until an author
-								     uploads artwork. -->
-								<span class="shelf-cover">
-									{#if book.coverAssetId}
+								<!-- A cover is the story's own title, set on the story's
+								     colour, until an author uploads artwork. Hidden from
+								     readers because the title repeats right below. -->
+								{#if book.coverAssetId}
+									<span class="shelf-cover">
 										<img src="/assets/{book.coverAssetId}" alt="" />
-									{:else}
+									</span>
+								{:else}
+									<span
+										class="shelf-cover shelf-cover-tinted"
+										style="--cover-tint: {book.coverColor}"
+										aria-hidden="true"
+									>
 										{book.title}
-									{/if}
-								</span>
+									</span>
+								{/if}
 								<span class="shelf-item-title">{book.title}</span>
 								<span class="shelf-item-meta">
 									{formatLongDate(book.publishedAt)}{#if book.isAdult}

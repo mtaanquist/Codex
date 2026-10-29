@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/Icon.svelte';
 	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
@@ -7,6 +8,8 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
+	import { enhance } from '$lib/enhance';
+	import { LIBRARY_VIEWS, recentStories, type LibraryView } from '$lib/dashboard';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -27,11 +30,11 @@
 
 	type Story = (typeof data.stories)[number];
 
-	const recent = $derived(
-		[...data.stories]
-			.sort((a, b) => new Date(b.editedAt).getTime() - new Date(a.editedAt).getTime())
-			.slice(0, 3)
-	);
+	const recent = $derived(recentStories(data.stories));
+	// The switch sets this as it submits so the page changes at once; the
+	// reloaded data then agrees with it.
+	let pickedView = $state<LibraryView | null>(null);
+	const view = $derived(pickedView ?? data.libraryView ?? 'covers');
 
 	const totalWords = $derived(data.stories.reduce((sum, story) => sum + story.words, 0));
 
@@ -88,17 +91,34 @@
 {#snippet storyCard(story: Story)}
 	<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
 		<!-- The published shelf's cover pattern: the uploaded artwork, or the
-		     story's own title set on the cover blank. Hidden from readers
-		     because the title repeats right below. -->
-		<span class="shelf-cover story-card-cover" aria-hidden="true">
-			{#if story.coverAssetId}
+		     story's own title set on a cover tinted in its colour. Hidden from
+		     readers; the heading below names the story. -->
+		{#if view === 'compact'}
+			<!-- No covers: the card starts at its title. -->
+		{:else if story.coverAssetId}
+			<span class="shelf-cover story-card-cover" aria-hidden="true">
 				<img src="/assets/{story.coverAssetId}" alt="" />
-			{:else}
+			</span>
+		{:else}
+			<span
+				class="shelf-cover shelf-cover-tinted story-card-cover"
+				class:story-card-empty={story.words === 0}
+				style="--cover-tint: {story.coverColor}"
+				aria-hidden="true"
+			>
 				{story.title}
-			{/if}
-		</span>
+			</span>
+		{/if}
 		<div class="story-card-header">
-			<h3 class="story-card-title" class:story-card-empty={story.words === 0}>{story.title}</h3>
+			<!-- A blank cover already shows the title, so the heading is only
+			     for assistive technology there. -->
+			<h3
+				class="story-card-title"
+				class:story-card-empty={story.words === 0}
+				class:visually-hidden={view === 'covers' && !story.coverAssetId}
+			>
+				{story.title}
+			</h3>
 			<span class="story-card-status">
 				<span class="scene-dot" style="background: var(--status-{story.status.token});"></span>
 				{story.status.label}
@@ -115,11 +135,80 @@
 	</a>
 {/snippet}
 
+{#snippet storyTable(stories: Story[], label: string)}
+	<div class="admin-card tight library-table-card">
+		<table class="admin-table library-table" aria-label={label}>
+			<thead>
+				<tr>
+					<th>Title</th>
+					<th>Status</th>
+					<th class="num">Words</th>
+					<th class="num">Chapters</th>
+					<th>Last edited</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each stories as story (story.id)}
+					<tr>
+						<td>
+							<a
+								class="library-table-title"
+								class:story-card-empty={story.words === 0}
+								href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a
+							>
+						</td>
+						<td>
+							<span class="story-card-status">
+								<span class="scene-dot" style="background: var(--status-{story.status.token});"
+								></span>
+								{story.status.label}
+							</span>
+						</td>
+						<td class="num">{formatNumber(story.words)}</td>
+						<td class="num">{formatNumber(story.chapters)}</td>
+						<td class="cell-muted">{story.editedLabel}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/snippet}
+
+{#snippet viewSwitch()}
+	<form
+		method="POST"
+		action="?/setLibraryView"
+		use:enhance={({ submitter }) => {
+			const previous = pickedView;
+			pickedView = (submitter?.getAttribute('value') as LibraryView | null) ?? null;
+			return async ({ result, update }) => {
+				if (result.type !== 'success') pickedView = previous;
+				await update();
+			};
+		}}
+	>
+		<div class="seg" role="group" aria-label="Library view">
+			{#each LIBRARY_VIEWS as option (option.value)}
+				<button
+					class="seg-btn"
+					class:active={view === option.value}
+					type="submit"
+					name="libraryView"
+					value={option.value}
+					aria-pressed={view === option.value}
+				>
+					{option.label}
+				</button>
+			{/each}
+		</div>
+	</form>
+{/snippet}
+
 {#snippet library()}
 	<div class="page-shell">
 		<AppBar crumbs={[libraryCrumb(true)]} helpTopic="getting-started" helpLabel="the library" />
 
-		<div class="page-body">
+		<main id="main" class="page-body">
 			<div class="page-container">
 				<div class="page-header">
 					<div>
@@ -133,6 +222,7 @@
 						</p>
 					</div>
 					<div class="page-actions">
+						{#if data.stories.length > 0}{@render viewSwitch()}{/if}
 						{#if creatingUniverse}
 							<form class="new-inline" method="POST" action="?/createUniverse">
 								<!-- svelte-ignore a11y_autofocus (the field only appears on the menu choice) -->
@@ -193,11 +283,15 @@
 				{#if recent.length > 0}
 					<section class="universe-section">
 						<h2 class="universe-mark recent-mark">Recent</h2>
-						<div class="recent-row">
-							{#each recent as story (story.id)}
-								{@render storyCard(story)}
-							{/each}
-						</div>
+						{#if view === 'table'}
+							{@render storyTable(recent, 'Recent')}
+						{:else}
+							<div class="recent-row">
+								{#each recent as story (story.id)}
+									{@render storyCard(story)}
+								{/each}
+							</div>
+						{/if}
 					</section>
 				{/if}
 
@@ -257,10 +351,15 @@
 								/>
 							</div>
 						</header>
+						{#if view === 'table' && universeStories(universe.id).length > 0}
+							{@render storyTable(universeStories(universe.id), universe.name)}
+						{/if}
 						<div class="story-grid">
-							{#each universeStories(universe.id) as story (story.id)}
-								{@render storyCard(story)}
-							{/each}
+							{#if view !== 'table'}
+								{#each universeStories(universe.id) as story (story.id)}
+									{@render storyCard(story)}
+								{/each}
+							{/if}
 							{#if newStoryFor === universe.id}
 								<form class="card-add card-add-form" method="POST" action="?/createStory">
 									<input type="hidden" name="universeId" value={universe.id} />
@@ -423,14 +522,12 @@
 									<form
 										method="POST"
 										action="?/destroyUniverse"
-										onsubmit={(e) => {
-											if (
-												!confirm(
-													`Delete "${item.name}" forever? Everything in it goes and cannot be restored after this.`
-												)
-											)
-												e.preventDefault();
-										}}
+										onsubmit={confirmSubmit({
+											title: `Delete "${item.name}" forever?`,
+											body: 'Everything in it goes and cannot be restored after this.',
+											confirmLabel: 'Delete forever',
+											danger: true
+										})}
 									>
 										<input type="hidden" name="universeId" value={item.id} />
 										<button class="btn btn-ghost btn-sm trash-forever" type="submit">
@@ -466,14 +563,12 @@
 									<form
 										method="POST"
 										action="?/destroyStory"
-										onsubmit={(e) => {
-											if (
-												!confirm(
-													`Delete "${item.title}" forever? Its chapters, scenes, and history go and cannot be restored after this.`
-												)
-											)
-												e.preventDefault();
-										}}
+										onsubmit={confirmSubmit({
+											title: `Delete "${item.title}" forever?`,
+											body: 'Its chapters, scenes, and history go and cannot be restored after this.',
+											confirmLabel: 'Delete forever',
+											danger: true
+										})}
 									>
 										<input type="hidden" name="storyId" value={item.id} />
 										<button class="btn btn-ghost btn-sm trash-forever" type="submit">
@@ -490,7 +585,7 @@
 					New here? Read the <a href={resolve('/docs')}>help</a>.
 				</p>
 			</div>
-		</div>
+		</main>
 	</div>
 
 	<ImportStoryModal universe={importFor} onClose={() => (importFor = null)} />
@@ -501,6 +596,30 @@
 		min-width: 0;
 		display: block;
 		margin-bottom: var(--space-4, 16px);
+	}
+	.library-table-card {
+		margin-bottom: var(--space-4, 16px);
+		overflow-x: auto;
+	}
+	@media (max-width: 640px) {
+		.page-header,
+		.page-actions {
+			flex-wrap: wrap;
+		}
+	}
+	.library-table .num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.library-table-title {
+		font-family: var(--font-serif);
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--text);
+		text-decoration: none;
+	}
+	.library-table-title:hover {
+		text-decoration: underline;
 	}
 	.new-inline {
 		display: flex;

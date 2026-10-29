@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
 	import { dismiss } from '$lib/dismiss';
+	import { menu as menuKeys } from '$lib/menu';
 	import { modLabel } from '$lib/keys';
 	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
 	import Icon from './Icon.svelte';
@@ -22,7 +23,8 @@
 		loreCategories = [],
 		onClose
 	}: {
-		menu: { x: number; y: number; name: string; raw: string };
+		// keyboard: opened from the keyboard (the menu key), so focus moves in.
+		menu: { x: number; y: number; name: string; raw: string; keyboard?: boolean };
 		getView: () => EditorView | undefined;
 		onCreateEntity?: (
 			type: 'character' | 'place' | 'lore_entry',
@@ -78,6 +80,11 @@
 	class="sel-menu"
 	role="menu"
 	use:dismiss={{ close: onClose, refocus: () => getView()?.focus() }}
+	use:menuKeys={{
+		close: onClose,
+		refocus: () => getView()?.focus(),
+		focusFirst: menu.keyboard === true
+	}}
 	style="left: {menu.x}px; top: {menu.y}px;"
 >
 	<div class="sel-menu-formats">
@@ -86,6 +93,7 @@
 			type="button"
 			role="menuitem"
 			title={`Bold (${mod}+B)`}
+			aria-label={`Bold (${mod}+B)`}
 			onclick={() => runFormat(toggleBold)}
 		>
 			<Icon name="bold" size={15} />
@@ -95,6 +103,7 @@
 			type="button"
 			role="menuitem"
 			title={`Italic (${mod}+I)`}
+			aria-label={`Italic (${mod}+I)`}
 			onclick={() => runFormat(toggleItalic)}
 		>
 			<Icon name="italic" size={15} />
@@ -104,6 +113,7 @@
 			type="button"
 			role="menuitem"
 			title="Quote"
+			aria-label="Quote"
 			onclick={() => runFormat(toggleQuote)}
 		>
 			<Icon name="quote" size={15} />
@@ -113,6 +123,7 @@
 			type="button"
 			role="menuitem"
 			title="Bullet list"
+			aria-label="Bullet list"
 			onclick={() => runFormat(toggleBulletList)}
 		>
 			<Icon name="list" size={15} />
@@ -128,7 +139,9 @@
 			class="sel-sub"
 			role="presentation"
 			onmouseenter={() => (assistantSubOpen = true)}
-			onmouseleave={() => (assistantSubOpen = false)}
+			onmouseleave={(event) => {
+				if (!event.currentTarget.contains(document.activeElement)) assistantSubOpen = false;
+			}}
 		>
 			<button
 				class="sel-create sel-sub-trigger"
@@ -155,7 +168,7 @@
 			class="sel-create"
 			type="button"
 			role="menuitem"
-			disabled={busy}
+			aria-disabled={busy}
 			onclick={() => createFromSelection('character')}
 		>
 			New character
@@ -164,7 +177,7 @@
 			class="sel-create"
 			type="button"
 			role="menuitem"
-			disabled={busy}
+			aria-disabled={busy}
 			onclick={() => createFromSelection('place')}
 		>
 			New place
@@ -176,7 +189,9 @@
 				class="sel-sub"
 				role="presentation"
 				onmouseenter={() => (loreSubOpen = true)}
-				onmouseleave={() => (loreSubOpen = false)}
+				onmouseleave={(event) => {
+					if (!event.currentTarget.contains(document.activeElement)) loreSubOpen = false;
+				}}
 			>
 				<button
 					class="sel-create sel-sub-trigger"
@@ -184,7 +199,7 @@
 					role="menuitem"
 					aria-haspopup="menu"
 					aria-expanded={loreSubOpen}
-					disabled={busy}
+					aria-disabled={busy}
 					onclick={() => (loreSubOpen = !loreSubOpen)}
 				>
 					New lore entry
@@ -197,7 +212,7 @@
 								class="sel-create"
 								type="button"
 								role="menuitem"
-								disabled={busy}
+								aria-disabled={busy}
 								onclick={() => createFromSelection('lore_entry', category.id)}
 							>
 								{category.name}
@@ -211,7 +226,7 @@
 				class="sel-create"
 				type="button"
 				role="menuitem"
-				disabled={busy}
+				aria-disabled={busy}
 				onclick={() => createFromSelection('lore_entry')}
 			>
 				New lore entry
@@ -284,7 +299,8 @@
 	.sel-create:hover:not(:disabled) {
 		background: var(--accent-soft);
 	}
-	.sel-create:disabled {
+	.sel-create:disabled,
+	.sel-create[aria-disabled='true'] {
 		color: var(--text-faint);
 	}
 	.sel-menu-error {

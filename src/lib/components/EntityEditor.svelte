@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
@@ -61,7 +62,7 @@
 		// The entity's standing in the story; characters and places only.
 		membership?: { member: boolean; mentioned: boolean } | null;
 		// Builds the Plan link for a related entity, scoped to story or universe.
-		entityHref?: (entityId: string) => string;
+		entityHref?: (entityId: string) => ResolvedPathname;
 		// When set, a settled rename offers to replace the old name across the
 		// universe's prose (the universe slug for the API path).
 		universeRef?: string;
@@ -349,6 +350,7 @@
 			state: EditorState.create({
 				doc: entity.bodyMd,
 				extensions: proseExtensions({
+					label: 'Description',
 					placeholder: BODY_PLACEHOLDER,
 					onDocChanged: scheduleSave,
 					// Descriptions are notes, not manuscript: plain prose with no

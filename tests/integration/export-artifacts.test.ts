@@ -227,7 +227,7 @@ describe('generateEditionArtifacts', () => {
 		await pool.query('update publications set removed_at = now() where id = $1', [publicationId]);
 		expect(await generateEditionArtifacts(db, publicationId, deps(store))).toMatchObject({
 			ok: false,
-			reason: 'edition was taken down'
+			reason: 'That edition was taken down.'
 		});
 	});
 });

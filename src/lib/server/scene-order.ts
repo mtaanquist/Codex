@@ -1,4 +1,5 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
 
@@ -6,6 +7,10 @@ export type SceneOrder = {
 	chapters: { id: string; sceneIds: string[] }[];
 	orphanSceneIds: string[];
 };
+
+// The order names every chapter and scene, so a mismatch almost always means
+// the page is out of date (a scene added or trashed elsewhere).
+const STALE_ORDER = 'The story changed since this page loaded. Reload and try again.';
 
 // Applies a full ordering of a story's scenes: every chapter and every scene
 // must appear exactly once. Renumbering the whole story keeps the positions
@@ -15,7 +20,7 @@ export async function applySceneOrder(
 	db: Database,
 	storyId: string,
 	order: SceneOrder
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const chapterRows = await db
 		.select({ id: chapters.id })
 		.from(chapters)
@@ -33,7 +38,7 @@ export async function applySceneOrder(
 		chapterIds.size !== orderedChapterIds.size ||
 		[...orderedChapterIds].some((id) => !chapterIds.has(id))
 	) {
-		return { ok: false, reason: 'order must list each chapter of the story exactly once' };
+		return { ok: false, code: 'conflict', reason: STALE_ORDER };
 	}
 
 	const sceneIds = new Set(sceneRows.map((row) => row.id));
@@ -46,7 +51,7 @@ export async function applySceneOrder(
 		sceneIds.size !== orderedSceneIds.length ||
 		orderedSceneIds.some((id) => !sceneIds.has(id))
 	) {
-		return { ok: false, reason: 'order must list each scene of the story exactly once' };
+		return { ok: false, code: 'conflict', reason: STALE_ORDER };
 	}
 
 	// One UPDATE over unnested arrays instead of a statement per scene; a

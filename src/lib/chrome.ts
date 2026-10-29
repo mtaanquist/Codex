@@ -1,4 +1,5 @@
 import { resolve } from '$app/paths';
+import type { ResolvedPathname } from '$app/types';
 
 // The path in the app bar, built here so every screen spells the same
 // destinations the same way. The model: Library / Universe / Story / Page.
@@ -26,11 +27,11 @@ export const GUEST_MODE_NOTE =
 export const NOTES_MODE_NOTE =
 	'Notes sit beside every mode; the Notes panel on the right of Write and Plan brings you here. Pick a mode to go back to the work.';
 
-export type CrumbMenuItem = { label: string; href: string; current?: boolean };
+export type CrumbMenuItem = { label: string; href: ResolvedPathname; current?: boolean };
 
 export type Crumb =
 	// A place further up the path, opened by clicking its name.
-	| { kind: 'link'; label: string; href: string }
+	| { kind: 'link'; label: string; href: ResolvedPathname }
 	// The page you are on, or a place with nothing behind it.
 	| { kind: 'text'; label: string }
 	// A place: the name is the menu, and `groups` are separated by a rule.
@@ -49,6 +50,11 @@ export type StoryRef = { slug: string; title: string; reading?: ReadingRef | nul
 export type UniverseAt = 'universe' | 'settings' | 'insights' | 'export' | null;
 // Which story-scoped page is open, so the menu can tick it.
 export type StoryAt = 'story' | 'settings' | 'print' | 'export' | 'reading' | null;
+
+// Accessible names for the workspace side panes. One wording everywhere, so a
+// screen reader user meets the same two landmarks on every workspace page.
+export const LEFT_PANE_LABEL = 'Sidebar';
+export const RIGHT_PANE_LABEL = 'Side panel';
 
 export function libraryCrumb(current = false): Crumb {
 	return current

@@ -166,7 +166,7 @@ and `node scripts/restore-backup.ts latest` restores the newest.
 
 ## Develop
 
-You need Node 24 and Docker.
+You need Node 26 and Docker.
 
 ```
 npm install
@@ -245,6 +245,7 @@ the copy, since their secrets were encrypted with the source instance's key.
 - `tests`, `e2e` - integration (Vitest against Postgres) and Playwright
 - `scratch` - design documents; planning material, not part of the app
 - `TODO.md` - progress tracker and feedback backlog
+- `scratch/system-design/history.md` - notes on how shipped work was built
 
 ## License
 

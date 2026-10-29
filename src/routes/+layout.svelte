@@ -24,15 +24,27 @@
 	// footer and the shared primitives and then set their own type on top.
 	import '$lib/styles/public.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { applyAppearance } from '$lib/appearance-apply';
 	import { followSystemTheme } from '$lib/theme';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
+
+	// Every page has one main with id="main", which the link targets. Moving
+	// focus by hand puts the next Tab inside main in every browser; tabindex
+	// lets a non-control take focus.
+	function skipToMain(event: MouseEvent) {
+		const main = document.getElementById('main');
+		if (!main) return;
+		event.preventDefault();
+		if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+		main.focus();
+	}
 
 	// Marks the document once the client has taken over. Server-rendered markup
 	// is clickable before its handlers are attached, so a test that clicks
@@ -65,7 +77,9 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
+<a class="skip-link" href="#main" onclick={skipToMain}>Skip to content</a>
 {@render children()}
+<ConfirmDialog />
 {#if data.user}
 	<CommandPalette />
 	<ActivityCenter />

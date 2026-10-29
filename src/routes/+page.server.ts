@@ -8,6 +8,7 @@ import { uniqueSlug } from '$lib/server/slugs';
 import { isUuid } from '$lib/slug';
 import { createStoryInUniverse, standaloneUniverse } from '$lib/server/story-create';
 import { relativeTime, storyStatus } from '$lib/dashboard';
+import { storyCoverColor } from '$lib/entity-color';
 import {
 	destroyUniverse,
 	listTrashedUniverses,
@@ -15,6 +16,7 @@ import {
 } from '$lib/server/universe-lifecycle';
 import { destroyStory, listTrashedStories, restoreStory } from '$lib/server/story-lifecycle';
 import { signupMode } from '$lib/server/settings';
+import { saveLibraryView, userPreferences } from '$lib/server/preferences';
 import { formText } from '$lib/server/validation';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -47,7 +49,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// was last touched.
 	const result = await db.execute(sql`
 		select st.id, st.slug, st.title, st.brief, st.universe_id,
-			st.cover_asset_id, st.position_in_series, st.created_at,
+			st.cover_asset_id, st.cover_color, st.position_in_series, st.created_at,
 			(select count(*)::int from chapters c where c.story_id = st.id) as chapters,
 			count(s.id)::int as scene_count,
 			coalesce(sum(s.word_count), 0)::int as words,
@@ -71,6 +73,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			brief: string | null;
 			universe_id: string;
 			cover_asset_id: string | null;
+			cover_color: string | null;
 			chapters: number;
 			scene_count: number;
 			words: number;
@@ -88,6 +91,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			brief: r.brief,
 			universeId: r.universe_id,
 			coverAssetId: r.cover_asset_id,
+			coverColor: storyCoverColor({ id: r.id, coverColor: r.cover_color }),
 			chapters: r.chapters,
 			words: r.words,
 			editedAt: editedAt.toISOString(),
@@ -104,6 +108,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	});
 
 	return {
+		libraryView: (await userPreferences(db, user.id)).libraryView,
 		universes: list,
 		stories: storyList,
 		trashedUniverses,
@@ -112,6 +117,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
+	// The view switch above the stories; the same setting as on the account page.
+	setLibraryView: async ({ request, locals }) => {
+		if (!locals.user) redirect(303, '/login');
+		const view = (await request.formData()).get('libraryView');
+		if (!(await saveLibraryView(db, locals.user.id, view))) {
+			return fail(400, { scope: 'view', message: 'Pick a library view.' });
+		}
+		return { scope: 'view', saved: true };
+	},
 	createUniverse: async ({ request, locals }) => {
 		// The route is public for the landing page; the action is not.
 		if (!locals.user) redirect(303, '/login');

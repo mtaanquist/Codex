@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { openHref } from '$lib/open-href';
 	import Icon from './Icon.svelte';
 	import type { NotificationItem } from '$lib/notifications';
 	import { dismiss } from '$lib/dismiss';
@@ -55,8 +55,7 @@
 		}
 		if (item.href) {
 			open = false;
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path built server-side
-			await goto(item.href);
+			await openHref(item.href);
 		}
 	}
 
@@ -131,7 +130,7 @@
 		height: 15px;
 		padding: 0 3px;
 		border-radius: 8px;
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--accent-contrast);
 		font-size: 10px;
 		font-weight: 700;
@@ -168,7 +167,7 @@
 	.bell-mark-all {
 		border: 0;
 		background: none;
-		color: var(--accent);
+		color: var(--accent-ink);
 		font-size: 12px;
 		cursor: pointer;
 		padding: 0;

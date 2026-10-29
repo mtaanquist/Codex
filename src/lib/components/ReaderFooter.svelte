@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 
@@ -9,7 +10,7 @@
 	let {
 		shell = 'reader',
 		author = '',
-		shelfHref = '',
+		shelfHref,
 		belongs = 'story'
 	}: {
 		// reader: a published story or an author's shelf. public: the landing
@@ -17,7 +18,7 @@
 		shell?: 'reader' | 'public';
 		// The author's name for the reader (pen name, else display name).
 		author?: string;
-		shelfHref?: string;
+		shelfHref?: ResolvedPathname;
 		// 'story' says who published this story; 'shelf' says whose shelf this is.
 		belongs?: 'story' | 'shelf';
 	} = $props();
@@ -37,10 +38,9 @@
 			</span>
 		{/if}
 		{#if shell === 'reader'}
-			{#if author}
+			{#if author && shelfHref}
 				<span>
 					{belongs === 'shelf' ? 'This shelf belongs to' : 'Published by'}
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (the caller resolves the shelf path) -->
 					<a href={shelfHref}>{author}</a>
 				</span>
 			{/if}

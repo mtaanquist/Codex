@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { ownedStory } from '$lib/server/story-access';
 import { duplicateScene } from '$lib/server/scene-split-merge';
@@ -16,7 +17,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		error(400, 'sceneId must be a string');
 	}
 	const result = await duplicateScene(db, locals.user!.id, payload.sceneId);
-	if (!result.ok) error(400, result.reason);
+	if (!result.ok) throwActionError(result);
 	await queueSceneMentions(result.newSceneId);
 	return json({ ok: true, newSceneId: result.newSceneId });
 };

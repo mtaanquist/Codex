@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	// The Write/Plan/Review strip above the left sidebar. It is always the
 	// same three modes in the same order at the same width, wherever it
 	// appears. Notes is not a mode: notes ride in the right panel of Write
@@ -20,7 +21,7 @@
 		// that lies about where you are is worse than a strip with nothing
 		// lit.
 		active: Mode | null;
-		hrefs: Partial<Record<Mode, string | 'disabled'>>;
+		hrefs: Partial<Record<Mode, ResolvedPathname | 'disabled'>>;
 		// Rendered under the strip, not as a tooltip, so it can be read by
 		// keyboard and by screen reader.
 		note?: string;
@@ -38,7 +39,6 @@
 		{#if mode === active}
 			<button class="seg-btn active" type="button" aria-current="page">{label}</button>
 		{:else if hrefs[mode] && hrefs[mode] !== 'disabled'}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (caller resolves the paths) -->
 			<a class="seg-btn" href={hrefs[mode]}>{label}</a>
 		{:else}
 			<span class="seg-btn" aria-disabled="true">{label}</span>

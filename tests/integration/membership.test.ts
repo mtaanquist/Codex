@@ -113,7 +113,7 @@ describe('declareMembership and removeMembership', () => {
 
 		expect(
 			await declareMembership(db, strangerId, 'character', memberOnlyId, storyId)
-		).toMatchObject({ ok: false });
+		).toMatchObject({ ok: false, code: 'not_found' });
 
 		const [other] = await db.insert(universes).values({ ownerId, name: 'Other' }).returning();
 		const [foreignStory] = await db

@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { createAutosave } from '$lib/autosave';
 	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
@@ -115,7 +116,7 @@
 		// editor last took focus; this reports that.
 		onFocus?: () => void;
 		// Editor-view controls carried on the formatting bar.
-		storyView?: { active: boolean; toggleHref: string };
+		storyView?: { active: boolean; toggleHref: ResolvedPathname };
 		// The View dropdown (Edit, Preview, Focus, Print) on the formatting bar.
 		viewMenu?: ViewItem[];
 		// The prose-view toggles, shared across every editor in the story. The
@@ -409,7 +410,13 @@
 	// browser's spelling suggestions stay reachable on a plain caret click.
 	// The handler sits on the pane wrapper rather than the prose column, so
 	// the margins around the centered text behave like the text itself.
-	let selectionMenu = $state<{ x: number; y: number; name: string; raw: string } | null>(null);
+	let selectionMenu = $state<{
+		x: number;
+		y: number;
+		name: string;
+		raw: string;
+		keyboard: boolean;
+	} | null>(null);
 
 	function onPaneContextMenu(event: MouseEvent) {
 		if (view) openSelectionMenu(event, view);
@@ -426,7 +433,9 @@
 			x: Math.min(event.clientX, window.innerWidth - 240),
 			y: Math.min(event.clientY, window.innerHeight - 230),
 			name,
-			raw
+			raw,
+			// The menu key fires contextmenu at (0, 0).
+			keyboard: event.clientX === 0 && event.clientY === 0
 		};
 		return true;
 	}
@@ -446,6 +455,7 @@
 				doc: body,
 				extensions: [
 					...proseExtensions({
+						label: 'Scene text',
 						placeholder: 'Start writing...',
 						onDocChanged: scheduleSave,
 						editingMode,

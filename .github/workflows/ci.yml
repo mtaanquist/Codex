@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
       - name: Install postgresql-client-18 (backup round-trip test)
         run: |
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
       - name: Start RustFS (asset uploads)
         run: .github/scripts/start-rustfs.sh "$ASSET_S3_ACCESS_KEY_ID" "$ASSET_S3_SECRET_ACCESS_KEY" "$ASSET_S3_BUCKET"
@@ -149,6 +149,16 @@ jobs:
           foreign=$(post http://evil.example)
           echo "foreign origin: $foreign"
           [ "${foreign%% *}" = "403" ]
+      - name: No HSTS on a plain-HTTP origin
+        # HSTS pins a browser to HTTPS for a year, which outlives any rollback,
+        # so it must follow ORIGIN (http here) even when a request claims https.
+        run: |
+          for proto in '' 'X-Forwarded-Proto: https'; do
+            headers=$(curl -fsS -D - -o /dev/null ${proto:+-H "$proto"} http://localhost:3000/login)
+            if echo "$headers" | grep -qi '^strict-transport-security'; then
+              echo "HSTS sent on http ORIGIN (${proto:-no forwarded proto})"; exit 1
+            fi
+          done
       - name: Show logs on failure
         if: failure()
         run: docker compose -f compose.yaml logs

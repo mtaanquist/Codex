@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isRedirect } from '@sveltejs/kit';
 
 // The hook only touches the database to validate a session cookie; these
@@ -7,6 +7,12 @@ vi.mock('$lib/server/db', () => ({ db: {} }));
 vi.mock('$lib/server/auth', () => ({
 	SESSION_COOKIE: 'session',
 	validateSession: vi.fn(async () => null)
+}));
+// Read ORIGIN live so vi.stubEnv can set it per test.
+vi.mock('$app/env/private', () => ({
+	get ORIGIN() {
+		return process.env.ORIGIN || undefined;
+	}
 }));
 vi.mock('$lib/server/log', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/server/log')>()),
@@ -173,24 +179,78 @@ describe('security headers', () => {
 		expect(response.headers.get('set-cookie')).toBeNull();
 	});
 
-	it('sends HSTS over HTTPS only', async () => {
-		expect((await headersFor('/')).get('strict-transport-security')).toBeNull();
-		expect((await headersFor('/', 'https://codex.example')).get('strict-transport-security')).toBe(
-			'max-age=31536000'
-		);
+	describe('HSTS', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('is sent when ORIGIN is https, whatever the request protocol', async () => {
+			vi.stubEnv('ORIGIN', 'https://codex.example');
+			expect((await headersFor('/', 'http://codex.example')).get('strict-transport-security')).toBe(
+				'max-age=31536000'
+			);
+			expect(
+				(await headersFor('/', 'https://codex.example')).get('strict-transport-security')
+			).toBe('max-age=31536000');
+		});
+
+		// adapter-node 6 reports https for a plain-HTTP request when no protocol
+		// header is configured; HSTS there would pin the browser for a year.
+		it('is not sent when ORIGIN is http, even if the request looks like https', async () => {
+			vi.stubEnv('ORIGIN', 'http://localhost:3000');
+			expect(
+				(await headersFor('/', 'https://localhost:3000')).get('strict-transport-security')
+			).toBeNull();
+			expect(
+				(await headersFor('/', 'http://localhost:3000')).get('strict-transport-security')
+			).toBeNull();
+		});
 	});
 });
 
 describe('handleError', () => {
 	const event = { request: { method: 'GET' }, url: new URL('http://localhost/stories/x') };
 
+	beforeEach(() => {
+		vi.mocked(logEvent).mockClear();
+	});
+
 	it('logs the stack of a server fault', () => {
 		const error = new Error('boom');
-		handleError({ error, event, status: 500, message: 'Internal Error' } as never);
+		handleError({ kind: 'unknown', error, event } as never);
 		expect(logEvent).toHaveBeenCalledWith(
 			'error',
 			'request.error',
-			expect.objectContaining({ message: 'boom', stack: error.stack })
+			expect.objectContaining({ status: 500, message: 'boom', stack: error.stack })
 		);
+	});
+
+	it('logs framework refusals other than 404', () => {
+		handleError({
+			kind: 'framework',
+			error: { status: 413, message: 'Payload Too Large' },
+			event
+		} as never);
+		expect(logEvent).toHaveBeenCalledWith(
+			'error',
+			'request.error',
+			expect.objectContaining({ status: 413, message: 'Payload Too Large' })
+		);
+	});
+
+	it('does not log expected errors', () => {
+		handleError({ kind: 'app', error: { status: 403, message: 'Forbidden' }, event } as never);
+		handleError({
+			kind: 'framework',
+			error: { status: 404, message: 'Not Found' },
+			event
+		} as never);
+		handleError({
+			kind: 'validation',
+			error: { status: 400, message: 'Bad Request' },
+			issues: [],
+			event
+		} as never);
+		expect(logEvent).not.toHaveBeenCalled();
 	});
 });

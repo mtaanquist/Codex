@@ -1,4 +1,4 @@
-import { json } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { secretsAvailable } from '$lib/server/crypto';
@@ -9,10 +9,10 @@ import { rateLimit } from '$lib/server/rate-limit';
 // account hints, just a fresh challenge held in a signed cookie.
 export const POST: RequestHandler = async ({ cookies, getClientAddress, url }) => {
 	if (!secretsAvailable()) {
-		return json({ message: 'Passkey sign-in is not available.' }, { status: 503 });
+		error(503, 'Passkey sign-in is not available.');
 	}
 	if (!rateLimit(`passkey:${getClientAddress()}`, 30, 5 * 60 * 1000).allowed) {
-		return json({ message: 'Too many attempts. Wait a few minutes.' }, { status: 429 });
+		error(429, 'Too many attempts. Wait a few minutes.');
 	}
 	const origin = publicOrigin(url);
 	const { options, challengeToken } = await startPasskeySignIn(origin);

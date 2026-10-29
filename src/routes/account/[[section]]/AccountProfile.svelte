@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
@@ -59,6 +60,9 @@
 	}
 
 	const handleUrl = $derived(data.profile.handle ? `${data.origin}/@${data.profile.handle}` : '');
+	const handlePath = $derived(
+		data.profile.handle ? resolve('/@[handle]', { handle: data.profile.handle }) : null
+	);
 </script>
 
 <div class="admin-head">
@@ -121,7 +125,7 @@
 				<label for="display-name">Display name</label>
 				<input
 					id="display-name"
-					class="input"
+					class="input short"
 					type="text"
 					name="displayName"
 					value={data.displayName}
@@ -134,11 +138,11 @@
 				<label for="pen-name">Pen name <span class="lbl-opt">optional</span></label>
 				<input
 					id="pen-name"
-					class="input"
+					class="input short"
 					type="text"
 					name="penName"
 					value={data.profile.penName ?? ''}
-					placeholder="A name to publish under, if different from your own"
+					placeholder="A name to publish under"
 				/>
 				<p class="field-hint">Used as the author name on stories and your public page when set.</p>
 			</div>
@@ -184,7 +188,7 @@
 					<label for="handle">Claim your handle</label>
 					<input
 						id="handle"
-						class="input"
+						class="input short"
 						type="text"
 						name="handle"
 						placeholder="your-name"
@@ -219,7 +223,12 @@
 						</div>
 					</div>
 					<label class="toggle">
-						<input type="checkbox" name="profilePublic" checked={data.profile.profilePublic} />
+						<input
+							type="checkbox"
+							name="profilePublic"
+							aria-label="List my page publicly"
+							checked={data.profile.profilePublic}
+						/>
 						<span class="toggle-track"></span>
 					</label>
 				</div>
@@ -231,9 +240,8 @@
 					</div>
 					<p class="field-hint">
 						Where your page lives.
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (absolute URL on this origin) -->
-						<a href={handleUrl}>Open your page</a> - until visibility is on, it shows a preview only you
-						can see. Publish stories from their settings page.
+						<a href={handlePath}>Open your page</a> - until visibility is on, it shows a preview only
+						you can see. Publish stories from their settings page.
 					</p>
 				</div>
 
@@ -313,6 +321,7 @@
 							<input
 								type="checkbox"
 								name="commissionsOpen"
+								aria-label="Open for commissions"
 								checked={data.profile.commissionsOpen}
 							/>
 							<span class="toggle-track"></span>

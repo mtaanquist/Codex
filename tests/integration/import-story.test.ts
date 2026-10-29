@@ -24,6 +24,7 @@ import { previewImport, runImport } from '../../src/lib/server/import-story';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { zipBytes } from '../../src/lib/server/zip-stream';
+import { isCoverColor } from '../../src/lib/entity-color';
 
 let pool: pg.Pool;
 let db: Database;
@@ -332,6 +333,8 @@ describe('runImport', () => {
 		const [story] = await db.select().from(stories).where(eq(stories.id, result.storyId));
 		expect(story.isAdult).toBe(true);
 		expect(story.descriptionMd).toBe('Summary.');
+		// Imports get a placeholder cover colour like any new story.
+		expect(isCoverColor(story.coverColor)).toBe(true);
 		const [chapter] = await db.select().from(chapters).where(eq(chapters.storyId, story.id));
 		expect(chapter.summaryMd).toBe('What happens.');
 		const [scene] = await db.select().from(scenes).where(eq(scenes.storyId, story.id));

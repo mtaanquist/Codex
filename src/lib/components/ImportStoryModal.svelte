@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { modal } from '$lib/modal';
+	import { enhance } from '$lib/enhance';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatNumber } from '$lib/format';
@@ -98,7 +99,7 @@
 	const submit = () => {
 		busy = true;
 		busyLabel = preview ? 'Importing...' : 'Reading the file...';
-		return async ({ result }: { result: import('@sveltejs/kit').ActionResult }) => {
+		return async ({ result }: { result: import('$app/forms').ActionResult }) => {
 			busy = false;
 			if (result.type === 'success') {
 				const data = result.data as
@@ -126,13 +127,6 @@
 		dragOver = false;
 		takeFile(event.dataTransfer?.files?.[0]);
 	}
-
-	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onClose();
-		}
-	}
 </script>
 
 {#if universe}
@@ -142,9 +136,14 @@
 		onclick={(event) => {
 			if (event.target === event.currentTarget) onClose();
 		}}
-		onkeydown={onKeydown}
 	>
-		<div class="modal-panel modal-lg" role="dialog" aria-modal="true" aria-label="Import a story">
+		<div
+			class="modal-panel modal-lg"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Import a story"
+			use:modal={{ close: onClose }}
+		>
 			<div class="modal-head">
 				<div class="modal-head-main">
 					<h2 class="modal-title">Import a story</h2>
@@ -275,8 +274,9 @@
 				<div class="modal-foot-note"></div>
 				{#if imported}
 					<button class="btn btn-sm btn-secondary" type="button" onclick={onClose}>Done</button>
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (slug known at runtime) -->
-					<a class="btn btn-sm btn-primary" href="/stories/{imported.slug}">Open the story</a>
+					<a class="btn btn-sm btn-primary" href={resolve('/stories/[id]', { id: imported.slug })}
+						>Open the story</a
+					>
 				{:else}
 					<button class="btn btn-sm btn-secondary" type="button" onclick={onClose}>Cancel</button>
 					<button

@@ -1,12 +1,13 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import { daysMetGoal, daysUntil } from '$lib/insights';
-	import { formatNumber } from '$lib/format';
+	import { formatNumber, narrowWeekday } from '$lib/format';
 	import AppBar from '$lib/components/AppBar.svelte';
-	import { INSIGHTS_MODE_NOTE, universePath } from '$lib/chrome';
+	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import PanelStrip from '$lib/components/PanelStrip.svelte';
 	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
@@ -21,6 +22,8 @@
 	// cookie; on the first visit (or a changed clock) set it and reload the
 	// data once.
 	onMount(() => {
+		// Reads the browser's timezone, not display formatting.
+		// eslint-disable-next-line no-restricted-syntax
 		const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 		if (timezone && timezone !== data.timezone) {
 			document.cookie = `codex-tz=${encodeURIComponent(timezone)}; path=/; max-age=31536000; samesite=lax`;
@@ -82,10 +85,7 @@
 	const week = $derived(
 		data.activity.daily.slice(-7).map((entry) => ({
 			day: entry.day,
-			label: new Date(`${entry.day}T00:00:00Z`).toLocaleDateString('en-US', {
-				weekday: 'narrow',
-				timeZone: 'UTC'
-			}),
+			label: narrowWeekday(entry.day),
 			written: entry.words !== 0,
 			isToday: entry.day === data.activity.today
 		}))
@@ -143,7 +143,7 @@
 		helpLabel="insights"
 	/>
 	<div class="body" class:no-right={panels.length === 0}>
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<!-- Insights is not one of the three modes, so none of them is lit and
 				     one line says why. -->
@@ -167,7 +167,7 @@
 				</nav>
 			</div>
 		</aside>
-		<main class="pane center">
+		<main id="main" class="pane center">
 			<div class="insights-body">
 				<div class="page-header">
 					<div>
@@ -420,12 +420,11 @@
 									</h3>
 									<div class="heat-grid">
 										{#each group as entity (entity.id)}
-											<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 											<a
 												class="heat-tile"
 												class:cold={entity.mentionCount === 0}
 												style="--heat: {heatStrength(entity.mentionCount)}%;"
-												href={`${planPath}?entity=${entity.id}`}
+												href={withQuery(planPath, { entity: entity.id })}
 												title={heatTitle(entity)}
 											>
 												<span class="heat-tile-head">
@@ -448,7 +447,6 @@
 													{/if}
 												</span>
 											</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 										{/each}
 									</div>
 								</div>
@@ -468,13 +466,13 @@
 					<RelationshipWeb
 						entities={data.heat}
 						links={data.web}
-						entityHref={(id) => `${planPath}?entity=${id}`}
+						entityHref={(id) => withQuery(planPath, { entity: id })}
 					/>
 				</div>
 			</div>
 		</main>
 		{#if panels.length > 0}
-			<aside class="pane right">
+			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 				<PanelStrip {panels} active="assistant" onSelect={() => {}} sub="this universe">
 					{#snippet panel()}
 						<AssistantPanel
@@ -484,10 +482,6 @@
 							initialMessages={data.assistantChat}
 							summarised={data.assistantChatSummarised}
 						/>
-						<p class="panel-note">
-							The only panel that has a subject on this page: the numbers in the middle. Reference,
-							History and Notes belong to a document you are editing, so they are not here.
-						</p>
 					{/snippet}
 				</PanelStrip>
 			</aside>
@@ -714,8 +708,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	/* Muted text loses AA on the strongest accent tints, so only cold tiles,
+	   which sit on the plain surface, use it. */
 	.heat-tile-meta {
 		font-size: 11.5px;
+		color: var(--text);
+	}
+	.heat-tile.cold .heat-tile-meta {
 		color: var(--text-muted);
 	}
 </style>

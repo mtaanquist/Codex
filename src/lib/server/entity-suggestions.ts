@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
+import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { entitySuggestions } from './db/schema';
 import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups';
@@ -149,7 +150,7 @@ export async function decideEntitySuggestion(
 	ownerId: string,
 	id: string,
 	decision: 'accept' | 'reject'
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<{ ok: true } | ActionFailure> {
 	const [s] = await db
 		.select()
 		.from(entitySuggestions)
@@ -160,7 +161,7 @@ export async function decideEntitySuggestion(
 				eq(entitySuggestions.status, 'pending')
 			)
 		);
-	if (!s) return { ok: false, reason: 'suggestion not found' };
+	if (!s) return { ok: false, code: 'not_found', reason: 'That suggestion no longer exists.' };
 
 	if (decision === 'reject') {
 		await db
@@ -186,7 +187,7 @@ export async function decideEntitySuggestion(
 				.where(eq(entitySuggestions.id, id));
 		});
 	} catch {
-		return { ok: false, reason: 'could not apply the suggestion' };
+		return { ok: false, code: 'conflict', reason: 'That suggestion could not be applied.' };
 	}
 
 	if (s.field === 'alias' && universeId) await queueUniverseMentions(universeId);

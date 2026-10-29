@@ -1,7 +1,10 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
+	import { askConfirm } from '$lib/confirm.svelte';
 	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
 	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
 	import FormStatus from '$lib/components/FormStatus.svelte';
@@ -187,9 +190,9 @@
 	});
 
 	// The usage log pages through ?usage=N on the assistant section.
-	function usagePageHref(n: number): string {
+	function usagePageHref(n: number): ResolvedPathname {
 		const base = resolve('/account/[[section]]', { section: 'assistant' });
-		return n > 0 ? `${base}?usage=${n}` : base;
+		return n > 0 ? withQuery(base, { usage: n }) : base;
 	}
 
 	// The provider picker: a preset prefills and locks the endpoint URL (the
@@ -210,25 +213,35 @@
 	// the form saves: a key typed for the old provider must not be saved as the
 	// new one's.
 	let apiKeyField = $state<HTMLInputElement>();
-	function switchProvider(event: Event & { currentTarget: HTMLSelectElement }) {
+	async function switchProvider(event: Event & { currentTarget: HTMLSelectElement }) {
 		const select = event.currentTarget;
 		if (select.value === data.assistant.provider) return;
 		const hasPicks = Object.values(savedModels).some(Boolean);
-		if (
-			(data.assistant.hasKey || hasPicks) &&
-			!confirm(
-				'Switch provider? Your saved API key and the models picked for each role are cleared.'
-			)
-		) {
-			event.stopPropagation();
+		const ask = data.assistant.hasKey || hasPicks;
+		// Hold the form's autosave until the answer; a yes saves it below.
+		if (ask) event.stopPropagation();
+		const go =
+			!ask ||
+			(await askConfirm({
+				title: 'Switch provider?',
+				body: 'Your saved API key and the models picked for each role are cleared.',
+				confirmLabel: 'Switch provider'
+			}));
+		if (!go) {
 			selectedProvider = data.assistant.provider;
 			return;
 		}
 		if (apiKeyField) apiKeyField.value = '';
-		// The old preset's URL is still in the box; a custom endpoint starts empty.
+		discoveredModels = [];
+		if (ask) {
+			select.form?.requestSubmit();
+			return;
+		}
+		// The old preset's URL is still in the box; a custom endpoint starts
+		// empty. After a prompt the box has already re-rendered for the new
+		// provider, so clearing it then would wipe the new preset's URL.
 		const endpointField = select.form?.elements.namedItem('endpoint');
 		if (endpointField instanceof HTMLInputElement) endpointField.value = '';
-		discoveredModels = [];
 	}
 	// Once a key is saved the box empties, so it is never resent with a later
 	// switch; the placeholder then says a key is saved.
@@ -476,8 +489,7 @@
 					</select>
 					{#if activePreset}
 						<p class="field-hint">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external provider docs -->
-							<a href={activePreset.docsUrl} target="_blank" rel="noopener noreferrer"
+							<a href={activePreset.docsUrl} target="_blank" rel="external noopener noreferrer"
 								>Get an API key</a
 							>
 							from {activePreset.label}.
@@ -836,14 +848,12 @@
 				</div>
 				{#if data.assistantUsage.page > 0 || data.assistantUsage.hasMore}
 					<div class="settings-actions">
-						<!-- eslint-disable svelte/no-navigation-without-resolve (usagePageHref resolves the section path) -->
 						{#if data.assistantUsage.page > 0}
 							<a class="btn btn-ghost" href={usagePageHref(data.assistantUsage.page - 1)}>Newer</a>
 						{/if}
 						{#if data.assistantUsage.hasMore}
 							<a class="btn btn-ghost" href={usagePageHref(data.assistantUsage.page + 1)}>Older</a>
 						{/if}
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					</div>
 				{/if}
 			{/if}

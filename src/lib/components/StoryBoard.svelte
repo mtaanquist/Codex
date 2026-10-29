@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import type { StoryStatus } from '$lib/dashboard';
 	import { formatNumber, pluralSuffix } from '$lib/format';
 
@@ -11,7 +12,7 @@
 	}: {
 		stories: {
 			id: string;
-			href: string;
+			href: ResolvedPathname;
 			title: string;
 			status: StoryStatus;
 			words: number;
@@ -39,9 +40,7 @@
 			<div class="lane-cards">
 				{#each cards as story (story.id)}
 					<article class="card">
-						<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the path) -->
 						<a class="card-title" href={story.href}>{story.title}</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						<footer class="card-foot">
 							<span>{formatNumber(story.words)} words</span>
 							<span>{story.sceneCount} scene{pluralSuffix(story.sceneCount)}</span>

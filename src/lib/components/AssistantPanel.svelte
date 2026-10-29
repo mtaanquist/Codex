@@ -1,10 +1,11 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	// The right pane's Assistant tab: a chat with the writing Assistant,
 	// grounded in the open story. The conversation is kept per story and user:
 	// the server stores each completed turn and the page load seeds the panel,
 	// so it survives a reload. The server holds the key and endpoint; this only
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { assistantIntent } from '$lib/assistant.svelte';
 	import {
 		startSummariesJob,
@@ -21,6 +22,7 @@
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
 
 	let {
 		scope,
@@ -88,7 +90,7 @@
 		getSelection?: () => string | null;
 		// The story's review page, for /copyedit to open when notes are staged.
 		// Story surfaces pass it; the universe surface does not.
-		reviewHref?: string;
+		reviewHref?: ResolvedPathname;
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
@@ -613,6 +615,7 @@
 	// The actions menu next to the send button; closes like the other inline
 	// menus, on an outside press or Escape.
 	let actionsOpen = $state(false);
+	let actionsTrigger = $state<HTMLButtonElement>();
 
 	function runAction(action: () => void) {
 		actionsOpen = false;
@@ -806,12 +809,18 @@
 				onkeydown={onKeydown}></textarea>
 			<div
 				class="composer-menu-wrap"
-				use:dismiss={{ enabled: actionsOpen, close: () => (actionsOpen = false) }}
+				use:dismiss={{
+					enabled: actionsOpen,
+					close: () => (actionsOpen = false),
+					refocus: () => actionsTrigger?.focus()
+				}}
 			>
 				<button
+					bind:this={actionsTrigger}
 					class="menu-btn"
 					type="button"
 					title="More actions"
+					aria-label="More actions"
 					aria-haspopup="menu"
 					aria-expanded={actionsOpen}
 					onclick={() => (actionsOpen = !actionsOpen)}
@@ -819,7 +828,14 @@
 					<Icon name="more" size={16} />
 				</button>
 				{#if actionsOpen}
-					<div class="composer-menu popover" role="menu">
+					<div
+						class="composer-menu popover"
+						role="menu"
+						use:menu={{
+							close: () => (actionsOpen = false),
+							refocus: () => actionsTrigger?.focus()
+						}}
+					>
 						{#if isStory}
 							<button
 								class="menu-item"
@@ -856,7 +872,13 @@
 				{/if}
 			</div>
 			{#if busy}
-				<button class="icon-btn" type="button" title="Stop generating" onclick={stop}>
+				<button
+					class="icon-btn"
+					type="button"
+					title="Stop generating"
+					aria-label="Stop generating"
+					onclick={stop}
+				>
 					<span class="stop-glyph"></span>
 				</button>
 			{:else}
@@ -865,6 +887,7 @@
 					type="button"
 					disabled={!input.trim()}
 					title="Send"
+					aria-label="Send"
 					onclick={() => send()}
 				>
 					<Icon name="send" size={16} />
@@ -932,7 +955,7 @@
 	}
 	.msg.user {
 		align-self: flex-end;
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--accent-contrast);
 		padding: 9px 13px;
 		border-radius: 13px 13px 4px 13px;
@@ -1093,7 +1116,7 @@
 		cursor: pointer;
 	}
 	.msg-insert:hover {
-		color: var(--accent);
+		color: var(--accent-ink);
 		text-decoration: underline;
 	}
 	.msg-ref {

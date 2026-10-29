@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -27,7 +29,7 @@
 	import ModeSwitcher from './ModeSwitcher.svelte';
 	import PanelStrip from './PanelStrip.svelte';
 	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import { GUEST_MODE_NOTE } from '$lib/chrome';
+	import { GUEST_MODE_NOTE, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction
@@ -80,12 +82,12 @@
 		book?: { title: string; subtitle: string | null } | null;
 		canSuggest?: boolean;
 		// The mode switcher links, shown on the author side only.
-		seg?: { writeHref: string; planHref: string } | null;
+		seg?: { writeHref: ResolvedPathname; planHref: ResolvedPathname } | null;
 		// Entity mention data for the centre's highlights and quick cards.
 		entities?: MentionEntity[];
 		mentionMembers?: string[];
 		mentionPins?: Record<string, string>;
-		entityHref?: ((entity: MentionEntity) => string) | null;
+		entityHref?: ((entity: MentionEntity) => ResolvedPathname) | null;
 		// The author editor's view toggles, persisted per user.
 		nonPrintingMarks?: MarkVisibility;
 		commandMarkers?: MarkVisibility;
@@ -253,19 +255,26 @@
 	// The View dropdown for the editable centre, the same control as the Write
 	// toolbar: Edit (here), Preview and Print (the export views), and a
 	// distraction-free Focus that hides the side panes.
-	const storyHref = $derived(storySlug ? resolve('/stories/[id]', { id: storySlug }) : '');
 	const viewMenu = $derived<ViewItem[]>(
-		storyHref
+		storySlug
 			? [
 					{ id: 'edit', label: 'Edit', icon: 'pencil', current: true },
 					{
 						id: 'preview',
 						label: 'Preview',
 						icon: 'book',
-						href: `${storyHref}?view=preview&scene=${selectedSceneId}`
+						href: withQuery(resolve('/stories/[id]', { id: storySlug }), {
+							view: 'preview',
+							scene: selectedSceneId
+						})
 					},
 					{ id: 'focus', label: 'Focus', icon: 'expand', onSelect: () => (focusMode.on = true) },
-					{ id: 'print', label: 'Print', icon: 'print', href: `${storyHref}/print` }
+					{
+						id: 'print',
+						label: 'Print',
+						icon: 'print',
+						href: resolve('/stories/[id]/print', { id: storySlug })
+					}
 				]
 			: []
 	);
@@ -428,7 +437,7 @@
 		</button>
 	</nav>
 	<div class="body" data-mtab={mobileTab}>
-		<aside class="pane left">
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 			<div class="left-head">
 				<!-- A reviewer stays in review mode; the other views are out of reach. -->
 				<ModeSwitcher
@@ -463,7 +472,10 @@
 			</div>
 		</aside>
 
-		<main class="pane center">
+		<main id="main" class="pane center">
+			{#if !selectedScene}
+				<h1 class="visually-hidden">{book?.title ?? 'Review'} - Review</h1>
+			{/if}
 			{#if selectedScene}
 				{#key selectedScene.id}
 					{#if role === 'author' && storyId}
@@ -517,7 +529,7 @@
 			{/if}
 		</main>
 
-		<aside class="pane right">
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 			<!-- One panel invocation, two shapes of pane: with the Assistant the strip
 			     is a real tablist, without it the pane is just the Comments panel,
 			     which carries its own title. The props must not drift between the

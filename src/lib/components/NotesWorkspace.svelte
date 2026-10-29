@@ -1,4 +1,8 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+	import { withQuery } from '$lib/href';
+	import { RIGHT_PANE_LABEL } from '$lib/chrome';
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { ComponentProps } from 'svelte';
 	import NotesSidebar from './NotesSidebar.svelte';
 	import NoteEditor from './NoteEditor.svelte';
@@ -16,6 +20,7 @@
 	// The Notes view, shared by the story and universe scopes. The pages load
 	// the notes and pass in the scope's crumbs and mode-strip links.
 	let {
+		title,
 		crumbs,
 		notes,
 		universeNotes,
@@ -30,14 +35,16 @@
 		revisionPreview,
 		form
 	}: {
+		// The story or universe name, for the page heading.
+		title: string;
 		crumbs: Crumb[];
 		notes: SidebarProps['notes'];
 		universeNotes?: SidebarProps['universeNotes'];
-		universeNotesPath?: string;
-		notesPath: string;
-		planHref: string;
-		writeHref?: string;
-		reviewHref?: string;
+		universeNotesPath?: ResolvedPathname;
+		notesPath: ResolvedPathname;
+		planHref: ResolvedPathname;
+		writeHref?: ResolvedPathname;
+		reviewHref?: ResolvedPathname;
 		modeNote?: string;
 		selected: (ComponentProps<typeof NoteEditor>['note'] & { pinned: boolean }) | null;
 		revisionRows: ComponentProps<typeof RevisionHistory>['revisions'];
@@ -52,7 +59,7 @@
 		saveStatus = 'idle';
 	});
 
-	const itemHref = $derived(selected ? `${notesPath}?note=${selected.id}` : notesPath);
+	const itemHref = $derived(selected ? withQuery(notesPath, { note: selected.id }) : notesPath);
 	const currentBody = $derived(selected?.bodyMd ?? '');
 
 	// A note mentions nothing, has no comments and no notes of its own, so
@@ -76,7 +83,8 @@
 			{modeNote}
 			{form}
 		/>
-		<main class="pane center">
+		<main id="main" class="pane center">
+			<h1 class="visually-hidden">{title} - Notes</h1>
 			{#if revisionPreview && selected}
 				<div class="detail">
 					<RevisionPreview
@@ -101,9 +109,12 @@
 						<form
 							method="POST"
 							action="?/deleteNote"
-							onsubmit={(e) => {
-								if (!confirm('Delete this note? This cannot be undone.')) e.preventDefault();
-							}}
+							onsubmit={confirmSubmit({
+								title: 'Delete this note?',
+								body: 'This cannot be undone.',
+								confirmLabel: 'Delete note',
+								danger: true
+							})}
 						>
 							<input type="hidden" name="noteId" value={selected.id} />
 							<button class="note-tool danger" type="submit">
@@ -121,7 +132,7 @@
 		</main>
 		{#if selected}
 			{@const openNote = selected}
-			<aside class="pane right">
+			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
 				<PanelStrip {panels} active="history" onSelect={() => {}} sub="this note">
 					{#snippet panel()}
 						<RevisionHistory
@@ -129,12 +140,8 @@
 							entityId={openNote.id}
 							revisions={revisionRows}
 							previewId={revisionPreview?.id}
-							previewHref={(revisionId) => `${itemHref}&revision=${revisionId}`}
+							previewHref={(revisionId) => withQuery(itemHref, { revision: revisionId })}
 						/>
-						<p class="panel-note">
-							A note has versions like anything else you type here. Codex autosaves; name a
-							checkpoint when you want to find your way back to this wording.
-						</p>
 					{/snippet}
 				</PanelStrip>
 			</aside>

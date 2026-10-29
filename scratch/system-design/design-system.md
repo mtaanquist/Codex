@@ -61,17 +61,33 @@ Surfaces, from back to front:
   they work on any surface.
 
 Text tiers: `--text` (primary), `--text-muted` (secondary), `--text-faint`
-(tertiary and empty states). Borders: `--border` (default), `--border-strong`
+(tertiary and empty states). All three clear WCAG AA (4.5:1) on every solid
+surface of their theme; `src/lib/styles/contrast.test.ts` enforces it, so a new value that
+fails breaks the build. Borders: `--border` (default), `--border-strong`
 (emphasis, scrollbar thumbs).
 
-Accent family: `--accent` (fills), `--accent-contrast` (text on accent
-fills; use this, never `#fff`), `--accent-soft` (selection, focus glow,
-soft fills), `--accent-line` (focused borders).
+Accent family: `--accent` (the user's colour, for borders, focus rings,
+dots and other non-text marks, where 3:1 is the bar), `--accent-fill` (any
+accent fill that carries text: primary buttons, badges, chat bubbles,
+initials avatars; the accent mixed 75% with black), `--accent-ink` (accent
+as text or link colour; the same mix in light and warm, plain `--accent` in
+dark), `--accent-contrast` (text on accent fills; use this, never `#fff`),
+`--accent-soft` (selection, focus glow, soft fills), `--accent-line`
+(focused borders). Never write `color: var(--accent)`: raw accent as text
+falls under 4.5:1 on the light themes for every preset. `src/lib/contrast.ts`
+mirrors the fill mix, and the account page warns when a custom accent still
+leaves white text on the fill, or accent text on a light or dark surface,
+under AA. The review owner colour is `--accent-ink` (its avatar tile takes
+`--accent-fill`).
 
 Assets and contrast:
 
-- `--danger-contrast` - text on a `--danger` fill (`.btn-danger`). The
+- `--danger-fill` - the `.btn-danger` background: `--danger` in light and
+  warm, darkened in dark so white text clears AA.
+- `--danger-contrast` - text on a `--danger-fill` (`.btn-danger`). The
   danger twin of `--accent-contrast`; never write `#fff` on danger.
+- `--status-final-ink` - `--status-final` as text (`.btn-accept`,
+  `FormStatus`, the "Saved." hints), darkened in light and warm.
 - `--on-color` - text and icons on any other solid colour tile: universe
   and story colours, author colours, category badges, swatches, the toggle
   knob. Never write `#fff` on a user-chosen colour.
@@ -92,7 +108,8 @@ Meaning colours:
 
 Geometry: `--radius-sm` (6px), `--radius`/`--radius-md` (9px), `--radius-lg`
 (14px); spacing scale `--space-1` through `--space-10` (4 to 44px);
-`--row-h` for list rows; `--content-max` for the prose column.
+`--row-h` for list rows; `--content-max` for the prose column; `--left-w` and
+`--right-w` for the shell side columns.
 
 Rules:
 
@@ -114,14 +131,32 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Shell | Component(s) | Used by |
 |---|---|---|
 | Workspace | `.app` grid + `AppBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes, Insights (universe scope); help; guest review |
-| Page | `.page-shell` + `AppBar.svelte` | Library, print preview |
+| Page | `.page-shell` + `AppBar.svelte` | Library, print preview, the error page when signed in |
 | Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings |
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
-| Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, and every email-flow page |
+| Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
-The workspace shell is a three-column grid: structure left (fixed 240px),
-work centre, reference right (fixed 280px). Sidebar widths are a settled
-decision; resize is deferred. Focus mode (`.app.focus-mode`) hides both
+**Narrow windows.** The workspace grid keeps its side columns at any width,
+since the editor is not a phone surface; help is the exception (`DocsShell`
+adds `.docs`), stacking the topic list above the article below 760px so the
+page scrolls as one. The library grid drops to one column below 560px.
+
+**Structure every shell carries.** Exactly one `<main id="main">` (the root
+layout's skip link targets it), exactly one h1 (a `.visually-hidden` one where the
+visible title lives elsewhere: Write, Plan, Notes and an empty Review use "{name} - Write"
+and so on), and named side panes: every `aside.pane.left` takes
+`aria-label={LEFT_PANE_LABEL}` and every `aside.pane.right`
+`aria-label={RIGHT_PANE_LABEL}` from `$lib/chrome`. A `nav.side-nav` under a
+`.side-nav-label` is named by it with `aria-labelledby`.
+`e2e/accessibility.spec.ts` runs axe over the main pages to hold this.
+
+The workspace shell is a three-column grid: structure left (`--left-w`),
+work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
+and clamp with the window: left 264px to 320px, right 312px to 380px, so the
+right column grows from about 1640px and the left from about 1760px, taking
+the extra space from the gutters. The prose column keeps its reading
+width. The settings shell reads the same `--left-w`. Drag-to-resize is
+deferred. Focus mode (`.app.focus-mode`) hides both
 sidebars with `visibility: hidden` so the prose column does not shift. Add
 `.body.no-right` when no panel has a subject, so the centre takes the space
 instead of a fixed empty column.
@@ -137,6 +172,13 @@ which of those two it is doing; nothing else decides it.
 Every one of them wears the same bar; see Chrome below. Nothing escapes a
 shell any more: docs, print, guest review and the public reader all carry it.
 
+**The settings column.** `SettingsShell.svelte` anchors its content column
+(`.admin-main-inner`, 720px at most) right after the sidebar, so the spare
+width on a wide screen sits to the right. A section that holds a wide table
+or a stat grid passes `wide` for an 860px column (`.admin-main-inner.wide`):
+admin Overview and Users, and universe Details. Two-column setting rows and
+"On this page" links for long sections are deferred (issue #731).
+
 ## Chrome
 
 One navigation bar for every page type, defined in `chrome.css` (imported
@@ -149,7 +191,7 @@ none adds a second bar.
 
 | Shell | Brand | Path | Tools |
 |---|---|---|---|
-| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Theme, Help, Notifications, You |
+| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Help, Notifications, You (the theme picker is in the account menu) |
 | `.appbar.guest` | lockup, not a link | the one story they were sent, plus a "Review only" pill | Theme, Help, "Reviewing as ..." |
 | `.appbar.reader` | links to Codex | the story and its author, as text | Theme, Help |
 | `.appbar.public` | links home | none at all: a signed-out visitor is not anywhere in the library | Theme, Help |
@@ -171,10 +213,19 @@ The path and its crumb menus:
 - Menus compose the shared `.popover`/`.menu-item` skin, carry
   `aria-haspopup`/`aria-expanded`, tick the current page with
   `aria-current="page"`, and close on outside pointerdown or Escape through
-  the shared `dismiss` action.
+  the shared `dismiss` action. Keyboard behaviour comes from `use:menu`
+  (see Menus and popovers).
 - Paths are built by `$lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
   `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
   spells the same destinations the same way. Do not hand-roll a path.
+
+**Narrow windows.** Below 640px the bar drops the brand name, the rule and
+the byline, and keeps only the current place in the path, plus its parent
+when the current crumb is a page (plain text), so there is still a way up.
+`AppBar` marks the crumbs with `.narrow-hide` and `.narrow-first`. Search
+shows only its icon (the button keeps its `aria-label`), and the guest's
+"Reviewing as" keeps only the avatar, with the name visually hidden. The
+current crumb ellipsises. Crumbs keep a 24px minimum height for touch.
 
 Page actions are not bar actions. Anything that acts on the page (Print,
 Page setup, Save, New universe) lives in the page header under the bar,
@@ -184,26 +235,32 @@ Tools:
 
 - `.tool-search` is the palette trigger: a labelled button with a `kbd`
   hint, not an icon. Ctrl+K does the same.
-- The theme tool cycles dark -> light -> warm (`$lib/theme.ts`,
-  `cycleTheme`). A signed-in viewer's choice persists through the appearance
-  API; a guest reviewer's and a reader's is kept in localStorage only.
+- The theme is one component, `ThemePicker` (Light / Warm / Dark / System,
+  the current choice checked, applied through `setTheme` in `$lib/theme.ts`).
+  In the author bar it is a radio group inside the account menu
+  (`variant="items"`); the guest, reader and public bars have no account
+  menu, so they carry it as their own small menu button. A signed-in
+  viewer's choice persists through the appearance API (so "System" is stored
+  as a choice, not as a palette); a signed-out viewer's is kept in
+  localStorage only. Focus mode has no theme control.
 - The `?` is a tool that is a place, not a popup: it navigates to the help
   pages, lights up with `aria-current="page"` while you are there, and takes
   you back to where you were when pressed again. There is no help modal.
 
-The left slot is always 240px, whatever fills it:
+The left slot is always `--left-w`, whatever fills it:
 
-- **The mode strip is always four.** Write, Plan, Notes, Review, same order,
+- **The mode strip is always three.** Write, Plan, Review, same order,
   same width, wherever it appears; it never resizes silently.
   `ModeSwitcher.svelte` is the only implementation. At universe scope Write
-  and Review stay live and open the universe's story list. For a guest,
-  three are `aria-disabled` and stay in place. Where a mode is unavailable,
+  and Review stay live and open the universe's story list. For a guest, the
+  other two are `aria-disabled` and stay in place. Notes is a page beside
+  the modes, not one of them (it left the strip in v3.17.0). Where a mode is unavailable,
   one `.mode-note` line under the strip says why: rendered, not a tooltip,
   so it is readable by keyboard and by screen reader. The two lines live as
   `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `$lib/chrome.ts`.
 - **The mode strip may have nothing lit.** `ModeSwitcher` takes `active: Mode
-  | null`; a universe page that is not one of the four (insights) passes null,
-  keeps all four live, and says why in its `.mode-note`
+  | null`; a universe page that is not one of the three (insights) passes null,
+  keeps all three live, and says why in its `.mode-note`
   (`INSIGHTS_MODE_NOTE`). A strip that lies about where you are is worse than
   a strip with nothing lit.
 - Where there is no mode at all (settings, print, help) the same slot holds
@@ -267,17 +324,28 @@ Rules, all of them enforced in one place (`$lib/panels.ts`):
   `.seg` inside the panel, under the strip and under the panel's own
   `.panel-head`, so the two segmented controls in that pane are never
   mistaken for one another.
+- **Tabs size to their labels.** The panel strip's buttons are `flex: auto`,
+  so a long label like "Reference" gets more room than "Notes". The mode
+  strip keeps its equal slots.
 - **A count on a tab is a `.seg-count`**, passed as the subject
   (`visiblePanels({ notes: 3 })`); zero still shows the panel, and the badge
   itself only renders above zero.
-- **`.panel-note`** is a panel's one line of help for a first-time reader of
-  that panel, at `--text-meta` and `--text-muted`, at the end of the panel.
+- **No footer note under a panel.** A panel does not end with a line
+  explaining what it is. When a panel needs an instruction, its empty state
+  gives it (the Reference panel's "Mention a character, place, or lore
+  entry from Plan in this scene and it shows up here after the scene
+  saves.").
 
 ## Canonical primitives
 
 The rule for all of them: if the control you need is close to one of these,
 use or extend the primitive; if it is genuinely new, add it to the shared
 CSS with a considered name and add it to this sheet.
+
+Skip link (`primitives.css`):
+
+- `.skip-link` - "Skip to content", the first focusable element on every
+  page (rendered once in the root layout). Off screen until focused.
 
 Forced-state hooks: every state rule in the shared CSS also matches
 `.is-hover`, `.is-active`, or `.is-focus` beside the real pseudo-state.
@@ -307,15 +375,21 @@ primitive's own class too, but do not copy the pattern.
   styles `a.icon-btn`. There are two icon sizes and no third.
 - Scoped exceptions that stay: `.md-tool` (editor toolbar), `.seg-btn`
   (segmented strips).
-- An icon-only button always carries an `aria-label`.
+- An icon-only button always carries an `aria-label` (`src/lib/icon-buttons.test.ts`
+  fails the build on one without). The formatting bar is a `role="toolbar"`
+  with one tab stop and arrow keys between tools (`$lib/toolbar`).
 
 ### Forms
 
 - Wrapper: `.field` with a `<label>`, optional `.field-hint`, laid out with
   `.field-grid` when two-up. Action row: `.settings-actions`.
-- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`,
-  `.slider`. The focus ring (accent border plus `--accent-soft` glow) comes
-  from the shared rule; never redefine it.
+- Controls: `.input`, `.textarea`, `.select`, `.toggle` inside `.toggle-row`
+  (its checkbox has no visible label of its own, so give it an `aria-label`
+  matching the row title),
+  `.slider`. `.input.short` caps a field for a short value (a display name,
+  a pen name, a handle) at 36ch instead of the full column. The focus ring
+  (accent border plus `--accent-soft` glow) comes from the shared rule;
+  never redefine it.
 - `.slider` (`primitives.css`) is a range input for a bounded value that is
   judged rather than typed exactly: a temperature, a reply length. It is
   always paired with a number field carrying the same value, so an exact
@@ -340,7 +414,19 @@ primitive's own class too, but do not copy the pattern.
   `.is-current`). Defined in `menus.css`, which documents the intent. Used
   by the row menu and view menu; every new dropdown uses it.
 - The avatar dropdown (`.avatar-dropdown`) is deliberately its own richer
-  skin. That exception does not license others.
+  skin. That exception does not license others. Like every other menu, it is
+  rendered only while open, never hidden with opacity.
+- Every `role="menu"` renders only while open (`{#if open}`), takes
+  `use:menu` (`$lib/menu.ts`) for the keyboard and `use:dismiss` with a
+  `refocus` for Escape and outside clicks. `use:menu` focuses the first item
+  on open (the editor's own menus only when opened from the keyboard, so a
+  mouse open does not blur the editor), moves with the arrow keys (wrapping)
+  and Home/End, closes on Tab after handing focus back to the trigger,
+  and opens and closes a submenu with ArrowRight/ArrowLeft. Escape returns
+  focus to the trigger, or to the editor for the editor's own menus.
+- A popover that is not a list of actions (the entity badge picker's swatches
+  and image buttons) is not a menu: it uses `aria-haspopup="dialog"` and
+  `role="dialog"`, plain buttons, and `dismiss` only.
 
 ### Modals
 
@@ -360,10 +446,33 @@ control is an `.icon-btn.sm`; the primary action sits last in the footer.
 A head can carry a `.modal-search` field instead of a title, with
 `.modal-head.searching`.
 
-The behaviour is the component's, not the CSS's: Esc closes, focus is
-trapped in the panel and returned to the opener, and a backdrop click
-closes only when nothing is unsaved. `CommandPalette` and `ReviewModal` are
-the two reference uses. Help is not one of them: it is a page, not a modal.
+The behaviour belongs to the `use:modal` action (`$lib/modal.ts`), put on
+the `role="dialog"` panel with `aria-modal="true"`: focus moves into the
+panel on open (or to `initialFocus`), Tab and Shift+Tab cycle inside it,
+Esc calls its `close` (stopping there, so a page-level Esc such as leaving
+focus mode does not also fire), and focus returns to the opener on close
+unless something run from the dialog moved it on purpose. A backdrop click
+closes only when nothing is unsaved. Every modal uses the action
+(`CommandPalette`, `ImportStoryModal`, `ReviewModal`, `RoleTuningModal`,
+`PenNamePrompt`); `QuickNote` is a floating card, not a modal, and keeps its
+own focus return. A search modal keeps focus in its box and drives the
+results with `role="combobox"` and `aria-activedescendant` (the options are
+`tabindex="-1"`). Help is not a modal: it is a page.
+
+Asking before a destructive or irreversible step is `ConfirmDialog`, mounted
+once in the root layout and driven by `$lib/confirm.svelte.ts`: an
+`alertdialog` with a title, an optional line of body, Cancel, and a button
+named by its verb ("Delete scene", never "OK"), red (`.btn-danger`) when the
+step destroys something, in which case Cancel takes the focus. A plain form
+uses `onsubmit={confirmSubmit({...})}` (it holds the submit, asks, then
+submits again with the same button); a form with `use:enhance` passes
+`confirmEnhance({...})` as its enhance callback, since `enhance` does not
+honour a prevented submit; anything else awaits `askConfirm({...})`. Never
+call the browser's `window.confirm`. A menu whose item opens the prompt stays
+open underneath it (`dismiss` ignores clicks on the prompt, marked
+`data-over-menus`, and Escape inside any modal above it), so the form inside
+the menu is still there to submit. The prompt has no backdrop click: it waits
+for Cancel, Esc or the verb, and it cancels itself when the page navigates.
 
 A modal that edits fields belonging to a form on the page behind it renders
 inside that form, so its controls submit with it (`RoleTuningModal`). Where
@@ -413,7 +522,12 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 
 ### Cards
 
-`.story-card` (library), `.admin-card` (settings/admin sections, also used
+`.story-card` (library; it always leads with a cover, and when the cover is
+the tinted blank the card's `h3` is `.visually-hidden` so the title shows
+once). The per-user library view (`users.preferences.libraryView`: covers,
+compact, table) drops the cover in compact, and in table renders each
+collection as an `.admin-table` inside `.admin-card.tight` instead of cards.
+`.admin-card` (settings/admin sections, also used
 well outside admin), `.r-card` (right-pane reference blocks), `.rv-card`
 (review threads). New reference-pane content should compose `.r-card`;
 new settings content composes `.admin-card`.
@@ -427,8 +541,9 @@ shared `.popover`/`.menu-item` skin inside a `.menu-host`, carries
 `aria-haspopup`/`aria-expanded`, and closes on outside pointerdown or Escape
 through the shared `dismiss` action.
 
-- `.menu-host` positions the popover under its trigger; `.open` shows it, and
-  `.start` opens it from the left edge for a button on the left of its row.
+- `.menu-host` positions the popover under its trigger (rendered only while
+  open), and `.start` opens it from the left edge for a button on the left of
+  its row.
 - `.menu-sep` is the rule between making and importing; `.menu-note` is the
   one help line; `.new-caret` is the 11px caret in the trigger's label.
 - `.row-actions` is the action cluster a row's controls sit in (a universe row:
@@ -441,6 +556,13 @@ through the shared `dismiss` action.
 - **`.card-add` is legacy in a populated grid.** A dashed tile beside real
   cards was a third affordance for the same act. It survives only as the skin
   of the inline title form the menu swaps in.
+- **A sidebar group adds with one `.outline-add` row.** Write has "New
+  scene" and "New chapter"; the Plan sidebar has "Add character", "Add
+  place", "Add <category> entry" and, at story scope, "Add a character from
+  the universe". Where the new thing needs a name, the row swaps in a small
+  form (a labelled `.input` or `.select` and the same row as its submit), one
+  open at a time; Escape closes it. Never leave a field open for every group.
+  Categories are not made in the sidebar: it links to universe settings.
 
 ### The reading pages
 
@@ -451,15 +573,20 @@ The outward face of the work, built from the same tokens as everything else.
 - Type and colour are tokens: `.reader-prose` is `--font-content` at
   `--text-prose`/1.75 in a 37rem `.reader-col` (`.wide` is 62rem for the
   shelf). A new paragraph is an indent, not a gap.
-- **Body text is `--text` and `--text-muted` only.** `--text-faint` is a
-  chrome colour and measures under 4.5:1 on the dark background, so it is not
-  a reading colour and does not appear on these pages.
+- **Body text is `--text` and `--text-muted` only.** `--text-faint` passes
+  AA, but it is a chrome colour (meta, empty states), not a reading colour,
+  and does not appear on these pages.
 - **Links in reading text are underlined in the body colour**, not accent:
-  accent on the light and warm backgrounds falls short of 4.5:1, and an
+  a custom accent can fall short of 4.5:1 even as `--accent-ink`, and an
   underline is what a book does anyway. Accent is kept for the focus ring,
   where 3:1 is the bar.
-- **A cover is the story's own title**, set in `--font-serif` on `--bg-inset`
-  (`.shelf-cover`), until an author uploads artwork.
+- **A cover is the story's own title**, set in `--font-serif` (`.shelf-cover`),
+  until an author uploads artwork. Without artwork it is tinted in the story's
+  colour (`.shelf-cover-tinted` with `--cover-tint` set inline to the
+  `stories.cover_color` palette token, resolved by `storyCoverColor()`): a
+  spine in the full colour, the page mixed 30% into `--bg-card`, the title in
+  `--text`. The library card, the public shelf and the story settings preview
+  all draw the same blank, so a book looks the same everywhere.
 - **One footer, on both pages:** the mark and "Written in Codex", who
   published it, and three links (Reading in Codex, About Codex, Write your
   own). "Write your own" targets the app root - the library for a signed-in
@@ -468,7 +595,7 @@ The outward face of the work, built from the same tokens as everything else.
 - **The theme is the reader's.** With no choice stored on the device the page
   opens in the theme the system asks for (the pre-paint script in
   `app.html`), and `followSystemTheme()` in the root layout keeps following it
-  while the page is open. The theme tool in the bar overrides and remembers;
+  while the page is open. The theme picker in the bar overrides and remembers;
   an author's account choice carries over, since it is the same key.
 - **The author is named, not addressed.** The path crumb and the footer show
   `users.penName ?? users.displayName` (`$lib/author-name.ts`), never the raw
@@ -519,6 +646,12 @@ Everything a signed-out visitor sees, in `public.css`, loaded last.
   someone who was handed a code without a link. Render conditionally from the
   mode; there is no `[data-signup]` attribute switch.
 
+### Visually hidden
+
+`.visually-hidden` (`primitives.css`) keeps text for assistive technology
+without drawing it: a heading whose visible twin is decorative, such as the
+library card title on a tinted cover. Do not use it to hide controls.
+
 ### Empty states
 
 `.empty-state` is the primitive, defined in `primitives.css`: a centred
@@ -556,6 +689,30 @@ From CLAUDE.md, repeated here because every screen touches it:
 - No jargon or slang in user-facing text.
 - User-facing functionality changes come with a check of the help articles
   in `src/lib/docs/`.
+- Dates, times and numbers go through the helpers in `$lib/format`, which
+  pass `DISPLAY_LOCALE` (`en-GB`) explicitly so server and browser output
+  match. Lint bans `toLocale*` calls and `new Intl.*Format` outside that
+  file; add a helper there instead.
+
+## Links
+
+Every internal link and `goto()` goes through `resolve()` from `$app/paths`,
+which the `svelte/no-navigation-without-resolve` lint enforces:
+
+- Build a path with a route id and params: `resolve('/stories/[id]', { id })`.
+  A static hash can ride on the id: `resolve('/universes/[id]/[[section]]#import-story', ...)`.
+- Add query parameters with `withQuery(path, { scene: id })` from `$lib/href`.
+  It encodes values, drops empty ones, extends an existing query string, and
+  keeps the `ResolvedPathname` type. Do not put dynamic values in the route
+  id's query string, and do not build `${path}?a=${b}` templates.
+- Type every prop, field and return value that carries an app path as
+  `ResolvedPathname` (from `$app/types`), so the lint can follow it through
+  components. A `string` breaks the chain.
+- External links carry `rel="external"`. An href that arrives as data (a
+  search result, a notification) is cast to `ResolvedPathname` at the
+  boundary with a comment saying where it came from.
+- The lint has no type information in plain `.ts` files, so a `goto()` there
+  on a typed path still needs a disable with a reason.
 
 ## CSS file map
 
@@ -610,7 +767,9 @@ shared class inside a component (this still happens for `.btn-sm` and
    fallbacks.
 6. Check dark, light, and warm, plus compact density if the page has rows.
 7. Keyboard: everything reachable, visible focus, `aria-label` on icon-only
-   controls, Escape closes any overlay.
+   controls, Escape closes any overlay. One h1, one `main id="main"`, named
+   side panes; add the page to `e2e/accessibility.spec.ts` if it is a main
+   route.
 8. Empty, loading, and error states use the shared patterns.
 9. UI text follows the writing rules; help articles updated if behaviour
    changed. The word "Session" does not appear in the product.
@@ -735,7 +894,7 @@ once the drag handlers stop swallowing keyboard events.
 ## Component index
 
 Reusable primitives: `Icon`, `EntityBadge`, `EntityQuickCard`, `TagInput`,
-`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemeToggle`, `CrumbMenu`,
+`ModeSwitcher`, `PanelStrip`, `NewMenu`, `ThemePicker`, `CrumbMenu`,
 `SidebarSearch`, `HelpLink`, `FormStatus`, `ReviewAvatar`, `ReviewReplyForm`,
 `ReviewReplyRow`, `ReviewMarginRail`, `ReviewSelectionToolbar`.
 

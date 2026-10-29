@@ -1,9 +1,10 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
 	import { flushFocusedField } from '$lib/autosave-form';
-	import { entityColor } from '$lib/entity-color';
+	import { storyCoverColor } from '$lib/entity-color';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { storyPath } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
@@ -37,7 +38,7 @@
 	};
 	const helpTopic = $derived(HELP_BY_SECTION[active] ?? 'getting-started');
 
-	function sectionHref(section: string): string {
+	function sectionHref(section: string): ResolvedPathname {
 		return resolve('/stories/[id]/settings/[[section]]', {
 			id: data.story.slug,
 			section: section === 'details' ? undefined : section
@@ -48,7 +49,7 @@
 	// with a button; see $lib/autosave-form.
 	beforeNavigate(flushFocusedField);
 
-	const coverColor = $derived(entityColor(data.story.title));
+	const coverColor = $derived(storyCoverColor(data.story));
 
 	// Cover uploads need asset storage and publishing needs a public shelf;
 	// without those the sections hide entirely rather than explaining server
@@ -101,16 +102,14 @@
 				<div class="st">{data.universe.name}</div>
 			</div>
 		</div>
-		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-		<div class="side-nav-label">Story settings</div>
-		<nav class="side-nav">
+		<div class="side-nav-label" id="story-settings-label">Story settings</div>
+		<nav class="side-nav" aria-labelledby="story-settings-label">
 			{#each NAV as item (item.id)}
 				<a href={sectionHref(item.id)} aria-current={active === item.id ? 'page' : undefined}>
 					{item.label}
 				</a>
 			{/each}
 		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/snippet}
 
 	<div class="admin-head">

@@ -1,11 +1,11 @@
-FROM node:24.22.0-alpine3.24 AS build
+FROM node:26.13.0-alpine3.24 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
-FROM node:24.22.0-alpine3.24
+FROM node:26.13.0-alpine3.24
 WORKDIR /app
 ENV NODE_ENV=production
 # pg_dump and pg_restore for off-site backups; the major version must be
@@ -17,6 +17,8 @@ RUN apk add --no-cache postgresql18-client chromium font-liberation ttf-dejavu
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/build build
 COPY --from=build /app/package.json package.json
+# Runtime entry that feeds ORIGIN to adapter-node (see server.js).
+COPY --from=build /app/server.js server.js
 # Migrations (applied on app start) and operational scripts (seed-admin).
 COPY --from=build /app/drizzle drizzle
 COPY --from=build /app/scripts scripts

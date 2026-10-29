@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { MIN_PASSWORD } from '$lib/password';
 	import { invalidateAll } from '$app/navigation';
 	import { formatDate, formatDateTime } from '$lib/format';
 	import ExportPanel from '$lib/components/ExportPanel.svelte';
@@ -138,7 +139,7 @@
 				{#if form?.scope === 'email' && form.message}
 					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
 				{:else if form?.scope === 'email' && form.sent}
-					<span class="field-hint" role="status" style="color:var(--status-final);"
+					<span class="field-hint" role="status" style="color:var(--status-final-ink);"
 						>Check your new inbox for a confirmation link.</span
 					>
 				{/if}
@@ -174,15 +175,19 @@
 					type="password"
 					name="newPassword"
 					required
-					minlength="8"
+					minlength={MIN_PASSWORD}
+					aria-describedby="new-password-hint"
 					autocomplete="new-password"
 				/>
+				<span class="field-hint" id="new-password-hint">
+					At least {MIN_PASSWORD} characters.
+				</span>
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'password' && form.message}
 					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
 				{:else if form?.scope === 'password' && form.saved}
-					<span class="field-hint" role="status" style="color:var(--status-final);"
+					<span class="field-hint" role="status" style="color:var(--status-final-ink);"
 						>Password changed. Other devices were signed out.</span
 					>
 				{/if}
@@ -483,12 +488,16 @@
 			{#if form?.scope === 'passkeys' && form.message}
 				<p class="field-hint" role="alert" style="color:var(--danger);">{form.message}</p>
 			{:else if form?.scope === 'passkeys' && 'removed' in form && form.removed}
-				<p class="field-hint" role="status" style="color:var(--status-final);">Passkey removed.</p>
+				<p class="field-hint" role="status" style="color:var(--status-final-ink);">
+					Passkey removed.
+				</p>
 			{/if}
 			{#if passkeyError}
 				<p class="field-hint" role="alert" style="color:var(--danger);">{passkeyError}</p>
 			{:else if passkeyAdded}
-				<p class="field-hint" role="status" style="color:var(--status-final);">Passkey added.</p>
+				<p class="field-hint" role="status" style="color:var(--status-final-ink);">
+					Passkey added.
+				</p>
 			{/if}
 			<div class="settings-actions" style="justify-content:flex-start;">
 				<input
@@ -571,7 +580,7 @@
 			{#if form?.scope === 'sessions' && form.message}
 				<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
 			{:else if form?.scope === 'sessions' && form.saved}
-				<span class="field-hint" role="status" style="color:var(--status-final);">Done.</span>
+				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Done.</span>
 			{/if}
 			<form method="POST" action="?/revokeOthers" class="tfa-guard">
 				<input

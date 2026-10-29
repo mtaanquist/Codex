@@ -1,8 +1,12 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+	import { withQuery } from '$lib/href';
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
+	import { enhance } from '$lib/enhance';
 	import Icon from './Icon.svelte';
 	import FormStatus from './FormStatus.svelte';
 	import { put } from '$lib/api';
@@ -34,7 +38,7 @@
 		trashedScenes = [],
 		selectedSceneId,
 		viewStory = false,
-		storyPath = '',
+		storyPath,
 		query,
 		mergeSelection = new SvelteSet<string>(),
 		renamingChapterId = $bindable(null),
@@ -59,7 +63,7 @@
 		selectedSceneId: string | null;
 		// In the continuous story view the rows jump by anchor, not navigation.
 		viewStory?: boolean;
-		storyPath?: string;
+		storyPath?: ResolvedPathname;
 		query: string;
 		// Scenes picked for merging, shared with the row menu.
 		mergeSelection?: SvelteSet<string>;
@@ -218,12 +222,13 @@
 			{@render sceneMetaBadge(scene)}
 		</button>
 	{:else}
-		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 		<a
 			class="scene-row"
 			class:active={scene.id === selectedSceneId}
 			class:merge-selected={mergeSelection.has(scene.id)}
-			href={viewStory ? `#scene-${scene.id}` : `${storyPath}?scene=${scene.id}`}
+			href={viewStory || !storyPath
+				? `#scene-${scene.id}`
+				: withQuery(storyPath, { scene: scene.id })}
 			{draggable}
 			oncontextmenu={(e) => onOpenRowMenu(e, { kind: 'scene', id: scene.id })}
 			ondragstart={(e) => {
@@ -239,7 +244,6 @@
 			<span class="scene-name">{scene.title ?? 'Untitled scene'}</span>
 			{@render sceneMetaBadge(scene)}
 		</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 {/snippet}
 
@@ -289,8 +293,7 @@
 							onclick={async () => {
 								storyMenuOpen = false;
 								if (sibling.id !== story.id) {
-									// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path from an owned slug
-									await goto(`/stories/${sibling.slug}`);
+									await goto(resolve('/stories/[id]', { id: sibling.slug }));
 								}
 							}}
 						>
@@ -443,21 +446,33 @@
 								{/if}
 								<form method="POST" action="?/restoreScene" use:enhance>
 									<input type="hidden" name="sceneId" value={scene.id} />
-									<button class="icon-btn sm" type="submit" title="Restore scene">
+									<button
+										class="icon-btn sm"
+										type="submit"
+										title="Restore scene"
+										aria-label="Restore scene"
+									>
 										<Icon name="restore" size={12} />
 									</button>
 								</form>
 								<form
 									method="POST"
 									action="?/destroyScene"
-									onsubmit={(e) => {
-										if (!confirm('Delete this scene forever? It cannot be restored after this.'))
-											e.preventDefault();
-									}}
+									onsubmit={confirmSubmit({
+										title: 'Delete this scene forever?',
+										body: 'It cannot be restored after this.',
+										confirmLabel: 'Delete scene',
+										danger: true
+									})}
 								>
 									<input type="hidden" name="sceneId" value={scene.id} />
 									{@render openSceneField()}
-									<button class="icon-btn sm danger" type="submit" title="Delete forever">
+									<button
+										class="icon-btn sm danger"
+										type="submit"
+										title="Delete forever"
+										aria-label="Delete forever"
+									>
 										<Icon name="trash" size={12} />
 									</button>
 								</form>

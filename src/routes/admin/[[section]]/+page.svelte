@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AppBar from '$lib/components/AppBar.svelte';
@@ -22,7 +23,7 @@
 	// so an action result lands where it belongs without any bookkeeping.
 	let active: Section = $derived((page.params.section as Section) ?? 'overview');
 
-	function sectionHref(section: Section): string {
+	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/admin/[[section]]', {
 			section: section === 'overview' ? undefined : section
 		});
@@ -36,7 +37,7 @@
 	<title>Site admin - Codex</title>
 </svelte:head>
 
-<SettingsShell>
+<SettingsShell wide={active === 'overview' || active === 'users'}>
 	{#snippet topbar()}
 		<AppBar crumbs={[libraryCrumb(), pageCrumb('Site admin')]} />
 	{/snippet}
@@ -58,7 +59,6 @@
 			</div>
 		</div>
 
-		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 		<nav class="admin-nav">
 			<div class="admin-nav-label">Instance</div>
 			<a class="nav-item" class:active={active === 'overview'} href={sectionHref('overview')}>
@@ -197,7 +197,6 @@
 				<span class="lbl">Email relay</span>
 			</a>
 		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 
 		<div class="admin-health">
 			<div class="admin-health-row">

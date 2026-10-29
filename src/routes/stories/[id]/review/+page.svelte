@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
 	import { resolve } from '$app/paths';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { storyPath } from '$lib/chrome';
@@ -28,7 +29,7 @@
 	});
 	// The author can open an entity's full details from its quick card.
 	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.slug }));
-	const entityHref = (entity: { id: string }) => `${planPath}?entity=${entity.id}`;
+	const entityHref = (entity: { id: string }) => withQuery(planPath, { entity: entity.id });
 </script>
 
 <svelte:head>

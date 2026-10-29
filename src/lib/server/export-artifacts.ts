@@ -213,7 +213,7 @@ export async function generateEditionArtifacts(
 ): Promise<GenerateResult> {
 	const config = await effectiveAssetConfig(db);
 	if (!config && !(deps.store && deps.prefix !== undefined)) {
-		return { ok: false, reason: 'asset storage is not configured' };
+		return { ok: false, reason: 'File storage is not set up on this server.' };
 	}
 	const prefix = deps.prefix ?? config!.prefix;
 	const store = deps.store ?? s3AssetStore(config!);
@@ -233,8 +233,8 @@ export async function generateEditionArtifacts(
 		.from(publications)
 		.innerJoin(stories, eq(publications.storyId, stories.id))
 		.where(eq(publications.id, publicationId));
-	if (!edition) return { ok: false, reason: 'publication not found' };
-	if (edition.removedAt) return { ok: false, reason: 'edition was taken down' };
+	if (!edition) return { ok: false, reason: 'That edition no longer exists.' };
+	if (edition.removedAt) return { ok: false, reason: 'That edition was taken down.' };
 
 	// Formatting is not content: artifacts always typeset with the current
 	// page setup, so "Generate again" picks up setup changes without a new

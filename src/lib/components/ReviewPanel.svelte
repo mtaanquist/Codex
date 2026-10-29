@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import Icon from './Icon.svelte';
 	import ReviewCommentCard from './ReviewCommentCard.svelte';
 	import ReviewSuggestionCard from './ReviewSuggestionCard.svelte';
@@ -144,7 +144,7 @@
 				method="POST"
 				action={composer.mode === 'suggest' ? '?/suggest' : '?/comment'}
 				class="rv-card is-draft"
-				style="--auth: var(--accent);"
+				style="--auth: var(--accent-ink);"
 				use:enhance={() =>
 					({ update }) => {
 						onCloseComposer();
@@ -191,7 +191,7 @@
 					</div>
 				{:else}
 					{#if composer.anchored}
-						<div class="rv-quote" style="--auth: var(--accent);">"{composer.text}"</div>
+						<div class="rv-quote" style="--auth: var(--accent-ink);">"{composer.text}"</div>
 					{/if}
 					<textarea
 						name="body"
@@ -281,11 +281,6 @@
 					/>
 				{/if}
 			{/each}
-
-			<p class="panel-note">
-				Every comment and suggestion on this scene, from you and from anyone you invited. Select a
-				run of prose in the middle to add one.
-			</p>
 		</div>
 	{/if}
 </div>

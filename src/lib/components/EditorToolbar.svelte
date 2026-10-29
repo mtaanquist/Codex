@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
 	import Icon, { type IconName } from './Icon.svelte';
@@ -15,6 +16,8 @@
 	import { ALIGNMENTS } from '$lib/alignment';
 	import { modLabel } from '$lib/keys';
 	import { dismiss } from '$lib/dismiss';
+	import { menu } from '$lib/menu';
+	import { toolbar } from '$lib/toolbar';
 	import ViewMenu, { type ViewItem } from './ViewMenu.svelte';
 
 	// The formatting bar above a prose editor: headings, bold, italic, quote,
@@ -40,7 +43,7 @@
 		// bar when set, the same on the Write and Review toolbars.
 		viewMenu?: ViewItem[];
 		// The scene <-> whole-story toggle, shown at the end of the bar.
-		storyView?: { active: boolean; toggleHref: string };
+		storyView?: { active: boolean; toggleHref: ResolvedPathname };
 		// The view toggles: show non-printing characters, and hide the command
 		// markers (\center and friends). Each button appears only when its
 		// toggle callback is set; active marks the toggle as on.
@@ -233,15 +236,22 @@
 		recompute();
 	});
 
+	const storyLabel = $derived(
+		storyView?.active ? 'Back to the scene editor' : 'Read the whole story'
+	);
+
 	// The "more" menu. Closes on an outside press or Escape.
 	let menuOpen = $state(false);
+	// Opened with Enter or Space (a click with no pointer): focus moves into the
+	// menu. A mouse open leaves focus in the editor.
+	let menuByKeyboard = $state(false);
 	// A vanished overflow (the bar grew) must not leave a stale open menu.
 	$effect(() => {
 		if (overflow.length === 0) menuOpen = false;
 	});
 </script>
 
-<div class="md-toolbar" bind:this={barEl}>
+<div class="md-toolbar" role="toolbar" aria-label="Formatting" bind:this={barEl} use:toolbar>
 	<!-- Off-screen full-width copy used only to measure each tool's natural size.
 	     The zero-size clip keeps the wide row from ever adding a scrollbar. -->
 	<div class="md-measure-clip" aria-hidden="true">
@@ -271,6 +281,7 @@
 				class="md-tool"
 				type="button"
 				title={item.title}
+				aria-label={item.title}
 				onmousedown={(event) => event.preventDefault()}
 				onclick={item.act}
 			>
@@ -286,6 +297,7 @@
 				class:is-active={item.active}
 				type="button"
 				title={item.title}
+				aria-label={item.title}
 				aria-pressed={item.active}
 				onmousedown={(event) => event.preventDefault()}
 				onclick={item.toggle}
@@ -297,7 +309,14 @@
 
 	{#if overflow.length > 0}
 		<span class="md-sep"></span>
-		<div class="md-overflow" use:dismiss={{ enabled: menuOpen, close: () => (menuOpen = false) }}>
+		<div
+			class="md-overflow"
+			use:dismiss={{
+				enabled: menuOpen,
+				close: () => (menuOpen = false),
+				refocus: () => view()?.focus()
+			}}
+		>
 			<button
 				class="md-tool"
 				class:is-active={menuOpen}
@@ -307,12 +326,23 @@
 				aria-haspopup="menu"
 				aria-expanded={menuOpen}
 				onmousedown={(event) => event.preventDefault()}
-				onclick={() => (menuOpen = !menuOpen)}
+				onclick={(event) => {
+					menuByKeyboard = event.detail === 0;
+					menuOpen = !menuOpen;
+				}}
 			>
 				<Icon name="more" size={16} />
 			</button>
 			{#if menuOpen}
-				<div class="md-menu" role="menu">
+				<div
+					class="md-menu"
+					role="menu"
+					use:menu={{
+						close: () => (menuOpen = false),
+						refocus: () => view()?.focus(),
+						focusFirst: menuByKeyboard
+					}}
+				>
 					{#each overflow as item (item.id)}
 						{#if item.kind === 'cmd'}
 							<button
@@ -337,7 +367,13 @@
 								role="menuitemcheckbox"
 								aria-checked={item.active}
 								onmousedown={(event) => event.preventDefault()}
-								onclick={() => item.toggle()}
+								onclick={(event) => {
+									item.toggle();
+									// From the keyboard, a toggle is done with the menu; a mouse
+									// user may flip several, so it stays open for them.
+									if (event.detail === 0) menuOpen = false;
+									view()?.focus();
+								}}
 							>
 								<span class="md-menu-check">{item.active ? '✓' : ''}</span>
 								{item.menuLabel}
@@ -363,15 +399,9 @@
 			</button>
 		{/if}
 		{#if storyView}
-			<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
-			<a
-				class="md-tool"
-				href={storyView.toggleHref}
-				title={storyView.active ? 'Back to the scene editor' : 'Read the whole story'}
-			>
+			<a class="md-tool" href={storyView.toggleHref} title={storyLabel} aria-label={storyLabel}>
 				<Icon name={storyView.active ? 'scene' : 'chapter'} size={16} />
 			</a>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/if}
 		{#if viewMenu}
 			<ViewMenu items={viewMenu} />
@@ -444,7 +474,7 @@
 		justify-content: center;
 		width: 1.2em;
 		flex: none;
-		color: var(--accent);
+		color: var(--accent-ink);
 		font-weight: 700;
 	}
 	.md-menu-ic {
@@ -464,6 +494,6 @@
 	}
 	.md-coauthor:hover,
 	.md-coauthor.is-active {
-		color: var(--accent);
+		color: var(--accent-ink);
 	}
 </style>

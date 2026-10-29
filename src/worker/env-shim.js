@@ -1,5 +1,6 @@
-// Worker stand-in for SvelteKit's `$env/dynamic/private`, which is a build-time
-// virtual module the app server provides but the plain-Node worker does not.
-// On the server that module is just the runtime environment, so process.env is
-// the faithful equivalent. The resolve hook (loader.js) maps the import here.
-export const env = process.env;
+// Worker stand-in for SvelteKit's `$app/env/private`, which the app server
+// generates from src/env.ts but the plain-Node worker does not have. It reads
+// the same variables from the runtime environment, with an empty value counted
+// as unset as src/env.ts does. The resolve hook (loader.js) maps the import here.
+export const DATABASE_URL = process.env.DATABASE_URL || undefined;
+export const ORIGIN = process.env.ORIGIN || undefined;

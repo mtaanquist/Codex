@@ -3,6 +3,7 @@ import type { Database } from './auth.ts';
 import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
 import { gatherStory } from './export.ts';
 import { findAssetReferences } from '$lib/markdown';
+import { storyCoverColor } from '$lib/entity-color';
 import { isUniqueViolation } from './db-errors.ts';
 import { storyIsLive } from './universe-scope.ts';
 
@@ -25,14 +26,15 @@ export async function publishStory(
 		.from(users)
 		.where(eq(users.id, userId));
 	if (!user?.enabled) {
-		return { ok: false, reason: 'the site admin has not enabled your public archive' };
+		return { ok: false, reason: 'The site admin has not turned on your public archive yet.' };
 	}
-	if (!user.handle) return { ok: false, reason: 'claim a public handle first' };
+	if (!user.handle)
+		return { ok: false, reason: 'Claim a public handle on your account page first.' };
 	const [story] = await db
 		.select()
 		.from(stories)
 		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
-	if (!story) return { ok: false, reason: 'story not found' };
+	if (!story) return { ok: false, reason: 'That story no longer exists.' };
 
 	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
 	const content: EditionContent = {
@@ -49,7 +51,7 @@ export async function publishStory(
 			.map((scene) => ({ title: scene.title, bodyMd: scene.bodyMd }))
 	};
 	if (content.chapters.length === 0 && content.unfiled.length === 0) {
-		return { ok: false, reason: 'there is nothing to publish yet' };
+		return { ok: false, reason: 'There is nothing to publish yet.' };
 	}
 
 	// Inline images the frozen prose points at, so the reader can serve them
@@ -108,7 +110,7 @@ export async function publishStory(
 		// The partial unique index caught a concurrent publish of the same
 		// story; the loser rolls back rather than leaving two current rows.
 		if (isUniqueViolation(error)) {
-			return { ok: false, reason: 'another publish just happened; reload and try again' };
+			return { ok: false, reason: 'Another publish just finished. Reload the page and try again.' };
 		}
 		throw error;
 	}
@@ -137,7 +139,7 @@ export async function readingPageRef(
 // The author shelf: current, non-removed editions of stories the author
 // has set public. Unlisted stories stay reachable by direct link only.
 export async function publicShelf(db: Database, handle: string) {
-	return await db
+	const rows = await db
 		.select({
 			storyId: publications.storyId,
 			title: publications.title,
@@ -145,7 +147,8 @@ export async function publicShelf(db: Database, handle: string) {
 			descriptionMd: publications.descriptionMd,
 			isAdult: publications.isAdult,
 			publishedAt: publications.publishedAt,
-			coverAssetId: stories.coverAssetId
+			coverAssetId: stories.coverAssetId,
+			coverColor: stories.coverColor
 		})
 		.from(publications)
 		.innerJoin(stories, eq(publications.storyId, stories.id))
@@ -159,6 +162,10 @@ export async function publicShelf(db: Database, handle: string) {
 			)
 		)
 		.orderBy(desc(publications.publishedAt));
+	return rows.map((row) => ({
+		...row,
+		coverColor: storyCoverColor({ id: row.storyId, coverColor: row.coverColor })
+	}));
 }
 
 // The author's public profile for the shelf header: identity, bio, links, and

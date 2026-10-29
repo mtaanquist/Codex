@@ -101,7 +101,7 @@ describe('publishStory', () => {
 		await db.update(users).set({ publicArchiveEnabled: false }).where(eq(users.id, authorId));
 		expect(await publishStory(db, authorId, storyId)).toMatchObject({
 			ok: false,
-			reason: 'the site admin has not enabled your public archive'
+			reason: 'The site admin has not turned on your public archive yet.'
 		});
 	});
 

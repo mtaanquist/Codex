@@ -49,9 +49,8 @@
 	</h2>
 	<p class="admin-block-sub">
 		Invite someone to read this story and leave comments. They follow a link; no account is needed.
-		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (app path with a suffix) -->
-		<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/review`}> Open review mode</a> to read
-		the manuscript and leave your own comments and suggestions, and to work through any feedback.
+		<a href={resolve('/stories/[id]/review', { id: data.story.slug })}> Open review mode</a> to read the
+		manuscript and leave your own comments and suggestions, and to work through any feedback.
 	</p>
 </div>
 {#if data.assistant.surfacesEnabled}

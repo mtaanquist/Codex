@@ -24,8 +24,7 @@
 	<p class="field-hint">
 		Markdown bundles every scene and story note as a file with images; EPUB is for e-readers. For a
 		PDF,
-		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (print view) -->
-		<a href={`${resolve('/stories/[id]', { id: data.story.slug })}/print`}>open the print view</a>
+		<a href={resolve('/stories/[id]/print', { id: data.story.slug })}>open the print view</a>
 		and choose "Save as PDF".
 	</p>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import { renderMarkdown } from '$lib/markdown';
 	import { contentWidthCss, fontFamilyCss, lineHeightCss, type PageSetup } from '$lib/page-setup';
@@ -16,8 +17,8 @@
 		chapters: { id: string; title: string | null }[];
 		storyDoc: { id: string; chapterId: string | null; bodyMd: string }[];
 		pageSetup: PageSetup | null;
-		editStoryHref: string;
-		toggleHref: string;
+		editStoryHref: ResolvedPathname;
+		toggleHref: ResolvedPathname;
 	} = $props();
 
 	function docScenes(chapterId: string | null) {
@@ -52,26 +53,30 @@
      no markers, alignment and scene breaks applied. -->
 <div class="md-editor">
 	<div class="md-toolbar">
-		<!-- eslint-disable svelte/no-navigation-without-resolve (resolved path plus a query string) -->
 		<a class="md-tool md-preview-edit" href={editStoryHref} title="Back to editing">
 			<Icon name="pencil" size={15} />
 			<span class="md-tool-label">Edit</span>
 		</a>
 		<div class="md-right">
 			<span class="md-hint">Preview</span>
-			<a class="md-tool" href={toggleHref} title="Back to the scene editor">
+			<a
+				class="md-tool"
+				href={toggleHref}
+				title="Back to the scene editor"
+				aria-label="Back to the scene editor"
+			>
 				<Icon name="scene" size={16} />
 			</a>
 			<button
 				class="md-tool"
 				type="button"
 				title="Focus mode"
+				aria-label="Focus mode"
 				onclick={() => (focusMode.on = true)}
 			>
 				<Icon name="expand" size={16} />
 			</button>
 		</div>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>
 	<div class="editor-scroll">
 		<div class="editor story-preview" class:spaced={previewSpaced} style={previewStyle}>

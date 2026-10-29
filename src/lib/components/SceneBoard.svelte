@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import FormStatus from './FormStatus.svelte';
 	import { SCENE_STATUSES, SCENE_STATUS_LABELS, type SceneStatus } from '$lib/scene-status';
@@ -25,7 +26,7 @@
 		chapters: { id: string; title: string | null }[];
 		// Open TODO markers per scene id.
 		todoCounts: Record<string, number>;
-		sceneHref: (sceneId: string) => string;
+		sceneHref: (sceneId: string) => ResolvedPathname;
 		// Resolves to an error message when the move did not save, else null.
 		onMove: (sceneId: string, status: SceneStatus) => Promise<string | null>;
 	} = $props();
@@ -103,11 +104,9 @@
 						}}
 						ondragend={endDrag}
 					>
-						<!-- eslint-disable svelte/no-navigation-without-resolve (caller resolves the path) -->
 						<a class="card-title" href={sceneHref(scene.id)}>
 							{scene.title ?? 'Untitled scene'}
 						</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{#if scene.chapterId}
 							<span class="card-chapter">{chapterTitles.get(scene.chapterId)}</span>
 						{/if}
@@ -187,11 +186,16 @@
 	.card:focus-within .card-tools {
 		opacity: 1;
 	}
+	/* 24px square so a finger can hit it; the icon stays small. */
 	.card-tools button {
+		display: inline-grid;
+		place-items: center;
+		min-width: 24px;
+		min-height: 24px;
 		border: 0;
 		background: none;
 		color: var(--text-muted);
-		padding: 1px 3px;
+		padding: 0;
 		cursor: pointer;
 		border-radius: 4px;
 	}

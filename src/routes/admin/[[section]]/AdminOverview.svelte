@@ -1,11 +1,12 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import type { Section } from './sections';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	function sectionHref(section: Section): string {
+	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/admin/[[section]]', {
 			section: section === 'overview' ? undefined : section
 		});
@@ -181,7 +182,6 @@
 					</div>
 					{#if item.goto}
 						<div class="attn-actions">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
 							<a class="btn btn-secondary btn-sm" href={sectionHref(item.goto)}>Open</a>
 						</div>
 					{/if}

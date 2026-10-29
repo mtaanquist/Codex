@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { withQuery } from '$lib/href';
+	import type { ResolvedPathname } from '$app/types';
+	import { confirmSubmit } from '$lib/confirm.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -9,7 +12,7 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { universePath } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
-	import { formatNumber } from '$lib/format';
+	import { formatLongDate, formatNumber, formatTime } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -26,7 +29,7 @@
 	];
 	let active: Section = $derived((page.params.section as Section) ?? 'details');
 
-	function sectionHref(section: Section): string {
+	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/universes/[id]/[[section]]', {
 			id: data.universe.slug,
 			section: section === 'details' ? undefined : section
@@ -105,15 +108,7 @@
 		for (const row of filteredTimeline) {
 			const day = row.createdAt.toDateString();
 			const label =
-				day === today
-					? 'Today'
-					: day === yesterday
-						? 'Yesterday'
-						: row.createdAt.toLocaleDateString(undefined, {
-								day: 'numeric',
-								month: 'long',
-								year: 'numeric'
-							});
+				day === today ? 'Today' : day === yesterday ? 'Yesterday' : formatLongDate(row.createdAt);
 			const last = groups[groups.length - 1];
 			if (last && last.label === label) last.rows.push(row);
 			else groups.push({ label, rows: [row] });
@@ -122,14 +117,20 @@
 	});
 
 	function entryTime(row: (typeof data.timeline)[number]): string {
-		return row.createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+		return formatTime(row.createdAt);
 	}
 
-	function previewHref(row: (typeof data.timeline)[number]): string {
+	function previewHref(row: (typeof data.timeline)[number]): ResolvedPathname {
 		if (row.entityType === 'scene' && row.storySlug) {
-			return `/stories/${row.storySlug}?scene=${row.entityId}&revision=${row.id}`;
+			return withQuery(resolve('/stories/[id]', { id: row.storySlug }), {
+				scene: row.entityId,
+				revision: row.id
+			});
 		}
-		return `/universes/${data.universe.slug}/plan?entity=${row.entityId}&revision=${row.id}`;
+		return withQuery(resolve('/universes/[id]/plan', { id: data.universe.slug }), {
+			entity: row.entityId,
+			revision: row.id
+		});
 	}
 
 	let restoring = $state<string | null>(null);
@@ -152,7 +153,7 @@
 	<title>{data.universe.name} - Codex</title>
 </svelte:head>
 
-<SettingsShell>
+<SettingsShell wide={active === 'details'}>
 	{#snippet topbar()}
 		<AppBar
 			crumbs={universePath(data.universe, {
@@ -172,21 +173,19 @@
 				<div class="st">Universe</div>
 			</div>
 		</div>
-		<!-- eslint-disable svelte/no-navigation-without-resolve (sectionHref wraps resolve) -->
-		<div class="side-nav-label">Universe settings</div>
-		<nav class="side-nav">
+		<div class="side-nav-label" id="universe-settings-label">Universe settings</div>
+		<nav class="side-nav" aria-labelledby="universe-settings-label">
 			{#each NAV as item (item.id)}
 				<a href={sectionHref(item.id)} aria-current={active === item.id ? 'page' : undefined}>
 					{item.label}
 				</a>
 			{/each}
 		</nav>
-		<div class="side-nav-label">Back to the universe</div>
-		<nav class="side-nav">
+		<div class="side-nav-label" id="universe-back-label">Back to the universe</div>
+		<nav class="side-nav" aria-labelledby="universe-back-label">
 			<a href={resolve('/universes/[id]/plan', { id: data.universe.slug })}>Plan</a>
 			<a href={resolve('/universes/[id]/insights', { id: data.universe.slug })}>Insights</a>
 		</nav>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/snippet}
 
 	<div class="admin-head">
@@ -309,6 +308,7 @@
 									class="icon-btn sm turn-up"
 									type="button"
 									title="Move category up"
+									aria-label="Move category up"
 									disabled={index === 0}
 									onclick={() => moveDraft(index, -1)}
 								>
@@ -318,6 +318,7 @@
 									class="icon-btn sm turn-down"
 									type="button"
 									title="Move category down"
+									aria-label="Move category down"
 									disabled={index === drafts.length - 1}
 									onclick={() => moveDraft(index, 1)}
 								>
@@ -356,6 +357,7 @@
 								class="category-delete"
 								type="button"
 								title={draft.entries > 0 ? 'Move or delete its entries first' : 'Delete category'}
+								aria-label="Delete category"
 								disabled={draft.entries > 0}
 								onclick={() => (drafts = drafts.filter((row) => row !== draft))}
 							>
@@ -448,9 +450,7 @@
 									</div>
 									{#if row.reason === 'checkpoint'}
 										<div class="revision-actions">
-											<!-- eslint-disable svelte/no-navigation-without-resolve (app path with query parameters) -->
 											<a class="btn btn-ghost btn-sm" href={previewHref(row)}>Preview</a>
-											<!-- eslint-enable svelte/no-navigation-without-resolve -->
 											<button
 												class="btn btn-secondary btn-sm"
 												type="button"
@@ -542,14 +542,12 @@
 					<form
 						method="POST"
 						action="?/delete"
-						onsubmit={(e) => {
-							if (
-								!confirm(
-									`Delete this universe and everything in it? You can restore it from the library for ${data.trashDays} days.`
-								)
-							)
-								e.preventDefault();
-						}}
+						onsubmit={confirmSubmit({
+							title: 'Delete this universe and everything in it?',
+							body: `You can restore it from the library for ${data.trashDays} days.`,
+							confirmLabel: 'Delete universe',
+							danger: true
+						})}
 					>
 						<button class="btn btn-danger" type="submit">Delete universe</button>
 					</form>

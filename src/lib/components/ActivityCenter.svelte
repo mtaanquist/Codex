@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { openHref } from '$lib/open-href';
 	import Icon from './Icon.svelte';
 	import { activity, dismissActivity, type ActivityItem } from '$lib/activity.svelte';
 
@@ -12,8 +12,7 @@
 	async function open(item: ActivityItem) {
 		if (!item.href) return;
 		dismissActivity(item.id);
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path built by the caller
-		await goto(item.href);
+		await openHref(item.href);
 	}
 </script>
 

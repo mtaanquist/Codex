@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import ReviewSceneHead from './ReviewSceneHead.svelte';
 	import ReviewMarginRail from './ReviewMarginRail.svelte';
 	import ReviewSelectionToolbar from './ReviewSelectionToolbar.svelte';
@@ -47,7 +48,7 @@
 		mentionPins: Record<string, string>;
 		// Where "Open full details" points; absent for reviewers, who never reach
 		// the full entity.
-		entityHref: ((entity: MentionEntity) => string) | null;
+		entityHref: ((entity: MentionEntity) => ResolvedPathname) | null;
 		onStartComment: (sel: { start: number; end: number; text: string }) => void;
 		onStartSuggest: (sel: { start: number; end: number; text: string }) => void;
 	} = $props();
@@ -144,7 +145,7 @@
 			raw.push({
 				id,
 				kind: node.dataset.kind === 'suggest' ? 'suggest' : 'comment',
-				color: node.style.getPropertyValue('--auth') || 'var(--accent)',
+				color: node.style.getPropertyValue('--auth') || 'var(--accent-ink)',
 				top: node.offsetTop
 			});
 		}

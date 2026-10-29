@@ -388,12 +388,9 @@ describe('scene routes refuse another user', () => {
 
 	it('POST /api/scenes/[id]/split', async () => {
 		const offset = 'Alpha walks in. '.length;
-		// The offset path maps every split failure, a foreign scene included, to
-		// 400; it is still refused before any write.
 		await expectRefused(
 			sceneSplitRoute.POST,
-			event(B, { params: { id: s.sceneA1.id }, body: { offset } }),
-			400
+			event(B, { params: { id: s.sceneA1.id }, body: { offset } })
 		);
 		await expectRefused(
 			sceneSplitRoute.POST,
@@ -574,15 +571,15 @@ describe('story routes refuse another user', () => {
 	it('POST /api/stories/[id]/duplicate-scene', async () => {
 		const body = { sceneId: s.sceneA1.id };
 		await expectRefused(duplicateRoute.POST, event(B, { params: { id: s.storyA.id }, body }));
-		// B's own story with A's scene: refused (as 400) by the scene lookup.
-		await expectRefused(duplicateRoute.POST, event(B, { params: { id: s.storyB.id }, body }), 400);
+		// B's own story with A's scene: refused by the scene lookup.
+		await expectRefused(duplicateRoute.POST, event(B, { params: { id: s.storyB.id }, body }));
 		await expectAllowed(duplicateRoute.POST, event(A, { params: { id: s.storyA.id }, body }));
 	});
 
 	it('POST /api/stories/[id]/merge-scenes', async () => {
 		const body = { sceneIds: [s.sceneA1.id, s.sceneA2.id] };
 		await expectRefused(mergeRoute.POST, event(B, { params: { id: s.storyA.id }, body }));
-		await expectRefused(mergeRoute.POST, event(B, { params: { id: s.storyB.id }, body }), 400);
+		await expectRefused(mergeRoute.POST, event(B, { params: { id: s.storyB.id }, body }));
 		await expectAllowed(mergeRoute.POST, event(A, { params: { id: s.storyA.id }, body }));
 	});
 
@@ -600,7 +597,7 @@ describe('story routes refuse another user', () => {
 				params: { id: s.storyB.id },
 				body: { chapters: [], orphanSceneIds: [s.sceneB1.id, s.sceneA1.id] }
 			}),
-			400
+			409
 		);
 		await expectAllowed(
 			sceneOrderRoute.PUT,

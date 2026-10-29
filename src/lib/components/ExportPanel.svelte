@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { formatDateTime } from '$lib/format';
 	type ExportItem = {
 		id: string;
@@ -51,8 +52,11 @@
 					<span class="export-name">{item.filename ?? `${item.format.toUpperCase()} export`}</span>
 					<span class="export-meta">{formatDateTime(item.createdAt)}</span>
 					{#if item.status === 'ready'}
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve (file download) -->
-						<a class="btn btn-ghost btn-sm" href="/exports/{item.id}" download>Download</a>
+						<a
+							class="btn btn-ghost btn-sm"
+							href={resolve('/exports/[id=uuid]', { id: item.id })}
+							download>Download</a
+						>
 					{:else if item.status === 'pending'}
 						<span class="export-status">Preparing...</span>
 					{:else}

@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
+import { MIN_PASSWORD } from '../../src/lib/password';
 import * as schema from '../../src/lib/server/db/schema';
 import { sessions, users } from '../../src/lib/server/db/schema';
 import {
@@ -230,6 +231,10 @@ describe('changePassword', () => {
 		const current = await newSession();
 		expect((await changePassword(db, userId, current, 'wrong', 'a-new-password')).ok).toBe(false);
 		expect((await changePassword(db, userId, current, 'current-password', 'short')).ok).toBe(false);
+		const oneShort = 'x'.repeat(MIN_PASSWORD - 1);
+		expect((await changePassword(db, userId, current, 'current-password', oneShort)).ok).toBe(
+			false
+		);
 		// Unchanged.
 		const [row] = await db.select().from(users).where(eq(users.id, userId));
 		expect(await verifyPassword(row.passwordHash, 'current-password')).toBe(true);

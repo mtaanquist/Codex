@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
+import { MIN_PASSWORD } from '../../src/lib/password';
 import * as schema from '../../src/lib/server/db/schema';
 import { authTokens, inviteCodes, users } from '../../src/lib/server/db/schema';
 import {
@@ -56,6 +57,10 @@ describe('registerUser', () => {
 		).toBe(false);
 		expect(
 			(await registerUser(db, { email: 'a@b.co', password: 'short', displayName: 'X' })).ok
+		).toBe(false);
+		const oneShort = 'x'.repeat(MIN_PASSWORD - 1);
+		expect(
+			(await registerUser(db, { email: 'a@b.co', password: oneShort, displayName: 'X' })).ok
 		).toBe(false);
 		expect(
 			(await registerUser(db, { email: 'a@b.co', password: 'a-good-password', displayName: ' ' }))

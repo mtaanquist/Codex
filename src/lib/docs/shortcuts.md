@@ -9,12 +9,16 @@ Option on a Mac, Ctrl and Alt everywhere else.
   entity, or run a command (new scene, switch view, focus mode, and more).
 - **Ctrl+Alt+N**: on a story's Write page, open the quick-note card to jot a
   note without leaving the editor. Ctrl+Enter saves it, Esc closes it.
+- **Arrow keys** move through any open menu, and Home and End jump to its first
+  and last item. Esc closes the menu.
 
 ## In the editor
 
 - **Ctrl+B**: bold the selection.
 - **Ctrl+I**: italicise the selection.
 - **Ctrl+F**: find and replace within the scene.
+- **Arrow keys** on the formatting bar move between its tools, and Home and End
+  jump to the first and last. Tab moves on to the text.
 - **Ctrl+Alt+M**: mark the selected text as a TODO. A line that begins with
   `TODO:` becomes one on its own, no shortcut needed.
 - **Ctrl+Z** and **Ctrl+Shift+Z**: undo and redo.

@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
@@ -22,11 +23,15 @@ export async function splitScene(
 	userId: string,
 	sceneId: string,
 	offset: number
-): Promise<{ ok: true; newSceneId: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; newSceneId: string } | ActionFailure> {
 	const scene = await ownedScene(db, userId, sceneId);
-	if (!scene) return { ok: false, reason: 'scene not found' };
+	if (!scene) return { ok: false, code: 'not_found', reason: 'That scene no longer exists.' };
 	if (!Number.isInteger(offset) || offset <= 0 || offset >= scene.bodyMd.length) {
-		return { ok: false, reason: 'put the cursor inside the text, not at an edge' };
+		return {
+			ok: false,
+			code: 'invalid',
+			reason: 'Put the cursor inside the text, not at an edge.'
+		};
 	}
 
 	// Split exactly at the offset for the marker maths, then tidy the seam:
@@ -37,7 +42,7 @@ export async function splitScene(
 	const tailShift = rawTail.length - rawTail.replace(/^\s+/, '').length;
 	const tail = rawTail.slice(tailShift);
 	if (head === '' || tail === '') {
-		return { ok: false, reason: 'both halves need some text' };
+		return { ok: false, code: 'invalid', reason: 'Both halves need some text.' };
 	}
 
 	const newSceneId = await db.transaction(async (tx) => {
@@ -125,12 +130,12 @@ export async function locateSplitInStory(
 	userId: string,
 	sceneId: string,
 	before: string
-): Promise<{ ok: true; sceneId: string; offset: number } | { ok: false; reason: string }> {
+): Promise<{ ok: true; sceneId: string; offset: number } | ActionFailure> {
 	const scene = await ownedScene(db, userId, sceneId);
-	if (!scene) return { ok: false, reason: 'scene not found' };
+	if (!scene) return { ok: false, code: 'not_found', reason: 'That scene no longer exists.' };
 	const here = locateSplitBefore(scene.bodyMd, before);
 	if (here.ok) return { ok: true, sceneId, offset: here.offset };
-	if (scene.bodyMd.includes(before)) return here;
+	if (scene.bodyMd.includes(before)) return { ...here, code: 'invalid' };
 
 	const siblings = await db
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
@@ -139,16 +144,17 @@ export async function locateSplitInStory(
 			and(eq(scenes.storyId, scene.storyId), isNull(scenes.deletedAt), ne(scenes.id, sceneId))
 		);
 	const holders = siblings.filter((sibling) => sibling.bodyMd.includes(before));
-	if (holders.length === 0) return here;
+	if (holders.length === 0) return { ...here, code: 'invalid' };
 	if (holders.length > 1) {
 		return {
 			ok: false,
+			code: 'invalid',
 			reason:
 				'That text appears in more than one scene; include more surrounding text to make it unique.'
 		};
 	}
 	const there = locateSplitBefore(holders[0].bodyMd, before);
-	if (!there.ok) return there;
+	if (!there.ok) return { ...there, code: 'invalid' };
 	return { ok: true, sceneId: holders[0].id, offset: there.offset };
 }
 
@@ -162,7 +168,7 @@ export async function duplicateScene(
 	db: Database,
 	userId: string,
 	sceneId: string
-): Promise<{ ok: true; newSceneId: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; newSceneId: string } | ActionFailure> {
 	const [source] = await db
 		.select()
 		.from(scenes)
@@ -175,7 +181,7 @@ export async function duplicateScene(
 				isNull(scenes.deletedAt)
 			)
 		);
-	if (!source) return { ok: false, reason: 'scene not found' };
+	if (!source) return { ok: false, code: 'not_found', reason: 'That scene no longer exists.' };
 	const scene = source.scenes;
 
 	const newSceneId = await db.transaction(async (tx) => {
@@ -252,9 +258,10 @@ export async function mergeScenes(
 	userId: string,
 	storyId: string,
 	sceneIds: string[]
-): Promise<{ ok: true; targetSceneId: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; targetSceneId: string } | ActionFailure> {
 	const unique = [...new Set(sceneIds)];
-	if (unique.length < 2) return { ok: false, reason: 'pick at least two scenes' };
+	if (unique.length < 2)
+		return { ok: false, code: 'invalid', reason: 'Pick at least two scenes to merge.' };
 
 	const rows = await db
 		.select({
@@ -276,7 +283,7 @@ export async function mergeScenes(
 		)
 		.orderBy(asc(scenes.globalPosition));
 	if (rows.length !== unique.length) {
-		return { ok: false, reason: 'every scene must be a live scene of this story' };
+		return { ok: false, code: 'not_found', reason: 'One of those scenes no longer exists.' };
 	}
 
 	const [target, ...rest] = rows;
