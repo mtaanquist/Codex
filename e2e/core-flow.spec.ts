@@ -584,8 +584,8 @@ async function journey({ page, browser }: { page: Page; browser: Browser }) {
 	await expect(page.getByRole('status')).toHaveText('Saved.');
 	await page.getByRole('button', { name: 'Publish edition' }).click();
 	// The first publish with no pen name set asks what name goes public;
-	// whether it appears depends on whether the account spec has run, so
-	// keep the offered display name when it does. The dialog opens
+	// an earlier attempt may already have answered it, so keep the offered
+	// display name when it does appear. The dialog opens
 	// synchronously from the intercepted submit.
 	const penPrompt = page.getByRole('dialog', { name: 'Choose your author name' });
 	if (await penPrompt.isVisible()) {
@@ -598,10 +598,9 @@ async function journey({ page, browser }: { page: Page; browser: Browser }) {
 	await gotoReady(reader, '/@core-flow-tester');
 	// The shelf names the author - the pen name if the account has one, else the
 	// display name, never the raw handle - and keeps the handle as the address
-	// under it. Which of the two names it is depends on whether the account spec
-	// has run, so assert the shape rather than one of them.
+	// under it. The pen name prompt above keeps the display name.
 	const shelfName = reader.locator('.shelf-name');
-	await expect(shelfName).toContainText('Tester');
+	await expect(shelfName).toContainText('Core Flow Tester');
 	await expect(shelfName).not.toContainText('@');
 	await expect(reader.locator('.shelf-handle')).toContainText('@core-flow-tester');
 	// A cover is the story's own title, set, until an author uploads artwork -
