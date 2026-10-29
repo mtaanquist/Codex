@@ -308,10 +308,10 @@ export async function runBackup(
 	options: BackupRunOptions = {}
 ): Promise<{ ok: true; key: string | null; skipped: boolean } | { ok: false; reason: string }> {
 	const config = options.config !== undefined ? options.config : await effectiveBackupConfig(db);
-	if (!config) return { ok: false, reason: 'backups are not configured' };
+	if (!config) return { ok: false, reason: 'Backups are not set up.' };
 	const store = options.store ?? s3Store(config);
 	const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
-	if (!databaseUrl) return { ok: false, reason: 'DATABASE_URL is not set' };
+	if (!databaseUrl) return { ok: false, reason: 'DATABASE_URL is not set on the server.' };
 
 	const [run] = await db
 		.insert(backupRuns)

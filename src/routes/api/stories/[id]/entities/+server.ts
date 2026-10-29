@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { createStoryEntity } from '$lib/server/create-entity';
 import { queueUniverseMentions } from '$lib/server/jobs';
 import { ownedStory } from '$lib/server/story-access';
@@ -29,7 +30,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		payload.name,
 		typeof payload.categoryId === 'string' ? payload.categoryId : undefined
 	);
-	if (!result.ok) error(400, result.reason);
+	if (!result.ok) throwActionError(result);
 	await queueUniverseMentions(universe.id);
 	return json({ ok: true, id: result.id });
 };

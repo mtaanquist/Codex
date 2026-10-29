@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { isHttpError } from '@sveltejs/kit';
 
 // The endpoint opens a real database pool and reaches the passkey ceremony on
 // import; stub the dependencies so the test exercises only the re-auth gate.
@@ -16,6 +17,16 @@ vi.mock('$lib/server/passkeys', () => ({
 const { verifyAccountPassword } = await import('$lib/server/account');
 const { startPasskeyRegistration } = await import('$lib/server/passkeys');
 const { POST } = await import('./+server');
+
+// The status the handler answered with, whether it returned a Response or threw.
+async function statusOf(ev: ReturnType<typeof event>): Promise<number> {
+	try {
+		return ((await POST(ev as never)) as Response).status;
+	} catch (err) {
+		if (isHttpError(err)) return err.status;
+		throw err;
+	}
+}
 
 function event(userId: string, password: string) {
 	const cookies = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
@@ -36,8 +47,7 @@ describe('passkey register-options re-auth gate', () => {
 	it('refuses to start registration when the password is wrong', async () => {
 		vi.mocked(verifyAccountPassword).mockResolvedValue(false);
 		const ev = event('pk-wrong-user', 'nope');
-		const res = (await POST(ev as never)) as Response;
-		expect(res.status).toBe(400);
+		expect(await statusOf(ev)).toBe(400);
 		// No challenge issued and no ceremony begun.
 		expect(ev.cookies.set).not.toHaveBeenCalled();
 		expect(startPasskeyRegistration).not.toHaveBeenCalled();
@@ -46,8 +56,7 @@ describe('passkey register-options re-auth gate', () => {
 	it('starts registration and sets the challenge cookie when the password is right', async () => {
 		vi.mocked(verifyAccountPassword).mockResolvedValue(true);
 		const ev = event('pk-right-user', 'correct');
-		const res = (await POST(ev as never)) as Response;
-		expect(res.status).toBe(200);
+		expect(await statusOf(ev)).toBe(200);
 		expect(startPasskeyRegistration).toHaveBeenCalledTimes(1);
 		expect(ev.cookies.set).toHaveBeenCalledWith('pk_challenge', 'token', expect.any(Object));
 	});
@@ -56,10 +65,8 @@ describe('passkey register-options re-auth gate', () => {
 		vi.mocked(verifyAccountPassword).mockResolvedValue(true);
 		const userId = 'pk-throttle-user';
 		for (let attempt = 1; attempt <= 10; attempt++) {
-			const res = (await POST(event(userId, 'correct') as never)) as Response;
-			expect(res.status).toBe(200);
+			expect(await statusOf(event(userId, 'correct'))).toBe(200);
 		}
-		const res = (await POST(event(userId, 'correct') as never)) as Response;
-		expect(res.status).toBe(429);
+		expect(await statusOf(event(userId, 'correct'))).toBe(429);
 	});
 });

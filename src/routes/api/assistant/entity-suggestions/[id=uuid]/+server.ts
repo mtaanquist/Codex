@@ -1,6 +1,8 @@
-import { error, type RequestHandler } from '@sveltejs/kit';
+import { json, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { decideEntitySuggestion } from '$lib/server/entity-suggestions';
+import { readJson } from '$lib/server/validation';
 
 // Accept or reject one staged entity suggestion. Owner-scoped in the data layer.
 // Accepting applies the single field (alias / detail / summary) to the entity and
@@ -11,13 +13,10 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 	const userId = locals.user!.id;
 	const id = params.id!;
 
-	const payload = (await request.json().catch(() => null)) as { decision?: unknown } | null;
-	const decision = payload && payload.decision === 'reject' ? 'reject' : 'accept';
+	const payload = await readJson<{ decision?: unknown }>(request);
+	const decision = payload.decision === 'reject' ? 'reject' : 'accept';
 
 	const result = await decideEntitySuggestion(db, userId, id, decision);
-	if (!result.ok) error(404, result.reason ?? 'Suggestion not found.');
-
-	return new Response(JSON.stringify({ ok: true }), {
-		headers: { 'content-type': 'application/json' }
-	});
+	if (!result.ok) throwActionError(result);
+	return json({ ok: true });
 };

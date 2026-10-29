@@ -1,7 +1,8 @@
-import { json } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { readJson } from '$lib/server/validation';
 import { verifyAccountPassword } from '$lib/server/account';
 import { secretsAvailable } from '$lib/server/crypto';
 import { reauthLimit } from '$lib/server/reauth';
@@ -17,21 +18,19 @@ import { PASSKEY_CHALLENGE_COOKIE, startPasskeyRegistration } from '$lib/server/
 // page's other password-gated actions.
 export const POST: RequestHandler = async ({ cookies, locals, request, url }) => {
 	if (!secretsAvailable()) {
-		return json({ message: 'Set APP_SECRET on the server to use passkeys.' }, { status: 503 });
+		error(503, 'Set APP_SECRET on the server to use passkeys.');
 	}
 	const limit = reauthLimit(locals.user!.id);
 	if (!limit.allowed) {
 		const minutes = Math.ceil(limit.retryAfterSeconds / 60);
-		return json(
-			{
-				message: `Too many attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`
-			},
-			{ status: 429 }
+		error(
+			429,
+			`Too many attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`
 		);
 	}
-	const body = await request.json().catch(() => null);
-	if (!(await verifyAccountPassword(db, locals.user!.id, String(body?.password ?? '')))) {
-		return json({ message: 'That password is not right.' }, { status: 400 });
+	const body = await readJson<{ password?: unknown }>(request);
+	if (!(await verifyAccountPassword(db, locals.user!.id, String(body.password ?? '')))) {
+		error(400, 'That password is not right.');
 	}
 	const origin = publicOrigin(url);
 	const { options, challengeToken } = await startPasskeyRegistration(db, locals.user!, origin);

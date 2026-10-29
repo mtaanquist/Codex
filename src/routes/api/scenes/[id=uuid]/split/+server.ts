@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { rateLimitWrites } from '$lib/server/write-guard';
 import { locateSplitInStory, splitScene } from '$lib/server/scene-split-merge';
 import { queueSceneMentions } from '$lib/server/jobs';
@@ -21,9 +22,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	let offset: number;
 	if (typeof payload.before === 'string') {
 		const location = await locateSplitInStory(db, locals.user!.id, params.id, payload.before);
-		if (!location.ok) {
-			error(location.reason === 'scene not found' ? 404 : 400, location.reason);
-		}
+		if (!location.ok) throwActionError(location);
 		targetSceneId = location.sceneId;
 		offset = location.offset;
 	} else if (typeof payload.offset === 'number') {
@@ -33,7 +32,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	const result = await splitScene(db, locals.user!.id, targetSceneId, offset);
-	if (!result.ok) error(400, result.reason);
+	if (!result.ok) throwActionError(result);
 	await queueSceneMentions(targetSceneId);
 	await queueSceneMentions(result.newSceneId);
 	// splitSceneId names the scene that was actually cut, which the locate may

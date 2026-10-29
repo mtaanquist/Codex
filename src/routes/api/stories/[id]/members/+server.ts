@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { declareMembership, removeMembership } from '$lib/server/membership';
 import { readJson } from '$lib/server/validation';
 import { rateLimitWrites } from '$lib/server/write-guard';
@@ -24,6 +25,6 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const result = payload.member
 		? await declareMembership(db, locals.user!.id, payload.kind, payload.entityId, params.id)
 		: await removeMembership(db, locals.user!.id, payload.kind, payload.entityId, params.id);
-	if (!result.ok) error(404, result.reason);
+	if (!result.ok) throwActionError(result);
 	return json({ ok: true });
 };

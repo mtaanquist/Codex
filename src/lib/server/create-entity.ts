@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
+import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import {
 	characters,
@@ -27,11 +28,11 @@ export async function createStoryEntity(
 	type: EntityType,
 	rawName: string,
 	categoryId?: string
-): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	const name = rawName.replace(/\s+/g, ' ').trim();
-	if (!name) return { ok: false, reason: 'The selection is empty.' };
+	if (!name) return { ok: false, code: 'invalid', reason: 'The selection is empty.' };
 	if (name.length > ENTITY_NAME_MAX) {
-		return { ok: false, reason: 'That selection is too long for a name.' };
+		return { ok: false, code: 'invalid', reason: 'That selection is too long for a name.' };
 	}
 	if (type === 'character') {
 		const [character] = await db
@@ -70,6 +71,7 @@ export async function createStoryEntity(
 	if (!category) {
 		return {
 			ok: false,
+			code: categoryId ? 'not_found' : 'invalid',
 			reason: categoryId
 				? 'That category does not exist.'
 				: 'The universe has no lore category yet.'

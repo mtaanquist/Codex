@@ -90,7 +90,7 @@ export async function rebuildSceneMentions(
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(eq(scenes.id, sceneId));
-	if (!scene) return { ok: false, reason: 'scene not found' };
+	if (!scene) return { ok: false, reason: 'That scene no longer exists.' };
 	// A trashed scene holds no mentions. Clear and stamp so a rebuild queued
 	// before the deletion cannot re-add rows, and the reconcile sweep settles.
 	if (scene.deletedAt) {

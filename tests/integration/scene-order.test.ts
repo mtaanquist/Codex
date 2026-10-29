@@ -120,7 +120,7 @@ describe('applySceneOrder', () => {
 			],
 			orphanSceneIds: []
 		});
-		expect(result).toMatchObject({ ok: false });
+		expect(result).toMatchObject({ ok: false, code: 'conflict' });
 	});
 
 	it('rejects an order that lists a scene twice', async () => {
@@ -131,7 +131,7 @@ describe('applySceneOrder', () => {
 			],
 			orphanSceneIds: []
 		});
-		expect(result).toMatchObject({ ok: false });
+		expect(result).toMatchObject({ ok: false, code: 'conflict' });
 	});
 
 	it('rejects an order with a foreign chapter', async () => {
@@ -139,6 +139,6 @@ describe('applySceneOrder', () => {
 			chapters: [{ id: crypto.randomUUID(), sceneIds: [s1, s2, s3] }],
 			orphanSceneIds: []
 		});
-		expect(result).toMatchObject({ ok: false });
+		expect(result).toMatchObject({ ok: false, code: 'conflict' });
 	});
 });

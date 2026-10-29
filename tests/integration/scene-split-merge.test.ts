@@ -298,8 +298,14 @@ describe('mergeScenes', () => {
 	it('refuses fewer than two scenes, foreign scenes, and cross-story mixes', async () => {
 		const a = await makeScene(1, 'One.');
 		const b = await makeScene(2, 'Two.');
-		expect(await mergeScenes(db, ownerId, storyId, [a.id])).toMatchObject({ ok: false });
-		expect(await mergeScenes(db, strangerId, storyId, [a.id, b.id])).toMatchObject({ ok: false });
+		expect(await mergeScenes(db, ownerId, storyId, [a.id])).toMatchObject({
+			ok: false,
+			code: 'invalid'
+		});
+		expect(await mergeScenes(db, strangerId, storyId, [a.id, b.id])).toMatchObject({
+			ok: false,
+			code: 'not_found'
+		});
 
 		// A scene from another story cannot ride along.
 		const [story] = await db.select().from(stories).where(eq(stories.id, storyId));
@@ -393,7 +399,8 @@ describe('locateSplitInStory', () => {
 		const scene = await makeScene(1, BODY);
 		expect(await locateSplitInStory(db, strangerId, scene.id, 'MIDCUT')).toMatchObject({
 			ok: false,
-			reason: 'scene not found'
+			code: 'not_found',
+			reason: 'That scene no longer exists.'
 		});
 	});
 });

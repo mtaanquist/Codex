@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
+import { throwActionError } from '$lib/server/action-result';
 import { ownedStory } from '$lib/server/story-access';
 import { applySceneOrder, type SceneOrder } from '$lib/server/scene-order';
 import { readJson } from '$lib/server/validation';
@@ -16,6 +17,6 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	const result = await applySceneOrder(db, story.id, payload);
-	if (!result.ok) error(400, result.reason);
+	if (!result.ok) throwActionError(result);
 	return json({ ok: true });
 };
