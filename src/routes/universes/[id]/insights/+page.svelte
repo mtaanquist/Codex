@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { entityColor } from '$lib/entity-color';
 	import { daysMetGoal, daysUntil } from '$lib/insights';
-	import { formatNumber } from '$lib/format';
+	import { formatNumber, narrowWeekday } from '$lib/format';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
@@ -82,10 +82,7 @@
 	const week = $derived(
 		data.activity.daily.slice(-7).map((entry) => ({
 			day: entry.day,
-			label: new Date(`${entry.day}T00:00:00Z`).toLocaleDateString('en-US', {
-				weekday: 'narrow',
-				timeZone: 'UTC'
-			}),
+			label: narrowWeekday(entry.day),
 			written: entry.words !== 0,
 			isToday: entry.day === data.activity.today
 		}))

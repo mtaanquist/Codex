@@ -10,7 +10,7 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { universePath } from '$lib/chrome';
 	import SettingsShell from '$lib/components/SettingsShell.svelte';
-	import { formatNumber } from '$lib/format';
+	import { formatLongDate, formatNumber, formatTime } from '$lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -106,15 +106,7 @@
 		for (const row of filteredTimeline) {
 			const day = row.createdAt.toDateString();
 			const label =
-				day === today
-					? 'Today'
-					: day === yesterday
-						? 'Yesterday'
-						: row.createdAt.toLocaleDateString(undefined, {
-								day: 'numeric',
-								month: 'long',
-								year: 'numeric'
-							});
+				day === today ? 'Today' : day === yesterday ? 'Yesterday' : formatLongDate(row.createdAt);
 			const last = groups[groups.length - 1];
 			if (last && last.label === label) last.rows.push(row);
 			else groups.push({ label, rows: [row] });
@@ -123,7 +115,7 @@
 	});
 
 	function entryTime(row: (typeof data.timeline)[number]): string {
-		return row.createdAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+		return formatTime(row.createdAt);
 	}
 
 	function previewHref(row: (typeof data.timeline)[number]): string {

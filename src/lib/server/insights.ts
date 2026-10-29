@@ -264,6 +264,8 @@ export async function relationshipLinks(db: Database, universeId: string): Promi
 /** True when the string names a timezone the runtime knows. */
 export function isValidTimezone(timezone: string): boolean {
 	try {
+		// A validity probe, not display formatting.
+		// eslint-disable-next-line no-restricted-syntax
 		new Intl.DateTimeFormat('en', { timeZone: timezone });
 		return true;
 	} catch {
