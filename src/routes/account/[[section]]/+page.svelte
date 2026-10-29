@@ -44,6 +44,28 @@
 	// on, so an action result lands where it belongs without any bookkeeping.
 	let active: Section = $derived((page.params.section as Section) ?? 'profile');
 
+	// "On this page" links for the two sections too long for one screen; the
+	// ids sit on each group's block in AccountSecurity and AccountAssistant.
+	const CONTENTS: Partial<Record<Section, { id: string; label: string }[]>> = {
+		security: [
+			{ id: 'security-email', label: 'Email' },
+			{ id: 'security-password', label: 'Password' },
+			{ id: 'security-two-factor', label: 'Two-factor authentication' },
+			{ id: 'security-passkeys', label: 'Passkeys' },
+			{ id: 'security-sessions', label: 'Sessions' },
+			{ id: 'security-data', label: 'Your data' },
+			{ id: 'security-delete', label: 'Delete account' }
+		],
+		assistant: [
+			{ id: 'assistant-how', label: 'How Codex uses your assistant' },
+			{ id: 'assistant-identity', label: 'Identity' },
+			{ id: 'assistant-endpoint', label: 'Endpoint' },
+			{ id: 'assistant-models', label: 'Models per role' },
+			{ id: 'assistant-usage', label: 'Usage' }
+		]
+	};
+	const contents = $derived(CONTENTS[active]);
+
 	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/account/[[section]]', {
 			section: section === 'profile' ? undefined : section
@@ -86,7 +108,7 @@
 			</div>
 		</div>
 
-		<nav class="admin-nav">
+		<nav class="admin-nav" class:fit={contents}>
 			<div class="admin-nav-label">You</div>
 			<a class="nav-item" class:active={active === 'profile'} href={sectionHref('profile')}>
 				<svg
@@ -237,6 +259,17 @@
 				</a>
 			{/if}
 		</nav>
+
+		{#if contents}
+			<div class="admin-nav-label" id="account-contents-label">On this page</div>
+			<nav class="contents-nav" aria-labelledby="account-contents-label">
+				{#each contents as item (item.id)}
+					<a href="#{item.id}" aria-current={page.url.hash === `#${item.id}` ? 'true' : undefined}
+						>{item.label}</a
+					>
+				{/each}
+			</nav>
+		{/if}
 
 		<div
 			class="admin-health"

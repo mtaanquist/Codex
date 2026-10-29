@@ -336,7 +336,7 @@
 	</form>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="assistant-how">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">How Codex uses your assistant</h2>
 	</div>
@@ -409,7 +409,7 @@
 </div>
 
 <div data-ai-gated class:off={assistantOff}>
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-identity">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Identity</h2>
@@ -460,7 +460,7 @@
 		</div>
 	</div>
 
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-endpoint">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Endpoint</h2>
@@ -651,7 +651,7 @@
 		</div>
 	</div>
 
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-models">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Models per role</h2>
@@ -803,7 +803,7 @@
 		</div>
 	</div>
 
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-usage">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Usage</h2>
