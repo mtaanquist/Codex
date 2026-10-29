@@ -1,5 +1,5 @@
-import type { SubmitFunction } from '@sveltejs/kit';
-import { browser } from '$app/environment';
+import type { SubmitFunction } from '$app/forms';
+import { browser } from '$app/env';
 
 // Helpers for settings forms that save on change instead of with a button. A
 // select or checkbox saves at once; a text field saves when it loses focus

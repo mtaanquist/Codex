@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { openHref } from '$lib/open-href';
 	import Icon from './Icon.svelte';
 	import type { NotificationItem } from '$lib/notifications';
 	import { dismiss } from '$lib/dismiss';
@@ -55,8 +55,7 @@
 		}
 		if (item.href) {
 			open = false;
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- app path built server-side
-			await goto(item.href);
+			await openHref(item.href);
 		}
 	}
 

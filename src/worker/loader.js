@@ -28,8 +28,8 @@ function resolveFile(baseUrl) {
 	return null;
 }
 
-// SvelteKit's runtime private env is just process.env on the server; a leaf
-// data helper the worker reaches imports it, so point it at the shim.
+// SvelteKit generates `$app/env/private` for the app server only; data
+// helpers the worker reaches import it, so point it at the shim.
 const envShim = new URL('./env-shim.js', import.meta.url).href;
 
 /**
@@ -38,7 +38,7 @@ const envShim = new URL('./env-shim.js', import.meta.url).href;
  * @param {(specifier: string, context: object) => { url: string }} nextResolve
  */
 export function resolve(specifier, context, nextResolve) {
-	if (specifier === '$env/dynamic/private') {
+	if (specifier === '$app/env/private') {
 		return { url: envShim, shortCircuit: true };
 	}
 	if (specifier === '$lib' || specifier.startsWith('$lib/')) {

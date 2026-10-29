@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import FormStatus from '$lib/components/FormStatus.svelte';
 	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';

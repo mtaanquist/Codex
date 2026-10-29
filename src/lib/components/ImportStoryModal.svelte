@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { modal } from '$lib/modal';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatNumber } from '$lib/format';
@@ -99,7 +99,7 @@
 	const submit = () => {
 		busy = true;
 		busyLabel = preview ? 'Importing...' : 'Reading the file...';
-		return async ({ result }: { result: import('@sveltejs/kit').ActionResult }) => {
+		return async ({ result }: { result: import('$app/forms').ActionResult }) => {
 			busy = false;
 			if (result.type === 'success') {
 				const data = result.data as

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import type { ActionResult } from '@sveltejs/kit';
+	import { enhance } from '$lib/enhance';
+	import type { ActionResult } from '$app/forms';
 	import Icon from './Icon.svelte';
 
 	// The reply row shared by the comment and suggestion cards: the text field,

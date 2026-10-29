@@ -8,7 +8,7 @@
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { libraryCrumb } from '$lib/chrome';
 	import { formatNumber } from '$lib/format';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { LIBRARY_VIEWS, recentStories, type LibraryView } from '$lib/dashboard';
 	import type { ActionData, PageData } from './$types';
 

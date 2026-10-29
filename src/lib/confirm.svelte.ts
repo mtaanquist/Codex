@@ -1,4 +1,4 @@
-import type { SubmitFunction } from '@sveltejs/kit';
+import type { SubmitFunction } from '$app/forms';
 
 // The app's own confirm prompt, in place of the browser's confirm(). One
 // ConfirmDialog in the root layout shows whatever is asked here.

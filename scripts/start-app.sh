@@ -7,4 +7,4 @@
 set -e
 cd /app
 node scripts/migrate.ts
-exec node build
+exec node server.js

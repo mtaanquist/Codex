@@ -22,8 +22,8 @@ Next up (as of 2026-10-20, after v3.20.0). Nothing is in flight; pick from:
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and
 every finding was filed as an issue (#572 to #630), plus the Assistant retry
-notice (#638). All of them are fixed on staging except the SvelteKit 3 upgrade
-(#613, parked). Partly done, with the rest left open on the issue: dependency
+notice (#638). All of them are fixed on staging; the SvelteKit 3 upgrade (#613)
+followed in the 2026-10-26 issue round. Partly done, with the rest left open on the issue: dependency
 hygiene (#616, since done in the 2026-10-26 issue round: Node 26 runtime and
 engines, drizzle-orm 0.45.4),
 action error codes (#627, review form actions, scene split and passkey

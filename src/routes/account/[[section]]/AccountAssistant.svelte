@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
 	import { askConfirm } from '$lib/confirm.svelte';
 	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';

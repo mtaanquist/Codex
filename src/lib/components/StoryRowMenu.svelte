@@ -8,7 +8,7 @@
 <script lang="ts">
 	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { SvelteSet } from 'svelte/reactivity';
-	import { enhance } from '$app/forms';
+	import { enhance } from '$lib/enhance';
 	import Icon from './Icon.svelte';
 	import { dismiss } from '$lib/dismiss';
 	import { menu as menuKeys } from '$lib/menu';
