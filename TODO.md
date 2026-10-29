@@ -26,8 +26,7 @@ notice (#638). All of them are fixed on staging; the SvelteKit 3 upgrade (#613)
 followed in the 2026-10-26 issue round. Partly done, with the rest left open on the issue: dependency
 hygiene (#616, since done in the 2026-10-26 issue round: Node 26 runtime and
 engines, drizzle-orm 0.45.4),
-action error codes (#627, review form actions, scene split and passkey
-responses), the hygiene sweep (#629, one fixed locale, large-file splits) and
+action error codes (#627, since done in the 2026-10-26 issue round), the hygiene sweep (#629, one fixed locale, large-file splits) and
 the docs pass (#630, the TODO.md format proposal waits on the owner).
 Follow-ups: the worker's purge schedules have no test, `resolvePlanEntity`
 still queries the three entity tables in turn (#623), and end-to-end CI still
