@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { CATEGORY_COLORS } from '$lib/entity-color';
 	import { dismiss } from '$lib/dismiss';
 	import EntityBadge from './EntityBadge.svelte';
@@ -74,7 +74,7 @@
 			fail(result.message);
 			return;
 		}
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	async function uploadImage(event: Event) {
@@ -93,7 +93,7 @@
 		);
 		if (!result.ok) return fail(result.message);
 		badgeAssetId = result.id;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	async function removeImage() {
@@ -105,7 +105,7 @@
 		);
 		if (!result.ok) return fail(result.message);
 		badgeAssetId = null;
-		await invalidateAll();
+		await refreshAll();
 	}
 </script>
 

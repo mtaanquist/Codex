@@ -3,7 +3,7 @@
 	import { withQuery } from '$lib/href';
 	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { afterNavigate, beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto, refreshAll, snapshot } from '$app/navigation';
 	import { refreshStoryLive } from './live';
 	import { altLabel, modLabel } from '$lib/keys';
 	import { resolve } from '$app/paths';
@@ -43,7 +43,7 @@
 	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
 	import AppBar from '$lib/components/AppBar.svelte';
 	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
-	import type { PageData, Snapshot } from './$types';
+	import type { PageData } from './$types';
 	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
 	import { apiErrorMessage } from '$lib/format';
 	import {
@@ -115,7 +115,8 @@
 	});
 
 	type ScenePosition = { sceneId: string; anchor: number; scroll: number };
-	export const snapshot: Snapshot<ScenePosition | null> = {
+	snapshot<ScenePosition | null>({
+		id: 'scene-position',
 		capture: () => {
 			const position = sceneEditor?.getViewPosition();
 			if (!position || !data.selectedScene) return null;
@@ -126,7 +127,7 @@
 				sceneEditor?.restoreViewPosition(value);
 			}
 		}
-	};
+	});
 
 	// Picking which entity a shared name means: store the pin, then let the
 	// data refresh re-render the underlines (the editor reconfigures its
@@ -137,7 +138,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ name, targetType: target.type, targetId: target.id })
 		});
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 
 	const mentionOptions = $derived({
@@ -203,7 +204,7 @@
 	async function openSceneKeepingPane(sceneId: string) {
 		keepPaneOnNavigate = true;
 		try {
-			await goto(withQuery(storyPath, { scene: sceneId }), { invalidateAll: true });
+			await goto(withQuery(storyPath, { scene: sceneId }), { refreshAll: true });
 		} finally {
 			keepPaneOnNavigate = false;
 		}
@@ -252,7 +253,7 @@
 		if (!response.ok) {
 			return await apiErrorMessage(response, 'Could not create it.');
 		}
-		await invalidateAll();
+		await refreshAll();
 		return null;
 	}
 
@@ -321,7 +322,7 @@
 			return;
 		}
 		mergeSelection.clear();
-		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { refreshAll: true });
 		editorNonce++;
 	}
 
@@ -334,7 +335,7 @@
 			alert(result.message);
 			return;
 		}
-		await goto(withQuery(storyPath, { scene: result.newSceneId }), { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
 	}
 
 	// Opens the review modal for a scene or chapter from the sidebar row menu;
@@ -366,7 +367,7 @@
 			alert(result.message);
 			return;
 		}
-		await goto(withQuery(storyPath, { scene: result.newSceneId }), { invalidateAll: true });
+		await goto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
 	}
 
 	// Records a proposal card's outcome on its stored chat turn, so the card
@@ -1002,7 +1003,7 @@
 																headers: { 'content-type': 'application/json' },
 																body: JSON.stringify({ resolved: true })
 															});
-															await invalidateAll();
+															await refreshAll();
 														}}
 													></button>
 												{:else}

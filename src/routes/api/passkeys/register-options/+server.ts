@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { publicOrigin } from '$lib/server/origin';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
@@ -40,5 +40,5 @@ export const POST: RequestHandler = async ({ cookies, locals, request, url }) =>
 		sameSite: 'lax',
 		maxAge: 600
 	});
-	return json(options);
+	return Response.json(options);
 };

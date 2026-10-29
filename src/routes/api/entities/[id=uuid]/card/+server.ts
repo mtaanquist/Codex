@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { getEntityCard } from '$lib/server/plan-data';
@@ -8,5 +8,5 @@ import { getEntityCard } from '$lib/server/plan-data';
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const card = await getEntityCard(db, locals.user!.id, params.id);
 	if (!card) error(404, 'Not found');
-	return json(card);
+	return Response.json(card);
 };

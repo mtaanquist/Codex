@@ -52,7 +52,7 @@
 				'Could not restore this revision.'
 			);
 			if (result.ok) {
-				await goto(exitHref, { invalidateAll: true });
+				await goto(exitHref, { refreshAll: true });
 			} else {
 				alert(result.message);
 			}

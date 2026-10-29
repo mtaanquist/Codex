@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { db } from './db';
 import { throwActionError } from './action-result';
 import { saveEntity, type EntitySaveKind } from './entity-save.ts';
@@ -60,5 +60,5 @@ export async function handleEntityPut(
 	if (result.mentionsAffected) {
 		await queueUniverseMentions(result.universeId);
 	}
-	return json({ savedAt: new Date().toISOString() });
+	return Response.json({ savedAt: new Date().toISOString() });
 }

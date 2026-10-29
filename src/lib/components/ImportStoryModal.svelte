@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { modal } from '$lib/modal';
 	import { enhance } from '$lib/enhance';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatNumber } from '$lib/format';
 
@@ -108,7 +108,7 @@
 					imported = data.imported;
 					preview = null;
 					// The story list behind the modal picks up the new story.
-					await invalidateAll();
+					await refreshAll();
 				} else if (data?.preview) {
 					preview = data.preview;
 				}

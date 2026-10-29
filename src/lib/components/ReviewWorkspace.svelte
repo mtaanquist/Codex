@@ -2,7 +2,7 @@
 	import { withQuery } from '$lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
@@ -171,7 +171,7 @@
 		} catch {
 			// reported by the missing reply itself
 		}
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	let filter = $state<ReviewFilter>('all');
@@ -220,7 +220,7 @@
 	// The selected scene starts from the URL's ?scene, which a sidebar management
 	// action's redirect carries the open scene in. After that it is local state:
 	// an in-page scene click (or a duplicate/merge) sets it directly. Because it
-	// is plain state, a data refresh (invalidateAll leaves the URL alone) keeps
+	// is plain state, a data refresh (refreshAll leaves the URL alone) keeps
 	// that choice - a writable $derived would recompute on the refresh and lose
 	// it. The effect re-syncs only when the URL's ?scene actually changes (a real
 	// navigation or a management redirect), not on every refresh.
@@ -341,7 +341,7 @@
 			return;
 		}
 		chosenSceneId = result.newSceneId;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	// Joins the picked scenes in story order; the survivor becomes the open scene.
@@ -355,7 +355,7 @@
 		}
 		mergeSelection.clear();
 		chosenSceneId = result.targetSceneId;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	// Clicking a card jumps to its passage; clicking a mark jumps to its note.

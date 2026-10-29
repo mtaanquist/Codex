@@ -1,4 +1,3 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { throwActionError } from '$lib/server/action-result';
@@ -19,5 +18,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const result = await mergeScenes(db, locals.user!.id, story.id, sceneIds);
 	if (!result.ok) throwActionError(result);
 	await queueSceneMentions(result.targetSceneId);
-	return json({ ok: true, targetSceneId: result.targetSceneId });
+	return Response.json({ ok: true, targetSceneId: result.targetSceneId });
 };

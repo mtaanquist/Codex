@@ -2,7 +2,7 @@
 	import { withQuery } from '$lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import { confirmSubmit } from '$lib/confirm.svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
@@ -147,7 +147,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ entityType: row.entityType, entityId: row.entityId })
 			});
-			if (response.ok) await invalidateAll();
+			if (response.ok) await refreshAll();
 		} finally {
 			restoring = null;
 		}

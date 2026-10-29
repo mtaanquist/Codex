@@ -1,4 +1,4 @@
-import { json, type RequestHandler } from '@sveltejs/kit';
+import { type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { throwActionError } from '$lib/server/action-result';
 import { decideEntitySuggestion } from '$lib/server/entity-suggestions';
@@ -18,5 +18,5 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 
 	const result = await decideEntitySuggestion(db, userId, id, decision);
 	if (!result.ok) throwActionError(result);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

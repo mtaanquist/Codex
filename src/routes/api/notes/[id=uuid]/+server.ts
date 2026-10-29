@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { throwActionError } from '$lib/server/action-result';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
@@ -19,5 +19,5 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		bodyMd: payload.bodyMd
 	});
 	if (!result.ok) throwActionError(result);
-	return json({ savedAt: new Date().toISOString() });
+	return Response.json({ savedAt: new Date().toISOString() });
 };

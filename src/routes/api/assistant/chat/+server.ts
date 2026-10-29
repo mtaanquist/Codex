@@ -1,4 +1,4 @@
-import { error, json, type RequestHandler } from '@sveltejs/kit';
+import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { ownedStory } from '$lib/server/story-access';
 import { ownedUniverse } from '$lib/server/universe-access';
@@ -159,5 +159,5 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 	} else {
 		error(400, 'storyId or universeId is required.');
 	}
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

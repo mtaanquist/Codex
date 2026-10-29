@@ -1,4 +1,4 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { ownedScene } from '$lib/server/scene-access';
@@ -71,11 +71,11 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	if (!result.ok) {
 		// The scene changed somewhere else since this editor last saw it; the
 		// editor offers to load that version or keep its own.
-		return json({ conflict: true, ...result.conflict }, { status: 409 });
+		return Response.json({ conflict: true, ...result.conflict }, { status: 409 });
 	}
 	if (result.bodyChanged) await queueSceneMentions(row.id);
 
-	return json({ savedAt: new Date().toISOString(), wordCount: result.wordCount });
+	return Response.json({ savedAt: new Date().toISOString(), wordCount: result.wordCount });
 };
 
 // Status changes come from the scene board, separate from the autosave: no
@@ -88,5 +88,5 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	}
 	const changed = await setSceneStatus(db, locals.user!.id, params.id, payload.status);
 	if (!changed) error(404, 'Scene not found');
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

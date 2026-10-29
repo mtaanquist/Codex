@@ -4,7 +4,7 @@
 	import { confirmSubmit } from '$lib/confirm.svelte';
 	import type { Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { enhance } from '$lib/enhance';
 	import Icon from './Icon.svelte';
@@ -166,7 +166,7 @@
 			'Could not move the scene. Try again.'
 		);
 		reorderError = result.ok ? null : result.message;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	function endDrag() {

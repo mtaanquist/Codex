@@ -1,4 +1,4 @@
-import { error, json, type RequestHandler } from '@sveltejs/kit';
+import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { getAssistantJobState, reviewJobState } from '$lib/server/jobs';
 import { loadReviewRun } from '$lib/server/review-runs';
@@ -15,11 +15,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		error(400, 'A job kind and id are required.');
 	}
 	const state = await getAssistantJobState(kind, id);
-	if (kind !== 'review') return json({ state });
+	if (kind !== 'review') return Response.json({ state });
 
 	const run = await loadReviewRun(db, id, locals.user.id);
-	if (!run) return json({ state });
-	return json({
+	if (!run) return Response.json({ state });
+	return Response.json({
 		state: reviewJobState(state, run.phase),
 		phase: run.phase,
 		completed: run.completed.length,

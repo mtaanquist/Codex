@@ -9,7 +9,7 @@
 	import { onMount } from 'svelte';
 	import { createAutosave } from '$lib/autosave';
 	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
 	import {
@@ -209,7 +209,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ anchorStart: from, anchorEnd: to })
 		});
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 
 	// At the visual top or bottom of this editor, vertical arrows hand
