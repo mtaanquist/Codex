@@ -90,6 +90,17 @@ export default async function globalSetup() {
 		 on conflict (email) do update set password_hash = excluded.password_hash, preferences = '{}'`,
 		['library-e2e@example.com', passwordHash]
 	);
+	// A separate account for the core-flow journey, which changes editor
+	// preferences mid-run; on the shared account that raced the other specs.
+	// It publishes to a public shelf, so it needs a handle like the e2e user.
+	await pool.query(
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at, handle, public_archive_enabled)
+		 values ($1, 'Core Flow Tester', $2, 'user', now(), now(), 'core-flow-tester', true)
+		 on conflict (email) do update set password_hash = excluded.password_hash,
+		   handle = excluded.handle, public_archive_enabled = excluded.public_archive_enabled,
+		   preferences = '{}'`,
+		['core-flow-e2e@example.com', passwordHash]
+	);
 	// A separate account for the passkey journey, kept clean of credentials so
 	// the register-then-sign-in flow starts fresh every run.
 	await pool.query(
