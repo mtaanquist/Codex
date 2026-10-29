@@ -82,7 +82,7 @@ const signup = (email: string, ip?: string) =>
 	);
 
 // The status a handler answered with, whether it returned a Response or threw.
-async function statusOf(run: () => Promise<unknown>): Promise<number> {
+async function statusOf(run: () => unknown): Promise<number> {
 	try {
 		return ((await run()) as Response).status;
 	} catch (err) {

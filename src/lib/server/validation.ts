@@ -14,7 +14,7 @@ export const MAX_DISPLAY_NAME = 120;
 // a non-JSON body, which surfaces as an unhandled 500.
 export async function readJson<T = Record<string, unknown>>(request: Request): Promise<T> {
 	const body = await request.json().catch(() => null);
-	if (body === null || typeof body !== 'object') error(400, 'expected a JSON body');
+	if (body === null || typeof body !== 'object') error(400, 'The request was not understood.');
 	return body as T;
 }
 
