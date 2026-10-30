@@ -99,6 +99,9 @@
 	async function flushEditors(): Promise<boolean> {
 		const editors = openEditors();
 		await Promise.all(editors.map((editor) => editor.flushSave()));
+		// One more pass for an image upload that landed during the first.
+		const dirty = editors.filter((editor) => editor.isDirty());
+		await Promise.all(dirty.map((editor) => editor.flushSave()));
 		return !editors.some((editor) => editor.isDirty());
 	}
 
@@ -120,6 +123,7 @@
 
 	const LEAVE_UNSAVED =
 		'The latest changes to this scene could not be saved. Leave anyway and lose them? Cancel to stay on the scene.';
+	const BUSY = 'Another change to the scenes is still running. Try again when it is done.';
 	const SAVE_FAILED =
 		'The scene could not be saved, so nothing was changed. If the scene says it was changed in another window, choose Load newer version or Keep mine first. Otherwise, try again in a moment.';
 
@@ -249,6 +253,9 @@
 	// Set while an Assistant proposal card changes scene, so the chat stays open.
 	let keepPaneOnNavigate = false;
 	afterNavigate(({ from, to, type }) => {
+		// A replayed Back or Forward that never fired must not exempt a later
+		// navigation to the same place from the save guard.
+		ownNavigation = null;
 		if (keepPaneOnNavigate) return;
 		// A followed link (even to the scene already open) or a different scene,
 		// view or anchor; not a data refresh of this one.
@@ -379,8 +386,11 @@
 	// on the merged text instead of saving over it.
 	let editorNonce = $state(0);
 
+	// Each of these acts once at a time: a second split or merge sent while
+	// the first runs would act on text the first is about to change.
 	async function mergeSelectedScenes() {
 		rowMenu = null;
+		if (typingPaused) return;
 		await pauseTypingWhile(async () => {
 			// The merge reads the stored text, so pending saves land first.
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
@@ -396,6 +406,7 @@
 	// scene as a reusable template.
 	async function duplicateScene(sceneId: string) {
 		rowMenu = null;
+		if (typingPaused) return;
 		await pauseTypingWhile(async () => {
 			// The copy is made from the stored text, so pending saves land first.
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
@@ -420,7 +431,7 @@
 	// Splits the open scene at the cursor, like a page break: the rest of
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
-		if (!sceneEditor || !data.selectedScene) return;
+		if (!sceneEditor || !data.selectedScene || typingPaused) return;
 		const sceneId = data.selectedScene.id;
 		const cursor = sceneEditor.cursorOffset();
 		if (!cursor || cursor.offset <= 0 || cursor.offset >= cursor.length) {
@@ -449,6 +460,7 @@
 		sceneId: string;
 		before: string;
 	}): Promise<{ error: string } | { splitSceneId: string; newSceneId: string }> {
+		if (typingPaused) return { error: BUSY };
 		return pauseTypingWhile(async () => {
 			if (!(await flushEditors())) return { error: SAVE_FAILED };
 			const result = await splitSceneAction(proposal.sceneId, { before: proposal.before });
@@ -467,6 +479,7 @@
 		before: string;
 		confirmed: { splitSceneId: string; newSceneId: string };
 	}): Promise<string | null> {
+		if (typingPaused) return BUSY;
 		return pauseTypingWhile(async () => {
 			if (!(await flushEditors())) return SAVE_FAILED;
 			const result = await mergeScenesAction(data.story.id, [

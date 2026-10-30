@@ -1,4 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
+// Relative imports with extensions: the backup scripts load this file under
+// plain node, which cannot resolve an extensionless #lib path.
 import type { Database } from './auth.ts';
 import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';

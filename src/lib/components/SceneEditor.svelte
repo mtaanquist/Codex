@@ -195,8 +195,10 @@
 	});
 
 	// Swap in the newer text; the edits made here since are dropped.
+	// Both wait while the page swaps the scene: the paused editor would drop
+	// the swap-in, and the save would then overwrite the newer text.
 	function loadNewer() {
-		if (!view || !conflict) return;
+		if (!view || !conflict || leaving) return;
 		const newer = conflict;
 		saver.adopt(newer.bodyMd);
 		titleValue = newer.title ?? '';
@@ -205,7 +207,7 @@
 	}
 
 	function keepMine() {
-		if (!conflict) return;
+		if (!conflict || leaving) return;
 		saver.keepMine(conflict.bodyMd);
 		void autosave.flush();
 	}
