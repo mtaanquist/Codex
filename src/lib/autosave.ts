@@ -37,6 +37,8 @@ export type Autosave = {
 	warnBeforeUnload: (event: BeforeUnloadEvent | Event) => void;
 	// Whether an edit is waiting or a save failed and needs retrying.
 	isDirty: () => boolean;
+	// isDirty, or a save is still on its way and may yet fail.
+	hasUnsaved: () => boolean;
 	// Teardown flush for onMount cleanup; resolves when the chain drains.
 	teardown: () => Promise<void>;
 };
@@ -151,6 +153,9 @@ export function createAutosave(options: AutosaveOptions): Autosave {
 		},
 		isDirty() {
 			return dirty;
+		},
+		hasUnsaved() {
+			return dirty || inFlight;
 		},
 		teardown() {
 			stopped = true;

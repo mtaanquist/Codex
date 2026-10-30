@@ -299,8 +299,9 @@ The left slot is always `--left-w`, whatever fills it:
 - **`.side-nav` means routes, and only routes**, to the sibling pages of a
   settings family. A list of anchors inside the page you are already on is
   `.contents-nav` (same visual treatment, `aria-current="true"` on the open
-  section). Insights is the one user today; the two must not be confused,
-  because one navigates away and the other does not.
+  section). Insights and the Security and Assistant account sections use it;
+  the two must not be confused, because one navigates away and the other
+  does not.
 
 The command palette stays the fast path to everything, but it is a shortcut
 to this model, never a substitute for it: anything reachable only from the

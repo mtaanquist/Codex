@@ -260,10 +260,10 @@ Staging branch `staging/issue-review-2`, merged to main in one PR.
 - [x] Settings rows and "On this page" links for Security and Assistant, steps 2 and 3. (#731)
 - [x] Story workspace shows one pane at a time below 820px. (#737)
 - [x] SvelteKit 3 cleanup: `refreshAll`, `Response.json`, `snapshot()`, `#lib` subpath imports. (#752)
+- [x] No typing into a scene while the next one opens, a split or merge runs, or a failed save holds a switch. (#772)
 
 Follow-ups (open):
 
-- [ ] Scene data landing mid-typing remounts the editor and drops keys (#772).
 - [ ] Entity badge letter contrast (#775).
 - [ ] Focused review mark tint contrast (#776).
 
