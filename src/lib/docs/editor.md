@@ -12,7 +12,7 @@ On a narrow window, such as a phone or a zoomed-in browser, the editor shows one
 
 ## Scenes and chapters
 
-A scene holds one stretch of prose. Chapters group scenes in order. When you pick another scene, or split or merge scenes, the scene on screen dims until the change is done; it does not take typing in that moment, so wait for it before you type. If a scene cannot be saved when you move away, you are asked whether to leave without the latest changes; pick Cancel to stay on the scene with your words. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
+A scene holds one stretch of prose. Chapters group scenes in order. When you pick another scene, or split, merge or duplicate scenes, the scene on screen dims until the change is done; it does not take typing in that moment, so wait for it before you type. If a scene cannot be saved when you move away, you are asked whether to leave without the latest changes; pick Cancel to stay on the scene with your words. If it cannot be saved before a split, merge or duplicate, that change is not made and a message says so; try again in a moment. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
 
 Right-click a chapter in the sidebar to rename it, move it up or down, or delete it. Deleting a chapter keeps its scenes; they move to the unfiled list.
 

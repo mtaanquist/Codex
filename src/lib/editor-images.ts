@@ -1,5 +1,6 @@
 import { EditorView } from '@codemirror/view';
 import { StateEffect, StateField, type Extension } from '@codemirror/state';
+import { landsWhilePaused } from './editor-paused';
 
 // Paste or drop an image into the prose: it uploads and lands as a
 // markdown image pointing at the app-served path. Markdown is the stored
@@ -36,7 +37,6 @@ const pendingField = StateField.define<Pending[]>({
 });
 
 let nextId = 0;
-const PAUSED_RETRY_MS = 200;
 
 export function imageUploadExtension(universeId: string): Extension {
 	// Replace a placeholder's current (mapped) range; a null replacement just
@@ -46,17 +46,14 @@ export function imageUploadExtension(universeId: string): Extension {
 		// mid-upload); dispatching on a destroyed view throws. Its DOM is detached
 		// once destroyed, so skip the update.
 		if (!view.dom.isConnected) return;
-		// Read-only while the page saves and swaps the scene, which drops the
-		// edit. Try again once that is over; if the editor goes, so does this.
-		if (view.state.readOnly) {
-			setTimeout(() => clear(view, id, replacement), PAUSED_RETRY_MS);
-			return;
-		}
 		const marker = view.state.field(pendingField).find((p) => p.id === id);
 		if (!marker) return;
 		view.dispatch({
 			changes: { from: marker.from, to: marker.to, insert: replacement ?? '' },
 			effects: removePending.of(id),
+			// Even while the page swaps the scene: the editor's last save then
+			// carries it, where waiting could lose it with the editor.
+			annotations: landsWhilePaused.of(true),
 			scrollIntoView: replacement !== null
 		});
 	}

@@ -1042,7 +1042,13 @@ links) was closed as not planned: no base path is configured or planned.
   for the pause to end, and Insert keeps its draft); that a second click
   during the save was lost (the guard now goes to the last place clicked);
   and that the review shell's pane tabs dropped focus (it now shares
-  `focusShownPane` with the story editor).
+  `focusShownPane` with the story editor). Round 3 found that holding a
+  finished upload until the pause ended lost it when the editor was torn
+  down (it now lands with an annotation the pause filter lets through, and
+  the flush takes a second pass for it), and that "Load newer version" on a
+  paused editor kept the old text and then saved it over the newer one (the
+  conflict buttons now wait for the pause). Split, merge and duplicate now
+  refuse to start while another runs.
 
 Under parallel load a few e2e specs (notes, import-story, two-factor,
 author-review) fail about once a run on staging as well; not chased this round.

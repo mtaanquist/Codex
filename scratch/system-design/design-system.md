@@ -146,7 +146,7 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
-**Narrow windows.** Below 820px the story editor and the review shell (owner
+**Narrow windows.** At 820px wide and narrower the story editor and the review shell (owner
 and guest) show one pane at a time: a `<nav class="seg full pane-tabs">` sits between
 the bar and the `.body`, and the body carries the active pane as `data-mtab`
 (`nav` for the left column, `read` for the centre, `notes` for the right).
@@ -209,7 +209,7 @@ Security and Assistant) lists its groups as `.contents-nav` anchors in the
 sidebar under the route list, with an `.admin-nav-label` heading that names
 the nav. Each group's `.admin-block` carries the anchor id (with a
 `scroll-margin-top` that clears the sticky bar). The list is hidden below
-820px wide or 640px tall; the headings are a scroll away. Split a section
+820px wide or 760px tall; the headings are a scroll away. Split a section
 into its own sidebar item instead when its groups are independent and it
 keeps growing.
 

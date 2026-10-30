@@ -339,3 +339,36 @@ test('an image that finishes uploading while a switch is held still lands', asyn
 	const body = (await saved).request().postData() ?? '';
 	expect(body).not.toContain('Uploading');
 });
+
+test('an image that finishes uploading during a switch is saved to its scene', async ({ page }) => {
+	test.slow();
+	const { firstUrl, secondUrl } = await twoScenes(page, `Upload ${Date.now()}`);
+	await page.route('**/api/assets', async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		await route.fulfill({ json: { path: '/assets/switch.png' } });
+	});
+	await page.route('**/api/scenes/**', async (route) => {
+		if (route.request().method() !== 'PUT') return route.continue();
+		await new Promise((resolve) => setTimeout(resolve, 1200));
+		await route.continue();
+	});
+	const saved = page.waitForResponse(
+		(r) =>
+			r.url().includes('/api/scenes/') &&
+			r.request().method() === 'PUT' &&
+			r.ok() &&
+			(r.request().postData() ?? '').includes('](/assets/switch.png)')
+	);
+	await editor(page).click();
+	await page.keyboard.type('Picture: ');
+	await editor(page).evaluate((el) => {
+		const data = new DataTransfer();
+		data.items.add(new File(['png'], 'switch.png', { type: 'image/png' }));
+		el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+	});
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(secondUrl);
+	expect(new URL((await saved).url()).pathname).toContain(
+		new URL(firstUrl).searchParams.get('scene')!
+	);
+});
