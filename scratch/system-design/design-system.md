@@ -209,7 +209,7 @@ Security and Assistant) lists its groups as `.contents-nav` anchors in the
 sidebar under the route list, with an `.admin-nav-label` heading that names
 the nav. Each group's `.admin-block` carries the anchor id (with a
 `scroll-margin-top` that clears the sticky bar). The list is hidden below
-820px wide or 760px tall; the headings are a scroll away. Split a section
+820px wide or 640px tall; the headings are a scroll away. Split a section
 into its own sidebar item instead when its groups are independent and it
 keeps growing.
 
@@ -303,8 +303,8 @@ The left slot is always `--left-w`, whatever fills it:
   the open item.
 - **`.side-nav` means routes, and only routes**, to the sibling pages of a
   settings family. A list of anchors inside the page you are already on is
-  `.contents-nav` (same visual treatment, `aria-current="true"` on the open
-  section). Insights and the Security and Assistant account sections use it;
+  `.contents-nav` (same visual treatment, `aria-current="true"` on the
+  section in view, from `trackSectionInView` in `#lib/section-tracker.svelte`). Insights and the Security and Assistant account sections use it;
   the two must not be confused, because one navigates away and the other
   does not.
 
