@@ -36,6 +36,7 @@ const pendingField = StateField.define<Pending[]>({
 });
 
 let nextId = 0;
+const PAUSED_RETRY_MS = 200;
 
 export function imageUploadExtension(universeId: string): Extension {
 	// Replace a placeholder's current (mapped) range; a null replacement just
@@ -45,6 +46,12 @@ export function imageUploadExtension(universeId: string): Extension {
 		// mid-upload); dispatching on a destroyed view throws. Its DOM is detached
 		// once destroyed, so skip the update.
 		if (!view.dom.isConnected) return;
+		// Read-only while the page saves and swaps the scene, which drops the
+		// edit. Try again once that is over; if the editor goes, so does this.
+		if (view.state.readOnly) {
+			setTimeout(() => clear(view, id, replacement), PAUSED_RETRY_MS);
+			return;
+		}
 		const marker = view.state.field(pendingField).find((p) => p.id === id);
 		if (!marker) return;
 		view.dispatch({
@@ -101,6 +108,7 @@ export function imageUploadExtension(universeId: string): Extension {
 				const files = imageFiles(event.clipboardData);
 				if (files.length === 0) return false;
 				event.preventDefault();
+				if (view.state.readOnly) return true;
 				start(view, files, view.state.selection.main.head);
 				return true;
 			},
@@ -108,6 +116,7 @@ export function imageUploadExtension(universeId: string): Extension {
 				const files = imageFiles(event.dataTransfer);
 				if (files.length === 0) return false;
 				event.preventDefault();
+				if (view.state.readOnly) return true;
 				const pos =
 					view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
 					view.state.selection.main.head;

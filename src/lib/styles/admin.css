@@ -307,6 +307,10 @@ a.nav-item {
 .admin-block {
 	margin-bottom: var(--space-8);
 }
+/* An "On this page" jump lands the heading below the sticky top bar. */
+.admin-block[id] {
+	scroll-margin-top: calc(52px + var(--space-4));
+}
 .admin-block-head {
 	display: flex;
 	align-items: baseline;

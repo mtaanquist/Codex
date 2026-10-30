@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { withQuery } from '#lib/href';
+	import { focusShownPane } from '#lib/pane-focus';
+	import { tick } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { refreshAll } from '$app/navigation';
@@ -184,7 +186,16 @@
 	let composer = $state<Composer | null>(null);
 	// On a narrow screen the three panes stack behind a tab bar; on desktop the
 	// tab bar is hidden and all three show side by side.
-	let mobileTab = $state<'nav' | 'read' | 'notes'>('read');
+	type PaneTab = 'nav' | 'read' | 'notes';
+	let mobileTab = $state<PaneTab>('read');
+	const paneEls: Partial<Record<PaneTab, HTMLElement>> = {};
+	let paneTabsEl = $state<HTMLElement>();
+	async function showPane(tab: PaneTab) {
+		if (mobileTab === tab) return;
+		mobileTab = tab;
+		await tick();
+		focusShownPane(paneTabsEl, paneEls[tab]);
+	}
 	// The right pane's panels. You are not editing here, so there is no History
 	// and no Reference: Comments is what this text has, and the Assistant reads
 	// it when the author has one. A reviewer gets Comments alone, so their pane
@@ -300,7 +311,7 @@
 	function navSelectScene(sceneId: string) {
 		selectScene(sceneId);
 		// Picking a scene from the outline shows the manuscript on mobile.
-		mobileTab = 'read';
+		void showPane('read');
 	}
 
 	// The author manages structure from the review sidebar, the same outline and
@@ -362,17 +373,17 @@
 	// On mobile that means switching to the pane the target lives in.
 	function focusFromPanel(id: string | null) {
 		focusedId = id;
-		mobileTab = 'read';
+		void showPane('read');
 	}
 	function focusFromSurface(id: string | null) {
 		focusedId = id;
-		mobileTab = 'notes';
+		void showPane('notes');
 	}
 
 	function openComposer(c: Composer) {
 		composer = c;
 		// The composer lives in the right panel; show it on mobile.
-		mobileTab = 'notes';
+		void showPane('notes');
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
@@ -410,7 +421,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="review-shell">
-	<nav class="seg full pane-tabs" aria-label="Review sections">
+	<nav class="seg full pane-tabs" aria-label="Review sections" bind:this={paneTabsEl}>
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'nav'}
@@ -440,7 +451,7 @@
 		</button>
 	</nav>
 	<div class="body" data-mtab={mobileTab}>
-		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL} tabindex="-1" bind:this={paneEls.nav}>
 			<div class="left-head">
 				<!-- A reviewer stays in review mode; the other views are out of reach. -->
 				<ModeSwitcher
@@ -475,7 +486,7 @@
 			</div>
 		</aside>
 
-		<main id="main" class="pane center">
+		<main id="main" class="pane center" tabindex="-1" bind:this={paneEls.read}>
 			{#if !selectedScene}
 				<h1 class="visually-hidden">{book?.title ?? 'Review'} - Review</h1>
 			{/if}
@@ -532,7 +543,7 @@
 			{/if}
 		</main>
 
-		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL} tabindex="-1" bind:this={paneEls.notes}>
 			<!-- One panel invocation, two shapes of pane: with the Assistant the strip
 			     is a real tablist, without it the pane is just the Comments panel,
 			     which carries its own title. The props must not drift between the

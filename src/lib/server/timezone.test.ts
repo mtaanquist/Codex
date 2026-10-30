@@ -11,6 +11,7 @@ describe('requestTimeZone', () => {
 	it('falls back to UTC when the cookie is missing or unknown', () => {
 		expect(requestTimeZone(jar())).toBe('UTC');
 		expect(requestTimeZone(jar('Mars/Olympus'))).toBe('UTC');
+		// Not a zone name; real cookie decoding is covered in e2e/timezone.spec.ts.
 		expect(requestTimeZone(jar('%E0%A4%A'))).toBe('UTC');
 	});
 });

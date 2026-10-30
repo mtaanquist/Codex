@@ -96,7 +96,8 @@
 
 	function insert() {
 		const view = getView();
-		if (!view || !result.trim()) return;
+		// Read-only while the page saves and swaps the scene; keep the draft.
+		if (!view || !result.trim() || view.state.readOnly) return;
 		const head = view.state.selection.main.head;
 		view.dispatch({
 			changes: { from: head, insert: result },
