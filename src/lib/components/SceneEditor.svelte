@@ -172,11 +172,16 @@
 	let titleValue = $state(title ?? '');
 	// Set when a save was refused because the scene changed elsewhere.
 	let conflict = $state<SceneConflict | null>(null);
+	let tornDown = false;
 	// svelte-ignore state_referenced_locally
 	const saver = createSceneSaver(sceneId, body, (next) => (conflict = next));
 	const autosave = createAutosave({
 		debounceMs: SAVE_DEBOUNCE_MS,
-		onStatus: (status) => onStatus(status),
+		// Once this editor is torn down the pill belongs to the next scene, so a
+		// late failure here must not show there. 'saved' still refreshes the tree.
+		onStatus: (status) => {
+			if (!tornDown || status === 'saved') onStatus(status);
+		},
 		save: async ({ keepalive }) => {
 			if (!view) return;
 			await saver.save({
@@ -500,6 +505,7 @@
 		applyFindAt();
 		return () => {
 			// Last-chance flush so navigating away does not lose the tail edit.
+			tornDown = true;
 			void autosave.teardown().then(() => {
 				view?.destroy();
 				view = undefined;
@@ -512,7 +518,6 @@
 	<div
 		class="editor compact"
 		class:is-leaving={leaving}
-		aria-busy={leaving}
 		role="presentation"
 		style={editorStyle}
 		oncontextmenu={onPaneContextMenu}

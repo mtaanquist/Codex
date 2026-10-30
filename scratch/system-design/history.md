@@ -1033,7 +1033,16 @@ links) was closed as not planned: no base path is configured or planned.
   `hasUnsaved`), Duplicate did not flush, Back and Forward were re-issued as
   new history entries, and a hard stop on a failed save trapped a writer whose
   save could never succeed (a conflict, a 403). A failed save now asks
-  whether to leave without the latest changes.
+  whether to leave without the latest changes. A review loop followed (fix,
+  merge to staging, fresh review). Round 1 found that read-only alone let
+  dispatched edits through (a Tab continuation, a finished image upload,
+  coauthor Insert); a transaction filter now drops them. Round 2 found that
+  the pause was a flag, so overlapping actions unpaused each other (now a
+  count); that a dropped upload or Insert lost its content (uploads now wait
+  for the pause to end, and Insert keeps its draft); that a second click
+  during the save was lost (the guard now goes to the last place clicked);
+  and that the review shell's pane tabs dropped focus (it now shares
+  `focusShownPane` with the story editor).
 
 Under parallel load a few e2e specs (notes, import-story, two-factor,
 author-review) fail about once a run on staging as well; not chased this round.

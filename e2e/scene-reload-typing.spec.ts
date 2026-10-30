@@ -270,3 +270,72 @@ test('Back straight after typing saves first and keeps Forward', async ({ page }
 	await expect(page).toHaveURL(secondUrl);
 	await expect(page.locator('.cm-content')).toContainText('Before going back.');
 });
+
+test('the last scene clicked while a save lands is the one that opens', async ({ page }) => {
+	test.slow();
+	const { firstUrl } = await twoScenes(page, `Hop ${Date.now()}`);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(3);
+	const thirdUrl = page.url();
+	await gotoReady(page, firstUrl);
+
+	await page.route('**/api/scenes/**', async (route) => {
+		if (route.request().method() !== 'PUT') return route.continue();
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		await route.continue();
+	});
+	await editor(page).click();
+	await page.keyboard.type('Saved on the way.');
+	await page.locator('.scene-row').nth(1).click();
+	await page.locator('.scene-row').nth(2).click();
+	await expect(page).toHaveURL(thirdUrl);
+	await page.unroute('**/api/scenes/**');
+	await gotoReady(page, firstUrl);
+	await expect(page.locator('.cm-content')).toContainText('Saved on the way.');
+});
+
+test('an image that finishes uploading while a switch is held still lands', async ({ page }) => {
+	test.slow();
+	await twoScenes(page, `Image ${Date.now()}`);
+	await page.route('**/api/assets', async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		await route.fulfill({ json: { path: '/assets/held.png' } });
+	});
+	await page.route('**/api/scenes/**', async (route) => {
+		if (route.request().method() !== 'PUT') return route.continue();
+		await new Promise((resolve) => setTimeout(resolve, 1200));
+		await route.fulfill({ status: 503, body: 'down' });
+	});
+	let asked = 0;
+	page.on('dialog', (dialog) => {
+		asked++;
+		void dialog.dismiss();
+	});
+
+	await editor(page).click();
+	await page.keyboard.type('Picture: ');
+	await editor(page).evaluate((el) => {
+		const data = new DataTransfer();
+		data.items.add(new File(['png'], 'held.png', { type: 'image/png' }));
+		el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+	});
+	// The upload finishes while the switch waits on the failing save; staying
+	// on the scene then lets it in.
+	const firstUrl = page.url();
+	await page.locator('.scene-row').nth(1).click();
+	await expect.poll(() => asked).toBe(1);
+	await expect(page).toHaveURL(firstUrl);
+	await page.unroute('**/api/scenes/**');
+	const saved = page.waitForResponse(
+		(r) =>
+			r.url().includes('/api/scenes/') &&
+			r.request().method() === 'PUT' &&
+			r.ok() &&
+			(r.request().postData() ?? '').includes('](/assets/held.png)')
+	);
+	await editor(page).click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.keyboard.type(' After.');
+	const body = (await saved).request().postData() ?? '';
+	expect(body).not.toContain('Uploading');
+});

@@ -110,7 +110,7 @@
 /* Narrow windows: the two side columns and the centre cannot sit side by
    side, so a .pane-tabs bar (a .seg) above the .body shows one pane at a
    time. The body carries the choice as data-mtab: nav (left), read (centre)
-   or notes (right). Used by the story editor and the guest review shell. */
+   or notes (right). Used by the story editor and the review shell. */
 /* Outweighs .seg.full, which sets its own display further down. */
 .seg.full.pane-tabs {
 	display: none;

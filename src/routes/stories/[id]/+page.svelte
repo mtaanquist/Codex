@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { withQuery } from '#lib/href';
+	import { focusShownPane } from '#lib/pane-focus';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { afterNavigate, beforeNavigate, goto, refreshAll, snapshot } from '$app/navigation';
@@ -104,13 +105,16 @@
 	// Set while the page saves and then replaces the open scene (a scene
 	// switch, split or merge). The editors stay on screen but take no typing:
 	// words typed then would land after the save and vanish with the remount.
-	let typingPaused = $state(false);
+	// A count, not a flag: overlapping actions (a second merge clicked while
+	// the first is still running) must not unpause each other early.
+	let pauseDepth = $state(0);
+	const typingPaused = $derived(pauseDepth > 0);
 	async function pauseTypingWhile<T>(work: () => Promise<T>): Promise<T> {
-		typingPaused = true;
+		pauseDepth++;
 		try {
 			return await work();
 		} finally {
-			typingPaused = false;
+			pauseDepth--;
 		}
 	}
 
@@ -126,6 +130,7 @@
 	// screen, or leave without them. A full unload is left to SceneEditor's
 	// own pagehide flush.
 	let ownNavigation: string | null = null;
+	let heldNavigation: { url: URL; delta: number | undefined } | null = null;
 	let destroyed = false;
 	onDestroy(() => (destroyed = true));
 	beforeNavigate((nav) => {
@@ -142,14 +147,26 @@
 			nav.to.url.search === nav.from.url.search
 		)
 			return;
+		const target = {
+			url: nav.to.url,
+			delta: nav.type === 'popstate' ? nav.delta : undefined
+		};
+		// A save is already being landed for an earlier navigation: go to the
+		// latest place clicked once it lands.
+		if (heldNavigation) {
+			nav.cancel();
+			heldNavigation = target;
+			return;
+		}
 		if (!openEditors().some((editor) => editor.isDirty())) return;
 		nav.cancel();
-		// A save is already being landed for an earlier navigation.
+		// A split, merge or duplicate is running and will navigate itself.
 		if (typingPaused) return;
-		const { url } = nav.to;
-		const delta = nav.type === 'popstate' ? nav.delta : undefined;
+		heldNavigation = target;
 		void pauseTypingWhile(async () => {
 			const saved = await flushEditors();
+			const { url, delta } = heldNavigation ?? target;
+			heldNavigation = null;
 			if (destroyed) return;
 			if (!saved && !confirm(LEAVE_UNSAVED)) return;
 			ownNavigation = url.href;
@@ -222,19 +239,12 @@
 	let paneTab = $state<PaneTab>('read');
 	const paneEls: Partial<Record<PaneTab, HTMLElement>> = {};
 	let paneTabsEl = $state<HTMLElement>();
-	// Switches pane without the tab bar. On a narrow window, if that hid the
-	// focused control (or a navigation reset focus to the page), focus moves
-	// to the pane now shown so the next Tab starts there.
-	// Rendered at all; checkVisibility() is missing before Safari 17.4.
-	const isShown = (el: Element) => el.getClientRects().length > 0;
+	// Switches pane without the tab bar.
 	async function showPane(tab: PaneTab) {
 		if (paneTab === tab) return;
 		paneTab = tab;
 		await tick();
-		if (!paneTabsEl || !isShown(paneTabsEl)) return;
-		const focused = document.activeElement;
-		if (!(focused instanceof HTMLElement) || focused === document.body || !isShown(focused))
-			paneEls[tab]?.focus({ preventScroll: true });
+		focusShownPane(paneTabsEl, paneEls[tab]);
 	}
 	// Set while an Assistant proposal card changes scene, so the chat stays open.
 	let keepPaneOnNavigate = false;
