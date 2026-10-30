@@ -1049,6 +1049,15 @@ links) was closed as not planned: no base path is configured or planned.
   paused editor kept the old text and then saved it over the newer one (the
   conflict buttons now wait for the pause). Split, merge and duplicate now
   refuse to start while another runs.
+  Round 4 found only lows, filed as #794 to #802 and then fixed on staging:
+  an image still uploading now counts as unsaved (leaving asks first),
+  Back and Forward stay paused until the replayed move starts, a click
+  during a split or merge is queued rather than dropped, scene-changing
+  buttons are disabled while paused, the save timeout grows with the scene
+  and up to 16 unsettled fingerprints are kept, "On this page" shares the
+  sidebar with the route list and follows scrolling, pane tabs apply up to
+  960px while Plan and Notes scroll sideways inside the body, and a
+  timezone the server rejects is reported once per tab.
 
 Under parallel load a few e2e specs (notes, import-story, two-factor,
 author-review) fail about once a run on staging as well; not chased this round.

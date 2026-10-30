@@ -345,6 +345,17 @@ a.nav-item {
 }
 /* Inside a bordered card the frame sets the measure; a tighter cap there
    makes the text look cut off against the empty remainder. */
+/* A link in a section's description: underlined in the body colour, as
+   prose links are everywhere. */
+.admin-block-sub a {
+	color: var(--text);
+	text-decoration: underline;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 2px;
+}
+.admin-block-sub a:hover {
+	text-decoration-color: currentColor;
+}
 .admin-card .admin-block-sub {
 	max-width: none;
 }
