@@ -1,12 +1,12 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { ownedStory } from '$lib/server/story-access';
-import { duplicateScene } from '$lib/server/scene-split-merge';
-import { queueSceneMentions } from '$lib/server/jobs';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { ownedStory } from '#lib/server/story-access';
+import { duplicateScene } from '#lib/server/scene-split-merge';
+import { queueSceneMentions } from '#lib/server/jobs';
+import { readJson } from '#lib/server/validation';
 
 // Duplicates a scene as a full copy directly after the original.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
@@ -19,5 +19,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const result = await duplicateScene(db, locals.user!.id, payload.sceneId);
 	if (!result.ok) throwActionError(result);
 	await queueSceneMentions(result.newSceneId);
-	return json({ ok: true, newSceneId: result.newSceneId });
+	return Response.json({ ok: true, newSceneId: result.newSceneId });
 };

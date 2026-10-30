@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '$lib/format';
+	import { formatDate } from '#lib/format';
 	import S3Fields from './S3Fields.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -64,7 +65,8 @@
 
 {#if data.assetMigration}
 	<p class="admin-block-sub">
-		Last copy finished {formatDate(data.assetMigration.finishedAt)}: {data.assetMigration.copied} copied,
+		Last copy finished {formatDate(data.assetMigration.finishedAt, page.data.timeZone)}: {data
+			.assetMigration.copied} copied,
 		{data.assetMigration.failed} failed{data.assetMigration.failed > 0
 			? '. Failures are listed in the worker log; run the copy again to retry.'
 			: '.'}

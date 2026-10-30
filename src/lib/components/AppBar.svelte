@@ -7,12 +7,12 @@
 	import NotificationBell from './NotificationBell.svelte';
 	import UserMenu from './UserMenu.svelte';
 	import ThemePicker from './ThemePicker.svelte';
-	import { openPalette } from '$lib/palette.svelte';
-	import { helpReturn, rememberLocation } from '$lib/help.svelte';
-	import { authorInitials } from '$lib/review-ui';
-	import { modLabel } from '$lib/keys';
+	import { openPalette } from '#lib/palette.svelte';
+	import { helpReturn, rememberLocation } from '#lib/help.svelte';
+	import { authorInitials } from '#lib/review-ui';
+	import { modLabel } from '#lib/keys';
 	import { onMount } from 'svelte';
-	import type { Crumb } from '$lib/chrome';
+	import type { Crumb } from '#lib/chrome';
 
 	// The one navigation bar: brand, path, tools, in that order, on every page.
 	// Four shells share it. A shell may drop a tool; none reorders one, and

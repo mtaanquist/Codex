@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import NotesWorkspace from '$lib/components/NotesWorkspace.svelte';
-	import { storyPath } from '$lib/chrome';
+	import NotesWorkspace from '#lib/components/NotesWorkspace.svelte';
+	import { storyPath } from '#lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

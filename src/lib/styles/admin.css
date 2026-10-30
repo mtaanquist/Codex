@@ -75,6 +75,31 @@
 	margin: 0 -4px;
 	padding: 0 4px;
 }
+/* With an "On this page" list below it, both lists start at full height.
+   The contents list gives up space first, down to a few rows; only then
+   does the route list scroll too. */
+.admin-nav.fit,
+.admin-sidebar > .contents-nav {
+	flex: 0 1 auto;
+	min-height: 96px;
+	overflow-y: auto;
+}
+.admin-nav.fit > *,
+.admin-sidebar > .contents-nav > * {
+	flex: none;
+}
+.admin-sidebar > .contents-nav {
+	flex-shrink: 1000;
+	padding: 0;
+}
+/* Where the sidebar stacks above the content, or a short window leaves no
+   room for it, the list goes; the headings are a scroll away. */
+@media (max-width: 820px), (max-height: 640px) {
+	.admin-sidebar > .contents-nav,
+	.admin-sidebar > .admin-nav-label:has(+ .contents-nav) {
+		display: none;
+	}
+}
 .admin-nav-label {
 	font-size: 10.5px;
 	font-weight: 650;
@@ -238,6 +263,8 @@ a.nav-item {
 .admin-main-inner {
 	max-width: 720px;
 	padding: 36px 44px 96px;
+	/* The setting rows in pages.css switch on this column's width. */
+	container-type: inline-size;
 }
 .admin-main-inner.wide {
 	max-width: 860px;
@@ -286,6 +313,10 @@ a.nav-item {
 .admin-block {
 	margin-bottom: var(--space-8);
 }
+/* An "On this page" jump lands the heading below the sticky top bar. */
+.admin-block[id] {
+	scroll-margin-top: calc(52px + var(--space-4));
+}
 .admin-block-head {
 	display: flex;
 	align-items: baseline;
@@ -313,6 +344,17 @@ a.nav-item {
 	line-height: 1.5;
 	margin: 5px 0 0;
 	max-width: 60ch;
+}
+/* A link in a section's description: underlined in the body colour, as
+   prose links are everywhere. */
+.admin-block-sub a {
+	color: var(--text);
+	text-decoration: underline;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 2px;
+}
+.admin-block-sub a:hover {
+	text-decoration-color: currentColor;
 }
 /* Inside a bordered card the frame sets the measure; a tighter cap there
    makes the text look cut off against the empty remainder. */
@@ -422,7 +464,7 @@ a.nav-item {
 }
 .attn-ic.warn {
 	background: color-mix(in oklab, var(--status-draft) 18%, transparent);
-	color: var(--status-draft);
+	color: var(--status-draft-ink);
 }
 .attn-ic.ok {
 	background: color-mix(in oklab, var(--status-final) 18%, transparent);
@@ -877,7 +919,7 @@ a.nav-item {
 }
 .link-row .link-del:hover {
 	background: var(--bg-hover);
-	color: var(--danger);
+	color: var(--danger-ink);
 }
 .link-row .link-del svg {
 	width: 15px;
@@ -1193,7 +1235,7 @@ a.nav-item {
 	width: 16px;
 	height: 16px;
 	flex: none;
-	color: var(--status-draft);
+	color: var(--status-draft-ink);
 	margin-top: 1px;
 }
 .recovery-grid {

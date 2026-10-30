@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 	import { tick } from 'svelte';
-	import HelpLink from '$lib/components/HelpLink.svelte';
-	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
+	import HelpLink from '#lib/components/HelpLink.svelte';
+	import PenNamePrompt from '#lib/components/PenNamePrompt.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -125,7 +126,10 @@
 						<a href={resolve('/artifacts/[id=uuid]', { id: artifact.id })} download>
 							{FORMAT_LABELS[artifact.format] ?? artifact.format}
 						</a>
-						- {formatBytes(artifact.byteSize)}, generated {formatDateTime(artifact.createdAt)}
+						- {formatBytes(artifact.byteSize)}, generated {formatDateTime(
+							artifact.createdAt,
+							page.data.timeZone
+						)}
 					</li>
 				{/each}
 			</ul>
@@ -136,7 +140,7 @@
 			</p>
 		{/if}
 		{#if data.edition.artifactErrors.length > 0}
-			<p class="field-hint" style="color:var(--danger);">
+			<p class="field-hint" style="color:var(--danger-ink);">
 				Some downloads could not be built on the last run:
 				{data.edition.artifactErrors
 					.map((e) => `${e.format.toUpperCase()} (${e.error})`)

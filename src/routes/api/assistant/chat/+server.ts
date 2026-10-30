@@ -1,28 +1,28 @@
-import { error, json, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
-import { ownedUniverse } from '$lib/server/universe-access';
+import { error, type RequestHandler } from '@sveltejs/kit';
+import { db } from '#lib/server/db';
+import { ownedStory } from '#lib/server/story-access';
+import { ownedUniverse } from '#lib/server/universe-access';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
 	requireAssistantStory,
 	requireAssistantUniverse
-} from '$lib/server/llm/assistant-route';
+} from '#lib/server/llm/assistant-route';
 import {
 	assembleContext,
 	buildSystemMessage,
 	type AssembleOptions
-} from '$lib/server/llm/context/assemble';
-import { appendChat, clearChat, type ChatScope } from '$lib/server/llm/chat-history';
-import { fitChatWithSummary } from '$lib/server/llm/chat-summary';
-import { chatBudgetTokens, contextBudgetTokens } from '$lib/server/llm/context/budgets';
-import { modelContextWindow, resolveLlmConfig } from '$lib/server/llm/config';
+} from '#lib/server/llm/context/assemble';
+import { appendChat, clearChat, type ChatScope } from '#lib/server/llm/chat-history';
+import { fitChatWithSummary } from '#lib/server/llm/chat-summary';
+import { chatBudgetTokens, contextBudgetTokens } from '#lib/server/llm/context/budgets';
+import { modelContextWindow, resolveLlmConfig } from '#lib/server/llm/config';
 import {
 	foldReference,
 	readReference,
 	type ChatReference
-} from '$lib/server/llm/prompts/reference';
-import type { ChatMessage } from '$lib/server/llm/providers/types';
+} from '#lib/server/llm/prompts/reference';
+import type { ChatMessage } from '#lib/server/llm/providers/types';
 
 // The chat surface: the browser POSTs its transcript and either the open story
 // (and scene) or the universe in view, the server assembles the in-scope world,
@@ -159,5 +159,5 @@ export const DELETE: RequestHandler = async ({ request, locals }) => {
 	} else {
 		error(400, 'storyId or universeId is required.');
 	}
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

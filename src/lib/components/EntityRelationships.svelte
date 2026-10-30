@@ -17,9 +17,9 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { invalidateAll } from '$app/navigation';
-	import { entityColor } from '$lib/entity-color';
-	import { post } from '$lib/api';
+	import { refreshAll } from '$app/navigation';
+	import { entityColor } from '#lib/entity-color';
+	import { post } from '#lib/api';
 	import type { EntityKind } from './EntityEditor.svelte';
 
 	// The typed relationships block: the existing rows and the add form.
@@ -96,12 +96,12 @@
 		relTargetId = '';
 		relNotes = '';
 		addingRel = false;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	async function removeRelationship(relationshipId: string) {
 		const response = await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 </script>
 
@@ -222,7 +222,7 @@
 		margin-top: 10px;
 	}
 	.rel-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 		font-size: 12.5px;
 		margin: 0;
 	}

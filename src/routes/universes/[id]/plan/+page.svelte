@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import EntityEditor from '$lib/components/EntityEditor.svelte';
-	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
-	import PanelStrip from '$lib/components/PanelStrip.svelte';
-	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
-	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import StoryBoard from '$lib/components/StoryBoard.svelte';
-	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
-	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { UNIVERSE_MODE_NOTE, universePath, RIGHT_PANE_LABEL } from '$lib/chrome';
+	import EntityEditor from '#lib/components/EntityEditor.svelte';
+	import PlanSidebar from '#lib/components/PlanSidebar.svelte';
+	import PanelStrip from '#lib/components/PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '#lib/panels';
+	import RevisionHistory from '#lib/components/RevisionHistory.svelte';
+	import RevisionPreview from '#lib/components/RevisionPreview.svelte';
+	import StoryBoard from '#lib/components/StoryBoard.svelte';
+	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
+	import type { SaveStatus } from '#lib/components/SceneEditor.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { UNIVERSE_MODE_NOTE, universePath, RIGHT_PANE_LABEL } from '#lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

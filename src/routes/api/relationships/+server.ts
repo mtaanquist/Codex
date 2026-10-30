@@ -1,10 +1,10 @@
-import { error, json } from '@sveltejs/kit';
-import { throwActionError } from '$lib/server/action-result';
+import { error } from '@sveltejs/kit';
+import { throwActionError } from '#lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { createRelationship } from '$lib/server/relationships';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { createRelationship } from '#lib/server/relationships';
+import { readJson } from '#lib/server/validation';
 
 const KINDS = ['character', 'place', 'lore'] as const;
 
@@ -36,5 +36,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!result.ok) {
 		throwActionError(result);
 	}
-	return json({ id: result.id }, { status: 201 });
+	return Response.json({ id: result.id }, { status: 201 });
 };

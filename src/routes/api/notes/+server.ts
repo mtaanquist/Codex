@@ -1,14 +1,14 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
-import { throwActionError } from '$lib/server/action-result';
+import { throwActionError } from '#lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { scenes, stories } from '$lib/server/db/schema';
-import { createSceneNote, createStoryNote, saveNote } from '$lib/server/notes';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { checkProseLength, readJson } from '$lib/server/validation';
-import { isUuid } from '$lib/slug';
-import { storyIsLive } from '$lib/server/universe-scope';
+import { db } from '#lib/server/db';
+import { scenes, stories } from '#lib/server/db/schema';
+import { createSceneNote, createStoryNote, saveNote } from '#lib/server/notes';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { checkProseLength, readJson } from '#lib/server/validation';
+import { isUuid } from '#lib/slug';
+import { storyIsLive } from '#lib/server/universe-scope';
 
 // The quick-note jot: creates a story note (attached to a scene when one is
 // named) and saves its text in one request, so the writer never has to leave
@@ -52,5 +52,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		bodyMd: payload.bodyMd
 	});
 	if (!result.ok) throwActionError(result);
-	return json({ id: noteId, href: `/stories/${story.slug}/notes?note=${noteId}` });
+	return Response.json({ id: noteId, href: `/stories/${story.slug}/notes?note=${noteId}` });
 };

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import FormStatus from '$lib/components/FormStatus.svelte';
-	import PenNamePrompt from '$lib/components/PenNamePrompt.svelte';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import FormStatus from '#lib/components/FormStatus.svelte';
+	import PenNamePrompt from '#lib/components/PenNamePrompt.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

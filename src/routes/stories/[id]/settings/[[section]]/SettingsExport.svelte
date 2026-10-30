@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import ExportPanel from '$lib/components/ExportPanel.svelte';
+	import ExportPanel from '#lib/components/ExportPanel.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

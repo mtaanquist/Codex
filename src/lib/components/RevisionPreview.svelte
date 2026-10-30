@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 	import { diffLines } from 'diff';
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
-	import type { EntitySnapshot } from '$lib/entity-snapshot';
-	import { post } from '$lib/api';
+	import type { EntitySnapshot } from '#lib/entity-snapshot';
+	import { post } from '#lib/api';
 
 	// The centre column while a past revision is open: banner, the
 	// revision's text (read-only), and a toggle that diffs it against what
@@ -51,7 +52,7 @@
 				'Could not restore this revision.'
 			);
 			if (result.ok) {
-				await goto(exitHref, { invalidateAll: true });
+				await goto(exitHref, { refreshAll: true });
 			} else {
 				alert(result.message);
 			}
@@ -68,7 +69,9 @@
 	<div class="revision-banner-main">
 		<div class="revision-banner-title">Viewing a past revision</div>
 		<div class="revision-banner-sub">
-			{formatDateTime(revision.createdAt)}{revision.label ? ` - ${revision.label}` : ''}
+			{formatDateTime(revision.createdAt, page.data.timeZone)}{revision.label
+				? ` - ${revision.label}`
+				: ''}
 		</div>
 	</div>
 	<div class="revision-banner-actions">

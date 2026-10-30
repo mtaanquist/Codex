@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import { ADMIN_KINDS, NOTIFICATION_KINDS, NOTIFICATION_LABELS } from '$lib/notifications';
-	import FormStatus from '$lib/components/FormStatus.svelte';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import { ADMIN_KINDS, NOTIFICATION_KINDS, NOTIFICATION_LABELS } from '#lib/notifications';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

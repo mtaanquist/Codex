@@ -1,9 +1,9 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { savePreferences } from '$lib/server/preferences';
-import { readJson } from '$lib/server/validation';
-import { isTheme } from '$lib/appearance';
+import { db } from '#lib/server/db';
+import { savePreferences } from '#lib/server/preferences';
+import { readJson } from '#lib/server/validation';
+import { isTheme } from '#lib/appearance';
 
 // Persists the colour theme for the signed-in user. The theme picker posts
 // here so a theme change survives the next navigation, where the root
@@ -14,5 +14,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await readJson<{ theme?: unknown }>(request);
 	if (!isTheme(body.theme)) error(400, 'invalid theme');
 	await savePreferences(db, locals.user.id, { theme: body.theme });
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

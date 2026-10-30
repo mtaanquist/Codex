@@ -1,7 +1,7 @@
 // Print and PDF page setup: the values that parameterize the one print
 // stylesheet shared by the browser print route and the worker's PDF
 // renderer. Pure data and builders only, imported by the worker, so no
-// $lib aliases and no server imports here.
+// #lib aliases and no server imports here.
 
 import type { Alignment } from './alignment.ts';
 

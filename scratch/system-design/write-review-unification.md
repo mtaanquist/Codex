@@ -49,7 +49,7 @@ Two facts make this the path of least resistance rather than a big merge:
 
 1. **Relative form actions.** `StoryOutline`/`StoryRowMenu` post to `?/action`,
    which targets the rendering route. Give the Review route the same-named
-   actions (thin wrappers over `$lib/server/scene-lifecycle`, consolidated in
+   actions (thin wrappers over `#lib/server/scene-lifecycle`, consolidated in
    step 1) and the menu, create, rename, and trash all work unchanged.
 2. **`StoryOutline` already has the hard parts** the menu needs: the inline
    rename field, merge-selection highlighting, the row menu hook. `ReviewNav`

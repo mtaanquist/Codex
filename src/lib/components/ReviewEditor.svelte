@@ -13,21 +13,21 @@
 		nonPrintingFor,
 		proseExtensions,
 		type MarkVisibility
-	} from '$lib/editor';
-	import { mentionExtensions, type MentionEntity } from '$lib/editor-mentions';
+	} from '#lib/editor';
+	import { mentionExtensions, type MentionEntity } from '#lib/editor-mentions';
 	import {
 		buildReviewMarks,
 		removeReviewMarks,
 		reviewMarksExtension,
 		setReviewMarks,
 		type ReviewMarksHandle
-	} from '$lib/editor-review-marks';
-	import { createAutosave, type SaveStatus } from '$lib/autosave';
-	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
+	} from '#lib/editor-review-marks';
+	import { createAutosave, type SaveStatus } from '#lib/autosave';
+	import { createSceneSaver, type SceneConflict } from '#lib/scene-saver';
 	import {
 		toggleCommandMarkers as toggleCommandMarkersView,
 		toggleNonPrintingMarks
-	} from '$lib/editor-view';
+	} from '#lib/editor-view';
 	import {
 		nudgeMarkers,
 		isWholeSceneNote,
@@ -38,7 +38,7 @@
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
-	} from '$lib/review-ui';
+	} from '#lib/review-ui';
 
 	let {
 		scene,

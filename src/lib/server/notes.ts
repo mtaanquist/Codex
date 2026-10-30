@@ -1,4 +1,4 @@
-import type { NoteListItem } from '$lib/wire-types';
+import type { NoteListItem } from '#lib/wire-types';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth';
 import { notes, revisions } from './db/schema';
@@ -10,7 +10,7 @@ import type { ActionFailure } from './action-result';
 // story_id null; story notes carry both the story and its universe. The list
 // order is pinned first, then most recently edited.
 
-export type { NoteListItem } from '$lib/wire-types';
+export type { NoteListItem } from '#lib/wire-types';
 
 export type Note = {
 	id: string;

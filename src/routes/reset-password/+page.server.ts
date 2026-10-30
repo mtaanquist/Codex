@@ -1,8 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { resetPassword } from '$lib/server/password-reset';
-import { formText } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { resetPassword } from '#lib/server/password-reset';
+import { formText } from '#lib/server/validation';
 
 export const load: PageServerLoad = async ({ url }) => {
 	// Carry the token to the form so it survives the round trip without the user

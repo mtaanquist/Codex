@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '$lib/format';
+	import { formatDate } from '#lib/format';
 	import S3Fields from './S3Fields.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -49,7 +50,10 @@
 			<span>
 				<span class="v">Backups are on</span>
 				{#if lastBackup}<span class="x"
-						>- last run {lastBackup.status} on {formatDate(lastBackup.startedAt)}</span
+						>- last run {lastBackup.status} on {formatDate(
+							lastBackup.startedAt,
+							page.data.timeZone
+						)}</span
 					>{/if}
 			</span>
 			<span class="when">
@@ -140,7 +144,7 @@
 									: ''}
 							</div>
 						</div>
-						<div class="list-sub">{formatDate(run.startedAt)}</div>
+						<div class="list-sub">{formatDate(run.startedAt, page.data.timeZone)}</div>
 					</div>
 				{/each}
 			</div>

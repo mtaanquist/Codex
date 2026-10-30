@@ -1,15 +1,15 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { scenes } from '$lib/server/db/schema';
+import { db } from '#lib/server/db';
+import { scenes } from '#lib/server/db/schema';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
 	requireAssistantStory
-} from '$lib/server/llm/assistant-route';
-import { assembleRecapContext } from '$lib/server/llm/context/assemble';
-import { buildRecapMessage } from '$lib/server/llm/prompts/recap';
-import type { ChatMessage } from '$lib/server/llm/providers/types';
+} from '#lib/server/llm/assistant-route';
+import { assembleRecapContext } from '#lib/server/llm/context/assemble';
+import { buildRecapMessage } from '#lib/server/llm/prompts/recap';
+import type { ChatMessage } from '#lib/server/llm/providers/types';
 
 // Recap ("catch me up"): the server assembles the story so far - every scene up
 // to and including the open one - and streams a recap back as Server-Sent

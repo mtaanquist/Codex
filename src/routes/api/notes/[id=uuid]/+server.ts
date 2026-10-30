@@ -1,10 +1,10 @@
-import { error, json } from '@sveltejs/kit';
-import { throwActionError } from '$lib/server/action-result';
+import { error } from '@sveltejs/kit';
+import { throwActionError } from '#lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { saveNote } from '$lib/server/notes';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { checkProseLength, readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { saveNote } from '#lib/server/notes';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { checkProseLength, readJson } from '#lib/server/validation';
 
 // Debounced autosave target for the note editor.
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
@@ -19,5 +19,5 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		bodyMd: payload.bodyMd
 	});
 	if (!result.ok) throwActionError(result);
-	return json({ savedAt: new Date().toISOString() });
+	return Response.json({ savedAt: new Date().toISOString() });
 };

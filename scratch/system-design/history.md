@@ -981,6 +981,102 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Issue review round (2026-10-29)
+
+Second open issue review (2026-10-29): seven open issues, each with a review
+comment; the owner settled the decisions on the issues. Six lanes ran in order
+on `staging/issue-review-2`, lane commits saying "Refs" for partial work so the
+staging squash closes only finished issues. #769 (base path in server-built
+links) was closed as not planned: no base path is configured or planned.
+
+- #760: a Playwright trace showed the cause was not the retry collision the
+  issue guessed. The scene's navigation data landed while the test was typing,
+  the editor remounted, and keys were lost. The spec now runs as its own user
+  with run-unique names and waits for the scene data before typing; the
+  product-side race is #772.
+- #744: `-ink` twins (`--danger-ink`, `--status-draft-ink`,
+  `--status-revised-ink`) darkened in light and warm and plain in dark, and
+  author text mixes `--auth` towards black by `--ink-share`. The owner's
+  author colour is `--accent`. `contrast.test.ts` checks the pairs and scans
+  src for raw text uses of the plain colours. Badge letters (#775) and the
+  focused mark tint (#776) were split out.
+- #766: the cookie route. The root layout sets `codex-tz` and refreshes once
+  per page load; the server reads it (`requestTimeZone`) into
+  `page.data.timeZone`, and the format helpers take it, so server HTML and the
+  hydrated page agree. Rendering times only in the browser was rejected: it
+  flashes empty timestamps.
+- #731: setting rows are a container query on `.admin-main-inner`, so fields
+  in modals and the admin invite row keep the stacked layout. Step 3 became
+  `.contents-nav` "On this page" links rather than new sidebar items, hidden
+  on narrow screens.
+- #737: the review shell's narrow tab bar moved to `theme.css` as the shared
+  `.pane-tabs` plus `data-mtab` pattern and the story editor uses it. `.app`
+  got an explicit `minmax(0, 1fr)` column; without it the formatting toolbar
+  widened the page at 720px. A review pass caught Assistant actions opening a
+  hidden panel and focus dropping to the page on a pane switch; both fixed.
+- #752 in two PRs. `refreshAll` keeps `page.state`, which nothing reads, so it
+  is a straight swap. The `#lib` codemod was a regex over quoted specifiers,
+  not `sv migrate`, to avoid reprinting `.svelte` files. TypeScript maps
+  package.json `imports` without trying extensions, so `tsconfig.json` keeps
+  a matching `paths` entry, and the worker loader adds extensions for `#lib`
+  as Node does not.
+- #772 was added mid-round. Clicking the open scene was harmless, not the
+  cause the issue guessed; the loss was a switch to another scene, where the
+  old editor stayed writable until the next scene's data landed. The page
+  pauses typing (read-only, dimmed, no caret) while it leaves the scene. An
+  independent review of staging then found the same gap around split, merge
+  and the Assistant's split cards, no guard in the whole-story view, and a
+  failed save turning the pre-navigation flush into an endless retry loop. All
+  of these now go through one `pauseTypingWhile` plus `flushEditors` pair. A
+  second review found the guard ignored a save already on its way (it read
+  `dirty`, which clears when the request leaves; it now reads
+  `hasUnsaved`), Duplicate did not flush, Back and Forward were re-issued as
+  new history entries, and a hard stop on a failed save trapped a writer whose
+  save could never succeed (a conflict, a 403). A failed save now asks
+  whether to leave without the latest changes. A review loop followed (fix,
+  merge to staging, fresh review). Round 1 found that read-only alone let
+  dispatched edits through (a Tab continuation, a finished image upload,
+  coauthor Insert); a transaction filter now drops them. Round 2 found that
+  the pause was a flag, so overlapping actions unpaused each other (now a
+  count); that a dropped upload or Insert lost its content (uploads now wait
+  for the pause to end, and Insert keeps its draft); that a second click
+  during the save was lost (the guard now goes to the last place clicked);
+  and that the review shell's pane tabs dropped focus (it now shares
+  `focusShownPane` with the story editor). Round 3 found that holding a
+  finished upload until the pause ended lost it when the editor was torn
+  down (it now lands with an annotation the pause filter lets through, and
+  the flush takes a second pass for it), and that "Load newer version" on a
+  paused editor kept the old text and then saved it over the newer one (the
+  conflict buttons now wait for the pause). Split, merge and duplicate now
+  refuse to start while another runs.
+  Round 4 found only lows, filed as #794 to #802 and then fixed on staging:
+  an image still uploading now counts as unsaved (leaving asks first),
+  Back and Forward stay paused until the replayed move starts, a click
+  during a split or merge is queued rather than dropped, scene-changing
+  buttons are disabled while paused, the save timeout grows with the scene
+  and up to 16 unsettled fingerprints are kept, "On this page" shares the
+  sidebar with the route list and follows scrolling, pane tabs apply up to
+  960px while Plan and Notes scroll sideways inside the body, and a
+  timezone the server rejects is reported once per tab.
+  Round 5 (after those fixes) found that a Back clicked during a split could
+  land one step off (queued moves now replay by URL), that leaving during an
+  upload stored its placeholder (the save now leaves pending uploads out and
+  maps marker anchors past them), and that "On this page" used a fixed line
+  that missed Insights' own scroller and the last groups on Security (the
+  line now follows the scroller and the heading's scroll margin, and at the
+  bottom the section jumped to wins). Leftover lows went into #805.
+  The open follow-ups then shipped on staging too: entity badge letters sit
+  on the palette colour mixed 65% towards black (#775); the focused review
+  tint dropped to 12%, with hover and the focus pulse capped at 15%, the
+  most author-coloured text keeps AA on in every theme (#776); and a split,
+  merge or duplicate whose move is cut short by Back or Forward reloads the
+  page data and remounts the editors, while a queued move keeps its data
+  refresh (#805). Goto options such as replaceState are not visible to
+  `beforeNavigate`, so a queued move cannot keep them.
+
+Under parallel load a few e2e specs (notes, import-story, two-factor,
+author-review) fail about once a run on staging as well; not chased this round.
+
 ## Issue review round (2026-10-26)
 
 Open issue review (2026-10-26): all 20 open issues got a review and fix plan

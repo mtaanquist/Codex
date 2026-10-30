@@ -1,5 +1,6 @@
 import { EditorView } from '@codemirror/view';
-import { StateEffect, StateField, type Extension } from '@codemirror/state';
+import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
+import { landsWhilePaused } from './editor-paused';
 
 // Paste or drop an image into the prose: it uploads and lands as a
 // markdown image pointing at the app-served path. Markdown is the stored
@@ -37,6 +38,38 @@ const pendingField = StateField.define<Pending[]>({
 
 let nextId = 0;
 
+type Range = { from: number; to: number };
+
+// Text with the given ranges cut out, and a map from positions in the full
+// text to positions in the cut one (a position inside a cut lands at its
+// start).
+export function withoutRanges(text: string, ranges: Range[]) {
+	const cuts = [...ranges].sort((a, b) => a.from - b.from);
+	let kept = '';
+	let at = 0;
+	for (const cut of cuts) {
+		kept += text.slice(at, Math.max(at, cut.from));
+		at = Math.max(at, cut.to);
+	}
+	kept += text.slice(at);
+	const mapPos = (pos: number) =>
+		pos - cuts.reduce((shift, cut) => shift + Math.max(0, Math.min(pos, cut.to) - cut.from), 0);
+	return { text: kept, mapPos };
+}
+
+// The text to store: an image still uploading is not the writer's text yet,
+// so its placeholder stays out (or a save on the way out would keep it for
+// good once the upload lands on a closed editor).
+export function storedText(state: EditorState) {
+	return withoutRanges(state.doc.toString(), state.field(pendingField, false) ?? []);
+}
+
+// Whether an image is still uploading into this editor; its placeholder is
+// not the writer's text yet, so leaving now would lose the image.
+export function hasPendingUploads(state: EditorState): boolean {
+	return (state.field(pendingField, false) ?? []).length > 0;
+}
+
 export function imageUploadExtension(universeId: string): Extension {
 	// Replace a placeholder's current (mapped) range; a null replacement just
 	// removes it, the failed-upload case.
@@ -50,6 +83,9 @@ export function imageUploadExtension(universeId: string): Extension {
 		view.dispatch({
 			changes: { from: marker.from, to: marker.to, insert: replacement ?? '' },
 			effects: removePending.of(id),
+			// Even while the page swaps the scene: the editor's last save then
+			// carries it, where waiting could lose it with the editor.
+			annotations: landsWhilePaused.of(true),
 			scrollIntoView: replacement !== null
 		});
 	}
@@ -101,6 +137,7 @@ export function imageUploadExtension(universeId: string): Extension {
 				const files = imageFiles(event.clipboardData);
 				if (files.length === 0) return false;
 				event.preventDefault();
+				if (view.state.readOnly) return true;
 				start(view, files, view.state.selection.main.head);
 				return true;
 			},
@@ -108,6 +145,7 @@ export function imageUploadExtension(universeId: string): Extension {
 				const files = imageFiles(event.dataTransfer);
 				if (files.length === 0) return false;
 				event.preventDefault();
+				if (view.state.readOnly) return true;
 				const pos =
 					view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
 					view.state.selection.main.head;

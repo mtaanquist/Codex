@@ -5,24 +5,24 @@
 	// the server stores each completed turn and the page load seeds the panel,
 	// so it survives a reload. The server holds the key and endpoint; this only
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
-	import { enhance } from '$lib/enhance';
-	import { assistantIntent } from '$lib/assistant.svelte';
+	import { enhance } from '#lib/enhance';
+	import { assistantIntent } from '#lib/assistant.svelte';
 	import {
 		startSummariesJob,
 		reviewSceneWithAssistant,
 		startBackgroundReview,
 		startContinuityReview
-	} from '$lib/assistant-actions';
-	import { openReviewModal } from '$lib/review-modal.svelte';
-	import { REVIEW_CATEGORIES } from '$lib/review-shape';
-	import { flashActivity } from '$lib/activity.svelte';
-	import { parseSseFrames } from '$lib/assistant-stream';
-	import { CHAT_WINDOW_TURNS } from '$lib/assistant-chat';
-	import { commandsForScope, matchSlash, slashName, slashArgs } from '$lib/assistant-slash';
+	} from '#lib/assistant-actions';
+	import { openReviewModal } from '#lib/review-modal.svelte';
+	import { REVIEW_CATEGORIES } from '#lib/review-shape';
+	import { flashActivity } from '#lib/activity.svelte';
+	import { parseSseFrames } from '#lib/assistant-stream';
+	import { CHAT_WINDOW_TURNS } from '#lib/assistant-chat';
+	import { commandsForScope, matchSlash, slashName, slashArgs } from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
 
 	let {
 		scope,
@@ -36,6 +36,7 @@
 		onRevertSplit,
 		onInsert,
 		onReplaceSelection,
+		insertPaused = false,
 		getSelection,
 		reviewHref
 	}: {
@@ -85,6 +86,8 @@
 		// command's affordance. Passed alongside getSelection when a scene editor is
 		// open.
 		onReplaceSelection?: (text: string) => void;
+		// The scene is saving and swapping; Insert and Replace wait for it.
+		insertPaused?: boolean;
 		// The editor's current selection text, or null when nothing is selected.
 		// /rewrite needs it; only passed when a scene editor is open.
 		getSelection?: () => string | null;
@@ -730,6 +733,7 @@
 									class="msg-insert"
 									type="button"
 									title="Replace the selected passage with this rewrite"
+									disabled={insertPaused}
 									onclick={() => onReplaceSelection(message.content)}
 								>
 									<Icon name="plus" size={12} /> Replace selection
@@ -739,6 +743,7 @@
 									class="msg-insert"
 									type="button"
 									title="Insert this reply into the scene at the cursor"
+									disabled={insertPaused}
 									onclick={() => onInsert(message.content)}
 								>
 									<Icon name="plus" size={12} /> Insert at cursor
@@ -1115,9 +1120,13 @@
 		color: var(--text-faint);
 		cursor: pointer;
 	}
-	.msg-insert:hover {
+	.msg-insert:hover:not(:disabled) {
 		color: var(--accent-ink);
 		text-decoration: underline;
+	}
+	.msg-insert:disabled {
+		cursor: progress;
+		opacity: 0.6;
 	}
 	.msg-ref {
 		border-left: 2px solid var(--accent-contrast);

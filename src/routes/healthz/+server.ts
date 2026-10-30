@@ -1,7 +1,6 @@
-import { json } from '@sveltejs/kit';
 import { sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 
 // Shorter than the container healthcheck's own timeout, so the probe always
 // gets an answer rather than being killed.
@@ -20,9 +19,9 @@ export const GET: RequestHandler = async () => {
 				timer = setTimeout(() => reject(new Error('probe timed out')), PROBE_TIMEOUT_MS);
 			})
 		]);
-		return json({ status: 'ok' });
+		return Response.json({ status: 'ok' });
 	} catch {
-		return json({ status: 'error' }, { status: 503 });
+		return Response.json({ status: 'error' }, { status: 503 });
 	} finally {
 		clearTimeout(timer);
 	}

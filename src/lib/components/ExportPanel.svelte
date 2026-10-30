@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 	type ExportItem = {
 		id: string;
 		format: 'zip' | 'epub';
@@ -50,7 +51,7 @@
 			{#each exports as item (item.id)}
 				<li class="export-row">
 					<span class="export-name">{item.filename ?? `${item.format.toUpperCase()} export`}</span>
-					<span class="export-meta">{formatDateTime(item.createdAt)}</span>
+					<span class="export-meta">{formatDateTime(item.createdAt, page.data.timeZone)}</span>
 					{#if item.status === 'ready'}
 						<a
 							class="btn btn-ghost btn-sm"
@@ -103,6 +104,6 @@
 		font-size: 0.9em;
 	}
 	.export-failed {
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 </style>

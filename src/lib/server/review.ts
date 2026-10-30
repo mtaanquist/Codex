@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { textHash } from '$lib/text-hash';
+import { textHash } from '#lib/text-hash';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {

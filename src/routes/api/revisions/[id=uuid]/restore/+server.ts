@@ -1,11 +1,11 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { queueSceneMentions, queueUniverseMentions } from '$lib/server/jobs';
-import { restoreRevision, type RevisionEntityType } from '$lib/server/revisions';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { queueSceneMentions, queueUniverseMentions } from '#lib/server/jobs';
+import { restoreRevision, type RevisionEntityType } from '#lib/server/revisions';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'note'] as const;
 
@@ -37,5 +37,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (result.mentionsAffected && result.universeId) {
 		await queueUniverseMentions(result.universeId);
 	}
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

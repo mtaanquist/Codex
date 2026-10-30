@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { dismiss } from '$lib/dismiss';
-	import { menu } from '$lib/menu';
-	import type { CrumbMenuItem } from '$lib/chrome';
+	import { dismiss } from '#lib/dismiss';
+	import { menu } from '#lib/menu';
+	import type { CrumbMenuItem } from '#lib/chrome';
 
 	// A place in the path. The name is the whole control: clicking it opens
 	// everything that belongs to that place, starting with going there.

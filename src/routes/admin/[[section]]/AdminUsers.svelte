@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { confirmSubmit } from '$lib/confirm.svelte';
+	import { page } from '$app/state';
+	import { confirmSubmit } from '#lib/confirm.svelte';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '$lib/format';
-	import { authorInitials } from '$lib/review-ui';
+	import { formatDate } from '#lib/format';
+	import { authorInitials } from '#lib/review-ui';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -147,9 +148,10 @@
 						<div class="user-row-identity">
 							<p class="user-row-name">{account.displayName}</p>
 							<p class="user-row-email">
-								{account.email} - requested {formatDate(account.createdAt)}{account.emailVerifiedAt
-									? ''
-									: ' - email unconfirmed'}
+								{account.email} - requested {formatDate(
+									account.createdAt,
+									page.data.timeZone
+								)}{account.emailVerifiedAt ? '' : ' - email unconfirmed'}
 							</p>
 						</div>
 						<div class="user-row-actions">
@@ -213,7 +215,7 @@
 						<td class="cell-muted">
 							{userStatus(account)}{account.publicArchiveEnabled ? ', can publish' : ''}
 						</td>
-						<td class="cell-muted">{formatDate(account.createdAt)}</td>
+						<td class="cell-muted">{formatDate(account.createdAt, page.data.timeZone)}</td>
 						<td class="cell-actions">
 							<div class="cell-actions-inner">
 								<form method="POST" action="?/setInviteAllowance" class="allowance-form">
@@ -274,7 +276,7 @@
 											<button
 												type="submit"
 												class="btn btn-ghost btn-sm"
-												style="color:var(--danger);">Suspend</button
+												style="color:var(--danger-ink);">Suspend</button
 											>
 										</form>
 									{/if}
@@ -304,8 +306,10 @@
 										})}
 									>
 										<input type="hidden" name="userId" value={account.id} />
-										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
-											>Delete</button
+										<button
+											type="submit"
+											class="btn btn-ghost btn-sm"
+											style="color:var(--danger-ink);">Delete</button
 										>
 									</form>
 								{/if}
@@ -396,7 +400,7 @@
 							<td class="cell-muted">{code.usedCount}/{code.maxUses}</td>
 							<td class="cell-muted">
 								{inviteStatus(code)}{code.expiresAt && inviteStatus(code) === 'Active'
-									? `, expires ${formatDate(code.expiresAt)}`
+									? `, expires ${formatDate(code.expiresAt, page.data.timeZone)}`
 									: ''}
 							</td>
 							<td class="cell-actions">
@@ -410,8 +414,10 @@
 									</button>
 									<form method="POST" action="?/deleteInvite">
 										<input type="hidden" name="inviteId" value={code.id} />
-										<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
-											>Delete</button
+										<button
+											type="submit"
+											class="btn btn-ghost btn-sm"
+											style="color:var(--danger-ink);">Delete</button
 										>
 									</form>
 								</div>

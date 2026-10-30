@@ -1,4 +1,4 @@
-import { isUuid } from '$lib/slug';
+import { isUuid } from '#lib/slug';
 // A chat turn can point at a passage of the open story ("Ask the Assistant
 // about this" on a selection). The client sends the reference as data beside
 // the message so the transcript can render it as a chip; here it is folded

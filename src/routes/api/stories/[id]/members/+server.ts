@@ -1,10 +1,10 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { throwActionError } from '$lib/server/action-result';
-import { declareMembership, removeMembership } from '$lib/server/membership';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { throwActionError } from '#lib/server/action-result';
+import { declareMembership, removeMembership } from '#lib/server/membership';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 // Declares or removes an entity's membership of the story, depending on
 // the boolean in the payload.
@@ -26,5 +26,5 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		? await declareMembership(db, locals.user!.id, payload.kind, payload.entityId, params.id)
 		: await removeMembership(db, locals.user!.id, payload.kind, payload.entityId, params.id);
 	if (!result.ok) throwActionError(result);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

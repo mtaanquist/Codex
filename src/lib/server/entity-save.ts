@@ -11,7 +11,7 @@ import {
 	ownsStoryInUniverse
 } from './entity-lookups';
 import { characterStoryNotes, loreStoryNotes, placeStoryNotes } from './db/schema';
-import type { EntityDetail } from '$lib/entity-snapshot';
+import type { EntityDetail } from '#lib/entity-snapshot';
 import type { ActionFailure } from './action-result.ts';
 
 // One save path for all three entity kinds. The flow carries real invariants

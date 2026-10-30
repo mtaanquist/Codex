@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
+	import { focusShownPane } from '#lib/pane-focus';
+	import { tick } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
@@ -15,27 +17,27 @@
 	import type { Composer } from './ReviewPanel.svelte';
 	import AssistantPanel from './AssistantPanel.svelte';
 	import type { SplitProposal } from './AssistantProposal.svelte';
-	import type { MentionEntity } from '$lib/editor-mentions';
-	import type { MarkVisibility } from '$lib/editor';
+	import type { MentionEntity } from '#lib/editor-mentions';
+	import type { MarkVisibility } from '#lib/editor';
 	import {
 		suggestionInFilter,
 		threadInFilter,
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
-	} from '$lib/review-ui';
+	} from '#lib/review-ui';
 	import type { SaveStatus } from './SceneEditor.svelte';
 	import type { ViewItem } from './ViewMenu.svelte';
 	import ModeSwitcher from './ModeSwitcher.svelte';
 	import PanelStrip from './PanelStrip.svelte';
-	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import { GUEST_MODE_NOTE, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
+	import { activePanel, visiblePanels, type PanelId } from '#lib/panels';
+	import { GUEST_MODE_NOTE, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction
-	} from '$lib/scene-actions';
-	import { focusMode } from '$lib/focus-mode.svelte';
-	import { openReviewModal } from '$lib/review-modal.svelte';
+	} from '#lib/scene-actions';
+	import { focusMode } from '#lib/focus-mode.svelte';
+	import { openReviewModal } from '#lib/review-modal.svelte';
 
 	let {
 		chapters,
@@ -171,7 +173,7 @@
 		} catch {
 			// reported by the missing reply itself
 		}
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	let filter = $state<ReviewFilter>('all');
@@ -184,7 +186,16 @@
 	let composer = $state<Composer | null>(null);
 	// On a narrow screen the three panes stack behind a tab bar; on desktop the
 	// tab bar is hidden and all three show side by side.
-	let mobileTab = $state<'nav' | 'read' | 'notes'>('read');
+	type PaneTab = 'nav' | 'read' | 'notes';
+	let mobileTab = $state<PaneTab>('read');
+	const paneEls: Partial<Record<PaneTab, HTMLElement>> = {};
+	let paneTabsEl = $state<HTMLElement>();
+	async function showPane(tab: PaneTab) {
+		if (mobileTab === tab) return;
+		mobileTab = tab;
+		await tick();
+		focusShownPane(paneTabsEl, paneEls[tab]);
+	}
 	// The right pane's panels. You are not editing here, so there is no History
 	// and no Reference: Comments is what this text has, and the Assistant reads
 	// it when the author has one. A reviewer gets Comments alone, so their pane
@@ -220,7 +231,7 @@
 	// The selected scene starts from the URL's ?scene, which a sidebar management
 	// action's redirect carries the open scene in. After that it is local state:
 	// an in-page scene click (or a duplicate/merge) sets it directly. Because it
-	// is plain state, a data refresh (invalidateAll leaves the URL alone) keeps
+	// is plain state, a data refresh (refreshAll leaves the URL alone) keeps
 	// that choice - a writable $derived would recompute on the refresh and lose
 	// it. The effect re-syncs only when the URL's ?scene actually changes (a real
 	// navigation or a management redirect), not on every refresh.
@@ -300,7 +311,7 @@
 	function navSelectScene(sceneId: string) {
 		selectScene(sceneId);
 		// Picking a scene from the outline shows the manuscript on mobile.
-		mobileTab = 'read';
+		void showPane('read');
 	}
 
 	// The author manages structure from the review sidebar, the same outline and
@@ -341,7 +352,7 @@
 			return;
 		}
 		chosenSceneId = result.newSceneId;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	// Joins the picked scenes in story order; the survivor becomes the open scene.
@@ -355,24 +366,24 @@
 		}
 		mergeSelection.clear();
 		chosenSceneId = result.targetSceneId;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	// Clicking a card jumps to its passage; clicking a mark jumps to its note.
 	// On mobile that means switching to the pane the target lives in.
 	function focusFromPanel(id: string | null) {
 		focusedId = id;
-		mobileTab = 'read';
+		void showPane('read');
 	}
 	function focusFromSurface(id: string | null) {
 		focusedId = id;
-		mobileTab = 'notes';
+		void showPane('notes');
 	}
 
 	function openComposer(c: Composer) {
 		composer = c;
 		// The composer lives in the right panel; show it on mobile.
-		mobileTab = 'notes';
+		void showPane('notes');
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
@@ -410,10 +421,11 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="review-shell">
-	<nav class="seg full" aria-label="Review sections">
+	<nav class="seg full pane-tabs" aria-label="Review sections" bind:this={paneTabsEl}>
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'nav'}
+			aria-pressed={mobileTab === 'nav'}
 			type="button"
 			onclick={() => (mobileTab = 'nav')}
 		>
@@ -422,6 +434,7 @@
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'read'}
+			aria-pressed={mobileTab === 'read'}
 			type="button"
 			onclick={() => (mobileTab = 'read')}
 		>
@@ -430,6 +443,7 @@
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'notes'}
+			aria-pressed={mobileTab === 'notes'}
 			type="button"
 			onclick={() => (mobileTab = 'notes')}
 		>
@@ -437,7 +451,7 @@
 		</button>
 	</nav>
 	<div class="body" data-mtab={mobileTab}>
-		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL} tabindex="-1" bind:this={paneEls.nav}>
 			<div class="left-head">
 				<!-- A reviewer stays in review mode; the other views are out of reach. -->
 				<ModeSwitcher
@@ -472,7 +486,7 @@
 			</div>
 		</aside>
 
-		<main id="main" class="pane center">
+		<main id="main" class="pane center" tabindex="-1" bind:this={paneEls.read}>
 			{#if !selectedScene}
 				<h1 class="visually-hidden">{book?.title ?? 'Review'} - Review</h1>
 			{/if}
@@ -529,7 +543,7 @@
 			{/if}
 		</main>
 
-		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL} tabindex="-1" bind:this={paneEls.notes}>
 			<!-- One panel invocation, two shapes of pane: with the Assistant the strip
 			     is a real tablist, without it the pane is just the Comments panel,
 			     which carries its own title. The props must not drift between the

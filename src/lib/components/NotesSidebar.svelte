@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
-	import type { NoteListItem } from '$lib/wire-types';
+	import type { NoteListItem } from '#lib/wire-types';
 	import ModeSwitcher from './ModeSwitcher.svelte';
-	import { NOTES_MODE_NOTE, LEFT_PANE_LABEL } from '$lib/chrome';
+	import { NOTES_MODE_NOTE, LEFT_PANE_LABEL } from '#lib/chrome';
 
 	// The left pane of a Notes view, shared by the story and universe scopes.
 	// Note links keep the current page and swap the ?note= query; the new-note
@@ -167,7 +167,7 @@
 		font-style: italic;
 	}
 	.note-error {
-		color: var(--danger);
+		color: var(--danger-ink);
 		font-size: 12.5px;
 		margin: 0 0 8px;
 	}

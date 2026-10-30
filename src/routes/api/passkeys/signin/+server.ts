@@ -1,13 +1,13 @@
-import { error, json } from '@sveltejs/kit';
-import { publicOrigin } from '$lib/server/origin';
+import { error } from '@sveltejs/kit';
+import { publicOrigin } from '#lib/server/origin';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { readJson } from '$lib/server/validation';
-import { createSession, SESSION_COOKIE } from '$lib/server/auth';
-import { finishPasskeySignIn, PASSKEY_CHALLENGE_COOKIE } from '$lib/server/passkeys';
-import { rateLimit } from '$lib/server/rate-limit';
-import { logEvent } from '$lib/server/log';
+import { db } from '#lib/server/db';
+import { readJson } from '#lib/server/validation';
+import { createSession, SESSION_COOKIE } from '#lib/server/auth';
+import { finishPasskeySignIn, PASSKEY_CHALLENGE_COOKIE } from '#lib/server/passkeys';
+import { rateLimit } from '#lib/server/rate-limit';
+import { logEvent } from '#lib/server/log';
 
 // Step two of passkey sign-in: verify the assertion, apply the same account
 // gates as the password path, and create the session. A verified passkey
@@ -54,5 +54,5 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, request,
 		sameSite: 'lax',
 		expires: session.expiresAt
 	});
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

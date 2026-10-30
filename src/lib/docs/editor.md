@@ -8,9 +8,11 @@ If the same scene changed in another tab or on another device since you opened i
 
 The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
+On a narrow window, such as a phone or a zoomed-in browser, the editor shows one area at a time. Use the tabs under the top bar to switch between Scenes (the chapter and scene list), Writing, and Side panel. Picking a scene from the list takes you back to the writing.
+
 ## Scenes and chapters
 
-A scene holds one stretch of prose. Chapters group scenes in order. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
+A scene holds one stretch of prose. Chapters group scenes in order. When you pick another scene, or split, merge or duplicate scenes, the scene on screen dims until the change is done; it does not take typing in that moment, so wait for it before you type. Buttons that would change the scene, such as Insert at cursor, are unavailable until then. If a scene cannot be saved when you move away, you are asked whether to leave without the latest changes; pick Cancel to stay on the scene with your words. If it cannot be saved before a split, merge or duplicate, that change is not made and a message says so; try again in a moment. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
 
 Right-click a chapter in the sidebar to rename it, move it up or down, or delete it. Deleting a chapter keeps its scenes; they move to the unfiled list.
 

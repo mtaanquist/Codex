@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
-	import { invalidateAll } from '$app/navigation';
-	import { relativeShort } from '$lib/format';
+	import { refreshAll } from '$app/navigation';
+	import { relativeShort } from '#lib/format';
 
 	type Row = { id: string; reason: string | null; label: string | null; createdAt: Date };
 
@@ -63,7 +64,7 @@
 			});
 			if (response.ok) {
 				label = '';
-				await invalidateAll();
+				await refreshAll();
 			}
 		} finally {
 			// A network-level rejection must not leave the button stuck disabled.
@@ -89,7 +90,7 @@
 				<div class="hist-main">
 					<div class="hist-label">{rowTitle(row)}</div>
 					<div class="hist-meta">
-						<span>{relativeShort(row.createdAt)}</span>
+						<span>{relativeShort(row.createdAt, page.data.timeZone)}</span>
 						{#if row.label && row.reason !== 'checkpoint'}
 							<span class="hist-note">{row.label}</span>
 						{/if}

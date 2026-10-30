@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import { WRITING_LANGUAGES, writingLanguageLabel } from '$lib/writing-languages';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import { WRITING_LANGUAGES, writingLanguageLabel } from '#lib/writing-languages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

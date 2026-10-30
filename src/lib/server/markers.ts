@@ -3,7 +3,7 @@ import type { Database } from './auth.ts';
 import { sceneMarkers, scenes, stories } from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
-import { findTodoLines } from '$lib/todo-markers';
+import { findTodoLines } from '#lib/todo-markers';
 import { createAnchorMapper } from '../review-anchor.ts';
 import type { ActionFailure } from './action-result.ts';
 

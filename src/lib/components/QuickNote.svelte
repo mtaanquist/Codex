@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
-	import { modLabel } from '$lib/keys';
-	import { quickNote, openQuickNote, closeQuickNote } from '$lib/quick-note.svelte';
+	import { refreshAll } from '$app/navigation';
+	import { modLabel } from '#lib/keys';
+	import { quickNote, openQuickNote, closeQuickNote } from '#lib/quick-note.svelte';
 
 	// The quick-note jot: a small card floating over the editor, opened with
 	// Ctrl/Cmd+Alt+N or from the command palette, that saves a thought to the
@@ -75,7 +75,7 @@
 			text = '';
 			savedHref = data.href;
 			// The Notes panel behind the card picks up the new note.
-			await invalidateAll();
+			await refreshAll();
 			close();
 		} finally {
 			saving = false;
@@ -191,7 +191,7 @@
 	.qn-error {
 		margin: 0;
 		font-size: var(--text-meta);
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 	.qn-foot {
 		display: flex;

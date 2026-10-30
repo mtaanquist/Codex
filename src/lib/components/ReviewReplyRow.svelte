@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
-	import { confirmEnhance } from '$lib/confirm.svelte';
+	import { page } from '$app/state';
+	import { enhance } from '#lib/enhance';
+	import { confirmEnhance } from '#lib/confirm.svelte';
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
-	import { formatDateTime } from '$lib/format';
+	import { formatDateTime } from '#lib/format';
 
 	// One reply in a card's discussion list, shared by the comment and
 	// suggestion cards. retractAction names the form action for deleting your
@@ -33,7 +34,7 @@
 	<div class="rv-reply-main">
 		<div class="rv-reply-head">
 			<span class="rv-reply-name">{reply.authorName}</span>
-			<span class="rv-reply-when">{formatDateTime(reply.createdAt)}</span>
+			<span class="rv-reply-when">{formatDateTime(reply.createdAt, page.data.timeZone)}</span>
 			{#if reply.mine && retractAction}
 				<form
 					method="POST"

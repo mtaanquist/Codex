@@ -2,11 +2,12 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { trackSectionInView } from '#lib/section-tracker.svelte';
 	import { beforeNavigate } from '$app/navigation';
-	import { flushFocusedField } from '$lib/autosave-form';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { libraryCrumb, pageCrumb } from '$lib/chrome';
-	import SettingsShell from '$lib/components/SettingsShell.svelte';
+	import { flushFocusedField } from '#lib/autosave-form';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { libraryCrumb, pageCrumb } from '#lib/chrome';
+	import SettingsShell from '#lib/components/SettingsShell.svelte';
 	import AccountProfile from './AccountProfile.svelte';
 	import AccountSecurity from './AccountSecurity.svelte';
 	import AccountInvites from './AccountInvites.svelte';
@@ -20,7 +21,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	// The settings forms save on change instead of with a button; see
-	// $lib/autosave-form. One-shot actions (claim a handle, change the
+	// #lib/autosave-form. One-shot actions (claim a handle, change the
 	// password, test the connection) keep their buttons. Flushing a focused
 	// field before navigation is page-level, across every section.
 	beforeNavigate(flushFocusedField);
@@ -43,6 +44,29 @@
 	// a plain /account is the profile. Forms post to the section they sit
 	// on, so an action result lands where it belongs without any bookkeeping.
 	let active: Section = $derived((page.params.section as Section) ?? 'profile');
+
+	// "On this page" links for the two sections too long for one screen; the
+	// ids sit on each group's block in AccountSecurity and AccountAssistant.
+	const CONTENTS: Partial<Record<Section, { id: string; label: string }[]>> = {
+		security: [
+			{ id: 'security-email', label: 'Email' },
+			{ id: 'security-password', label: 'Password' },
+			{ id: 'security-two-factor', label: 'Two-factor authentication' },
+			{ id: 'security-passkeys', label: 'Passkeys' },
+			{ id: 'security-sessions', label: 'Sessions' },
+			{ id: 'security-data', label: 'Your data' },
+			{ id: 'security-delete', label: 'Delete account' }
+		],
+		assistant: [
+			{ id: 'assistant-how', label: 'How Codex uses your assistant' },
+			{ id: 'assistant-identity', label: 'Identity' },
+			{ id: 'assistant-endpoint', label: 'Endpoint' },
+			{ id: 'assistant-models', label: 'Models per role' },
+			{ id: 'assistant-usage', label: 'Usage' }
+		]
+	};
+	const contents = $derived(CONTENTS[active]);
+	const inView = trackSectionInView(() => contents?.map((item) => item.id));
 
 	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/account/[[section]]', {
@@ -86,7 +110,7 @@
 			</div>
 		</div>
 
-		<nav class="admin-nav">
+		<nav class="admin-nav" class:fit={contents}>
 			<div class="admin-nav-label">You</div>
 			<a class="nav-item" class:active={active === 'profile'} href={sectionHref('profile')}>
 				<svg
@@ -237,6 +261,17 @@
 				</a>
 			{/if}
 		</nav>
+
+		{#if contents}
+			<div class="admin-nav-label" id="account-contents-label">On this page</div>
+			<nav class="contents-nav" aria-labelledby="account-contents-label">
+				{#each contents as item (item.id)}
+					<a href="#{item.id}" aria-current={inView.id === item.id ? 'true' : undefined}
+						>{item.label}</a
+					>
+				{/each}
+			</nav>
+		{/if}
 
 		<div
 			class="admin-health"

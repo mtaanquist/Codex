@@ -1,15 +1,16 @@
 // Module resolution hook for the worker. The worker runs the app's TypeScript
 // source directly under Node (no bundler), so two things Vite handles for the
-// app need handling here: the `$lib` alias, and extensionless relative imports.
-// App modules use both freely; rather than make every module the worker might
-// reach carry worker-specific import styles, this hook resolves them the way
-// Vite would. It only intercepts `$lib/*` and extensionless relative
-// specifiers; everything else (npm packages, node: builtins, already-extensioned
-// paths) falls through to Node's default resolver.
+// app need handling here: extensionless imports, both relative ones and
+// `#lib/*` ones (Node maps `#lib` through package.json `imports` but does not
+// add an extension). App modules use them freely; rather than make every
+// module the worker might reach carry worker-specific import styles, this hook
+// resolves them the way Vite would. Everything else (npm packages, node:
+// builtins, already-extensioned paths) falls through to Node's default resolver.
 import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// `$lib` maps to src/lib; this loader sits in src/worker, so src/lib is ../lib.
+// `#lib` maps to src/lib (package.json `imports`); this loader sits in
+// src/worker, so src/lib is ../lib.
 const libBase = new URL('../lib/', import.meta.url);
 
 const CANDIDATES = ['', '.ts', '.js', '/index.ts', '/index.js'];
@@ -41,9 +42,11 @@ export function resolve(specifier, context, nextResolve) {
 	if (specifier === '$app/env/private') {
 		return { url: envShim, shortCircuit: true };
 	}
-	if (specifier === '$lib' || specifier.startsWith('$lib/')) {
-		const rest = specifier === '$lib' ? '' : specifier.slice('$lib/'.length);
-		const resolved = resolveFile(new URL(rest, libBase));
+	// Every #lib specifier from app code goes through the candidates, extension
+	// or not, so `#lib/x.svelte` finds `x.svelte.ts` the way Vite does. A
+	// package with its own `#lib` import map keeps it.
+	if (specifier.startsWith('#lib/') && !context.parentURL?.includes('/node_modules/')) {
+		const resolved = resolveFile(new URL(specifier.slice('#lib/'.length), libBase));
 		if (resolved) return { url: resolved, shortCircuit: true };
 	} else if (
 		(specifier.startsWith('./') || specifier.startsWith('../')) &&

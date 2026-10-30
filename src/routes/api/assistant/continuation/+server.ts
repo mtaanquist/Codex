@@ -1,12 +1,12 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
 	requireAssistantStory,
 	throwAssistantError
-} from '$lib/server/llm/assistant-route';
-import { buildContinuationMessage } from '$lib/server/llm/prompts/continuation';
-import { complete } from '$lib/server/llm/gateway';
+} from '#lib/server/llm/assistant-route';
+import { buildContinuationMessage } from '#lib/server/llm/prompts/continuation';
+import { complete } from '#lib/server/llm/gateway';
 
 // Inline continuation: the editor sends the prose before the cursor and gets a
 // short continuation back, shown as ghost-text the writer accepts with Tab.

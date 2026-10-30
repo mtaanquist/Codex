@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { panelDomId, tabDomId, type Panel, type PanelId } from '$lib/panels';
+	import { panelDomId, tabDomId, type Panel, type PanelId } from '#lib/panels';
 	import type { Snippet } from 'svelte';
 
 	// The right pane's header and its panels. Two or more panels make a real

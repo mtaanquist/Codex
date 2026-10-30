@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath } from '$lib/chrome';
-	import ReviewWorkspace from '$lib/components/ReviewWorkspace.svelte';
-	import ReviewModal from '$lib/components/ReviewModal.svelte';
-	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
-	import { editorStyleVars } from '$lib/page-setup';
-	import { focusMode } from '$lib/focus-mode.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { storyPath } from '#lib/chrome';
+	import ReviewWorkspace from '#lib/components/ReviewWorkspace.svelte';
+	import ReviewModal from '#lib/components/ReviewModal.svelte';
+	import type { SaveStatus } from '#lib/components/SceneEditor.svelte';
+	import { editorStyleVars } from '#lib/page-setup';
+	import { focusMode } from '#lib/focus-mode.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

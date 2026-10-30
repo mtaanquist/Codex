@@ -1,10 +1,10 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
-import { setProposalConfirmed } from '$lib/server/llm/chat-history';
-import { readJson } from '$lib/server/validation';
-import { rateLimitAssistant } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { ownedStory } from '#lib/server/story-access';
+import { setProposalConfirmed } from '#lib/server/llm/chat-history';
+import { readJson } from '#lib/server/validation';
+import { rateLimitAssistant } from '#lib/server/write-guard';
 
 // Records a split proposal's outcome on its stored chat turn: the confirm
 // sends what the split created, a revert sends null to reopen the card. The
@@ -36,5 +36,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		{ sceneId: payload.sceneId, before: payload.before },
 		confirmed
 	);
-	return json({ ok: true, matched });
+	return Response.json({ ok: true, matched });
 };

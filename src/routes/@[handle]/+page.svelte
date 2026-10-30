@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { renderMarkdown } from '$lib/markdown';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import ReaderFooter from '$lib/components/ReaderFooter.svelte';
-	import { pageCrumb } from '$lib/chrome';
-	import { authorInitials, authorName } from '$lib/author-name';
-	import { formatLongDate, formatNumber } from '$lib/format';
+	import { renderMarkdown } from '#lib/markdown';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import ReaderFooter from '#lib/components/ReaderFooter.svelte';
+	import { pageCrumb } from '#lib/chrome';
+	import { authorInitials, authorName } from '#lib/author-name';
+	import { formatLongDate, formatNumber } from '#lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -131,7 +132,7 @@
 								{/if}
 								<span class="shelf-item-title">{book.title}</span>
 								<span class="shelf-item-meta">
-									{formatLongDate(book.publishedAt)}{#if book.isAdult}
+									{formatLongDate(book.publishedAt, page.data.timeZone)}{#if book.isAdult}
 										- adult content{/if}
 								</span>
 								{#if book.descriptionMd}

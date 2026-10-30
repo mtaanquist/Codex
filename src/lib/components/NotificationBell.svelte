@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { openHref } from '$lib/open-href';
+	import { page } from '$app/state';
+	import { openHref } from '#lib/open-href';
 	import Icon from './Icon.svelte';
-	import type { NotificationItem } from '$lib/notifications';
-	import { dismiss } from '$lib/dismiss';
-	import { relativeShort } from '$lib/format';
+	import type { NotificationItem } from '#lib/notifications';
+	import { dismiss } from '#lib/dismiss';
+	import { relativeShort } from '#lib/format';
 
 	// The topbar bell: unread badge, a dropdown of recent notifications,
 	// click marks read and follows the link when there is one.
@@ -105,7 +106,7 @@
 										<span class="bell-item-detail">{item.detail}</span>
 									{/if}
 								</span>
-								<span class="bell-age">{relativeShort(item.createdAt)}</span>
+								<span class="bell-age">{relativeShort(item.createdAt, page.data.timeZone)}</span>
 							</button>
 						</li>
 					{/each}

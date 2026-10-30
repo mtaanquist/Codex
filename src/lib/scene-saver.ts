@@ -28,9 +28,21 @@ export type SceneSaver = {
 	rebase: (bodyMd: string, fromHash: string) => void;
 };
 
-// The server accepts at most four fingerprints: the base plus the most recent
-// unsettled attempts.
-const MAX_PENDING = 3;
+// A save that gets no answer in this time counts as a network error, so the
+// autosave retries it and a page waiting on it is not held indefinitely. A
+// long scene gets longer, so a slow link can still send it (about 1 KB/s),
+// up to two minutes so a stalled network does not hold a scene switch long.
+export const SAVE_TIMEOUT_MS = 30_000;
+const SAVE_TIMEOUT_MAX_MS = 120_000;
+export function saveTimeoutMs(body: string): number {
+	return Math.min(SAVE_TIMEOUT_MS + body.length, SAVE_TIMEOUT_MAX_MS);
+}
+
+// Fingerprints a save may send: the base plus the most recent unsettled
+// attempts. Enough that a run of timed-out saves does not push out one the
+// server applied late, which would show the writer's own words as a conflict.
+export const MAX_BASE_HASHES = 16;
+const MAX_PENDING = MAX_BASE_HASHES - 1;
 
 export function createSceneSaver(
 	sceneId: string,
@@ -66,19 +78,29 @@ export function createSceneSaver(
 				baseHashes,
 				overwrite: sendOverwrite || undefined
 			});
-			const response = await fetch(`/api/scenes/${sceneId}`, {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				keepalive: keepalive && keepaliveFits(body),
-				body
-			});
-			settle(hash);
-			if (response.status === 409) {
-				const conflict = (await response.json()) as SceneConflict;
-				if (started === generation) onConflict({ bodyMd: conflict.bodyMd, title: conflict.title });
-				throw new UnretryableSaveError('the scene changed somewhere else');
+			const controller = new AbortController();
+			// Covers reading a refusal's body too.
+			const timer = setTimeout(() => controller.abort(), saveTimeoutMs(body));
+			try {
+				const response = await fetch(`/api/scenes/${sceneId}`, {
+					method: 'PUT',
+					headers: { 'content-type': 'application/json' },
+					keepalive: keepalive && keepaliveFits(body),
+					body,
+					// The close-tab save outlives the page; nothing waits on it.
+					signal: keepalive ? undefined : controller.signal
+				});
+				settle(hash);
+				if (response.status === 409) {
+					const conflict = (await response.json()) as SceneConflict;
+					if (started === generation)
+						onConflict({ bodyMd: conflict.bodyMd, title: conflict.title });
+					throw new UnretryableSaveError('the scene changed somewhere else');
+				}
+				if (!response.ok) throw saveFailure(response.status);
+			} finally {
+				clearTimeout(timer);
 			}
-			if (!response.ok) throw saveFailure(response.status);
 			if (started === generation) {
 				base = hash;
 				overwrite = false;

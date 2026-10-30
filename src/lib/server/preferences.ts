@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { jsonbMergePatch } from './jsonb-patch.ts';
 import type { Database } from './auth.ts';
 import { stories, users } from './db/schema.ts';
-import type { AutocompleteMode } from '$lib/editor-autocomplete';
+import type { AutocompleteMode } from '#lib/editor-autocomplete';
 import {
 	DEFAULT_ACCENT,
 	DEFAULT_SYSTEM_DARK,
@@ -13,9 +13,9 @@ import {
 	normaliseAccent,
 	type ConcreteTheme,
 	type Theme
-} from '$lib/appearance';
-import { NOTIFICATION_KINDS, type NotificationMatrix } from '$lib/notifications';
-import { isLibraryView, type LibraryView } from '$lib/dashboard';
+} from '#lib/appearance';
+import { NOTIFICATION_KINDS, type NotificationMatrix } from '#lib/notifications';
+import { isLibraryView, type LibraryView } from '#lib/dashboard';
 import {
 	clampLineSpacingCm,
 	isLineSpacing,
@@ -23,7 +23,7 @@ import {
 	sanitiseFontName,
 	type LineSpacing,
 	type PageFont
-} from '$lib/page-setup';
+} from '#lib/page-setup';
 
 export type UserPreferences = {
 	entityAutocomplete: AutocompleteMode;

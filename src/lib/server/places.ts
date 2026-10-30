@@ -1,6 +1,6 @@
 import type { Database } from './auth';
 import { saveEntity, type EntitySaveResult } from './entity-save.ts';
-import type { EntityDetail } from '$lib/entity-snapshot';
+import type { EntityDetail } from '#lib/entity-snapshot';
 
 export type PlaceSave = {
 	name: string;

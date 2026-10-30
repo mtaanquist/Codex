@@ -63,7 +63,7 @@ function escapeHtml(text: string): string {
 }
 
 // A complete print-ready HTML document for the PDF renderer, styled by the
-// page setup ($lib/page-setup builds the stylesheet the browser print route
+// page setup (#lib/page-setup builds the stylesheet the browser print route
 // shares). Page geometry rides the pdf options instead of an @page rule,
 // since Chromium's header/footer layer needs it there. Images are inlined
 // as data URIs; any other image URL is blocked by the renderer (isolatePage).

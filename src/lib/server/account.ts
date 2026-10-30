@@ -6,7 +6,7 @@ import { consumeToken, reserveToken, revokeTokens } from './tokens';
 import { isUniqueViolation } from './db-errors.ts';
 import { EMAIL_RE } from './signup.ts';
 import { MAX_DISPLAY_NAME } from './validation.ts';
-import { MIN_PASSWORD } from '$lib/password';
+import { MIN_PASSWORD } from '#lib/password';
 
 const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
 

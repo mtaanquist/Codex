@@ -1,15 +1,16 @@
 <script lang="ts" module>
 	// Re-exported from the shared autosave queue so existing imports stand.
-	import type { SaveStatus as AutosaveStatus } from '$lib/autosave';
+	import type { SaveStatus as AutosaveStatus } from '#lib/autosave';
 	export type SaveStatus = AutosaveStatus;
 </script>
 
 <script lang="ts">
+	import { pausedExtension } from '#lib/editor-paused';
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
-	import { createAutosave } from '$lib/autosave';
-	import { createSceneSaver, type SceneConflict } from '$lib/scene-saver';
-	import { invalidateAll } from '$app/navigation';
+	import { createAutosave } from '#lib/autosave';
+	import { createSceneSaver, type SceneConflict } from '#lib/scene-saver';
+	import { refreshAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
 	import {
@@ -18,12 +19,12 @@
 		nonPrintingFor,
 		type EditingMode,
 		type MarkVisibility
-	} from '$lib/editor';
-	import { mentionExtensions, type MentionEntity, type MentionOptions } from '$lib/editor-mentions';
-	import { autocompleteExtensions, type AutocompleteMode } from '$lib/editor-autocomplete';
-	import { continuationExtensions } from '$lib/editor-continuation';
-	import { imageUploadExtension } from '$lib/editor-images';
-	import { markerExtensions, type MarkerHandle, type SceneMarker } from '$lib/editor-markers';
+	} from '#lib/editor';
+	import { mentionExtensions, type MentionEntity, type MentionOptions } from '#lib/editor-mentions';
+	import { autocompleteExtensions, type AutocompleteMode } from '#lib/editor-autocomplete';
+	import { continuationExtensions } from '#lib/editor-continuation';
+	import { hasPendingUploads, imageUploadExtension, storedText } from '#lib/editor-images';
+	import { markerExtensions, type MarkerHandle, type SceneMarker } from '#lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
 	import SceneConflictBanner from './SceneConflictBanner.svelte';
@@ -60,7 +61,8 @@
 		commandMarkers = 'shown',
 		onToggleNonPrinting,
 		onToggleCommandMarkers,
-		onStatus
+		onStatus,
+		leaving = false
 	}: {
 		sceneId: string;
 		// The owning story; continuation posts it so the server can gate and scope.
@@ -78,6 +80,9 @@
 		spellCheck?: 'on' | 'off';
 		writingLanguage?: string;
 		markers?: SceneMarker[];
+		// The page is switching to another scene: the text stays on screen but
+		// takes no input, so nothing is typed into a scene about to be replaced.
+		leaving?: boolean;
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
 		imageUniverseId?: string;
@@ -141,6 +146,7 @@
 	// The toolbar toggles flip these at runtime.
 	const nonPrintingCompartment = new Compartment();
 	const alignmentCompartment = new Compartment();
+	const leavingCompartment = new Compartment();
 	// svelte-ignore state_referenced_locally
 	let markerHandle: MarkerHandle = markerExtensions(markers, markSelection);
 
@@ -166,26 +172,38 @@
 	let titleValue = $state(title ?? '');
 	// Set when a save was refused because the scene changed elsewhere.
 	let conflict = $state<SceneConflict | null>(null);
+	let tornDown = false;
 	// svelte-ignore state_referenced_locally
 	const saver = createSceneSaver(sceneId, body, (next) => (conflict = next));
 	const autosave = createAutosave({
 		debounceMs: SAVE_DEBOUNCE_MS,
-		onStatus: (status) => onStatus(status),
+		// Once this editor is torn down the pill belongs to the next scene, so a
+		// late failure here must not show there. 'saved' still refreshes the tree.
+		onStatus: (status) => {
+			if (!tornDown || status === 'saved') onStatus(status);
+		},
 		save: async ({ keepalive }) => {
 			if (!view) return;
+			const stored = storedText(view.state);
 			await saver.save({
 				keepalive,
 				title: titleValue,
-				bodyMd: view.state.doc.toString(),
+				bodyMd: stored.text,
 				// Marker anchors as the editor mapped them through edits.
-				markers: markerHandle.anchors(view)
+				markers: markerHandle.anchors(view).map((marker) => ({
+					...marker,
+					anchorStart: stored.mapPos(marker.anchorStart),
+					anchorEnd: stored.mapPos(marker.anchorEnd)
+				}))
 			});
 		}
 	});
 
 	// Swap in the newer text; the edits made here since are dropped.
+	// Both wait while the page swaps the scene: the paused editor would drop
+	// the swap-in, and the save would then overwrite the newer text.
 	function loadNewer() {
-		if (!view || !conflict) return;
+		if (!view || !conflict || leaving) return;
 		const newer = conflict;
 		saver.adopt(newer.bodyMd);
 		titleValue = newer.title ?? '';
@@ -194,7 +212,7 @@
 	}
 
 	function keepMine() {
-		if (!conflict) return;
+		if (!conflict || leaving) return;
 		saver.keepMine(conflict.bodyMd);
 		void autosave.flush();
 	}
@@ -209,7 +227,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ anchorStart: from, anchorEnd: to })
 		});
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 
 	// At the visual top or bottom of this editor, vertical arrows hand
@@ -260,11 +278,22 @@
 		await autosave.flush();
 	}
 
-	// Whether an edit is waiting in the debounce window. The page uses this to
+	// Whether any words are not yet stored: an edit waiting in the debounce
+	// window, a failed save, or one still on its way. The page uses this to
 	// flush before navigating away, so a quick scene round-trip never reloads
-	// stale prose over a save still in flight.
+	// stale prose and a save that fails late is not lost with the editor.
 	export function isDirty(): boolean {
-		return autosave.isDirty();
+		return autosave.hasUnsaved();
+	}
+
+	export function isUploading(): boolean {
+		return view ? hasPendingUploads(view.state) : false;
+	}
+
+	// Closing the tab asks first while words or an image are not yet stored.
+	function warnBeforeUnload(event: BeforeUnloadEvent) {
+		if (isUploading()) event.preventDefault();
+		else autosave.warnBeforeUnload(event);
 	}
 
 	// The continuous view's shared formatting toolbar runs its commands on
@@ -276,7 +305,7 @@
 	// Inserts text at the caret, like the coauthor panel's Insert does; the
 	// Assistant tab uses it to drop a chat reply into the scene.
 	export function insertAtCursor(text: string) {
-		if (!view || !text) return;
+		if (!view || !text || leaving) return;
 		const head = view.state.selection.main.head;
 		view.dispatch({
 			changes: { from: head, insert: text },
@@ -300,7 +329,7 @@
 	// nothing is selected. The /rewrite affordance drops its rewrite in over the
 	// passage it rewrote.
 	export function replaceSelection(text: string) {
-		if (!view || !text) return;
+		if (!view || !text || leaving) return;
 		const { from, to } = view.state.selection.main;
 		view.dispatch({
 			changes: { from, to, insert: text },
@@ -342,6 +371,11 @@
 		const extension = nonPrintingFor(nonPrintingMarks);
 		if (!view) return;
 		view.dispatch({ effects: nonPrintingCompartment.reconfigure(extension) });
+	});
+	$effect(() => {
+		const extension = pausedExtension(leaving);
+		if (!view) return;
+		view.dispatch({ effects: leavingCompartment.reconfigure(extension) });
 	});
 	$effect(() => {
 		const extension = commandMarkerExtensions(commandMarkers);
@@ -470,6 +504,7 @@
 					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
+					leavingCompartment.of(pausedExtension(leaving)),
 					assistantContinuation && storyId ? continuationExtensions(storyId) : [],
 					boundaryKeymap(),
 					onFocus
@@ -487,6 +522,7 @@
 		applyFindAt();
 		return () => {
 			// Last-chance flush so navigating away does not lose the tail edit.
+			tornDown = true;
 			void autosave.teardown().then(() => {
 				view?.destroy();
 				view = undefined;
@@ -498,12 +534,13 @@
 {#if compact}
 	<div
 		class="editor compact"
+		class:is-leaving={leaving}
 		role="presentation"
 		style={editorStyle}
 		oncontextmenu={onPaneContextMenu}
 	>
 		{#if conflict}
-			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} paused={leaving} />
 		{/if}
 		<div class="editor-cm" bind:this={editorEl}></div>
 	</div>
@@ -530,6 +567,7 @@
 				{sceneId}
 				onInserted={scheduleSave}
 				onClose={() => (coauthorOpen = false)}
+				paused={leaving}
 			/>
 		{/if}
 		<div
@@ -538,15 +576,16 @@
 			bind:this={scrollEl}
 			oncontextmenu={onPaneContextMenu}
 		>
-			<div class="editor" style={editorStyle}>
+			<div class="editor" class:is-leaving={leaving} style={editorStyle}>
 				{#if conflict}
-					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} paused={leaving} />
 				{/if}
 				<input
 					class="editor-title-input"
 					type="text"
 					placeholder="Untitled scene"
 					bind:value={titleValue}
+					readonly={leaving}
 					oninput={scheduleSave}
 					onchange={flushTitle}
 				/>
@@ -556,7 +595,7 @@
 	</div>
 {/if}
 
-<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={warnBeforeUnload} />
 
 {#if selectionMenu}
 	<SelectionMenu
@@ -584,6 +623,15 @@
 	}
 	.editor-title-input::placeholder {
 		color: var(--text-faint);
+	}
+	/* Dims at once and drops the caret, so it is plain that typing is paused. */
+	.editor.is-leaving {
+		opacity: 0.55;
+		cursor: progress;
+		transition: opacity 0.1s ease;
+	}
+	.editor.is-leaving :global(.cm-cursorLayer) {
+		visibility: hidden;
 	}
 	.editor.compact :global(.editor-cm) {
 		min-height: 0;

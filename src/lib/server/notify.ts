@@ -16,7 +16,7 @@ import {
 	type NotificationItem,
 	type NotificationKind,
 	type NotificationPayload
-} from '$lib/notifications';
+} from '#lib/notifications';
 
 // The fan-out behind every notification: one event in, per-user rows out,
 // each stamped with the channels that user's preference matrix allows. The

@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { deserialize } from '$app/forms';
-	import { closePalette, openPalette, palette } from '$lib/palette.svelte';
-	import { modal } from '$lib/modal';
-	import { focusMode } from '$lib/focus-mode.svelte';
-	import { assistantIntent } from '$lib/assistant.svelte';
-	import { openReviewModal } from '$lib/review-modal.svelte';
-	import { openQuickNote } from '$lib/quick-note.svelte';
-	import { startSummariesJob } from '$lib/assistant-actions';
-	import type { SearchResult } from '$lib/wire-types';
+	import { closePalette, openPalette, palette } from '#lib/palette.svelte';
+	import { modal } from '#lib/modal';
+	import { focusMode } from '#lib/focus-mode.svelte';
+	import { assistantIntent } from '#lib/assistant.svelte';
+	import { openReviewModal } from '#lib/review-modal.svelte';
+	import { openQuickNote } from '#lib/quick-note.svelte';
+	import { startSummariesJob } from '#lib/assistant-actions';
+	import type { SearchResult } from '#lib/wire-types';
 
 	// The command palette: Ctrl+K (or the topbar button) opens it; type to
 	// search everything you own and to filter the commands that fit where
@@ -64,9 +64,9 @@
 			const result = deserialize(await response.text());
 			if (result.type === 'redirect') {
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- the action's own redirect
-				await goto(result.location, { invalidateAll: true });
+				await goto(result.location, { refreshAll: true });
 			} else {
-				await invalidateAll();
+				await refreshAll();
 			}
 		};
 	}

@@ -1,8 +1,10 @@
 import { eq, sql } from 'drizzle-orm';
+// Relative imports with extensions: the backup scripts load this file under
+// plain node, which cannot resolve an extensionless #lib path.
 import type { Database } from './auth.ts';
 import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';
-import { SIGNUP_MODES, type SignupMode } from '$lib/signup-mode';
+import { SIGNUP_MODES, type SignupMode } from '../signup-mode.ts';
 
 const SMTP_KEY = 'smtp';
 const SIGNUP_KEY = 'signup';
@@ -158,7 +160,7 @@ export async function s3SettingsView(
 
 // Who can create an account. The list and the type are shared with the browser
 // (the landing and sign-in pages render from the mode), so they live in
-// $lib/signup-mode.ts; reading and writing the setting stays here.
+// #lib/signup-mode.ts; reading and writing the setting stays here.
 export { SIGNUP_MODES, type SignupMode };
 
 export async function signupMode(db: Database): Promise<SignupMode> {

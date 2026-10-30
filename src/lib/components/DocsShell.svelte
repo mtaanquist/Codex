@@ -3,9 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import AppBar from './AppBar.svelte';
-	import { helpFrom } from '$lib/help.svelte';
-	import { pageCrumb, type Crumb, LEFT_PANE_LABEL } from '$lib/chrome';
-	import type { DocTopic } from '$lib/docs';
+	import { helpFrom } from '#lib/help.svelte';
+	import { pageCrumb, type Crumb, LEFT_PANE_LABEL } from '#lib/chrome';
+	import type { DocTopic } from '#lib/docs';
 
 	// Help is one presentation: a page inside the chrome, with the article list
 	// as the left pane, so an article is never a bare page floating outside the

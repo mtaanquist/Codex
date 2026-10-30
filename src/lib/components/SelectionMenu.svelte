@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { EditorView } from '@codemirror/view';
-	import { dismiss } from '$lib/dismiss';
-	import { menu as menuKeys } from '$lib/menu';
-	import { modLabel } from '$lib/keys';
-	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '$lib/editor-format';
+	import { dismiss } from '#lib/dismiss';
+	import { menu as menuKeys } from '#lib/menu';
+	import { modLabel } from '#lib/keys';
+	import { toggleBold, toggleBulletList, toggleItalic, toggleQuote } from '#lib/editor-format';
 	import Icon from './Icon.svelte';
 
 	// SSR cannot know the platform, so the modifier label settles after mount.
@@ -306,7 +306,7 @@
 	.sel-menu-error {
 		font-family: var(--font-ui);
 		font-size: 12px;
-		color: var(--danger);
+		color: var(--danger-ink);
 		margin: 2px 7px 4px;
 	}
 	/* The lore item's category flyout. */

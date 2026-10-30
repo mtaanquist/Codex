@@ -14,7 +14,7 @@ import { ensureTestDatabase } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'route-limits-test-secret';
 
-vi.mock('$lib/server/db', async () => {
+vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
 	const schemaModule = await import('../../src/lib/server/db/schema');
@@ -22,25 +22,25 @@ vi.mock('$lib/server/db', async () => {
 	const testPool = new pgModule.Pool({ connectionString: TEST_DATABASE_URL });
 	return { db: drizzle(testPool, { schema: schemaModule }), pool: testPool };
 });
-vi.mock('$lib/server/jobs', () => ({ queueEmail: vi.fn(async () => undefined) }));
-vi.mock('$lib/server/notify', () => ({ notifyAdmins: vi.fn(async () => undefined) }));
-vi.mock('$lib/server/signup', async (importActual) => {
-	const actual = await importActual<typeof import('$lib/server/signup')>();
+vi.mock('#lib/server/jobs', () => ({ queueEmail: vi.fn(async () => undefined) }));
+vi.mock('#lib/server/notify', () => ({ notifyAdmins: vi.fn(async () => undefined) }));
+vi.mock('#lib/server/signup', async (importActual) => {
+	const actual = await importActual<typeof import('#lib/server/signup')>();
 	return { ...actual, registerUser: vi.fn(actual.registerUser) };
 });
-vi.mock('$lib/server/search', async (importActual) => {
-	const actual = await importActual<typeof import('$lib/server/search')>();
+vi.mock('#lib/server/search', async (importActual) => {
+	const actual = await importActual<typeof import('#lib/server/search')>();
 	return { ...actual, searchAll: vi.fn(actual.searchAll) };
 });
 
-const { db, pool } = (await import('$lib/server/db')) as unknown as {
+const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { resetRateLimits } = await import('$lib/server/rate-limit');
-const { queueEmail } = await import('$lib/server/jobs');
-const { registerUser } = await import('$lib/server/signup');
-const { searchAll } = await import('$lib/server/search');
+const { resetRateLimits } = await import('#lib/server/rate-limit');
+const { queueEmail } = await import('#lib/server/jobs');
+const { registerUser } = await import('#lib/server/signup');
+const { searchAll } = await import('#lib/server/search');
 const forgotPage = await import('../../src/routes/forgot-password/+page.server');
 const signupPage = await import('../../src/routes/signup/+page.server');
 const signinOptions = await import('../../src/routes/api/passkeys/signin-options/+server');

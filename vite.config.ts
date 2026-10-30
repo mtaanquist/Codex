@@ -11,9 +11,6 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
-			// Kit 3 drops $lib for #lib subpath imports; this keeps the old
-			// specifier working until the codebase moves over.
-			alias: { $lib: 'src/lib' },
 			// Scripts only from this origin, plus the inline ones SvelteKit (and the
 			// theme script in app.html) mark with a nonce. Styles are left open:
 			// Svelte transitions insert inline style elements.

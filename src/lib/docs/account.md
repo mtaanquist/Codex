@@ -6,6 +6,9 @@ Page setup, plus Invites once an admin has given you invites. Changes save on th
 a choice saves as soon as you make it, and a text field saves when you leave it.
 A "Saved." note confirms each save.
 
+On a large window, the sidebar lists the parts of Security and Assistant under
+"On this page". Pick one to jump to it.
+
 ## Profile
 
 Set your display name and, if you like, a separate pen name to show on your

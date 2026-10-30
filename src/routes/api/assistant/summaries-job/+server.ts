@@ -1,6 +1,6 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
-import { readAssistantPayload, requireAssistantStory } from '$lib/server/llm/assistant-route';
-import { queueAssistantSummaries } from '$lib/server/jobs';
+import { readAssistantPayload, requireAssistantStory } from '#lib/server/llm/assistant-route';
+import { queueAssistantSummaries } from '#lib/server/jobs';
 
 // Queues whole-story summary maintenance as a background job (it reads every
 // scene, too long for a request). The Assistant drafts missing scene and chapter

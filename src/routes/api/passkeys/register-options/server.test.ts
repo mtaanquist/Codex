@@ -3,10 +3,10 @@ import { isHttpError } from '@sveltejs/kit';
 
 // The endpoint opens a real database pool and reaches the passkey ceremony on
 // import; stub the dependencies so the test exercises only the re-auth gate.
-vi.mock('$lib/server/db', () => ({ db: {} }));
-vi.mock('$lib/server/crypto', () => ({ secretsAvailable: () => true }));
-vi.mock('$lib/server/account', () => ({ verifyAccountPassword: vi.fn() }));
-vi.mock('$lib/server/passkeys', () => ({
+vi.mock('#lib/server/db', () => ({ db: {} }));
+vi.mock('#lib/server/crypto', () => ({ secretsAvailable: () => true }));
+vi.mock('#lib/server/account', () => ({ verifyAccountPassword: vi.fn() }));
+vi.mock('#lib/server/passkeys', () => ({
 	PASSKEY_CHALLENGE_COOKIE: 'pk_challenge',
 	startPasskeyRegistration: vi.fn(async () => ({
 		options: { challenge: 'opts' },
@@ -14,8 +14,8 @@ vi.mock('$lib/server/passkeys', () => ({
 	}))
 }));
 
-const { verifyAccountPassword } = await import('$lib/server/account');
-const { startPasskeyRegistration } = await import('$lib/server/passkeys');
+const { verifyAccountPassword } = await import('#lib/server/account');
+const { startPasskeyRegistration } = await import('#lib/server/passkeys');
 const { POST } = await import('./+server');
 
 // The status the handler answered with, whether it returned a Response or threw.

@@ -1,13 +1,13 @@
-import { error, json } from '@sveltejs/kit';
-import { throwActionError } from '$lib/server/action-result';
+import { error } from '@sveltejs/kit';
+import { throwActionError } from '#lib/server/action-result';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { rateLimitWrites } from '$lib/server/write-guard';
-import { clearMentionPin, setMentionPin } from '$lib/server/mention-pins';
-import { stories } from '$lib/server/db/schema';
-import { queueUniverseMentions } from '$lib/server/jobs';
+import { db } from '#lib/server/db';
+import { rateLimitWrites } from '#lib/server/write-guard';
+import { clearMentionPin, setMentionPin } from '#lib/server/mention-pins';
+import { stories } from '#lib/server/db/schema';
+import { queueUniverseMentions } from '#lib/server/jobs';
 import { eq } from 'drizzle-orm';
-import { readJson } from '$lib/server/validation';
+import { readJson } from '#lib/server/validation';
 
 const TYPES = ['character', 'place', 'lore_entry'] as const;
 
@@ -48,7 +48,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throwActionError(result);
 	}
 	await requeue(params.id);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };
 
 export const DELETE: RequestHandler = async ({ params, request, locals }) => {
@@ -58,5 +58,5 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 	const removed = await clearMentionPin(db, locals.user!.id, params.id, payload.name);
 	if (!removed) error(404, 'pin not found');
 	await requeue(params.id);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

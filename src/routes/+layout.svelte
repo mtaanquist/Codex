@@ -5,31 +5,33 @@
 	import '@fontsource/spectral/500.css';
 	import '@fontsource/spectral/600.css';
 	import '@fontsource-variable/jetbrains-mono/index.css';
-	import '$lib/styles/tokens.css';
-	import '$lib/styles/theme.css';
-	import '$lib/styles/board.css';
-	import '$lib/styles/pages.css';
-	import '$lib/styles/admin.css';
-	import '$lib/styles/editor.css';
-	import '$lib/styles/review.css';
-	import '$lib/styles/menus.css';
+	import '#lib/styles/tokens.css';
+	import '#lib/styles/theme.css';
+	import '#lib/styles/board.css';
+	import '#lib/styles/pages.css';
+	import '#lib/styles/admin.css';
+	import '#lib/styles/editor.css';
+	import '#lib/styles/review.css';
+	import '#lib/styles/menus.css';
 	// Late, so the consolidated primitives win over any screen-local skin.
-	import '$lib/styles/primitives.css';
+	import '#lib/styles/primitives.css';
 	// Late: the one navigation bar, which beats the bars it replaces.
-	import '$lib/styles/chrome.css';
+	import '#lib/styles/chrome.css';
 	// Last of all: the secondary surfaces (right-pane panels, the reader, the
 	// creation menus), so they beat any screen-local skin they replace.
-	import '$lib/styles/surfaces.css';
+	import '#lib/styles/surfaces.css';
 	// After the surfaces, because the signed-out pages reuse the reading pages'
 	// footer and the shared primitives and then set their own type on top.
-	import '$lib/styles/public.css';
-	import favicon from '$lib/assets/favicon.svg';
+	import '#lib/styles/public.css';
+	import favicon from '#lib/assets/favicon.svg';
 	import { browser } from '$app/env';
-	import { applyAppearance } from '$lib/appearance-apply';
-	import { followSystemTheme } from '$lib/theme';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import ActivityCenter from '$lib/components/ActivityCenter.svelte';
+	import { applyAppearance } from '#lib/appearance-apply';
+	import { followSystemTheme } from '#lib/theme';
+	import { TIMEZONE_COOKIE, TIMEZONE_TRIED_KEY, browserTimeZone } from '#lib/timezone';
+	import { refreshAll } from '$app/navigation';
+	import CommandPalette from '#lib/components/CommandPalette.svelte';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import ActivityCenter from '#lib/components/ActivityCenter.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -53,6 +55,36 @@
 	// browser, and only once the component tree is mounted.
 	$effect(() => {
 		document.documentElement.dataset.hydrated = 'true';
+	});
+
+	// Times render on the author's clock. The server learns it from a cookie;
+	// on the first visit (or a changed clock) set it and reload the data once,
+	// so every time on the page re-renders in the right zone.
+	// Once per tab: a zone the server does not know comes back as UTC, and
+	// asking again would reload the data on every page load.
+	let timeZoneSent = false;
+	$effect(() => {
+		const timeZone = browserTimeZone();
+		if (timeZone && timeZone === data.timeZone) {
+			// Accepted: if the cookie goes missing later, set it again.
+			try {
+				sessionStorage.removeItem(TIMEZONE_TRIED_KEY);
+			} catch {
+				// No storage.
+			}
+			return;
+		}
+		if (timeZoneSent || !timeZone) return;
+		timeZoneSent = true;
+		try {
+			if (sessionStorage.getItem(TIMEZONE_TRIED_KEY) === timeZone) return;
+			sessionStorage.setItem(TIMEZONE_TRIED_KEY, timeZone);
+		} catch {
+			// No storage (a private window): fall back to once per page load.
+		}
+		const secure = location.protocol === 'https:' ? '; secure' : '';
+		document.cookie = `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax${secure}`;
+		void refreshAll();
 	});
 
 	// With no theme choice stored on this device, the palette follows the system

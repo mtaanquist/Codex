@@ -1,8 +1,8 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { savePreferences, type UserPreferences } from '$lib/server/preferences';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { savePreferences, type UserPreferences } from '#lib/server/preferences';
+import { readJson } from '#lib/server/validation';
 
 // Persists the prose editor's view toggles (the non-printing marks and the
 // command-marker visibility) for the signed-in user. The formatting toolbar
@@ -23,5 +23,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 	if (Object.keys(patch).length === 0) error(400, 'nothing to save');
 	await savePreferences(db, locals.user.id, patch);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

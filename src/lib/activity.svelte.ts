@@ -5,7 +5,7 @@
 // happening right now, so the writer can see something is still going.
 //
 // Lives here like assistant.svelte.ts so any surface can raise an activity. The
-// ActivityCenter component renders the list from $lib/components.
+// ActivityCenter component renders the list from #lib/components.
 
 export type ActivityState = 'running' | 'done' | 'failed';
 

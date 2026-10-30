@@ -1,35 +1,20 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
-	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import { entityColor } from '$lib/entity-color';
-	import { daysMetGoal, daysUntil } from '$lib/insights';
-	import { formatNumber, narrowWeekday } from '$lib/format';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
-	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
-	import PanelStrip from '$lib/components/PanelStrip.svelte';
-	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
-	import RelationshipWeb from '$lib/components/RelationshipWeb.svelte';
-	import { visiblePanels } from '$lib/panels';
-	import { page } from '$app/state';
+	import { entityColor } from '#lib/entity-color';
+	import { daysMetGoal, daysUntil } from '#lib/insights';
+	import { formatNumber, narrowWeekday } from '#lib/format';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { INSIGHTS_MODE_NOTE, universePath, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
+	import ModeSwitcher from '#lib/components/ModeSwitcher.svelte';
+	import PanelStrip from '#lib/components/PanelStrip.svelte';
+	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
+	import RelationshipWeb from '#lib/components/RelationshipWeb.svelte';
+	import { visiblePanels } from '#lib/panels';
+	import { trackSectionInView } from '#lib/section-tracker.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-
-	// Day boundaries follow the author's clock. The server reads the timezone
-	// cookie; on the first visit (or a changed clock) set it and reload the
-	// data once.
-	onMount(() => {
-		// Reads the browser's timezone, not display formatting.
-		// eslint-disable-next-line no-restricted-syntax
-		const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-		if (timezone && timezone !== data.timezone) {
-			document.cookie = `codex-tz=${encodeURIComponent(timezone)}; path=/; max-age=31536000; samesite=lax`;
-			invalidateAll();
-		}
-	});
 
 	// The left pane below the mode strip is always the contents of the centre;
 	// here that is this page's own sections. Its own class, not .side-nav, which
@@ -41,6 +26,7 @@
 		{ id: 'heatmap', label: 'World heatmap' },
 		{ id: 'web', label: 'Relationship web' }
 	];
+	const inView = trackSectionInView(() => NAV.map((item) => item.id));
 
 	const STATUS_ORDER = ['outline', 'draft', 'revised', 'final'] as const;
 	const STATUS_LABELS: Record<string, string> = {
@@ -157,10 +143,7 @@
 				<div class="group-label">On this page<span class="count">{NAV.length}</span></div>
 				<nav class="contents-nav" aria-label="Sections of this page">
 					{#each NAV as item (item.id)}
-						<a
-							href="#{item.id}"
-							aria-current={page.url.hash === `#${item.id}` ? 'true' : undefined}
-						>
+						<a href="#{item.id}" aria-current={inView.id === item.id ? 'true' : undefined}>
 							{item.label}
 						</a>
 					{/each}

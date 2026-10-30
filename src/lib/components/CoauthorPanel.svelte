@@ -13,7 +13,8 @@
 		storyId,
 		sceneId,
 		onInserted,
-		onClose
+		onClose,
+		paused = false
 	}: {
 		getView: () => EditorView | undefined;
 		// The owning story and scene; posted so the server can gate and ground.
@@ -23,6 +24,8 @@
 		onInserted: () => void;
 		// Closes the panel (the parent stops rendering it).
 		onClose: () => void;
+		// The scene is saving and swapping; Insert waits for it.
+		paused?: boolean;
 	} = $props();
 
 	// Where the writer is in the prose when the panel opens: the selection if
@@ -96,7 +99,8 @@
 
 	function insert() {
 		const view = getView();
-		if (!view || !result.trim()) return;
+		// Read-only while the page saves and swaps the scene; keep the draft.
+		if (!view || !result.trim() || view.state.readOnly) return;
 		const head = view.state.selection.main.head;
 		view.dispatch({
 			changes: { from: head, insert: result },
@@ -155,7 +159,9 @@
 	{#if result}
 		<textarea class="coauthor-result" rows="6" bind:value={result}></textarea>
 		<div class="coauthor-actions">
-			<button class="btn btn-primary" type="button" onclick={insert}> Insert at cursor </button>
+			<button class="btn btn-primary" type="button" disabled={paused} onclick={insert}>
+				Insert at cursor
+			</button>
 			<button class="btn" type="button" onclick={generate} disabled={busy || !instruction.trim()}>
 				{busy ? 'Writing...' : 'Try again'}
 			</button>
@@ -277,6 +283,6 @@
 	.coauthor-error {
 		margin: 0;
 		font-size: 12.5px;
-		color: var(--danger);
+		color: var(--danger-ink);
 	}
 </style>

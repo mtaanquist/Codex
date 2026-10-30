@@ -4,9 +4,9 @@
 	import ReviewMarginRail from './ReviewMarginRail.svelte';
 	import ReviewSelectionToolbar from './ReviewSelectionToolbar.svelte';
 	import EntityQuickCard from './EntityQuickCard.svelte';
-	import { detectMentions, type MentionTarget } from '$lib/mention-detect';
-	import type { MentionEntity } from '$lib/editor-mentions';
-	import { dismiss } from '$lib/dismiss';
+	import { detectMentions, type MentionTarget } from '#lib/mention-detect';
+	import type { MentionEntity } from '#lib/editor-mentions';
+	import { dismiss } from '#lib/dismiss';
 	import {
 		nudgeMarkers,
 		isWholeSceneNote,
@@ -17,7 +17,7 @@
 		type ReviewFilter,
 		type ReviewSuggestion,
 		type ReviewThread
-	} from '$lib/review-ui';
+	} from '#lib/review-ui';
 
 	let {
 		scene,
@@ -145,7 +145,7 @@
 			raw.push({
 				id,
 				kind: node.dataset.kind === 'suggest' ? 'suggest' : 'comment',
-				color: node.style.getPropertyValue('--auth') || 'var(--accent-ink)',
+				color: node.style.getPropertyValue('--auth') || 'var(--accent)',
 				top: node.offsetTop
 			});
 		}

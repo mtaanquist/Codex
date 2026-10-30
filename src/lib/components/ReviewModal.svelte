@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { modal } from '$lib/modal';
-	import { formatNumber } from '$lib/format';
-	import { reviewModal, closeReviewModal } from '$lib/review-modal.svelte';
+	import { modal } from '#lib/modal';
+	import { formatNumber } from '#lib/format';
+	import { reviewModal, closeReviewModal } from '#lib/review-modal.svelte';
 	import {
 		reviewSceneWithAssistant,
 		startBackgroundReview,
 		type JobStartFailure
-	} from '$lib/assistant-actions';
-	import { REVIEW_CATEGORIES, type ReviewCategory, type ReviewLevel } from '$lib/review-shape';
+	} from '#lib/assistant-actions';
+	import { REVIEW_CATEGORIES, type ReviewCategory, type ReviewLevel } from '#lib/review-shape';
 
 	// The review modal: pick a level (this scene, this chapter, the whole story)
 	// and which categories the Assistant should check, then start the review. The

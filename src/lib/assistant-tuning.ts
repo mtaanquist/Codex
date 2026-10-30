@@ -1,7 +1,7 @@
 // The Assistant's role names and the bounds on each per-role tuning value.
 // Both the server config and the account settings page need to agree on these,
-// and the settings page cannot import $lib/server, so they live here instead of
-// being spelled once on each side. $lib/server/llm/config re-exports the roles
+// and the settings page cannot import #lib/server, so they live here instead of
+// being spelled once on each side. #lib/server/llm/config re-exports the roles
 // and effort levels, so server callers keep one import.
 
 // 'utility' covers the background work the writer never prompts directly:

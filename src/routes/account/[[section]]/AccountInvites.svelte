@@ -1,5 +1,5 @@
 <script lang="ts">
-	import FormStatus from '$lib/components/FormStatus.svelte';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

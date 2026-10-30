@@ -1,12 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { createSession, SESSION_COOKIE, verifyCredentials } from '$lib/server/auth';
-import { signupMode } from '$lib/server/settings';
-import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '$lib/server/two-factor';
-import { rateLimit } from '$lib/server/rate-limit';
-import { logEvent } from '$lib/server/log';
-import { formText } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { createSession, SESSION_COOKIE, verifyCredentials } from '#lib/server/auth';
+import { signupMode } from '#lib/server/settings';
+import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '#lib/server/two-factor';
+import { rateLimit } from '#lib/server/rate-limit';
+import { logEvent } from '#lib/server/log';
+import { formText } from '#lib/server/validation';
 
 const CHALLENGE_MAX_AGE_SECONDS = 10 * 60;
 // Keyed by the targeted account, so brute force against one login is slowed

@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { peekToken } from '$lib/server/tokens';
-import { verifyEmail } from '$lib/server/signup';
+import { db } from '#lib/server/db';
+import { peekToken } from '#lib/server/tokens';
+import { verifyEmail } from '#lib/server/signup';
 
 // The GET only checks the token, so a mail scanner's prefetch cannot spend
 // it; the button's POST does the confirming.

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { renderMarkdown } from '$lib/markdown';
-	import { appleShortcutLabels, modLabel } from '$lib/keys';
-	import DocsShell from '$lib/components/DocsShell.svelte';
+	import { renderMarkdown } from '#lib/markdown';
+	import { appleShortcutLabels, modLabel } from '#lib/keys';
+	import DocsShell from '#lib/components/DocsShell.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

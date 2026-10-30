@@ -1,23 +1,23 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { isUniqueViolation } from '$lib/server/db-errors';
-import { entityCategories, universes } from '$lib/server/db/schema';
-import { uniqueSlug } from '$lib/server/slugs';
-import { isUuid } from '$lib/slug';
-import { createStoryInUniverse, standaloneUniverse } from '$lib/server/story-create';
-import { relativeTime, storyStatus } from '$lib/dashboard';
-import { storyCoverColor } from '$lib/entity-color';
+import { db } from '#lib/server/db';
+import { isUniqueViolation } from '#lib/server/db-errors';
+import { entityCategories, universes } from '#lib/server/db/schema';
+import { uniqueSlug } from '#lib/server/slugs';
+import { isUuid } from '#lib/slug';
+import { createStoryInUniverse, standaloneUniverse } from '#lib/server/story-create';
+import { relativeTime, storyStatus } from '#lib/dashboard';
+import { storyCoverColor } from '#lib/entity-color';
 import {
 	destroyUniverse,
 	listTrashedUniverses,
 	restoreUniverse
-} from '$lib/server/universe-lifecycle';
-import { destroyStory, listTrashedStories, restoreStory } from '$lib/server/story-lifecycle';
-import { signupMode } from '$lib/server/settings';
-import { saveLibraryView, userPreferences } from '$lib/server/preferences';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/universe-lifecycle';
+import { destroyStory, listTrashedStories, restoreStory } from '#lib/server/story-lifecycle';
+import { signupMode } from '#lib/server/settings';
+import { saveLibraryView, userPreferences } from '#lib/server/preferences';
+import { formText } from '#lib/server/validation';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page. The page checks the layout's

@@ -91,13 +91,19 @@
 	--accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 40%, transparent);
 	--accent-ink: var(--accent);
+	/* How much of a per-element colour (review authors' --auth) survives
+	   when it is darkened for use as text: none is lost on dark. */
+	--ink-share: 100%;
 
 	--status-draft: #c8924a;
 	--status-revised: #9b7bff;
 	--status-final: #2fae8c;
 	--status-final-ink: var(--status-final);
+	--status-draft-ink: var(--status-draft);
+	--status-revised-ink: var(--status-revised);
 	--status-outline: #7d8aa3;
 	--danger: #e2687c;
+	--danger-ink: var(--danger);
 	--danger-fill: color-mix(in oklab, var(--danger) 75%, black);
 	--danger-soft: color-mix(in oklab, var(--danger) 16%, transparent);
 
@@ -141,13 +147,17 @@
 	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
 	--accent-ink: color-mix(in oklab, var(--accent) 75%, black);
+	--ink-share: 75%;
 
 	--status-draft: #b07b34;
 	--status-revised: #7d5fe0;
 	--status-final: #1f8a5b;
 	--status-final-ink: #12623f;
+	--status-draft-ink: #825a24;
+	--status-revised-ink: #6c52c3;
 	--status-outline: #8a8a93;
 	--danger: #c8384f;
+	--danger-ink: #ae2f44;
 	--danger-fill: var(--danger);
 	--danger-soft: color-mix(in oklab, var(--danger) 9%, transparent);
 
@@ -185,13 +195,17 @@
 	--accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
 	--accent-line: color-mix(in oklab, var(--accent) 36%, transparent);
 	--accent-ink: color-mix(in oklab, var(--accent) 75%, black);
+	--ink-share: 75%;
 
 	--status-draft: #b07b34;
 	--status-revised: #7d5fe0;
 	--status-final: #1f8a5b;
 	--status-final-ink: #12623f;
+	--status-draft-ink: #825a24;
+	--status-revised-ink: #6c52c3;
 	--status-outline: #8a8a93;
 	--danger: #c8384f;
+	--danger-ink: #ae2f44;
 	--danger-fill: var(--danger);
 	--danger-soft: color-mix(in oklab, var(--danger) 9%, transparent);
 

@@ -25,7 +25,7 @@ export function authorKey(author: AuthorRef): string {
 // owner is the accent, the assistant a fixed violet, guests a hashed tint.
 export function authorColor(author: AuthorRef): string {
 	if (author.isAssistant) return 'var(--cat-violet)';
-	if (author.isOwner) return 'var(--accent-ink)';
+	if (author.isOwner) return 'var(--accent)';
 	return entityColor(author.name);
 }
 

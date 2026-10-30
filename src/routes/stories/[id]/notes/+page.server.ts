@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { ownedStory } from '$lib/server/story-access';
+import { db } from '#lib/server/db';
+import { ownedStory } from '#lib/server/story-access';
 import {
 	createStoryNote,
 	deleteNote,
@@ -9,11 +9,11 @@ import {
 	listStoryNotes,
 	listUniverseNotes,
 	setNotePinned
-} from '$lib/server/notes';
-import { getRevision, listRevisions, type RevisionRow } from '$lib/server/revisions';
-import { readingPageRef } from '$lib/server/publish';
-import { isUuid } from '$lib/slug';
-import { formText } from '$lib/server/validation';
+} from '#lib/server/notes';
+import { getRevision, listRevisions, type RevisionRow } from '#lib/server/revisions';
+import { readingPageRef } from '#lib/server/publish';
+import { isUuid } from '#lib/slug';
+import { formText } from '#lib/server/validation';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);

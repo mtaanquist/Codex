@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { formatDateTime } from '$lib/format';
+	import { page } from '$app/state';
+	import { formatDateTime } from '#lib/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -20,7 +21,7 @@
 					<span class="t-what">
 						{row.label ?? (row.reason === 'checkpoint' ? 'checkpoint' : (row.reason ?? 'autosave'))}
 					</span>
-					<span class="t-when">{formatDateTime(row.createdAt)}</span>
+					<span class="t-when">{formatDateTime(row.createdAt, page.data.timeZone)}</span>
 				</li>
 			{/each}
 		</ul>

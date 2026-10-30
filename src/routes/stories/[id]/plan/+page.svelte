@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
-	import { invalidateAll } from '$app/navigation';
+	import { withQuery } from '#lib/href';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import EntityEditor from '$lib/components/EntityEditor.svelte';
-	import SceneBoard from '$lib/components/SceneBoard.svelte';
-	import PlanSidebar from '$lib/components/PlanSidebar.svelte';
-	import PanelStrip from '$lib/components/PanelStrip.svelte';
-	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import { patch } from '$lib/api';
-	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
-	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
-	import type { SaveStatus } from '$lib/components/SceneEditor.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath, RIGHT_PANE_LABEL } from '$lib/chrome';
+	import EntityEditor from '#lib/components/EntityEditor.svelte';
+	import SceneBoard from '#lib/components/SceneBoard.svelte';
+	import PlanSidebar from '#lib/components/PlanSidebar.svelte';
+	import PanelStrip from '#lib/components/PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '#lib/panels';
+	import { patch } from '#lib/api';
+	import RevisionHistory from '#lib/components/RevisionHistory.svelte';
+	import RevisionPreview from '#lib/components/RevisionPreview.svelte';
+	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
+	import type { SaveStatus } from '#lib/components/SceneEditor.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { storyPath, RIGHT_PANE_LABEL } from '#lib/chrome';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -140,7 +140,7 @@
 							{ status },
 							'Could not move the scene. Try again.'
 						);
-						await invalidateAll();
+						await refreshAll();
 						return result.ok ? null : result.message;
 					}}
 				/>

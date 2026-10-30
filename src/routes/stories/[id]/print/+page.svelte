@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { renderMarkdown } from '$lib/markdown';
-	import { fontFamilyCss, lineHeightCss, pageRuleCss } from '$lib/page-setup';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath } from '$lib/chrome';
+	import { renderMarkdown } from '#lib/markdown';
+	import { fontFamilyCss, lineHeightCss, pageRuleCss } from '#lib/page-setup';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { storyPath } from '#lib/chrome';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

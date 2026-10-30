@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
+	import { enhance } from '#lib/enhance';
 	import type { ActionResult } from '$app/forms';
 	import Icon from './Icon.svelte';
 

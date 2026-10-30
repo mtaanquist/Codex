@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
-	import { renderMarkdown } from '$lib/markdown';
-	import { contentWidthCss, fontFamilyCss, lineHeightCss, type PageSetup } from '$lib/page-setup';
-	import { focusMode } from '$lib/focus-mode.svelte';
+	import { renderMarkdown } from '#lib/markdown';
+	import { contentWidthCss, fontFamilyCss, lineHeightCss, type PageSetup } from '#lib/page-setup';
+	import { focusMode } from '#lib/focus-mode.svelte';
 
 	let {
 		storyTitle,

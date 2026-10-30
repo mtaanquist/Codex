@@ -1,10 +1,10 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { ownedUniverse } from '$lib/server/universe-access';
-import { countProseMatches, replaceProse } from '$lib/server/prose-replace';
-import { readJson } from '$lib/server/validation';
-import { rateLimitWrites } from '$lib/server/write-guard';
+import { db } from '#lib/server/db';
+import { ownedUniverse } from '#lib/server/universe-access';
+import { countProseMatches, replaceProse } from '#lib/server/prose-replace';
+import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 
 // The rename sweep behind the entity editor's offer: GET counts what a
 // replacement would touch, POST performs it.
@@ -22,7 +22,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
 	const find = cleanTerm(url.searchParams.get('q'));
 	if (!find) error(400, 'q must be a non-empty name');
-	return json(await countProseMatches(db, universe.id, find));
+	return Response.json(await countProseMatches(db, universe.id, find));
 };
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
@@ -33,5 +33,5 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const replace = cleanTerm(payload.replace);
 	if (!find || !replace) error(400, 'find and replace must be non-empty names');
 	if (find === replace) error(400, 'find and replace are the same');
-	return json(await replaceProse(db, universe.id, find, replace));
+	return Response.json(await replaceProse(db, universe.id, find, replace));
 };

@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
-import { db } from '$lib/server/db';
-import { peekToken } from '$lib/server/tokens';
-import { cancelAccountDeletion } from '$lib/server/account-deletion';
+import { db } from '#lib/server/db';
+import { peekToken } from '#lib/server/tokens';
+import { cancelAccountDeletion } from '#lib/server/account-deletion';
 
 // The GET only checks the token, so a mail scanner's prefetch can neither
 // spend the link nor cancel the deletion; the button's POST does it.

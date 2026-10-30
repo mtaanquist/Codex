@@ -1,8 +1,8 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { markNotificationsRead } from '$lib/server/notify';
-import { readJson } from '$lib/server/validation';
+import { db } from '#lib/server/db';
+import { markNotificationsRead } from '#lib/server/notify';
+import { readJson } from '#lib/server/validation';
 
 // Marks notifications read: {ids: [...]} for specific ones, {all: true}
 // for everything unread.
@@ -15,5 +15,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	} else {
 		error(400, 'Send ids or all.');
 	}
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

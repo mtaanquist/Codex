@@ -30,7 +30,7 @@ import {
 // account master is off; account-off is dark everywhere.
 
 // The roles, the effort levels, and the bounds on each tuning value live in
-// $lib/assistant-tuning, which the settings page can import too; re-exported
+// #lib/assistant-tuning, which the settings page can import too; re-exported
 // here so server callers keep one import. 'utility' was added after the other
 // four, so an older config has no utility model; pickModel's fallback keeps
 // those accounts on the chat model, exactly as before.

@@ -1,11 +1,11 @@
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { db } from './db';
 import { throwActionError } from './action-result';
 import { saveEntity, type EntitySaveKind } from './entity-save.ts';
 import { queueUniverseMentions } from './jobs';
 import { rateLimitWrites } from './write-guard';
 import { checkProseLength, readJson } from './validation';
-import { cleanDetails } from '$lib/entity-snapshot';
+import { cleanDetails } from '#lib/entity-snapshot';
 
 // The shared body of the character/place/lore PUT autosave endpoints: parse
 // and validate the payload, save through the one entity flow, and queue the
@@ -60,5 +60,5 @@ export async function handleEntityPut(
 	if (result.mentionsAffected) {
 		await queueUniverseMentions(result.universeId);
 	}
-	return json({ savedAt: new Date().toISOString() });
+	return Response.json({ savedAt: new Date().toISOString() });
 }

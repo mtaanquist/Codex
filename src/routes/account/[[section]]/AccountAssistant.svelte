@@ -1,14 +1,15 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
-	import { askConfirm } from '$lib/confirm.svelte';
-	import { formatDateTime, formatNumber, pluralSuffix } from '$lib/format';
-	import { resolveRoleModel, type AssistantRole } from '$lib/assistant-tuning';
-	import FormStatus from '$lib/components/FormStatus.svelte';
-	import RoleTuningModal from '$lib/components/RoleTuningModal.svelte';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import { askConfirm } from '#lib/confirm.svelte';
+	import { formatDateTime, formatNumber, pluralSuffix } from '#lib/format';
+	import { resolveRoleModel, type AssistantRole } from '#lib/assistant-tuning';
+	import FormStatus from '#lib/components/FormStatus.svelte';
+	import RoleTuningModal from '#lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -315,7 +316,7 @@
 					everything stops at once.
 				</div>
 				{#if form?.scope === 'assistant-kill' && form.message}
-					<div class="ks-sub" role="alert" style="color:var(--danger);">
+					<div class="ks-sub" role="alert" style="color:var(--danger-ink);">
 						{form.message}
 					</div>
 				{/if}
@@ -335,7 +336,7 @@
 	</form>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="assistant-how">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">How Codex uses your assistant</h2>
 	</div>
@@ -408,7 +409,7 @@
 </div>
 
 <div data-ai-gated class:off={assistantOff}>
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-identity">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Identity</h2>
@@ -459,7 +460,7 @@
 		</div>
 	</div>
 
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-endpoint">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Endpoint</h2>
@@ -650,7 +651,7 @@
 		</div>
 	</div>
 
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-models">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Models per role</h2>
@@ -802,7 +803,7 @@
 		</div>
 	</div>
 
-	<div class="admin-block">
+	<div class="admin-block" id="assistant-usage">
 		<div class="settings-group">
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Usage</h2>
@@ -830,7 +831,7 @@
 							<div class="list-main">
 								<div class="list-title">{entry.model}</div>
 								<div class="list-sub">
-									{formatDateTime(entry.createdAt)} - {entry.role}
+									{formatDateTime(entry.createdAt, page.data.timeZone)} - {entry.role}
 									{#if entry.promptTokens !== null || entry.completionTokens !== null}
 										- {formatNumber(entry.promptTokens ?? 0)} in / {formatNumber(
 											entry.completionTokens ?? 0

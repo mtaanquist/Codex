@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { entityLetter } from '$lib/entity-color';
-	import { badgeBackground, badgeImageSrc } from '$lib/entity-badge';
+	import { entityLetter } from '#lib/entity-color';
+	import { badgeBackground, badgeImageSrc, letterFill } from '#lib/entity-badge';
 
 	// One entity badge: an uploaded image when set, otherwise the entity's
 	// letter on its resolved colour. Shared by every badge site so the override
@@ -23,7 +23,10 @@
 	} = $props();
 
 	const image = $derived(badgeImageSrc({ badgeAssetId }));
-	const background = $derived(badgeBackground({ name, badgeColor, categoryColor }));
+	const background = $derived.by(() => {
+		const color = badgeBackground({ name, badgeColor, categoryColor });
+		return letter ? letterFill(color) : color;
+	});
 </script>
 
 {#if image}

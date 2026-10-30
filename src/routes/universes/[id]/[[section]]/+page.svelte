@@ -1,18 +1,19 @@
 <script lang="ts">
-	import { withQuery } from '$lib/href';
+	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
-	import { confirmSubmit } from '$lib/confirm.svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { confirmSubmit } from '#lib/confirm.svelte';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { CATEGORY_COLORS, entityColor } from '$lib/entity-color';
-	import Icon from '$lib/components/Icon.svelte';
-	import ImportStoryModal from '$lib/components/ImportStoryModal.svelte';
-	import ExportPanel from '$lib/components/ExportPanel.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { universePath } from '$lib/chrome';
-	import SettingsShell from '$lib/components/SettingsShell.svelte';
-	import { formatLongDate, formatNumber, formatTime } from '$lib/format';
+	import { CATEGORY_COLORS, entityColor } from '#lib/entity-color';
+	import { letterFill } from '#lib/entity-badge';
+	import Icon from '#lib/components/Icon.svelte';
+	import ImportStoryModal from '#lib/components/ImportStoryModal.svelte';
+	import ExportPanel from '#lib/components/ExportPanel.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { universePath } from '#lib/chrome';
+	import SettingsShell from '#lib/components/SettingsShell.svelte';
+	import { dayKey, formatLongDate, formatNumber, formatTime } from '#lib/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -103,12 +104,17 @@
 	// Rows grouped under Today / Yesterday / the day's date.
 	const timelineGroups = $derived.by(() => {
 		const groups: { label: string; rows: typeof data.timeline }[] = [];
-		const today = new Date().toDateString();
-		const yesterday = new Date(Date.now() - 86_400_000).toDateString();
+		const timeZone = page.data.timeZone;
+		const today = dayKey(new Date(), timeZone);
+		const yesterday = dayKey(new Date(Date.now() - 86_400_000), timeZone);
 		for (const row of filteredTimeline) {
-			const day = row.createdAt.toDateString();
+			const day = dayKey(row.createdAt, timeZone);
 			const label =
-				day === today ? 'Today' : day === yesterday ? 'Yesterday' : formatLongDate(row.createdAt);
+				day === today
+					? 'Today'
+					: day === yesterday
+						? 'Yesterday'
+						: formatLongDate(row.createdAt, timeZone);
 			const last = groups[groups.length - 1];
 			if (last && last.label === label) last.rows.push(row);
 			else groups.push({ label, rows: [row] });
@@ -117,7 +123,7 @@
 	});
 
 	function entryTime(row: (typeof data.timeline)[number]): string {
-		return formatTime(row.createdAt);
+		return formatTime(row.createdAt, page.data.timeZone);
 	}
 
 	function previewHref(row: (typeof data.timeline)[number]): ResolvedPathname {
@@ -142,7 +148,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ entityType: row.entityType, entityId: row.entityId })
 			});
-			if (response.ok) await invalidateAll();
+			if (response.ok) await refreshAll();
 		} finally {
 			restoring = null;
 		}
@@ -165,7 +171,10 @@
 	{/snippet}
 	{#snippet sidebar()}
 		<div class="admin-sidebar-title">
-			<span class="ic badge sm" style="background: {universeColor}; color: var(--on-color);">
+			<span
+				class="ic badge sm"
+				style="background: {letterFill(universeColor)}; color: var(--on-color);"
+			>
 				{data.universe.name.slice(0, 1).toUpperCase()}
 			</span>
 			<div>
@@ -616,7 +625,7 @@
 		transform: rotate(45deg);
 	}
 	.category-delete:hover:not(:disabled) {
-		color: var(--danger);
+		color: var(--danger-ink);
 		background: var(--bg-hover);
 	}
 	.category-delete:disabled {

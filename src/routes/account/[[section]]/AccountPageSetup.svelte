@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
 	import {
 		FONT_SIZES,
 		GUTTERS,
@@ -11,8 +11,8 @@
 		PAGE_MARGINS,
 		PAGE_SIZES,
 		TEXT_ALIGNS
-	} from '$lib/page-setup';
-	import FormStatus from '$lib/components/FormStatus.svelte';
+	} from '#lib/page-setup';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

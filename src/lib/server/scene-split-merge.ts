@@ -4,8 +4,8 @@ import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { ownedScene } from './scene-access.ts';
-import { wordCount } from '$lib/word-count';
-import { locateSplitBefore } from '$lib/scene-split-locate';
+import { wordCount } from '#lib/word-count';
+import { locateSplitBefore } from '#lib/scene-split-locate';
 import { storyIsLive } from './universe-scope.ts';
 
 // Splitting and merging scenes. Both run in one transaction and record a

@@ -1,4 +1,4 @@
-import type { EntityCardData } from '$lib/wire-types';
+import type { EntityCardData } from '#lib/wire-types';
 import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
@@ -10,7 +10,7 @@ import {
 	scenes,
 	stories
 } from './db/schema.ts';
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 import { listEntityRelationships } from './relationships.ts';
 import {
 	entityAliasColumn,
@@ -161,7 +161,7 @@ export async function entityMentionCount(
 	return row?.total ?? 0;
 }
 
-export type { EntityCardData } from '$lib/wire-types';
+export type { EntityCardData } from '#lib/wire-types';
 
 // An entity by id with its category, details, and typed relationships, for
 // the editor's read-only entity card. Owner-scoped, so a foreign id resolves

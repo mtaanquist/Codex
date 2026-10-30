@@ -93,7 +93,7 @@ test('story menus: crumb menu and the toolbar overflow', async ({ page }) => {
 	await expect(page).toHaveURL(/scene=/);
 
 	// A narrow window pushes tools into the "More tools" overflow menu.
-	await page.setViewportSize({ width: 900, height: 800 });
+	await page.setViewportSize({ width: 1000, height: 800 });
 	const more = page.getByRole('button', { name: 'More tools' });
 	await expect(more).toBeVisible();
 	// Opened with the mouse, the overflow leaves focus in the editor.

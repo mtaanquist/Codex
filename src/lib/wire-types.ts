@@ -1,9 +1,9 @@
 // Wire types shared between server loaders and client components, defined
 // client-side (the review-ui.ts pattern) so no component imports from
-// $lib/server. The server modules that produce these shapes import the types
+// #lib/server. The server modules that produce these shapes import the types
 // from here.
 
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 
 // A note row in the sidebar list (notes.ts).
 export type NoteListItem = {

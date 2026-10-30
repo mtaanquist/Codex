@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$lib/enhance';
-	import { autosaveSubmit, autosubmitForm } from '$lib/autosave-form';
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
 	import {
 		FONT_SIZES,
 		GUTTERS,
@@ -11,7 +11,7 @@
 		PAGE_MARGINS,
 		PAGE_SIZES,
 		TEXT_ALIGNS
-	} from '$lib/page-setup';
+	} from '#lib/page-setup';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

@@ -1,10 +1,10 @@
-import { error, json } from '@sveltejs/kit';
-import { publicOrigin } from '$lib/server/origin';
+import { error } from '@sveltejs/kit';
+import { publicOrigin } from '#lib/server/origin';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { readJson } from '$lib/server/validation';
-import { finishPasskeyRegistration, PASSKEY_CHALLENGE_COOKIE } from '$lib/server/passkeys';
+import { db } from '#lib/server/db';
+import { readJson } from '#lib/server/validation';
+import { finishPasskeyRegistration, PASSKEY_CHALLENGE_COOKIE } from '#lib/server/passkeys';
 
 // Step two of adding a passkey: verify the authenticator's response against
 // the held challenge and store the credential.
@@ -24,5 +24,5 @@ export const POST: RequestHandler = async ({ cookies, locals, request, url }) =>
 	);
 	cookies.delete(PASSKEY_CHALLENGE_COOKIE, { path: '/' });
 	if (!result.ok) error(400, result.reason);
-	return json({ ok: true });
+	return Response.json({ ok: true });
 };

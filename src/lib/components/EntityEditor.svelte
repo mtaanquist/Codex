@@ -5,19 +5,19 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
-	import { proseExtensions } from '$lib/editor';
+	import { proseExtensions } from '#lib/editor';
 	import TagInput from './TagInput.svelte';
 	import EntityBadgePicker from './EntityBadgePicker.svelte';
 	import EntityRelationships, {
 		type RelationTypeOption,
 		type RelationshipRow
 	} from './EntityRelationships.svelte';
-	import { createAutosave, keepaliveFits, saveFailure } from '$lib/autosave';
-	import type { SaveStatus } from '$lib/autosave';
-	import { apiErrorMessage, pluralSuffix } from '$lib/format';
+	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
+	import type { SaveStatus } from '#lib/autosave';
+	import { apiErrorMessage, pluralSuffix } from '#lib/format';
 
 	let {
 		kind,
@@ -207,7 +207,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ kind, entityId: entity.id, member })
 		});
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 
 	// Rename propagation: once a rename settles (a save lands and no edit
@@ -249,7 +249,7 @@
 			if (!response.ok) return;
 			renameFrom = name.trim();
 			renameOffer = null;
-			await invalidateAll();
+			await refreshAll();
 		} finally {
 			renameBusy = false;
 		}

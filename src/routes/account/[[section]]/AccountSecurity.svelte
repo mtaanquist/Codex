@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { MIN_PASSWORD } from '$lib/password';
-	import { invalidateAll } from '$app/navigation';
-	import { formatDate, formatDateTime } from '$lib/format';
-	import ExportPanel from '$lib/components/ExportPanel.svelte';
+	import { page } from '$app/state';
+	import { MIN_PASSWORD } from '#lib/password';
+	import { refreshAll } from '$app/navigation';
+	import { formatDate, formatDateTime } from '#lib/format';
+	import ExportPanel from '#lib/components/ExportPanel.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -42,7 +43,7 @@
 			passkeyName = '';
 			passkeyPassword = '';
 			passkeyAdded = true;
-			await invalidateAll();
+			await refreshAll();
 		} catch (err) {
 			// A dismissed browser prompt arrives as NotAllowedError; say it plainly.
 			passkeyError =
@@ -103,7 +104,7 @@
 	<p class="admin-lede">Your email, password, and the devices currently signed in.</p>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-email">
 	<div class="settings-group">
 		<header class="settings-group-header">
 			<h2 class="settings-group-title">Email</h2>
@@ -137,7 +138,9 @@
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'email' && form.message}
-					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+					<span class="field-hint" role="alert" style="color:var(--danger-ink);"
+						>{form.message}</span
+					>
 				{:else if form?.scope === 'email' && form.sent}
 					<span class="field-hint" role="status" style="color:var(--status-final-ink);"
 						>Check your new inbox for a confirmation link.</span
@@ -149,7 +152,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-password">
 	<div class="settings-group">
 		<header class="settings-group-header">
 			<h2 class="settings-group-title">Password</h2>
@@ -185,7 +188,9 @@
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'password' && form.message}
-					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+					<span class="field-hint" role="alert" style="color:var(--danger-ink);"
+						>{form.message}</span
+					>
 				{:else if form?.scope === 'password' && form.saved}
 					<span class="field-hint" role="status" style="color:var(--status-final-ink);"
 						>Password changed. Other devices were signed out.</span
@@ -197,7 +202,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-two-factor">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Two-factor authentication</h2>
 		<p class="admin-block-sub">
@@ -246,7 +251,10 @@
 				</div>
 				<p class="tfa-sub">
 					{#if data.twoFactor.status === 'on'}
-						{#if data.twoFactor.confirmedAt}Enabled {formatDate(data.twoFactor.confirmedAt)} -
+						{#if data.twoFactor.confirmedAt}Enabled {formatDate(
+								data.twoFactor.confirmedAt,
+								page.data.timeZone
+							)} -
 						{/if}you'll be asked for a code on new devices. {data.twoFactor.recoveryRemaining} recovery
 						codes remain.
 					{:else if data.twoFactor.status === 'pending'}
@@ -281,7 +289,7 @@
 								aria-label="Current password"
 								required
 							/>
-							<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);"
+							<button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger-ink);"
 								>Turn off</button
 							>
 						</form>
@@ -299,7 +307,11 @@
 		</div>
 
 		{#if form?.scope === 'totp' && form.message}
-			<p class="field-hint" role="alert" style="color:var(--danger); margin-top:var(--space-2);">
+			<p
+				class="field-hint"
+				role="alert"
+				style="color:var(--danger-ink); margin-top:var(--space-2);"
+			>
 				{form.message}
 			</p>
 		{/if}
@@ -441,7 +453,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-passkeys">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Passkeys</h2>
 		<p class="admin-block-sub">
@@ -462,8 +474,8 @@
 							<div class="user-row-identity">
 								<p class="user-row-name">{passkey.name ?? 'Passkey'}</p>
 								<p class="user-row-email">
-									Added {formatDate(passkey.createdAt)}{passkey.lastUsedAt
-										? ` - last used ${formatDateTime(passkey.lastUsedAt)}`
+									Added {formatDate(passkey.createdAt, page.data.timeZone)}{passkey.lastUsedAt
+										? ` - last used ${formatDateTime(passkey.lastUsedAt, page.data.timeZone)}`
 										: ''}
 								</p>
 							</div>
@@ -486,14 +498,14 @@
 				</div>
 			{/if}
 			{#if form?.scope === 'passkeys' && form.message}
-				<p class="field-hint" role="alert" style="color:var(--danger);">{form.message}</p>
+				<p class="field-hint" role="alert" style="color:var(--danger-ink);">{form.message}</p>
 			{:else if form?.scope === 'passkeys' && 'removed' in form && form.removed}
 				<p class="field-hint" role="status" style="color:var(--status-final-ink);">
 					Passkey removed.
 				</p>
 			{/if}
 			{#if passkeyError}
-				<p class="field-hint" role="alert" style="color:var(--danger);">{passkeyError}</p>
+				<p class="field-hint" role="alert" style="color:var(--danger-ink);">{passkeyError}</p>
 			{:else if passkeyAdded}
 				<p class="field-hint" role="status" style="color:var(--status-final-ink);">
 					Passkey added.
@@ -530,7 +542,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-sessions">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Sessions</h2>
 		<p class="admin-block-sub">Devices currently signed in to your account.</p>
@@ -559,7 +571,9 @@
 					</div>
 					<div class="user-row-identity">
 						<p class="user-row-name">{session.userAgent ?? 'Unknown device'}</p>
-						<p class="user-row-email">Last active {formatDateTime(session.lastSeenAt)}</p>
+						<p class="user-row-email">
+							Last active {formatDateTime(session.lastSeenAt, page.data.timeZone)}
+						</p>
 					</div>
 					<div class="user-row-actions">
 						{#if session.current}
@@ -578,7 +592,7 @@
 	{#if data.sessions.length > 1}
 		<div class="settings-actions">
 			{#if form?.scope === 'sessions' && form.message}
-				<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+				<span class="field-hint" role="alert" style="color:var(--danger-ink);">{form.message}</span>
 			{:else if form?.scope === 'sessions' && form.saved}
 				<span class="field-hint" role="status" style="color:var(--status-final-ink);">Done.</span>
 			{/if}
@@ -597,7 +611,7 @@
 	{/if}
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-data">
 	<div class="admin-block-head">
 		<h2 class="admin-block-title">Your data</h2>
 		<p class="admin-block-sub">
@@ -616,7 +630,7 @@
 	</div>
 </div>
 
-<div class="admin-block">
+<div class="admin-block" id="security-delete">
 	<div class="settings-group danger-group">
 		<header class="settings-group-header">
 			<h2 class="settings-group-title">Delete account</h2>
@@ -640,7 +654,9 @@
 			</div>
 			<div class="settings-actions">
 				{#if form?.scope === 'delete' && form.message}
-					<span class="field-hint" role="alert" style="color:var(--danger);">{form.message}</span>
+					<span class="field-hint" role="alert" style="color:var(--danger-ink);"
+						>{form.message}</span
+					>
 				{/if}
 				<button type="submit" class="btn btn-danger">Delete my account</button>
 			</div>

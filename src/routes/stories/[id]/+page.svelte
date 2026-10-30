@@ -1,55 +1,56 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { withQuery } from '$lib/href';
-	import { onMount, tick, untrack } from 'svelte';
+	import { withQuery } from '#lib/href';
+	import { focusShownPane } from '#lib/pane-focus';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto, refreshAll, snapshot } from '$app/navigation';
 	import { refreshStoryLive } from './live';
-	import { altLabel, modLabel } from '$lib/keys';
+	import { altLabel, modLabel } from '#lib/keys';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
-	import { focusMode } from '$lib/focus-mode.svelte';
-	import { assistantIntent } from '$lib/assistant.svelte';
-	import { openReviewModal } from '$lib/review-modal.svelte';
-	import ReviewModal from '$lib/components/ReviewModal.svelte';
-	import QuickNote from '$lib/components/QuickNote.svelte';
-	import EntityBadge from '$lib/components/EntityBadge.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import StoryPreview from '$lib/components/StoryPreview.svelte';
-	import { editorStyleVars } from '$lib/page-setup';
-	import { nearViewport } from '$lib/near-viewport';
-	import type { ViewItem } from '$lib/components/ViewMenu.svelte';
-	import StoryOutline from '$lib/components/StoryOutline.svelte';
+	import { navigating, page } from '$app/state';
+	import { focusMode } from '#lib/focus-mode.svelte';
+	import { assistantIntent } from '#lib/assistant.svelte';
+	import { openReviewModal } from '#lib/review-modal.svelte';
+	import ReviewModal from '#lib/components/ReviewModal.svelte';
+	import QuickNote from '#lib/components/QuickNote.svelte';
+	import EntityBadge from '#lib/components/EntityBadge.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import StoryPreview from '#lib/components/StoryPreview.svelte';
+	import { editorStyleVars } from '#lib/page-setup';
+	import { nearViewport } from '#lib/near-viewport';
+	import type { ViewItem } from '#lib/components/ViewMenu.svelte';
+	import StoryOutline from '#lib/components/StoryOutline.svelte';
 	import StoryRowMenu, {
 		type RowMenuState,
 		type RowMenuTarget
-	} from '$lib/components/StoryRowMenu.svelte';
+	} from '#lib/components/StoryRowMenu.svelte';
 	import {
 		duplicateScene as duplicateSceneAction,
 		mergeScenes as mergeScenesAction,
 		persistProposalState,
 		splitScene as splitSceneAction
-	} from '$lib/scene-actions';
-	import EditorToolbar from '$lib/components/EditorToolbar.svelte';
-	import EntityCard from '$lib/components/EntityCard.svelte';
-	import type { EntityCardData } from '$lib/wire-types';
-	import RevisionHistory from '$lib/components/RevisionHistory.svelte';
-	import RevisionPreview from '$lib/components/RevisionPreview.svelte';
-	import SceneEditor, { type SaveStatus } from '$lib/components/SceneEditor.svelte';
+	} from '#lib/scene-actions';
+	import EditorToolbar from '#lib/components/EditorToolbar.svelte';
+	import EntityCard from '#lib/components/EntityCard.svelte';
+	import type { EntityCardData } from '#lib/wire-types';
+	import RevisionHistory from '#lib/components/RevisionHistory.svelte';
+	import RevisionPreview from '#lib/components/RevisionPreview.svelte';
+	import SceneEditor, { type SaveStatus } from '#lib/components/SceneEditor.svelte';
 	import type { EditorView } from '@codemirror/view';
-	import AssistantPanel from '$lib/components/AssistantPanel.svelte';
-	import PanelStrip from '$lib/components/PanelStrip.svelte';
-	import { activePanel, visiblePanels, type PanelId } from '$lib/panels';
-	import SidebarSearch from '$lib/components/SidebarSearch.svelte';
-	import AppBar from '$lib/components/AppBar.svelte';
-	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '$lib/chrome';
-	import type { PageData, Snapshot } from './$types';
-	import ModeSwitcher from '$lib/components/ModeSwitcher.svelte';
-	import { apiErrorMessage } from '$lib/format';
+	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
+	import PanelStrip from '#lib/components/PanelStrip.svelte';
+	import { activePanel, visiblePanels, type PanelId } from '#lib/panels';
+	import SidebarSearch from '#lib/components/SidebarSearch.svelte';
+	import AppBar from '#lib/components/AppBar.svelte';
+	import { storyPath as storyCrumbs, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
+	import type { PageData } from './$types';
+	import ModeSwitcher from '#lib/components/ModeSwitcher.svelte';
+	import { apiErrorMessage } from '#lib/format';
 	import {
 		toggleCommandMarkers as toggleCommandMarkersView,
 		toggleNonPrintingMarks
-	} from '$lib/editor-view';
+	} from '#lib/editor-view';
 
 	let { data }: { data: PageData } = $props();
 
@@ -88,14 +89,109 @@
 	// of the top of the scene.
 	let sceneEditor = $state<SceneEditor>();
 
+	// The editors that can hold unsaved words: the open scene's, or the
+	// mounted ones in the whole-story view.
+	const openEditors = () =>
+		[sceneEditor, ...Object.values(docEditors)].filter((editor) => editor != null);
+
+	// Lands every pending save; false when one failed and its words are still
+	// only in the browser.
+	async function flushEditors(): Promise<boolean> {
+		const editors = openEditors();
+		await Promise.all(editors.map((editor) => editor.flushSave()));
+		// One more pass for an image upload that landed during the first (the
+		// writer chose to leave while it was still on its way).
+		const dirty = editors.filter((editor) => editor.isDirty());
+		await Promise.all(dirty.map((editor) => editor.flushSave()));
+		return !editors.some((editor) => editor.isDirty());
+	}
+
+	// Set while the page saves and then replaces the open scene (a scene
+	// switch, split or merge). The editors stay on screen but take no typing:
+	// words typed then would land after the save and vanish with the remount.
+	// A count, not a flag: overlapping actions (a second merge clicked while
+	// the first is still running) must not unpause each other early.
+	let pauseDepth = $state(0);
+	const typingPaused = $derived(pauseDepth > 0);
+	async function pauseTypingWhile<T>(work: () => Promise<T>): Promise<T> {
+		pauseDepth++;
+		try {
+			return await work();
+		} finally {
+			pauseDepth--;
+			// A place clicked while a split, merge or duplicate ran: go there now.
+			// By URL even for Back or Forward, since the action may have added a
+			// history entry that would throw a replayed step off. Other goto
+			// options (replaceState, noScroll) are not visible to the guard.
+			const queued = queuedNavigation;
+			if (pauseDepth === 0 && queued && !destroyed) {
+				queuedNavigation = null;
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- a URL the writer already chose
+				void goto(queued.url, { refreshAll: queued.refresh });
+			}
+		}
+	}
+
+	const LEAVE_UNSAVED =
+		'The latest changes to this scene could not be saved. Leave anyway and lose them? Cancel to stay on the scene.';
+	const uploading = () => openEditors().some((editor) => editor.isUploading());
+	const LEAVE_UPLOADING =
+		'An image is still uploading into this scene and may not be added if you leave now. Leave anyway? Cancel to stay until it is in.';
+	const WAIT_UPLOADING = 'An image is still uploading into this scene. Try again once it is in.';
+	const BUSY = 'Another change to the scenes is still running. Try again when it is done.';
+	const SAVE_FAILED =
+		'The scene could not be saved, so nothing was changed. If the scene says it was changed in another window, choose Load newer version or Keep mine first. Otherwise, try again in a moment.';
+
 	// A quick scene round-trip (A to B and back) faster than the debounced
 	// save lands would let the reload of A return stale prose, which the
-	// remounted editor then owns. Flush the open scene's pending save before
-	// any client navigation, the way splitCurrentScene already does. A full
-	// unload is left to SceneEditor's own pagehide flush.
-	let flushingNav = false;
+	// remounted editor then owns. Flush pending saves before any client
+	// navigation. If one fails, the writer chooses: stay with the words on
+	// screen, or leave without them. A full unload is left to SceneEditor's
+	// own pagehide flush.
+	// refresh: a goto or form may have asked for fresh data, so the replay does.
+	type Target = { url: URL; delta: number | undefined; refresh: boolean };
+	let ownNavigation: string | null = null;
+	// Resolves the wait for a replayed Back or Forward to start.
+	let replayStarted: (() => void) | null = null;
+	// The latest place clicked while the guard lands a save, or while a
+	// split, merge or duplicate runs.
+	let heldNavigation: Target | null = null;
+	let queuedNavigation: Target | null = null;
+	const REPLAY_WAIT_MS = 1000;
+
+	// A navigation the page makes itself after its saves have landed; the
+	// guard lets it through. Returns whether it arrived: another navigation
+	// can cut it short.
+	async function ownGoto(to: ResolvedPathname | URL, opts?: Parameters<typeof goto>[1]) {
+		const href = new URL(to, page.url.href).href;
+		ownNavigation = href;
+		try {
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved by the caller
+			await goto(to, opts);
+		} finally {
+			if (ownNavigation === href) ownNavigation = null;
+		}
+		return page.url.href === href;
+	}
+	// Opens a scene after a split, merge or duplicate changed the stored text,
+	// remounting every editor on the new text. If a Back or Forward cut the
+	// move short, this page's data is reloaded instead, so no editor keeps
+	// text the action replaced; the queued move runs once the pause ends.
+	async function openChangedScene(sceneId: string) {
+		if (!(await ownGoto(withQuery(storyPath, { scene: sceneId }), { refreshAll: true })))
+			await refreshAll();
+		editorNonce++;
+	}
+	let destroyed = false;
+	onDestroy(() => (destroyed = true));
 	beforeNavigate((nav) => {
-		if (flushingNav || nav.willUnload || !nav.to) return;
+		if (nav.willUnload || !nav.to) return;
+		// The navigation this guard re-issues once the saves have landed.
+		if (nav.to.url.href === ownNavigation) {
+			ownNavigation = null;
+			replayStarted?.();
+			return;
+		}
 		// Same-document hash jumps (story-view scene anchors) reload nothing.
 		if (
 			nav.from &&
@@ -103,19 +199,53 @@
 			nav.to.url.search === nav.from.url.search
 		)
 			return;
-		if (!sceneEditor?.isDirty()) return;
+		const target: Target = {
+			url: nav.to.url,
+			delta: nav.type === 'popstate' ? nav.delta : undefined,
+			refresh: nav.type !== 'link'
+		};
+		// A save is already being landed for an earlier navigation: go to the
+		// latest place clicked once it lands.
+		if (heldNavigation) {
+			nav.cancel();
+			heldNavigation = target;
+			return;
+		}
+		// A split, merge or duplicate is running: go once it is done.
+		if (typingPaused) {
+			nav.cancel();
+			queuedNavigation = target;
+			return;
+		}
+		if (!openEditors().some((editor) => editor.isDirty()) && !uploading()) return;
 		nav.cancel();
-		flushingNav = true;
-		const url = nav.to.url;
-		void sceneEditor.flushSave().finally(() => {
-			flushingNav = false;
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the URL this navigation was already heading to
-			void goto(url);
+		if (uploading() && !confirm(LEAVE_UPLOADING)) return;
+		heldNavigation = target;
+		void pauseTypingWhile(async () => {
+			const saved = await flushEditors();
+			const { url, delta, refresh } = heldNavigation ?? target;
+			heldNavigation = null;
+			if (destroyed) return;
+			if (!saved && !confirm(LEAVE_UNSAVED)) return;
+			// Back and Forward move through history rather than adding to it.
+			// Stay paused until the move starts; if it never does (the entry
+			// is gone), stop waiting and drop the exemption.
+			if (delta) {
+				ownNavigation = url.href;
+				await new Promise<void>((resolve) => {
+					replayStarted = resolve;
+					history.go(delta);
+					setTimeout(resolve, REPLAY_WAIT_MS);
+				});
+				replayStarted = null;
+				ownNavigation = null;
+			} else await ownGoto(url, { refreshAll: refresh });
 		});
 	});
 
 	type ScenePosition = { sceneId: string; anchor: number; scroll: number };
-	export const snapshot: Snapshot<ScenePosition | null> = {
+	snapshot<ScenePosition | null>({
+		id: 'scene-position',
 		capture: () => {
 			const position = sceneEditor?.getViewPosition();
 			if (!position || !data.selectedScene) return null;
@@ -126,7 +256,7 @@
 				sceneEditor?.restoreViewPosition(value);
 			}
 		}
-	};
+	});
 
 	// Picking which entity a shared name means: store the pin, then let the
 	// data refresh re-render the underlines (the editor reconfigures its
@@ -137,7 +267,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ name, targetType: target.type, targetId: target.id })
 		});
-		if (response.ok) await invalidateAll();
+		if (response.ok) await refreshAll();
 	}
 
 	const mentionOptions = $derived({
@@ -164,7 +294,44 @@
 		inspectCard = (await response.json()) as EntityCardData;
 	}
 
+	// On a narrow window one pane shows at a time (the .pane-tabs bar).
+	// Opening a scene shows the writing; opening a card shows the side panel.
+	type PaneTab = 'nav' | 'read' | 'notes';
+	const PANE_TABS: { id: PaneTab; label: string }[] = [
+		{ id: 'nav', label: 'Scenes' },
+		{ id: 'read', label: 'Writing' },
+		{ id: 'notes', label: 'Side panel' }
+	];
+	let paneTab = $state<PaneTab>('read');
+	const paneEls: Partial<Record<PaneTab, HTMLElement>> = {};
+	let paneTabsEl = $state<HTMLElement>();
+	// Switches pane without the tab bar.
+	async function showPane(tab: PaneTab) {
+		if (paneTab === tab) return;
+		paneTab = tab;
+		await tick();
+		focusShownPane(paneTabsEl, paneEls[tab]);
+	}
+	// Set while an Assistant proposal card changes scene, so the chat stays open.
+	let keepPaneOnNavigate = false;
+	afterNavigate(({ from, to, type }) => {
+		if (keepPaneOnNavigate) return;
+		// A followed link (even to the scene already open) or a different scene,
+		// view or anchor; not a data refresh of this one.
+		if (type === 'link' || from?.url.search !== to?.url.search || from?.url.hash !== to?.url.hash)
+			void showPane('read');
+	});
+	async function openSceneKeepingPane(sceneId: string) {
+		keepPaneOnNavigate = true;
+		try {
+			await openChangedScene(sceneId);
+		} finally {
+			keepPaneOnNavigate = false;
+		}
+	}
+
 	function openCard(entityId: string) {
+		void showPane('notes');
 		inspectStack = [...inspectStack, entityId];
 		void loadCard(entityId);
 	}
@@ -206,7 +373,7 @@
 		if (!response.ok) {
 			return await apiErrorMessage(response, 'Could not create it.');
 		}
-		await invalidateAll();
+		await refreshAll();
 		return null;
 	}
 
@@ -218,6 +385,22 @@
 
 	let saveStatus = $state<SaveStatus>('idle');
 	const selectedSceneId = $derived(data.selectedScene?.id);
+	// While another scene, view or page is loading, the open scene stays on
+	// screen but takes no typing: words typed there would be saved to it and
+	// then vanish as the next one replaces it (#772).
+	const leavingScene = $derived.by(() => {
+		if (typingPaused) return true;
+		const to = navigating.to?.url;
+		if (!to) return false;
+		if (to.pathname !== page.url.pathname) return true;
+		if (to.search === page.url.search) return false;
+		const changes = (key: string) => to.searchParams.get(key) !== page.url.searchParams.get(key);
+		return (
+			to.searchParams.get('scene') !== (data.selectedScene?.id ?? null) ||
+			changes('view') ||
+			changes('revision')
+		);
+	});
 	$effect(() => {
 		void selectedSceneId;
 		saveStatus = 'idle';
@@ -262,33 +445,35 @@
 	// on the merged text instead of saving over it.
 	let editorNonce = $state(0);
 
+	// Each of these acts once at a time: a second split or merge sent while
+	// the first runs would act on text the first is about to change.
 	async function mergeSelectedScenes() {
 		rowMenu = null;
-		// The merge reads the stored text, so pending saves land first.
-		for (const id of mergeSelection) {
-			const editor = data.selectedScene?.id === id ? sceneEditor : docEditors[id];
-			await editor?.flushSave();
-		}
-		const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		mergeSelection.clear();
-		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { invalidateAll: true });
-		editorNonce++;
+		if (typingPaused) return;
+		if (uploading()) return alert(WAIT_UPLOADING);
+		await pauseTypingWhile(async () => {
+			// The merge reads the stored text, so pending saves land first.
+			if (!(await flushEditors())) return alert(SAVE_FAILED);
+			const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
+			if (!result.ok) return alert(result.message);
+			mergeSelection.clear();
+			await openChangedScene(result.targetSceneId);
+		});
 	}
 
 	// Copies a scene in full directly after itself; useful for keeping a
 	// scene as a reusable template.
 	async function duplicateScene(sceneId: string) {
 		rowMenu = null;
-		const result = await duplicateSceneAction(data.story.id, sceneId);
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		await goto(withQuery(storyPath, { scene: result.newSceneId }), { invalidateAll: true });
+		if (typingPaused) return;
+		if (uploading()) return alert(WAIT_UPLOADING);
+		await pauseTypingWhile(async () => {
+			// The copy is made from the stored text, so pending saves land first.
+			if (!(await flushEditors())) return alert(SAVE_FAILED);
+			const result = await duplicateSceneAction(data.story.id, sceneId);
+			if (!result.ok) return alert(result.message);
+			await openChangedScene(result.newSceneId);
+		});
 	}
 
 	// Opens the review modal for a scene or chapter from the sidebar row menu;
@@ -306,21 +491,22 @@
 	// Splits the open scene at the cursor, like a page break: the rest of
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
-		if (!sceneEditor || !data.selectedScene) return;
+		if (!sceneEditor || !data.selectedScene || typingPaused) return;
+		if (uploading()) return alert(WAIT_UPLOADING);
+		const sceneId = data.selectedScene.id;
 		const cursor = sceneEditor.cursorOffset();
 		if (!cursor || cursor.offset <= 0 || cursor.offset >= cursor.length) {
 			alert('Put the cursor where the scene should break, inside the text.');
 			return;
 		}
-		// The offset must point into the stored text, so the pending autosave
-		// lands first.
-		await sceneEditor.flushSave();
-		const result = await splitSceneAction(data.selectedScene.id, { offset: cursor.offset });
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		await goto(withQuery(storyPath, { scene: result.newSceneId }), { invalidateAll: true });
+		await pauseTypingWhile(async () => {
+			// The offset must point into the stored text, so the pending autosave
+			// lands first.
+			if (!(await flushEditors())) return alert(SAVE_FAILED);
+			const result = await splitSceneAction(sceneId, { offset: cursor.offset });
+			if (!result.ok) return alert(result.message);
+			await openChangedScene(result.newSceneId);
+		});
 	}
 
 	// Records a proposal card's outcome on its stored chat turn, so the card
@@ -335,15 +521,17 @@
 		sceneId: string;
 		before: string;
 	}): Promise<{ error: string } | { splitSceneId: string; newSceneId: string }> {
-		const editor =
-			data.selectedScene?.id === proposal.sceneId ? sceneEditor : docEditors[proposal.sceneId];
-		await editor?.flushSave();
-		const result = await splitSceneAction(proposal.sceneId, { before: proposal.before });
-		if (!result.ok) return { error: result.message };
-		const { newSceneId, splitSceneId } = result;
-		persistProposalState(data.story.id, proposal, { splitSceneId, newSceneId });
-		await goto(withQuery(storyPath, { scene: newSceneId }), { invalidateAll: true });
-		return { splitSceneId, newSceneId };
+		if (typingPaused) return { error: BUSY };
+		if (uploading()) return { error: WAIT_UPLOADING };
+		return pauseTypingWhile(async () => {
+			if (!(await flushEditors())) return { error: SAVE_FAILED };
+			const result = await splitSceneAction(proposal.sceneId, { before: proposal.before });
+			if (!result.ok) return { error: result.message };
+			const { newSceneId, splitSceneId } = result;
+			persistProposalState(data.story.id, proposal, { splitSceneId, newSceneId });
+			await openSceneKeepingPane(newSceneId);
+			return { splitSceneId, newSceneId };
+		});
 	}
 
 	// Reverts a confirmed split from its proposal card: the two halves merge
@@ -353,19 +541,19 @@
 		before: string;
 		confirmed: { splitSceneId: string; newSceneId: string };
 	}): Promise<string | null> {
-		for (const id of [proposal.confirmed.splitSceneId, proposal.confirmed.newSceneId]) {
-			const editor = data.selectedScene?.id === id ? sceneEditor : docEditors[id];
-			await editor?.flushSave();
-		}
-		const result = await mergeScenesAction(data.story.id, [
-			proposal.confirmed.splitSceneId,
-			proposal.confirmed.newSceneId
-		]);
-		if (!result.ok) return result.message;
-		persistProposalState(data.story.id, proposal, null);
-		await goto(withQuery(storyPath, { scene: result.targetSceneId }), { invalidateAll: true });
-		editorNonce++;
-		return null;
+		if (typingPaused) return BUSY;
+		if (uploading()) return WAIT_UPLOADING;
+		return pauseTypingWhile(async () => {
+			if (!(await flushEditors())) return SAVE_FAILED;
+			const result = await mergeScenesAction(data.story.id, [
+				proposal.confirmed.splitSceneId,
+				proposal.confirmed.newSceneId
+			]);
+			if (!result.ok) return result.message;
+			persistProposalState(data.story.id, proposal, null);
+			await openSceneKeepingPane(result.targetSceneId);
+			return null;
+		});
 	}
 
 	// "Suggest where to split": a canned chat turn naming the scene, so the
@@ -483,7 +671,10 @@
 	// An Assistant intent (from a menu here or the command palette) opens the
 	// panel; the panel consumes the intent itself once it renders.
 	$effect(() => {
-		if (assistantIntent.pending && data.assistant.tabEnabled) chosenPanel = 'assistant';
+		if (assistantIntent.pending && data.assistant.tabEnabled) {
+			chosenPanel = 'assistant';
+			untrack(() => showPane('notes'));
+		}
 	});
 
 	// "Ask the Assistant about this" on an editor selection: the passage goes
@@ -539,6 +730,8 @@
 				focusEdge: (edge: 'start' | 'end') => void;
 				getView: () => EditorView | undefined;
 				flushSave: () => Promise<void>;
+				isDirty: () => boolean;
+				isUploading: () => boolean;
 		  }
 		| undefined
 	> = $state({});
@@ -609,8 +802,21 @@
 		helpTopic="editor"
 		helpLabel="the editor"
 	/>
-	<div class="body">
-		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+	<nav class="seg full pane-tabs" aria-label="Story panes" bind:this={paneTabsEl}>
+		{#each PANE_TABS as tab (tab.id)}
+			<button
+				class="seg-btn"
+				class:active={paneTab === tab.id}
+				type="button"
+				aria-pressed={paneTab === tab.id}
+				onclick={() => (paneTab = tab.id)}
+			>
+				{tab.label}
+			</button>
+		{/each}
+	</nav>
+	<div class="body" data-mtab={paneTab}>
+		<aside class="pane left" aria-label={LEFT_PANE_LABEL} tabindex="-1" bind:this={paneEls.nav}>
 			<div class="left-head">
 				<ModeSwitcher
 					active="write"
@@ -639,7 +845,7 @@
 				/>
 			</div>
 		</aside>
-		<main id="main" class="pane center">
+		<main id="main" class="pane center" tabindex="-1" bind:this={paneEls.read}>
 			{#if !inWholeStory}<h1 class="visually-hidden">{data.story.title} - Write</h1>{/if}
 			{#if viewStory}
 				{#snippet docScene(scene: NonNullable<typeof data.storyDoc>[number])}
@@ -656,6 +862,7 @@
 						{#if mountedDocScenes.has(scene.id)}
 							<SceneEditor
 								bind:this={docEditors[scene.id]}
+								leaving={leavingScene}
 								compact
 								{editorStyle}
 								sceneId={scene.id}
@@ -770,6 +977,7 @@
 				{#key `${data.selectedScene.id}:${editorNonce}`}
 					<SceneEditor
 						bind:this={sceneEditor}
+						leaving={leavingScene}
 						{editorStyle}
 						onSplitScene={splitCurrentScene}
 						storyView={{ active: inWholeStory, toggleHref }}
@@ -823,7 +1031,7 @@
 				</div>
 			{/if}
 		</main>
-		<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+		<aside class="pane right" aria-label={RIGHT_PANE_LABEL} tabindex="-1" bind:this={paneEls.notes}>
 			{#if inspectStack.length > 0}
 				{#if inspectCard}
 					<EntityCard
@@ -856,15 +1064,22 @@
 								summarised={data.assistantChatSummarised}
 								onConfirmSplit={confirmAssistantSplit}
 								onRevertSplit={revertAssistantSplit}
+								insertPaused={leavingScene}
 								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 								onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? (text) => sceneEditor?.insertAtCursor(text)
+									? (text) => {
+											void showPane('read');
+											sceneEditor?.insertAtCursor(text);
+										}
 									: undefined}
 								getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
 									? () => sceneEditor?.getSelectionText() ?? null
 									: undefined}
 								onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? (text) => sceneEditor?.replaceSelection(text)
+									? (text) => {
+											void showPane('read');
+											sceneEditor?.replaceSelection(text);
+										}
 									: undefined}
 							/>
 						{:else if id === 'history' && data.selectedScene}
@@ -940,7 +1155,7 @@
 																headers: { 'content-type': 'application/json' },
 																body: JSON.stringify({ resolved: true })
 															});
-															await invalidateAll();
+															await refreshAll();
 														}}
 													></button>
 												{:else}

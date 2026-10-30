@@ -5,8 +5,8 @@ import { entitySuggestions } from './db/schema';
 import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups';
 import { recordEntityRevision } from './revisions';
 import { queueUniverseMentions } from './jobs';
-import { MAX_DETAILS, type EntityDetail } from '$lib/entity-snapshot';
-import type { EntityKind } from '$lib/components/EntityEditor.svelte';
+import { MAX_DETAILS, type EntityDetail } from '#lib/entity-snapshot';
+import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 
 // The Assistant's staged enrichments for an entity: a new alias, a quick detail,
 // or a drafted summary. Nothing here touches an entity until the writer accepts;

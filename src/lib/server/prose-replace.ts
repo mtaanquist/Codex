@@ -4,8 +4,8 @@ import { sceneMarkers, scenes, stories } from './db/schema';
 import { updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
 import { queueSceneMentions } from './jobs';
-import { replaceWholeWord, wholeWordMatches } from '$lib/prose-replace';
-import { wordCount } from '$lib/word-count';
+import { replaceWholeWord, wholeWordMatches } from '#lib/prose-replace';
+import { wordCount } from '#lib/word-count';
 
 // Renaming an entity can sweep the old name out of the prose: count first
 // so the offer says what it will touch, then replace with a revision per

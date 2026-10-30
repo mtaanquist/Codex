@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { formatDate } from '$lib/format';
+	import { page } from '$app/state';
+	import { formatDate } from '#lib/format';
 	import { resolve } from '$app/paths';
-	import HelpLink from '$lib/components/HelpLink.svelte';
-	import { startBackgroundReview } from '$lib/assistant-actions';
-	import { REVIEW_CATEGORIES } from '$lib/review-shape';
+	import HelpLink from '#lib/components/HelpLink.svelte';
+	import { startBackgroundReview } from '#lib/assistant-actions';
+	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -49,7 +50,7 @@
 	</h2>
 	<p class="admin-block-sub">
 		Invite someone to read this story and leave comments. They follow a link; no account is needed.
-		<a href={resolve('/stories/[id]/review', { id: data.story.slug })}> Open review mode</a> to read the
+		<a href={resolve('/stories/[id]/review', { id: data.story.slug })}>Open review mode</a> to read the
 		manuscript and leave your own comments and suggestions, and to work through any feedback.
 	</p>
 </div>
@@ -124,7 +125,8 @@
 				<li>
 					<span>
 						{invitation.email ?? 'Review link'} - {inviteStatus(invitation)}, created {formatDate(
-							invitation.createdAt
+							invitation.createdAt,
+							page.data.timeZone
 						)}{invitation.guests.length > 0
 							? ` - joined: ${invitation.guests.map((guest) => guest.displayName).join(', ')}`
 							: ''}
@@ -167,7 +169,7 @@
 	.danger-ghost {
 		background: transparent;
 		border: 0;
-		color: var(--danger);
+		color: var(--danger-ink);
 		cursor: pointer;
 		padding: 0;
 		font-size: 12.5px;

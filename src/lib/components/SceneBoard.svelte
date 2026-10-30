@@ -2,8 +2,8 @@
 	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
 	import FormStatus from './FormStatus.svelte';
-	import { SCENE_STATUSES, SCENE_STATUS_LABELS, type SceneStatus } from '$lib/scene-status';
-	import { formatNumber, pluralSuffix } from '$lib/format';
+	import { SCENE_STATUSES, SCENE_STATUS_LABELS, type SceneStatus } from '#lib/scene-status';
+	import { formatNumber, pluralSuffix } from '#lib/format';
 
 	// The story's scenes as cards in status lanes. Drag a card to a lane, or
 	// use the card's arrows, to move it along the ladder; story order within
@@ -173,7 +173,7 @@
 		color: var(--text-faint);
 	}
 	.card-todos {
-		color: var(--cat-amber);
+		color: var(--status-draft-ink);
 		font-weight: 600;
 	}
 	.card-tools {

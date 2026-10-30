@@ -3,7 +3,7 @@
 // applies at once, and the change persists in the background so the next
 // visit opens the same way. Encodes the /api/editor-view contract once.
 
-import type { MarkVisibility } from '$lib/editor';
+import type { MarkVisibility } from '#lib/editor';
 
 function persist(patch: { nonPrintingMarks?: string; commandMarkers?: string }) {
 	void fetch('/api/editor-view', {
