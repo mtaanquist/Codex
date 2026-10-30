@@ -146,7 +146,7 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
 
-**Narrow windows.** At 820px wide and narrower the story editor and the review shell (owner
+**Narrow windows.** At 960px wide and narrower the story editor and the review shell (owner
 and guest) show one pane at a time: a `<nav class="seg full pane-tabs">` sits between
 the bar and the `.body`, and the body carries the active pane as `data-mtab`
 (`nav` for the left column, `read` for the centre, `notes` for the right).
@@ -155,8 +155,9 @@ attribute. Each tab button carries `aria-pressed` for the pane it shows.
 When code switches the pane, call `focusShownPane` (`#lib/pane-focus`) so
 focus follows if the focused control was hidden; each pane takes
 `tabindex="-1"`. Following a link to a scene shows the writing, and opening an
-entity card shows the side panel. The Plan and Notes workspaces keep their
-side columns. Help stacks instead (`DocsShell` adds `.docs`), with the topic
+entity card shows the side panel. The Plan, Notes and Insights workspaces keep
+their side columns, with the centre at least 360px and the body scrolling
+sideways. Help stacks instead (`DocsShell` adds `.docs`), with the topic
 list above the article below 760px so the page scrolls as one. The library grid drops to one column below 560px.
 
 **Structure every shell carries.** Exactly one `<main id="main">` (the root

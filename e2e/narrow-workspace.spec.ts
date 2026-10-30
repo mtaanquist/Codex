@@ -40,7 +40,7 @@ test('the story editor shows one pane at a time on narrow windows', async ({ pag
 	await expect(sidebar).toBeVisible();
 	await expect(sidePanel).toBeVisible();
 
-	for (const width of [720, 390]) {
+	for (const width of [900, 720, 390]) {
 		await page.setViewportSize({ width, height: 800 });
 		await expect(tabs).toBeVisible();
 		await expectNoSidewaysScroll(page);
@@ -80,4 +80,11 @@ test('the story editor shows one pane at a time on narrow windows', async ({ pag
 	await save;
 	await page.reload();
 	await expect(page.locator('.cm-content')).toContainText('Written on a narrow window.');
+
+	// Plan keeps its columns: the centre stays readable and the body, not the
+	// page, scrolls sideways.
+	await gotoReady(page, `${new URL(page.url()).pathname}/plan`);
+	await expectNoSidewaysScroll(page);
+	const centre = await page.locator('.pane.center').boundingBox();
+	expect(centre!.width).toBeGreaterThanOrEqual(360);
 });
