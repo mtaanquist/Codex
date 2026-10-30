@@ -99,7 +99,8 @@
 	async function flushEditors(): Promise<boolean> {
 		const editors = openEditors();
 		await Promise.all(editors.map((editor) => editor.flushSave()));
-		// One more pass for an image upload that landed during the first.
+		// One more pass for an image upload that landed during the first (the
+		// writer chose to leave while it was still on its way).
 		const dirty = editors.filter((editor) => editor.isDirty());
 		await Promise.all(dirty.map((editor) => editor.flushSave()));
 		return !editors.some((editor) => editor.isDirty());
@@ -123,6 +124,10 @@
 
 	const LEAVE_UNSAVED =
 		'The latest changes to this scene could not be saved. Leave anyway and lose them? Cancel to stay on the scene.';
+	const uploading = () => openEditors().some((editor) => editor.isUploading());
+	const LEAVE_UPLOADING =
+		'An image is still uploading into this scene and may not be added if you leave now. Leave anyway? Cancel to stay until it is in.';
+	const WAIT_UPLOADING = 'An image is still uploading into this scene. Try again once it is in.';
 	const BUSY = 'Another change to the scenes is still running. Try again when it is done.';
 	const SAVE_FAILED =
 		'The scene could not be saved, so nothing was changed. If the scene says it was changed in another window, choose Load newer version or Keep mine first. Otherwise, try again in a moment.';
@@ -162,10 +167,11 @@
 			heldNavigation = target;
 			return;
 		}
-		if (!openEditors().some((editor) => editor.isDirty())) return;
+		if (!openEditors().some((editor) => editor.isDirty()) && !uploading()) return;
 		nav.cancel();
 		// A split, merge or duplicate is running and will navigate itself.
 		if (typingPaused) return;
+		if (uploading() && !confirm(LEAVE_UPLOADING)) return;
 		heldNavigation = target;
 		void pauseTypingWhile(async () => {
 			const saved = await flushEditors();
@@ -391,6 +397,7 @@
 	async function mergeSelectedScenes() {
 		rowMenu = null;
 		if (typingPaused) return;
+		if (uploading()) return alert(WAIT_UPLOADING);
 		await pauseTypingWhile(async () => {
 			// The merge reads the stored text, so pending saves land first.
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
@@ -407,6 +414,7 @@
 	async function duplicateScene(sceneId: string) {
 		rowMenu = null;
 		if (typingPaused) return;
+		if (uploading()) return alert(WAIT_UPLOADING);
 		await pauseTypingWhile(async () => {
 			// The copy is made from the stored text, so pending saves land first.
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
@@ -432,6 +440,7 @@
 	// the text moves to a new untitled scene directly after this one.
 	async function splitCurrentScene() {
 		if (!sceneEditor || !data.selectedScene || typingPaused) return;
+		if (uploading()) return alert(WAIT_UPLOADING);
 		const sceneId = data.selectedScene.id;
 		const cursor = sceneEditor.cursorOffset();
 		if (!cursor || cursor.offset <= 0 || cursor.offset >= cursor.length) {
@@ -461,6 +470,7 @@
 		before: string;
 	}): Promise<{ error: string } | { splitSceneId: string; newSceneId: string }> {
 		if (typingPaused) return { error: BUSY };
+		if (uploading()) return { error: WAIT_UPLOADING };
 		return pauseTypingWhile(async () => {
 			if (!(await flushEditors())) return { error: SAVE_FAILED };
 			const result = await splitSceneAction(proposal.sceneId, { before: proposal.before });
@@ -480,6 +490,7 @@
 		confirmed: { splitSceneId: string; newSceneId: string };
 	}): Promise<string | null> {
 		if (typingPaused) return BUSY;
+		if (uploading()) return WAIT_UPLOADING;
 		return pauseTypingWhile(async () => {
 			if (!(await flushEditors())) return SAVE_FAILED;
 			const result = await mergeScenesAction(data.story.id, [
@@ -669,6 +680,7 @@
 				getView: () => EditorView | undefined;
 				flushSave: () => Promise<void>;
 				isDirty: () => boolean;
+				isUploading: () => boolean;
 		  }
 		| undefined
 	> = $state({});

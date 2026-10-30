@@ -23,7 +23,7 @@
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '#lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '#lib/editor-autocomplete';
 	import { continuationExtensions } from '#lib/editor-continuation';
-	import { imageUploadExtension } from '#lib/editor-images';
+	import { hasPendingUploads, imageUploadExtension } from '#lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '#lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
@@ -279,6 +279,16 @@
 	// stale prose and a save that fails late is not lost with the editor.
 	export function isDirty(): boolean {
 		return autosave.hasUnsaved();
+	}
+
+	export function isUploading(): boolean {
+		return view ? hasPendingUploads(view.state) : false;
+	}
+
+	// Closing the tab asks first while words or an image are not yet stored.
+	function warnBeforeUnload(event: BeforeUnloadEvent) {
+		if (isUploading()) event.preventDefault();
+		else autosave.warnBeforeUnload(event);
 	}
 
 	// The continuous view's shared formatting toolbar runs its commands on
@@ -579,7 +589,7 @@
 	</div>
 {/if}
 
-<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={warnBeforeUnload} />
 
 {#if selectionMenu}
 	<SelectionMenu

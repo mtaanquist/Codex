@@ -1,5 +1,5 @@
 import { EditorView } from '@codemirror/view';
-import { StateEffect, StateField, type Extension } from '@codemirror/state';
+import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { landsWhilePaused } from './editor-paused';
 
 // Paste or drop an image into the prose: it uploads and lands as a
@@ -37,6 +37,12 @@ const pendingField = StateField.define<Pending[]>({
 });
 
 let nextId = 0;
+
+// Whether an image is still uploading into this editor; its placeholder is
+// not the writer's text yet, so leaving now would lose the image.
+export function hasPendingUploads(state: EditorState): boolean {
+	return (state.field(pendingField, false) ?? []).length > 0;
+}
 
 export function imageUploadExtension(universeId: string): Extension {
 	// Replace a placeholder's current (mapped) range; a null replacement just

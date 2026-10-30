@@ -308,6 +308,8 @@ test('an image that finishes uploading while a switch is held still lands', asyn
 	});
 	let asked = 0;
 	page.on('dialog', (dialog) => {
+		// Leave despite the upload, then stay when the save fails.
+		if (dialog.message().includes('still uploading')) return void dialog.accept();
 		asked++;
 		void dialog.dismiss();
 	});
@@ -359,6 +361,7 @@ test('an image that finishes uploading during a switch is saved to its scene', a
 			r.ok() &&
 			(r.request().postData() ?? '').includes('](/assets/switch.png)')
 	);
+	page.on('dialog', (dialog) => void dialog.accept());
 	await editor(page).click();
 	await page.keyboard.type('Picture: ');
 	await editor(page).evaluate((el) => {
@@ -371,4 +374,41 @@ test('an image that finishes uploading during a switch is saved to its scene', a
 	expect(new URL((await saved).url()).pathname).toContain(
 		new URL(firstUrl).searchParams.get('scene')!
 	);
+});
+
+test('leaving while an image uploads asks first, and staying keeps it', async ({ page }) => {
+	test.slow();
+	const { firstUrl } = await twoScenes(page, `Ask ${Date.now()}`);
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route('**/api/assets', async (route) => {
+		await held;
+		await route.fulfill({ json: { path: '/assets/stay.png' } });
+	});
+	const dialogs: string[] = [];
+	page.on('dialog', (dialog) => {
+		dialogs.push(dialog.message());
+		void dialog.dismiss();
+	});
+	await editor(page).click();
+	await page.keyboard.type('Picture: ');
+	await editor(page).evaluate((el) => {
+		const data = new DataTransfer();
+		data.items.add(new File(['png'], 'stay.png', { type: 'image/png' }));
+		el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+	});
+	await page.locator('.scene-row').nth(1).click();
+	await expect.poll(() => dialogs.length).toBe(1);
+	expect(dialogs[0]).toContain('still uploading');
+	await expect(page).toHaveURL(firstUrl);
+
+	const saved = page.waitForResponse(
+		(r) =>
+			r.url().includes('/api/scenes/') &&
+			r.request().method() === 'PUT' &&
+			r.ok() &&
+			(r.request().postData() ?? '').includes('](/assets/stay.png)')
+	);
+	release();
+	await saved;
 });
