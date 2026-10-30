@@ -597,10 +597,14 @@
 	.editor-title-input::placeholder {
 		color: var(--text-faint);
 	}
+	/* Dims at once and drops the caret, so it is plain that typing is paused. */
 	.editor.is-leaving {
 		opacity: 0.55;
 		cursor: progress;
-		transition: opacity 0.15s ease 0.1s;
+		transition: opacity 0.1s ease;
+	}
+	.editor.is-leaving :global(.cm-cursorLayer) {
+		visibility: hidden;
 	}
 	.editor.compact :global(.editor-cm) {
 		min-height: 0;
