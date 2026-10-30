@@ -151,7 +151,7 @@ show one pane at a time: a `<nav class="seg full pane-tabs">` sits between
 the bar and the `.body`, and the body carries the active pane as `data-mtab`
 (`nav` for the left column, `read` for the centre, `notes` for the right).
 `theme.css` owns the rules; a page only renders the bar and sets the
-attribute. Following a link to a scene shows the writing, and opening an
+attribute. Each tab button carries `aria-pressed` for the pane it shows. Following a link to a scene shows the writing, and opening an
 entity card shows the side panel. The Plan and Notes workspaces keep their
 side columns. Help stacks instead (`DocsShell` adds `.docs`), with the topic
 list above the article below 760px so the page scrolls as one. The library grid drops to one column below 560px.

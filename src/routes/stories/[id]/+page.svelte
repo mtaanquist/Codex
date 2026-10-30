@@ -117,7 +117,7 @@
 	const LEAVE_UNSAVED =
 		'The latest changes to this scene could not be saved. Leave anyway and lose them? Cancel to stay on the scene.';
 	const SAVE_FAILED =
-		'The scene could not be saved, so nothing was changed. Try again in a moment.';
+		'The scene could not be saved, so nothing was changed. If the scene says it was changed in another window, choose Load newer version or Keep mine first. Otherwise, try again in a moment.';
 
 	// A quick scene round-trip (A to B and back) faster than the debounced
 	// save lands would let the reload of A return stale prose, which the
