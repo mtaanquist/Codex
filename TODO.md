@@ -258,10 +258,11 @@ Staging branch `staging/issue-review-2`, merged to main in one PR.
 - [x] Status, danger and author colours used as text pass AA in every theme (ink twins). (#744)
 - [x] Server-rendered times use the author's timezone (`codex-tz` cookie). (#766)
 - [x] Settings rows and "On this page" links for Security and Assistant, steps 2 and 3. (#731)
-- [x] Story workspace shows one pane at a time below 820px. (#737)
+- [x] Story workspace shows one pane at a time at 960px and narrower. (#737)
 - [x] SvelteKit 3 cleanup: `refreshAll`, `Response.json`, `snapshot()`, `#lib` subpath imports. (#752)
 - [x] No typing into a scene while the next one opens, a split or merge runs, or a failed save holds a switch. (#772)
 - [x] Review leftovers: backup scripts load under plain node, save requests time out, real-cookie timezone test, `#lib` loader and lint messages. (#786, #787, #788, #789)
+- [x] Staging review loop fixes, including a prompt before leaving a scene with unsaved text or an upload in progress. (#794 to #802)
 
 Follow-ups (open):
 

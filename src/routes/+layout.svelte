@@ -65,7 +65,16 @@
 	let timeZoneSent = false;
 	$effect(() => {
 		const timeZone = browserTimeZone();
-		if (timeZoneSent || !timeZone || timeZone === data.timeZone) return;
+		if (timeZone && timeZone === data.timeZone) {
+			// Accepted: if the cookie goes missing later, set it again.
+			try {
+				sessionStorage.removeItem(TIMEZONE_TRIED_KEY);
+			} catch {
+				// No storage.
+			}
+			return;
+		}
+		if (timeZoneSent || !timeZone) return;
 		timeZoneSent = true;
 		try {
 			if (sessionStorage.getItem(TIMEZONE_TRIED_KEY) === timeZone) return;
