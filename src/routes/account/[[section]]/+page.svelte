@@ -2,6 +2,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { trackSectionInView } from '#lib/section-tracker.svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { flushFocusedField } from '#lib/autosave-form';
 	import AppBar from '#lib/components/AppBar.svelte';
@@ -65,6 +66,7 @@
 		]
 	};
 	const contents = $derived(CONTENTS[active]);
+	const inView = trackSectionInView(() => contents?.map((item) => item.id));
 
 	function sectionHref(section: Section): ResolvedPathname {
 		return resolve('/account/[[section]]', {
@@ -264,7 +266,7 @@
 			<div class="admin-nav-label" id="account-contents-label">On this page</div>
 			<nav class="contents-nav" aria-labelledby="account-contents-label">
 				{#each contents as item (item.id)}
-					<a href="#{item.id}" aria-current={page.url.hash === `#${item.id}` ? 'true' : undefined}
+					<a href="#{item.id}" aria-current={inView.id === item.id ? 'true' : undefined}
 						>{item.label}</a
 					>
 				{/each}

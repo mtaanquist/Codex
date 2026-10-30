@@ -23,7 +23,7 @@
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '#lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '#lib/editor-autocomplete';
 	import { continuationExtensions } from '#lib/editor-continuation';
-	import { imageUploadExtension } from '#lib/editor-images';
+	import { hasPendingUploads, imageUploadExtension } from '#lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '#lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
@@ -281,6 +281,16 @@
 		return autosave.hasUnsaved();
 	}
 
+	export function isUploading(): boolean {
+		return view ? hasPendingUploads(view.state) : false;
+	}
+
+	// Closing the tab asks first while words or an image are not yet stored.
+	function warnBeforeUnload(event: BeforeUnloadEvent) {
+		if (isUploading()) event.preventDefault();
+		else autosave.warnBeforeUnload(event);
+	}
+
 	// The continuous view's shared formatting toolbar runs its commands on
 	// this view when this editor holds the caret.
 	export function getView(): EditorView | undefined {
@@ -525,7 +535,7 @@
 		oncontextmenu={onPaneContextMenu}
 	>
 		{#if conflict}
-			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} paused={leaving} />
 		{/if}
 		<div class="editor-cm" bind:this={editorEl}></div>
 	</div>
@@ -552,6 +562,7 @@
 				{sceneId}
 				onInserted={scheduleSave}
 				onClose={() => (coauthorOpen = false)}
+				paused={leaving}
 			/>
 		{/if}
 		<div
@@ -560,9 +571,9 @@
 			bind:this={scrollEl}
 			oncontextmenu={onPaneContextMenu}
 		>
-			<div class="editor" class:is-leaving={leaving} aria-busy={leaving} style={editorStyle}>
+			<div class="editor" class:is-leaving={leaving} style={editorStyle}>
 				{#if conflict}
-					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} paused={leaving} />
 				{/if}
 				<input
 					class="editor-title-input"
@@ -579,7 +590,7 @@
 	</div>
 {/if}
 
-<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={autosave.warnBeforeUnload} />
+<svelte:window onpagehide={autosave.flushOnPageHide} onbeforeunload={warnBeforeUnload} />
 
 {#if selectionMenu}
 	<SelectionMenu

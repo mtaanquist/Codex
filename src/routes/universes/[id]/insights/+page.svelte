@@ -11,7 +11,7 @@
 	import AssistantPanel from '#lib/components/AssistantPanel.svelte';
 	import RelationshipWeb from '#lib/components/RelationshipWeb.svelte';
 	import { visiblePanels } from '#lib/panels';
-	import { page } from '$app/state';
+	import { trackSectionInView } from '#lib/section-tracker.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -26,6 +26,7 @@
 		{ id: 'heatmap', label: 'World heatmap' },
 		{ id: 'web', label: 'Relationship web' }
 	];
+	const inView = trackSectionInView(() => NAV.map((item) => item.id));
 
 	const STATUS_ORDER = ['outline', 'draft', 'revised', 'final'] as const;
 	const STATUS_LABELS: Record<string, string> = {
@@ -142,10 +143,7 @@
 				<div class="group-label">On this page<span class="count">{NAV.length}</span></div>
 				<nav class="contents-nav" aria-label="Sections of this page">
 					{#each NAV as item (item.id)}
-						<a
-							href="#{item.id}"
-							aria-current={page.url.hash === `#${item.id}` ? 'true' : undefined}
-						>
+						<a href="#{item.id}" aria-current={inView.id === item.id ? 'true' : undefined}>
 							{item.label}
 						</a>
 					{/each}

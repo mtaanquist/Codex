@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { UnretryableSaveError } from './autosave';
-import { createSceneSaver, SAVE_TIMEOUT_MS } from './scene-saver';
+import { createSceneSaver, MAX_BASE_HASHES, SAVE_TIMEOUT_MS } from './scene-saver';
 import { textHash } from './text-hash';
 
 type Sent = { baseHashes: string[]; overwrite?: boolean; bodyMd: string; keepalive?: boolean };
@@ -69,12 +69,23 @@ describe('createSceneSaver', () => {
 		expect(sent[4].baseHashes).toEqual([textHash('a'), textHash('ab'), textHash('abc')]);
 	});
 
-	it('never sends more than four fingerprints', async () => {
-		const sent = mockFetch([networkError, networkError, networkError, networkError, ok]);
+	it('keeps the oldest of several timed-out saves, up to the cap', async () => {
+		const bodies = ['b', 'c', 'd', 'e', 'f'];
+		const sent = mockFetch([...bodies.map(() => networkError), ok]);
 		const saver = createSceneSaver('s', 'a', () => {});
-		for (const body of ['b', 'c', 'd', 'e']) await expect(saver.save(save(body))).rejects.toThrow();
-		await saver.save(save('f'));
-		expect(sent[4].baseHashes).toHaveLength(4);
+		for (const body of bodies) await expect(saver.save(save(body))).rejects.toThrow();
+		await saver.save(save('g'));
+		// The server may have applied 'b' late; it must still count as a base.
+		expect(sent[5].baseHashes).toContain(textHash('b'));
+	});
+
+	it('never sends more fingerprints than the server accepts', async () => {
+		const bodies = Array.from({ length: MAX_BASE_HASHES + 2 }, (_, i) => `t${i}`);
+		const sent = mockFetch([...bodies.map(() => networkError), ok]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		for (const body of bodies) await expect(saver.save(save(body))).rejects.toThrow();
+		await saver.save(save('last'));
+		expect(sent.at(-1)!.baseHashes).toHaveLength(MAX_BASE_HASHES);
 	});
 
 	it('gives up on a save with no answer, as a retryable network error', async () => {
@@ -92,8 +103,36 @@ describe('createSceneSaver', () => {
 			const saver = createSceneSaver('s', 'a', () => {});
 			const saving = saver.save(save('ab'));
 			const outcome = expect(saving).rejects.not.toBeInstanceOf(UnretryableSaveError);
-			await vi.advanceTimersByTimeAsync(SAVE_TIMEOUT_MS);
+			await vi.advanceTimersByTimeAsync(SAVE_TIMEOUT_MS + 1000);
 			await outcome;
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('gives a long scene more time before it gives up', async () => {
+		vi.useFakeTimers();
+		try {
+			let aborted = false;
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(
+					(_url: string, init: RequestInit) =>
+						new Promise((_resolve, reject) => {
+							init.signal?.addEventListener('abort', () => {
+								aborted = true;
+								reject(new Error('aborted'));
+							});
+						})
+				)
+			);
+			const saver = createSceneSaver('s', 'a', () => {});
+			const saving = saver.save(save('x'.repeat(100_000)));
+			saving.catch(() => {});
+			await vi.advanceTimersByTimeAsync(SAVE_TIMEOUT_MS + 1000);
+			expect(aborted).toBe(false);
+			await vi.advanceTimersByTimeAsync(110_000);
+			expect(aborted).toBe(true);
 		} finally {
 			vi.useRealTimers();
 		}

@@ -72,6 +72,21 @@ test('security lists its groups under "On this page"', async ({ page }) => {
 		'aria-current',
 		'true'
 	);
+	// Scrolling to another group moves the mark with it.
+	await page.evaluate(() => document.getElementById('security-password')?.scrollIntoView());
+	await expect(contents.getByRole('link', { name: 'Password' })).toHaveAttribute(
+		'aria-current',
+		'true'
+	);
+	await expect(contents.getByRole('link', { name: 'Sessions' })).not.toHaveAttribute(
+		'aria-current'
+	);
+
+	// On a laptop-height window both lists stay, at full row height.
+	await page.setViewportSize({ width: 1280, height: 700 });
+	await expect(contents).toBeVisible();
+	const row = await contents.getByRole('link', { name: 'Email' }).boundingBox();
+	expect(row!.height).toBeGreaterThanOrEqual(28);
 
 	// Where the sidebar stacks above the content, the list is left out.
 	await page.setViewportSize({ width: 760, height: 900 });

@@ -215,7 +215,7 @@ Two things to keep separate: **entity autocomplete** (the ghost-text that comple
 - **Not a book-distribution platform.** Codex can publish reading pages to the web (see Public reading pages), and a story exports as a markdown archive or an EPUB, with published editions also carrying a page-setup-faithful PDF. It does not push your book into stores; DOCX with manuscript standards remains a someday-maybe, and the markdown archive stays the canonical full-fidelity export.
 - **Not a real-time collaboration tool.** Single-author-per-session is assumed. Review is async, not live: the guest-review role lets an invited reviewer leave threaded comments and suggested edits that the author resolves in their own time. There is no simultaneous multi-author editing.
 - **Not a feature-gated SaaS.** The hosted instance runs the same code anyone can install themselves, under the same MIT licence. There is no paid edition with extra features; if a difference between self-host and hosted ever appears, it will be operational (someone else runs the box) rather than functional (you get more features by paying).
-- **Not a mobile editing app.** Phones are too small to draft on meaningfully. Tablets in desktop mode work for review but aren't prioritised for authoring in v1. Narrow or zoomed windows stay usable: at 820px and narrower the editor and the review page show one pane at a time.
+- **Not a mobile editing app.** Phones are too small to draft on meaningfully. Tablets in desktop mode work for review but aren't prioritised for authoring in v1. Narrow or zoomed windows stay usable: at 960px and narrower the editor and the review page show one pane at a time. Plan, Notes and Insights keep their columns and scroll sideways.
 
 ## Technical shape
 

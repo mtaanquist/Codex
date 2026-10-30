@@ -75,20 +75,24 @@
 	margin: 0 -4px;
 	padding: 0 4px;
 }
-/* With an "On this page" list below it, the route list keeps its height and
-   the list takes the spare room instead. */
-.admin-nav.fit {
-	flex: 0 0 auto;
-}
+/* With an "On this page" list below it, both lists start at full height and
+   share any shortfall, each scrolling within at least a few rows. */
+.admin-nav.fit,
 .admin-sidebar > .contents-nav {
-	flex: 1 1 0;
+	flex: 0 1 auto;
 	min-height: 96px;
 	overflow-y: auto;
+}
+.admin-nav.fit > *,
+.admin-sidebar > .contents-nav > * {
+	flex: none;
+}
+.admin-sidebar > .contents-nav {
 	padding: 0;
 }
 /* Where the sidebar stacks above the content, or a short window leaves no
    room for it, the list goes; the headings are a scroll away. */
-@media (max-width: 820px), (max-height: 760px) {
+@media (max-width: 820px), (max-height: 640px) {
 	.admin-sidebar > .contents-nav,
 	.admin-sidebar > .admin-nav-label:has(+ .contents-nav) {
 		display: none;
@@ -341,6 +345,17 @@ a.nav-item {
 }
 /* Inside a bordered card the frame sets the measure; a tighter cap there
    makes the text look cut off against the empty remainder. */
+/* A link in a section's description: underlined in the body colour, as
+   prose links are everywhere. */
+.admin-block-sub a {
+	color: var(--text);
+	text-decoration: underline;
+	text-decoration-color: var(--border-strong);
+	text-underline-offset: 2px;
+}
+.admin-block-sub a:hover {
+	text-decoration-color: currentColor;
+}
 .admin-card .admin-block-sub {
 	max-width: none;
 }

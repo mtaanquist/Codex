@@ -36,6 +36,7 @@
 		onRevertSplit,
 		onInsert,
 		onReplaceSelection,
+		insertPaused = false,
 		getSelection,
 		reviewHref
 	}: {
@@ -85,6 +86,8 @@
 		// command's affordance. Passed alongside getSelection when a scene editor is
 		// open.
 		onReplaceSelection?: (text: string) => void;
+		// The scene is saving and swapping; Insert and Replace wait for it.
+		insertPaused?: boolean;
 		// The editor's current selection text, or null when nothing is selected.
 		// /rewrite needs it; only passed when a scene editor is open.
 		getSelection?: () => string | null;
@@ -730,6 +733,7 @@
 									class="msg-insert"
 									type="button"
 									title="Replace the selected passage with this rewrite"
+									disabled={insertPaused}
 									onclick={() => onReplaceSelection(message.content)}
 								>
 									<Icon name="plus" size={12} /> Replace selection
@@ -739,6 +743,7 @@
 									class="msg-insert"
 									type="button"
 									title="Insert this reply into the scene at the cursor"
+									disabled={insertPaused}
 									onclick={() => onInsert(message.content)}
 								>
 									<Icon name="plus" size={12} /> Insert at cursor
@@ -1115,9 +1120,13 @@
 		color: var(--text-faint);
 		cursor: pointer;
 	}
-	.msg-insert:hover {
+	.msg-insert:hover:not(:disabled) {
 		color: var(--accent-ink);
 		text-decoration: underline;
+	}
+	.msg-insert:disabled {
+		cursor: progress;
+		opacity: 0.6;
 	}
 	.msg-ref {
 		border-left: 2px solid var(--accent-contrast);
