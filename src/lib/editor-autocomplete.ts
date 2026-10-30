@@ -4,7 +4,7 @@ import { Prec, type Extension } from '@codemirror/state';
 import type { ViewUpdate, DecorationSet } from '@codemirror/view';
 import type { MentionEntity } from './editor-mentions';
 import { entityLetter } from './entity-color';
-import { badgeBackground, badgeImageSrc } from './entity-badge';
+import { badgeBackground, badgeImageSrc, letterFill } from './entity-badge';
 
 export type AutocompleteMode = 'off' | 'popup' | 'ghost';
 
@@ -135,11 +135,13 @@ function popupExtension(entities: MentionEntity[]): Extension {
 							badge.style.backgroundPosition = 'center';
 						} else {
 							badge.textContent = entityLetter(entity.name);
-							badge.style.background = badgeBackground({
-								name: entity.name,
-								badgeColor: entity.badgeColor,
-								categoryColor: entity.color
-							});
+							badge.style.background = letterFill(
+								badgeBackground({
+									name: entity.name,
+									badgeColor: entity.badgeColor,
+									categoryColor: entity.color
+								})
+							);
 						}
 						return badge;
 					}

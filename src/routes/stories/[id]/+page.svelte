@@ -121,12 +121,13 @@
 			pauseDepth--;
 			// A place clicked while a split, merge or duplicate ran: go there now.
 			// By URL even for Back or Forward, since the action may have added a
-			// history entry that would throw a replayed step off.
+			// history entry that would throw a replayed step off. Other goto
+			// options (replaceState, noScroll) are not visible to the guard.
 			const queued = queuedNavigation;
 			if (pauseDepth === 0 && queued && !destroyed) {
 				queuedNavigation = null;
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- a URL the writer already chose
-				void goto(queued.url);
+				void goto(queued.url, { refreshAll: queued.refresh });
 			}
 		}
 	}
@@ -147,7 +148,8 @@
 	// navigation. If one fails, the writer chooses: stay with the words on
 	// screen, or leave without them. A full unload is left to SceneEditor's
 	// own pagehide flush.
-	type Target = { url: URL; delta: number | undefined };
+	// refresh: a goto or form may have asked for fresh data, so the replay does.
+	type Target = { url: URL; delta: number | undefined; refresh: boolean };
 	let ownNavigation: string | null = null;
 	// Resolves the wait for a replayed Back or Forward to start.
 	let replayStarted: (() => void) | null = null;
@@ -158,7 +160,8 @@
 	const REPLAY_WAIT_MS = 1000;
 
 	// A navigation the page makes itself after its saves have landed; the
-	// guard lets it through.
+	// guard lets it through. Returns whether it arrived: another navigation
+	// can cut it short.
 	async function ownGoto(to: ResolvedPathname | URL, opts?: Parameters<typeof goto>[1]) {
 		const href = new URL(to, page.url.href).href;
 		ownNavigation = href;
@@ -168,6 +171,16 @@
 		} finally {
 			if (ownNavigation === href) ownNavigation = null;
 		}
+		return page.url.href === href;
+	}
+	// Opens a scene after a split, merge or duplicate changed the stored text,
+	// remounting every editor on the new text. If a Back or Forward cut the
+	// move short, this page's data is reloaded instead, so no editor keeps
+	// text the action replaced; the queued move runs once the pause ends.
+	async function openChangedScene(sceneId: string) {
+		if (!(await ownGoto(withQuery(storyPath, { scene: sceneId }), { refreshAll: true })))
+			await refreshAll();
+		editorNonce++;
 	}
 	let destroyed = false;
 	onDestroy(() => (destroyed = true));
@@ -188,7 +201,8 @@
 			return;
 		const target: Target = {
 			url: nav.to.url,
-			delta: nav.type === 'popstate' ? nav.delta : undefined
+			delta: nav.type === 'popstate' ? nav.delta : undefined,
+			refresh: nav.type !== 'link'
 		};
 		// A save is already being landed for an earlier navigation: go to the
 		// latest place clicked once it lands.
@@ -207,11 +221,9 @@
 		nav.cancel();
 		if (uploading() && !confirm(LEAVE_UPLOADING)) return;
 		heldNavigation = target;
-		// A goto or form may have asked for fresh data; the re-issued one does.
-		const navType = nav.type;
 		void pauseTypingWhile(async () => {
 			const saved = await flushEditors();
-			const { url, delta } = heldNavigation ?? target;
+			const { url, delta, refresh } = heldNavigation ?? target;
 			heldNavigation = null;
 			if (destroyed) return;
 			if (!saved && !confirm(LEAVE_UNSAVED)) return;
@@ -227,7 +239,7 @@
 				});
 				replayStarted = null;
 				ownNavigation = null;
-			} else await ownGoto(url, { refreshAll: navType !== 'link' });
+			} else await ownGoto(url, { refreshAll: refresh });
 		});
 	});
 
@@ -312,7 +324,7 @@
 	async function openSceneKeepingPane(sceneId: string) {
 		keepPaneOnNavigate = true;
 		try {
-			await ownGoto(withQuery(storyPath, { scene: sceneId }), { refreshAll: true });
+			await openChangedScene(sceneId);
 		} finally {
 			keepPaneOnNavigate = false;
 		}
@@ -445,8 +457,7 @@
 			const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
 			if (!result.ok) return alert(result.message);
 			mergeSelection.clear();
-			await ownGoto(withQuery(storyPath, { scene: result.targetSceneId }), { refreshAll: true });
-			editorNonce++;
+			await openChangedScene(result.targetSceneId);
 		});
 	}
 
@@ -461,7 +472,7 @@
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
 			const result = await duplicateSceneAction(data.story.id, sceneId);
 			if (!result.ok) return alert(result.message);
-			await ownGoto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
+			await openChangedScene(result.newSceneId);
 		});
 	}
 
@@ -494,7 +505,7 @@
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
 			const result = await splitSceneAction(sceneId, { offset: cursor.offset });
 			if (!result.ok) return alert(result.message);
-			await ownGoto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
+			await openChangedScene(result.newSceneId);
 		});
 	}
 
@@ -541,7 +552,6 @@
 			if (!result.ok) return result.message;
 			persistProposalState(data.story.id, proposal, null);
 			await openSceneKeepingPane(result.targetSceneId);
-			editorNonce++;
 			return null;
 		});
 	}

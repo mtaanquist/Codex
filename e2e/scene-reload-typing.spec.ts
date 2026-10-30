@@ -503,3 +503,34 @@ test('Back pressed during a split goes back past the scene that was split', asyn
 	// Where Back was heading when it was pressed, not the first half.
 	await expect(page).toHaveURL(secondUrl);
 });
+
+test('Back pressed while a split opens its new scene leaves no stale text behind', async ({
+	page
+}) => {
+	test.slow();
+	const { firstUrl, secondUrl } = await twoScenes(page, `BackOpen ${Date.now()}`);
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(secondUrl);
+	await page.locator('.scene-row').nth(0).click();
+	await expect(page).toHaveURL(firstUrl);
+	await editor(page).click();
+	await page.keyboard.type('First half.');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('Second half.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.keyboard.press('Home');
+
+	const splitDone = page.waitForResponse(/\/api\/scenes\/.*\/split/);
+	await slowSceneData(page);
+	await clickTool(page, 'Split scene at cursor');
+	await splitDone;
+	await page.goBack();
+	await expect(page).toHaveURL(secondUrl);
+	await expect(page.locator('.scene-row')).toHaveCount(3);
+	await page.unroute(SCENE_DATA);
+	await page.locator('.scene-row').nth(0).click();
+	await expect(page).toHaveURL(firstUrl);
+	await expect(editor(page)).toHaveText('First half.');
+	await expect(page.getByText(/changed in another window/)).toHaveCount(0);
+});
