@@ -73,3 +73,25 @@ test('a malformed or unknown timezone cookie renders in UTC, not an error', asyn
 		expect(shown.filter((time) => utc.includes(time)).length).toBeGreaterThan(0);
 	}
 });
+
+test('a zone the server does not know reloads the data once, not on every load', async ({
+	page
+}) => {
+	// The browser reports a zone name the server rejects (it falls back to UTC).
+	await page.addInitScript(() => {
+		const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+		Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+			return { ...resolved.call(this), timeZone: 'Mars/Olympus' };
+		};
+	});
+	let refreshes = 0;
+	page.on('request', (r) => {
+		if (r.url().includes('__data.json')) refreshes++;
+	});
+	await gotoReady(page, '/account/security');
+	await expect.poll(() => refreshes).toBe(1);
+	await gotoReady(page, '/account/security');
+	await gotoReady(page, '/account/security');
+	await page.waitForTimeout(500);
+	expect(refreshes).toBe(1);
+});

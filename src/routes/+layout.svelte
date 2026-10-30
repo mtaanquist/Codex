@@ -27,7 +27,7 @@
 	import { browser } from '$app/env';
 	import { applyAppearance } from '#lib/appearance-apply';
 	import { followSystemTheme } from '#lib/theme';
-	import { TIMEZONE_COOKIE, browserTimeZone } from '#lib/timezone';
+	import { TIMEZONE_COOKIE, TIMEZONE_TRIED_KEY, browserTimeZone } from '#lib/timezone';
 	import { refreshAll } from '$app/navigation';
 	import CommandPalette from '#lib/components/CommandPalette.svelte';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
@@ -60,13 +60,19 @@
 	// Times render on the author's clock. The server learns it from a cookie;
 	// on the first visit (or a changed clock) set it and reload the data once,
 	// so every time on the page re-renders in the right zone.
-	// Once per page load: a zone the server does not know comes back as UTC,
-	// and asking again would reload forever.
+	// Once per tab: a zone the server does not know comes back as UTC, and
+	// asking again would reload the data on every page load.
 	let timeZoneSent = false;
 	$effect(() => {
 		const timeZone = browserTimeZone();
 		if (timeZoneSent || !timeZone || timeZone === data.timeZone) return;
 		timeZoneSent = true;
+		try {
+			if (sessionStorage.getItem(TIMEZONE_TRIED_KEY) === timeZone) return;
+			sessionStorage.setItem(TIMEZONE_TRIED_KEY, timeZone);
+		} catch {
+			// No storage (a private window): fall back to once per page load.
+		}
 		const secure = location.protocol === 'https:' ? '; secure' : '';
 		document.cookie = `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; path=/; max-age=31536000; samesite=lax${secure}`;
 		void refreshAll();
