@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { appSettings } from './db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from './crypto.ts';
-import { SIGNUP_MODES, type SignupMode } from '#lib/signup-mode';
+import { SIGNUP_MODES, type SignupMode } from '../signup-mode.ts';
 
 const SMTP_KEY = 'smtp';
 const SIGNUP_KEY = 'signup';

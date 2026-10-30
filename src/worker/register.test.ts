@@ -29,4 +29,9 @@ describe('worker resolve hook', () => {
 		`);
 		expect(out).toBe('function true true');
 	});
+
+	it('resolves #lib modules named with a dot, such as x.svelte.ts', () => {
+		const out = runWithHooks(`console.log(import.meta.resolve('#lib/focus-mode.svelte'));`);
+		expect(out).toMatch(/src\/lib\/focus-mode\.svelte\.ts$/);
+	});
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { UnretryableSaveError } from './autosave';
-import { createSceneSaver } from './scene-saver';
+import { createSceneSaver, SAVE_TIMEOUT_MS } from './scene-saver';
 import { textHash } from './text-hash';
 
 type Sent = { baseHashes: string[]; overwrite?: boolean; bodyMd: string; keepalive?: boolean };
@@ -75,6 +75,28 @@ describe('createSceneSaver', () => {
 		for (const body of ['b', 'c', 'd', 'e']) await expect(saver.save(save(body))).rejects.toThrow();
 		await saver.save(save('f'));
 		expect(sent[4].baseHashes).toHaveLength(4);
+	});
+
+	it('gives up on a save with no answer, as a retryable network error', async () => {
+		vi.useFakeTimers();
+		try {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(
+					(_url: string, init: RequestInit) =>
+						new Promise((_resolve, reject) => {
+							init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+						})
+				)
+			);
+			const saver = createSceneSaver('s', 'a', () => {});
+			const saving = saver.save(save('ab'));
+			const outcome = expect(saving).rejects.not.toBeInstanceOf(UnretryableSaveError);
+			await vi.advanceTimersByTimeAsync(SAVE_TIMEOUT_MS);
+			await outcome;
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('sends a close-tab save as keepalive only when the body fits the cap', async () => {

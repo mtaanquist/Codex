@@ -261,6 +261,7 @@ Staging branch `staging/issue-review-2`, merged to main in one PR.
 - [x] Story workspace shows one pane at a time below 820px. (#737)
 - [x] SvelteKit 3 cleanup: `refreshAll`, `Response.json`, `snapshot()`, `#lib` subpath imports. (#752)
 - [x] No typing into a scene while the next one opens, a split or merge runs, or a failed save holds a switch. (#772)
+- [x] Review leftovers: backup scripts load under plain node, save requests time out, real-cookie timezone test, `#lib` loader and lint messages. (#786, #787, #788, #789)
 
 Follow-ups (open):
 

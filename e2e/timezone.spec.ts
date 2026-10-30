@@ -48,3 +48,28 @@ test('server-rendered times use the browser timezone once it is known', async ({
 	expect(utc.length).toBeGreaterThan(0);
 	expect(utc.filter((time) => auckland.includes(time))).toEqual([]);
 });
+
+test('a malformed or unknown timezone cookie renders in UTC, not an error', async ({
+	page,
+	context
+}) => {
+	await gotoReady(page, '/account/security');
+	const session = (await context.cookies()).filter((c) => c.name !== 'codex-tz');
+	// Sent as raw headers, so the server's own cookie parsing sees the bad value.
+	const render = async (zone: string) => {
+		const response = await page.request.get('/account/security', {
+			headers: {
+				cookie: [...session.map((c) => `${c.name}=${c.value}`), `codex-tz=${zone}`].join('; ')
+			}
+		});
+		expect(response.status()).toBe(200);
+		return [...(await response.text()).matchAll(/Last active ([^<]+)</g)].map((m) => m[1]);
+	};
+	const utc = await render('UTC');
+	expect(utc.length).toBeGreaterThan(0);
+	for (const zone of ['%E0%A4%A', 'Mars%2FOlympus']) {
+		// Overlap, not equality: a parallel spec can add or refresh a session row.
+		const shown = await render(zone);
+		expect(shown.filter((time) => utc.includes(time)).length).toBeGreaterThan(0);
+	}
+});
