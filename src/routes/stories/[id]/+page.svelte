@@ -7,7 +7,7 @@
 	import { refreshStoryLive } from './live';
 	import { altLabel, modLabel } from '#lib/keys';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { focusMode } from '#lib/focus-mode.svelte';
 	import { assistantIntent } from '#lib/assistant.svelte';
 	import { openReviewModal } from '#lib/review-modal.svelte';
@@ -93,7 +93,7 @@
 	// remounted editor then owns. Flush the open scene's pending save before
 	// any client navigation, the way splitCurrentScene already does. A full
 	// unload is left to SceneEditor's own pagehide flush.
-	let flushingNav = false;
+	let flushingNav = $state(false);
 	beforeNavigate((nav) => {
 		if (flushingNav || nav.willUnload || !nav.to) return;
 		// Same-document hash jumps (story-view scene anchors) reload nothing.
@@ -265,6 +265,19 @@
 
 	let saveStatus = $state<SaveStatus>('idle');
 	const selectedSceneId = $derived(data.selectedScene?.id);
+	// While another scene (or view) of this story is loading, the open scene
+	// stays on screen but takes no typing: words typed there would be saved to
+	// it and then vanish as the next scene replaces it (#772).
+	const leavingScene = $derived.by(() => {
+		// Landing the open scene's pending save before a navigation goes on.
+		if (flushingNav) return true;
+		const to = navigating.to?.url;
+		if (!to || !data.selectedScene || to.pathname !== page.url.pathname) return false;
+		return (
+			to.searchParams.get('scene') !== data.selectedScene.id ||
+			to.searchParams.get('view') !== page.url.searchParams.get('view')
+		);
+	});
 	$effect(() => {
 		void selectedSceneId;
 		saveStatus = 'idle';
@@ -833,6 +846,7 @@
 				{#key `${data.selectedScene.id}:${editorNonce}`}
 					<SceneEditor
 						bind:this={sceneEditor}
+						leaving={leavingScene}
 						{editorStyle}
 						onSplitScene={splitCurrentScene}
 						storyView={{ active: inWholeStory, toggleHref }}

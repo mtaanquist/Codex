@@ -12,7 +12,7 @@ On a narrow window, such as a phone or a zoomed-in browser, the editor shows one
 
 ## Scenes and chapters
 
-A scene holds one stretch of prose. Chapters group scenes in order. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
+A scene holds one stretch of prose. Chapters group scenes in order. When you pick another scene, the one on screen dims until the new one opens; it does not take typing in that moment, so wait for the new scene before you type. Drag a scene to move it between chapters; scenes without a chapter sit under "Unfiled scenes".
 
 Right-click a chapter in the sidebar to rename it, move it up or down, or delete it. Deleting a chapter keeps its scenes; they move to the unfiled list.
 
