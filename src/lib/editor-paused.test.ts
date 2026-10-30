@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EditorState } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import { landsWhilePaused, pausedExtension } from './editor-paused';
 
 const insert = (paused: boolean) => {
@@ -25,5 +26,14 @@ describe('pausedExtension', () => {
 			annotations: landsWhilePaused.of(true)
 		}).state;
 		expect(next.doc.toString()).toBe('Words. Image.');
+	});
+
+	it('marks the text box busy only while paused', () => {
+		const busy = (paused: boolean) =>
+			EditorState.create({ extensions: pausedExtension(paused) })
+				.facet(EditorView.contentAttributes)
+				.some((attrs) => typeof attrs === 'object' && attrs['aria-busy'] === 'true');
+		expect(busy(true)).toBe(true);
+		expect(busy(false)).toBe(false);
 	});
 });

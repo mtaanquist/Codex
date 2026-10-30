@@ -1053,6 +1053,7 @@
 								summarised={data.assistantChatSummarised}
 								onConfirmSplit={confirmAssistantSplit}
 								onRevertSplit={revertAssistantSplit}
+								insertPaused={leavingScene}
 								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 								onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 									? (text) => {

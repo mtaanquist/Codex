@@ -535,7 +535,7 @@
 		oncontextmenu={onPaneContextMenu}
 	>
 		{#if conflict}
-			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+			<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} paused={leaving} />
 		{/if}
 		<div class="editor-cm" bind:this={editorEl}></div>
 	</div>
@@ -562,6 +562,7 @@
 				{sceneId}
 				onInserted={scheduleSave}
 				onClose={() => (coauthorOpen = false)}
+				paused={leaving}
 			/>
 		{/if}
 		<div
@@ -570,9 +571,9 @@
 			bind:this={scrollEl}
 			oncontextmenu={onPaneContextMenu}
 		>
-			<div class="editor" class:is-leaving={leaving} aria-busy={leaving} style={editorStyle}>
+			<div class="editor" class:is-leaving={leaving} style={editorStyle}>
 				{#if conflict}
-					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
+					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} paused={leaving} />
 				{/if}
 				<input
 					class="editor-title-input"
