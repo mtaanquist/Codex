@@ -28,6 +28,10 @@ export type SceneSaver = {
 	rebase: (bodyMd: string, fromHash: string) => void;
 };
 
+// A save that gets no answer in this time counts as a network error, so the
+// autosave retries it and a page waiting on it is not held indefinitely.
+export const SAVE_TIMEOUT_MS = 30_000;
+
 // The server accepts at most four fingerprints: the base plus the most recent
 // unsettled attempts.
 const MAX_PENDING = 3;
@@ -66,12 +70,21 @@ export function createSceneSaver(
 				baseHashes,
 				overwrite: sendOverwrite || undefined
 			});
-			const response = await fetch(`/api/scenes/${sceneId}`, {
-				method: 'PUT',
-				headers: { 'content-type': 'application/json' },
-				keepalive: keepalive && keepaliveFits(body),
-				body
-			});
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS);
+			let response: Response;
+			try {
+				response = await fetch(`/api/scenes/${sceneId}`, {
+					method: 'PUT',
+					headers: { 'content-type': 'application/json' },
+					keepalive: keepalive && keepaliveFits(body),
+					body,
+					// The close-tab save outlives the page; nothing waits on it.
+					signal: keepalive ? undefined : controller.signal
+				});
+			} finally {
+				clearTimeout(timer);
+			}
 			settle(hash);
 			if (response.status === 409) {
 				const conflict = (await response.json()) as SceneConflict;

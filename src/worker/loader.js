@@ -42,7 +42,9 @@ export function resolve(specifier, context, nextResolve) {
 	if (specifier === '$app/env/private') {
 		return { url: envShim, shortCircuit: true };
 	}
-	if (specifier.startsWith('#lib/') && !/\.[a-z0-9]+$/i.test(specifier)) {
+	// Every #lib specifier goes through the candidates, extension or not, so
+	// `#lib/x.svelte` finds `x.svelte.ts` the way Vite does.
+	if (specifier.startsWith('#lib/')) {
 		const resolved = resolveFile(new URL(specifier.slice('#lib/'.length), libBase));
 		if (resolved) return { url: resolved, shortCircuit: true };
 	} else if (
