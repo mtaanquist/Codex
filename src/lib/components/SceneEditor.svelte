@@ -60,7 +60,8 @@
 		commandMarkers = 'shown',
 		onToggleNonPrinting,
 		onToggleCommandMarkers,
-		onStatus
+		onStatus,
+		leaving = false
 	}: {
 		sceneId: string;
 		// The owning story; continuation posts it so the server can gate and scope.
@@ -78,6 +79,9 @@
 		spellCheck?: 'on' | 'off';
 		writingLanguage?: string;
 		markers?: SceneMarker[];
+		// The page is switching to another scene: the text stays on screen but
+		// takes no input, so nothing is typed into a scene about to be replaced.
+		leaving?: boolean;
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
 		imageUniverseId?: string;
@@ -141,6 +145,7 @@
 	// The toolbar toggles flip these at runtime.
 	const nonPrintingCompartment = new Compartment();
 	const alignmentCompartment = new Compartment();
+	const leavingCompartment = new Compartment();
 	// svelte-ignore state_referenced_locally
 	let markerHandle: MarkerHandle = markerExtensions(markers, markSelection);
 
@@ -344,6 +349,11 @@
 		view.dispatch({ effects: nonPrintingCompartment.reconfigure(extension) });
 	});
 	$effect(() => {
+		const extension = EditorState.readOnly.of(leaving);
+		if (!view) return;
+		view.dispatch({ effects: leavingCompartment.reconfigure(extension) });
+	});
+	$effect(() => {
 		const extension = commandMarkerExtensions(commandMarkers);
 		if (!view) return;
 		view.dispatch({ effects: alignmentCompartment.reconfigure(extension) });
@@ -470,6 +480,7 @@
 					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
+					leavingCompartment.of(EditorState.readOnly.of(leaving)),
 					assistantContinuation && storyId ? continuationExtensions(storyId) : [],
 					boundaryKeymap(),
 					onFocus
@@ -538,7 +549,7 @@
 			bind:this={scrollEl}
 			oncontextmenu={onPaneContextMenu}
 		>
-			<div class="editor" style={editorStyle}>
+			<div class="editor" class:is-leaving={leaving} aria-busy={leaving} style={editorStyle}>
 				{#if conflict}
 					<SceneConflictBanner onLoadNewer={loadNewer} onKeepMine={keepMine} />
 				{/if}
@@ -547,6 +558,7 @@
 					type="text"
 					placeholder="Untitled scene"
 					bind:value={titleValue}
+					readonly={leaving}
 					oninput={scheduleSave}
 					onchange={flushTitle}
 				/>
@@ -584,6 +596,11 @@
 	}
 	.editor-title-input::placeholder {
 		color: var(--text-faint);
+	}
+	.editor.is-leaving {
+		opacity: 0.55;
+		cursor: progress;
+		transition: opacity 0.15s ease 0.1s;
 	}
 	.editor.compact :global(.editor-cm) {
 		min-height: 0;
