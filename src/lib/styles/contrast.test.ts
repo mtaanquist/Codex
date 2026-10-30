@@ -50,7 +50,9 @@ const AUTHOR_FILL_SHARE = 65;
 
 // Raw colour tokens that miss AA as text in some theme. Text takes the -ink
 // twin (or, for a per-element colour, the --ink-share mix) instead.
-const RAW_TEXT = /(?<![-\w])color:\s*var\(--(accent|danger|status-[a-z]+|cat-[a-z]+|auth)\)/;
+// Matches a CSS declaration and a Svelte style:color directive.
+const RAW_TEXT =
+	/(?<![-\w])(color:\s*|style:color=["{]?['"]?)var\(--(accent|danger|status-[a-z]+|cat-[a-z]+|auth)\)/;
 
 function sourceFiles(dir: string): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -70,6 +72,12 @@ describe('token contrast', () => {
 				.map(({ index }) => `${file.slice(process.cwd().length + 1)}:${index + 1}`)
 		);
 		expect(offenders).toEqual([]);
+	});
+
+	it('catches a raw colour set with a style directive', () => {
+		expect(RAW_TEXT.test('<span style:color="var(--danger)">')).toBe(true);
+		expect(RAW_TEXT.test("<span style:color={'var(--cat-red)'}>")).toBe(true);
+		expect(RAW_TEXT.test('color: var(--danger-ink);')).toBe(false);
 	});
 
 	it('uses one author fill share wherever white sits on an author colour', () => {
