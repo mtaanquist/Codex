@@ -1058,6 +1058,13 @@ links) was closed as not planned: no base path is configured or planned.
   sidebar with the route list and follows scrolling, pane tabs apply up to
   960px while Plan and Notes scroll sideways inside the body, and a
   timezone the server rejects is reported once per tab.
+  Round 5 (after those fixes) found that a Back clicked during a split could
+  land one step off (queued moves now replay by URL), that leaving during an
+  upload stored its placeholder (the save now leaves pending uploads out and
+  maps marker anchors past them), and that "On this page" used a fixed line
+  that missed Insights' own scroller and the last groups on Security (the
+  line now follows the scroller and the heading's scroll margin, and at the
+  bottom the section jumped to wins). Leftover lows are in #805.
 
 Under parallel load a few e2e specs (notes, import-story, two-factor,
 author-review) fail about once a run on staging as well; not chased this round.
