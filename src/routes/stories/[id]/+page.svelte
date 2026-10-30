@@ -119,6 +119,14 @@
 			return await work();
 		} finally {
 			pauseDepth--;
+			// A place clicked while a split, merge or duplicate ran: go there now.
+			const queued = queuedNavigation;
+			if (pauseDepth === 0 && queued && !destroyed) {
+				queuedNavigation = null;
+				if (queued.delta) history.go(queued.delta);
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- a URL the writer already chose
+				else void goto(queued.url);
+			}
 		}
 	}
 
@@ -138,8 +146,28 @@
 	// navigation. If one fails, the writer chooses: stay with the words on
 	// screen, or leave without them. A full unload is left to SceneEditor's
 	// own pagehide flush.
+	type Target = { url: URL; delta: number | undefined };
 	let ownNavigation: string | null = null;
-	let heldNavigation: { url: URL; delta: number | undefined } | null = null;
+	// Resolves the wait for a replayed Back or Forward to start.
+	let replayStarted: (() => void) | null = null;
+	// The latest place clicked while the guard lands a save, or while a
+	// split, merge or duplicate runs.
+	let heldNavigation: Target | null = null;
+	let queuedNavigation: Target | null = null;
+	const REPLAY_WAIT_MS = 1000;
+
+	// A navigation the page makes itself after its saves have landed; the
+	// guard lets it through.
+	async function ownGoto(to: ResolvedPathname | URL, opts?: Parameters<typeof goto>[1]) {
+		const href = new URL(to, page.url.href).href;
+		ownNavigation = href;
+		try {
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved by the caller
+			await goto(to, opts);
+		} finally {
+			if (ownNavigation === href) ownNavigation = null;
+		}
+	}
 	let destroyed = false;
 	onDestroy(() => (destroyed = true));
 	beforeNavigate((nav) => {
@@ -147,6 +175,7 @@
 		// The navigation this guard re-issues once the saves have landed.
 		if (nav.to.url.href === ownNavigation) {
 			ownNavigation = null;
+			replayStarted?.();
 			return;
 		}
 		// Same-document hash jumps (story-view scene anchors) reload nothing.
@@ -156,7 +185,7 @@
 			nav.to.url.search === nav.from.url.search
 		)
 			return;
-		const target = {
+		const target: Target = {
 			url: nav.to.url,
 			delta: nav.type === 'popstate' ? nav.delta : undefined
 		};
@@ -167,23 +196,37 @@
 			heldNavigation = target;
 			return;
 		}
+		// A split, merge or duplicate is running: go once it is done.
+		if (typingPaused) {
+			nav.cancel();
+			queuedNavigation = target;
+			return;
+		}
 		if (!openEditors().some((editor) => editor.isDirty()) && !uploading()) return;
 		nav.cancel();
-		// A split, merge or duplicate is running and will navigate itself.
-		if (typingPaused) return;
 		if (uploading() && !confirm(LEAVE_UPLOADING)) return;
 		heldNavigation = target;
+		// A goto or form may have asked for fresh data; the re-issued one does.
+		const navType = nav.type;
 		void pauseTypingWhile(async () => {
 			const saved = await flushEditors();
 			const { url, delta } = heldNavigation ?? target;
 			heldNavigation = null;
 			if (destroyed) return;
 			if (!saved && !confirm(LEAVE_UNSAVED)) return;
-			ownNavigation = url.href;
 			// Back and Forward move through history rather than adding to it.
-			if (delta) history.go(delta);
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the URL this navigation was already heading to
-			else await goto(url);
+			// Stay paused until the move starts; if it never does (the entry
+			// is gone), stop waiting and drop the exemption.
+			if (delta) {
+				ownNavigation = url.href;
+				await new Promise<void>((resolve) => {
+					replayStarted = resolve;
+					history.go(delta);
+					setTimeout(resolve, REPLAY_WAIT_MS);
+				});
+				replayStarted = null;
+				ownNavigation = null;
+			} else await ownGoto(url, { refreshAll: navType !== 'link' });
 		});
 	});
 
@@ -259,9 +302,6 @@
 	// Set while an Assistant proposal card changes scene, so the chat stays open.
 	let keepPaneOnNavigate = false;
 	afterNavigate(({ from, to, type }) => {
-		// A replayed Back or Forward that never fired must not exempt a later
-		// navigation to the same place from the save guard.
-		ownNavigation = null;
 		if (keepPaneOnNavigate) return;
 		// A followed link (even to the scene already open) or a different scene,
 		// view or anchor; not a data refresh of this one.
@@ -271,7 +311,7 @@
 	async function openSceneKeepingPane(sceneId: string) {
 		keepPaneOnNavigate = true;
 		try {
-			await goto(withQuery(storyPath, { scene: sceneId }), { refreshAll: true });
+			await ownGoto(withQuery(storyPath, { scene: sceneId }), { refreshAll: true });
 		} finally {
 			keepPaneOnNavigate = false;
 		}
@@ -404,7 +444,7 @@
 			const result = await mergeScenesAction(data.story.id, [...mergeSelection]);
 			if (!result.ok) return alert(result.message);
 			mergeSelection.clear();
-			await goto(withQuery(storyPath, { scene: result.targetSceneId }), { refreshAll: true });
+			await ownGoto(withQuery(storyPath, { scene: result.targetSceneId }), { refreshAll: true });
 			editorNonce++;
 		});
 	}
@@ -420,7 +460,7 @@
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
 			const result = await duplicateSceneAction(data.story.id, sceneId);
 			if (!result.ok) return alert(result.message);
-			await goto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
+			await ownGoto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
 		});
 	}
 
@@ -453,7 +493,7 @@
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
 			const result = await splitSceneAction(sceneId, { offset: cursor.offset });
 			if (!result.ok) return alert(result.message);
-			await goto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
+			await ownGoto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
 		});
 	}
 
