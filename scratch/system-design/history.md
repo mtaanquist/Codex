@@ -1027,9 +1027,13 @@ links) was closed as not planned: no base path is configured or planned.
   independent review of staging then found the same gap around split, merge
   and the Assistant's split cards, no guard in the whole-story view, and a
   failed save turning the pre-navigation flush into an endless retry loop. All
-  of these now go through one `pauseTypingWhile` plus `flushEditors` pair; a
-  failed save holds the writer on the scene with a message instead of
-  navigating.
+  of these now go through one `pauseTypingWhile` plus `flushEditors` pair. A
+  second review found the guard ignored a save already on its way (it read
+  `dirty`, which clears when the request leaves; it now reads
+  `hasUnsaved`), Duplicate did not flush, Back and Forward were re-issued as
+  new history entries, and a hard stop on a failed save trapped a writer whose
+  save could never succeed (a conflict, a 403). A failed save now asks
+  whether to leave without the latest changes.
 
 Under parallel load a few e2e specs (notes, import-story, two-factor,
 author-review) fail about once a run on staging as well; not chased this round.

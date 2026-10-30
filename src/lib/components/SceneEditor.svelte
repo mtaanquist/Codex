@@ -265,11 +265,12 @@
 		await autosave.flush();
 	}
 
-	// Whether an edit is waiting in the debounce window. The page uses this to
+	// Whether any words are not yet stored: an edit waiting in the debounce
+	// window, a failed save, or one still on its way. The page uses this to
 	// flush before navigating away, so a quick scene round-trip never reloads
-	// stale prose over a save still in flight.
+	// stale prose and a save that fails late is not lost with the editor.
 	export function isDirty(): boolean {
-		return autosave.isDirty();
+		return autosave.hasUnsaved();
 	}
 
 	// The continuous view's shared formatting toolbar runs its commands on
@@ -281,7 +282,7 @@
 	// Inserts text at the caret, like the coauthor panel's Insert does; the
 	// Assistant tab uses it to drop a chat reply into the scene.
 	export function insertAtCursor(text: string) {
-		if (!view || !text) return;
+		if (!view || !text || leaving) return;
 		const head = view.state.selection.main.head;
 		view.dispatch({
 			changes: { from: head, insert: text },
@@ -305,7 +306,7 @@
 	// nothing is selected. The /rewrite affordance drops its rewrite in over the
 	// passage it rewrote.
 	export function replaceSelection(text: string) {
-		if (!view || !text) return;
+		if (!view || !text || leaving) return;
 		const { from, to } = view.state.selection.main;
 		view.dispatch({
 			changes: { from, to, insert: text },

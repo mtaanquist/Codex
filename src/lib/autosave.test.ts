@@ -77,6 +77,19 @@ describe('createAutosave', () => {
 		expect(autosave.isDirty()).toBe(false);
 	});
 
+	it('hasUnsaved covers a save still on its way', async () => {
+		const { calls, save } = manualSave();
+		const autosave = createAutosave({ debounceMs: 100, save });
+		autosave.schedule();
+		vi.advanceTimersByTime(100);
+		await tick();
+		expect(autosave.isDirty()).toBe(false);
+		expect(autosave.hasUnsaved()).toBe(true);
+		calls[0].resolve();
+		await tick();
+		expect(autosave.hasUnsaved()).toBe(false);
+	});
+
 	it('a failed save restores dirty and reports error', async () => {
 		const { calls, save } = manualSave();
 		const seen: SaveStatus[] = [];

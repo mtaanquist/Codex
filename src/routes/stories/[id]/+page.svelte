@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { withQuery } from '#lib/href';
-	import { onMount, tick, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { afterNavigate, beforeNavigate, goto, refreshAll, snapshot } from '$app/navigation';
 	import { refreshStoryLive } from './live';
@@ -114,17 +114,27 @@
 		}
 	}
 
+	const LEAVE_UNSAVED =
+		'The latest changes to this scene could not be saved. Leave anyway and lose them? Cancel to stay on the scene.';
 	const SAVE_FAILED =
 		'The scene could not be saved, so nothing was changed. Try again in a moment.';
 
 	// A quick scene round-trip (A to B and back) faster than the debounced
 	// save lands would let the reload of A return stale prose, which the
 	// remounted editor then owns. Flush pending saves before any client
-	// navigation; if one fails, stay put with its error showing rather than
-	// load the next page without those words. A full unload is left to
-	// SceneEditor's own pagehide flush.
+	// navigation. If one fails, the writer chooses: stay with the words on
+	// screen, or leave without them. A full unload is left to SceneEditor's
+	// own pagehide flush.
+	let ownNavigation: string | null = null;
+	let destroyed = false;
+	onDestroy(() => (destroyed = true));
 	beforeNavigate((nav) => {
-		if (typingPaused || nav.willUnload || !nav.to) return;
+		if (nav.willUnload || !nav.to) return;
+		// The navigation this guard re-issues once the saves have landed.
+		if (nav.to.url.href === ownNavigation) {
+			ownNavigation = null;
+			return;
+		}
 		// Same-document hash jumps (story-view scene anchors) reload nothing.
 		if (
 			nav.from &&
@@ -134,11 +144,19 @@
 			return;
 		if (!openEditors().some((editor) => editor.isDirty())) return;
 		nav.cancel();
-		const url = nav.to.url;
+		// A save is already being landed for an earlier navigation.
+		if (typingPaused) return;
+		const { url } = nav.to;
+		const delta = nav.type === 'popstate' ? nav.delta : undefined;
 		void pauseTypingWhile(async () => {
+			const saved = await flushEditors();
+			if (destroyed) return;
+			if (!saved && !confirm(LEAVE_UNSAVED)) return;
+			ownNavigation = url.href;
+			// Back and Forward move through history rather than adding to it.
+			if (delta) history.go(delta);
 			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the URL this navigation was already heading to
-			if (await flushEditors()) await goto(url);
-			else alert('The scene could not be saved, so it stays open. Try again in a moment.');
+			else await goto(url);
 		});
 	});
 
@@ -207,17 +225,15 @@
 	// Switches pane without the tab bar. On a narrow window, if that hid the
 	// focused control (or a navigation reset focus to the page), focus moves
 	// to the pane now shown so the next Tab starts there.
+	// Rendered at all; checkVisibility() is missing before Safari 17.4.
+	const isShown = (el: Element) => el.getClientRects().length > 0;
 	async function showPane(tab: PaneTab) {
 		if (paneTab === tab) return;
 		paneTab = tab;
 		await tick();
-		if (!paneTabsEl?.checkVisibility()) return;
+		if (!paneTabsEl || !isShown(paneTabsEl)) return;
 		const focused = document.activeElement;
-		if (
-			!(focused instanceof HTMLElement) ||
-			focused === document.body ||
-			!focused.checkVisibility()
-		)
+		if (!(focused instanceof HTMLElement) || focused === document.body || !isShown(focused))
 			paneEls[tab]?.focus({ preventScroll: true });
 	}
 	// Set while an Assistant proposal card changes scene, so the chat stays open.
@@ -370,12 +386,13 @@
 	// scene as a reusable template.
 	async function duplicateScene(sceneId: string) {
 		rowMenu = null;
-		const result = await duplicateSceneAction(data.story.id, sceneId);
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		await goto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
+		await pauseTypingWhile(async () => {
+			// The copy is made from the stored text, so pending saves land first.
+			if (!(await flushEditors())) return alert(SAVE_FAILED);
+			const result = await duplicateSceneAction(data.story.id, sceneId);
+			if (!result.ok) return alert(result.message);
+			await goto(withQuery(storyPath, { scene: result.newSceneId }), { refreshAll: true });
+		});
 	}
 
 	// Opens the review modal for a scene or chapter from the sidebar row menu;
@@ -963,13 +980,19 @@
 								onRevertSplit={revertAssistantSplit}
 								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 								onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? (text) => sceneEditor?.insertAtCursor(text)
+									? (text) => {
+											void showPane('read');
+											sceneEditor?.insertAtCursor(text);
+										}
 									: undefined}
 								getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
 									? () => sceneEditor?.getSelectionText() ?? null
 									: undefined}
 								onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? (text) => sceneEditor?.replaceSelection(text)
+									? (text) => {
+											void showPane('read');
+											sceneEditor?.replaceSelection(text);
+										}
 									: undefined}
 							/>
 						{:else if id === 'history' && data.selectedScene}

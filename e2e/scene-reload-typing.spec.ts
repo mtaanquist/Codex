@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 import { clickTool } from './toolbar';
+import { openRowMenu } from './context-menu';
 
 // Typing while a scene change is loading (#772). The open scene stays on
 // screen until the next one's data lands; words typed into it in that moment
@@ -112,7 +113,9 @@ test('clicking the open scene keeps what is typed straight after', async ({ page
 	await expect(page.locator('.cm-content')).toContainText(text);
 });
 
-test('a failed save keeps the scene open and editable instead of switching', async ({ page }) => {
+test('a failed save asks before switching, and staying keeps the scene editable', async ({
+	page
+}) => {
 	test.slow();
 	await newStory(page, `Offline ${Date.now()}`);
 	const firstUrl = page.url();
@@ -131,13 +134,14 @@ test('a failed save keeps the scene open and editable instead of switching', asy
 	const dialogs: string[] = [];
 	page.on('dialog', (dialog) => {
 		dialogs.push(dialog.message());
-		void dialog.accept();
+		// Cancel: stay on the scene.
+		void dialog.dismiss();
 	});
 	await editor(page).click();
 	await page.keyboard.type('Held here.');
 	await page.locator('.scene-row').nth(1).click();
 
-	// One save attempt and a message, not a loop; the scene stays and still types.
+	// One save attempt and a question, not a loop; the scene stays and still types.
 	await expect.poll(() => dialogs.length).toBe(1);
 	expect(dialogs[0]).toContain('could not be saved');
 	await page.waitForTimeout(1000);
@@ -201,4 +205,68 @@ test('words typed in the whole-story view are saved before a scene opens', async
 	await expect(page).not.toHaveURL(/view=story/);
 	await expect(page.locator('.cm-content')).toContainText('Written in the flow.');
 	await expect(page.getByRole('button', { name: /Keep mine/ })).toHaveCount(0);
+});
+
+/** A story with two scenes, the first open; returns both scene URLs. */
+async function twoScenes(page: Page, name: string) {
+	await newStory(page, name);
+	const firstUrl = page.url();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(2);
+	await expect(page).not.toHaveURL(firstUrl);
+	const secondUrl = page.url();
+	await gotoReady(page, firstUrl);
+	return { firstUrl, secondUrl };
+}
+
+test('a save that fails on its way out still holds the switch', async ({ page }) => {
+	test.slow();
+	const { firstUrl } = await twoScenes(page, `Late ${Date.now()}`);
+	await page.route('**/api/scenes/**', async (route) => {
+		if (route.request().method() !== 'PUT') return route.continue();
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		await route.fulfill({ status: 503, body: 'down' });
+	});
+	const dialogs: string[] = [];
+	page.on('dialog', (dialog) => {
+		dialogs.push(dialog.message());
+		void dialog.dismiss();
+	});
+	await editor(page).click();
+	const sent = page.waitForRequest((r) => r.url().includes('/api/scenes/') && r.method() === 'PUT');
+	await page.keyboard.type('Sent but not stored.');
+	// Switch while that save is still on its way.
+	await sent;
+	await page.locator('.scene-row').nth(1).click();
+	await expect.poll(() => dialogs.length).toBe(1);
+	await expect(page).toHaveURL(firstUrl);
+	await expect(page.locator('.cm-content')).toContainText('Sent but not stored.');
+});
+
+test('a duplicate includes the words typed just before it', async ({ page }) => {
+	test.slow();
+	await newStory(page, `Copy ${Date.now()}`);
+	await editor(page).click();
+	await page.keyboard.type('Copied in full.');
+	await (
+		await openRowMenu(page, page.locator('.scene-row').nth(0))
+	)
+		.getByRole('menuitem', { name: 'Duplicate scene' })
+		.click();
+	await expect(page.locator('.scene-row')).toHaveCount(2);
+	await expect(page.locator('.cm-content')).toContainText('Copied in full.');
+});
+
+test('Back straight after typing saves first and keeps Forward', async ({ page }) => {
+	test.slow();
+	const { firstUrl, secondUrl } = await twoScenes(page, `Hist ${Date.now()}`);
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(secondUrl);
+	await editor(page).click();
+	await page.keyboard.type('Before going back.');
+	await page.goBack();
+	await expect(page).toHaveURL(firstUrl);
+	await page.goForward();
+	await expect(page).toHaveURL(secondUrl);
+	await expect(page.locator('.cm-content')).toContainText('Before going back.');
 });
