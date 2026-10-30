@@ -87,6 +87,8 @@ test('security lists its groups under "On this page"', async ({ page }) => {
 	await expect(contents).toBeVisible();
 	const row = await contents.getByRole('link', { name: 'Email' }).boundingBox();
 	expect(row!.height).toBeGreaterThanOrEqual(28);
+	// The route list keeps its full height; the contents list gives way.
+	await expect(page.getByRole('link', { name: 'Page setup' })).toBeInViewport({ ratio: 0.95 });
 
 	// Where the sidebar stacks above the content, the list is left out.
 	await page.setViewportSize({ width: 760, height: 900 });

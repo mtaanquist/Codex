@@ -100,6 +100,12 @@ test('insights: words written show up in progress and the heatmap', async ({ pag
 	await expect(sessions.getByRole('heading', { name: 'Writing sessions' })).toBeVisible();
 	await expect(sessions.locator('.week-row .week-day.today')).toBeVisible();
 
+	// "On this page" marks the section a jump lands on.
+	for (const name of ['Writing sessions', 'Stories']) {
+		await contents.getByRole('link', { name }).click();
+		await expect(contents.getByRole('link', { name })).toHaveAttribute('aria-current', 'true');
+	}
+
 	// Hiding the streak on the account page drops the week strip; the word
 	// counts stay. Restore it for the other specs.
 	await gotoReady(page, '/account');

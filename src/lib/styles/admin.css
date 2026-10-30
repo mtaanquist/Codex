@@ -75,8 +75,9 @@
 	margin: 0 -4px;
 	padding: 0 4px;
 }
-/* With an "On this page" list below it, both lists start at full height and
-   share any shortfall, each scrolling within at least a few rows. */
+/* With an "On this page" list below it, both lists start at full height.
+   The contents list gives up space first, down to a few rows; only then
+   does the route list scroll too. */
 .admin-nav.fit,
 .admin-sidebar > .contents-nav {
 	flex: 0 1 auto;
@@ -88,6 +89,7 @@
 	flex: none;
 }
 .admin-sidebar > .contents-nav {
+	flex-shrink: 1000;
 	padding: 0;
 }
 /* Where the sidebar stacks above the content, or a short window leaves no
@@ -343,8 +345,6 @@ a.nav-item {
 	margin: 5px 0 0;
 	max-width: 60ch;
 }
-/* Inside a bordered card the frame sets the measure; a tighter cap there
-   makes the text look cut off against the empty remainder. */
 /* A link in a section's description: underlined in the body colour, as
    prose links are everywhere. */
 .admin-block-sub a {
@@ -356,6 +356,8 @@ a.nav-item {
 .admin-block-sub a:hover {
 	text-decoration-color: currentColor;
 }
+/* Inside a bordered card the frame sets the measure; a tighter cap there
+   makes the text look cut off against the empty remainder. */
 .admin-card .admin-block-sub {
 	max-width: none;
 }
