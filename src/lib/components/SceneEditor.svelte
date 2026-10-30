@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+	import { pausedExtension } from '#lib/editor-paused';
 	import type { ResolvedPathname } from '$app/types';
 	import { onMount } from 'svelte';
 	import { createAutosave } from '#lib/autosave';
@@ -350,7 +351,7 @@
 		view.dispatch({ effects: nonPrintingCompartment.reconfigure(extension) });
 	});
 	$effect(() => {
-		const extension = EditorState.readOnly.of(leaving);
+		const extension = pausedExtension(leaving);
 		if (!view) return;
 		view.dispatch({ effects: leavingCompartment.reconfigure(extension) });
 	});
@@ -481,7 +482,7 @@
 					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),
 					markersCompartment.of(markerHandle.extension),
-					leavingCompartment.of(EditorState.readOnly.of(leaving)),
+					leavingCompartment.of(pausedExtension(leaving)),
 					assistantContinuation && storyId ? continuationExtensions(storyId) : [],
 					boundaryKeymap(),
 					onFocus
@@ -510,6 +511,8 @@
 {#if compact}
 	<div
 		class="editor compact"
+		class:is-leaving={leaving}
+		aria-busy={leaving}
 		role="presentation"
 		style={editorStyle}
 		oncontextmenu={onPaneContextMenu}

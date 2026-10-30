@@ -75,11 +75,10 @@
 	margin: 0 -4px;
 	padding: 0 4px;
 }
-/* With an "On this page" list below it, the list takes the spare room; on a
-   short window both scroll, and each keeps a few rows in view. */
+/* With an "On this page" list below it, the route list keeps its height and
+   the list takes the spare room instead. */
 .admin-nav.fit {
-	flex: 0 1 auto;
-	min-height: 96px;
+	flex: 0 0 auto;
 }
 .admin-sidebar > .contents-nav {
 	flex: 1 1 0;
@@ -87,9 +86,9 @@
 	overflow-y: auto;
 	padding: 0;
 }
-/* Where the sidebar stacks above the content, the list would push the
-   settings a screen down; the headings are a scroll away. */
-@media (max-width: 820px) {
+/* Where the sidebar stacks above the content, or a short window leaves no
+   room for it, the list goes; the headings are a scroll away. */
+@media (max-width: 820px), (max-height: 640px) {
 	.admin-sidebar > .contents-nav,
 	.admin-sidebar > .admin-nav-label:has(+ .contents-nav) {
 		display: none;

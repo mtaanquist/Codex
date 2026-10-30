@@ -414,6 +414,7 @@
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'nav'}
+			aria-pressed={mobileTab === 'nav'}
 			type="button"
 			onclick={() => (mobileTab = 'nav')}
 		>
@@ -422,6 +423,7 @@
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'read'}
+			aria-pressed={mobileTab === 'read'}
 			type="button"
 			onclick={() => (mobileTab = 'read')}
 		>
@@ -430,6 +432,7 @@
 		<button
 			class="seg-btn"
 			class:active={mobileTab === 'notes'}
+			aria-pressed={mobileTab === 'notes'}
 			type="button"
 			onclick={() => (mobileTab = 'notes')}
 		>
