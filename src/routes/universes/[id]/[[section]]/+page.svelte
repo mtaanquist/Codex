@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { CATEGORY_COLORS, entityColor } from '#lib/entity-color';
+	import { letterFill } from '#lib/entity-badge';
 	import Icon from '#lib/components/Icon.svelte';
 	import ImportStoryModal from '#lib/components/ImportStoryModal.svelte';
 	import ExportPanel from '#lib/components/ExportPanel.svelte';
@@ -170,7 +171,10 @@
 	{/snippet}
 	{#snippet sidebar()}
 		<div class="admin-sidebar-title">
-			<span class="ic badge sm" style="background: {universeColor}; color: var(--on-color);">
+			<span
+				class="ic badge sm"
+				style="background: {letterFill(universeColor)}; color: var(--on-color);"
+			>
 				{data.universe.name.slice(0, 1).toUpperCase()}
 			</span>
 			<div>

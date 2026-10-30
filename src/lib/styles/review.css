@@ -101,25 +101,27 @@
 .rv-mark.rv-ins:hover,
 .rv-mark.rv-del:hover,
 .rv-mark.rv-replace:hover {
-	background: color-mix(in oklab, var(--auth) 18%, transparent);
+	background: color-mix(in oklab, var(--auth) 15%, transparent);
 }
 /* The focus ring sits inside the tinted box (inset), because an outward ring
    on wrapped inline text draws around every line fragment and collides with
    its own next line - and with the ghost widget sitting beside a deletion. */
 .rv-mark.is-focused {
 	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--auth) 65%, transparent);
-	background: color-mix(in oklab, var(--auth) 24%, transparent);
+	background: color-mix(in oklab, var(--auth) 12%, transparent);
 	animation: rvPulse 0.6s ease;
 }
+/* Tints behind author-coloured text stay at or under 15% so that text keeps
+   AA (checked in contrast.test.ts). */
 @keyframes rvPulse {
 	0% {
-		background: color-mix(in oklab, var(--auth) 24%, transparent);
+		background: color-mix(in oklab, var(--auth) 12%, transparent);
 	}
 	50% {
-		background: color-mix(in oklab, var(--auth) 42%, transparent);
+		background: color-mix(in oklab, var(--auth) 15%, transparent);
 	}
 	100% {
-		background: color-mix(in oklab, var(--auth) 24%, transparent);
+		background: color-mix(in oklab, var(--auth) 12%, transparent);
 	}
 }
 
@@ -699,7 +701,7 @@
 }
 .review-edit .cm-content .rv-mark.is-focused {
 	box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--auth) 65%, transparent);
-	background: color-mix(in oklab, var(--auth) 24%, transparent);
+	background: color-mix(in oklab, var(--auth) 12%, transparent);
 	animation: rvPulse 0.6s ease;
 }
 /* Resolved marks carry no author colour, so focus them in a neutral tone. */

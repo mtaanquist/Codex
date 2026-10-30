@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { badgeBackground, badgeImageSrc } from './entity-badge';
+import { badgeBackground, badgeImageSrc, letterFill } from './entity-badge';
 import { entityColor } from './entity-color';
 
 describe('badgeImageSrc', () => {
@@ -27,5 +27,11 @@ describe('badgeBackground', () => {
 			'var(--cat-blue)'
 		);
 		expect(badgeBackground({ name: 'Aria' })).toBe(entityColor('Aria'));
+	});
+});
+
+describe('letterFill', () => {
+	it('darkens the colour under a white letter', () => {
+		expect(letterFill('var(--cat-lime)')).toBe('color-mix(in oklab, var(--cat-lime) 65%, black)');
 	});
 });

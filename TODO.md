@@ -263,11 +263,7 @@ Staging branch `staging/issue-review-2`, merged to main in one PR.
 - [x] No typing into a scene while the next one opens, a split or merge runs, or a failed save holds a switch. (#772)
 - [x] Review leftovers: backup scripts load under plain node, save requests time out, real-cookie timezone test, `#lib` loader and lint messages. (#786, #787, #788, #789)
 - [x] Staging review loop fixes, including a prompt before leaving a scene with unsaved text or an upload in progress. (#794 to #802)
-
-Follow-ups (open):
-
-- [ ] Entity badge letter contrast (#775).
-- [ ] Focused review mark tint contrast (#776).
+- [x] Entity badge letters on a darkened fill, fainter focused review tint, interrupted scene moves reload their editors. (#775, #776, #805)
 
 Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-review-round-2026-10-29).
 

@@ -19,3 +19,9 @@ export function badgeImageSrc(fields: { badgeAssetId?: string | null }): string 
 export function badgeBackground(fields: BadgeFields): string {
 	return fields.badgeColor || fields.categoryColor || entityColor(fields.name);
 }
+
+// Under a white letter the raw palette is too light, so the fill is darkened.
+// Letterless dots keep the raw colour.
+export function letterFill(color: string): string {
+	return `color-mix(in oklab, ${color} 65%, black)`;
+}

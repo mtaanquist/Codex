@@ -1064,7 +1064,15 @@ links) was closed as not planned: no base path is configured or planned.
   maps marker anchors past them), and that "On this page" used a fixed line
   that missed Insights' own scroller and the last groups on Security (the
   line now follows the scroller and the heading's scroll margin, and at the
-  bottom the section jumped to wins). Leftover lows are in #805.
+  bottom the section jumped to wins). Leftover lows went into #805.
+  The open follow-ups then shipped on staging too: entity badge letters sit
+  on the palette colour mixed 65% towards black (#775); the focused review
+  tint dropped to 12%, with hover and the focus pulse capped at 15%, the
+  most author-coloured text keeps AA on in every theme (#776); and a split,
+  merge or duplicate whose move is cut short by Back or Forward reloads the
+  page data and remounts the editors, while a queued move keeps its data
+  refresh (#805). Goto options such as replaceState are not visible to
+  `beforeNavigate`, so a queued move cannot keep them.
 
 Under parallel load a few e2e specs (notes, import-story, two-factor,
 author-review) fail about once a run on staging as well; not chased this round.
