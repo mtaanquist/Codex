@@ -120,12 +120,13 @@
 		} finally {
 			pauseDepth--;
 			// A place clicked while a split, merge or duplicate ran: go there now.
+			// By URL even for Back or Forward, since the action may have added a
+			// history entry that would throw a replayed step off.
 			const queued = queuedNavigation;
 			if (pauseDepth === 0 && queued && !destroyed) {
 				queuedNavigation = null;
-				if (queued.delta) history.go(queued.delta);
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- a URL the writer already chose
-				else void goto(queued.url);
+				void goto(queued.url);
 			}
 		}
 	}

@@ -457,3 +457,49 @@ test('Back with a save that fails asks before leaving', async ({ page }) => {
 	await expect(page).toHaveURL(secondUrl);
 	await expect(page.locator('.cm-content')).toContainText('Not stored yet.');
 });
+
+test('leaving while an image uploads does not store its placeholder', async ({ page }) => {
+	test.slow();
+	const { firstUrl, secondUrl } = await twoScenes(page, `Drop ${Date.now()}`);
+	// The upload never finishes.
+	await page.route('**/api/assets', () => new Promise(() => {}));
+	page.on('dialog', (dialog) => void dialog.accept());
+	await editor(page).click();
+	await page.keyboard.type('Picture: ');
+	await editor(page).evaluate((el) => {
+		const data = new DataTransfer();
+		data.items.add(new File(['png'], 'never.png', { type: 'image/png' }));
+		el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }));
+	});
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(secondUrl);
+	await gotoReady(page, firstUrl);
+	await expect(page.locator('.cm-content')).toContainText('Picture:');
+	await expect(page.locator('.cm-content')).not.toContainText('Uploading');
+});
+
+test('Back pressed during a split goes back past the scene that was split', async ({ page }) => {
+	test.slow();
+	const { firstUrl, secondUrl } = await twoScenes(page, `BackSplit ${Date.now()}`);
+	await page.locator('.scene-row').nth(1).click();
+	await expect(page).toHaveURL(secondUrl);
+	await page.locator('.scene-row').nth(0).click();
+	await expect(page).toHaveURL(firstUrl);
+	await editor(page).click();
+	await page.keyboard.type('First half.');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('Second half.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.keyboard.press('Home');
+
+	await page.route('**/api/scenes/*/split', async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		await route.continue();
+	});
+	await clickTool(page, 'Split scene at cursor');
+	await page.goBack();
+	await expect(page.locator('.scene-row')).toHaveCount(3);
+	// Where Back was heading when it was pressed, not the first half.
+	await expect(page).toHaveURL(secondUrl);
+});

@@ -30,10 +30,12 @@ export type SceneSaver = {
 
 // A save that gets no answer in this time counts as a network error, so the
 // autosave retries it and a page waiting on it is not held indefinitely. A
-// long scene gets longer, so a slow link can still send it (about 1 KB/s).
+// long scene gets longer, so a slow link can still send it (about 1 KB/s),
+// up to two minutes so a stalled network does not hold a scene switch long.
 export const SAVE_TIMEOUT_MS = 30_000;
+const SAVE_TIMEOUT_MAX_MS = 120_000;
 export function saveTimeoutMs(body: string): number {
-	return SAVE_TIMEOUT_MS + body.length;
+	return Math.min(SAVE_TIMEOUT_MS + body.length, SAVE_TIMEOUT_MAX_MS);
 }
 
 // Fingerprints a save may send: the base plus the most recent unsettled

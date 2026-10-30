@@ -23,7 +23,7 @@
 	import { mentionExtensions, type MentionEntity, type MentionOptions } from '#lib/editor-mentions';
 	import { autocompleteExtensions, type AutocompleteMode } from '#lib/editor-autocomplete';
 	import { continuationExtensions } from '#lib/editor-continuation';
-	import { hasPendingUploads, imageUploadExtension } from '#lib/editor-images';
+	import { hasPendingUploads, imageUploadExtension, storedText } from '#lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '#lib/editor-markers';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
@@ -184,12 +184,17 @@
 		},
 		save: async ({ keepalive }) => {
 			if (!view) return;
+			const stored = storedText(view.state);
 			await saver.save({
 				keepalive,
 				title: titleValue,
-				bodyMd: view.state.doc.toString(),
+				bodyMd: stored.text,
 				// Marker anchors as the editor mapped them through edits.
-				markers: markerHandle.anchors(view)
+				markers: markerHandle.anchors(view).map((marker) => ({
+					...marker,
+					anchorStart: stored.mapPos(marker.anchorStart),
+					anchorEnd: stored.mapPos(marker.anchorEnd)
+				}))
 			});
 		}
 	});

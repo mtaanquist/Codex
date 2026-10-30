@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { UnretryableSaveError } from './autosave';
-import { createSceneSaver, MAX_BASE_HASHES, SAVE_TIMEOUT_MS } from './scene-saver';
+import { createSceneSaver, MAX_BASE_HASHES, SAVE_TIMEOUT_MS, saveTimeoutMs } from './scene-saver';
 import { textHash } from './text-hash';
 
 type Sent = { baseHashes: string[]; overwrite?: boolean; bodyMd: string; keepalive?: boolean };
@@ -108,6 +108,11 @@ describe('createSceneSaver', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it('caps the time a long scene gets at two minutes', () => {
+		expect(saveTimeoutMs('short')).toBeLessThan(SAVE_TIMEOUT_MS + 100);
+		expect(saveTimeoutMs('x'.repeat(1_000_000))).toBe(120_000);
 	});
 
 	it('gives a long scene more time before it gives up', async () => {
