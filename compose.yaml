@@ -134,7 +134,7 @@ services:
   # at an external bucket (S3, B2, R2) instead.
   rustfs:
     logging: *logging
-    image: rustfs/rustfs:1.0.3
+    image: rustfs/rustfs:1.0.4
     profiles:
       - rustfs
     restart: unless-stopped
@@ -153,7 +153,7 @@ services:
   # with the image's own curl; 409 means the bucket already exists.
   rustfs-init:
     logging: *logging
-    image: rustfs/rustfs:1.0.3
+    image: rustfs/rustfs:1.0.4
     profiles:
       - rustfs
     depends_on:

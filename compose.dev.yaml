@@ -25,7 +25,7 @@ services:
   # inside the compose network. Exports and image uploads stay hidden until
   # asset storage is configured, so the end-to-end suite needs this running.
   rustfs:
-    image: rustfs/rustfs:1.0.3
+    image: rustfs/rustfs:1.0.4
     environment:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-codex-rustfs}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-codex-rustfs-secret}
@@ -43,7 +43,7 @@ services:
   # One-shot: creates the bucket on first start, then exits. A signed PUT
   # with the image's own curl; 409 means the bucket already exists.
   rustfs-init:
-    image: rustfs/rustfs:1.0.3
+    image: rustfs/rustfs:1.0.4
     depends_on:
       rustfs:
         condition: service_healthy
