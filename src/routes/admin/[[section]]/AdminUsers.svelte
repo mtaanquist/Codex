@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { confirmSubmit } from '#lib/confirm.svelte';
 	import type { PageData, ActionData } from './$types';
-	import { formatDate } from '#lib/format';
+	import { formatDate, formatDateTime, relativeShort } from '#lib/format';
+	import AdminUserActions from './AdminUserActions.svelte';
 	import { authorInitials } from '#lib/review-ui';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -177,15 +177,16 @@
 			Accounts <span class="n">{activeUsers.length}</span>
 		</h2>
 	</div>
-	<div class="admin-card">
-		<table class="admin-table">
+	<div class="admin-card accounts-card">
+		<table class="admin-table accounts-table">
 			<thead>
 				<tr>
 					<th>Person</th>
-					<th>Role</th>
 					<th>Status</th>
 					<th>Joined</th>
-					<th></th>
+					<th>Last active</th>
+					<th>Invites</th>
+					<th><span class="visually-hidden">Actions</span></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -197,123 +198,47 @@
 								<div>
 									<div class="cell-name">
 										{account.displayName}
-										{#if account.id === data.meId}<span class="pill" style="margin-left:4px;"
-												>You</span
-											>{/if}
+										{#if account.role === 'admin'}<span class="role-tag admin">Admin</span>{/if}
+										{#if account.id === data.meId}<span class="pill">You</span>{/if}
 									</div>
 									<div class="cell-mail">{account.email}</div>
 								</div>
 							</div>
 						</td>
-						<td>
-							{#if account.role === 'admin'}
-								<span class="role-tag admin">Admin</span>
-							{:else}
-								<span class="role-tag writer">Writer</span>
-							{/if}
-						</td>
-						<td class="cell-muted">
+						<td class="cell-muted" data-label="Status">
 							{userStatus(account)}{account.publicArchiveEnabled ? ', can publish' : ''}
 						</td>
-						<td class="cell-muted">{formatDate(account.createdAt, page.data.timeZone)}</td>
+						<td class="cell-muted cell-nowrap" data-label="Joined"
+							>{formatDate(account.createdAt, page.data.timeZone)}</td
+						>
+						<td class="cell-muted cell-nowrap" data-label="Last active">
+							{#if account.lastActiveAt}
+								<time
+									datetime={new Date(account.lastActiveAt).toISOString()}
+									title={formatDateTime(account.lastActiveAt, page.data.timeZone)}
+									>{relativeShort(account.lastActiveAt, page.data.timeZone)}</time
+								>
+							{:else}
+								Never
+							{/if}
+						</td>
+						<td data-label="Invites">
+							<form method="POST" action="?/setInviteAllowance" class="allowance-form">
+								<input type="hidden" name="userId" value={account.id} />
+								<input
+									class="input allowance-input"
+									type="number"
+									name="allowance"
+									min="0"
+									max="99"
+									value={account.inviteAllowance}
+									aria-label="Invite allowance for {account.email}"
+								/>
+								<button type="submit" class="btn btn-ghost btn-sm">Set</button>
+							</form>
+						</td>
 						<td class="cell-actions">
-							<div class="cell-actions-inner">
-								<form method="POST" action="?/setInviteAllowance" class="allowance-form">
-									<input type="hidden" name="userId" value={account.id} />
-									<label class="allowance-label">
-										Invites
-										<input
-											class="input allowance-input"
-											type="number"
-											name="allowance"
-											min="0"
-											max="99"
-											value={account.inviteAllowance}
-										/>
-									</label>
-									<button type="submit" class="btn btn-ghost btn-sm">Set</button>
-								</form>
-								{#if account.publicArchiveEnabled}
-									<form method="POST" action="?/disableArchive">
-										<input type="hidden" name="userId" value={account.id} />
-										<button type="submit" class="btn btn-ghost btn-sm">Stop publishing</button>
-									</form>
-								{:else}
-									<form method="POST" action="?/enableArchive">
-										<input type="hidden" name="userId" value={account.id} />
-										<button type="submit" class="btn btn-ghost btn-sm">Allow publishing</button>
-									</form>
-								{/if}
-								{#if account.role !== 'admin' && account.id !== data.meId}
-									{#if !account.emailVerifiedAt}
-										<form method="POST" action="?/confirmEmail">
-											<input type="hidden" name="userId" value={account.id} />
-											<button type="submit" class="btn btn-ghost btn-sm">Confirm email</button>
-										</form>
-									{/if}
-									{#if account.deletionScheduledAt}
-										<form
-											method="POST"
-											action="?/cancelDeletion"
-											onsubmit={confirmSubmit({
-												title: `Cancel the scheduled deletion of ${account.email}?`,
-												body: 'The account becomes active again.',
-												confirmLabel: 'Cancel deletion'
-											})}
-										>
-											<input type="hidden" name="userId" value={account.id} />
-											<button type="submit" class="btn btn-ghost btn-sm">Cancel deletion</button>
-										</form>
-									{/if}
-									{#if account.suspendedAt}
-										<form method="POST" action="?/unsuspend">
-											<input type="hidden" name="userId" value={account.id} />
-											<button type="submit" class="btn btn-ghost btn-sm">Unsuspend</button>
-										</form>
-									{:else}
-										<form method="POST" action="?/suspend">
-											<input type="hidden" name="userId" value={account.id} />
-											<button
-												type="submit"
-												class="btn btn-ghost btn-sm"
-												style="color:var(--danger-ink);">Suspend</button
-											>
-										</form>
-									{/if}
-									{#if account.twoFactorEnabled}
-										<form
-											method="POST"
-											action="?/resetTotp"
-											onsubmit={confirmSubmit({
-												title: `Turn off two-factor authentication for ${account.email}?`,
-												body: 'They will sign in with their password alone until they set it up again.',
-												confirmLabel: 'Reset 2FA',
-												danger: true
-											})}
-										>
-											<input type="hidden" name="userId" value={account.id} />
-											<button type="submit" class="btn btn-ghost btn-sm">Reset 2FA</button>
-										</form>
-									{/if}
-									<form
-										method="POST"
-										action="?/deleteAccount"
-										onsubmit={confirmSubmit({
-											title: `Permanently delete ${account.email} and all their work?`,
-											body: 'This cannot be undone.',
-											confirmLabel: 'Delete account',
-											danger: true
-										})}
-									>
-										<input type="hidden" name="userId" value={account.id} />
-										<button
-											type="submit"
-											class="btn btn-ghost btn-sm"
-											style="color:var(--danger-ink);">Delete</button
-										>
-									</form>
-								{/if}
-							</div>
+							<AdminUserActions {account} isMe={account.id === data.meId} />
 						</td>
 					</tr>
 				{/each}
@@ -431,19 +356,59 @@
 </div>
 
 <style>
-	/* The per-row invite allowance: a number and a Set, kept small enough to
-	   share the actions cell. */
+	/* Below about 640px the accounts table cannot fit its columns, so each
+	   account becomes a stacked block with a label beside each value. */
+	.accounts-card {
+		container-type: inline-size;
+	}
+	@container (max-width: 640px) {
+		.accounts-table thead {
+			display: none;
+		}
+		.accounts-table,
+		.accounts-table tbody,
+		.accounts-table tr,
+		.accounts-table td {
+			display: block;
+		}
+		.accounts-table tr {
+			padding: 10px 0;
+			border-bottom: 1px solid var(--border);
+		}
+		.accounts-table tr:last-child {
+			border-bottom: 0;
+		}
+		.accounts-table td {
+			padding: 4px 0;
+			border-bottom: 0;
+		}
+		.accounts-table td[data-label] {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+		}
+		.accounts-table td[data-label]::before {
+			content: attr(data-label);
+			flex: none;
+			width: 7rem;
+			font-size: 12px;
+			color: var(--text-faint);
+		}
+		.accounts-table .cell-actions {
+			text-align: left;
+			padding-top: 8px;
+		}
+		/* The button now sits on the left, so its menu opens rightwards. */
+		.accounts-table .cell-actions :global(.popover) {
+			left: 0;
+			right: auto;
+		}
+	}
+	/* The per-row invite allowance: a number and a Set. */
 	.allowance-form {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-	}
-	.allowance-label {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		color: var(--text-muted);
 	}
 	.allowance-input {
 		width: 3.6rem;

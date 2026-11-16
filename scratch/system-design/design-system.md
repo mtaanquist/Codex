@@ -551,6 +551,12 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 
 - Real tabular data: `.admin-table` (with `.cell-*` helpers, `.num`
   columns, `.row-actions`).
+  When a row has more than a couple of actions, they go behind one
+  "Actions" menu button per row (`AdminUserActions.svelte` is the reference),
+  so rows keep one width and the control lines up; never a long inline row
+  of buttons. A table too wide for a narrow card stacks per row with a
+  container query and `data-label` cells (the admin accounts table) rather
+  than scrolling, since a scroll wrapper clips the row menus.
 - Icon-led row lists: `.list-row` with `.list-ic`, `.list-main`,
   `.list-title`, `.list-sub`, `.list-actions`.
 - Destructive settings rows: `.danger-group`/`.danger-row`.

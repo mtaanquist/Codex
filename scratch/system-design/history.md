@@ -981,6 +981,19 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Admin accounts list (2026-11-16)
+
+#813 and #814, one PR. Every row action sat inline in one flex row that never
+wrapped, so the table grew past its card and the right-aligned actions started
+at a different spot per row. The account actions moved behind one "Actions"
+menu per row (`AdminUserActions.svelte`), the invite allowance got its own
+column, and the Role column folded into an Admin tag beside the name (a
+Writer tag on every other row said nothing). Below a 640px card the table
+stacks per account through a container query, since a scroll wrapper would
+clip the menu. Last active is `greatest(max(sessions.last_seen_at),
+users.last_login_at)`: the daily sweep deletes expired sessions, so the sign-in
+time covers accounts idle for more than 30 days. No migration.
+
 ## Issue review round (2026-10-29)
 
 Second open issue review (2026-10-29): seven open issues, each with a review
