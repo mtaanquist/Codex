@@ -141,7 +141,7 @@ Every page uses exactly one of these five wrappers. Do not build a sixth.
 | Shell | Component(s) | Used by |
 |---|---|---|
 | Workspace | `.app` grid + `AppBar.svelte` | Write, Plan, Notes, Review (story scope); Plan, Notes, Insights (universe scope); help; guest review |
-| Page | `.page-shell` + `AppBar.svelte` | Library, print preview, the error page when signed in |
+| Page | `.page-shell` + `AppBar.svelte` | Library, print preview, a saved draft, the error page when signed in |
 | Settings | `SettingsShell.svelte` + `AppBar.svelte` | Account, admin, story settings, universe settings |
 | Reader | `.reader-shell` + `AppBar.svelte` (`shell="reader"`) | The public shelf and the public story page |
 | Public | `.public-surface` + `AppBar.svelte` (`shell="public"`) + `ReaderFooter.svelte` (`shell="public"`) | The landing page, and `AuthShell.svelte` over it for sign-in, sign-up, every email-flow page, and the error page when signed out |
@@ -250,8 +250,15 @@ The path and its crumb menus:
   `aria-current="page"`, and close on outside pointerdown or Escape through
   the shared `dismiss` action. Keyboard behaviour comes from `use:menu`
   (see Menus and popovers).
+- **The drafts crumb.** On Write and on a saved draft, a story with saved
+  drafts gets one more place after the story: "Working draft", or the open
+  draft's name. Its menu lists the working draft, every saved draft, and
+  "Save as draft...". Pass `drafts` to `storyPath`; it adds `draftCrumb` only
+  when there is a saved draft or one is open, so a story without drafts keeps
+  the short path. The crumb carries `keepParent`, so a narrow bar keeps the
+  story's name in front of it.
 - Paths are built by `#lib/chrome.ts` (`libraryCrumb`, `universeCrumb`,
-  `storyCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
+  `storyCrumb`, `draftCrumb`, `pageCrumb`, `storyPath`, `universePath`), so every screen
   spells the same destinations the same way. Do not hand-roll a path.
 
 **Narrow windows.** Below 640px the bar drops the brand name, the rule and
@@ -567,7 +574,12 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 
 `.story-card` (library; it always leads with a cover, and when the cover is
 the tinted blank the card's `h3` is `.visually-hidden` so the title shows
-once). The per-user library view (`users.preferences.libraryView`: covers,
+once). Each card sits in a `.story-card-wrap`, so a story with saved drafts
+can carry `StoryDraftsMenu` (a "Drafts" `.btn-sm` over the cover's corner,
+or at the card's foot in compact view, opening the shared `.popover`) beside
+the card's link rather than inside it. The table view links
+to Saved drafts under the title instead, since its scrolling card would clip
+a menu. The per-user library view (`users.preferences.libraryView`: covers,
 compact, table) drops the cover in compact, and in table renders each
 collection as an `.admin-table` inside `.admin-card.tight` instead of cards.
 `.admin-card` (settings/admin sections, also used
@@ -945,7 +957,7 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 `ReaderFooter`,
 `UserMenu`, `NotificationBell`, `ActivityCenter`, `ViewMenu`,
 `EditorToolbar`, `SelectionMenu`, `NotesWorkspace`, `NotesSidebar`, `PlanSidebar`,
-`StoryOutline`, `StoryRowMenu`, `RevisionHistory`, `EntityBadgePicker`,
+`StoryOutline`, `StoryRowMenu`, `StoryDraftsMenu`, `RevisionHistory`, `EntityBadgePicker`,
 `EntityRelationships`, `ReviewSurface`, `ReviewPanel`, `ReviewCommentCard`,
 `ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`.
 

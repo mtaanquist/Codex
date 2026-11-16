@@ -981,6 +981,61 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Saved drafts (2026-11-16)
+
+Low review items (#819 to #822), same PR: a cover change and a draft save
+now meet on the story row (`for update` in `replaceCover`, `for share` in
+`saveDraft`, which retries a serialization failure), so a draft cannot keep
+an old cover that was just freed; deleting the last draft that shows an old
+cover frees it. Draft relationships now carry `relationTypeId`, so "New story
+from this draft" copies story-only relationships. The library table links to
+Saved drafts under the title rather than carrying the cover menu, because its
+sideways-scrolling card would clip a menu. A failed draft delete still
+reports above the list: the row is gone by then.
+
+Review round on PR #815: "Add back to working draft" made a fresh copy on
+every click, since the copy has a new id. Matching by text was tried and
+dropped (empty or repeated scene text matched the wrong scene); the copy now
+records the saved scene's id in `scenes.metadata.fromDraftScene`, and an
+advisory lock stops a double submit. The importer skips `drafts/` before
+counting entries, so a story export with many drafts still imports, and says
+the drafts were left out. The compare view moved into a shared `DiffView`
+(`<ins>`/`<del>`), also used by `RevisionPreview`.
+
+Saved drafts (#812, branch `feat/saved-drafts`): a user asked, through Mads,
+for "editions" of a book they could always go back to, like a GitHub release,
+with switching from the library cover and the editor. Decided in discussion on
+the issue: private (not for the public page), a total freeze including the
+worldbuilding (like a git tag), named "draft" in the UI, per-scene restore and
+publishing a draft both in, and no limit on how many.
+
+- Storage is one jsonb snapshot per draft (`story_drafts.content`, typed in
+  `#lib/drafts`), read in a repeatable-read transaction. Not built on
+  `revisions`: those have no thinning yet, but #599 proposed one, and a
+  hard-deleted scene takes its revisions with it. The `publications` table was
+  the other candidate and was not reused: it is tied to the admin gate, the
+  handle, and one current row per story.
+- A draft copies the universe's whole entity set, not only the story's
+  members, because a story names entities it never declared. Scene, chapter,
+  note and entity ids are kept so a scene can be compared with and restored
+  onto the live one, and so notes and relationships still point at the right
+  things inside the draft.
+- Inline images are not pinned: nothing deletes an inline image today. The
+  cover is the one image that can go (replacing it deletes the old file), so
+  the cover replace now keeps a file that a saved draft still shows.
+- The draft page wears the Page shell like print preview: it reads the work
+  but has none of the workspace's panels. The worldbuilding tab lists the
+  frozen entities with how often the draft names them (the same
+  `detectMentions` rules as the editor) rather than underlining the prose.
+- "Save as draft..." lives in story settings rather than a dialog in the
+  editor, so leaving the editor flushes any pending save through the existing
+  navigation guard before the snapshot is taken.
+- Publishing a draft reuses the publish form (a "What to publish" select), so
+  the pen name prompt and the edition label work unchanged; the edition
+  records `source_draft_id`, set to null if the draft is deleted.
+- Deferred: underlines and hover cards inside a saved draft's prose, and a
+  side-by-side view of two saved drafts.
+
 ## Admin accounts list (2026-11-16)
 
 #813 and #814, one PR. Every row action sat inline in one flex row that never

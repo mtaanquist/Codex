@@ -7,6 +7,7 @@ describe('docTopics', () => {
 		expect(topics.map((t) => t.slug)).toEqual([
 			'getting-started',
 			'editor',
+			'drafts',
 			'planning',
 			'established-settings',
 			'publishing',

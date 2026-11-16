@@ -31,6 +31,7 @@ const REGISTRY: { slug: string; summary: string }[] = [
 		summary: 'Universes, stories, and scenes, and how to make your first one.'
 	},
 	{ slug: 'editor', summary: 'Drafting scenes, mentions, and marks in the editor.' },
+	{ slug: 'drafts', summary: 'Keeping a copy of the whole story you can always go back to.' },
 	{ slug: 'planning', summary: 'Characters, places, lore, the outline, and relationships.' },
 	{
 		slug: 'established-settings',

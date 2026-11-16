@@ -51,6 +51,7 @@ test.describe.configure({ mode: 'serial' });
 let storyPath = '';
 let universePlanPath = '';
 let readingPath = '';
+let draftPath = '';
 
 test.beforeAll(async ({ browser }) => {
 	test.setTimeout(90_000);
@@ -92,6 +93,13 @@ test.beforeAll(async ({ browser }) => {
 	}
 	await expect(page.getByRole('status')).toContainText('Edition published.');
 
+	await gotoReady(page, `${storyPath}/settings/drafts`);
+	await page.locator('#draft-label').fill('Axe draft');
+	await page.getByRole('button', { name: 'Save draft' }).click();
+	const openDraft = page.getByRole('link', { name: 'Open it' });
+	await expect(openDraft).toBeVisible();
+	draftPath = (await openDraft.getAttribute('href')) as string;
+
 	await gotoReady(page, '/@e2e-tester');
 	readingPath = (await page
 		.getByRole('link', { name: 'Axe story' })
@@ -105,6 +113,7 @@ const signedIn = () => [
 	['story workspace', storyPath],
 	['plan', `${storyPath}/plan`],
 	['review', `${storyPath}/review`],
+	['saved draft', draftPath],
 	['account', '/account'],
 	['help article', '/docs/editor'],
 	['not found', '/does-not-exist']

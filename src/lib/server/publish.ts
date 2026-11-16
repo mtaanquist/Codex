@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
-import { gatherStory } from './export.ts';
+import { gatherStory, type ExportScene } from './export.ts';
+import { getDraft } from './story-drafts.ts';
 import { findAssetReferences } from '#lib/markdown';
 import { storyCoverColor } from '#lib/entity-color';
 import { isUniqueViolation } from './db-errors.ts';
@@ -19,7 +20,9 @@ export async function publishStory(
 	db: Database,
 	userId: string,
 	storyId: string,
-	versionLabel?: string
+	versionLabel?: string,
+	// Publish a saved draft's frozen prose instead of the working draft.
+	draftId?: string | null
 ): Promise<{ ok: true; publicationId: string } | { ok: false; reason: string }> {
 	const [user] = await db
 		.select({ handle: users.handle, enabled: users.publicArchiveEnabled })
@@ -36,18 +39,38 @@ export async function publishStory(
 		.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId), storyIsLive()));
 	if (!story) return { ok: false, reason: 'That story no longer exists.' };
 
-	const { chapters: chapterList, scenes: sceneList } = await gatherStory(db, story);
+	// The title, pen name and description go out as they were in the draft,
+	// alongside its prose; the adult flag is the author's current choice.
+	let source: { chapters: { id: string; title: string | null }[]; scenes: ExportScene[] };
+	let frontMatter = {
+		title: story.title,
+		author: story.author,
+		descriptionMd: story.descriptionMd
+	};
+	if (draftId) {
+		const draft = await getDraft(db, story.id, draftId);
+		if (!draft) return { ok: false, reason: 'That saved draft no longer exists.' };
+		source = draft.content;
+		frontMatter = {
+			title: draft.content.story.title,
+			author: draft.content.story.author,
+			descriptionMd: draft.content.story.descriptionMd
+		};
+	} else {
+		source = await gatherStory(db, story);
+	}
+	const known = new Set(source.chapters.map((chapter) => chapter.id));
 	const content: EditionContent = {
-		chapters: chapterList
+		chapters: source.chapters
 			.map((chapter) => ({
 				title: chapter.title,
-				scenes: sceneList
+				scenes: source.scenes
 					.filter((scene) => scene.chapterId === chapter.id)
 					.map((scene) => ({ title: scene.title, bodyMd: scene.bodyMd }))
 			}))
 			.filter((chapter) => chapter.scenes.length > 0),
-		unfiled: sceneList
-			.filter((scene) => scene.chapterId === null)
+		unfiled: source.scenes
+			.filter((scene) => scene.chapterId === null || !known.has(scene.chapterId))
 			.map((scene) => ({ title: scene.title, bodyMd: scene.bodyMd }))
 	};
 	if (content.chapters.length === 0 && content.unfiled.length === 0) {
@@ -78,12 +101,11 @@ export async function publishStory(
 					storyId: story.id,
 					ownerId: userId,
 					handle: user.handle!,
-					title: story.title,
-					author: story.author,
-					descriptionMd: story.descriptionMd,
+					...frontMatter,
 					isAdult: story.isAdult,
 					content,
-					versionLabel: versionLabel?.trim() || null
+					versionLabel: versionLabel?.trim() || null,
+					sourceDraftId: draftId || null
 				})
 				.returning({ id: publications.id });
 			// Locked so a concurrent delete of one of these images cannot slip

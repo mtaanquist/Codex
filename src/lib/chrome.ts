@@ -35,7 +35,14 @@ export type Crumb =
 	// The page you are on, or a place with nothing behind it.
 	| { kind: 'text'; label: string }
 	// A place: the name is the menu, and `groups` are separated by a rule.
-	| { kind: 'place'; label: string; current: boolean; groups: CrumbMenuItem[][] };
+	| {
+			kind: 'place';
+			label: string;
+			current: boolean;
+			groups: CrumbMenuItem[][];
+			// A narrow bar keeps the crumb before this one too.
+			keepParent?: boolean;
+	  };
 
 export type UniverseRef = { slug: string; name: string };
 
@@ -46,10 +53,16 @@ export type ReadingRef = { handle: string; storyId: string };
 
 export type StoryRef = { slug: string; title: string; reading?: ReadingRef | null };
 
+// A saved draft of the story, for the drafts crumb.
+export type DraftRef = { id: string; label: string };
+
+// The story's saved drafts and which one is open: null for the working draft.
+export type StoryDrafts = { list: DraftRef[]; at: string | null };
+
 // Which universe-scoped page is open, so the menu can tick it.
 export type UniverseAt = 'universe' | 'settings' | 'insights' | 'export' | null;
 // Which story-scoped page is open, so the menu can tick it.
-export type StoryAt = 'story' | 'settings' | 'print' | 'export' | 'reading' | null;
+export type StoryAt = 'story' | 'settings' | 'print' | 'export' | 'drafts' | 'reading' | null;
 
 // Accessible names for the workspace side panes. One wording everywhere, so a
 // screen reader user meets the same two landmarks on every workspace page.
@@ -117,6 +130,14 @@ export function storyCrumb(story: StoryRef, at: StoryAt = null): Crumb {
 				section: 'export'
 			}),
 			current: at === 'export'
+		},
+		{
+			label: 'Saved drafts',
+			href: resolve('/stories/[id]/settings/[[section]]', {
+				id: story.slug,
+				section: 'drafts'
+			}),
+			current: at === 'drafts'
 		}
 	];
 	const groups: CrumbMenuItem[][] = [
@@ -144,6 +165,41 @@ export function storyCrumb(story: StoryRef, at: StoryAt = null): Crumb {
 	return { kind: 'place', label: story.title, current: at === 'story', groups };
 }
 
+// The crumb after the story on Write and on a saved draft: which copy of
+// the story you are reading, and a menu to switch between them.
+export function draftCrumb(story: StoryRef, drafts: StoryDrafts): Crumb {
+	const open = drafts.list.find((draft) => draft.id === drafts.at);
+	return {
+		kind: 'place',
+		label: open?.label ?? 'Working draft',
+		current: true,
+		keepParent: true,
+		groups: [
+			[
+				{
+					label: 'Working draft',
+					href: resolve('/stories/[id]', { id: story.slug }),
+					current: drafts.at === null
+				}
+			],
+			drafts.list.map((draft) => ({
+				label: draft.label,
+				href: resolve('/stories/[id]/drafts/[draft=uuid]', { id: story.slug, draft: draft.id }),
+				current: draft.id === drafts.at
+			})),
+			[
+				{
+					label: 'Save as draft...',
+					href: resolve('/stories/[id]/settings/[[section]]', {
+						id: story.slug,
+						section: 'drafts'
+					})
+				}
+			]
+		].filter((group) => group.length > 0)
+	};
+}
+
 // A page under a place: Insights, Print preview, a help article.
 export function pageCrumb(label: string): Crumb {
 	return { kind: 'text', label };
@@ -154,13 +210,18 @@ export function pageCrumb(label: string): Crumb {
 export function storyPath(
 	universe: UniverseRef,
 	story: StoryRef,
-	options: { storyAt?: StoryAt; page?: string } = {}
+	options: { storyAt?: StoryAt; page?: string; drafts?: StoryDrafts } = {}
 ): Crumb[] {
 	const crumbs: Crumb[] = [
 		libraryCrumb(),
 		universeCrumb(universe),
 		storyCrumb(story, options.storyAt ?? null)
 	];
+	// Only once there is something to switch to, or a draft is open.
+	const drafts = options.drafts;
+	if (drafts && (drafts.list.length > 0 || drafts.at !== null)) {
+		crumbs.push(draftCrumb(story, drafts));
+	}
 	if (options.page) crumbs.push(pageCrumb(options.page));
 	return crumbs;
 }

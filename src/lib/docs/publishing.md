@@ -10,6 +10,8 @@ An administrator enables publishing for your account. Once it is on, claim a han
 
 Open the story's settings and publish it. You can give the edition a label, such as "First edition". Publishing again replaces the public version with a fresh snapshot of your current text.
 
+If the story has [saved drafts](/docs/drafts), "What to publish" lets you publish one of them instead of the working draft.
+
 ## Visibility
 
 Each story has a visibility:

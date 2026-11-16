@@ -349,6 +349,19 @@
 	gap: var(--space-4);
 }
 
+/* Holds the card's link and, beside it, the drafts menu over its corner. */
+.story-card-wrap {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+.story-card-wrap > .story-card {
+	flex: 1;
+}
+/* Room for the Drafts button at the foot of a compact card. */
+.story-card-wrap.has-drafts .story-card-meta {
+	padding-right: 88px;
+}
 .story-card {
 	display: flex;
 	flex-direction: column;

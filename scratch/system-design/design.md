@@ -130,6 +130,14 @@ Every revision is kept indefinitely; consecutive autosaves within two minutes co
 
 A diff view sits alongside the timeline. Any two revisions can be compared, and a previewed revision is shown as a diff against the current text by default, with insertions and deletions marked inline. It is the same diff component wherever changes need to be shown, including a reviewer's suggested edits (see the review feature in `schema.md`), so it is built once and reused.
 
+### Saved drafts
+
+A saved draft is a named copy of a whole story at one moment, the way a tag marks a commit in a git repository: "this is the first draft, and I always want to be able to go back to it". It is private, and separate from publishing (a published edition is for readers; a saved draft is for the writer). Shipped 2026-11-16 (#812).
+
+- **A total freeze.** A draft keeps the chapters and scenes (text, summaries, status), the story's notes, and the universe's characters, places, and lore with their categories, details, relationships, and this story's notes on them. It is stored as one self-contained snapshot (`story_drafts.content`), not as references to revisions, so nothing that later happens to the live rows or to History can change or break it. Only its name and note can be edited; a writer can delete it outright.
+- **Switching is reading.** Opening a saved draft shows it read-only, with a banner, on its own page; nothing on that page writes over the working draft. From a draft the writer can compare a scene with the working draft, restore one scene (the replaced text is kept in that scene's History first, so it can be undone), add back a scene deleted since, start a new story from the draft, or publish the draft. There is deliberately no whole-story restore over the working draft: "new story from this draft" is the safe way back.
+- **Where it shows.** A drafts crumb after the story's title on Write and on the draft page, a "Drafts" menu on the story's library cover once it has a draft, and a Saved drafts section in story settings for saving, renaming, and deleting. Markdown exports of the story, its universe, and the account carry each draft in its own folder.
+
 ### Focus mode
 
 Focus mode, chosen from the View menu on the editor's formatting bar, hides the navigation bar and both sidebars, using `visibility: hidden` on the sidebars rather than `display: none`, so the prose column stays anchored where it was instead of shifting to the new centre of a now-wider grid. The mode doesn't widen the prose - it removes the chrome around it. The content width setting controls how wide the prose column actually is, independently of focus.

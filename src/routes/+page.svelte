@@ -5,6 +5,7 @@
 	import ImportStoryModal from '#lib/components/ImportStoryModal.svelte';
 	import Landing from '#lib/components/Landing.svelte';
 	import NewMenu from '#lib/components/NewMenu.svelte';
+	import StoryDraftsMenu from '#lib/components/StoryDraftsMenu.svelte';
 	import AppBar from '#lib/components/AppBar.svelte';
 	import { libraryCrumb } from '#lib/chrome';
 	import { formatNumber } from '#lib/format';
@@ -89,50 +90,61 @@
 {/if}
 
 {#snippet storyCard(story: Story)}
-	<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
-		<!-- The published shelf's cover pattern: the uploaded artwork, or the
+	<!-- The drafts menu sits beside the card's link, not inside it. -->
+	<div class="story-card-wrap" class:has-drafts={story.drafts.length > 0 && view === 'compact'}>
+		<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
+			<!-- The published shelf's cover pattern: the uploaded artwork, or the
 		     story's own title set on a cover tinted in its colour. Hidden from
 		     readers; the heading below names the story. -->
-		{#if view === 'compact'}
-			<!-- No covers: the card starts at its title. -->
-		{:else if story.coverAssetId}
-			<span class="shelf-cover story-card-cover" aria-hidden="true">
-				<img src="/assets/{story.coverAssetId}" alt="" />
-			</span>
-		{:else}
-			<span
-				class="shelf-cover shelf-cover-tinted story-card-cover"
-				class:story-card-empty={story.words === 0}
-				style="--cover-tint: {story.coverColor}"
-				aria-hidden="true"
-			>
-				{story.title}
-			</span>
-		{/if}
-		<div class="story-card-header">
-			<!-- A blank cover already shows the title, so the heading is only
+			{#if view === 'compact'}
+				<!-- No covers: the card starts at its title. -->
+			{:else if story.coverAssetId}
+				<span class="shelf-cover story-card-cover" aria-hidden="true">
+					<img src="/assets/{story.coverAssetId}" alt="" />
+				</span>
+			{:else}
+				<span
+					class="shelf-cover shelf-cover-tinted story-card-cover"
+					class:story-card-empty={story.words === 0}
+					style="--cover-tint: {story.coverColor}"
+					aria-hidden="true"
+				>
+					{story.title}
+				</span>
+			{/if}
+			<div class="story-card-header">
+				<!-- A blank cover already shows the title, so the heading is only
 			     for assistive technology there. -->
-			<h3
-				class="story-card-title"
-				class:story-card-empty={story.words === 0}
-				class:visually-hidden={view === 'covers' && !story.coverAssetId}
-			>
-				{story.title}
-			</h3>
-			<span class="story-card-status">
-				<span class="scene-dot" style="background: var(--status-{story.status.token});"></span>
-				{story.status.label}
-			</span>
-		</div>
-		{#if story.brief}<p class="story-card-brief">{story.brief}</p>{/if}
-		<div class="story-card-meta">
-			<span>{count(story.chapters, 'chapter')}</span>
-			<span class="story-card-meta-sep">·</span>
-			<span>{count(story.words, 'word')}</span>
-			<span class="story-card-meta-sep">·</span>
-			<span>edited {story.editedLabel}</span>
-		</div>
-	</a>
+				<h3
+					class="story-card-title"
+					class:story-card-empty={story.words === 0}
+					class:visually-hidden={view === 'covers' && !story.coverAssetId}
+				>
+					{story.title}
+				</h3>
+				<span class="story-card-status">
+					<span class="scene-dot" style="background: var(--status-{story.status.token});"></span>
+					{story.status.label}
+				</span>
+			</div>
+			{#if story.brief}<p class="story-card-brief">{story.brief}</p>{/if}
+			<div class="story-card-meta">
+				<span>{count(story.chapters, 'chapter')}</span>
+				<span class="story-card-meta-sep">·</span>
+				<span>{count(story.words, 'word')}</span>
+				<span class="story-card-meta-sep">·</span>
+				<span>edited {story.editedLabel}</span>
+			</div>
+		</a>
+		{#if story.drafts.length > 0}
+			<StoryDraftsMenu
+				storySlug={story.slug}
+				storyTitle={story.title}
+				drafts={story.drafts}
+				compact={view === 'compact'}
+			/>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet storyTable(stories: Story[], label: string)}
@@ -156,6 +168,17 @@
 								class:story-card-empty={story.words === 0}
 								href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a
 							>
+							<!-- A link, not the cover menu: the table scrolls sideways, which
+							     would clip a menu. -->
+							{#if story.drafts.length > 0}
+								<a
+									class="library-table-drafts"
+									href={resolve('/stories/[id]/settings/[[section]]', {
+										id: story.slug,
+										section: 'drafts'
+									})}>{count(story.drafts.length, 'saved draft')}</a
+								>
+							{/if}
 						</td>
 						<td>
 							<span class="story-card-status">
@@ -620,6 +643,11 @@
 	}
 	.library-table-title:hover {
 		text-decoration: underline;
+	}
+	.library-table-drafts {
+		display: block;
+		font-size: var(--text-meta);
+		color: var(--text-faint);
 	}
 	.new-inline {
 		display: flex;

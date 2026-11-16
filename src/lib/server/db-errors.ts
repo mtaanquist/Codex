@@ -5,3 +5,8 @@
 export function isUniqueViolation(err: unknown): boolean {
 	return (err as { cause?: { code?: string } })?.cause?.code === '23505';
 }
+
+/** Whether a thrown database error is a serialization failure (safe to retry). */
+export function isSerializationFailure(err: unknown): boolean {
+	return (err as { cause?: { code?: string } })?.cause?.code === '40001';
+}
