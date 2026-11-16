@@ -42,6 +42,7 @@ export type DraftRelationship = {
 	fromId: string;
 	toType: DraftEntityType;
 	toId: string;
+	relationTypeId: string;
 	label: string;
 	notesMd: string | null;
 	// True for a relationship that holds only in this story.

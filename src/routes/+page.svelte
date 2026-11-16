@@ -168,6 +168,17 @@
 								class:story-card-empty={story.words === 0}
 								href={resolve('/stories/[id]', { id: story.slug })}>{story.title}</a
 							>
+							<!-- A link, not the cover menu: the table scrolls sideways, which
+							     would clip a menu. -->
+							{#if story.drafts.length > 0}
+								<a
+									class="library-table-drafts"
+									href={resolve('/stories/[id]/settings/[[section]]', {
+										id: story.slug,
+										section: 'drafts'
+									})}>{count(story.drafts.length, 'saved draft')}</a
+								>
+							{/if}
 						</td>
 						<td>
 							<span class="story-card-status">
@@ -632,6 +643,11 @@
 	}
 	.library-table-title:hover {
 		text-decoration: underline;
+	}
+	.library-table-drafts {
+		display: block;
+		font-size: var(--text-meta);
+		color: var(--text-faint);
 	}
 	.new-inline {
 		display: flex;

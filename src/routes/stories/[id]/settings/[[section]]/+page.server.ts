@@ -10,8 +10,8 @@ import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '#l
 import { publishStory } from '#lib/server/publish';
 import {
 	deleteDraft,
-	draftUsesCover,
 	listDrafts,
+	replaceCover,
 	saveDraft,
 	updateDraftDetails
 } from '#lib/server/story-drafts';
@@ -434,12 +434,9 @@ export const actions: Actions = {
 		if (!created.ok) {
 			return fail(400, { action: 'cover', message: created.reason });
 		}
-		const previous = story.coverAssetId;
-		await db.update(stories).set({ coverAssetId: created.id }).where(eq(stories.id, story.id));
 		// The replaced cover goes, unless a saved draft still shows it.
-		if (previous && !(await draftUsesCover(db, story.id, previous))) {
-			await deleteAsset(db, locals.user!.id, previous);
-		}
+		const unused = await replaceCover(db, story.id, created.id);
+		if (unused) await deleteAsset(db, locals.user!.id, unused);
 		return { action: 'cover', saved: true };
 	},
 	saveDraft: async ({ request, params, locals }) => {
@@ -473,7 +470,7 @@ export const actions: Actions = {
 		if (!isUuid(draftId)) {
 			return fail(400, { action: 'drafts', message: 'That saved draft no longer exists.' });
 		}
-		const result = await deleteDraft(db, story.id, draftId);
+		const result = await deleteDraft(db, locals.user!.id, story.id, draftId);
 		if (!result.ok) return fail(400, { action: 'drafts', message: result.reason });
 		return { action: 'drafts', deleted: true };
 	},

@@ -5,6 +5,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assets,
 	chapters,
 	characters,
 	characterStoryMemberships,
@@ -26,6 +27,7 @@ import {
 	draftsByStory,
 	draftUsesCover,
 	getDraft,
+	replaceCover,
 	listDrafts,
 	newStoryFromDraft,
 	restoreDraftScene,
@@ -40,6 +42,11 @@ import {
 	gatherStory
 } from '../../src/lib/server/export';
 import { deleteStory } from '../../src/lib/server/story-delete';
+import { purgeUniverse } from '../../src/lib/server/universe-lifecycle';
+import { saveSceneBody } from '../../src/lib/server/scene-save';
+import { zipBytes } from '../../src/lib/server/zip-stream';
+import { parseStoryZip } from '../../src/lib/import-markdown';
+import { textHash } from '../../src/lib/text-hash';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureBuiltInRelationTypes, ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -68,7 +75,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table story_drafts, publication_assets, publications, revisions, entity_relationships, character_story_memberships, character_story_notes, notes, scenes, chapters, characters, places, lore_entries, entity_categories, stories, universes, users cascade'
+		'truncate table story_drafts, assets, pending_object_deletions, publication_assets, publications, revisions, entity_relationships, character_story_memberships, character_story_notes, notes, scenes, chapters, characters, places, lore_entries, entity_categories, stories, universes, users cascade'
 	);
 	await ensureBuiltInRelationTypes(pool);
 	const [owner] = await db
@@ -259,8 +266,8 @@ describe('updateDraftDetails and deleteDraft', () => {
 			.insert(stories)
 			.values({ universeId, ownerId, title: 'Other', slug: 'other' })
 			.returning();
-		expect(await deleteDraft(db, elsewhere.id, id)).toMatchObject({ ok: false });
-		expect(await deleteDraft(db, storyId, id)).toEqual({ ok: true });
+		expect(await deleteDraft(db, ownerId, elsewhere.id, id)).toMatchObject({ ok: false });
+		expect(await deleteDraft(db, ownerId, storyId, id)).toEqual({ ok: true });
 		expect(await getDraft(db, storyId, id)).toBeNull();
 	});
 });
@@ -344,6 +351,45 @@ describe('restoreDraftScene', () => {
 		expect(result.sceneId).not.toBe(other.id);
 	});
 
+	it('refuses a draft from another story', async () => {
+		const id = await save();
+		const [elsewhere] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Other', slug: 'other' })
+			.returning();
+		expect(await restoreDraftScene(db, elsewhere.id, id, sceneId)).toMatchObject({
+			ok: false,
+			code: 'not_found'
+		});
+	});
+
+	it('makes an editor still showing the old text ask before saving over it', async () => {
+		const id = await save();
+		await db.update(scenes).set({ bodyMd: 'Halden left at dusk.' }).where(eq(scenes.id, sceneId));
+		await restoreDraftScene(db, storyId, id, sceneId);
+		// An editor open since before the restore last saw the dusk text.
+		const result = await saveSceneBody(db, sceneId, {
+			title: 'Dawn',
+			bodyMd: 'Halden left at dusk, late.',
+			anchors: null,
+			baseHashes: [textHash('Halden left at dusk.')],
+			overwrite: false
+		});
+		expect(result).toEqual({
+			ok: false,
+			conflict: { bodyMd: 'Halden left at dawn.', title: 'Dawn' }
+		});
+		const history = await db
+			.select({ bodyMd: revisions.bodyMd })
+			.from(revisions)
+			.where(eq(revisions.entityId, sceneId))
+			.orderBy(asc(revisions.createdAt));
+		expect(history.map((row) => row.bodyMd)).toEqual([
+			'Halden left at dusk.',
+			'Halden left at dawn.'
+		]);
+	});
+
 	it('refuses a scene that is not in the draft', async () => {
 		const id = await save();
 		expect(await restoreDraftScene(db, storyId, id, characterId)).toMatchObject({
@@ -386,6 +432,34 @@ describe('newStoryFromDraft', () => {
 		expect(original.bodyMd).toBe('Changed since.');
 	});
 
+	it('copies relationships that held only in this story', async () => {
+		await db
+			.update(entityRelationships)
+			.set({ storyId, notesMd: 'Only here.' })
+			.where(eq(entityRelationships.fromId, characterId));
+		const id = await save();
+		const [story] = await db.select().from(stories).where(eq(stories.id, storyId));
+		const result = await newStoryFromDraft(db, ownerId, story, id, 'Copy');
+		if (!result.ok) throw new Error('expected a new story');
+		const [copy] = await db.select().from(stories).where(eq(stories.slug, result.slug));
+		const rows = await db
+			.select()
+			.from(entityRelationships)
+			.where(eq(entityRelationships.storyId, copy.id));
+		expect(rows).toEqual([
+			expect.objectContaining({ fromId: characterId, toId: placeId, notesMd: 'Only here.' })
+		]);
+	});
+
+	it('refuses a draft from another story', async () => {
+		const id = await save();
+		const [elsewhere] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Other', slug: 'other' })
+			.returning();
+		expect(await newStoryFromDraft(db, ownerId, elsewhere, id, '')).toMatchObject({ ok: false });
+	});
+
 	it('skips story notes for entities deleted since', async () => {
 		const id = await save();
 		await db.delete(characterStoryNotes);
@@ -421,7 +495,7 @@ describe('publishing a saved draft', () => {
 			unfiled: [{ title: 'Loose', bodyMd: 'A stray page.' }]
 		});
 		// Deleting the draft keeps the edition.
-		await deleteDraft(db, storyId, id);
+		await deleteDraft(db, ownerId, storyId, id);
 		const [kept] = await db.select().from(publications);
 		expect(kept.sourceDraftId).toBeNull();
 	});
@@ -438,6 +512,15 @@ describe('publishing a saved draft', () => {
 });
 
 describe('lifecycle', () => {
+	it('goes with the universe, editions published from a draft included', async () => {
+		const id = await save();
+		expect((await publishStory(db, ownerId, storyId, 'Edition 1', id)).ok).toBe(true);
+		await purgeUniverse(db, universeId);
+		expect(await db.select().from(storyDrafts)).toEqual([]);
+		expect(await db.select().from(publications)).toEqual([]);
+		expect(await db.select().from(stories)).toEqual([]);
+	});
+
 	it('goes with the story when it is deleted', async () => {
 		await save();
 		await deleteStory(db, storyId, ownerId);
@@ -450,12 +533,78 @@ describe('lifecycle', () => {
 		await db.update(stories).set({ coverAssetId: assetId }).where(eq(stories.id, storyId));
 		await save();
 		expect(await draftUsesCover(db, storyId, assetId)).toBe(true);
+		const [elsewhere] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Other', slug: 'other' })
+			.returning();
+		expect(await draftUsesCover(db, elsewhere.id, assetId)).toBe(false);
+	});
+
+	const cover = async (name: string) => {
+		const [row] = await db
+			.insert(assets)
+			.values({
+				ownerId,
+				universeId,
+				kind: 'cover',
+				filename: `${name}.png`,
+				contentType: 'image/png',
+				byteSize: 1,
+				storageKey: `key-${name}`
+			})
+			.returning({ id: assets.id });
+		return row.id;
+	};
+	const assetIds = async () => (await db.select({ id: assets.id }).from(assets)).map((a) => a.id);
+
+	it('keeps an old cover a draft shows, and frees it with the last such draft', async () => {
+		const first = await cover('first');
+		const second = await cover('second');
+		expect(await replaceCover(db, storyId, first)).toBeNull();
+		const id = await save();
+		// The draft still shows the first cover, so it is not freed.
+		expect(await replaceCover(db, storyId, second)).toBeNull();
+		expect(await deleteDraft(db, ownerId, storyId, id)).toEqual({ ok: true });
+		expect(await assetIds()).toEqual([second]);
+	});
+
+	it('hands back an old cover no draft shows', async () => {
+		const first = await cover('first');
+		const second = await cover('second');
+		await replaceCover(db, storyId, first);
+		expect(await replaceCover(db, storyId, second)).toBe(first);
+	});
+
+	it('keeps the story cover when a draft that shows it is deleted', async () => {
+		const first = await cover('first');
+		await replaceCover(db, storyId, first);
+		const id = await save();
+		await deleteDraft(db, ownerId, storyId, id);
+		expect(await assetIds()).toEqual([first]);
 	});
 });
 
 describe('exports', () => {
 	const text = (entry: { data: unknown } | undefined) =>
 		entry && entry.data instanceof Uint8Array ? new TextDecoder().decode(entry.data) : null;
+
+	it('import back as the working draft only', async () => {
+		await save();
+		await db.update(scenes).set({ bodyMd: 'Now.' }).where(eq(scenes.id, sceneId));
+		const [story] = await db.select().from(stories).where(eq(stories.id, storyId));
+		const content = await gatherStory(db, story);
+		const archive = await buildStoryZip(
+			story,
+			{ ...content, drafts: await gatherDrafts(db, story.id) },
+			async () => []
+		);
+		const plan = parseStoryZip(await zipBytes(archive.entries));
+		expect(plan.story.title).toBe('The Salt Road');
+		expect(plan.chapters[0].scenes.map((scene) => scene.bodyMd)).toEqual(['Now.']);
+		expect(plan.problems).toContain(
+			'The saved drafts in this archive were not imported, only the working draft.'
+		);
+	});
 
 	it('carry each saved draft in its own folder, worldbuilding included', async () => {
 		await save('First draft');

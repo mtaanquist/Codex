@@ -10,7 +10,7 @@ You can save as many drafts as you want.
 
 ## Switching between drafts
 
-Once a story has a saved draft, the path at the top of the editor shows "Working draft" after the story's title. Select it to open any saved draft, to go back to the working draft, or to save another one. In the library, a story with saved drafts has a "Drafts" button on its card with the same choices, in the covers and compact views.
+Once a story has a saved draft, the path at the top of the editor shows "Working draft" after the story's title. Select it to open any saved draft, to go back to the working draft, or to save another one. In the library, a story with saved drafts has a "Drafts" button on its card with the same choices. In the table view, a link under the title opens its saved drafts.
 
 A saved draft opens to read only. A banner at the top says so, and "Back to the working draft" takes you back to writing. The tabs under the banner show the story, the worldbuilding (with how often each name comes up in that draft), and the story's notes, all as they were when you saved.
 

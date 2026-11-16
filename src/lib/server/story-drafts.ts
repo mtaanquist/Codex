@@ -22,7 +22,8 @@ import type { ActionFailure } from './action-result.ts';
 import { recordRevision } from './revisions.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { uniqueSlug } from './slugs.ts';
-import { isUniqueViolation } from './db-errors.ts';
+import { isSerializationFailure, isUniqueViolation } from './db-errors.ts';
+import { deleteAsset } from './assets.ts';
 import { wordCount } from '#lib/word-count';
 import {
 	DRAFT_LABEL_MAX,
@@ -208,6 +209,7 @@ export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Pro
 			fromId: entityRelationships.fromId,
 			toType: entityRelationships.toType,
 			toId: entityRelationships.toId,
+			relationTypeId: entityRelationships.relationTypeId,
 			label: relationTypes.forwardLabel,
 			notesMd: entityRelationships.notesMd,
 			storyId: entityRelationships.storyId
@@ -259,7 +261,10 @@ export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Pro
 }
 
 // Saves the story as it stands now under a name. The story row is read
-// inside the transaction too, so its title and cover match the prose.
+// inside the transaction too, so its title and cover match the prose. The
+// share lock makes a concurrent cover change wait for the new draft (so it
+// sees the draft before freeing the old cover), or makes this snapshot fail
+// and start over with the new cover.
 export async function saveDraft(
 	db: Database,
 	userId: string,
@@ -270,12 +275,29 @@ export async function saveDraft(
 	if (typeof label !== 'string') return label;
 	const note = cleanNote(input.note);
 	if (note !== null && typeof note !== 'string') return note;
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await saveDraftOnce(db, userId, storyId, label, note);
+		} catch (err) {
+			if (attempt >= 3 || !isSerializationFailure(err)) throw err;
+		}
+	}
+}
+
+async function saveDraftOnce(
+	db: Database,
+	userId: string,
+	storyId: string,
+	label: string,
+	note: string | null
+): Promise<{ ok: true; id: string } | ActionFailure> {
 	return await db.transaction(
 		async (tx) => {
 			const [story] = await tx
 				.select()
 				.from(stories)
-				.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)));
+				.where(and(eq(stories.id, storyId), eq(stories.ownerId, userId)))
+				.for('share');
 			if (!story) {
 				return { ok: false as const, code: 'not_found' as const, reason: 'That story is gone.' };
 			}
@@ -350,22 +372,64 @@ export async function updateDraftDetails(
 	return updated.length > 0 ? { ok: true } : NOT_FOUND;
 }
 
+// Deletes a saved draft. When it was the last thing showing an old cover,
+// that image is freed too.
 export async function deleteDraft(
 	db: Database,
+	userId: string,
 	storyId: string,
 	draftId: string
 ): Promise<{ ok: true } | ActionFailure> {
-	const deleted = await db
-		.delete(storyDrafts)
-		.where(and(eq(storyDrafts.id, draftId), eq(storyDrafts.storyId, storyId)))
-		.returning({ id: storyDrafts.id });
-	return deleted.length > 0 ? { ok: true } : NOT_FOUND;
+	const result = await db.transaction(async (tx) => {
+		const [story] = await tx
+			.select({ coverAssetId: stories.coverAssetId })
+			.from(stories)
+			.where(eq(stories.id, storyId))
+			.for('update');
+		const [deleted] = await tx
+			.delete(storyDrafts)
+			.where(and(eq(storyDrafts.id, draftId), eq(storyDrafts.storyId, storyId)))
+			.returning({
+				cover: sql<string | null>`${storyDrafts.content} -> 'story' ->> 'coverAssetId'`
+			});
+		if (!deleted) return null;
+		const cover = deleted.cover;
+		const unused =
+			cover !== null &&
+			cover !== story?.coverAssetId &&
+			!(await draftUsesCover(tx, storyId, cover));
+		return { unusedCover: unused ? cover : null };
+	});
+	if (!result) return NOT_FOUND;
+	if (result.unusedCover) await deleteAsset(db, userId, result.unusedCover);
+	return { ok: true };
+}
+
+// Sets a new cover image. The old one is returned for the caller to free
+// when no saved draft still shows it; the story row lock keeps a draft being
+// saved at the same moment from picking up the old cover unseen.
+export async function replaceCover(
+	db: Database,
+	storyId: string,
+	assetId: string
+): Promise<string | null> {
+	return await db.transaction(async (tx) => {
+		const [story] = await tx
+			.select({ coverAssetId: stories.coverAssetId })
+			.from(stories)
+			.where(eq(stories.id, storyId))
+			.for('update');
+		const previous = story?.coverAssetId ?? null;
+		await tx.update(stories).set({ coverAssetId: assetId }).where(eq(stories.id, storyId));
+		if (!previous || previous === assetId) return null;
+		return (await draftUsesCover(tx, storyId, previous)) ? null : previous;
+	});
 }
 
 // Whether any saved draft still shows this image as its cover, so replacing
 // the cover keeps the old file for the draft.
 export async function draftUsesCover(
-	db: Database,
+	db: Tx | Database,
 	storyId: string,
 	assetId: string
 ): Promise<boolean> {
@@ -618,6 +682,42 @@ export async function newStoryFromDraft(
 						loreEntryId: entity.id,
 						storyId: created.id,
 						notesMd: entity.storyNotesMd
+					});
+				}
+			}
+
+			// Relationships that held only in this story, when both ends and the
+			// kind of relationship still exist.
+			const storyOnly = content.relationships.filter(
+				(rel) =>
+					rel.storyOnly && living[rel.fromType].has(rel.fromId) && living[rel.toType].has(rel.toId)
+			);
+			if (storyOnly.length > 0) {
+				const types = new Set(
+					(
+						await tx
+							.select({ id: relationTypes.id })
+							.from(relationTypes)
+							.where(
+								inArray(
+									relationTypes.id,
+									storyOnly.map((rel) => rel.relationTypeId)
+								)
+							)
+					).map((row) => row.id)
+				);
+				for (const rel of storyOnly) {
+					if (!types.has(rel.relationTypeId)) continue;
+					await tx.insert(entityRelationships).values({
+						universeId: story.universeId,
+						ownerId: userId,
+						fromType: rel.fromType,
+						fromId: rel.fromId,
+						toType: rel.toType,
+						toId: rel.toId,
+						relationTypeId: rel.relationTypeId,
+						storyId: created.id,
+						notesMd: rel.notesMd
 					});
 				}
 			}

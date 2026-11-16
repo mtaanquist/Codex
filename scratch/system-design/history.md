@@ -983,6 +983,16 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 
 ## Saved drafts (2026-11-16)
 
+Low review items (#819 to #822), same PR: a cover change and a draft save
+now meet on the story row (`for update` in `replaceCover`, `for share` in
+`saveDraft`, which retries a serialization failure), so a draft cannot keep
+an old cover that was just freed; deleting the last draft that shows an old
+cover frees it. Draft relationships now carry `relationTypeId`, so "New story
+from this draft" copies story-only relationships. The library table links to
+Saved drafts under the title rather than carrying the cover menu, because its
+sideways-scrolling card would clip a menu. A failed draft delete still
+reports above the list: the row is gone by then.
+
 Review round on PR #815: "Add back to working draft" made a fresh copy on
 every click, since the copy has a new id. Matching by text was tried and
 dropped (empty or repeated scene text matched the wrong scene); the copy now
