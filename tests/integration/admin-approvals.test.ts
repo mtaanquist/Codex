@@ -155,6 +155,14 @@ describe('listAllUsers', () => {
 			expect(value?.getTime()).toBe(recent.getTime());
 		});
 
+		it('takes a sign-in newer than every remaining session', async () => {
+			const id = await makeUser('back@example.com', { approved: true });
+			const login = new Date(Date.now() - 60 * 1000);
+			await db.update(users).set({ lastLoginAt: login }).where(eq(users.id, id));
+			await addSession(id, new Date(Date.now() - 20 * day));
+			expect((await lastActiveOf('back@example.com'))?.getTime()).toBe(login.getTime());
+		});
+
 		it('falls back to the last sign-in once sessions are gone', async () => {
 			const id = await makeUser('away@example.com', { approved: true });
 			const login = new Date(Date.now() - 40 * day);

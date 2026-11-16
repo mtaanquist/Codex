@@ -138,7 +138,8 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			twoFactorEnabled: sql<boolean>`${userTotp.confirmedAt} is not null`,
 			createdAt: users.createdAt,
 			// The newest session activity, or the last sign-in once the daily sweep
-			// has purged the sessions. greatest() skips nulls.
+			// has purged the sessions. greatest() skips nulls. last_seen_at is only
+			// refreshed every few minutes (auth.ts), so this can lag by that much.
 			lastActiveAt: sql<Date | null>`greatest(
 				(select max(${sessions.lastSeenAt}) from ${sessions} where ${sessions.userId} = ${users.id}),
 				${users.lastLoginAt}
