@@ -543,14 +543,24 @@ a.nav-item {
 }
 .cell-name {
 	font-weight: 600;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 6px;
 }
 .cell-mail {
 	font-size: 12px;
 	color: var(--text-muted);
 	margin-top: 1px;
+	/* A long address breaks rather than pushing the table past its card. */
+	overflow-wrap: anywhere;
+	min-width: 16ch;
 }
 .cell-muted {
 	color: var(--text-muted);
+}
+.cell-nowrap {
+	white-space: nowrap;
 }
 /* Keep this a real table cell so its row border lines up with the others;
    the buttons flex inside an inner wrapper. */
@@ -577,11 +587,6 @@ a.nav-item {
 	border: 1px solid var(--accent-line);
 	color: var(--text);
 }
-.role-tag.writer {
-	background: var(--bg-inset);
-	border: 1px solid var(--border);
-	color: var(--text-muted);
-}
 .role-tag::before {
 	content: '';
 	width: 6px;
@@ -590,9 +595,6 @@ a.nav-item {
 }
 .role-tag.admin::before {
 	background: var(--accent);
-}
-.role-tag.writer::before {
-	background: var(--text-faint);
 }
 
 /* ============ INVITE / SNAPSHOT ROWS ============ */
