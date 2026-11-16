@@ -437,7 +437,7 @@ export const actions: Actions = {
 		const previous = story.coverAssetId;
 		await db.update(stories).set({ coverAssetId: created.id }).where(eq(stories.id, story.id));
 		// The replaced cover goes, unless a saved draft still shows it.
-		if (previous && !(await draftUsesCover(db, previous))) {
+		if (previous && !(await draftUsesCover(db, story.id, previous))) {
 			await deleteAsset(db, locals.user!.id, previous);
 		}
 		return { action: 'cover', saved: true };

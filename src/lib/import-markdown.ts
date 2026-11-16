@@ -56,6 +56,7 @@ export class StoryZipError extends Error {}
 // expands to gigabytes, or one with millions of entries) is rejected up front
 // rather than after it has exhausted the process.
 const MAX_ENTRIES = 5000;
+const SAVED_DRAFT_PATH = /^[^/]+\/drafts\//;
 const MAX_ENTRY_BYTES = 50 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
@@ -138,9 +139,16 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	let entries: Record<string, Uint8Array>;
 	let count = 0;
 	let total = 0;
+	let skippedDrafts = false;
 	try {
 		entries = unzipSync(bytes, {
 			filter(file) {
+				// Saved drafts ride along in the story folder's drafts/; they are
+				// not imported, so they do not count against the limits either.
+				if (SAVED_DRAFT_PATH.test(file.name)) {
+					skippedDrafts = true;
+					return false;
+				}
 				if (++count > MAX_ENTRIES) {
 					throw new StoryZipError('This archive has too many files to import.');
 				}
@@ -174,6 +182,9 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	const inRoot = (path: string) => (path.startsWith(root) ? path.slice(root.length) : null);
 
 	const problems: string[] = [];
+	if (skippedDrafts) {
+		problems.push('The saved drafts in this archive were not imported, only the working draft.');
+	}
 	const read = (path: string) => strFromU8(entries[path]);
 
 	const storyDoc = parseFrontMatter(read(storyPath));

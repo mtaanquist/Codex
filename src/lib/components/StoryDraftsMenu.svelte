@@ -11,8 +11,9 @@
 	let {
 		storySlug,
 		storyTitle,
-		drafts
-	}: { storySlug: string; storyTitle: string; drafts: DraftRef[] } = $props();
+		drafts,
+		compact = false
+	}: { storySlug: string; storyTitle: string; drafts: DraftRef[]; compact?: boolean } = $props();
 
 	let open = $state(false);
 	let trigger = $state<HTMLButtonElement>();
@@ -24,6 +25,7 @@
 
 <span
 	class="menu-host story-drafts"
+	class:compact
 	use:dismiss={{ enabled: open, close, refocus: () => trigger?.focus() }}
 >
 	<button
@@ -81,7 +83,13 @@
 		right: 26px;
 		z-index: 2;
 	}
+	/* No cover in the compact view, so the status sits in that corner. */
+	.story-drafts.compact {
+		top: auto;
+		right: var(--space-4);
+		bottom: var(--space-3);
+	}
 	.story-drafts-btn {
-		gap: 4px;
+		gap: var(--space-1);
 	}
 </style>

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatDateTime } from '#lib/format';
-	import { diffLines } from 'diff';
+	import DiffView from './DiffView.svelte';
 	import { goto } from '$app/navigation';
 	import Icon from './Icon.svelte';
 	import type { EntitySnapshot } from '#lib/entity-snapshot';
@@ -39,7 +39,6 @@
 	let showDiff = $state(false);
 	let restoring = $state(false);
 
-	const parts = $derived(showDiff ? diffLines(currentBody, revision.bodyMd) : []);
 	const paragraphs = $derived(revision.bodyMd.split(/\n\n+/).filter((part) => part.trim() !== ''));
 
 	async function restore() {
@@ -127,12 +126,7 @@
 {/if}
 
 {#if showDiff}
-	<div class="prose-historical diff-view">
-		{#each parts as part, index (index)}<span
-				class:diff-add={part.added}
-				class:diff-del={part.removed}>{part.value}</span
-			>{/each}
-	</div>
+	<DiffView class="prose-historical" from={currentBody} to={revision.bodyMd} />
 {:else}
 	<div class="prose-historical">
 		{#each paragraphs as paragraph, index (index)}
@@ -173,18 +167,5 @@
 	.snap-v {
 		color: var(--text);
 		min-width: 0;
-	}
-	.diff-view {
-		white-space: pre-wrap;
-		line-height: 1.7;
-	}
-	.diff-add {
-		background: color-mix(in oklab, var(--cat-green) 22%, transparent);
-		border-radius: 3px;
-	}
-	.diff-del {
-		background: color-mix(in oklab, var(--danger) 18%, transparent);
-		text-decoration: line-through;
-		border-radius: 3px;
 	}
 </style>

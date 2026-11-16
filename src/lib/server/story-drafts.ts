@@ -364,14 +364,27 @@ export async function deleteDraft(
 
 // Whether any saved draft still shows this image as its cover, so replacing
 // the cover keeps the old file for the draft.
-export async function draftUsesCover(db: Database, assetId: string): Promise<boolean> {
+export async function draftUsesCover(
+	db: Database,
+	storyId: string,
+	assetId: string
+): Promise<boolean> {
 	const [row] = await db
 		.select({ id: storyDrafts.id })
 		.from(storyDrafts)
-		.where(sql`${storyDrafts.content} -> 'story' ->> 'coverAssetId' = ${assetId}`)
+		.where(
+			and(
+				eq(storyDrafts.storyId, storyId),
+				sql`${storyDrafts.content} -> 'story' ->> 'coverAssetId' = ${assetId}`
+			)
+		)
 		.limit(1);
 	return Boolean(row);
 }
+
+// The scenes.metadata key on a scene added back from a saved draft: the id
+// the scene had when the draft was saved.
+export const FROM_DRAFT_SCENE = 'fromDraftScene';
 
 // Puts one scene's saved text back into the working draft. The live scene's
 // current text is kept in History first, and the restored text lands as a
@@ -412,6 +425,24 @@ export async function restoreDraftScene(
 			}
 			return { ok: true as const, sceneId: live.id, created: false };
 		}
+		// Added back once already: the copy has a new id and remembers the
+		// saved scene it came from. The lock keeps a double submit from making
+		// two copies.
+		await tx.execute(
+			sql`select pg_advisory_xact_lock(hashtext(${`draft-restore:${storyId}:${sceneId}`}))`
+		);
+		const [copy] = await tx
+			.select({ id: scenes.id })
+			.from(scenes)
+			.where(
+				and(
+					eq(scenes.storyId, storyId),
+					isNull(scenes.deletedAt),
+					sql`${scenes.metadata} ->> ${FROM_DRAFT_SCENE} = ${sceneId}`
+				)
+			)
+			.limit(1);
+		if (copy) return { ok: true as const, sceneId: copy.id, created: false };
 		const [chapter] = saved.chapterId
 			? await tx
 					.select({ id: chapters.id })
@@ -431,8 +462,10 @@ export async function restoreDraftScene(
 				title: saved.title,
 				bodyMd: saved.bodyMd,
 				summaryMd: saved.summaryMd,
+				status: saved.status as (typeof scenes.$inferInsert)['status'],
 				storyTime: saved.storyTime,
-				wordCount: wordCount(saved.bodyMd)
+				wordCount: wordCount(saved.bodyMd),
+				metadata: { [FROM_DRAFT_SCENE]: sceneId }
 			})
 			.returning({ id: scenes.id });
 		await recordRevision(tx, 'scene', created.id, saved.bodyMd, 'restore', { label });

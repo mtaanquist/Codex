@@ -4,6 +4,7 @@
 	import { confirmSubmit } from '#lib/confirm.svelte';
 	import { DRAFT_LABEL_MAX, DRAFT_NOTE_MAX } from '#lib/drafts';
 	import { formatDateTime, formatNumber } from '#lib/format';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import HelpLink from '#lib/components/HelpLink.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -17,6 +18,15 @@
 	}
 	const drafts = $derived(form?.action === 'drafts' ? form : null);
 	const savedId = $derived(drafts && 'savedDraftId' in drafts ? drafts.savedDraftId : null);
+	const formSuccess = $derived(
+		!drafts
+			? null
+			: 'deleted' in drafts
+				? 'Draft deleted.'
+				: 'saved' in drafts
+					? 'Draft renamed.'
+					: null
+	);
 	const rowError = $derived(
 		drafts && 'draftId' in drafts && 'message' in drafts ? drafts.draftId : null
 	);
@@ -49,22 +59,21 @@
 			<label for="draft-note">Note (optional)</label>
 			<textarea
 				id="draft-note"
-				class="input"
+				class="textarea"
 				name="note"
 				rows="2"
 				maxlength={DRAFT_NOTE_MAX}
 				placeholder="What this draft is, or what changed"></textarea>
 		</div>
-		{#if drafts && 'message' in drafts && !rowError}
-			<p class="form-error" role="alert">{drafts.message}</p>
-		{/if}
+		<FormStatus
+			error={drafts && 'message' in drafts && !rowError ? drafts.message : null}
+			success={formSuccess}
+			block
+		/>
 		{#if savedId}
 			<p class="field-hint saved" role="status">
 				Draft saved. <a href={draftHref(savedId)}>Open it</a>
 			</p>
-		{/if}
-		{#if drafts && 'deleted' in drafts}
-			<p class="field-hint saved" role="status">Draft deleted.</p>
 		{/if}
 		<div class="settings-actions">
 			<button class="btn btn-primary" type="submit">Save draft</button>
@@ -104,7 +113,7 @@
 							})}
 						>
 							<input type="hidden" name="draftId" value={draft.id} />
-							<button class="btn btn-sm btn-ghost" type="submit">Delete</button>
+							<button class="btn btn-sm btn-danger" type="submit">Delete</button>
 						</form>
 					</div>
 					{#if editing === draft.id || rowError === draft.id}
@@ -125,15 +134,18 @@
 								<label for="draft-note-{draft.id}">Note</label>
 								<textarea
 									id="draft-note-{draft.id}"
-									class="input"
+									class="textarea"
 									name="note"
 									rows="2"
 									maxlength={DRAFT_NOTE_MAX}>{draft.noteMd ?? ''}</textarea
 								>
 							</div>
-							{#if rowError === draft.id && drafts && 'message' in drafts}
-								<p class="form-error" role="alert">{drafts.message}</p>
-							{/if}
+							<FormStatus
+								error={rowError === draft.id && drafts && 'message' in drafts
+									? drafts.message
+									: null}
+								block
+							/>
 							<div class="settings-actions">
 								<button class="btn btn-primary btn-sm" type="submit">Save</button>
 							</div>

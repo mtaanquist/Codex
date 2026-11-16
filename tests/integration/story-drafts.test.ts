@@ -317,6 +317,33 @@ describe('restoreDraftScene', () => {
 		expect(trashed.deletedAt).not.toBeNull();
 	});
 
+	it('adds a deleted scene back only once', async () => {
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const first = await restoreDraftScene(db, storyId, id, sceneId);
+		const second = await restoreDraftScene(db, storyId, id, sceneId);
+		expect(first).toMatchObject({ ok: true, created: true });
+		if (!first.ok) return;
+		expect(second).toEqual({ ok: true, sceneId: first.sceneId, created: false });
+		const copies = await db.select().from(scenes).where(eq(scenes.bodyMd, 'Halden left at dawn.'));
+		expect(copies).toHaveLength(1);
+	});
+
+	it('adds a scene back even when another scene has the same text', async () => {
+		const id = await save();
+		await db.delete(notes);
+		const [other] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 50, bodyMd: 'Halden left at dawn.' })
+			.returning({ id: scenes.id });
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const result = await restoreDraftScene(db, storyId, id, sceneId);
+		expect(result).toMatchObject({ ok: true, created: true });
+		if (!result.ok) return;
+		expect(result.sceneId).not.toBe(other.id);
+	});
+
 	it('refuses a scene that is not in the draft', async () => {
 		const id = await save();
 		expect(await restoreDraftScene(db, storyId, id, characterId)).toMatchObject({
@@ -419,10 +446,10 @@ describe('lifecycle', () => {
 
 	it('knows when a draft still shows an image as its cover', async () => {
 		const assetId = '00000000-0000-4000-8000-000000000001';
-		expect(await draftUsesCover(db, assetId)).toBe(false);
+		expect(await draftUsesCover(db, storyId, assetId)).toBe(false);
 		await db.update(stories).set({ coverAssetId: assetId }).where(eq(stories.id, storyId));
 		await save();
-		expect(await draftUsesCover(db, assetId)).toBe(true);
+		expect(await draftUsesCover(db, storyId, assetId)).toBe(true);
 	});
 });
 

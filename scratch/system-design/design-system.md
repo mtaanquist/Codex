@@ -570,7 +570,8 @@ The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 the tinted blank the card's `h3` is `.visually-hidden` so the title shows
 once). Each card sits in a `.story-card-wrap`, so a story with saved drafts
 can carry `StoryDraftsMenu` (a "Drafts" `.btn-sm` over the cover's corner,
-opening the shared `.popover`) beside the card's link rather than inside it. The per-user library view (`users.preferences.libraryView`: covers,
+or at the card's foot in compact view, opening the shared `.popover`) beside
+the card's link rather than inside it. The table view has no drafts menu. The per-user library view (`users.preferences.libraryView`: covers,
 compact, table) drops the cover in compact, and in table renders each
 collection as an `.admin-table` inside `.admin-card.tight` instead of cards.
 `.admin-card` (settings/admin sections, also used

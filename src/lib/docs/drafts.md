@@ -10,7 +10,7 @@ You can save as many drafts as you want.
 
 ## Switching between drafts
 
-Once a story has a saved draft, the path at the top of the editor shows "Working draft" after the story's title. Select it to open any saved draft, to go back to the working draft, or to save another one. In the library, a story with saved drafts has a "Drafts" button on its cover with the same choices.
+Once a story has a saved draft, the path at the top of the editor shows "Working draft" after the story's title. Select it to open any saved draft, to go back to the working draft, or to save another one. In the library, a story with saved drafts has a "Drafts" button on its card with the same choices, in the covers and compact views.
 
 A saved draft opens to read only. A banner at the top says so, and "Back to the working draft" takes you back to writing. The tabs under the banner show the story, the worldbuilding (with how often each name comes up in that draft), and the story's notes, all as they were when you saved.
 
@@ -18,7 +18,7 @@ A saved draft opens to read only. A banner at the top says so, and "Back to the 
 
 Each scene in a saved draft says whether it is the same as in the working draft, has changed since, or is no longer there.
 
-- **Compare with working draft** shows what changed in that scene since you saved the draft. Highlighted text was added later, and struck-through text was taken out.
+- **Compare with working draft** shows what changed in that scene since you saved the draft. Green text was added later. Red, struck-through text was taken out.
 - **Restore this scene** puts the saved text back into the scene in the working draft. The text it replaces stays in that scene's History, so you can undo it from there.
 - **Add back to working draft** makes a new scene with the saved text when the scene was deleted since. It goes into its old chapter if that chapter still exists.
 
@@ -26,7 +26,7 @@ To go back to the whole story as it was, select "New story from this draft". Thi
 
 ## Publishing a saved draft
 
-If you can publish stories, you can publish a saved draft instead of the working draft. Select "Publish this draft" on the draft, or pick it under "What to publish" in the story's Publish settings. Only the prose goes on the public page.
+If you can publish stories, you can publish a saved draft instead of the working draft. Select "Publish this draft" on the draft, or pick it under "What to publish" in the story's Publish settings. The public page uses the draft's prose, title, and description.
 
 ## Renaming and deleting
 
@@ -34,4 +34,4 @@ In "Saved drafts" in the story's settings, select "Rename" to change a draft's n
 
 ## Exporting
 
-When you export the story or your whole account as markdown, each saved draft comes along in its own folder under `drafts/`, with its scenes, notes, and worldbuilding.
+When you export the story or your whole account as markdown, each saved draft comes along in its own folder under `drafts/`, with its scenes, notes, and worldbuilding. Importing a story export brings back the working draft only, not its saved drafts.

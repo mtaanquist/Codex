@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { diffLines } from 'diff';
 	import AppBar from '#lib/components/AppBar.svelte';
+	import DiffView from '#lib/components/DiffView.svelte';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import { storyPath } from '#lib/chrome';
 	import { confirmEnhance } from '#lib/confirm.svelte';
@@ -37,6 +38,17 @@
 	// Scenes open for comparison, by id.
 	let comparing = $state<Record<string, boolean>>({});
 	let newStoryOpen = $state(false);
+	// A failed submit keeps the form open, with its message, until closed.
+	$effect(() => {
+		if (form?.action === 'newStory') newStoryOpen = true;
+	});
+	const restoreResult = $derived(form?.action === 'restore' ? form : null);
+	// The result of restoring a scene shows on that scene.
+	function restoreMessage(sceneId: string) {
+		return restoreResult && 'sceneId' in restoreResult && restoreResult.sceneId === sceneId
+			? restoreResult
+			: null;
+	}
 
 	type SceneState = 'same' | 'changed' | 'missing';
 	function sceneState(scene: DraftScene): SceneState {
@@ -141,7 +153,7 @@
 				</div>
 			</div>
 
-			{#if newStoryOpen || form?.action === 'newStory'}
+			{#if newStoryOpen}
 				<form class="admin-card new-story" method="POST" action="?/newStory" use:enhance>
 					<div class="field">
 						<label for="draft-new-title">Title of the new story</label>
@@ -157,9 +169,7 @@
 							as it is.
 						</p>
 					</div>
-					{#if form?.action === 'newStory' && form.message}
-						<p class="form-error" role="alert">{form.message}</p>
-					{/if}
+					<FormStatus error={form?.action === 'newStory' ? form.message : null} block />
 					<div class="settings-actions">
 						<button class="btn btn-primary" type="submit">Make the new story</button>
 						<button class="btn btn-ghost" type="button" onclick={() => (newStoryOpen = false)}>
@@ -183,19 +193,6 @@
 			</nav>
 
 			{#if data.tab === 'story'}
-				{#if form?.action === 'restore'}
-					{#if 'message' in form && form.message}
-						<p class="form-error" role="alert">{form.message}</p>
-					{:else if 'restoredSceneId' in form}
-						<p class="field-hint restored" role="status">
-							{form.created
-								? 'The scene was added back to the working draft.'
-								: 'The scene in the working draft now has this text. The text it replaced is in its History.'}
-							<a href={withQuery(workingHref, { scene: form.restoredSceneId })}>Open the scene</a>
-						</p>
-					{/if}
-				{/if}
-
 				{#if content.scenes.length === 0}
 					<div class="empty-state">
 						<p class="empty-state-text">This draft was saved before any scenes were written.</p>
@@ -204,6 +201,7 @@
 
 				{#snippet sceneBlock(scene: DraftScene)}
 					{@const state = sceneState(scene)}
+					{@const result = restoreMessage(scene.id)}
 					<section class="draft-scene" aria-labelledby="draft-scene-{scene.id}">
 						<div class="draft-scene-head">
 							<h3 id="draft-scene-{scene.id}">{scene.title ?? 'Untitled scene'}</h3>
@@ -247,17 +245,24 @@
 								{/if}
 							</div>
 						</div>
+						{#if result && 'message' in result}
+							<FormStatus error={result.message} block />
+						{:else if result && 'restoredSceneId' in result}
+							<p class="field-hint restored" role="status">
+								{result.created
+									? 'The scene was added back to the working draft.'
+									: 'The scene in the working draft now has this text. The text it replaced is in its History.'}
+								<a href={withQuery(workingHref, { scene: result.restoredSceneId })}
+									>Open the scene</a
+								>
+							</p>
+						{/if}
 						{#if comparing[scene.id] && state === 'changed'}
 							<p class="field-hint">
-								Highlighted text was added in the working draft since; struck-through text was taken
+								Green text was added in the working draft since. Red, struck-through text was taken
 								out.
 							</p>
-							<div class="reader-prose draft-diff">
-								{#each diffLines(scene.bodyMd, data.live[scene.id] ?? '') as part, index (index)}<span
-										class:diff-add={part.added}
-										class:diff-del={part.removed}>{part.value}</span
-									>{/each}
-							</div>
+							<DiffView class="reader-prose" from={scene.bodyMd} to={data.live[scene.id] ?? ''} />
 						{:else}
 							<div class="reader-prose">
 								<!-- eslint-disable-next-line svelte/no-at-html-tags (shared renderer escapes raw HTML) -->
@@ -304,6 +309,7 @@
 								{@const related = relationshipsOf(entity.id)}
 								<details class="r-card draft-entity">
 									<summary>
+										<span class="draft-entity-caret"><Icon name="caret" size={11} /></span>
 										<span class="draft-entity-name">{entity.name}</span>
 										{#if entity.categoryName}
 											<span class="pill">{entity.categoryName}</span>
@@ -361,7 +367,7 @@
 				<div class="draft-entities">
 					{#each content.notes as note (note.id)}
 						<article class="r-card draft-entity">
-							<h3 class="draft-entity-name">{note.title ?? 'Untitled note'}</h3>
+							<h2 class="draft-entity-name">{note.title ?? 'Untitled note'}</h2>
 							{#if note.sceneId && sceneTitle.has(note.sceneId)}
 								<p class="field-hint">On the scene "{sceneTitle.get(note.sceneId)}"</p>
 							{/if}
@@ -433,19 +439,8 @@
 	.draft-scene-tools {
 		margin-left: auto;
 		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-2);
-	}
-	.draft-diff {
-		white-space: pre-wrap;
-	}
-	.diff-add {
-		background: color-mix(in oklab, var(--cat-green) 22%, transparent);
-		border-radius: 3px;
-	}
-	.diff-del {
-		background: color-mix(in oklab, var(--danger) 18%, transparent);
-		text-decoration: line-through;
-		border-radius: 3px;
 	}
 	.draft-entities {
 		display: flex;
@@ -454,10 +449,23 @@
 	}
 	.draft-entity summary {
 		display: flex;
+		list-style: none;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-2);
 		cursor: pointer;
+	}
+	.draft-entity summary::-webkit-details-marker {
+		display: none;
+	}
+	.draft-entity-caret {
+		display: inline-flex;
+		color: var(--text-faint);
+		transform: rotate(-90deg);
+		transition: transform 0.14s;
+	}
+	.draft-entity[open] .draft-entity-caret {
+		transform: none;
 	}
 	.draft-entity-name {
 		font-weight: 650;
@@ -507,6 +515,9 @@
 		}
 		.draft-scene-tools {
 			margin-left: 0;
+		}
+		.draft-page :global(.revision-banner) {
+			flex-wrap: wrap;
 		}
 	}
 </style>

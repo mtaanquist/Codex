@@ -6,6 +6,7 @@ import { scenes, users } from '#lib/server/db/schema';
 import { ownedStory } from '#lib/server/story-access';
 import { readingPageRef } from '#lib/server/publish';
 import {
+	FROM_DRAFT_SCENE,
 	getDraft,
 	listDrafts,
 	newStoryFromDraft,
@@ -16,6 +17,26 @@ import { formText } from '#lib/server/validation';
 import { rateLimitWrites } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
 import { detectMentions, type MentionTarget } from '#lib/mention-detect';
+
+// The working draft's text for each saved scene. A scene that was added back
+// from a draft has a new id, so it is found by the id it came from.
+function liveByDraftScene(
+	saved: { id: string }[],
+	live: { id: string; bodyMd: string; metadata: unknown }[]
+): Record<string, string> {
+	const byId = new Map<string, string>();
+	for (const scene of live) {
+		const from = (scene.metadata as Record<string, unknown>)[FROM_DRAFT_SCENE];
+		if (typeof from === 'string' && !byId.has(from)) byId.set(from, scene.bodyMd);
+	}
+	for (const scene of live) byId.set(scene.id, scene.bodyMd);
+	const result: Record<string, string> = {};
+	for (const scene of saved) {
+		const body = byId.get(scene.id);
+		if (body !== undefined) result[scene.id] = body;
+	}
+	return result;
+}
 
 const TABS = ['story', 'world', 'notes'] as const;
 type Tab = (typeof TABS)[number];
@@ -36,7 +57,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		// say which scenes have changed since.
 		tab === 'story'
 			? db
-					.select({ id: scenes.id, bodyMd: scenes.bodyMd })
+					.select({ id: scenes.id, bodyMd: scenes.bodyMd, metadata: scenes.metadata })
 					.from(scenes)
 					.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
 			: Promise.resolve([]),
@@ -72,7 +93,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		reading,
 		draft,
 		drafts: drafts.map((row) => ({ id: row.id, label: row.label })),
-		live: Object.fromEntries(liveScenes.map((scene) => [scene.id, scene.bodyMd])),
+		live: liveByDraftScene(draft.content.scenes, liveScenes),
 		mentions,
 		tab,
 		canPublish: Boolean(archive?.enabled && archive?.handle)

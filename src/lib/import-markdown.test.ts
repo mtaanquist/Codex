@@ -60,6 +60,23 @@ describe('parseStoryZip', () => {
 			[`halden/assets/${ASSET_ID}.png`]: new Uint8Array([1, 2, 3])
 		});
 
+	it('skips saved drafts without counting them against the file limit', () => {
+		const files: Record<string, string> = {
+			'halden/story.md': '---\ntitle: "Halden"\n---\n',
+			'halden/unfiled/01-loose-end.md': '---\ntitle: "Loose end"\n---\nNow.'
+		};
+		for (let index = 0; index < 5001; index++) {
+			files[`halden/drafts/first/characters/c-${index}.md`] = '---\nname: "C"\n---\n';
+		}
+		files['halden/drafts/first/story.md'] = '---\ntitle: "Halden, then"\n---\n';
+		const plan = parseStoryZip(zip(files));
+		expect(plan.story.title).toBe('Halden');
+		expect(plan.unfiled.map((scene) => scene.bodyMd)).toEqual(['Now.']);
+		expect(plan.problems).toContain(
+			'The saved drafts in this archive were not imported, only the working draft.'
+		);
+	});
+
 	it('rebuilds the story plan in NN order with notes and assets', () => {
 		const plan = parseStoryZip(full());
 		expect(plan.story).toEqual({

@@ -91,7 +91,7 @@
 
 {#snippet storyCard(story: Story)}
 	<!-- The drafts menu sits beside the card's link, not inside it. -->
-	<div class="story-card-wrap">
+	<div class="story-card-wrap" class:has-drafts={story.drafts.length > 0 && view === 'compact'}>
 		<a class="story-card" href={resolve('/stories/[id]', { id: story.slug })}>
 			<!-- The published shelf's cover pattern: the uploaded artwork, or the
 		     story's own title set on a cover tinted in its colour. Hidden from
@@ -137,7 +137,12 @@
 			</div>
 		</a>
 		{#if story.drafts.length > 0}
-			<StoryDraftsMenu storySlug={story.slug} storyTitle={story.title} drafts={story.drafts} />
+			<StoryDraftsMenu
+				storySlug={story.slug}
+				storyTitle={story.title}
+				drafts={story.drafts}
+				compact={view === 'compact'}
+			/>
 		{/if}
 	</div>
 {/snippet}

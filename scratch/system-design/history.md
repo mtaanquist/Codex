@@ -983,6 +983,15 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 
 ## Saved drafts (2026-11-16)
 
+Review round on PR #815: "Add back to working draft" made a fresh copy on
+every click, since the copy has a new id. Matching by text was tried and
+dropped (empty or repeated scene text matched the wrong scene); the copy now
+records the saved scene's id in `scenes.metadata.fromDraftScene`, and an
+advisory lock stops a double submit. The importer skips `drafts/` before
+counting entries, so a story export with many drafts still imports, and says
+the drafts were left out. The compare view moved into a shared `DiffView`
+(`<ins>`/`<del>`), also used by `RevisionPreview`.
+
 Saved drafts (#812, branch `feat/saved-drafts`): a user asked, through Mads,
 for "editions" of a book they could always go back to, like a GitHub release,
 with switching from the library cover and the editor. Decided in discussion on
