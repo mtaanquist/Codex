@@ -17,8 +17,10 @@ import {
 	relationTypes,
 	scenes,
 	stories,
+	storyDrafts,
 	universes
 } from './db/schema.ts';
+import { draftOutline, type DraftContent, type DraftEntityType } from '../drafts.ts';
 import { findAssetReferences, rewriteAssetReferences } from '../markdown.ts';
 import { effectiveAssetConfig, s3AssetStore, type AssetObjectStore } from './assets.ts';
 import { extensionFor } from './media-types.ts';
@@ -206,7 +208,33 @@ export type StoryContent = {
 	// Both absent for frozen editions: notes are working material, not manuscript.
 	notes?: ExportNote[];
 	freeformNotes?: ExportFreeformNote[];
+	// Saved drafts, for the working archive only.
+	drafts?: ExportDraft[];
 };
+
+// A saved draft as the archives carry it: a folder under drafts/ holding the
+// story as it was, worldbuilding included.
+export type ExportDraft = {
+	id: string;
+	label: string;
+	noteMd: string | null;
+	createdAt: Date;
+	content: DraftContent;
+};
+
+export async function gatherDrafts(db: Database, storyId: string): Promise<ExportDraft[]> {
+	return db
+		.select({
+			id: storyDrafts.id,
+			label: storyDrafts.label,
+			noteMd: storyDrafts.noteMd,
+			createdAt: storyDrafts.createdAt,
+			content: storyDrafts.content
+		})
+		.from(storyDrafts)
+		.where(eq(storyDrafts.storyId, storyId))
+		.orderBy(asc(storyDrafts.createdAt));
+}
 
 export async function gatherStory(db: Database, story: ExportStory): Promise<StoryContent> {
 	const chapterList = await db
@@ -311,14 +339,18 @@ export async function buildStoryZip(
 		chapters: chapterList,
 		scenes: sceneList,
 		notes: noteList = [],
-		freeformNotes: freeformList = []
+		freeformNotes: freeformList = [],
+		drafts: draftList = []
 	} = content;
 
+	const root = slugify(story.title, 'story');
+	const draftDocList = draftFolders(draftList, `${root}/drafts`);
 	const referenced = [
 		...new Set([
 			...sceneList.flatMap((scene) => findAssetReferences(scene.bodyMd)),
 			...noteList.flatMap((note) => findAssetReferences(note.notesMd)),
-			...freeformList.flatMap((note) => findAssetReferences(note.bodyMd))
+			...freeformList.flatMap((note) => findAssetReferences(note.bodyMd)),
+			...docAssets(draftDocList)
 		])
 	];
 	const loaded = await loadAssets(referenced);
@@ -326,7 +358,6 @@ export async function buildStoryZip(
 		loaded.map((asset) => [asset.id, `assets/${asset.id}.${extensionFor(asset.contentType)}`])
 	);
 
-	const root = slugify(story.title, 'story');
 	const entries: ZipEntry[] = [];
 	entries.push(
 		textEntry(
@@ -405,6 +436,12 @@ export async function buildStoryZip(
 			)
 		);
 	}
+
+	// Draft docs carry full paths from the zip root, so their links climb back
+	// to root/assets rather than to the top.
+	entries.push(
+		...docEntries(draftDocList, (id) => (assetPath.has(id) ? `${root}/${assetPath.get(id)}` : null))
+	);
 
 	for (const asset of loaded) {
 		entries.push(assetEntry(`${root}/${assetPath.get(asset.id)!}`, asset));
@@ -620,6 +657,7 @@ async function gatherUniverseDocs(
 				.where(eq(notes.storyId, story.id))
 				.orderBy(asc(notes.createdAt));
 			docs.push(...notebookDocs(storyNoteRows, `${sDir}/notebook`));
+			docs.push(...draftFolders(await gatherDrafts(db, story.id), `${sDir}/drafts`));
 			if (loadReviews) {
 				const threads = await loadReviews(story.id);
 				if (threads.length > 0) {
@@ -698,34 +736,12 @@ async function packDocs(
 ): Promise<ZipArchive> {
 	// Collect every referenced and cover asset, load once, then write each doc
 	// with links rewritten relative to its own depth.
-	const referenced = new Set<string>();
-	for (const doc of docs) {
-		findAssetReferences(doc.body).forEach((id) => referenced.add(id));
-		if (doc.coverId) referenced.add(doc.coverId);
-	}
-	const loaded = await loadAssets([...referenced]);
+	const loaded = await loadAssets(docAssets(docs));
 	const assetPath = new Map(
 		loaded.map((a) => [a.id, `assets/${a.id}.${extensionFor(a.contentType)}`])
 	);
 
-	const entries: ZipEntry[] = [];
-	for (const doc of docs) {
-		// A '.' base (the single-universe export) roots files at the top of
-		// the zip; drop it from paths and depth alike.
-		const parts = doc.dir.split('/').filter((part) => part && part !== '.');
-		const up = '../'.repeat(parts.length);
-		const linkFor = (id: string) =>
-			assetPath.has(id) ? `${up}${assetPath.get(id)}` : `/assets/${id}`;
-		let head = '';
-		if (doc.front) {
-			const front = { ...doc.front };
-			if (doc.coverId && assetPath.has(doc.coverId)) front.cover = linkFor(doc.coverId);
-			head = frontMatter(front);
-		}
-		entries.push(
-			textEntry([...parts, doc.name].join('/'), head + rewriteAssetReferences(doc.body, linkFor))
-		);
-	}
+	const entries: ZipEntry[] = docEntries(docs, (id) => assetPath.get(id) ?? null);
 	for (const asset of loaded) {
 		entries.push(assetEntry(assetPath.get(asset.id)!, asset));
 	}
@@ -751,4 +767,145 @@ function notebookDocs(
 		front: { title: note.title },
 		body: note.bodyMd
 	}));
+}
+
+// Every image a set of docs points at, covers included.
+function docAssets(docs: Doc[]): string[] {
+	const referenced = new Set<string>();
+	for (const doc of docs) {
+		findAssetReferences(doc.body).forEach((id) => referenced.add(id));
+		if (doc.coverId) referenced.add(doc.coverId);
+	}
+	return [...referenced];
+}
+
+// Docs as zip entries, each image link rewritten relative to the doc's own
+// depth. assetFile gives a bundled image's path from the zip root, or null
+// to keep the app path.
+function docEntries(docs: Doc[], assetFile: (id: string) => string | null): ZipEntry[] {
+	return docs.map((doc) => {
+		// A '.' base (the single-universe export) roots files at the top of
+		// the zip; drop it from paths and depth alike.
+		const parts = doc.dir.split('/').filter((part) => part && part !== '.');
+		const up = '../'.repeat(parts.length);
+		const linkFor = (id: string) => {
+			const file = assetFile(id);
+			return file ? `${up}${file}` : `/assets/${id}`;
+		};
+		let head = '';
+		if (doc.front) {
+			const front = { ...doc.front };
+			if (doc.coverId && assetFile(doc.coverId)) front.cover = linkFor(doc.coverId);
+			head = frontMatter(front);
+		}
+		return textEntry(
+			[...parts, doc.name].join('/'),
+			head + rewriteAssetReferences(doc.body, linkFor)
+		);
+	});
+}
+
+const DRAFT_ENTITY_LAYOUT: Record<DraftEntityType, (typeof ARCHIVE_LAYOUT)[EntityType]> =
+	ARCHIVE_LAYOUT;
+const DRAFT_NOTE_DIRS: Record<DraftEntityType, string> = {
+	character: NOTE_DIRS.character,
+	place: NOTE_DIRS.place,
+	lore_entry: NOTE_DIRS.lore
+};
+
+// Each saved draft as its own folder: a draft.md naming it, then the story
+// laid out like the live archive (story.md, chapters/, unfiled/, notebook/,
+// notes/), plus the worldbuilding as it was (characters/, places/, lore/,
+// relationships.md).
+function draftFolders(drafts: ExportDraft[], base: string): Doc[] {
+	const folder = uniqueNamer();
+	return drafts.flatMap((draft) =>
+		draftDocs(draft, `${base}/${folder(slugify(draft.label, draft.id))}`)
+	);
+}
+
+function draftDocs(draft: ExportDraft, dir: string): Doc[] {
+	const { content } = draft;
+	const docs: Doc[] = [
+		{
+			dir,
+			name: 'draft.md',
+			front: { name: draft.label, saved: draft.createdAt.toISOString() },
+			body: draft.noteMd ?? ''
+		},
+		{
+			dir,
+			name: 'story.md',
+			front: {
+				title: content.story.title,
+				author: content.story.author,
+				brief: content.story.brief
+			},
+			body: content.story.descriptionMd ?? '',
+			coverId: content.story.coverAssetId
+		}
+	];
+	const outline = draftOutline(content);
+	const addScene = (scene: DraftContent['scenes'][number], index: number, sceneDir: string) => {
+		docs.push({
+			dir: sceneDir,
+			name: `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`,
+			front: { title: scene.title, status: scene.status },
+			body: scene.bodyMd
+		});
+	};
+	outline.chapters.forEach((chapter, ci) => {
+		const chapterDir = `${dir}/chapters/${String(ci + 1).padStart(2, '0')}-${slugify(chapter.title, 'chapter')}`;
+		docs.push({
+			dir: chapterDir,
+			name: 'chapter.md',
+			front: { title: chapter.title },
+			body: chapter.summaryMd ?? ''
+		});
+		chapter.scenes.forEach((scene, si) => addScene(scene, si, chapterDir));
+	});
+	outline.unfiled.forEach((scene, si) => addScene(scene, si, `${dir}/unfiled`));
+	docs.push(...notebookDocs(content.notes, `${dir}/notebook`));
+
+	const entityName = new Map(content.entities.map((entity) => [entity.id, entity.name]));
+	const fileNamers = { character: uniqueNamer(), place: uniqueNamer(), lore_entry: uniqueNamer() };
+	const noteNamers = { character: uniqueNamer(), place: uniqueNamer(), lore_entry: uniqueNamer() };
+	for (const entity of content.entities) {
+		const { dir: kindDir, nameKey, tagsKey } = DRAFT_ENTITY_LAYOUT[entity.type];
+		docs.push({
+			dir: `${dir}/${kindDir}`,
+			name: `${fileNamers[entity.type](slugify(entity.name, entity.id))}.md`,
+			front: {
+				[nameKey]: entity.name,
+				[tagsKey]: entity.aliases.length ? entity.aliases.join(', ') : null,
+				category: entity.categoryName,
+				details: detailLines(entity.details)
+			},
+			body: joinBody(entity.summaryMd, entity.bodyMd)
+		});
+		if (entity.storyNotesMd) {
+			docs.push({
+				dir: `${dir}/notes/${DRAFT_NOTE_DIRS[entity.type]}`,
+				name: `${noteNamers[entity.type](slugify(entity.name, entity.id))}.md`,
+				front: {
+					name: entity.name,
+					kind: entity.type === 'lore_entry' ? 'lore' : entity.type
+				},
+				body: entity.storyNotesMd
+			});
+		}
+	}
+	if (content.relationships.length > 0) {
+		const lines = ['# Relationships', ''];
+		for (const relationship of content.relationships) {
+			const from = entityName.get(relationship.fromId) ?? 'Unknown';
+			const to = entityName.get(relationship.toId) ?? 'Unknown';
+			const scope = relationship.storyOnly ? ' (this story only)' : '';
+			lines.push(`- ${from} - ${relationship.label} - ${to}${scope}`);
+			const note = relationship.notesMd?.trim();
+			if (note) for (const noteLine of note.split('\n')) lines.push(`  ${noteLine}`);
+		}
+		docs.push({ dir, name: 'relationships.md', body: lines.join('\n') + '\n' });
+	}
+	return docs;
 }

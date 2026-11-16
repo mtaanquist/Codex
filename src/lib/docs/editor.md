@@ -100,6 +100,8 @@ The History tab on the right keeps past versions of the open scene. Use "Checkpo
 
 Every saved version is kept, including checkpoints.
 
+To keep a copy of the whole story rather than one scene, save a draft; see [Saved drafts](/docs/drafts).
+
 ## The Assistant
 
 When you have set up the Assistant on your account page, an Assistant panel appears on the right alongside Reference, History, and Notes. Open it to chat about the open story: ask about a character, check whether something stays consistent, or talk through a scene. The starter prompts above the box are there to get you going; you can also type your own question and press Enter to send, or Shift+Enter for a new line. While a reply is coming in you can select the stop button to cut it short.

@@ -795,7 +795,8 @@
 			data.universe,
 			{ ...data.story, reading: data.reading },
 			{
-				storyAt: 'story'
+				storyAt: 'story',
+				drafts: { list: data.drafts, at: null }
 			}
 		)}
 		{saveStatus}

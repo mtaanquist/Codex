@@ -18,6 +18,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
+import type { DraftContent } from '../../drafts.ts';
 import { randomCoverColor } from '../../entity-color.ts';
 import { NOTIFICATION_KINDS, type NotificationPayload } from '../../notifications.ts';
 import { SCENE_STATUSES } from '../../scene-status.ts';
@@ -754,6 +755,30 @@ export const notes = pgTable(
 	]
 );
 
+// A saved draft: a private, named, frozen copy of a whole story at one
+// moment, like a tag in a git repository. `content` holds everything as it
+// stood (prose, outline, notes, and the universe's worldbuilding), so it
+// never depends on live rows or on revisions surviving. Never updated after
+// insert except for the label and note; see #lib/server/story-drafts.ts.
+export const storyDrafts = pgTable(
+	'story_drafts',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id')
+			.references(() => stories.id)
+			.notNull(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id)
+			.notNull(),
+		label: text('label').notNull(),
+		noteMd: text('note_md'),
+		content: jsonb('content').$type<DraftContent>().notNull(),
+		wordCount: integer('word_count').notNull().default(0),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('story_drafts_story_idx').on(table.storyId, table.createdAt.desc())]
+);
+
 // A frozen, read-only edition of a story, served on the public reading
 // pages. Snapshot, not live: in-progress drafts never appear, and the
 // reader path reads only these rows.
@@ -778,6 +803,11 @@ export const publications = pgTable(
 		content: jsonb('content').notNull(),
 		// Optional, e.g. 'Edition 2'.
 		versionLabel: text('version_label'),
+		// The saved draft this edition was published from; null when it was
+		// published from the working draft. Kept null if the draft is deleted.
+		sourceDraftId: uuid('source_draft_id').references(() => storyDrafts.id, {
+			onDelete: 'set null'
+		}),
 		// Owner's choice: when true, readers can download the edition's EPUB and
 		// PDF artifacts from the public story page.
 		downloadsPublic: boolean('downloads_public').notNull().default(false),

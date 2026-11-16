@@ -8,6 +8,14 @@ import { stories } from '#lib/server/db/schema';
 import { storyTimeline } from '#lib/server/revisions';
 import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '#lib/server/assets';
 import { publishStory } from '#lib/server/publish';
+import {
+	deleteDraft,
+	draftUsesCover,
+	listDrafts,
+	saveDraft,
+	updateDraftDetails
+} from '#lib/server/story-drafts';
+import { rateLimitWrites } from '#lib/server/write-guard';
 import { setPenNameIfUnset } from '#lib/server/account';
 import { listEditionArtifacts, setDownloadsPublic } from '#lib/server/export-artifacts';
 import {
@@ -71,6 +79,7 @@ const SECTIONS = [
 	'publish',
 	'review',
 	'export',
+	'drafts',
 	'history',
 	'danger'
 ];
@@ -90,7 +99,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		accountPreferences,
 		pageSetupOverrides,
 		accountPageSetup,
-		assistant
+		assistant,
+		drafts
 	] = await Promise.all([
 		storyTimeline(db, story.id, 30),
 		db
@@ -107,7 +117,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		userPreferences(db, locals.user!.id),
 		storyPageSetupOverrides(db, story.id),
 		userPageSetup(db, locals.user!.id),
-		assistantLayout(db, locals.user!.id, story.id)
+		assistantLayout(db, locals.user!.id, story.id),
+		listDrafts(db, story.id)
 	]);
 	const assetsConfigured = (await effectiveAssetConfig(db)) !== null;
 	// These sections hide when their feature is off, so their pages do too.
@@ -136,7 +147,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		pageSetupOverrides,
 		accountPageSetup,
 		// Whether to offer "Review this story" in the Review section.
-		assistant
+		assistant,
+		drafts
 	};
 };
 
@@ -320,11 +332,15 @@ export const actions: Actions = {
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
 		const versionLabel = formText(data, 'versionLabel');
+		const draftId = formText(data, 'draftId');
+		if (draftId && !isUuid(draftId)) {
+			return fail(400, { action: 'publish', message: 'That saved draft no longer exists.' });
+		}
 		// The first publish asks what name goes public; the chosen name rides
 		// the form and lands as the pen name, unless one is already set.
 		const penName = formText(data, 'penName');
 		if (penName) await setPenNameIfUnset(db, locals.user!.id, penName);
-		const result = await publishStory(db, locals.user!.id, story.id, versionLabel);
+		const result = await publishStory(db, locals.user!.id, story.id, versionLabel, draftId || null);
 		if (!result.ok) {
 			return fail(400, { action: 'publish', message: result.reason });
 		}
@@ -420,9 +436,46 @@ export const actions: Actions = {
 		}
 		const previous = story.coverAssetId;
 		await db.update(stories).set({ coverAssetId: created.id }).where(eq(stories.id, story.id));
-		// The replaced cover has no other references; clean it up.
-		if (previous) await deleteAsset(db, locals.user!.id, previous);
+		// The replaced cover goes, unless a saved draft still shows it.
+		if (previous && !(await draftUsesCover(db, previous))) {
+			await deleteAsset(db, locals.user!.id, previous);
+		}
 		return { action: 'cover', saved: true };
+	},
+	saveDraft: async ({ request, params, locals }) => {
+		rateLimitWrites(locals.user!.id);
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const result = await saveDraft(db, locals.user!.id, story.id, {
+			label: formText(data, 'label'),
+			note: formText(data, 'note')
+		});
+		if (!result.ok) return fail(400, { action: 'drafts', message: result.reason });
+		return { action: 'drafts', savedDraftId: result.id };
+	},
+	updateDraft: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const draftId = formText(data, 'draftId');
+		if (!isUuid(draftId)) {
+			return fail(400, { action: 'drafts', message: 'That saved draft no longer exists.' });
+		}
+		const result = await updateDraftDetails(db, story.id, draftId, {
+			label: formText(data, 'label'),
+			note: formText(data, 'note')
+		});
+		if (!result.ok) return fail(400, { action: 'drafts', draftId, message: result.reason });
+		return { action: 'drafts', draftId, saved: true };
+	},
+	deleteDraft: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const draftId = formText(await request.formData(), 'draftId');
+		if (!isUuid(draftId)) {
+			return fail(400, { action: 'drafts', message: 'That saved draft no longer exists.' });
+		}
+		const result = await deleteDraft(db, story.id, draftId);
+		if (!result.ok) return fail(400, { action: 'drafts', message: result.reason });
+		return { action: 'drafts', deleted: true };
 	},
 	delete: async ({ params, locals }) => {
 		const { story, universe } = await ownedStory(params.id, locals.user!.id);

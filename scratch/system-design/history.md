@@ -981,6 +981,42 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Saved drafts (2026-11-16)
+
+Saved drafts (#812, branch `feat/saved-drafts`): a user asked, through Mads,
+for "editions" of a book they could always go back to, like a GitHub release,
+with switching from the library cover and the editor. Decided in discussion on
+the issue: private (not for the public page), a total freeze including the
+worldbuilding (like a git tag), named "draft" in the UI, per-scene restore and
+publishing a draft both in, and no limit on how many.
+
+- Storage is one jsonb snapshot per draft (`story_drafts.content`, typed in
+  `#lib/drafts`), read in a repeatable-read transaction. Not built on
+  `revisions`: those have no thinning yet, but #599 proposed one, and a
+  hard-deleted scene takes its revisions with it. The `publications` table was
+  the other candidate and was not reused: it is tied to the admin gate, the
+  handle, and one current row per story.
+- A draft copies the universe's whole entity set, not only the story's
+  members, because a story names entities it never declared. Scene, chapter,
+  note and entity ids are kept so a scene can be compared with and restored
+  onto the live one, and so notes and relationships still point at the right
+  things inside the draft.
+- Inline images are not pinned: nothing deletes an inline image today. The
+  cover is the one image that can go (replacing it deletes the old file), so
+  the cover replace now keeps a file that a saved draft still shows.
+- The draft page wears the Page shell like print preview: it reads the work
+  but has none of the workspace's panels. The worldbuilding tab lists the
+  frozen entities with how often the draft names them (the same
+  `detectMentions` rules as the editor) rather than underlining the prose.
+- "Save as draft..." lives in story settings rather than a dialog in the
+  editor, so leaving the editor flushes any pending save through the existing
+  navigation guard before the snapshot is taken.
+- Publishing a draft reuses the publish form (a "What to publish" select), so
+  the pen name prompt and the edition label work unchanged; the edition
+  records `source_draft_id`, set to null if the draft is deleted.
+- Deferred: underlines and hover cards inside a saved draft's prose, and a
+  side-by-side view of two saved drafts.
+
 ## Issue review round (2026-10-29)
 
 Second open issue review (2026-10-29): seven open issues, each with a review

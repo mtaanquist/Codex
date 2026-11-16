@@ -8,6 +8,7 @@ import {
 	buildAccountExport,
 	buildStoryZip,
 	buildUniverseExport,
+	gatherDrafts,
 	gatherStory
 } from './export.ts';
 import { buildEpub } from './epub.ts';
@@ -170,7 +171,11 @@ export async function runUserExport(
 							story.coverAssetId,
 							await storyPageSetup(db, story.id)
 						)
-					: await buildStoryZip(story, content, loadAssets);
+					: await buildStoryZip(
+							story,
+							{ ...content, drafts: await gatherDrafts(db, story.id) },
+							loadAssets
+						);
 		}
 
 		const contentType = CONTENT_TYPE[row.format];

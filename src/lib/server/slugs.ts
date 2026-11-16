@@ -1,7 +1,7 @@
 import { and, eq, like } from 'drizzle-orm';
-import type { Database } from './auth';
-import { stories, universes } from './db/schema';
-import { isUuid, slugify } from '../slug';
+import type { Database } from './auth.ts';
+import { stories, universes } from './db/schema.ts';
+import { isUuid, slugify } from '../slug.ts';
 
 // Suffix room: a deduped slug must still fit the column conventions.
 const BASE_MAX = 55;

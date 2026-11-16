@@ -267,6 +267,12 @@ Staging branch `staging/issue-review-2`, merged to main in one PR.
 
 Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-review-round-2026-10-29).
 
+## Saved drafts (2026-11-16)
+
+- [x] Saved drafts: private, frozen copies of a whole story with switching from the library and the editor, scene restore, new story from a draft, and publishing a draft. (#812)
+
+Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-drafts-2026-11-16).
+
 ## Feedback backlog
 
 From the design pass click-throughs (2026-07-30):

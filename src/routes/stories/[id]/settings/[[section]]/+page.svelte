@@ -17,6 +17,7 @@
 	import SettingsPublish from './SettingsPublish.svelte';
 	import SettingsReview from './SettingsReview.svelte';
 	import SettingsExport from './SettingsExport.svelte';
+	import SettingsDrafts from './SettingsDrafts.svelte';
 	import SettingsHistory from './SettingsHistory.svelte';
 	import SettingsDanger from './SettingsDanger.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -35,7 +36,8 @@
 		pagesetup: 'publishing',
 		review: 'reviewing',
 		editor: 'editor',
-		goals: 'planning'
+		goals: 'planning',
+		drafts: 'drafts'
 	};
 	const helpTopic = $derived(HELP_BY_SECTION[active] ?? 'getting-started');
 
@@ -65,6 +67,7 @@
 			{ id: 'publish', label: 'Publish' },
 			{ id: 'review', label: 'Review' },
 			{ id: 'export', label: 'Export' },
+			{ id: 'drafts', label: 'Saved drafts' },
 			{ id: 'history', label: 'History' },
 			{ id: 'danger', label: 'Danger zone' }
 		]
@@ -86,7 +89,7 @@
 				data.universe,
 				{ ...data.story, reading: data.reading },
 				{
-					storyAt: active === 'export' ? 'export' : 'settings'
+					storyAt: active === 'export' ? 'export' : active === 'drafts' ? 'drafts' : 'settings'
 				}
 			)}
 			{helpTopic}
@@ -156,6 +159,10 @@
 
 	<div class="admin-block" class:active={active === 'export'} id="export">
 		<SettingsExport {data} />
+	</div>
+
+	<div class="admin-block" class:active={active === 'drafts'} id="drafts">
+		<SettingsDrafts {data} {form} />
 	</div>
 
 	<div class="admin-block" class:active={active === 'history'} id="history">

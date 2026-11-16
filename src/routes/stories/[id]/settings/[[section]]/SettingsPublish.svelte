@@ -87,6 +87,22 @@
 				</a>.
 			</p>
 		{/if}
+		{#if data.drafts.length > 0}
+			<div class="field">
+				<label for="st-edition-source">What to publish</label>
+				<select
+					id="st-edition-source"
+					class="select"
+					name="draftId"
+					value={page.url.searchParams.get('draft') ?? ''}
+				>
+					<option value="">The working draft, as it is now</option>
+					{#each data.drafts as draft (draft.id)}
+						<option value={draft.id}>Saved draft: {draft.label}</option>
+					{/each}
+				</select>
+			</div>
+		{/if}
 		<div class="field">
 			<label for="st-edition-label">Edition label (optional)</label>
 			<input
@@ -97,8 +113,8 @@
 				placeholder="Edition 2"
 			/>
 			<p class="field-hint">
-				Publishing freezes the story as it stands now. Later edits stay private until you publish
-				again.
+				Publishing freezes the story as it stands now, or as a saved draft has it. Later edits stay
+				private until you publish again.
 			</p>
 		</div>
 		<div class="settings-actions">

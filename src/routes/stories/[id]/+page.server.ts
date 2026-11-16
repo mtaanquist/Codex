@@ -19,6 +19,7 @@ import { hasChatSummary } from '#lib/server/llm/chat-summary';
 import { listTrashedScenes } from '#lib/server/scene-lifecycle';
 import { sceneManageActions } from '#lib/server/scene-manage-actions';
 import { formText } from '#lib/server/validation';
+import { listDrafts } from '#lib/server/story-drafts';
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const { story, universe } = await ownedStory(params.id, locals.user!.id);
@@ -74,7 +75,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		trashedScenes,
 		pageSetup,
 		assistant,
-		storyNotes
+		storyNotes,
+		drafts
 	] = await Promise.all([
 		// Sibling stories, the scene list and the to-do list (sceneless here;
 		// the open scene's part follows once it is known).
@@ -132,7 +134,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		// the way asset-backed features hide when no bucket is configured.
 		assistantLayout(db, locals.user!.id, story.id),
 		// The Notes panel's story-wide list; the Notes page is reached from it.
-		listStoryNotes(db, story.id, locals.user!.id)
+		listStoryNotes(db, story.id, locals.user!.id),
+		// The drafts crumb in the app bar.
+		listDrafts(db, story.id)
 	]);
 
 	const { storySiblings, scenes: sceneList, storyTodos } = live;
@@ -189,6 +193,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selectedScene,
 		sceneNotes,
 		storyNotes,
+		drafts: drafts.map((draft) => ({ id: draft.id, label: draft.label })),
 		sceneRevisions,
 		revisionPreview,
 		sceneMarkers,

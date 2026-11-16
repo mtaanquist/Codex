@@ -24,7 +24,8 @@ import {
 	revisions,
 	sceneMarkers,
 	scenes,
-	stories
+	stories,
+	storyDrafts
 } from './db/schema.ts';
 
 // The transaction handle drizzle passes to db.transaction's callback.
@@ -58,6 +59,8 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 		await tx.delete(publicationAssets).where(inArray(publicationAssets.publicationId, pubIds));
 	}
 	await tx.delete(publications).where(eq(publications.storyId, storyId));
+	// Saved drafts after the editions that may point at them.
+	await tx.delete(storyDrafts).where(eq(storyDrafts.storyId, storyId));
 
 	// Review rows before revisions and scenes: threads and suggestions
 	// reference both, and guests are personal data that goes with the story.

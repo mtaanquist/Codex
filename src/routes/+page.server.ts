@@ -18,6 +18,7 @@ import { destroyStory, listTrashedStories, restoreStory } from '#lib/server/stor
 import { signupMode } from '#lib/server/settings';
 import { saveLibraryView, userPreferences } from '#lib/server/preferences';
 import { formText } from '#lib/server/validation';
+import { draftsByStory } from '#lib/server/story-drafts';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	// Signed-out visitors get the landing page. The page checks the layout's
@@ -43,6 +44,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.orderBy(desc(universes.updatedAt));
 	const trashedUniverses = await listTrashedUniverses(db, user.id);
 	const trashedStories = await listTrashedStories(db, user.id);
+	// Saved drafts, for the menu on each story's cover.
+	const drafts = await draftsByStory(db, user.id);
 
 	// One row per story with everything its card shows: chapter and word
 	// totals, scene status counts for the pill, and when anything in it
@@ -96,6 +99,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			words: r.words,
 			editedAt: editedAt.toISOString(),
 			editedLabel: relativeTime(editedAt, new Date()),
+			drafts: drafts.get(r.id) ?? [],
 			status: storyStatus({
 				sceneCount: r.scene_count,
 				words: r.words,

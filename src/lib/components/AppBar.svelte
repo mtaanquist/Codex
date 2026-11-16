@@ -47,12 +47,13 @@
 	} = $props();
 
 	// A narrow bar keeps the current place, plus its parent when the current
-	// crumb is a page (plain text) and so leads nowhere on its own.
-	const narrowFrom = $derived(
-		crumbs.length > 1 && crumbs[crumbs.length - 1].kind === 'text'
-			? crumbs.length - 2
-			: crumbs.length - 1
-	);
+	// crumb is a page (plain text) and so leads nowhere on its own, or a
+	// place that only makes sense under its parent (the drafts crumb).
+	const narrowFrom = $derived.by(() => {
+		const last = crumbs[crumbs.length - 1];
+		const keepParent = last && (last.kind === 'text' || (last.kind === 'place' && last.keepParent));
+		return crumbs.length > 1 && keepParent ? crumbs.length - 2 : crumbs.length - 1;
+	});
 
 	const SAVE_LABEL = {
 		idle: '',

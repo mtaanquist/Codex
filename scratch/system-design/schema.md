@@ -564,6 +564,31 @@ Inserted on debounced save; autosaves within two minutes coalesce into one row. 
 
 ---
 
+## Saved drafts
+
+A saved draft is a private, named copy of a whole story at one moment (see `design.md`, Saved drafts). It is a self-contained snapshot, not a pointer into `revisions`, so it survives anything that later happens to the live rows or their history.
+
+```sql
+story_drafts (
+  id          uuid primary key,
+  story_id    uuid references stories(id) not null,
+  owner_id    uuid references users(id) not null,
+  label       text not null,        -- the writer's name for it, e.g. 'First draft'
+  note_md     text,                 -- optional note
+  content     jsonb not null,       -- the frozen story; shape in src/lib/drafts.ts
+  word_count  integer not null,
+  created_at  timestamptz not null
+)
+
+-- index on (story_id, created_at desc)
+```
+
+- **Content.** The story's title, pen name, description and cover; chapters and scenes (text, summary, status, story time); the story's notes; and the universe's characters, places, and lore with aliases or keywords, category name, details, this story's notes on them, and whether they were declared in the story, plus the universe's relationships and this story's own. Ids are the live ids at save time, used to compare and restore a scene and to tie notes and relationships together inside the draft; none of them is a foreign key.
+- **Immutable.** Only `label` and `note_md` change after insert. Saving reads everything in one repeatable-read transaction.
+- **Lifecycle.** Deleted with the story. `publications.source_draft_id` records a draft an edition was published from, set to null when the draft is deleted.
+
+---
+
 ## Mentions index
 
 Rebuilt on every debounced save. Powers "find usages" and "appears in" for characters, places, and lore entries. Also drives the CodeMirror mention decoration plugin.
@@ -629,6 +654,7 @@ publications (
   is_adult        boolean not null default false,  -- carried from stories.is_adult; lets the reader site filter
   content         jsonb not null,        -- frozen chapters and scenes for this edition
   version_label   text,                  -- optional, e.g. 'Edition 2'
+  source_draft_id uuid references story_drafts(id) on delete set null,  -- the saved draft it came from, if any
   is_current      boolean not null default true,
   removed_at      timestamptz,           -- set by an admin takedown; hides the edition without deleting the source
   published_at    timestamptz not null
