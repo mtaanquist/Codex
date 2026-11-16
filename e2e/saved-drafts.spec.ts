@@ -74,7 +74,10 @@ test('save a draft, switch to it, and restore a scene', async ({ page }) => {
 
 	// The library cover offers the same drafts.
 	await gotoReady(page, '/');
-	await page.getByRole('button', { name: `Drafts of Tides ${stamp}` }).click();
+	await page
+		.getByRole('button', { name: `Drafts of Tides ${stamp}` })
+		.first()
+		.click();
 	await page.getByRole('menuitem', { name: 'First draft' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('First draft');
 });
