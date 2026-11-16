@@ -4,7 +4,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { authTokens, users } from '../../src/lib/server/db/schema';
+import { authTokens, sessions, users } from '../../src/lib/server/db/schema';
 import {
 	approveUser,
 	confirmUserEmail,
@@ -121,6 +121,46 @@ describe('listAllUsers', () => {
 		expect(all).toHaveLength(3);
 		// createdAt descending: the last inserted comes first.
 		expect(all[0].email).toBe('pending@example.com');
+	});
+
+	describe('lastActiveAt', () => {
+		const day = 24 * 60 * 60 * 1000;
+		async function addSession(userId: string, lastSeenAt: Date) {
+			await db.insert(sessions).values({
+				tokenHash: `hash-${userId}-${lastSeenAt.getTime()}`,
+				userId,
+				lastSeenAt,
+				expiresAt: new Date(Date.now() + 30 * day)
+			});
+		}
+		async function lastActiveOf(email: string) {
+			const all = await listAllUsers(db);
+			return all.find((u) => u.email === email)?.lastActiveAt ?? null;
+		}
+
+		it('is null for an account that never signed in', async () => {
+			await makeUser('never@example.com', { approved: true });
+			expect(await lastActiveOf('never@example.com')).toBeNull();
+		});
+
+		it('takes the newest session activity over an older sign-in', async () => {
+			const id = await makeUser('busy@example.com', { approved: true });
+			const login = new Date(Date.now() - 3 * day);
+			const recent = new Date(Date.now() - 60 * 60 * 1000);
+			await db.update(users).set({ lastLoginAt: login }).where(eq(users.id, id));
+			await addSession(id, new Date(Date.now() - 2 * day));
+			await addSession(id, recent);
+			const value = await lastActiveOf('busy@example.com');
+			expect(value).toBeInstanceOf(Date);
+			expect(value?.getTime()).toBe(recent.getTime());
+		});
+
+		it('falls back to the last sign-in once sessions are gone', async () => {
+			const id = await makeUser('away@example.com', { approved: true });
+			const login = new Date(Date.now() - 40 * day);
+			await db.update(users).set({ lastLoginAt: login }).where(eq(users.id, id));
+			expect((await lastActiveOf('away@example.com'))?.getTime()).toBe(login.getTime());
+		});
 	});
 });
 

@@ -116,6 +116,8 @@ export type AdminUser = {
 	handle: string | null;
 	twoFactorEnabled: boolean;
 	createdAt: Date;
+	// Null when the account has never signed in.
+	lastActiveAt: Date | null;
 };
 
 // Every account on the instance, newest first, for the admin accounts list.
@@ -134,7 +136,13 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			inviteAllowance: users.inviteAllowance,
 			handle: users.handle,
 			twoFactorEnabled: sql<boolean>`${userTotp.confirmedAt} is not null`,
-			createdAt: users.createdAt
+			createdAt: users.createdAt,
+			// The newest session activity, or the last sign-in once the daily sweep
+			// has purged the sessions. greatest() skips nulls.
+			lastActiveAt: sql<Date | null>`greatest(
+				(select max(${sessions.lastSeenAt}) from ${sessions} where ${sessions.userId} = ${users.id}),
+				${users.lastLoginAt}
+			)`.mapWith(users.lastLoginAt)
 		})
 		.from(users)
 		.leftJoin(userTotp, eq(userTotp.userId, users.id))
