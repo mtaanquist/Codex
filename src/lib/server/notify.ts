@@ -55,7 +55,7 @@ export async function notifyReviewActivity(
 	storyId: string,
 	reviewerName: string,
 	what: 'commented' | 'replied' | 'suggested an edit',
-	about: { threadId: string } | { suggestionId: string },
+	about: { threadId: string; commentId?: string } | { suggestionId: string },
 	body?: string
 ): Promise<void> {
 	const [story] = await db

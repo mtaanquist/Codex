@@ -286,6 +286,7 @@ Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-d
 - [x] Relative times ("5m") keep ticking while a page stays open. (#818)
 - [x] Clearing the Assistant conversation asks first. (#839)
 - [x] Saved drafts compare lists a moved chapter once instead of marking its scenes. (#841)
+- [x] Email digests also leave out a review reply that was deleted before they went out. (#840)
 
 ## Feedback backlog
 

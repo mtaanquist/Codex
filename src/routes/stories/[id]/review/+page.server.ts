@@ -169,7 +169,8 @@ export const actions: Actions = {
 		await notifyThreadReviewers(db, threadId, {
 			title: `${locals.user!.displayName} replied to your comment on "${story.title}"`,
 			detail: teaser(formText(data, 'body')),
-			threadId
+			threadId,
+			commentId: result.commentId
 		});
 		return { done: true };
 	},
@@ -199,7 +200,8 @@ export const actions: Actions = {
 			{
 				title: `${locals.user!.displayName} replied on your suggested edit on "${story.title}"`,
 				detail: teaser(body),
-				threadId: thread.threadId
+				threadId: thread.threadId,
+				commentId: result.commentId
 			}
 		);
 		return { done: true, threadId: thread.threadId };

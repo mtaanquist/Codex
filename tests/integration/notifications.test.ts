@@ -35,7 +35,7 @@ import {
 	reviewerOptOutToken,
 	reviewerOptOutTarget
 } from '../../src/lib/server/notification-digest';
-import { clearReviews } from '../../src/lib/server/review';
+import { addComment, clearReviews } from '../../src/lib/server/review';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -307,6 +307,69 @@ describe('buildUserDigest', () => {
 			.from(notifications)
 			.where(eq(notifications.emailWanted, true));
 		expect(pending).toHaveLength(1);
+	});
+
+	it('leaves out a reply that was deleted while its thread stays', async () => {
+		const me = await makeUser('me@example.com', {
+			preferences: { notifications: { review_activity: { email: true } } }
+		});
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId: me.id, name: 'Mythos' })
+			.returning();
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: me.id, title: 'Halden' })
+			.returning();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1, bodyMd: 'Text.' })
+			.returning();
+		const [thread] = await db
+			.insert(reviewThreads)
+			.values({ storyId: story.id, sceneId: scene.id })
+			.returning();
+		await db
+			.insert(reviewComments)
+			.values({ threadId: thread.id, authorUserId: me.id, bodyMd: 'First.' });
+		const reply = await addComment(db, {
+			storyId: story.id,
+			threadId: thread.id,
+			author: { userId: me.id },
+			body: 'Retracted.'
+		});
+		if (!reply.ok) throw new Error(reply.reason);
+		await notifyReviewActivity(
+			db,
+			story.id,
+			'Maren',
+			'replied',
+			{ threadId: thread.id, commentId: reply.commentId },
+			'Retracted.'
+		);
+
+		const kept = await addComment(db, {
+			storyId: story.id,
+			threadId: thread.id,
+			author: { userId: me.id },
+			body: 'Still here.'
+		});
+		if (!kept.ok) throw new Error(kept.reason);
+		await notifyReviewActivity(
+			db,
+			story.id,
+			'Maren',
+			'replied',
+			{ threadId: thread.id, commentId: kept.commentId },
+			'Still here.'
+		);
+
+		await db.delete(reviewComments).where(eq(reviewComments.id, reply.commentId));
+
+		const digest = await buildUserDigest(db, me.id, 'https://codex.test');
+		expect(digest?.ids).toHaveLength(1);
+		expect(digest?.email.text).toContain('Still here.');
+		expect(digest?.email.text).not.toContain('Retracted.');
 	});
 });
 

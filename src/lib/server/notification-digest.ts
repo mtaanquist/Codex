@@ -20,15 +20,17 @@ import { teaser } from '../notifications.ts';
 
 export type Digest = { email: EmailMessage; ids: string[] };
 
-// A review notification whose note was cleared or deleted before the digest
-// went out stays in the bell but is left out of the email. Rows that name no
-// note pass. The ids are cast to uuid so the primary keys serve the lookup;
+// A review notification whose note (or reply) was cleared or deleted before
+// the digest went out stays in the bell but is left out of the email. Rows
+// that name no note pass. The ids are cast to uuid so the primary keys serve the lookup;
 // every writer stores a uuid it has already checked.
 const reviewNoteGone = sql`(
 	(${notifications.payload}->>'threadId' is not null
 		and not exists (select 1 from ${reviewThreads} where ${reviewThreads.id} = (${notifications.payload}->>'threadId')::uuid))
 	or (${notifications.payload}->>'suggestionId' is not null
 		and not exists (select 1 from ${reviewSuggestions} where ${reviewSuggestions.id} = (${notifications.payload}->>'suggestionId')::uuid))
+	or (${notifications.payload}->>'commentId' is not null
+		and not exists (select 1 from ${reviewComments} where ${reviewComments.id} = (${notifications.payload}->>'commentId')::uuid))
 )`;
 
 export async function buildUserDigest(

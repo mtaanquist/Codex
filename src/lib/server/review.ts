@@ -435,7 +435,7 @@ export async function ensureSuggestionThread(
 export async function addComment(
 	db: Database,
 	input: { storyId: string; threadId: string; author: ThreadAuthor; body: string }
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true; commentId: string } | { ok: false; reason: string }> {
 	const body = input.body.trim();
 	if (!body) return { ok: false, reason: 'Write a comment first.' };
 	if (body.length > MAX_COMMENT_LENGTH) {
@@ -450,16 +450,19 @@ export async function addComment(
 			.from(reviewThreads)
 			.where(and(eq(reviewThreads.id, input.threadId), eq(reviewThreads.storyId, input.storyId)))
 			.for('update');
-		if (!thread) return false;
-		await tx.insert(reviewComments).values({
-			threadId: thread.id,
-			...commentAuthorColumns(input.author),
-			bodyMd: body
-		});
-		return true;
+		if (!thread) return null;
+		const [comment] = await tx
+			.insert(reviewComments)
+			.values({
+				threadId: thread.id,
+				...commentAuthorColumns(input.author),
+				bodyMd: body
+			})
+			.returning({ id: reviewComments.id });
+		return comment.id;
 	});
 	if (!inserted) return { ok: false, reason: 'That thread does not exist.' };
-	return { ok: true };
+	return { ok: true, commentId: inserted };
 }
 
 // Only the story's owner resolves or reopens a thread, and only one of that
