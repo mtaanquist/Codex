@@ -284,6 +284,8 @@ Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-d
 - [x] Saved drafts: the suggested name steps past the highest draft number in use; compare counts moves, status and summary changes, and lists chapter renames. (#833)
 - [x] Destructive menu items are red at rest, not only on hover. (#817)
 - [x] Relative times ("5m") keep ticking while a page stays open. (#818)
+- [x] Clearing the Assistant conversation asks first. (#839)
+- [x] Saved drafts compare lists a moved chapter once instead of marking its scenes. (#841)
 
 ## Feedback backlog
 

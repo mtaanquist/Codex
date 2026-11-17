@@ -113,7 +113,7 @@ describe('compareDrafts', () => {
 			{ chapters, scenes: ['b', 'c', 'd', 'a'].map((id) => text(id, id)) }
 		);
 		expect(result.changes.map((change) => [change.after!.id, change.notes])).toEqual([
-			['a', ['Moved to another place in the story']]
+			['a', ['Moved to another place in its chapter']]
 		]);
 		expect(result.counts.same).toBe(3);
 	});
@@ -124,6 +124,44 @@ describe('compareDrafts', () => {
 			{ chapters, scenes: [text('n', 'n'), text('a', 'a'), text('b', 'b')] }
 		);
 		expect(result.counts).toEqual({ same: 2, changed: 0, added: 1, removed: 0 });
+	});
+
+	it('lists a moved chapter once instead of marking its scenes', () => {
+		const two = [...chapters, { id: 'c2', title: 'Two', summaryMd: null }];
+		const scenes = [text('a', 'a'), text('b', 'b'), text('c', 'c', { chapterId: 'c2' })];
+		const result = compareDrafts({ chapters: two, scenes }, { chapters: [two[1], two[0]], scenes });
+		expect(result.counts).toEqual({ same: 3, changed: 0, added: 0, removed: 0 });
+		// A swap of two reads as either one moving; one line is enough.
+		expect(result.chapterMoves).toHaveLength(1);
+	});
+
+	it('does not list chapters as moved when one is added in front', () => {
+		const added = [{ id: 'c0', title: 'Zero', summaryMd: null }, ...chapters];
+		const result = compareDrafts({ chapters, scenes: [] }, { chapters: added, scenes: [] });
+		expect(result.chapterMoves).toEqual([]);
+	});
+
+	it('checks unfiled scenes as one group', () => {
+		const result = compareDrafts(
+			{
+				chapters: [],
+				scenes: [text('a', 'a', { chapterId: null }), text('b', 'b', { chapterId: 'gone' })]
+			},
+			{
+				chapters: [],
+				scenes: [text('b', 'b', { chapterId: 'gone' }), text('a', 'a', { chapterId: null })]
+			}
+		);
+		expect(result.counts.changed).toBe(1);
+	});
+
+	it('still marks a scene moved inside its chapter', () => {
+		const result = compareDrafts(
+			{ chapters, scenes: [text('a', 'a'), text('b', 'b')] },
+			{ chapters, scenes: [text('b', 'b'), text('a', 'a')] }
+		);
+		expect(result.counts.changed).toBe(1);
+		expect(result.chapterMoves).toEqual([]);
 	});
 
 	it('lists renamed chapters', () => {
