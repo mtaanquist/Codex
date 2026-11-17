@@ -6,6 +6,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
 import {
 	addComment,
+	clearReviews,
 	createSuggestion,
 	createThread,
 	decideSuggestion,
@@ -265,6 +266,16 @@ export const actions: Actions = {
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		const result = await deleteSuggestion(db, { userId: locals.user!.id }, story.id, suggestionId);
 		if (!result.ok) return fail(400, { message: result.reason });
+		return { done: true };
+	},
+	// Clears the story's finished review notes, or all of them.
+	clearReviews: async ({ params, request, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const scope = formText(await request.formData(), 'scope');
+		if (scope !== 'finished' && scope !== 'all') {
+			return fail(400, { message: 'Pick what to clear.' });
+		}
+		await clearReviews(db, story.id, scope);
 		return { done: true };
 	},
 	// The Assistant tab's mute and un-mute, the same per-story override as the

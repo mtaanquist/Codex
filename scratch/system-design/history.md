@@ -989,6 +989,17 @@ use. Words over a bare number because writers say "second draft"; computed on
 load from the existing labels, so there is no stored counter to keep in step
 with renames and deletes.
 
+Clear review notes (#823, 2026-11-17): Mads asked for a way to start a
+fresh review round after saving a draft. Drafts never captured review
+notes, so clearing them cannot touch a draft (a test pins that). The
+dialog (`ClearReviewsModal`, opened from the foot of the Comments panel)
+offers "Finished notes only" (resolved threads, decided suggestions and
+their discussions) or "Everything", as Mads chose over a single delete-all.
+`clearReviews` locks the story's suggestions, then its threads (the lock
+`addComment` takes), so neither a first reply on a suggestion nor a reply
+in a thread can land in something being deleted. Notes on scenes in the
+deleted list stay with those scenes.
+
 Compare drafts (#825, 2026-11-17): a Compare tab on the draft page,
 against the working draft or another saved draft, always older to newer.
 `compareDrafts` (pure, `src/lib/drafts.ts`) matches scenes by id, or by

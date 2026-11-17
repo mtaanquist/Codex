@@ -6,6 +6,8 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import { entityCategories, stories, universes, users } from '../../src/lib/server/db/schema';
 import { uniqueSlug } from '../../src/lib/server/slugs';
+import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
+import { restoreUniverse, trashUniverse } from '../../src/lib/server/universe-lifecycle';
 import { createStoryInUniverse, standaloneUniverse } from '../../src/lib/server/story-create';
 import { ownedStory } from '../../src/lib/server/story-access';
 import { ownedUniverse } from '../../src/lib/server/universe-access';
@@ -65,6 +67,11 @@ describe('uniqueSlug', () => {
 		expect(await uniqueSlug(db, 'universes', ownerId, 'Ardenfall', 'universe')).toBe('ardenfall-2');
 		await db.insert(universes).values({ ownerId, name: 'Ardenfall', slug: 'ardenfall-2' });
 		expect(await uniqueSlug(db, 'universes', ownerId, 'Ardenfall', 'universe')).toBe('ardenfall-3');
+	});
+
+	it('ignores trashed rows, which have freed their slug', async () => {
+		await db.update(universes).set({ deletedAt: new Date() }).where(eq(universes.id, universeId));
+		expect(await uniqueSlug(db, 'universes', ownerId, 'Ardenfall', 'universe')).toBe('ardenfall');
 	});
 
 	it('another owner gets the plain slug', async () => {
@@ -161,5 +168,78 @@ describe('standaloneUniverse', () => {
 		// A story created now lands in a live universe, so it stays visible.
 		const story = await createStoryInUniverse(db, ownerId, revived.id, 'After Trash');
 		expect(story.universeId).toBe(revived.id);
+	});
+});
+
+// A trashed row frees its slug: a new one can take it at once, and the
+// trashed row gets a fresh slug only if it is restored into a clash.
+describe('trash frees the slug', () => {
+	it("a new story reuses a trashed story's slug, and the restore moves aside", async () => {
+		expect(await trashStory(db, ownerId, storyId)).toBe(true);
+		const reused = await createStoryInUniverse(db, ownerId, universeId, 'The Toll');
+		expect(reused.slug).toBe('the-toll');
+
+		expect(await restoreStory(db, ownerId, storyId)).toBe(true);
+		const [restored] = await db.select().from(stories).where(eq(stories.id, storyId));
+		expect(restored.deletedAt).toBeNull();
+		expect(restored.slug).toBe('the-toll-2');
+		// The new story keeps its slug, and both resolve.
+		expect((await ownedStory('the-toll', ownerId, db)).story.id).toBe(reused.id);
+		expect((await ownedStory('the-toll-2', ownerId, db)).story.id).toBe(storyId);
+	});
+
+	it('a restore with no clash keeps the slug', async () => {
+		await trashStory(db, ownerId, storyId);
+		await restoreStory(db, ownerId, storyId);
+		const [restored] = await db.select().from(stories).where(eq(stories.id, storyId));
+		expect(restored.slug).toBe('the-toll');
+		expect(restored.deletedAt).toBeNull();
+	});
+
+	it('a restore into a clash picks the fresh slug from the current title', async () => {
+		await db.update(stories).set({ title: 'Bells' }).where(eq(stories.id, storyId));
+		await trashStory(db, ownerId, storyId);
+		await createStoryInUniverse(db, ownerId, universeId, 'The Toll');
+		await restoreStory(db, ownerId, storyId);
+		const [restored] = await db.select().from(stories).where(eq(stories.id, storyId));
+		expect(restored.slug).toBe('bells');
+	});
+
+	it('two trashed stories can share a slug', async () => {
+		await trashStory(db, ownerId, storyId);
+		const second = await createStoryInUniverse(db, ownerId, universeId, 'The Toll');
+		expect(await trashStory(db, ownerId, second.id)).toBe(true);
+		await restoreStory(db, ownerId, storyId);
+		await restoreStory(db, ownerId, second.id);
+		const slugs = (await db.select({ slug: stories.slug }).from(stories)).map((r) => r.slug);
+		expect(slugs.sort()).toEqual(['the-toll', 'the-toll-2']);
+	});
+
+	it('a universe works the same way', async () => {
+		expect(await trashUniverse(db, ownerId, universeId)).toBe(true);
+		const [reused] = await db
+			.insert(universes)
+			.values({
+				ownerId,
+				name: 'Ardenfall',
+				slug: await uniqueSlug(db, 'universes', ownerId, 'Ardenfall', 'universe')
+			})
+			.returning();
+		expect(reused.slug).toBe('ardenfall');
+
+		expect(await restoreUniverse(db, ownerId, universeId)).toBe(true);
+		expect((await ownedUniverse('ardenfall', ownerId, db)).id).toBe(reused.id);
+		expect((await ownedUniverse('ardenfall-2', ownerId, db)).id).toBe(universeId);
+	});
+
+	it('reviving the standalone home moves aside from a universe that took its slug', async () => {
+		const home = await standaloneUniverse(db, ownerId);
+		await db.update(universes).set({ deletedAt: new Date() }).where(eq(universes.id, home.id));
+		await db.insert(universes).values({ ownerId, name: 'Standalone stories', slug: home.slug });
+
+		const revived = await standaloneUniverse(db, ownerId);
+		expect(revived.id).toBe(home.id);
+		expect(revived.deletedAt).toBeNull();
+		expect(revived.slug).toBe(`${home.slug}-2`);
 	});
 });

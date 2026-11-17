@@ -8,6 +8,8 @@ Open the story's settings and pick "Saved drafts", or choose "Saved drafts" from
 
 You can save as many drafts as you want.
 
+A saved draft does not keep review comments or suggestions. To start a fresh round of feedback after saving one, use "Clear review notes..." in review mode (see [reviewing](/docs/reviewing)).
+
 ## Switching between drafts
 
 Once a story has a saved draft, the path at the top of the editor shows "Working draft" after the story's title. Select it to open any saved draft, to go back to the working draft, or to save another one. In the library, a story with saved drafts has a "Drafts" button on its card with the same choices. In the table view, a link under the title opens its saved drafts.

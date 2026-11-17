@@ -234,3 +234,60 @@ test('typing immediately after an accept keeps the accepted text', async ({ page
 	await expect(page.locator('.review-edit .cm-content')).toContainText('REPLACED');
 	await expect(page.locator('.review-edit .cm-content')).toContainText('TYPEDTAIL');
 });
+
+// #823: the author clears finished notes, keeping open ones, then clears
+// everything, from one dialog.
+test('the author can clear finished review notes, then all of them', async ({ page }) => {
+	await gotoReady(page, '/');
+	const stamp = Date.now();
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(`Clear ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, `Clear ${stamp}`);
+	await page.getByLabel('New story').fill('Clear');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('Something to talk about.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.getByRole('link', { name: 'Review', exact: true }).click();
+	await page.locator('.review-edit .cm-content').waitFor();
+
+	async function sceneComment(text: string) {
+		await page.getByRole('button', { name: 'On the whole scene' }).click();
+		await page.getByLabel('Your comment').fill(text);
+		await page
+			.locator('.rv-card.is-draft')
+			.getByRole('button', { name: 'Comment', exact: true })
+			.click();
+		await expect(page.locator('.rv-card').filter({ hasText: text })).toBeVisible();
+	}
+	await sceneComment('Still open.');
+	await sceneComment('Dealt with.');
+	await page
+		.locator('.rv-card')
+		.filter({ hasText: 'Dealt with.' })
+		.getByRole('button', { name: 'Resolve comment' })
+		.click();
+	await expect(page.locator('.rv-card').filter({ hasText: 'Dealt with.' })).toHaveCount(0);
+
+	await page.getByRole('button', { name: 'Clear review notes...' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Clear review notes' });
+	await expect(dialog.getByLabel(/Finished notes only \(1 note\)/)).toBeChecked();
+	await dialog.getByRole('button', { name: 'Clear notes' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.locator('.rv-card').filter({ hasText: 'Still open.' })).toBeVisible();
+	await page.getByRole('button', { name: /^Done/ }).click();
+	await expect(page.getByText('Nothing resolved in this scene yet.')).toBeVisible();
+
+	await page.getByRole('button', { name: 'Clear review notes...' }).click();
+	await dialog.getByLabel(/Everything/).check();
+	await dialog.getByRole('button', { name: 'Clear notes' }).click();
+	await expect(dialog).toHaveCount(0);
+	await page.getByRole('button', { name: /^Open/ }).click();
+	await expect(page.locator('.rv-card')).toHaveCount(0);
+	// Nothing left to clear, so the action goes away.
+	await expect(page.getByRole('button', { name: 'Clear review notes...' })).toHaveCount(0);
+});
