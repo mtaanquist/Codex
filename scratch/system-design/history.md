@@ -983,6 +983,11 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 
 ## Saved drafts (2026-11-16)
 
+Draft names (#824, 2026-11-17): the name field is prefilled with the next
+ordinal ("Second draft"), "Draft 13" past the twelfth, stepping past names in
+use. Words over a bare number because writers say "second draft"; computed on
+load from the existing labels, so there is no stored counter to keep in step
+with renames and deletes.
 Clear review notes (#823, 2026-11-17): Mads asked for a way to start a
 fresh review round after saving a draft. Drafts never captured review
 notes, so clearing them cannot touch a draft (a test pins that). The

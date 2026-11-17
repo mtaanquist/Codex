@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { confirmSubmit } from '#lib/confirm.svelte';
-	import { DRAFT_LABEL_MAX, DRAFT_NOTE_MAX } from '#lib/drafts';
+	import { DRAFT_LABEL_MAX, DRAFT_NOTE_MAX, suggestDraftName } from '#lib/drafts';
 	import { formatDateTime, formatNumber } from '#lib/format';
 	import FormStatus from '#lib/components/FormStatus.svelte';
 	import HelpLink from '#lib/components/HelpLink.svelte';
@@ -27,6 +27,8 @@
 					? 'Draft renamed.'
 					: null
 	);
+	// What the writer typed into a save that failed.
+	const typed = $derived(drafts && 'label' in drafts ? drafts : null);
 	const rowError = $derived(
 		drafts && 'draftId' in drafts && 'message' in drafts ? drafts.draftId : null
 	);
@@ -56,7 +58,7 @@
 				name="label"
 				required
 				maxlength={DRAFT_LABEL_MAX}
-				placeholder="First draft"
+				value={typed?.label ?? suggestDraftName(data.drafts.map((draft) => draft.label))}
 			/>
 		</div>
 		<div class="field">
@@ -67,7 +69,8 @@
 				name="note"
 				rows="2"
 				maxlength={DRAFT_NOTE_MAX}
-				placeholder="What this draft is, or what changed"></textarea>
+				placeholder="What this draft is, or what changed"
+				value={typed?.note ?? ''}></textarea>
 		</div>
 		<FormStatus
 			error={drafts && 'message' in drafts && !rowError ? drafts.message : null}

@@ -270,6 +270,7 @@ Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-
 ## Saved drafts (2026-11-16)
 
 - [x] Saved drafts: private, frozen copies of a whole story with switching from the library and the editor, scene restore, new story from a draft, and publishing a draft. (#812)
+- [x] Saved drafts: suggest the next draft name ("Second draft", ...). (#824)
 - [x] Review mode: clear finished or all review notes on a story in one step. (#823)
 
 Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-drafts-2026-11-16).
