@@ -19,6 +19,9 @@ export type DraftScene = {
 	status: string;
 	storyTime: string | null;
 	wordCount: number;
+	// For a scene added back from an earlier draft, the id it had there.
+	// Absent in drafts saved before this was recorded.
+	origin?: string | null;
 };
 
 export type DraftEntity = {
@@ -93,4 +96,70 @@ export function draftOutline(content: Pick<DraftContent, 'chapters' | 'scenes'>)
 				!content.chapters.some((chapter) => chapter.id === scene.chapterId)
 		)
 	};
+}
+
+export type SceneChangeKind = 'same' | 'changed' | 'added' | 'removed';
+
+export type SceneChange = {
+	kind: SceneChangeKind;
+	before: DraftScene | null;
+	after: DraftScene | null;
+	chapterTitle: string | null;
+};
+
+type Side = Pick<DraftContent, 'chapters' | 'scenes'>;
+
+// What changed between two versions of a story, scene by scene: in the
+// newer version's reading order, then the scenes it no longer has. A scene
+// matches by id, or by the id it came from when it was added back from a
+// draft. A scene is changed when its text or title differs.
+export function compareDrafts(
+	before: Side,
+	after: Side
+): {
+	changes: SceneChange[];
+	counts: Record<SceneChangeKind, number>;
+	words: { before: number; after: number };
+} {
+	const beforeById = new Map(before.scenes.map((scene) => [scene.id, scene]));
+	const used = new Set<string>();
+	const chapterTitle = (side: Side, scene: DraftScene) => {
+		const index = side.chapters.findIndex((chapter) => chapter.id === scene.chapterId);
+		if (index < 0) return null;
+		return side.chapters[index].title ?? `Chapter ${index + 1}`;
+	};
+	const changes: SceneChange[] = [];
+	const outline = draftOutline(after);
+	for (const scene of [
+		...outline.chapters.flatMap((chapter) => chapter.scenes),
+		...outline.unfiled
+	]) {
+		let match = beforeById.get(scene.id);
+		if ((!match || used.has(match.id)) && scene.origin) match = beforeById.get(scene.origin);
+		if (match && used.has(match.id)) match = undefined;
+		if (match) used.add(match.id);
+		changes.push({
+			kind: !match
+				? 'added'
+				: match.bodyMd === scene.bodyMd && match.title === scene.title
+					? 'same'
+					: 'changed',
+			before: match ?? null,
+			after: scene,
+			chapterTitle: chapterTitle(after, scene)
+		});
+	}
+	for (const scene of before.scenes) {
+		if (used.has(scene.id)) continue;
+		changes.push({
+			kind: 'removed',
+			before: scene,
+			after: null,
+			chapterTitle: chapterTitle(before, scene)
+		});
+	}
+	const counts = { same: 0, changed: 0, added: 0, removed: 0 };
+	for (const change of changes) counts[change.kind]++;
+	const sum = (side: Side) => side.scenes.reduce((total, scene) => total + scene.wordCount, 0);
+	return { changes, counts, words: { before: sum(before), after: sum(after) } };
 }

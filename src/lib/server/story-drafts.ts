@@ -41,6 +41,11 @@ import {
 // changed after it is saved; only its label and note are.
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+// The scenes.metadata key on a scene added back from a saved draft: the id
+// the scene had when the draft was saved.
+export const FROM_DRAFT_SCENE = 'fromDraftScene';
+
 type StoryRow = typeof stories.$inferSelect;
 
 export type DraftSummary = {
@@ -99,7 +104,8 @@ export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Pro
 			summaryMd: scenes.summaryMd,
 			status: scenes.status,
 			storyTime: scenes.storyTime,
-			wordCount: scenes.wordCount
+			wordCount: scenes.wordCount,
+			origin: sql<string | null>`${scenes.metadata} ->> ${FROM_DRAFT_SCENE}`
 		})
 		.from(scenes)
 		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
@@ -258,6 +264,37 @@ export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Pro
 		})),
 		notes: noteRows
 	};
+}
+
+// The working draft's chapters and scenes in the shape a saved draft keeps
+// them, for comparing against one. Worldbuilding is left out.
+export async function workingOutline(
+	db: Database,
+	storyId: string
+): Promise<Pick<DraftContent, 'chapters' | 'scenes'>> {
+	const [chapterRows, sceneRows] = await Promise.all([
+		db
+			.select({ id: chapters.id, title: chapters.title, summaryMd: chapters.summaryMd })
+			.from(chapters)
+			.where(eq(chapters.storyId, storyId))
+			.orderBy(asc(chapters.position)),
+		db
+			.select({
+				id: scenes.id,
+				chapterId: scenes.chapterId,
+				title: scenes.title,
+				bodyMd: scenes.bodyMd,
+				summaryMd: scenes.summaryMd,
+				status: scenes.status,
+				storyTime: scenes.storyTime,
+				wordCount: scenes.wordCount,
+				origin: sql<string | null>`${scenes.metadata} ->> ${FROM_DRAFT_SCENE}`
+			})
+			.from(scenes)
+			.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
+			.orderBy(asc(scenes.globalPosition))
+	]);
+	return { chapters: chapterRows, scenes: sceneRows };
 }
 
 // Saves the story as it stands now under a name. The story row is read
@@ -445,10 +482,6 @@ export async function draftUsesCover(
 		.limit(1);
 	return Boolean(row);
 }
-
-// The scenes.metadata key on a scene added back from a saved draft: the id
-// the scene had when the draft was saved.
-export const FROM_DRAFT_SCENE = 'fromDraftScene';
 
 // Puts one scene's saved text back into the working draft. The live scene's
 // current text is kept in History first, and the restored text lands as a

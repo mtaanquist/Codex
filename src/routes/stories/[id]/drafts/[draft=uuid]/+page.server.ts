@@ -9,6 +9,7 @@ import {
 	FROM_DRAFT_SCENE,
 	getDraft,
 	listDrafts,
+	workingOutline,
 	newStoryFromDraft,
 	restoreDraftScene
 } from '#lib/server/story-drafts';
@@ -17,6 +18,7 @@ import { formText } from '#lib/server/validation';
 import { rateLimitWrites } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
 import { detectMentions, type MentionTarget } from '#lib/mention-detect';
+import { compareDrafts } from '#lib/drafts';
 
 // The working draft's text for each saved scene. A scene that was added back
 // from a draft has a new id, so it is found by the id it came from.
@@ -38,7 +40,7 @@ function liveByDraftScene(
 	return result;
 }
 
-const TABS = ['story', 'world', 'notes'] as const;
+const TABS = ['story', 'world', 'notes', 'compare'] as const;
 type Tab = (typeof TABS)[number];
 
 // A saved draft, read-only. Nothing on this page changes the draft, and the
@@ -87,7 +89,29 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
+	// The compare tab: this draft against the working draft or another saved
+	// one, always from the older version to the newer.
+	let compare = null;
+	if (tab === 'compare') {
+		const withParam = url.searchParams.get('with');
+		const otherRow = drafts.find((row) => row.id === withParam && row.id !== draft.id);
+		const other = otherRow ? await getDraft(db, story.id, otherRow.id) : null;
+		const otherSide = other
+			? { label: other.label, content: other.content }
+			: { label: 'Working draft', content: await workingOutline(db, story.id) };
+		const thisSide = { label: draft.label, content: draft.content };
+		const otherIsOlder = other !== null && other.createdAt < draft.createdAt;
+		const [older, newer] = otherIsOlder ? [otherSide, thisSide] : [thisSide, otherSide];
+		compare = {
+			with: other?.id ?? 'working',
+			older: older.label,
+			newer: newer.label,
+			...compareDrafts(older.content, newer.content)
+		};
+	}
+
 	return {
+		compare,
 		story,
 		universe,
 		reading,

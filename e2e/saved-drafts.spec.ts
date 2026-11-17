@@ -58,6 +58,16 @@ test('save a draft, switch to it, and restore a scene', async ({ page }) => {
 	await expect(page.locator('.reader-prose')).toContainText('The tide came in at dusk.');
 	await expect(page.getByText('Changed since')).toBeVisible();
 
+	// The Compare tab shows the whole story's changes since the draft.
+	await page.getByRole('link', { name: 'Compare', exact: true }).click();
+	await expect(page.locator('.compare-summary')).toContainText(
+		'From "First draft" to "Working draft": 1 scene changed, 0 scenes added, 0 scenes removed.'
+	);
+	await page.locator('.compare-scene summary').click();
+	await expect(page.locator('.compare-scene .diff-add')).toContainText('The tide never came.');
+	await page.getByRole('link', { name: 'Story', exact: true }).click();
+	await expect(page.getByText('Changed since')).toBeVisible();
+
 	// Compare shows both versions; restoring asks first.
 	await waitForHydration(page);
 	await page.getByRole('button', { name: 'Compare with working draft' }).click();

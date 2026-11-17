@@ -983,6 +983,15 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 
 ## Saved drafts (2026-11-16)
 
+Compare drafts (#825, 2026-11-17): a Compare tab on the draft page,
+against the working draft or another saved draft, always older to newer.
+`compareDrafts` (pure, `src/lib/drafts.ts`) matches scenes by id, or by
+the id a scene added back came from; drafts now record that as
+`DraftScene.origin` (absent in older drafts, which then show such a scene
+as removed and added). The working side reads only chapters and scenes
+(`workingOutline`), not the worldbuilding. Prose only for now; comparing
+worldbuilding and notes is left for when someone asks.
+
 Low review items (#819 to #822), same PR: a cover change and a draft save
 now meet on the story row (`for update` in `replaceCover`, `for share` in
 `saveDraft`, which retries a serialization failure), so a draft cannot keep

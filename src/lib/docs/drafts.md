@@ -14,6 +14,10 @@ Once a story has a saved draft, the path at the top of the editor shows "Working
 
 A saved draft opens to read only. A banner at the top says so, and "Back to the working draft" takes you back to writing. The tabs under the banner show the story, the worldbuilding (with how often each name comes up in that draft), and the story's notes, all as they were when you saved.
 
+## Comparing drafts
+
+The Compare tab on a saved draft shows what changed across the whole story. Pick the working draft or another saved draft under "Compare with". It always reads from the older version to the newer one: a summary of how many scenes changed, were added, or were removed, and how the word count moved, then a card for each of those scenes. Open a card to see its text. In a changed scene, green text was added and red, struck-through text was taken out.
+
 ## Getting text back from a draft
 
 Each scene in a saved draft says whether it is the same as in the working draft, has changed since, or is no longer there.

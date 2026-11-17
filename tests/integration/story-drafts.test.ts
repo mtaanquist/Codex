@@ -32,8 +32,10 @@ import {
 	newStoryFromDraft,
 	restoreDraftScene,
 	saveDraft,
-	updateDraftDetails
+	updateDraftDetails,
+	workingOutline
 } from '../../src/lib/server/story-drafts';
+import { compareDrafts } from '../../src/lib/drafts';
 import { publishStory } from '../../src/lib/server/publish';
 import {
 	buildAccountExport,
@@ -388,6 +390,19 @@ describe('restoreDraftScene', () => {
 			'Halden left at dusk.',
 			'Halden left at dawn.'
 		]);
+	});
+
+	it('compares a scene added back as the same scene', async () => {
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		await restoreDraftScene(db, storyId, id, sceneId);
+		const draft = await getDraft(db, storyId, id);
+		const result = compareDrafts(draft!.content, await workingOutline(db, storyId));
+		expect(result.counts).toEqual({ same: 2, changed: 0, added: 0, removed: 0 });
+		// A draft saved now remembers where the copy came from too.
+		const later = await getDraft(db, storyId, await save());
+		expect(compareDrafts(draft!.content, later!.content).counts.same).toBe(2);
 	});
 
 	it('refuses a scene that is not in the draft', async () => {

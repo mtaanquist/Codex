@@ -114,6 +114,7 @@ const signedIn = () => [
 	['plan', `${storyPath}/plan`],
 	['review', `${storyPath}/review`],
 	['saved draft', draftPath],
+	['saved draft compare', `${draftPath}?tab=compare`],
 	['account', '/account'],
 	['help article', '/docs/editor'],
 	['not found', '/does-not-exist']

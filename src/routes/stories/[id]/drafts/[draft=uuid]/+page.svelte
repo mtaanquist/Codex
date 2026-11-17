@@ -8,7 +8,12 @@
 	import { storyPath } from '#lib/chrome';
 	import { confirmEnhance } from '#lib/confirm.svelte';
 	import { enhance } from '#lib/enhance';
-	import { draftOutline, type DraftEntityType, type DraftScene } from '#lib/drafts';
+	import {
+		draftOutline,
+		type DraftEntityType,
+		type DraftScene,
+		type SceneChangeKind
+	} from '#lib/drafts';
 	import { formatDateTime, formatNumber } from '#lib/format';
 	import { withQuery } from '#lib/href';
 	import { renderMarkdown } from '#lib/markdown';
@@ -33,7 +38,12 @@
 	);
 	const savedAt = $derived(formatDateTime(data.draft.createdAt, page.data.timeZone));
 
-	const TAB_LABELS = { story: 'Story', world: 'Worldbuilding', notes: 'Notes' } as const;
+	const TAB_LABELS = {
+		story: 'Story',
+		world: 'Worldbuilding',
+		notes: 'Notes',
+		compare: 'Compare'
+	} as const;
 
 	// Scenes open for comparison, by id.
 	let comparing = $state<Record<string, boolean>>({});
@@ -90,6 +100,19 @@
 		if (count === 0) return 'Not named in this draft';
 		return count === 1 ? 'Named once' : `Named ${formatNumber(count)} times`;
 	}
+	const CHANGE_LABEL: Record<SceneChangeKind, string> = {
+		same: 'Unchanged',
+		changed: 'Changed',
+		added: 'Added',
+		removed: 'Removed'
+	};
+	function signed(n: number): string {
+		return n > 0 ? `+${formatNumber(n)}` : n < 0 ? `-${formatNumber(-n)}` : '0';
+	}
+	function scenes(n: number): string {
+		return n === 1 ? '1 scene' : `${formatNumber(n)} scenes`;
+	}
+	const otherDrafts = $derived(data.drafts.filter((draft) => draft.id !== data.draft.id));
 	const sceneTitle = $derived(
 		new Map(content.scenes.map((scene) => [scene.id, scene.title ?? 'Untitled scene']))
 	);
@@ -358,6 +381,83 @@
 						</div>
 					{/if}
 				{/each}
+			{:else if data.tab === 'compare' && data.compare}
+				{@const compare = data.compare}
+				<form class="compare-pick" method="GET" action={draftHref}>
+					<input type="hidden" name="tab" value="compare" />
+					<label for="compare-with">Compare with</label>
+					<select
+						id="compare-with"
+						class="select"
+						name="with"
+						value={compare.with}
+						onchange={(event) => event.currentTarget.form?.requestSubmit()}
+					>
+						<option value="working">Working draft</option>
+						{#each otherDrafts as other (other.id)}
+							<option value={other.id}>{other.label}</option>
+						{/each}
+					</select>
+					<button class="btn btn-sm btn-secondary" type="submit">Compare</button>
+				</form>
+				<p class="compare-summary">
+					From "{compare.older}" to "{compare.newer}": {scenes(compare.counts.changed)} changed, {scenes(
+						compare.counts.added
+					)} added, {scenes(compare.counts.removed)} removed. {formatNumber(compare.words.before)} words
+					to {formatNumber(compare.words.after)} ({signed(
+						compare.words.after - compare.words.before
+					)}).
+				</p>
+				{#if compare.counts.changed + compare.counts.added + compare.counts.removed === 0}
+					<div class="empty-state">
+						<p class="empty-state-text">The scenes are the same in both.</p>
+					</div>
+				{:else}
+					<p class="field-hint">
+						Open a scene to see its text. In a changed scene, green text was added and red,
+						struck-through text was taken out.
+					</p>
+				{/if}
+				<div class="draft-entities">
+					{#each compare.changes.filter((change) => change.kind !== 'same') as change, index (index)}
+						{@const scene = (change.after ?? change.before)!}
+						<details class="r-card draft-entity compare-scene">
+							<summary>
+								<span class="draft-entity-caret"><Icon name="caret" size={11} /></span>
+								<span class="draft-entity-name">{scene.title ?? 'Untitled scene'}</span>
+								{#if change.chapterTitle}<span class="pill">{change.chapterTitle}</span>{/if}
+								<span class="pill" class:pill-accent={change.kind !== 'removed'}>
+									{CHANGE_LABEL[change.kind]}
+								</span>
+								<span class="draft-entity-count">
+									{signed((change.after?.wordCount ?? 0) - (change.before?.wordCount ?? 0))} words
+								</span>
+							</summary>
+							{#if change.kind === 'changed' && change.before && change.after}
+								{#if change.before.title !== change.after.title}
+									<p class="field-hint">
+										Renamed from "{change.before.title ?? 'Untitled scene'}"
+									</p>
+								{/if}
+								<DiffView
+									class="reader-prose"
+									from={change.before.bodyMd}
+									to={change.after.bodyMd}
+								/>
+							{:else}
+								<div class="reader-prose">
+									<!-- eslint-disable-next-line svelte/no-at-html-tags (shared renderer escapes raw HTML) -->
+									{@html renderMarkdown(scene.bodyMd)}
+								</div>
+							{/if}
+						</details>
+					{/each}
+				</div>
+				{#if compare.counts.same > 0}
+					<p class="field-hint compare-same">
+						{scenes(compare.counts.same)} unchanged.
+					</p>
+				{/if}
 			{:else}
 				{#if content.notes.length === 0}
 					<div class="empty-state">
@@ -441,6 +541,22 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+	}
+	.compare-pick {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2) var(--space-3);
+		margin-bottom: var(--space-4);
+	}
+	.compare-pick label {
+		font-weight: 600;
+	}
+	.compare-summary {
+		margin: 0 0 var(--space-2);
+	}
+	.compare-same {
+		margin-top: var(--space-4);
 	}
 	.draft-entities {
 		display: flex;
