@@ -220,7 +220,7 @@ export const actions: Actions = {
 			resolved.invitation.storyId,
 			access.reviewer.displayName,
 			'replied',
-			{ threadId },
+			{ threadId, commentId: result.commentId },
 			body
 		);
 		return { commented: true };
@@ -257,7 +257,7 @@ export const actions: Actions = {
 			resolved.invitation.storyId,
 			access.reviewer.displayName,
 			'replied',
-			{ threadId: thread.threadId },
+			{ threadId: thread.threadId, commentId: result.commentId },
 			body
 		);
 		return { commented: true };

@@ -28,15 +28,17 @@ export type NotificationMatrix = Record<NotificationKind, NotificationChannels>;
 
 // What a notification carries for display and navigation. href is absent
 // when there is nowhere to send the reader (a guest reviewer's thread is
-// only reachable through their review link). threadId and suggestionId name
-// the review note a review notification is about; they are never shown, and
-// let the email digest leave out notes that were cleared before it went out.
+// only reachable through their review link). threadId, suggestionId and
+// commentId name the review note (and, for a reply, the comment) a review
+// notification is about; they are never shown, and let the email digest leave
+// out notes that were cleared or deleted before it went out.
 export type NotificationPayload = {
 	title: string;
 	detail?: string;
 	href?: string;
 	threadId?: string;
 	suggestionId?: string;
+	commentId?: string;
 };
 
 // The bell's wire shape.
