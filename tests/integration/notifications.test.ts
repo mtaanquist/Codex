@@ -112,6 +112,25 @@ describe('notifyUsers', () => {
 	});
 });
 
+describe('notifyReviewActivity', () => {
+	it('links the feedback page by story id, which does not move with a rename', async () => {
+		const owner = await makeUser('owner@example.com');
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId: owner.id, name: 'Mythos' })
+			.returning();
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: owner.id, title: 'The Toll' })
+			.returning();
+
+		await notifyReviewActivity(db, story.id, 'Guest', 'commented', 'A note.');
+
+		const [row] = await db.select().from(notifications).where(eq(notifications.userId, owner.id));
+		expect((row.payload as { href: string }).href).toBe(`/stories/${story.id}/review`);
+	});
+});
+
 describe('the bell', () => {
 	it('lists in-app rows newest first and counts unread, scoped to the user', async () => {
 		const me = await makeUser('me@example.com');
