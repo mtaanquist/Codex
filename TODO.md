@@ -279,7 +279,6 @@ Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-d
 ## Small fixes (2026-11-17)
 
 - [x] A deleted story or universe frees its name and web address at once; a restore that clashes gets a fresh address. (#827)
-- [x] Destructive menu items are red at rest, not only on hover. (#817)
 
 ## Feedback backlog
 
