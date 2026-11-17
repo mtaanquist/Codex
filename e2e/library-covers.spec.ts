@@ -67,7 +67,13 @@ test('library: tinted covers, the cover colour, the Recent row, and the view set
 
 	// The view switch: Table lists the stories in rows, and the choice sticks.
 	const switcher = page.getByRole('group', { name: 'Library view' });
+	// The button flips before the save lands, so wait for the save before the
+	// reload below, or the reload can race it.
+	const saved = page.waitForResponse(
+		(r) => r.url().includes('setLibraryView') && r.request().method() === 'POST'
+	);
 	await switcher.getByRole('button', { name: 'Table' }).click();
+	await saved;
 	await expect(switcher.getByRole('button', { name: 'Table' })).toHaveAttribute(
 		'aria-pressed',
 		'true'

@@ -32,8 +32,11 @@ import {
 	newStoryFromDraft,
 	restoreDraftScene,
 	saveDraft,
-	updateDraftDetails
+	compareWithDraft,
+	updateDraftDetails,
+	workingOutline
 } from '../../src/lib/server/story-drafts';
+import { compareDrafts } from '../../src/lib/drafts';
 import { publishStory } from '../../src/lib/server/publish';
 import {
 	buildAccountExport,
@@ -390,6 +393,33 @@ describe('restoreDraftScene', () => {
 		]);
 	});
 
+	it('compares a scene added back as the same scene', async () => {
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		await restoreDraftScene(db, storyId, id, sceneId);
+		const draft = await getDraft(db, storyId, id);
+		const result = compareDrafts(draft!.content, await workingOutline(db, storyId));
+		expect(result.counts).toEqual({ same: 2, changed: 0, added: 0, removed: 0 });
+		// A draft saved now remembers where the copy came from too.
+		const later = await getDraft(db, storyId, await save());
+		expect(compareDrafts(draft!.content, later!.content).counts.same).toBe(2);
+	});
+
+	it('follows a scene added back twice to the first draft', async () => {
+		const first = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const once = await restoreDraftScene(db, storyId, first, sceneId);
+		if (!once.ok) throw new Error('expected a restore');
+		const second = await save('Second draft');
+		await db.delete(scenes).where(eq(scenes.id, once.sceneId));
+		await restoreDraftScene(db, storyId, second, once.sceneId);
+		const draft = await getDraft(db, storyId, first);
+		const result = compareDrafts(draft!.content, await workingOutline(db, storyId));
+		expect(result.counts).toEqual({ same: 2, changed: 0, added: 0, removed: 0 });
+	});
+
 	it('refuses a scene that is not in the draft', async () => {
 		const id = await save();
 		expect(await restoreDraftScene(db, storyId, id, characterId)).toMatchObject({
@@ -648,5 +678,47 @@ describe('exports', () => {
 				'the-salt-road/drafts/first-draft/chapters/01-departure/01-dawn.md'
 			])
 		);
+	});
+});
+
+describe('compareWithDraft', () => {
+	it('reads from the older draft to the newer, whichever is open', async () => {
+		const firstId = await save();
+		await db.update(scenes).set({ bodyMd: 'Halden left at dusk.' }).where(eq(scenes.id, sceneId));
+		const secondId = await save('Second draft');
+		const first = (await getDraft(db, storyId, firstId))!;
+		const second = (await getDraft(db, storyId, secondId))!;
+		for (const [open, other] of [
+			[first, second],
+			[second, first]
+		]) {
+			const result = await compareWithDraft(db, storyId, open, other.id);
+			expect(result).toMatchObject({
+				with: other.id,
+				older: 'First draft',
+				newer: 'Second draft',
+				counts: { same: 1, changed: 1, added: 0, removed: 0 }
+			});
+			expect(result.changes[0].before?.bodyMd).toBe('Halden left at dawn.');
+		}
+	});
+
+	it('falls back to the working draft for itself, junk, or another story', async () => {
+		const id = await save();
+		const draft = (await getDraft(db, storyId, id))!;
+		const [elsewhere] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Other', slug: 'other' })
+			.returning();
+		const foreign = await saveDraft(db, ownerId, elsewhere.id, { label: 'Theirs', note: '' });
+		if (!foreign.ok) throw new Error(foreign.reason);
+		for (const withId of [id, 'junk', null, foreign.id]) {
+			const result = await compareWithDraft(db, storyId, draft, withId);
+			expect(result).toMatchObject({
+				with: 'working',
+				older: 'First draft',
+				newer: 'Working draft'
+			});
+		}
 	});
 });

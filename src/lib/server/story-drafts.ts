@@ -25,9 +25,11 @@ import { uniqueSlug } from './slugs.ts';
 import { isSerializationFailure, isUniqueViolation } from './db-errors.ts';
 import { deleteAsset } from './assets.ts';
 import { wordCount } from '#lib/word-count';
+import { isUuid } from '#lib/slug';
 import {
 	DRAFT_LABEL_MAX,
 	DRAFT_NOTE_MAX,
+	compareDrafts,
 	draftOutline,
 	type DraftContent,
 	type DraftEntity,
@@ -41,6 +43,13 @@ import {
 // changed after it is saved; only its label and note are.
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+// The scenes.metadata key on a scene added back from a saved draft: the id
+// the scene had when the draft was saved.
+export const FROM_DRAFT_SCENE = 'fromDraftScene';
+// And the id it had in the first draft of a chain of add-backs.
+const FIRST_DRAFT_SCENE = 'firstDraftScene';
+
 type StoryRow = typeof stories.$inferSelect;
 
 export type DraftSummary = {
@@ -84,11 +93,16 @@ function cleanNote(raw: string): string | null | ActionFailure {
 
 // Everything the draft freezes, read through one connection. The caller
 // runs it inside a repeatable-read transaction.
-export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Promise<DraftContent> {
+// The story's chapters and scenes in the shape a saved draft keeps them.
+// Each query waits for the last, so it also runs inside a transaction.
+export async function workingOutline(
+	tx: Tx | Database,
+	storyId: string
+): Promise<Pick<DraftContent, 'chapters' | 'scenes'>> {
 	const chapterRows = await tx
 		.select({ id: chapters.id, title: chapters.title, summaryMd: chapters.summaryMd })
 		.from(chapters)
-		.where(eq(chapters.storyId, story.id))
+		.where(eq(chapters.storyId, storyId))
 		.orderBy(asc(chapters.position));
 	const sceneRows = await tx
 		.select({
@@ -99,11 +113,22 @@ export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Pro
 			summaryMd: scenes.summaryMd,
 			status: scenes.status,
 			storyTime: scenes.storyTime,
-			wordCount: scenes.wordCount
+			wordCount: scenes.wordCount,
+			origin: sql<string | null>`${scenes.metadata} ->> ${FROM_DRAFT_SCENE}`,
+			root: sql<
+				string | null
+			>`coalesce(${scenes.metadata} ->> ${FIRST_DRAFT_SCENE}, ${scenes.metadata} ->> ${FROM_DRAFT_SCENE})`
 		})
 		.from(scenes)
-		.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
+		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
+	return { chapters: chapterRows, scenes: sceneRows };
+}
+
+// Everything the draft freezes, read through one connection. The caller
+// runs it inside a repeatable-read transaction.
+export async function buildDraftContent(tx: Tx | Database, story: StoryRow): Promise<DraftContent> {
+	const { chapters: chapterRows, scenes: sceneRows } = await workingOutline(tx, story.id);
 
 	const categoryRows = await tx
 		.select({ id: entityCategories.id, name: entityCategories.name })
@@ -446,10 +471,6 @@ export async function draftUsesCover(
 	return Boolean(row);
 }
 
-// The scenes.metadata key on a scene added back from a saved draft: the id
-// the scene had when the draft was saved.
-export const FROM_DRAFT_SCENE = 'fromDraftScene';
-
 // Puts one scene's saved text back into the working draft. The live scene's
 // current text is kept in History first, and the restored text lands as a
 // new revision on top, so the step can be undone from History. When the
@@ -529,7 +550,10 @@ export async function restoreDraftScene(
 				status: saved.status as (typeof scenes.$inferInsert)['status'],
 				storyTime: saved.storyTime,
 				wordCount: wordCount(saved.bodyMd),
-				metadata: { [FROM_DRAFT_SCENE]: sceneId }
+				metadata: {
+					[FROM_DRAFT_SCENE]: sceneId,
+					[FIRST_DRAFT_SCENE]: saved.root ?? saved.origin ?? sceneId
+				}
 			})
 			.returning({ id: scenes.id });
 		await recordRevision(tx, 'scene', created.id, saved.bodyMd, 'restore', { label });
@@ -724,4 +748,29 @@ export async function newStoryFromDraft(
 			return { ok: true as const, slug: created.slug };
 		});
 	}
+}
+
+// A saved draft against the working draft or another of the story's saved
+// drafts (`withId`; anything else means the working draft), always from the
+// older version to the newer.
+export async function compareWithDraft(
+	db: Database,
+	storyId: string,
+	draft: { id: string; label: string; createdAt: Date; content: DraftContent },
+	withId: string | null
+) {
+	const other =
+		withId && withId !== draft.id && isUuid(withId) ? await getDraft(db, storyId, withId) : null;
+	const otherSide = other
+		? { label: other.label, content: other.content }
+		: { label: 'Working draft', content: await workingOutline(db, storyId) };
+	const thisSide = { label: draft.label, content: draft.content };
+	const [older, newer] =
+		other && other.createdAt < draft.createdAt ? [otherSide, thisSide] : [thisSide, otherSide];
+	return {
+		with: other?.id ?? 'working',
+		older: older.label,
+		newer: newer.label,
+		...compareDrafts(older.content, newer.content)
+	};
 }
