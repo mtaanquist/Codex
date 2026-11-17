@@ -864,7 +864,7 @@
 							</button>
 						{/if}
 						<button
-							class="menu-item"
+							class="menu-item danger"
 							type="button"
 							role="menuitem"
 							disabled={clearing || busy}
