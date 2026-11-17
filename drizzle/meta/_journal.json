@@ -540,6 +540,13 @@
 			"when": 1794827994093,
 			"tag": "0076_story-drafts",
 			"breakpoints": true
+		},
+		{
+			"idx": 77,
+			"version": "7",
+			"when": 1794915198314,
+			"tag": "0077_trash-frees-slugs",
+			"breakpoints": true
 		}
 	]
 }

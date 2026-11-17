@@ -274,6 +274,10 @@ Notes on the shipped steps: [history.md](scratch/system-design/history.md#issue-
 
 Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-drafts-2026-11-16).
 
+## Small fixes (2026-11-17)
+
+- [x] A deleted story or universe frees its name and web address at once; a restore that clashes gets a fresh address. (#827)
+
 ## Feedback backlog
 
 From the design pass click-throughs (2026-07-30):

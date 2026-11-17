@@ -19,6 +19,7 @@ import {
 	universes
 } from './db/schema.ts';
 import { scheduleObjectDeletions } from './assets.ts';
+import { untrash } from './slugs.ts';
 import { ENTITY_TYPES, entityTable } from './entity-lookups.ts';
 import { deleteStoryWithin, type Tx } from './story-delete.ts';
 import { ownedUniverseRow } from './universe-scope.ts';
@@ -41,7 +42,8 @@ export async function trashUniverse(
 	return true;
 }
 
-/** Brings a trashed universe back whole; nothing inside was touched. */
+/** Brings a trashed universe back whole; nothing inside was touched. Its
+ * slug may have been reused meanwhile, in which case it gets a fresh one. */
 export async function restoreUniverse(
 	db: Database,
 	userId: string,
@@ -49,7 +51,7 @@ export async function restoreUniverse(
 ): Promise<boolean> {
 	const universe = await ownedUniverseRow(db, userId, universeId, { deleted: true });
 	if (!universe) return false;
-	await db.update(universes).set({ deletedAt: null }).where(eq(universes.id, universe.id));
+	await untrash(db, 'universes', universe.id);
 	return true;
 }
 
