@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Database } from './auth';
 import { isUniqueViolation } from './db-errors.ts';
 import { entityCategories, stories, universes } from './db/schema';
-import { uniqueSlug } from './slugs';
+import { uniqueSlug, untrash } from './slugs';
 
 // Creates a story with a readable slug, shared by the library's new-story
 // card and the universe plan board. Retries once when a concurrent create
@@ -73,6 +73,7 @@ export async function standaloneUniverse(db: Database, ownerId: string) {
 // Brings a trashed standalone universe back so a new story has a live home.
 async function reviveIfTrashed(db: Database, universe: typeof universes.$inferSelect) {
 	if (!universe.deletedAt) return universe;
-	await db.update(universes).set({ deletedAt: null }).where(eq(universes.id, universe.id));
-	return { ...universe, deletedAt: null };
+	await untrash(db, 'universes', universe.id);
+	const [live] = await db.select().from(universes).where(eq(universes.id, universe.id));
+	return live;
 }

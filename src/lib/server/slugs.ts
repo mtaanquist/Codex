@@ -1,5 +1,6 @@
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, isNull, like } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { isUniqueViolation } from './db-errors.ts';
 import { stories, universes } from './db/schema.ts';
 import { isUuid, slugify } from '../slug.ts';
 
@@ -8,8 +9,9 @@ const BASE_MAX = 55;
 
 /**
  * A slug for a new universe or story, unique within the owner's account:
- * the slugified name, with -2, -3, ... appended when taken. The unique
- * index is the real guard; this just picks a free name.
+ * the slugified name, with -2, -3, ... appended when taken. Only live rows
+ * hold a slug; one in the trash has freed it. The unique index is the real
+ * guard; this just picks a free name.
  */
 export async function uniqueSlug(
 	db: Database,
@@ -23,7 +25,9 @@ export async function uniqueSlug(
 	const rows = await db
 		.select({ slug: target.slug })
 		.from(target)
-		.where(and(eq(target.ownerId, ownerId), like(target.slug, `${base}%`)));
+		.where(
+			and(eq(target.ownerId, ownerId), like(target.slug, `${base}%`), isNull(target.deletedAt))
+		);
 	const taken = new Set(rows.map((row) => row.slug));
 	// A uuid-shaped base would be looked up as an id and never resolve, so it
 	// always takes a suffix.
@@ -31,4 +35,40 @@ export async function uniqueSlug(
 	let n = 2;
 	while (taken.has(`${base}-${n}`)) n++;
 	return `${base}-${n}`;
+}
+
+/**
+ * Takes a universe or story out of the trash. A live row may have claimed its
+ * slug meanwhile; it then comes back under a fresh one picked from its name,
+ * the same as a rename. Retries once if a concurrent write takes that pick.
+ */
+export async function untrash(db: Database, table: 'universes' | 'stories', id: string) {
+	const [row] =
+		table === 'universes'
+			? await db
+					.select({ ownerId: universes.ownerId, name: universes.name })
+					.from(universes)
+					.where(eq(universes.id, id))
+			: await db
+					.select({ ownerId: stories.ownerId, name: stories.title })
+					.from(stories)
+					.where(eq(stories.id, id));
+	if (!row) return;
+	const revive = (slug?: string) => {
+		const values = slug ? { deletedAt: null, slug } : { deletedAt: null };
+		return table === 'universes'
+			? db.update(universes).set(values).where(eq(universes.id, id))
+			: db.update(stories).set(values).where(eq(stories.id, id));
+	};
+	const fallback = table === 'universes' ? 'universe' : 'story';
+	const fresh = () => uniqueSlug(db, table, row.ownerId, row.name, fallback);
+	const attempts = [undefined, fresh, fresh];
+	for (const [i, pick] of attempts.entries()) {
+		try {
+			await revive(pick && (await pick()));
+			return;
+		} catch (err) {
+			if (!isUniqueViolation(err) || i === attempts.length - 1) throw err;
+		}
+	}
 }

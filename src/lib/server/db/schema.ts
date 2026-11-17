@@ -155,7 +155,11 @@ export const universes = pgTable(
 			.$onUpdate(() => new Date())
 	},
 	(table) => [
-		uniqueIndex('universes_owner_slug_idx').on(table.ownerId, table.slug),
+		// Only live universes reserve a slug, so a name freed by the trash can be
+		// reused at once. A restore that finds its slug taken picks a fresh one.
+		uniqueIndex('universes_owner_slug_idx')
+			.on(table.ownerId, table.slug)
+			.where(sql`${table.deletedAt} is null`),
 		uniqueIndex('universes_one_standalone_idx')
 			.on(table.ownerId)
 			.where(sql`${table.standalone}`)
@@ -215,7 +219,7 @@ export const stories = pgTable(
 		targetWords: integer('target_words'),
 		deadline: date('deadline'),
 		// Set when the story is moved to the trash; the worker purges it once
-		// the restore window passes. The slug stays reserved meanwhile.
+		// the restore window passes. A trashed story frees its slug.
 		deletedAt: timestamp('deleted_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -224,7 +228,10 @@ export const stories = pgTable(
 			.$onUpdate(() => new Date())
 	},
 	(table) => [
-		uniqueIndex('stories_owner_slug_idx').on(table.ownerId, table.slug),
+		// Live stories only, as with universes.
+		uniqueIndex('stories_owner_slug_idx')
+			.on(table.ownerId, table.slug)
+			.where(sql`${table.deletedAt} is null`),
 		index('stories_universe_idx').on(table.universeId)
 	]
 );

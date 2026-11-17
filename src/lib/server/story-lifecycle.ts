@@ -1,10 +1,12 @@
 // Story trash. Deleting a story is a soft delete: it leaves every live read at
 // once but sits restorable for the same window as a trashed universe, after
-// which the worker purges it for good. The slug stays reserved meanwhile, so a
-// restore never clashes. Runs in the worker too.
+// which the worker purges it for good. A trashed story frees its slug for
+// reuse; a restore that finds it taken comes back under a fresh one. Runs in
+// the worker too.
 import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { stories, universes } from './db/schema.ts';
+import { untrash } from './slugs.ts';
 import { purgeStory } from './story-delete.ts';
 import { UNIVERSE_TRASH_DAYS } from './universe-lifecycle.ts';
 
@@ -44,7 +46,8 @@ export async function trashStory(db: Database, userId: string, storyId: string):
 	return true;
 }
 
-/** Brings a trashed story back whole. */
+/** Brings a trashed story back whole, under a fresh slug if its old one was
+ * reused meanwhile. */
 export async function restoreStory(
 	db: Database,
 	userId: string,
@@ -52,7 +55,7 @@ export async function restoreStory(
 ): Promise<boolean> {
 	const story = await ownedStoryRow(db, userId, storyId, { deleted: true });
 	if (!story) return false;
-	await db.update(stories).set({ deletedAt: null }).where(eq(stories.id, story.id));
+	await untrash(db, 'stories', story.id);
 	return true;
 }
 
