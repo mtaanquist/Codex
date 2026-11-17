@@ -603,6 +603,9 @@
 			confirmLabel: 'Clear conversation',
 			danger: true
 		});
+		// The menu item that asked is gone by now, so focus goes back to the
+		// composer rather than being lost.
+		composer?.focus();
 		if (!ok || clearing || busy) return;
 		clearing = true;
 		try {
