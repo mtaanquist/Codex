@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareDrafts, draftOutline, type DraftScene } from './drafts';
+import { compareDrafts, draftOutline, matchScenes, type DraftScene } from './drafts';
 
 function scene(id: string, chapterId: string | null): DraftScene {
 	return {
@@ -55,7 +55,6 @@ describe('compareDrafts', () => {
 		).toEqual([
 			['added', 'n'],
 			['changed', 'b'],
-			['same', 'a'],
 			['removed', 'c']
 		]);
 		expect(result.counts).toEqual({ same: 1, changed: 1, added: 1, removed: 1 });
@@ -68,7 +67,7 @@ describe('compareDrafts', () => {
 			{ chapters, scenes: [text('a', 'back again')] },
 			{ chapters, scenes: [text('copy', 'back again', { origin: 'a', title: 'a' })] }
 		);
-		expect(result.changes.map((change) => change.kind)).toEqual(['same']);
+		expect(result.counts).toEqual({ same: 1, changed: 0, added: 0, removed: 0 });
 	});
 
 	it('counts a title change as a change', () => {
@@ -77,5 +76,34 @@ describe('compareDrafts', () => {
 			{ chapters, scenes: [text('a', 'same', { title: 'New' })] }
 		);
 		expect(result.counts.changed).toBe(1);
+	});
+});
+
+describe('matchScenes', () => {
+	it('lets the same id win over a copy that came from it', () => {
+		// "a" was added back as "copy", then "a" itself came back from the trash
+		// and now reads after the copy.
+		const pairs = matchScenes([{ id: 'a' }], [{ id: 'copy', origin: 'a' }, { id: 'a' }]);
+		expect([...pairs]).toEqual([['a', 'a']]);
+	});
+
+	it('follows a scene added back twice to the first draft', () => {
+		expect([...matchScenes([{ id: 'a' }], [{ id: 'c', origin: 'b', root: 'a' }])]).toEqual([
+			['c', 'a']
+		]);
+		expect([...matchScenes([{ id: 'b' }], [{ id: 'c', origin: 'b', root: 'a' }])]).toEqual([
+			['c', 'b']
+		]);
+	});
+
+	it('pairs each older scene once', () => {
+		const pairs = matchScenes(
+			[{ id: 'a' }],
+			[
+				{ id: 'x', origin: 'a' },
+				{ id: 'y', origin: 'a' }
+			]
+		);
+		expect([...pairs]).toEqual([['x', 'a']]);
 	});
 });

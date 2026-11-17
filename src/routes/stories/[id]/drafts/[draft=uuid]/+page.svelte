@@ -112,6 +112,8 @@
 	function scenes(n: number): string {
 		return n === 1 ? '1 scene' : `${formatNumber(n)} scenes`;
 	}
+	// Compare cards that have been opened, by kind and scene id.
+	let opened = $state<Record<string, boolean>>({});
 	const otherDrafts = $derived(data.drafts.filter((draft) => draft.id !== data.draft.id));
 	const sceneTitle = $derived(
 		new Map(content.scenes.map((scene) => [scene.id, scene.title ?? 'Untitled scene']))
@@ -386,13 +388,7 @@
 				<form class="compare-pick" method="GET" action={draftHref}>
 					<input type="hidden" name="tab" value="compare" />
 					<label for="compare-with">Compare with</label>
-					<select
-						id="compare-with"
-						class="select"
-						name="with"
-						value={compare.with}
-						onchange={(event) => event.currentTarget.form?.requestSubmit()}
-					>
+					<select id="compare-with" class="select" name="with" value={compare.with}>
 						<option value="working">Working draft</option>
 						{#each otherDrafts as other (other.id)}
 							<option value={other.id}>{other.label}</option>
@@ -419,9 +415,13 @@
 					</p>
 				{/if}
 				<div class="draft-entities">
-					{#each compare.changes.filter((change) => change.kind !== 'same') as change, index (index)}
+					{#each compare.changes as change (`${change.kind}:${(change.after ?? change.before)!.id}`)}
 						{@const scene = (change.after ?? change.before)!}
-						<details class="r-card draft-entity compare-scene">
+						{@const key = `${change.kind}:${scene.id}`}
+						<details
+							class="r-card draft-entity compare-scene"
+							ontoggle={(event) => (opened[key] = event.currentTarget.open)}
+						>
 							<summary>
 								<span class="draft-entity-caret"><Icon name="caret" size={11} /></span>
 								<span class="draft-entity-name">{scene.title ?? 'Untitled scene'}</span>
@@ -433,7 +433,8 @@
 									{signed((change.after?.wordCount ?? 0) - (change.before?.wordCount ?? 0))} words
 								</span>
 							</summary>
-							{#if change.kind === 'changed' && change.before && change.after}
+							<!-- The text is drawn only once the card is opened. -->
+							{#if opened[key] && change.kind === 'changed' && change.before && change.after}
 								{#if change.before.title !== change.after.title}
 									<p class="field-hint">
 										Renamed from "{change.before.title ?? 'Untitled scene'}"
@@ -444,7 +445,7 @@
 									from={change.before.bodyMd}
 									to={change.after.bodyMd}
 								/>
-							{:else}
+							{:else if opened[key]}
 								<div class="reader-prose">
 									<!-- eslint-disable-next-line svelte/no-at-html-tags (shared renderer escapes raw HTML) -->
 									{@html renderMarkdown(scene.bodyMd)}
@@ -548,9 +549,6 @@
 		align-items: center;
 		gap: var(--space-2) var(--space-3);
 		margin-bottom: var(--space-4);
-	}
-	.compare-pick label {
-		font-weight: 600;
 	}
 	.compare-summary {
 		margin: 0 0 var(--space-2);

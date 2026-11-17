@@ -1,12 +1,12 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
-import { scenes, users } from '#lib/server/db/schema';
+import { users } from '#lib/server/db/schema';
 import { ownedStory } from '#lib/server/story-access';
 import { readingPageRef } from '#lib/server/publish';
 import {
-	FROM_DRAFT_SCENE,
+	compareWithDraft,
 	getDraft,
 	listDrafts,
 	workingOutline,
@@ -18,24 +18,19 @@ import { formText } from '#lib/server/validation';
 import { rateLimitWrites } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
 import { detectMentions, type MentionTarget } from '#lib/mention-detect';
-import { compareDrafts } from '#lib/drafts';
+import { matchScenes } from '#lib/drafts';
 
-// The working draft's text for each saved scene. A scene that was added back
-// from a draft has a new id, so it is found by the id it came from.
+// The working draft's text for each saved scene, paired the same way the
+// Compare tab pairs them.
 function liveByDraftScene(
 	saved: { id: string }[],
-	live: { id: string; bodyMd: string; metadata: unknown }[]
+	live: { id: string; bodyMd: string; origin?: string | null; root?: string | null }[]
 ): Record<string, string> {
-	const byId = new Map<string, string>();
-	for (const scene of live) {
-		const from = (scene.metadata as Record<string, unknown>)[FROM_DRAFT_SCENE];
-		if (typeof from === 'string' && !byId.has(from)) byId.set(from, scene.bodyMd);
-	}
-	for (const scene of live) byId.set(scene.id, scene.bodyMd);
+	const pairs = matchScenes(saved, live);
 	const result: Record<string, string> = {};
-	for (const scene of saved) {
-		const body = byId.get(scene.id);
-		if (body !== undefined) result[scene.id] = body;
+	for (const scene of live) {
+		const savedId = pairs.get(scene.id);
+		if (savedId) result[savedId] = scene.bodyMd;
 	}
 	return result;
 }
@@ -58,10 +53,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		// The working draft's text for each scene, to compare against and to
 		// say which scenes have changed since.
 		tab === 'story'
-			? db
-					.select({ id: scenes.id, bodyMd: scenes.bodyMd, metadata: scenes.metadata })
-					.from(scenes)
-					.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
+			? workingOutline(db, story.id).then((outline) => outline.scenes)
 			: Promise.resolve([]),
 		readingPageRef(db, story.id),
 		db
@@ -89,33 +81,24 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		}
 	}
 
-	// The compare tab: this draft against the working draft or another saved
-	// one, always from the older version to the newer.
-	let compare = null;
-	if (tab === 'compare') {
-		const withParam = url.searchParams.get('with');
-		const otherRow = drafts.find((row) => row.id === withParam && row.id !== draft.id);
-		const other = otherRow ? await getDraft(db, story.id, otherRow.id) : null;
-		const otherSide = other
-			? { label: other.label, content: other.content }
-			: { label: 'Working draft', content: await workingOutline(db, story.id) };
-		const thisSide = { label: draft.label, content: draft.content };
-		const otherIsOlder = other !== null && other.createdAt < draft.createdAt;
-		const [older, newer] = otherIsOlder ? [otherSide, thisSide] : [thisSide, otherSide];
-		compare = {
-			with: other?.id ?? 'working',
-			older: older.label,
-			newer: newer.label,
-			...compareDrafts(older.content, newer.content)
-		};
-	}
+	const compare =
+		tab === 'compare'
+			? await compareWithDraft(db, story.id, draft, url.searchParams.get('with'))
+			: null;
 
 	return {
 		compare,
 		story,
 		universe,
 		reading,
-		draft,
+		// The compare tab carries its own scenes; the draft's are not needed.
+		draft:
+			tab === 'compare'
+				? {
+						...draft,
+						content: { ...draft.content, scenes: [], entities: [], relationships: [], notes: [] }
+					}
+				: draft,
 		drafts: drafts.map((row) => ({ id: row.id, label: row.label })),
 		live: liveByDraftScene(draft.content.scenes, liveScenes),
 		mentions,

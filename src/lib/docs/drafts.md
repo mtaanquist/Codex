@@ -16,7 +16,7 @@ A saved draft opens to read only. A banner at the top says so, and "Back to the 
 
 ## Comparing drafts
 
-The Compare tab on a saved draft shows what changed across the whole story. Pick the working draft or another saved draft under "Compare with". It always reads from the older version to the newer one: a summary of how many scenes changed, were added, or were removed, and how the word count moved, then a card for each of those scenes. Open a card to see its text. In a changed scene, green text was added and red, struck-through text was taken out.
+The Compare tab on a saved draft shows what changed across the whole story. Pick the working draft or another saved draft under "Compare with". It always reads from the older version to the newer one: a summary of how many scenes changed (in their text or title), were added, or were removed, and how the word count moved, then a card for each of those scenes. Open a card to see its text. In a changed scene, green text was added and red, struck-through text was taken out.
 
 ## Getting text back from a draft
 

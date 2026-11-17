@@ -988,7 +988,12 @@ against the working draft or another saved draft, always older to newer.
 `compareDrafts` (pure, `src/lib/drafts.ts`) matches scenes by id, or by
 the id a scene added back came from; drafts now record that as
 `DraftScene.origin` (absent in older drafts, which then show such a scene
-as removed and added). The working side reads only chapters and scenes
+as removed and added). Matching runs in passes, exact id first, then
+`origin`, then `root` (the first draft of a chain of add-backs, kept as
+`scenes.metadata.firstDraftScene`), so a copy never takes the place of
+the original, and the Story tab's per-scene state shares the same
+`matchScenes`. Unchanged scenes are only counted, and a card's text is
+drawn only when it is opened, so a long novel's page stays light. The working side reads only chapters and scenes
 (`workingOutline`), not the worldbuilding. Prose only for now; comparing
 worldbuilding and notes is left for when someone asks.
 
