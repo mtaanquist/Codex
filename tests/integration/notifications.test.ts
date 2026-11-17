@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -124,7 +125,14 @@ describe('notifyReviewActivity', () => {
 			.values({ universeId: universe.id, ownerId: owner.id, title: 'The Toll' })
 			.returning();
 
-		await notifyReviewActivity(db, story.id, 'Guest', 'commented', 'A note.');
+		await notifyReviewActivity(
+			db,
+			story.id,
+			'Guest',
+			'commented',
+			{ threadId: randomUUID() },
+			'A note.'
+		);
 
 		const [row] = await db.select().from(notifications).where(eq(notifications.userId, owner.id));
 		expect((row.payload as { href: string }).href).toBe(`/stories/${story.id}/review`);
