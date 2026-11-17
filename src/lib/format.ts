@@ -40,8 +40,7 @@ export function formatLongDate(date: Date | string, timeZone?: string): string {
 }
 
 /** "just now", "5m", "3h", "2d", then the date: compact recency badges.
- * Components pass `now()` from `#lib/now.svelte` so the text stays current
- * and matches the browser's clock after hydration. */
+ * Components pass `now()` from `#lib/now.svelte` so the text keeps ticking. */
 export function relativeShort(
 	date: Date | string,
 	timeZone?: string,
