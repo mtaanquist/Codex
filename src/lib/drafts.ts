@@ -199,3 +199,31 @@ export function compareDrafts(
 	const sum = (side: Side) => side.scenes.reduce((total, scene) => total + scene.wordCount, 0);
 	return { changes, counts, words: { before: sum(before), after: sum(after) } };
 }
+
+const ORDINALS = [
+	'First',
+	'Second',
+	'Third',
+	'Fourth',
+	'Fifth',
+	'Sixth',
+	'Seventh',
+	'Eighth',
+	'Ninth',
+	'Tenth',
+	'Eleventh',
+	'Twelfth'
+];
+
+function draftName(n: number): string {
+	return n <= ORDINALS.length ? `${ORDINALS[n - 1]} draft` : `Draft ${n}`;
+}
+
+// The name offered for the next saved draft: "Second draft" when the story
+// has one, stepping past any name already in use.
+export function suggestDraftName(existing: string[]): string {
+	const taken = new Set(existing.map((label) => label.trim().toLowerCase()));
+	let n = existing.length + 1;
+	while (taken.has(draftName(n).toLowerCase())) n++;
+	return draftName(n);
+}

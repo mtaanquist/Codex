@@ -32,9 +32,18 @@ test('save a draft, switch to it, and restore a scene', async ({ page }) => {
 
 	// Save a draft from the story's settings.
 	await gotoReady(page, `/stories/tides-${stamp}/settings/drafts`);
+	// The name is suggested, counting on from the drafts there are.
+	await expect(page.locator('#draft-label')).toHaveValue('First draft');
+	// A save that fails keeps what was typed.
+	await page.locator('#draft-label').fill('   ');
+	await page.locator('#draft-note').fill('Before the rewrite.');
+	await page.getByRole('button', { name: 'Save draft' }).click();
+	await expect(page.getByRole('alert')).toHaveText('Give the draft a name.');
+	await expect(page.locator('#draft-note')).toHaveValue('Before the rewrite.');
 	await page.locator('#draft-label').fill('First draft');
 	await page.getByRole('button', { name: 'Save draft' }).click();
 	await expect(page.getByRole('status')).toContainText('Draft saved.');
+	await expect(page.locator('#draft-label')).toHaveValue('Second draft');
 
 	// Keep writing in the working draft.
 	await gotoReady(page, `/stories/tides-${stamp}`);

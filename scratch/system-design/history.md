@@ -983,6 +983,12 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 
 ## Saved drafts (2026-11-16)
 
+Draft names (#824, 2026-11-17): the name field is prefilled with the next
+ordinal ("Second draft"), "Draft 13" past the twelfth, stepping past names in
+use. Words over a bare number because writers say "second draft"; computed on
+load from the existing labels, so there is no stored counter to keep in step
+with renames and deletes.
+
 Compare drafts (#825, 2026-11-17): a Compare tab on the draft page,
 against the working draft or another saved draft, always older to newer.
 `compareDrafts` (pure, `src/lib/drafts.ts`) matches scenes by id, or by

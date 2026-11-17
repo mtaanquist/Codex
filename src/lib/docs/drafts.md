@@ -4,7 +4,7 @@ A saved draft is a copy of a whole story at one moment that you can always go ba
 
 ## Saving a draft
 
-Open the story's settings and pick "Saved drafts", or choose "Saved drafts" from the story's menu in the path at the top of the window. Give the draft a name, such as "First draft" or "Sent to the editor", add a note if you like, and select "Save draft". Scenes in the story's deleted list are not included.
+Open the story's settings and pick "Saved drafts", or choose "Saved drafts" from the story's menu in the path at the top of the window. The name is filled in for you ("First draft", then "Second draft", and so on). Keep it or type your own, such as "Sent to the editor", add a note if you like, and select "Save draft". Scenes in the story's deleted list are not included.
 
 You can save as many drafts as you want.
 
