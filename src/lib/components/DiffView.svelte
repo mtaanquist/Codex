@@ -32,6 +32,10 @@
 		text-decoration: none;
 		border-radius: 3px;
 	}
+	/* The hidden labels are for screen readers; keep them out of copied text. */
+	.diff-view :global(.visually-hidden) {
+		user-select: none;
+	}
 	.diff-del {
 		background: color-mix(in oklab, var(--danger) 18%, transparent);
 		text-decoration: line-through;

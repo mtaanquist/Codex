@@ -139,7 +139,7 @@ export type SceneChange = {
 	notes: string[];
 };
 
-export type ChapterRename = { before: string; after: string };
+export type ChapterRename = { id: string; before: string; after: string };
 
 type Side = Pick<DraftContent, 'chapters' | 'scenes'>;
 
@@ -212,9 +212,14 @@ export function compareDrafts(
 	const afterOrder = readingOrder(after);
 	const olderIndex = new Map(readingOrder(before).map((scene, index) => [scene.id, index]));
 	// Keyed by the newer scene's id, through its pair.
+	// A scene that changed chapter gets its own note, so it stays out of the
+	// order check and cannot make a scene that stayed put look moved.
 	const pairedIndex = new Map(
 		afterOrder
-			.filter((scene) => pairs.has(scene.id))
+			.filter(
+				(scene) =>
+					pairs.has(scene.id) && beforeById.get(pairs.get(scene.id)!)!.chapterId === scene.chapterId
+			)
 			.map((scene) => [scene.id, olderIndex.get(pairs.get(scene.id)!)!])
 	);
 	const moved = movedScenes(
@@ -273,10 +278,9 @@ export function compareDrafts(
 	for (const chapter of after.chapters) {
 		const older = before.chapters.find((candidate) => candidate.id === chapter.id);
 		if (!older || (older.title ?? '') === (chapter.title ?? '')) continue;
-		chapterRenames.push({
-			before: chapterTitle(before, older.id)!,
-			after: chapterTitle(after, chapter.id)!
-		});
+		const from = chapterTitle(before, older.id)!;
+		const to = chapterTitle(after, chapter.id)!;
+		if (from !== to) chapterRenames.push({ id: chapter.id, before: from, after: to });
 	}
 	const sum = (side: Side) => side.scenes.reduce((total, scene) => total + scene.wordCount, 0);
 	return {
@@ -312,7 +316,9 @@ function draftNumber(label: string): number {
 	const name = label.trim().toLowerCase();
 	const ordinal = ORDINALS.findIndex((word) => `${word.toLowerCase()} draft` === name);
 	if (ordinal >= 0) return ordinal + 1;
-	const numbered = /^draft (\d+)$/.exec(name);
+	// Up to six digits: past that it is not a count, and a huge number would
+	// stop the search for a free name from ever moving on.
+	const numbered = /^draft (\d{1,6})$/.exec(name);
 	return numbered ? Number(numbered[1]) : 0;
 }
 

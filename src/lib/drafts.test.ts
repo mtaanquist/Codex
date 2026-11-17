@@ -131,7 +131,29 @@ describe('compareDrafts', () => {
 			{ chapters, scenes: [] },
 			{ chapters: [{ id: 'c1', title: 'The Toll', summaryMd: null }], scenes: [] }
 		);
-		expect(result.chapterRenames).toEqual([{ before: 'One', after: 'The Toll' }]);
+		expect(result.chapterRenames).toEqual([{ id: 'c1', before: 'One', after: 'The Toll' }]);
+	});
+
+	it('does not list an untitled chapter given its own fallback name', () => {
+		const result = compareDrafts(
+			{ chapters: [{ id: 'c1', title: null, summaryMd: null }], scenes: [] },
+			{ chapters: [{ id: 'c1', title: 'Chapter 1', summaryMd: null }], scenes: [] }
+		);
+		expect(result.chapterRenames).toEqual([]);
+	});
+
+	it('does not mark a scene as moved when another scene changed chapter past it', () => {
+		const two = [...chapters, { id: 'c2', title: 'Two', summaryMd: null }];
+		const result = compareDrafts(
+			{ chapters: two, scenes: [text('a', 'a'), text('b', 'b', { chapterId: 'c2' })] },
+			{
+				chapters: two,
+				scenes: [text('b', 'b', { chapterId: 'c2' }), text('a', 'a', { chapterId: 'c2' })]
+			}
+		);
+		expect(result.changes.map((change) => [change.after!.id, change.notes])).toEqual([
+			['a', ['Moved from One']]
+		]);
 	});
 });
 
@@ -184,5 +206,6 @@ describe('suggestDraftName', () => {
 		expect(suggestDraftName(['Third draft'])).toBe('Fourth draft');
 		expect(suggestDraftName(['third DRAFT ', 'Notes'])).toBe('Fourth draft');
 		expect(suggestDraftName(['Draft 14'])).toBe('Draft 15');
+		expect(suggestDraftName(['Draft 9007199254740992'])).toBe('Second draft');
 	});
 });

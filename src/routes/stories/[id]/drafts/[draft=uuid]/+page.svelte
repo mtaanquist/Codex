@@ -406,7 +406,7 @@
 				</p>
 				{#if compare.chapterRenames.length > 0}
 					<ul class="compare-renames">
-						{#each compare.chapterRenames as rename (rename.before + rename.after)}
+						{#each compare.chapterRenames as rename (rename.id)}
 							<li>Chapter "{rename.before}" is now "{rename.after}".</li>
 						{/each}
 					</ul>
