@@ -280,6 +280,10 @@ Notes on the shipped step: [history.md](scratch/system-design/history.md#saved-d
 
 - [x] A deleted story or universe frees its name and web address at once; a restore that clashes gets a fresh address. (#827)
 - [x] Notification links point at the story or universe id, and Assistant jobs skip trashed work. (#831)
+- [x] Email digests leave out review notes that were cleared or deleted before they went out. (#832)
+- [x] Saved drafts: the suggested name steps past the highest draft number in use; compare counts moves, status and summary changes, and lists chapter renames. (#833)
+- [x] Destructive menu items are red at rest, not only on hover. (#817)
+- [x] Relative times ("5m") keep ticking while a page stays open. (#818)
 
 ## Feedback backlog
 
