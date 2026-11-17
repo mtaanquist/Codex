@@ -7,6 +7,7 @@
 	// POSTs the transcript and streams tokens back over Server-Sent Events.
 	import { enhance } from '#lib/enhance';
 	import { assistantIntent } from '#lib/assistant.svelte';
+	import { askConfirm } from '#lib/confirm.svelte';
 	import {
 		startSummariesJob,
 		reviewSceneWithAssistant,
@@ -596,6 +597,13 @@
 	let clearing = $state(false);
 	async function clearConversation() {
 		if (clearing || busy) return;
+		const ok = await askConfirm({
+			title: 'Clear this conversation?',
+			body: 'The conversation is deleted for good.',
+			confirmLabel: 'Clear conversation',
+			danger: true
+		});
+		if (!ok || clearing || busy) return;
 		clearing = true;
 		try {
 			const response = await fetch('/api/assistant/chat', {
