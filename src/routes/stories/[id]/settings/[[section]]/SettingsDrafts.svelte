@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { confirmSubmit } from '#lib/confirm.svelte';
-	import { DRAFT_LABEL_MAX, DRAFT_NOTE_MAX } from '#lib/drafts';
+	import { DRAFT_LABEL_MAX, DRAFT_NOTE_MAX, suggestDraftName } from '#lib/drafts';
 	import { formatDateTime, formatNumber } from '#lib/format';
 	import FormStatus from '#lib/components/FormStatus.svelte';
 	import HelpLink from '#lib/components/HelpLink.svelte';
@@ -52,7 +52,7 @@
 				name="label"
 				required
 				maxlength={DRAFT_LABEL_MAX}
-				placeholder="First draft"
+				value={suggestDraftName(data.drafts.map((draft) => draft.label))}
 			/>
 		</div>
 		<div class="field">
