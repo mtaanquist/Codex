@@ -71,7 +71,7 @@ Comments and suggestions point at the exact words they were made on. If you edit
 
 ## Clearing review notes
 
-When you are done with a round of feedback, select "Clear review notes..." at the foot of the Comments panel. It works on the whole story, not only the open scene. Choose "Finished notes only" to remove resolved comments and accepted or rejected suggestions and keep the open ones, or "Everything" to remove every comment and suggestion. Cleared notes, with their replies, are deleted for good, your reviewers' included. Your text and your [saved drafts](/docs/drafts) do not change.
+When you are done with a round of feedback, select "Clear review notes..." at the foot of the Comments panel. It works on the whole story, not only the open scene. Choose "Finished notes only" to remove resolved comments and accepted or rejected suggestions and keep the open ones, or "Everything" to remove every comment and suggestion. Cleared notes and their replies are deleted, yours and your reviewers'. Notes on scenes in the deleted list stay with those scenes. Your text and your [saved drafts](/docs/drafts) do not change.
 
 ## Hearing about activity
 

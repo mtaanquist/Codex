@@ -25,7 +25,14 @@
 	}
 </script>
 
-<div class="modal-backdrop" data-over-menus>
+<div
+	class="modal-backdrop"
+	role="presentation"
+	data-over-menus
+	onclick={(event) => {
+		if (event.target === event.currentTarget && !busy) onClose();
+	}}
+>
 	<div
 		class="modal-panel"
 		role="dialog"
@@ -57,26 +64,40 @@
 			<div class="modal-body">
 				<fieldset class="cr-group">
 					<legend class="visually-hidden">What to clear</legend>
-					<label class="cr-option">
-						<input type="radio" name="scope" value="finished" bind:group={scope} />
+					<label class="choice">
+						<input
+							type="radio"
+							name="scope"
+							value="finished"
+							aria-describedby="clear-finished-hint"
+							bind:group={scope}
+						/>
 						<span>
 							Finished notes only ({notes(finished)})
-							<span class="cr-hint">
+							<span class="choice-hint" id="clear-finished-hint">
 								Resolved comments and accepted or rejected suggestions. Open ones stay.
 							</span>
 						</span>
 					</label>
-					<label class="cr-option">
-						<input type="radio" name="scope" value="all" bind:group={scope} />
+					<label class="choice">
+						<input
+							type="radio"
+							name="scope"
+							value="all"
+							aria-describedby="clear-all-hint"
+							bind:group={scope}
+						/>
 						<span>
 							Everything ({notes(total)})
-							<span class="cr-hint">Every comment and suggestion, open or finished.</span>
+							<span class="choice-hint" id="clear-all-hint">
+								Every comment and suggestion, open or finished, yours included.
+							</span>
 						</span>
 					</label>
 				</fieldset>
 				<p class="cr-warning">
-					Cleared notes, and the replies on them, are deleted for good, including your reviewers'.
-					Your text and your saved drafts are not changed.
+					Cleared notes and their replies are deleted, yours and your reviewers'. Your text and your
+					saved drafts do not change.
 				</p>
 			</div>
 			<div class="modal-foot">
@@ -99,24 +120,6 @@
 		border: 0;
 		margin: 0;
 		padding: 0;
-	}
-	.cr-option {
-		display: flex;
-		align-items: baseline;
-		gap: 9px;
-		padding: 6px 0;
-		font-size: var(--text-base);
-		color: var(--text);
-		cursor: pointer;
-	}
-	.cr-option input {
-		margin: 0;
-		accent-color: var(--accent);
-	}
-	.cr-hint {
-		display: block;
-		font-size: var(--text-meta);
-		color: var(--text-faint);
 	}
 	.cr-warning {
 		margin: var(--space-3) 0 0;

@@ -153,18 +153,25 @@ describe('clearReviews', () => {
 			.select({ id: reviewThreads.id })
 			.from(reviewThreads)
 			.where(eq(reviewThreads.suggestionId, seeded.pending));
-		expect(await clearReviews(db, storyId, 'finished')).toEqual({ threads: 1, suggestions: 1 });
+		await clearReviews(db, storyId, 'finished');
 		expect(await threadIds()).toEqual([seeded.open, pendingThread.id, seeded.elsewhere].sort());
 		expect(await suggestionIds()).toEqual([seeded.pending]);
 	});
 
 	it('clears everything on the story and nothing on other stories', async () => {
 		const seeded = await seed();
-		expect(await clearReviews(db, storyId, 'all')).toEqual({ threads: 2, suggestions: 2 });
+		await clearReviews(db, storyId, 'all');
 		expect(await threadIds()).toEqual([seeded.elsewhere]);
 		expect(await suggestionIds()).toEqual([]);
 		const comments = await db.select({ threadId: reviewComments.threadId }).from(reviewComments);
 		expect(comments.map((row) => row.threadId)).toEqual([seeded.elsewhere]);
+	});
+
+	it('leaves notes on scenes in the deleted list with those scenes', async () => {
+		const open = await thread();
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
+		await clearReviews(db, storyId, 'all');
+		expect(await threadIds()).toEqual([open]);
 	});
 
 	it('leaves saved drafts as they were', async () => {

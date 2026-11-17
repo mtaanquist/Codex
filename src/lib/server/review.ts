@@ -22,6 +22,7 @@ import { createAnchorMapper, type AnchorMapper } from '../review-anchor.ts';
 import { wordCount } from '../word-count.ts';
 import { normaliseAssistantName } from './llm/prompts/persona.ts';
 import { EMAIL_RE } from './signup.ts';
+import { isForeignKeyViolation } from './db-errors.ts';
 
 // Guest review: invitations, guest identity, threaded comments, and
 // suggested edits. An author invites someone to one story by magic link; the
@@ -403,15 +404,22 @@ export async function ensureSuggestionThread(
 			)
 		);
 	if (!suggestion) return { ok: false, reason: 'That suggestion does not exist.' };
-	const [created] = await db
-		.insert(reviewThreads)
-		.values({
-			storyId: input.storyId,
-			sceneId: suggestion.sceneId,
-			suggestionId: suggestion.id
-		})
-		.onConflictDoNothing({ target: reviewThreads.suggestionId })
-		.returning({ id: reviewThreads.id });
+	let created: { id: string } | undefined;
+	try {
+		[created] = await db
+			.insert(reviewThreads)
+			.values({
+				storyId: input.storyId,
+				sceneId: suggestion.sceneId,
+				suggestionId: suggestion.id
+			})
+			.onConflictDoNothing({ target: reviewThreads.suggestionId })
+			.returning({ id: reviewThreads.id });
+	} catch (err) {
+		// The suggestion was cleared between the check and the insert.
+		if (isForeignKeyViolation(err)) return { ok: false, reason: 'That suggestion does not exist.' };
+		throw err;
+	}
 	if (created) return { ok: true, threadId: created.id };
 	const [existing] = await db
 		.select({ id: reviewThreads.id })
@@ -1109,15 +1117,27 @@ export type ClearScope = 'finished' | 'all';
 // Clears the story's review notes in one go. 'finished' takes resolved
 // threads and decided suggestions (with their discussions) and keeps
 // everything still open; 'all' takes every thread, comment and suggestion.
-// Saved drafts never hold review notes, so they are not touched. The
-// story's threads are locked first (addComment takes the same lock), so a
-// reply cannot land in a thread between its comments going and the thread.
+// Notes on scenes in the deleted list stay with those scenes. Saved drafts
+// never hold review notes, so they are not touched.
+//
+// Suggestions are locked before threads: a first reply on a suggestion
+// creates its thread, and that insert waits on the suggestion lock, so no
+// discussion thread can appear unseen. Threads are then locked the way
+// addComment locks them, so no reply lands in a thread being deleted.
 export async function clearReviews(
 	db: Database,
 	storyId: string,
 	scope: ClearScope
-): Promise<{ threads: number; suggestions: number }> {
-	return await db.transaction(async (tx) => {
+): Promise<void> {
+	await db.transaction(async (tx) => {
+		const liveScene = sql`(select ${scenes.id} from ${scenes} where ${scenes.storyId} = ${storyId} and ${scenes.deletedAt} is null)`;
+		const suggestions = await tx
+			.select({ id: reviewSuggestions.id, status: reviewSuggestions.status })
+			.from(reviewSuggestions)
+			.where(
+				and(eq(reviewSuggestions.storyId, storyId), inArray(reviewSuggestions.sceneId, liveScene))
+			)
+			.for('update');
 		const threads = await tx
 			.select({
 				id: reviewThreads.id,
@@ -1125,22 +1145,16 @@ export async function clearReviews(
 				suggestionId: reviewThreads.suggestionId
 			})
 			.from(reviewThreads)
-			.where(eq(reviewThreads.storyId, storyId))
+			.where(and(eq(reviewThreads.storyId, storyId), inArray(reviewThreads.sceneId, liveScene)))
 			.for('update');
-		const suggestions = await tx
-			.select({ id: reviewSuggestions.id, status: reviewSuggestions.status })
-			.from(reviewSuggestions)
-			.where(eq(reviewSuggestions.storyId, storyId))
-			.for('update');
-		const goingSuggestions = new Set(
-			suggestions
-				.filter((suggestion) => scope === 'all' || suggestion.status !== 'pending')
-				.map((suggestion) => suggestion.id)
-		);
+		const goingSuggestions = suggestions
+			.filter((suggestion) => scope === 'all' || suggestion.status !== 'pending')
+			.map((suggestion) => suggestion.id);
+		const going = new Set(goingSuggestions);
 		const goingThreads = threads
 			.filter((thread) =>
 				thread.suggestionId
-					? goingSuggestions.has(thread.suggestionId)
+					? going.has(thread.suggestionId)
 					: scope === 'all' || thread.resolvedAt !== null
 			)
 			.map((thread) => thread.id);
@@ -1148,14 +1162,8 @@ export async function clearReviews(
 			await tx.delete(reviewComments).where(inArray(reviewComments.threadId, goingThreads));
 			await tx.delete(reviewThreads).where(inArray(reviewThreads.id, goingThreads));
 		}
-		if (goingSuggestions.size > 0) {
-			await tx
-				.delete(reviewSuggestions)
-				.where(inArray(reviewSuggestions.id, [...goingSuggestions]));
+		if (goingSuggestions.length > 0) {
+			await tx.delete(reviewSuggestions).where(inArray(reviewSuggestions.id, goingSuggestions));
 		}
-		return {
-			threads: goingThreads.filter((id) => !threads.find((t) => t.id === id)?.suggestionId).length,
-			suggestions: goingSuggestions.size
-		};
 	});
 }

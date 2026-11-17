@@ -275,8 +275,8 @@ export const actions: Actions = {
 		if (scope !== 'finished' && scope !== 'all') {
 			return fail(400, { message: 'Pick what to clear.' });
 		}
-		const cleared = await clearReviews(db, story.id, scope);
-		return { done: true, cleared };
+		await clearReviews(db, story.id, scope);
+		return { done: true };
 	},
 	// The Assistant tab's mute and un-mute, the same per-story override as the
 	// Write editor's; the gate re-renders on the returned scope.

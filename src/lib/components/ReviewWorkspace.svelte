@@ -145,11 +145,15 @@
 	// only the standalone threads.
 	const standaloneThreads = $derived(threads.filter((t) => !t.suggestionId));
 	// Story-wide counts for the clear dialog.
+	// Notes on scenes in the deleted list stay with those scenes.
+	const liveSceneIds = $derived(new Set(scenes.map((scene) => scene.id)));
+	const liveThreads = $derived(standaloneThreads.filter((t) => liveSceneIds.has(t.sceneId)));
+	const liveSuggestions = $derived(suggestions.filter((s) => liveSceneIds.has(s.sceneId)));
 	const finishedNotes = $derived(
-		standaloneThreads.filter((t) => t.resolvedAt !== null).length +
-			suggestions.filter((s) => s.status !== 'pending').length
+		liveThreads.filter((t) => t.resolvedAt !== null).length +
+			liveSuggestions.filter((s) => s.status !== 'pending').length
 	);
-	const totalNotes = $derived(standaloneThreads.length + suggestions.length);
+	const totalNotes = $derived(liveThreads.length + liveSuggestions.length);
 	let clearing = $state(false);
 	const discussions = $derived(
 		new Map(threads.filter((t) => t.suggestionId).map((t) => [t.suggestionId!, t]))
