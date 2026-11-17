@@ -21,6 +21,7 @@ import {
 	listNotifications,
 	markNotificationsRead,
 	notifyAdmins,
+	notifyReviewActivity,
 	notifyThreadReviewers,
 	notifyUsers
 } from '../../src/lib/server/notify';
@@ -213,19 +214,17 @@ describe('buildUserDigest', () => {
 			payload: { title, ...about },
 			emailWanted: true
 		});
-		await db
-			.insert(notifications)
-			.values([
-				row('On the resolved thread', { threadId: resolved.id }),
-				row('On the open thread', { threadId: open.id }),
-				row('On the accepted suggestion', { suggestionId: accepted.id }),
-				{
-					userId: me.id,
-					kind: 'export_ready',
-					payload: { title: 'Export ready' },
-					emailWanted: true
-				}
-			]);
+		await db.insert(notifications).values([
+			row('On the resolved thread', { threadId: resolved.id }),
+			row('On the open thread', { threadId: open.id }),
+			row('On the accepted suggestion', { suggestionId: accepted.id }),
+			{
+				userId: me.id,
+				kind: 'export_ready',
+				payload: { title: 'Export ready' },
+				emailWanted: true
+			}
+		]);
 
 		await clearReviews(db, story.id, 'finished');
 
@@ -235,6 +234,52 @@ describe('buildUserDigest', () => {
 		expect(digest!.email.text).not.toContain('On the resolved thread');
 		expect(digest!.email.text).not.toContain('On the accepted suggestion');
 		expect(digest!.ids).toHaveLength(2);
+	});
+
+	it('leaves out a guest comment whose thread was cleared, end to end', async () => {
+		const me = await makeUser('me@example.com', {
+			preferences: { notifications: { review_activity: { email: true } } }
+		});
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId: me.id, name: 'Mythos' })
+			.returning();
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: me.id, title: 'Halden' })
+			.returning();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1, bodyMd: 'Text.' })
+			.returning();
+		const [cleared, kept] = await db
+			.insert(reviewThreads)
+			.values([
+				{ storyId: story.id, sceneId: scene.id, resolvedAt: new Date() },
+				{ storyId: story.id, sceneId: scene.id }
+			])
+			.returning();
+		await notifyReviewActivity(
+			db,
+			story.id,
+			'Maren',
+			'commented',
+			{ threadId: cleared.id },
+			'Gone.'
+		);
+		await notifyReviewActivity(db, story.id, 'Maren', 'replied', { threadId: kept.id }, 'Kept.');
+
+		await clearReviews(db, story.id, 'finished');
+
+		const digest = await buildUserDigest(db, me.id, 'https://codex.test');
+		expect(digest!.email.text).toContain('Kept.');
+		expect(digest!.email.text).not.toContain('Gone.');
+		// The skipped row no longer waits for an email.
+		const pending = await db
+			.select()
+			.from(notifications)
+			.where(eq(notifications.emailWanted, true));
+		expect(pending).toHaveLength(1);
 	});
 });
 

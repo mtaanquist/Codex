@@ -22,12 +22,13 @@ export type Digest = { email: EmailMessage; ids: string[] };
 
 // A review notification whose note was cleared or deleted before the digest
 // went out stays in the bell but is left out of the email. Rows that name no
-// note pass.
-const reviewNoteStillThere = sql`(
-	(${notifications.payload}->>'threadId' is null
-		or exists (select 1 from ${reviewThreads} where ${reviewThreads.id}::text = ${notifications.payload}->>'threadId'))
-	and (${notifications.payload}->>'suggestionId' is null
-		or exists (select 1 from ${reviewSuggestions} where ${reviewSuggestions.id}::text = ${notifications.payload}->>'suggestionId'))
+// note pass. The ids are cast to uuid so the primary keys serve the lookup;
+// every writer stores a uuid it has already checked.
+const reviewNoteGone = sql`(
+	(${notifications.payload}->>'threadId' is not null
+		and not exists (select 1 from ${reviewThreads} where ${reviewThreads.id} = (${notifications.payload}->>'threadId')::uuid))
+	or (${notifications.payload}->>'suggestionId' is not null
+		and not exists (select 1 from ${reviewSuggestions} where ${reviewSuggestions.id} = (${notifications.payload}->>'suggestionId')::uuid))
 )`;
 
 export async function buildUserDigest(
@@ -40,17 +41,18 @@ export async function buildUserDigest(
 		.from(users)
 		.where(eq(users.id, userId));
 	if (!user?.email) return null;
+	const unsent = and(
+		eq(notifications.userId, userId),
+		eq(notifications.emailWanted, true),
+		isNull(notifications.emailedAt)
+	);
+	// Rows about a note that is gone stop waiting for an email, so later
+	// digests do not check them again.
+	await db.update(notifications).set({ emailWanted: false }).where(and(unsent, reviewNoteGone));
 	const rows = await db
 		.select()
 		.from(notifications)
-		.where(
-			and(
-				eq(notifications.userId, userId),
-				eq(notifications.emailWanted, true),
-				isNull(notifications.emailedAt),
-				reviewNoteStillThere
-			)
-		)
+		.where(unsent)
 		.orderBy(asc(notifications.createdAt));
 	if (rows.length === 0) return null;
 
