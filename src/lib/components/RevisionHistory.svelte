@@ -3,6 +3,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { refreshAll } from '$app/navigation';
 	import { relativeShort } from '#lib/format';
+	import { now } from '#lib/now.svelte';
 
 	type Row = { id: string; reason: string | null; label: string | null; createdAt: Date };
 
@@ -90,7 +91,7 @@
 				<div class="hist-main">
 					<div class="hist-label">{rowTitle(row)}</div>
 					<div class="hist-meta">
-						<span>{relativeShort(row.createdAt, page.data.timeZone)}</span>
+						<span>{relativeShort(row.createdAt, page.data.timeZone, now())}</span>
 						{#if row.label && row.reason !== 'checkpoint'}
 							<span class="hist-note">{row.label}</span>
 						{/if}

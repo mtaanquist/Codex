@@ -5,6 +5,7 @@
 	import type { NotificationItem } from '#lib/notifications';
 	import { dismiss } from '#lib/dismiss';
 	import { relativeShort } from '#lib/format';
+	import { now } from '#lib/now.svelte';
 
 	// The topbar bell: unread badge, a dropdown of recent notifications,
 	// click marks read and follows the link when there is one.
@@ -106,7 +107,9 @@
 										<span class="bell-item-detail">{item.detail}</span>
 									{/if}
 								</span>
-								<span class="bell-age">{relativeShort(item.createdAt, page.data.timeZone)}</span>
+								<span class="bell-age"
+									>{relativeShort(item.createdAt, page.data.timeZone, now())}</span
+								>
 							</button>
 						</li>
 					{/each}
