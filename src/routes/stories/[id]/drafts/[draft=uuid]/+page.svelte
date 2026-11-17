@@ -404,6 +404,13 @@
 						compare.words.after - compare.words.before
 					)}).
 				</p>
+				{#if compare.chapterRenames.length > 0}
+					<ul class="compare-renames">
+						{#each compare.chapterRenames as rename (rename.id)}
+							<li>Chapter "{rename.before}" is now "{rename.after}".</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if compare.counts.changed + compare.counts.added + compare.counts.removed === 0}
 					<div class="empty-state">
 						<p class="empty-state-text">The scenes are the same in both.</p>
@@ -435,11 +442,9 @@
 							</summary>
 							<!-- The text is drawn only once the card is opened. -->
 							{#if opened[key] && change.kind === 'changed' && change.before && change.after}
-								{#if change.before.title !== change.after.title}
-									<p class="field-hint">
-										Renamed from "{change.before.title ?? 'Untitled scene'}"
-									</p>
-								{/if}
+								{#each change.notes as note (note)}
+									<p class="field-hint">{note}.</p>
+								{/each}
 								<DiffView
 									class="reader-prose"
 									from={change.before.bodyMd}
@@ -552,6 +557,10 @@
 	}
 	.compare-summary {
 		margin: 0 0 var(--space-2);
+	}
+	.compare-renames {
+		margin: 0 0 var(--space-2);
+		padding-left: var(--space-5);
 	}
 	.compare-same {
 		margin-top: var(--space-4);
