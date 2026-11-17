@@ -27,6 +27,8 @@
 					? 'Draft renamed.'
 					: null
 	);
+	// What the writer typed into a save that failed.
+	const typed = $derived(drafts && 'label' in drafts ? drafts : null);
 	const rowError = $derived(
 		drafts && 'draftId' in drafts && 'message' in drafts ? drafts.draftId : null
 	);
@@ -52,7 +54,7 @@
 				name="label"
 				required
 				maxlength={DRAFT_LABEL_MAX}
-				value={suggestDraftName(data.drafts.map((draft) => draft.label))}
+				value={typed?.label ?? suggestDraftName(data.drafts.map((draft) => draft.label))}
 			/>
 		</div>
 		<div class="field">
@@ -63,7 +65,8 @@
 				name="note"
 				rows="2"
 				maxlength={DRAFT_NOTE_MAX}
-				placeholder="What this draft is, or what changed"></textarea>
+				placeholder="What this draft is, or what changed"
+				value={typed?.note ?? ''}></textarea>
 		</div>
 		<FormStatus
 			error={drafts && 'message' in drafts && !rowError ? drafts.message : null}
