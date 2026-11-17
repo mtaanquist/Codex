@@ -74,6 +74,7 @@ export async function standaloneUniverse(db: Database, ownerId: string) {
 async function reviveIfTrashed(db: Database, universe: typeof universes.$inferSelect) {
 	if (!universe.deletedAt) return universe;
 	await untrash(db, 'universes', universe.id);
+	// Re-read: the restore may have given it a fresh slug.
 	const [live] = await db.select().from(universes).where(eq(universes.id, universe.id));
-	return live;
+	return live ?? { ...universe, deletedAt: null };
 }

@@ -196,6 +196,15 @@ describe('trash frees the slug', () => {
 		expect(restored.deletedAt).toBeNull();
 	});
 
+	it('a restore into a clash picks the fresh slug from the current title', async () => {
+		await db.update(stories).set({ title: 'Bells' }).where(eq(stories.id, storyId));
+		await trashStory(db, ownerId, storyId);
+		await createStoryInUniverse(db, ownerId, universeId, 'The Toll');
+		await restoreStory(db, ownerId, storyId);
+		const [restored] = await db.select().from(stories).where(eq(stories.id, storyId));
+		expect(restored.slug).toBe('bells');
+	});
+
 	it('two trashed stories can share a slug', async () => {
 		await trashStory(db, ownerId, storyId);
 		const second = await createStoryInUniverse(db, ownerId, universeId, 'The Toll');
