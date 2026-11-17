@@ -39,10 +39,16 @@ export function formatLongDate(date: Date | string, timeZone?: string): string {
 	});
 }
 
-/** "just now", "5m", "3h", "2d", then the date: compact recency badges. */
-export function relativeShort(date: Date | string, timeZone?: string): string {
+/** "just now", "5m", "3h", "2d", then the date: compact recency badges.
+ * Components pass `now()` from `#lib/now.svelte` so the text stays current
+ * and matches the browser's clock after hydration. */
+export function relativeShort(
+	date: Date | string,
+	timeZone?: string,
+	nowMs: number = Date.now()
+): string {
 	const then = new Date(date);
-	const minutes = Math.floor((Date.now() - then.getTime()) / 60_000);
+	const minutes = Math.floor((nowMs - then.getTime()) / 60_000);
 	if (minutes < 1) return 'just now';
 	if (minutes < 60) return `${minutes}m`;
 	const hours = Math.floor(minutes / 60);

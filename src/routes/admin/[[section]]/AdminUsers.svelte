@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import type { PageData, ActionData } from './$types';
 	import { formatDate, formatDateTime, relativeShort } from '#lib/format';
+	import { now } from '#lib/now.svelte';
 	import AdminUserActions from './AdminUserActions.svelte';
 	import { authorInitials } from '#lib/review-ui';
 
@@ -216,7 +217,7 @@
 								<time
 									datetime={new Date(account.lastActiveAt).toISOString()}
 									title={formatDateTime(account.lastActiveAt, page.data.timeZone)}
-									>{relativeShort(account.lastActiveAt, page.data.timeZone)}</time
+									>{relativeShort(account.lastActiveAt, page.data.timeZone, now())}</time
 								>
 							{:else}
 								Never

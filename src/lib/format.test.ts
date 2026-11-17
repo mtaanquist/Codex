@@ -36,6 +36,14 @@ describe('fixed display locale', () => {
 	it('falls back to the short date after a week', () => {
 		expect(relativeShort(june11)).toBe('11 Jun 2026');
 	});
+
+	it('measures against the given now, so server and browser can agree', () => {
+		const at = (minutes: number) => june11.getTime() + minutes * 60_000;
+		expect(relativeShort(june11, undefined, at(0.5))).toBe('just now');
+		expect(relativeShort(june11, undefined, at(5))).toBe('5m');
+		expect(relativeShort(june11, undefined, at(3 * 60))).toBe('3h');
+		expect(relativeShort(june11, undefined, at(2 * 24 * 60))).toBe('2d');
+	});
 });
 
 // One instant, 23:30 UTC on 11 June: already 12 June in Auckland, still
