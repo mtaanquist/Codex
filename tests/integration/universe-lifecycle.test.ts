@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
@@ -320,7 +321,14 @@ describe('trash and restore', () => {
 		const [{ total: before }] = await db
 			.select({ total: sql<number>`count(*)::int` })
 			.from(notifications);
-		await notifyReviewActivity(db, storyId, 'Guest', 'commented', 'Late note.');
+		await notifyReviewActivity(
+			db,
+			storyId,
+			'Guest',
+			'commented',
+			{ threadId: randomUUID() },
+			'Late note.'
+		);
 		const [{ total: after }] = await db
 			.select({ total: sql<number>`count(*)::int` })
 			.from(notifications);

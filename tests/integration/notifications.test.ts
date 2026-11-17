@@ -9,7 +9,9 @@ import {
 	reviewComments,
 	reviewers,
 	reviewInvitations,
+	reviewSuggestions,
 	reviewThreads,
+	revisions,
 	scenes,
 	stories,
 	universes,
@@ -31,6 +33,7 @@ import {
 	reviewerOptOutToken,
 	reviewerOptOutTarget
 } from '../../src/lib/server/notification-digest';
+import { clearReviews } from '../../src/lib/server/review';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -165,6 +168,73 @@ describe('buildUserDigest', () => {
 
 		await markEmailed(db, digest!.ids);
 		expect(await buildUserDigest(db, me.id, 'https://codex.test')).toBeNull();
+	});
+	it('leaves out review notes that were cleared before it went out', async () => {
+		const me = await makeUser('me@example.com');
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId: me.id, name: 'Mythos' })
+			.returning();
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: me.id, title: 'Halden' })
+			.returning();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1, bodyMd: 'Text.' })
+			.returning();
+		const [resolved, open] = await db
+			.insert(reviewThreads)
+			.values([
+				{ storyId: story.id, sceneId: scene.id, resolvedAt: new Date() },
+				{ storyId: story.id, sceneId: scene.id }
+			])
+			.returning();
+		const [base] = await db
+			.insert(revisions)
+			.values({ entityType: 'scene', entityId: scene.id, bodyMd: 'Text.' })
+			.returning();
+		const [accepted] = await db
+			.insert(reviewSuggestions)
+			.values({
+				storyId: story.id,
+				sceneId: scene.id,
+				assistant: true,
+				baseRevisionId: base.id,
+				rangeStart: 0,
+				rangeEnd: 4,
+				replacement: 'Words',
+				status: 'accepted'
+			})
+			.returning();
+		const row = (title: string, about: { threadId: string } | { suggestionId: string }) => ({
+			userId: me.id,
+			kind: 'review_activity' as const,
+			payload: { title, ...about },
+			emailWanted: true
+		});
+		await db
+			.insert(notifications)
+			.values([
+				row('On the resolved thread', { threadId: resolved.id }),
+				row('On the open thread', { threadId: open.id }),
+				row('On the accepted suggestion', { suggestionId: accepted.id }),
+				{
+					userId: me.id,
+					kind: 'export_ready',
+					payload: { title: 'Export ready' },
+					emailWanted: true
+				}
+			]);
+
+		await clearReviews(db, story.id, 'finished');
+
+		const digest = await buildUserDigest(db, me.id, 'https://codex.test');
+		expect(digest!.email.text).toContain('On the open thread');
+		expect(digest!.email.text).toContain('Export ready');
+		expect(digest!.email.text).not.toContain('On the resolved thread');
+		expect(digest!.email.text).not.toContain('On the accepted suggestion');
+		expect(digest!.ids).toHaveLength(2);
 	});
 });
 

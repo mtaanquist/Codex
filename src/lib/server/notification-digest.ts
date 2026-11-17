@@ -1,10 +1,11 @@
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	notifications,
 	reviewComments,
 	reviewers,
 	reviewInvitations,
+	reviewSuggestions,
 	reviewThreads,
 	stories,
 	users
@@ -18,6 +19,16 @@ import { teaser } from '../notifications.ts';
 // in the worker, so the origin for links arrives as a parameter.
 
 export type Digest = { email: EmailMessage; ids: string[] };
+
+// A review notification whose note was cleared or deleted before the digest
+// went out stays in the bell but is left out of the email. Rows that name no
+// note pass.
+const reviewNoteStillThere = sql`(
+	(${notifications.payload}->>'threadId' is null
+		or exists (select 1 from ${reviewThreads} where ${reviewThreads.id}::text = ${notifications.payload}->>'threadId'))
+	and (${notifications.payload}->>'suggestionId' is null
+		or exists (select 1 from ${reviewSuggestions} where ${reviewSuggestions.id}::text = ${notifications.payload}->>'suggestionId'))
+)`;
 
 export async function buildUserDigest(
 	db: Database,
@@ -36,7 +47,8 @@ export async function buildUserDigest(
 			and(
 				eq(notifications.userId, userId),
 				eq(notifications.emailWanted, true),
-				isNull(notifications.emailedAt)
+				isNull(notifications.emailedAt),
+				reviewNoteStillThere
 			)
 		)
 		.orderBy(asc(notifications.createdAt));

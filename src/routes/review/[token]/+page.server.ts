@@ -158,6 +158,7 @@ export const actions: Actions = {
 			resolved.invitation.storyId,
 			access.reviewer.displayName,
 			'commented',
+			{ threadId: result.threadId },
 			body
 		);
 		return { commented: true };
@@ -190,7 +191,8 @@ export const actions: Actions = {
 			db,
 			resolved.invitation.storyId,
 			access.reviewer.displayName,
-			'suggested an edit'
+			'suggested an edit',
+			{ suggestionId: result.suggestionId }
 		);
 		return { suggested: true };
 	},
@@ -218,6 +220,7 @@ export const actions: Actions = {
 			resolved.invitation.storyId,
 			access.reviewer.displayName,
 			'replied',
+			{ threadId },
 			body
 		);
 		return { commented: true };
@@ -254,6 +257,7 @@ export const actions: Actions = {
 			resolved.invitation.storyId,
 			access.reviewer.displayName,
 			'replied',
+			{ threadId: thread.threadId },
 			body
 		);
 		return { commented: true };

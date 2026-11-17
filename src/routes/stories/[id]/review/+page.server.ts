@@ -168,7 +168,8 @@ export const actions: Actions = {
 		// so the notification informs without navigating.
 		await notifyThreadReviewers(db, threadId, {
 			title: `${locals.user!.displayName} replied to your comment on "${story.title}"`,
-			detail: teaser(formText(data, 'body'))
+			detail: teaser(formText(data, 'body')),
+			threadId
 		});
 		return { done: true };
 	},
@@ -197,7 +198,8 @@ export const actions: Actions = {
 			{ suggestionId, threadId: thread.threadId },
 			{
 				title: `${locals.user!.displayName} replied on your suggested edit on "${story.title}"`,
-				detail: teaser(body)
+				detail: teaser(body),
+				threadId: thread.threadId
 			}
 		);
 		return { done: true, threadId: thread.threadId };

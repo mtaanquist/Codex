@@ -55,6 +55,7 @@ export async function notifyReviewActivity(
 	storyId: string,
 	reviewerName: string,
 	what: 'commented' | 'replied' | 'suggested an edit',
+	about: { threadId: string } | { suggestionId: string },
 	body?: string
 ): Promise<void> {
 	const [story] = await db
@@ -63,6 +64,7 @@ export async function notifyReviewActivity(
 		.where(and(eq(stories.id, storyId), storyIsLive()));
 	if (!story) return;
 	await notifyUsers(db, [story.ownerId], 'review_activity', {
+		...about,
 		title: `${reviewerName} ${what} on "${story.title}"`,
 		detail: body ? teaser(body) : undefined,
 		href: `/stories/${story.slug}/review`
