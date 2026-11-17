@@ -48,8 +48,8 @@ export async function notifyAdmins(
 }
 
 // A guest did something on the author's story: comment, reply, or
-// suggestion. One notification to the owner, linking the feedback page;
-// nothing for a story whose universe is in the trash.
+// suggestion. One notification to the owner, linking the feedback page by
+// id (a slug can pass to another story); nothing for a story whose universe is in the trash.
 export async function notifyReviewActivity(
 	db: Database,
 	storyId: string,
@@ -58,14 +58,14 @@ export async function notifyReviewActivity(
 	body?: string
 ): Promise<void> {
 	const [story] = await db
-		.select({ ownerId: stories.ownerId, title: stories.title, slug: stories.slug })
+		.select({ ownerId: stories.ownerId, title: stories.title })
 		.from(stories)
 		.where(and(eq(stories.id, storyId), storyIsLive()));
 	if (!story) return;
 	await notifyUsers(db, [story.ownerId], 'review_activity', {
 		title: `${reviewerName} ${what} on "${story.title}"`,
 		detail: body ? teaser(body) : undefined,
-		href: `/stories/${story.slug}/review`
+		href: `/stories/${storyId}/review`
 	});
 }
 

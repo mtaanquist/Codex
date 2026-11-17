@@ -19,6 +19,7 @@ import {
 	listNotifications,
 	markNotificationsRead,
 	notifyAdmins,
+	notifyReviewActivity,
 	notifyThreadReviewers,
 	notifyUsers
 } from '../../src/lib/server/notify';
@@ -105,6 +106,25 @@ describe('notifyUsers', () => {
 		const rows = await db.select().from(notifications);
 		expect(rows).toHaveLength(1);
 		expect(rows[0].userId).toBe(admin.id);
+	});
+});
+
+describe('notifyReviewActivity', () => {
+	it('links the feedback page by story id, which does not move with a rename', async () => {
+		const owner = await makeUser('owner@example.com');
+		const [universe] = await db
+			.insert(universes)
+			.values({ ownerId: owner.id, name: 'Mythos' })
+			.returning();
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: universe.id, ownerId: owner.id, title: 'The Toll' })
+			.returning();
+
+		await notifyReviewActivity(db, story.id, 'Guest', 'commented', 'A note.');
+
+		const [row] = await db.select().from(notifications).where(eq(notifications.userId, owner.id));
+		expect((row.payload as { href: string }).href).toBe(`/stories/${story.id}/review`);
 	});
 });
 

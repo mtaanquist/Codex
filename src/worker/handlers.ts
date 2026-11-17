@@ -1,5 +1,5 @@
 import type { Job, JobWithMetadata, PgBoss } from 'pg-boss';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
@@ -51,6 +51,7 @@ import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
+import { storyIsLive } from '../lib/server/universe-scope.ts';
 import { shouldNotifyWriter } from './job-guard.ts';
 
 // The job handlers, kept apart from index.ts (which owns the pg-boss
@@ -251,20 +252,21 @@ export function createHandlers(deps: WorkerDeps) {
 					const [universe] = await db
 						.select({
 							ownerId: schema.universes.ownerId,
-							name: schema.universes.name,
-							slug: schema.universes.slug
+							name: schema.universes.name
 						})
 						.from(schema.universes)
-						.where(eq(schema.universes.id, universeId));
+						.where(and(eq(schema.universes.id, universeId), isNull(schema.universes.deletedAt)));
 					if (!universe || universe.ownerId !== userId) {
 						logEvent('warn', 'assistant.continuity_skipped', {
 							universeId,
 							userId,
-							reason: 'not owner'
+							reason: universe ? 'not owner' : 'gone'
 						});
 						continue;
 					}
-					const href = `/universes/${universe.slug}/plan`;
+					// Stored links use the id: a slug can pass to another row on a
+					// rename or once this one is trashed.
+					const href = `/universes/${universeId}/plan`;
 					let title: string;
 					try {
 						const result = await services.reviewUniverseContinuity(db, {
@@ -303,17 +305,21 @@ export function createHandlers(deps: WorkerDeps) {
 				const [story] = await db
 					.select({
 						ownerId: schema.stories.ownerId,
-						title: schema.stories.title,
-						slug: schema.stories.slug
+						title: schema.stories.title
 					})
 					.from(schema.stories)
-					.where(eq(schema.stories.id, storyId));
-				// Re-check ownership at run time: the story may have been deleted since.
+					.where(and(eq(schema.stories.id, storyId), storyIsLive()));
+				// Re-check ownership at run time: the story may have been deleted or
+				// trashed since.
 				if (!story || story.ownerId !== userId) {
-					logEvent('warn', 'assistant.review_skipped', { storyId, userId, reason: 'not owner' });
+					logEvent('warn', 'assistant.review_skipped', {
+						storyId,
+						userId,
+						reason: story ? 'not owner' : 'gone'
+					});
 					continue;
 				}
-				const href = `/stories/${story.slug}/review`;
+				const href = `/stories/${storyId}/review`;
 
 				// A standalone story continuity pass: the consistency run alone, with
 				// no per-scene copyedit passes before it.
@@ -405,18 +411,21 @@ export function createHandlers(deps: WorkerDeps) {
 				const [story] = await db
 					.select({
 						ownerId: schema.stories.ownerId,
-						title: schema.stories.title,
-						slug: schema.stories.slug
+						title: schema.stories.title
 					})
 					.from(schema.stories)
-					.where(eq(schema.stories.id, storyId));
+					.where(and(eq(schema.stories.id, storyId), storyIsLive()));
 				if (!story || story.ownerId !== userId) {
-					logEvent('warn', 'assistant.summaries_skipped', { storyId, userId, reason: 'not owner' });
+					logEvent('warn', 'assistant.summaries_skipped', {
+						storyId,
+						userId,
+						reason: story ? 'not owner' : 'gone'
+					});
 					continue;
 				}
 				const result = await services.summariseStory(db, { userId, storyId, signal: job.signal });
 				const written = result.scenes + result.chapters;
-				const href = `/stories/${story.slug}`;
+				const href = `/stories/${storyId}`;
 				let title: string;
 				if (written === 0 && result.failed > 0) {
 					title = `The Assistant could not summarise "${story.title}". Check the endpoint in your settings.`;
