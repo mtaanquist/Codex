@@ -3,16 +3,23 @@
 
 	// Two versions of a text, line by line: what `to` added over `from` and
 	// what it took out. Used wherever an older text is compared with a newer.
+	// Most screen readers do not announce ins and del, so each part also says
+	// what it is in hidden text.
 	let { from, to, class: className = '' }: { from: string; to: string; class?: string } = $props();
 
 	const parts = $derived(diffLines(from, to));
 </script>
 
 <div class="diff-view {className}">
-	{#each parts as part, index (index)}{#if part.added}<ins class="diff-add">{part.value}</ins
-			>{:else if part.removed}<del class="diff-del">{part.value}</del>{:else}<span
-				>{part.value}</span
-			>{/if}{/each}
+	{#each parts as part, index (index)}{#if part.added}<ins class="diff-add"
+				><span class="visually-hidden">Added: </span>{part.value}<span class="visually-hidden"
+					>(end of added text)</span
+				></ins
+			>{:else if part.removed}<del class="diff-del"
+				><span class="visually-hidden">Removed: </span>{part.value}<span class="visually-hidden"
+					>(end of removed text)</span
+				></del
+			>{:else}<span>{part.value}</span>{/if}{/each}
 </div>
 
 <style>

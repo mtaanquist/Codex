@@ -1,4 +1,5 @@
 import type { EntityDetail } from './entity-snapshot.ts';
+import { isSceneStatus, SCENE_STATUS_LABELS } from './scene-status.ts';
 
 // The frozen content of a saved draft. Ids are the ids the rows had when the
 // draft was saved: they let a scene be compared with or restored onto the
@@ -134,14 +135,57 @@ export type SceneChange = {
 	before: CompareScene | null;
 	after: CompareScene | null;
 	chapterTitle: string | null;
+	// For a changed scene, what changed besides its text, in words.
+	notes: string[];
 };
+
+export type ChapterRename = { before: string; after: string };
 
 type Side = Pick<DraftContent, 'chapters' | 'scenes'>;
 
+function readingOrder(side: Side): DraftScene[] {
+	const outline = draftOutline(side);
+	return [...outline.chapters.flatMap((chapter) => chapter.scenes), ...outline.unfiled];
+}
+
+// The ids of the paired scenes that changed place: those outside the longest
+// run that kept its order. One scene moved, or one scene added, then marks
+// only that scene, not everything after it.
+function movedScenes(order: string[], olderIndex: Map<string, number>): Set<string> {
+	const ids = order.filter((id) => olderIndex.has(id));
+	const tails: number[] = [];
+	const tailAt: number[] = [];
+	const previous: number[] = [];
+	ids.forEach((id, i) => {
+		const value = olderIndex.get(id)!;
+		let low = 0;
+		let high = tails.length;
+		while (low < high) {
+			const mid = (low + high) >> 1;
+			if (tails[mid] < value) low = mid + 1;
+			else high = mid;
+		}
+		tails[low] = value;
+		tailAt[low] = i;
+		previous[i] = low > 0 ? tailAt[low - 1] : -1;
+	});
+	const kept = new Set<string>();
+	for (let i = tails.length ? tailAt[tails.length - 1] : -1; i >= 0; i = previous[i]) {
+		kept.add(ids[i]);
+	}
+	return new Set(ids.filter((id) => !kept.has(id)));
+}
+
+function statusLabel(status: string): string {
+	return isSceneStatus(status) ? SCENE_STATUS_LABELS[status] : status;
+}
+
 // What changed between two versions of a story, scene by scene: in the
 // newer version's reading order, then the scenes it no longer has. Scenes
-// pair up through matchScenes. A scene is changed when its text or title
-// differs; unchanged scenes are only counted.
+// pair up through matchScenes. A scene is changed when its text, title,
+// summary or status differs, or when it moved to another chapter or place;
+// unchanged scenes are only counted. Chapters kept in both under a new title
+// are listed as renames.
 export function compareDrafts(
 	before: Side,
 	after: Side
@@ -149,12 +193,13 @@ export function compareDrafts(
 	changes: SceneChange[];
 	counts: Record<SceneChangeKind, number>;
 	words: { before: number; after: number };
+	chapterRenames: ChapterRename[];
 } {
 	const beforeById = new Map(before.scenes.map((scene) => [scene.id, scene]));
 	const pairs = matchScenes(before.scenes, after.scenes);
 	const matched = new Set(pairs.values());
-	const chapterTitle = (side: Side, scene: DraftScene) => {
-		const index = side.chapters.findIndex((chapter) => chapter.id === scene.chapterId);
+	const chapterTitle = (side: Side, chapterId: string | null) => {
+		const index = side.chapters.findIndex((chapter) => chapter.id === chapterId);
 		if (index < 0) return null;
 		return side.chapters[index].title ?? `Chapter ${index + 1}`;
 	};
@@ -164,18 +209,44 @@ export function compareDrafts(
 		bodyMd: scene.bodyMd,
 		wordCount: scene.wordCount
 	});
+	const afterOrder = readingOrder(after);
+	const olderIndex = new Map(readingOrder(before).map((scene, index) => [scene.id, index]));
+	// Keyed by the newer scene's id, through its pair.
+	const pairedIndex = new Map(
+		afterOrder
+			.filter((scene) => pairs.has(scene.id))
+			.map((scene) => [scene.id, olderIndex.get(pairs.get(scene.id)!)!])
+	);
+	const moved = movedScenes(
+		afterOrder.map((scene) => scene.id),
+		pairedIndex
+	);
 	const changes: SceneChange[] = [];
 	const counts = { same: 0, changed: 0, added: 0, removed: 0 };
-	const outline = draftOutline(after);
-	for (const scene of [
-		...outline.chapters.flatMap((chapter) => chapter.scenes),
-		...outline.unfiled
-	]) {
+	for (const scene of afterOrder) {
 		const pairedId = pairs.get(scene.id);
 		const match = pairedId ? beforeById.get(pairedId) : undefined;
-		if (match && match.bodyMd === scene.bodyMd && match.title === scene.title) {
-			counts.same++;
-			continue;
+		const notes: string[] = [];
+		if (match) {
+			if (match.title !== scene.title) {
+				notes.push(`Renamed from "${match.title ?? 'Untitled scene'}"`);
+			}
+			if (match.chapterId !== scene.chapterId) {
+				const from = chapterTitle(before, match.chapterId);
+				notes.push(from ? `Moved from ${from}` : 'Moved into a chapter');
+			} else if (moved.has(scene.id)) {
+				notes.push('Moved to another place in the story');
+			}
+			if (match.status !== scene.status) {
+				notes.push(
+					`Status changed from ${statusLabel(match.status)} to ${statusLabel(scene.status)}`
+				);
+			}
+			if ((match.summaryMd ?? '') !== (scene.summaryMd ?? '')) notes.push('Summary changed');
+			if (match.bodyMd === scene.bodyMd && notes.length === 0) {
+				counts.same++;
+				continue;
+			}
 		}
 		const kind = match ? 'changed' : 'added';
 		counts[kind]++;
@@ -183,7 +254,8 @@ export function compareDrafts(
 			kind,
 			before: match ? slim(match) : null,
 			after: slim(scene),
-			chapterTitle: chapterTitle(after, scene)
+			chapterTitle: chapterTitle(after, scene.chapterId),
+			notes
 		});
 	}
 	for (const scene of before.scenes) {
@@ -193,11 +265,26 @@ export function compareDrafts(
 			kind: 'removed',
 			before: slim(scene),
 			after: null,
-			chapterTitle: chapterTitle(before, scene)
+			chapterTitle: chapterTitle(before, scene.chapterId),
+			notes: []
+		});
+	}
+	const chapterRenames: ChapterRename[] = [];
+	for (const chapter of after.chapters) {
+		const older = before.chapters.find((candidate) => candidate.id === chapter.id);
+		if (!older || (older.title ?? '') === (chapter.title ?? '')) continue;
+		chapterRenames.push({
+			before: chapterTitle(before, older.id)!,
+			after: chapterTitle(after, chapter.id)!
 		});
 	}
 	const sum = (side: Side) => side.scenes.reduce((total, scene) => total + scene.wordCount, 0);
-	return { changes, counts, words: { before: sum(before), after: sum(after) } };
+	return {
+		changes,
+		counts,
+		words: { before: sum(before), after: sum(after) },
+		chapterRenames
+	};
 }
 
 const ORDINALS = [
@@ -219,11 +306,22 @@ function draftName(n: number): string {
 	return n <= ORDINALS.length ? `${ORDINALS[n - 1]} draft` : `Draft ${n}`;
 }
 
+// The number a suggested name stands for: "Third draft" is 3, "Draft 14" is
+// 14. Anything else is 0.
+function draftNumber(label: string): number {
+	const name = label.trim().toLowerCase();
+	const ordinal = ORDINALS.findIndex((word) => `${word.toLowerCase()} draft` === name);
+	if (ordinal >= 0) return ordinal + 1;
+	const numbered = /^draft (\d+)$/.exec(name);
+	return numbered ? Number(numbered[1]) : 0;
+}
+
 // The name offered for the next saved draft: "Second draft" when the story
-// has one, stepping past any name already in use.
+// has one, and past the highest numbered name in use, so deleting earlier
+// drafts never offers a lower number again.
 export function suggestDraftName(existing: string[]): string {
 	const taken = new Set(existing.map((label) => label.trim().toLowerCase()));
-	let n = existing.length + 1;
+	let n = Math.max(existing.length, ...existing.map(draftNumber)) + 1;
 	while (taken.has(draftName(n).toLowerCase())) n++;
 	return draftName(n);
 }

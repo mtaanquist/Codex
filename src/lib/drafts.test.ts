@@ -82,6 +82,56 @@ describe('compareDrafts', () => {
 			{ chapters, scenes: [text('a', 'same', { title: 'New' })] }
 		);
 		expect(result.counts.changed).toBe(1);
+		expect(result.changes[0].notes).toEqual(['Renamed from "Old"']);
+	});
+
+	it('counts a status or summary change as a change and says which', () => {
+		const result = compareDrafts(
+			{ chapters, scenes: [text('a', 'same', { summaryMd: 'Old summary.' })] },
+			{ chapters, scenes: [text('a', 'same', { summaryMd: 'New.', status: 'revised' })] }
+		);
+		expect(result.counts.changed).toBe(1);
+		expect(result.changes[0].notes).toEqual([
+			'Status changed from Draft to Revised',
+			'Summary changed'
+		]);
+	});
+
+	it('names the chapter a scene moved from', () => {
+		const two = [...chapters, { id: 'c2', title: null, summaryMd: null }];
+		const result = compareDrafts(
+			{ chapters: two, scenes: [text('a', 'same')] },
+			{ chapters: two, scenes: [text('a', 'same', { chapterId: 'c2' })] }
+		);
+		expect(result.changes[0].notes).toEqual(['Moved from One']);
+	});
+
+	it('marks only the scene that moved, not the ones it passed', () => {
+		const ids = ['a', 'b', 'c', 'd'];
+		const result = compareDrafts(
+			{ chapters, scenes: ids.map((id) => text(id, id)) },
+			{ chapters, scenes: ['b', 'c', 'd', 'a'].map((id) => text(id, id)) }
+		);
+		expect(result.changes.map((change) => [change.after!.id, change.notes])).toEqual([
+			['a', ['Moved to another place in the story']]
+		]);
+		expect(result.counts.same).toBe(3);
+	});
+
+	it('does not mark scenes as moved when one is added before them', () => {
+		const result = compareDrafts(
+			{ chapters, scenes: [text('a', 'a'), text('b', 'b')] },
+			{ chapters, scenes: [text('n', 'n'), text('a', 'a'), text('b', 'b')] }
+		);
+		expect(result.counts).toEqual({ same: 2, changed: 0, added: 1, removed: 0 });
+	});
+
+	it('lists renamed chapters', () => {
+		const result = compareDrafts(
+			{ chapters, scenes: [] },
+			{ chapters: [{ id: 'c1', title: 'The Toll', summaryMd: null }], scenes: [] }
+		);
+		expect(result.chapterRenames).toEqual([{ before: 'One', after: 'The Toll' }]);
 	});
 });
 
@@ -128,5 +178,11 @@ describe('suggestDraftName', () => {
 	it('steps past a name already in use', () => {
 		expect(suggestDraftName(['second draft'])).toBe('Third draft');
 		expect(suggestDraftName(['Second draft', 'Third draft'])).toBe('Fourth draft');
+	});
+
+	it('starts past the highest numbered name, so deletes never step back', () => {
+		expect(suggestDraftName(['Third draft'])).toBe('Fourth draft');
+		expect(suggestDraftName(['third DRAFT ', 'Notes'])).toBe('Fourth draft');
+		expect(suggestDraftName(['Draft 14'])).toBe('Draft 15');
 	});
 });
