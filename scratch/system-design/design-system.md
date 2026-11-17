@@ -489,6 +489,8 @@ Structure: `.modal-head` (with `.modal-head-main`, `.modal-title`,
 control is an `.icon-btn.sm`; the primary action sits last in the footer.
 A head can carry a `.modal-search` field instead of a title, with
 `.modal-head.searching`.
+A list of radio or checkbox choices in a modal uses `.choice` rows (with
+`.choice-hint` under the label, tied to the input by `aria-describedby`).
 
 The behaviour belongs to the `use:modal` action (`#lib/modal.ts`), put on
 the `role="dialog"` panel with `aria-modal="true"`: focus moves into the
