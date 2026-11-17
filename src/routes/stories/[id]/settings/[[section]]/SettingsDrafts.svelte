@@ -41,6 +41,10 @@
 		scenes, chapters, notes, and the universe's characters, places, and lore exactly as they are,
 		and never changes after you save it.
 	</p>
+	<p class="admin-block-sub">
+		Review comments and suggestions are not saved with a draft. To start a fresh round of feedback,
+		use "Clear review notes..." in review mode.
+	</p>
 </div>
 <div class="settings-group">
 	<form method="POST" action="?/saveDraft" id="save-draft">

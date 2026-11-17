@@ -1103,3 +1103,59 @@ export async function deleteSuggestion(
 		return { ok: true };
 	});
 }
+
+export type ClearScope = 'finished' | 'all';
+
+// Clears the story's review notes in one go. 'finished' takes resolved
+// threads and decided suggestions (with their discussions) and keeps
+// everything still open; 'all' takes every thread, comment and suggestion.
+// Saved drafts never hold review notes, so they are not touched. The
+// story's threads are locked first (addComment takes the same lock), so a
+// reply cannot land in a thread between its comments going and the thread.
+export async function clearReviews(
+	db: Database,
+	storyId: string,
+	scope: ClearScope
+): Promise<{ threads: number; suggestions: number }> {
+	return await db.transaction(async (tx) => {
+		const threads = await tx
+			.select({
+				id: reviewThreads.id,
+				resolvedAt: reviewThreads.resolvedAt,
+				suggestionId: reviewThreads.suggestionId
+			})
+			.from(reviewThreads)
+			.where(eq(reviewThreads.storyId, storyId))
+			.for('update');
+		const suggestions = await tx
+			.select({ id: reviewSuggestions.id, status: reviewSuggestions.status })
+			.from(reviewSuggestions)
+			.where(eq(reviewSuggestions.storyId, storyId))
+			.for('update');
+		const goingSuggestions = new Set(
+			suggestions
+				.filter((suggestion) => scope === 'all' || suggestion.status !== 'pending')
+				.map((suggestion) => suggestion.id)
+		);
+		const goingThreads = threads
+			.filter((thread) =>
+				thread.suggestionId
+					? goingSuggestions.has(thread.suggestionId)
+					: scope === 'all' || thread.resolvedAt !== null
+			)
+			.map((thread) => thread.id);
+		if (goingThreads.length > 0) {
+			await tx.delete(reviewComments).where(inArray(reviewComments.threadId, goingThreads));
+			await tx.delete(reviewThreads).where(inArray(reviewThreads.id, goingThreads));
+		}
+		if (goingSuggestions.size > 0) {
+			await tx
+				.delete(reviewSuggestions)
+				.where(inArray(reviewSuggestions.id, [...goingSuggestions]));
+		}
+		return {
+			threads: goingThreads.filter((id) => !threads.find((t) => t.id === id)?.suggestionId).length,
+			suggestions: goingSuggestions.size
+		};
+	});
+}

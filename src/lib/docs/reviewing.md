@@ -69,6 +69,10 @@ When the Assistant is set up and a note came from it, replying on that note make
 
 Comments and suggestions point at the exact words they were made on. If you edit the text afterwards, they follow the passage when it can be found; if the passage itself was rewritten, a comment is kept and marked as referring to older text. A suggestion can be accepted only while its passage is exactly as it was when suggested: once you change any of those words, it can only be rejected.
 
+## Clearing review notes
+
+When you are done with a round of feedback, select "Clear review notes..." at the foot of the Comments panel. It works on the whole story, not only the open scene. Choose "Finished notes only" to remove resolved comments and accepted or rejected suggestions and keep the open ones, or "Everything" to remove every comment and suggestion. Cleared notes, with their replies, are deleted for good, your reviewers' included. Your text and your [saved drafts](/docs/drafts) do not change.
+
 ## Hearing about activity
 
 New comments and suggestions show up under the bell in the top bar, and an email gathers them up (a busy hour sends one message, not one per comment). Reviewers hear back the same way: a reviewer signed in to an account gets the bell and email, and a guest who left an email address gets the email with a link to stop further messages. Choose which of these reach you, and where, under Notifications on your account page.

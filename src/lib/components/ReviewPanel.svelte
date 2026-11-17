@@ -39,7 +39,8 @@
 		onStartSceneComment,
 		onAccepted = null,
 		assistant = null,
-		onAssistantReply = null
+		onAssistantReply = null,
+		onClearReviews = null
 	}: {
 		scene: { id: string; bodyMd: string };
 		threads: ReviewThread[];
@@ -64,6 +65,8 @@
 		// Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;
 		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
+		// Opens the story-wide clear dialog (author only, when there are notes).
+		onClearReviews?: (() => void) | null;
 	} = $props();
 
 	const nComments = $derived(threads.filter((t) => t.resolvedAt === null).length);
@@ -281,6 +284,13 @@
 					/>
 				{/if}
 			{/each}
+			{#if onClearReviews}
+				<div class="rv-clear">
+					<button class="btn btn-sm btn-ghost" type="button" onclick={onClearReviews}>
+						<Icon name="trash" size={13} /> Clear review notes...
+					</button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>

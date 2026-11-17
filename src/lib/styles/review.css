@@ -239,6 +239,13 @@
 .rv-panel-scroll > * {
 	flex: none;
 }
+/* The story-wide clear action, after the scene's cards. */
+.rv-clear {
+	margin-top: auto;
+	padding-top: var(--space-2);
+	display: flex;
+	justify-content: center;
+}
 
 /* review card */
 .rv-card {
