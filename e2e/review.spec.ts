@@ -137,7 +137,8 @@ test('guest review: invite, comment as a guest, reply and resolve as the author'
 		.locator('.bell-item', { hasText: 'Margin Walker commented on "Margin Notes"' })
 		.first()
 		.click();
-	await expect(page).toHaveURL(`/stories/${storyId}/review`);
+	// Stored links use the story's id, which never moves to another story.
+	await expect(page).toHaveURL(/\/stories\/[0-9a-f-]{36}\/review$/);
 
 	// The thread is on the review workspace; reply, accept the edit, resolve.
 	// The suggestion card carries its own reply field now, so the comment

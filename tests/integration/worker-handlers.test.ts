@@ -234,7 +234,7 @@ describe('assistant notices link by id', () => {
 	it('links a universe continuity pass to the universe id', async () => {
 		const { owner, universe } = await seedStory();
 		const { handlers } = harness({
-			reviewUniverseContinuity: async () => ({ ran: true, notes: 0, failures: [] })
+			reviewUniverseContinuity: async () => ({ ran: true, scenes: 2, notes: 0 })
 		});
 
 		await handlers.assistantReview([
