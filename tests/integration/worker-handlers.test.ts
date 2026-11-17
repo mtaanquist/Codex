@@ -172,6 +172,79 @@ describe('assistant jobs re-check ownership at run time', () => {
 	});
 });
 
+describe('assistant jobs skip trashed work', () => {
+	async function trash(table: typeof stories | typeof universes, id: string) {
+		await db.update(table).set({ deletedAt: new Date() }).where(eq(table.id, id));
+	}
+
+	it('skips a story review once the story is in the trash', async () => {
+		const { owner, story } = await seedStory();
+		await trash(stories, story.id);
+		const { handlers } = harness({ reviewStoryScenes: neverCalled });
+
+		await handlers.assistantReview([job({ userId: owner.id, storyId: story.id })]);
+
+		expect(await titles(owner.id)).toEqual([]);
+	});
+
+	it("skips summaries once the story's universe is in the trash", async () => {
+		const { owner, universe, story } = await seedStory();
+		await trash(universes, universe.id);
+		const { handlers } = harness({ summariseStory: neverCalled });
+
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+
+		expect(await titles(owner.id)).toEqual([]);
+	});
+
+	it('skips a universe continuity pass once the universe is in the trash', async () => {
+		const { owner, universe } = await seedStory();
+		await trash(universes, universe.id);
+		const { handlers } = harness({ reviewUniverseContinuity: neverCalled });
+
+		await handlers.assistantReview([
+			job({ userId: owner.id, universeId: universe.id, mode: 'continuity' as const })
+		]);
+
+		expect(await titles(owner.id)).toEqual([]);
+	});
+});
+
+describe('assistant notices link by id', () => {
+	async function hrefs(userId: string): Promise<string[]> {
+		const rows = await db.select().from(notifications).where(eq(notifications.userId, userId));
+		return rows.map((row) => (row.payload as { href: string }).href);
+	}
+
+	it('links a story review and summaries to the story id, not its slug', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			reviewStoryScenes: async () => reviewResult({}),
+			summariseStory: async () => ({ scenes: 1, chapters: 0, failed: 0 })
+		});
+
+		await handlers.assistantReview([job({ userId: owner.id, storyId: story.id })]);
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+
+		expect((await hrefs(owner.id)).sort()).toEqual(
+			[`/stories/${story.id}/review`, `/stories/${story.id}`].sort()
+		);
+	});
+
+	it('links a universe continuity pass to the universe id', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			reviewUniverseContinuity: async () => ({ ran: true, scenes: 2, notes: 0 })
+		});
+
+		await handlers.assistantReview([
+			job({ userId: owner.id, universeId: universe.id, mode: 'continuity' as const })
+		]);
+
+		expect(await hrefs(owner.id)).toEqual([`/universes/${universe.id}/plan`]);
+	});
+});
+
 describe('assistant review notices', () => {
 	async function reviewTitle(outcome: () => Promise<StoryReviewResult>): Promise<string> {
 		const { owner, story } = await seedStory();
