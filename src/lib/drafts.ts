@@ -141,6 +141,8 @@ export type SceneChange = {
 
 export type ChapterRename = { id: string; before: string; after: string };
 
+export type ChapterMove = { id: string; title: string };
+
 type Side = Pick<DraftContent, 'chapters' | 'scenes'>;
 
 function readingOrder(side: Side): DraftScene[] {
@@ -148,10 +150,10 @@ function readingOrder(side: Side): DraftScene[] {
 	return [...outline.chapters.flatMap((chapter) => chapter.scenes), ...outline.unfiled];
 }
 
-// The ids of the paired scenes that changed place: those outside the longest
-// run that kept its order. One scene moved, or one scene added, then marks
-// only that scene, not everything after it.
-function movedScenes(order: string[], olderIndex: Map<string, number>): Set<string> {
+// The ids (of scenes or chapters present in both versions) that changed place:
+// those outside the longest run that kept its order. One item moved, or one
+// added, then marks only that item, not everything after it.
+function movedIds(order: string[], olderIndex: Map<string, number>): Set<string> {
 	const ids = order.filter((id) => olderIndex.has(id));
 	const tails: number[] = [];
 	const tailAt: number[] = [];
@@ -194,6 +196,7 @@ export function compareDrafts(
 	counts: Record<SceneChangeKind, number>;
 	words: { before: number; after: number };
 	chapterRenames: ChapterRename[];
+	chapterMoves: ChapterMove[];
 } {
 	const beforeById = new Map(before.scenes.map((scene) => [scene.id, scene]));
 	const pairs = matchScenes(before.scenes, after.scenes);
@@ -222,10 +225,18 @@ export function compareDrafts(
 			)
 			.map((scene) => [scene.id, olderIndex.get(pairs.get(scene.id)!)!])
 	);
-	const moved = movedScenes(
-		afterOrder.map((scene) => scene.id),
-		pairedIndex
-	);
+	// Order is checked within each chapter, so moving a whole chapter does not
+	// mark every scene in it; the chapter move is listed on its own.
+	const moved = new Set<string>();
+	for (const chapterId of new Set(afterOrder.map((scene) => scene.chapterId))) {
+		const inChapter = afterOrder.filter((scene) => scene.chapterId === chapterId);
+		for (const id of movedIds(
+			inChapter.map((scene) => scene.id),
+			pairedIndex
+		)) {
+			moved.add(id);
+		}
+	}
 	const changes: SceneChange[] = [];
 	const counts = { same: 0, changed: 0, added: 0, removed: 0 };
 	for (const scene of afterOrder) {
@@ -282,12 +293,21 @@ export function compareDrafts(
 		const to = chapterTitle(after, chapter.id)!;
 		if (from !== to) chapterRenames.push({ id: chapter.id, before: from, after: to });
 	}
+	const olderChapterIndex = new Map(before.chapters.map((chapter, index) => [chapter.id, index]));
+	const movedChapters = movedIds(
+		after.chapters.map((chapter) => chapter.id),
+		olderChapterIndex
+	);
+	const chapterMoves: ChapterMove[] = after.chapters
+		.filter((chapter) => movedChapters.has(chapter.id))
+		.map((chapter) => ({ id: chapter.id, title: chapterTitle(after, chapter.id)! }));
 	const sum = (side: Side) => side.scenes.reduce((total, scene) => total + scene.wordCount, 0);
 	return {
 		changes,
 		counts,
 		words: { before: sum(before), after: sum(after) },
-		chapterRenames
+		chapterRenames,
+		chapterMoves
 	};
 }
 
