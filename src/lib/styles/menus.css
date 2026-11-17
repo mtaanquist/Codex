@@ -40,6 +40,8 @@
 .menu-item.active {
 	background: var(--bg-hover);
 }
-.menu-item.danger:hover:not(:disabled) {
+/* Destructive rows are red at rest, so they stand out while moving through
+   the menu with the keyboard too. */
+.menu-item.danger:not(:disabled) {
 	color: var(--danger-ink);
 }
