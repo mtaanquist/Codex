@@ -10,3 +10,8 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isSerializationFailure(err: unknown): boolean {
 	return (err as { cause?: { code?: string } })?.cause?.code === '40001';
 }
+
+/** Whether a thrown database error is a foreign-key violation. */
+export function isForeignKeyViolation(err: unknown): boolean {
+	return (err as { cause?: { code?: string } })?.cause?.code === '23503';
+}

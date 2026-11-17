@@ -416,7 +416,7 @@
 					<fieldset class="rm-group">
 						<legend>What to review</legend>
 						{#each levels as option (option.id)}
-							<label class="rm-radio">
+							<label class="choice">
 								<input type="radio" name="review-level" value={option.id} bind:group={level} />
 								<span>{option.label}</span>
 							</label>
@@ -425,15 +425,15 @@
 
 					<fieldset class="rm-group">
 						<legend>What to check</legend>
-						<label class="rm-check">
+						<label class="choice">
 							<input type="checkbox" bind:checked={general} disabled={categories.length > 0} />
 							<span>
 								General notes
-								<span class="rm-hint">a few high-value observations</span>
+								<span class="choice-hint">a few high-value observations</span>
 							</span>
 						</label>
 						{#each CATEGORY_OPTIONS as option (option.id)}
-							<label class="rm-check">
+							<label class="choice">
 								<input type="checkbox" bind:checked={picked[option.id]} />
 								<span>{option.label}</span>
 							</label>
@@ -492,26 +492,6 @@
 		font-size: var(--text-micro);
 		letter-spacing: 0.07em;
 		text-transform: uppercase;
-		color: var(--text-faint);
-	}
-	.rm-radio,
-	.rm-check {
-		display: flex;
-		align-items: baseline;
-		gap: 9px;
-		padding: 5px 0;
-		font-size: var(--text-base);
-		color: var(--text);
-		cursor: pointer;
-	}
-	.rm-radio input,
-	.rm-check input {
-		margin: 0;
-		accent-color: var(--accent);
-	}
-	.rm-hint {
-		display: block;
-		font-size: var(--text-meta);
 		color: var(--text-faint);
 	}
 	.rm-note {

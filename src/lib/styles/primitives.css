@@ -158,6 +158,26 @@ a.chip:hover {
 	line-height: 1.5;
 	margin: 4px 0 0;
 }
+/* A radio button or checkbox with its label (and an optional hint under
+   it), one per row: the choices in a dialog. */
+.choice {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
+	padding: 5px 0;
+	font-size: var(--text-base);
+	color: var(--text);
+	cursor: pointer;
+}
+.choice input {
+	margin: 0;
+	accent-color: var(--accent);
+}
+.choice-hint {
+	display: block;
+	font-size: var(--text-meta);
+	color: var(--text-faint);
+}
 .modal-kind {
 	font-size: var(--text-micro);
 	font-weight: 650;

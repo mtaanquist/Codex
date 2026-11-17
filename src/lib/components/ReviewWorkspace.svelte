@@ -10,6 +10,7 @@
 	import Icon from './Icon.svelte';
 	import SidebarSearch from './SidebarSearch.svelte';
 	import StoryOutline from './StoryOutline.svelte';
+	import ClearReviewsModal from './ClearReviewsModal.svelte';
 	import StoryRowMenu, { type RowMenuState, type RowMenuTarget } from './StoryRowMenu.svelte';
 	import ReviewSurface from './ReviewSurface.svelte';
 	import ReviewEditor from './ReviewEditor.svelte';
@@ -143,6 +144,17 @@
 	// else (the nav counts, the centre marks, the panel's comment list) sees
 	// only the standalone threads.
 	const standaloneThreads = $derived(threads.filter((t) => !t.suggestionId));
+	// Story-wide counts for the clear dialog.
+	// Notes on scenes in the deleted list stay with those scenes.
+	const liveSceneIds = $derived(new Set(scenes.map((scene) => scene.id)));
+	const liveThreads = $derived(standaloneThreads.filter((t) => liveSceneIds.has(t.sceneId)));
+	const liveSuggestions = $derived(suggestions.filter((s) => liveSceneIds.has(s.sceneId)));
+	const finishedNotes = $derived(
+		liveThreads.filter((t) => t.resolvedAt !== null).length +
+			liveSuggestions.filter((s) => s.status !== 'pending').length
+	);
+	const totalNotes = $derived(liveThreads.length + liveSuggestions.length);
+	let clearing = $state(false);
 	const discussions = $derived(
 		new Map(threads.filter((t) => t.suggestionId).map((t) => [t.suggestionId!, t]))
 	);
@@ -569,6 +581,9 @@
 							: null}
 						assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
 						onAssistantReply={assistantSurfaces ? assistantReply : null}
+						onClearReviews={role === 'author' && storyId && totalNotes > 0
+							? () => (clearing = true)
+							: null}
 					/>
 				{/if}
 			{/snippet}
@@ -617,6 +632,14 @@
 		</aside>
 	</div>
 </div>
+
+{#if clearing}
+	<ClearReviewsModal
+		finished={finishedNotes}
+		total={totalNotes}
+		onClose={() => (clearing = false)}
+	/>
+{/if}
 
 {#if manage && rowMenu}
 	<StoryRowMenu
