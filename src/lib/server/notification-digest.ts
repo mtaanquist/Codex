@@ -19,10 +19,10 @@ import { teaser } from '../notifications.ts';
 // in the worker, so the origin for links arrives as a parameter.
 
 export type Digest = { email: EmailMessage; ids: string[] };
-// A review notification whose note (or reply) was cleared or deleted before the digest
-// A review notification whose note was cleared or deleted before the digest
-// went out stays in the bell but is left out of the email. Rows that name no
-// note pass. The ids are cast to uuid so the primary keys serve the lookup;
+
+// A review notification whose note (or reply) was cleared or deleted before
+// the digest went out stays in the bell but is left out of the email. Rows
+// that name no note pass. The ids are cast to uuid so the primary keys serve the lookup;
 // every writer stores a uuid it has already checked.
 const reviewNoteGone = sql`(
 	(${notifications.payload}->>'threadId' is not null

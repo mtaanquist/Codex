@@ -348,9 +348,28 @@ describe('buildUserDigest', () => {
 			'Retracted.'
 		);
 
+		const kept = await addComment(db, {
+			storyId: story.id,
+			threadId: thread.id,
+			author: { userId: me.id },
+			body: 'Still here.'
+		});
+		if (!kept.ok) throw new Error(kept.reason);
+		await notifyReviewActivity(
+			db,
+			story.id,
+			'Maren',
+			'replied',
+			{ threadId: thread.id, commentId: kept.commentId },
+			'Still here.'
+		);
+
 		await db.delete(reviewComments).where(eq(reviewComments.id, reply.commentId));
 
-		expect(await buildUserDigest(db, me.id, 'https://codex.test')).toBeNull();
+		const digest = await buildUserDigest(db, me.id, 'https://codex.test');
+		expect(digest?.ids).toHaveLength(1);
+		expect(digest?.email.text).toContain('Still here.');
+		expect(digest?.email.text).not.toContain('Retracted.');
 	});
 });
 
