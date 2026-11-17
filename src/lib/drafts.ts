@@ -228,8 +228,12 @@ export function compareDrafts(
 	// Order is checked within each chapter, so moving a whole chapter does not
 	// mark every scene in it; the chapter move is listed on its own.
 	const moved = new Set<string>();
-	for (const chapterId of new Set(afterOrder.map((scene) => scene.chapterId))) {
-		const inChapter = afterOrder.filter((scene) => scene.chapterId === chapterId);
+	// Scenes whose chapter is missing read as unfiled, so they group with the
+	// scenes that have none.
+	const group = (scene: DraftScene) =>
+		after.chapters.some((chapter) => chapter.id === scene.chapterId) ? scene.chapterId : null;
+	for (const chapterId of new Set(afterOrder.map(group))) {
+		const inChapter = afterOrder.filter((scene) => group(scene) === chapterId);
 		for (const id of movedIds(
 			inChapter.map((scene) => scene.id),
 			pairedIndex
@@ -251,7 +255,7 @@ export function compareDrafts(
 				const from = chapterTitle(before, match.chapterId);
 				notes.push(from ? `Moved from ${from}` : 'Moved into a chapter');
 			} else if (moved.has(scene.id)) {
-				notes.push('Moved to another place in the story');
+				notes.push('Moved to another place in its chapter');
 			}
 			if (match.status !== scene.status) {
 				notes.push(
