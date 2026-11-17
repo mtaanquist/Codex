@@ -443,11 +443,11 @@ export const actions: Actions = {
 		rateLimitWrites(locals.user!.id);
 		const { story } = await ownedStory(params.id, locals.user!.id);
 		const data = await request.formData();
-		const result = await saveDraft(db, locals.user!.id, story.id, {
-			label: formText(data, 'label'),
-			note: formText(data, 'note')
-		});
-		if (!result.ok) return fail(400, { action: 'drafts', message: result.reason });
+		const label = formText(data, 'label');
+		const note = formText(data, 'note');
+		const result = await saveDraft(db, locals.user!.id, story.id, { label, note });
+		// The typed name and note come back, so a failed save loses neither.
+		if (!result.ok) return fail(400, { action: 'drafts', message: result.reason, label, note });
 		return { action: 'drafts', savedDraftId: result.id };
 	},
 	updateDraft: async ({ request, params, locals }) => {
