@@ -1948,7 +1948,10 @@ run, and `RunningJobsNote` under `ModeSwitcher` reads it. The 15-minute give-up
 in `trackJob` went: a story review can run for hours, so polling slows to 15s
 after five minutes instead, stops on a 401, 403 or 404 (signed out), and a run
 the queue dropped (`stale`) now ends the card as stopped rather than spinning. Universe continuity passes show only as
-a card; a universe-page line was left out until asked for.
+a card; a universe-page line was left out until asked for. Follow-up (#970):
+the layout re-checks the list when a tab comes back into view (at most every
+10s, `watchRunningJobs`), so a job started in another open tab shows there too;
+`trackJob`'s dedupe keeps a job already followed from getting a second card.
 
 From the design pass click-throughs (2026-07-30):
 
