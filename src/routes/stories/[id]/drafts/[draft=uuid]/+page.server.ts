@@ -7,6 +7,7 @@ import { ownedStory } from '#lib/server/story-access';
 import { readingPageRef } from '#lib/server/publish';
 import {
 	compareWithDraft,
+	draftScenesInTrash,
 	getDraft,
 	listDrafts,
 	workingOutline,
@@ -19,7 +20,6 @@ import { rateLimitWrites } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
 import { detectMentions, type MentionTarget } from '#lib/mention-detect';
 import { matchScenes } from '#lib/drafts';
-import { listTrashedScenes } from '#lib/server/scene-lifecycle';
 
 // The working draft's text for each saved scene, paired the same way the
 // Compare tab pairs them.
@@ -58,7 +58,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 			: Promise.resolve([]),
 		// Saved scenes that sit in the deleted list, so the page can point there
 		// before offering to add a second copy.
-		tab === 'story' ? listTrashedScenes(db, story.id) : Promise.resolve([]),
+		tab === 'story'
+			? draftScenesInTrash(db, story.id, draft.content.scenes)
+			: Promise.resolve([] as string[]),
 		readingPageRef(db, story.id),
 		db
 			.select({ enabled: users.publicArchiveEnabled, handle: users.handle })
@@ -105,7 +107,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				: draft,
 		drafts: drafts.map((row) => ({ id: row.id, label: row.label })),
 		live: liveByDraftScene(draft.content.scenes, liveScenes),
-		inTrash: trashed.map((scene) => scene.id),
+		inTrash: trashed,
 		mentions,
 		tab,
 		canPublish: Boolean(archive?.enabled && archive?.handle)

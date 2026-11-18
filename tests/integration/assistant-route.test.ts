@@ -498,16 +498,51 @@ describe('chats over the endpoints', () => {
 		]);
 	});
 
-	it("refuses a picked id that is another writer's chat or not a uuid", async () => {
+	it("refuses a picked id that is another writer's chat, another story's, or not a uuid", async () => {
 		const [other] = await db
 			.insert(users)
 			.values({ email: 'p@example.com', displayName: 'P', passwordHash: 'x', role: 'user' })
 			.returning({ id: users.id });
+		const [otherUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: other.id, name: 'P' })
+			.returning({ id: universes.id });
+		const [otherStory] = await db
+			.insert(stories)
+			.values({ universeId: otherUniverse.id, ownerId: other.id, title: 'P' })
+			.returning({ id: stories.id });
+		await saveAccountLlmConfig(db, other.id, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		});
+		// Another writer, on their own story, naming this writer's chat.
 		await expectStatus(
 			chatPost(
-				{ storyId, newChatId: chatId, messages: [{ role: 'user', content: 'x' }] },
+				{
+					storyId: otherStory.id,
+					newChatId: chatId,
+					messages: [{ role: 'user', content: 'x' }]
+				},
 				other.id
 			),
+			404
+		);
+		// The same writer, naming a chat that belongs to another story.
+		const [second] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: userId, title: 'S2' })
+			.returning({ id: stories.id });
+		await expectStatus(
+			chatPost({
+				storyId: second.id,
+				newChatId: chatId,
+				messages: [{ role: 'user', content: 'x' }]
+			}),
 			404
 		);
 		await expectStatus(

@@ -100,11 +100,27 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 			.update(scenes)
 			.set({ deletedAt: sql`now()` })
 			.where(eq(scenes.id, scene.id));
+		await markArcsStale(tx, [scene.id]);
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 	});
 	return true;
+}
+
+/** Shows the arcs of the characters these scenes mention as out of date (the
+ * watermark moves to the start of time). Call it before their mention rows are
+ * deleted, since the arc's own staleness check reads those rows. */
+export async function markArcsStale(tx: Database, sceneIds: string[]): Promise<void> {
+	if (!sceneIds.length) return;
+	await tx.execute(sql`
+		update characters set arc_summary_at = to_timestamp(0)
+		where arc_summary_md is not null and id in (
+			select target_id from entity_mentions
+			where source_type = 'scene' and target_type = 'character'
+				and source_id in ${sceneIds}
+		)
+	`);
 }
 
 /** Brings a scene back from the trash, at the end of its chapter (or of the

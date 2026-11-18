@@ -201,7 +201,10 @@ export async function fitChatWithSummary(
 					deps
 				)
 			).trim();
-			if (refreshed) {
+			// A model that thinks gets a larger reply cap than the summary's share,
+			// so a summary over its share is dropped rather than crowding out turns.
+			const fits = estimateTokens(refreshed) <= summaryBudgetTokens(opts.budgetTokens);
+			if (refreshed && fits) {
 				summary = refreshed;
 				await saveChatSummary(db, opts.userId, opts.scope, opts.chatId, {
 					summary,

@@ -619,10 +619,15 @@ async function gatherUniverseDocs(
 				scenes: sceneList,
 				notes: noteList = []
 			} = await gatherStory(db, story);
+			// Scene paths relative to the story folder, as the importer reads a
+			// notebook note's scene.
+			const scenePaths = new Map<string, string>();
 			const addScene = (scene: (typeof sceneList)[number], index: number, dir: string) => {
+				const name = `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`;
+				if (scene.id) scenePaths.set(scene.id, `${dir.slice(sDir.length + 1)}/${name}`);
 				docs.push({
 					dir,
-					name: `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`,
+					name,
 					front: { title: scene.title, status: scene.status },
 					body: scene.bodyMd
 				});
@@ -652,11 +657,17 @@ async function gatherUniverseDocs(
 			}
 			// This story's freeform notes.
 			const storyNoteRows = await db
-				.select({ id: notes.id, title: notes.title, bodyMd: notes.bodyMd })
+				.select({
+					id: notes.id,
+					title: notes.title,
+					bodyMd: notes.bodyMd,
+					pinned: notes.pinned,
+					sceneId: notes.sceneId
+				})
 				.from(notes)
 				.where(eq(notes.storyId, story.id))
 				.orderBy(asc(notes.createdAt));
-			docs.push(...notebookDocs(storyNoteRows, `${sDir}/notebook`));
+			docs.push(...notebookDocs(storyNoteRows, `${sDir}/notebook`, (id) => scenePaths.get(id)));
 			docs.push(...draftFolders(await gatherDrafts(db, story.id), `${sDir}/drafts`));
 			if (loadReviews) {
 				const threads = await loadReviews(story.id);

@@ -185,6 +185,13 @@
 	// stopped before the reply starts still lands in the chat the next one
 	// goes to, rather than leaving the question in a chat of its own.
 	let nextChatId = newChatId();
+	// The title the server gave the chat under nextChatId, when a send stored a
+	// turn there that the panel never adopted (stopped before the reply).
+	let nextChatTitle: string | null = null;
+	function freshChatId() {
+		nextChatId = newChatId();
+		nextChatTitle = null;
+	}
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
 	let input = $state('');
 	let busy = $state(false);
@@ -286,6 +293,7 @@
 		const updated = { id, title: existing?.title ?? title, updatedAt: new Date().toISOString() };
 		chats = [updated, ...chats.filter((c) => c.id !== id)];
 		chatId = id;
+		if (id === nextChatId) freshChatId();
 	}
 
 	// Stream a reply into the empty assistant message the caller has already
@@ -306,6 +314,10 @@
 		const controller = new AbortController();
 		pending = controller;
 		let startedIn: string | null = null;
+		const creating = chatId === null;
+		// A chat message is stored before its reply, so a stopped send leaves its
+		// turn, and its title, in the chat the next send reuses.
+		if (creating && storesTurnFirst) nextChatTitle ??= title;
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
@@ -316,7 +328,8 @@
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			const storedIn = response.headers.get('x-chat-id');
 			if (response.ok && storedIn) {
-				if (storesTurnFirst || chatId === storedIn) noteChatUsed(storedIn, title);
+				if (storesTurnFirst || chatId === storedIn)
+					noteChatUsed(storedIn, creating ? (nextChatTitle ?? title) : title);
 				else startedIn = storedIn;
 			}
 			if (response.status === 404 && (await errorMessage(response)) === CHAT_MISSING) {
@@ -324,7 +337,7 @@
 				const gone = chatId;
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
-				nextChatId = newChatId();
+				freshChatId();
 				appendToReply(
 					'This chat was deleted. Your message was not sent; send it again to start a new chat.'
 				);
@@ -372,6 +385,9 @@
 		} finally {
 			busy = false;
 			pending = null;
+			// A recap that did not start its chat leaves it to be dropped by the
+			// server, so the next send must not reuse its id.
+			if (creating && !storesTurnFirst && chatId === null) freshChatId();
 		}
 	}
 
@@ -734,7 +750,7 @@
 	function newChat() {
 		if (busy || switching) return;
 		chatId = null;
-		nextChatId = newChatId();
+		freshChatId();
 		messages = [{ role: 'assistant', content: opening }];
 		olderSummarised = false;
 		pickerOpen = false;
@@ -874,10 +890,14 @@
 
 	// The textarea's value is one-way bound, so it is written here directly to
 	// be sized and to place the cursor at the end in the same tick.
+	let lastPrefill = '';
 	function prefill(text: string) {
-		// Text the writer typed and has not sent stays, with the prompt after it.
+		// Text the writer typed and has not sent stays, with the prompt after it;
+		// an earlier prompt left as it was, or a half-typed command, is replaced.
 		const typed = input.trim();
-		const value = typed ? `${typed}\n\n${text}` : text;
+		const keep = typed && typed !== lastPrefill.trim() && !typed.startsWith('/');
+		const value = keep ? `${typed}\n\n${text}` : text;
+		lastPrefill = value;
 		input = value;
 		if (!composer) return;
 		composer.value = value;

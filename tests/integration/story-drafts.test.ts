@@ -31,6 +31,7 @@ import {
 	listDrafts,
 	newStoryFromDraft,
 	restoreDraftScene,
+	draftScenesInTrash,
 	saveDraft,
 	compareWithDraft,
 	updateDraftDetails,
@@ -458,6 +459,20 @@ describe('restoreDraftScene', () => {
 		expect(live.some((row) => row.bodyMd === 'Rewritten since.')).toBe(false);
 	});
 
+	it('finds a saved scene in the deleted list, itself or as a copy added back', async () => {
+		const first = await save();
+		expect(await draftScenesInTrash(db, storyId, [{ id: sceneId }])).toEqual([]);
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
+		expect(await draftScenesInTrash(db, storyId, [{ id: sceneId }])).toEqual([sceneId]);
+		// Deleted for good, added back, and the copy deleted in turn.
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const copy = await restoreDraftScene(db, storyId, first, sceneId);
+		if (!copy.ok) throw new Error('expected a restore');
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, copy.sceneId));
+		expect(await draftScenesInTrash(db, storyId, [{ id: sceneId }])).toEqual([sceneId]);
+	});
+
 	it('refuses a scene that is not in the draft', async () => {
 		const id = await save();
 		expect(await restoreDraftScene(db, storyId, id, characterId)).toMatchObject({
@@ -701,6 +716,10 @@ describe('exports', () => {
 		expect(text(byPath.get(`${base}/relationships.md`))).toContain('Halden - lives in - Saltmarsh');
 		// A notebook note keeps the scene it hangs off, by its path in the draft.
 		expect(text(byPath.get(`${base}/notebook/dawn-light.md`))).toContain(
+			'scene: "chapters/01-departure/01-dawn.md"'
+		);
+		// So does the live note, in the story's own notebook.
+		expect(text(byPath.get('universes/u/stories/the-salt-road/notebook/dawn-light.md'))).toContain(
 			'scene: "chapters/01-departure/01-dawn.md"'
 		);
 	});

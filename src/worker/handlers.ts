@@ -50,6 +50,7 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { enrichUniverse } from '../lib/server/llm/enrich.ts';
+import { ReplyCutOffError } from '../lib/server/llm/gateway.ts';
 import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
@@ -170,6 +171,16 @@ export function createHandlers(deps: WorkerDeps) {
 					: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
+			if (error instanceof ReplyCutOffError) {
+				// A retry would stop at the same limit, so say why and end here.
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_enrich', {
+						title: `The Assistant could not write the arc for ${character.name}. ${error.message}`,
+						href
+					})
+				);
+				return;
+			}
 			title = job.signal?.aborted
 				? `Writing the arc for ${character.name} was stopped before it finished.`
 				: `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
@@ -538,11 +549,14 @@ export function createHandlers(deps: WorkerDeps) {
 				if (result.aborted) {
 					title = `The Assistant stopped reading the entries in "${name}" before it finished, with ${suggestions} left. Type /enrich to carry on.`;
 				} else if (result.entities === 0 && result.failed > 0) {
-					title = `The Assistant could not read the entries in "${name}". Check the endpoint in your settings.`;
+					title = `The Assistant could not read the entries in "${name}". ${result.cutOff ?? 'Check the endpoint in your settings.'}`;
 				} else if (result.staged === 0) {
 					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
 				} else {
 					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
+				}
+				if (result.cutOff && result.entities > 0) {
+					title += ` ${result.failed} could not be read. ${result.cutOff}`;
 				}
 				if (result.capped) {
 					const spent = (result.spentUsd ?? 0).toFixed(2);
