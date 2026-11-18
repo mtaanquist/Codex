@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, max, not, notExists, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
@@ -27,15 +27,16 @@ export function sampleEvenly<T>(items: T[], max: number): T[] {
 
 // The live scenes in the character's universe that mention them, one row per
 // scene in reading order, with the scene's summary or else the passage around
-// its first mention.
+// its first mention, and the stories they came from.
 async function arcScenes(
 	db: Database,
 	characterId: string,
 	universeId: string
-): Promise<ArcScene[]> {
+): Promise<{ scenes: ArcScene[]; storyIds: string[] }> {
 	const rows = await db
 		.select({
 			sceneId: scenes.id,
+			storyId: stories.id,
 			sceneTitle: scenes.title,
 			summaryMd: scenes.summaryMd,
 			storyTitle: stories.title,
@@ -62,14 +63,17 @@ async function arcScenes(
 			asc(entityMentions.position)
 		);
 	const seen = new Set<string>();
+	const storyIds = new Set<string>();
 	const out: ArcScene[] = [];
 	for (const row of rows) {
 		if (seen.has(row.sceneId)) continue;
 		seen.add(row.sceneId);
 		const text = row.summaryMd?.trim() || row.snippet.trim();
-		if (text) out.push({ storyTitle: row.storyTitle, sceneTitle: row.sceneTitle, text });
+		if (!text) continue;
+		out.push({ storyTitle: row.storyTitle, sceneTitle: row.sceneTitle, text });
+		storyIds.add(row.storyId);
 	}
-	return out;
+	return { scenes: out, storyIds: [...storyIds] };
 }
 
 // Whether a cached arc is out of date: a scene that mentions the character
@@ -128,7 +132,7 @@ export async function summariseCharacterArc(
 
 	// The database clock, which scene saves stamp updated_at with.
 	const startedAt = await dbNow(db);
-	const found = await arcScenes(db, character.id, character.universeId);
+	const { scenes: found, storyIds } = await arcScenes(db, character.id, character.universeId);
 	if (found.length === 0) {
 		// Nothing left to retell (scenes deleted, or only in muted stories), so an
 		// earlier arc goes too rather than lingering in the context.
@@ -159,14 +163,29 @@ export async function summariseCharacterArc(
 	const text = result.content.trim();
 	if (!text) throw new Error('The Assistant returned an empty arc.');
 
-	await db
+	// A story muted while the model was writing must not end up in the arc:
+	// store it only if every story it read is still open to the Assistant.
+	const stored = await db
 		.update(characters)
 		.set({
 			arcSummaryMd: text,
 			arcSummaryAt: startedAt,
 			updatedAt: sql`${characters.updatedAt}`
 		})
-		.where(eq(characters.id, character.id));
+		.where(
+			and(
+				eq(characters.id, character.id),
+				notExists(
+					db
+						.select({ id: stories.id })
+						.from(stories)
+						.where(and(inArray(stories.id, storyIds), not(storyAssistantOn())))
+				)
+			)
+		)
+		.returning({ id: characters.id });
+	// Thrown so the job retries, and the retry reads without the muted story.
+	if (stored.length === 0) throw new Error('A story was muted while the arc was being written.');
 	return { outcome: 'written' };
 }
 

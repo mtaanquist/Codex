@@ -1431,6 +1431,19 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review fixes for Phase 9 (2026-11-18). A fresh review of the
+      whole staging diff found three things. The enrich queue is now created
+      with pg-boss's `exclusive` policy: under the default policy a
+      `singletonKey` does not stop a second job, so repeat `/enrich` or "Write
+      arc" clicks each ran (and paid). A policy cannot change once a queue
+      exists, which is why the older review and summaries queues are a
+      separate issue. An arc is only stored if no story it read was muted
+      while the model was writing (the job fails and its retry reads without
+      that story), and muting plus clearing arcs is one transaction. A pending
+      summary suggestion can no longer replace a summary the writer wrote
+      after it was staged: the server refuses it, and the editor hides it
+      while the summary field has text.
+
 - [x] Muted stories stay out of universe-wide work (2026-11-18, #975). Mads
       decided a story mute should keep that book's prose from the model
       everywhere, not only hide the surfaces on it. One condition,

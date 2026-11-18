@@ -211,13 +211,24 @@ export async function decideEntitySuggestion(
 				.set({ status: 'accepted', decidedAt: new Date() })
 				.where(eq(entitySuggestions.id, id));
 		});
-	} catch {
+	} catch (error) {
+		if (error instanceof SummaryTaken) {
+			return {
+				ok: false,
+				code: 'conflict',
+				reason: 'This entry already has a summary, so the suggestion was not added.'
+			};
+		}
 		return { ok: false, code: 'conflict', reason: 'That suggestion could not be applied.' };
 	}
 
 	if (s.field === 'alias' && universeId) return { ok: true, reindexUniverseId: universeId };
 	return { ok: true };
 }
+
+// A summary suggestion can sit pending for days; the writer may have written
+// their own since, and accepting must never replace it.
+class SummaryTaken extends Error {}
 
 // Apply one field to the entity inside a transaction, returning its universe.
 // Throws if the entity is not the user's (rolls the transaction back).
@@ -238,6 +249,7 @@ async function applyToEntity(
 		summaryMd?: string;
 	} = {};
 	if (s.field === 'summary') {
+		if (entity.summaryMd?.trim()) throw new SummaryTaken();
 		set.summaryMd = s.value;
 	} else if (s.field === 'detail') {
 		set.details = [...entity.details, { label: s.label ?? '', value: s.value }].slice(

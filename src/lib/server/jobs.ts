@@ -41,6 +41,7 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_ENRICH_QUEUE_OPTIONS,
 	ASSISTANT_JOB_EXPIRY_SECONDS,
 	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
@@ -68,7 +69,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 		await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
-		await boss.createQueue(ASSISTANT_ENRICH_QUEUE);
+		await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_ENRICH_QUEUE_OPTIONS);
 		return boss;
 	})();
 	return starting;
