@@ -6,10 +6,13 @@
 	// Clears the story's review notes in one go: the finished ones, or all of
 	// them. Opened from the review page's notes panel, author only.
 	let {
+		seenAt,
 		finished,
 		total,
 		onClose
 	}: {
+		// When the counted notes were read; the server keeps anything newer.
+		seenAt: string;
 		// Resolved comments and decided suggestions in the story.
 		finished: number;
 		// Every comment thread and suggestion in the story.
@@ -61,6 +64,7 @@
 				};
 			}}
 		>
+			<input type="hidden" name="seenAt" value={seenAt} />
 			<div class="modal-body">
 				<fieldset class="cr-group">
 					<legend class="visually-hidden">What to clear</legend>

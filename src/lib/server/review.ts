@@ -1117,11 +1117,21 @@ export async function deleteSuggestion(
 
 export type ClearScope = 'finished' | 'all';
 
+// The database clock, which stamps every note's created_at.
+export async function databaseNow(db: Database): Promise<Date> {
+	const { rows } = await db.execute<{ now: Date | string }>(sql`select now() as now`);
+	return new Date(rows[0].now);
+}
+
 // Clears the story's review notes in one go. 'finished' takes resolved
 // threads and decided suggestions (with their discussions) and keeps
 // everything still open; 'all' takes every thread, comment and suggestion.
 // Notes on scenes in the deleted list stay with those scenes. Saved drafts
 // never hold review notes, so they are not touched.
+//
+// Only what the writer could have seen goes: a thread or suggestion created
+// after `seenBefore` (when their page loaded), or one with a reply posted
+// since, is kept, so a guest's new note is never cleared unread.
 //
 // Suggestions are locked before threads: a first reply on a suggestion
 // creates its thread, and that insert waits on the suggestion lock, so no
@@ -1130,12 +1140,17 @@ export type ClearScope = 'finished' | 'all';
 export async function clearReviews(
 	db: Database,
 	storyId: string,
-	scope: ClearScope
+	scope: ClearScope,
+	seenBefore: Date
 ): Promise<void> {
 	await db.transaction(async (tx) => {
 		const liveScene = sql`(select ${scenes.id} from ${scenes} where ${scenes.storyId} = ${storyId} and ${scenes.deletedAt} is null)`;
 		const suggestions = await tx
-			.select({ id: reviewSuggestions.id, status: reviewSuggestions.status })
+			.select({
+				id: reviewSuggestions.id,
+				status: reviewSuggestions.status,
+				createdAt: reviewSuggestions.createdAt
+			})
 			.from(reviewSuggestions)
 			.where(
 				and(eq(reviewSuggestions.storyId, storyId), inArray(reviewSuggestions.sceneId, liveScene))
@@ -1145,20 +1160,48 @@ export async function clearReviews(
 			.select({
 				id: reviewThreads.id,
 				resolvedAt: reviewThreads.resolvedAt,
-				suggestionId: reviewThreads.suggestionId
+				suggestionId: reviewThreads.suggestionId,
+				createdAt: reviewThreads.createdAt
 			})
 			.from(reviewThreads)
 			.where(and(eq(reviewThreads.storyId, storyId), inArray(reviewThreads.sceneId, liveScene)))
 			.for('update');
+		// The thread locks hold back new replies, so this read is final.
+		const replied =
+			threads.length === 0
+				? []
+				: await tx
+						.selectDistinct({ threadId: reviewComments.threadId })
+						.from(reviewComments)
+						.where(
+							and(
+								inArray(
+									reviewComments.threadId,
+									threads.map((thread) => thread.id)
+								),
+								gt(reviewComments.createdAt, seenBefore)
+							)
+						);
+		const newSince = new Set(replied.map((row) => row.threadId));
+		for (const thread of threads) {
+			if (thread.createdAt > seenBefore) newSince.add(thread.id);
+		}
+		const discussed = new Map(
+			threads
+				.filter((thread) => thread.suggestionId)
+				.map((thread) => [thread.suggestionId!, thread.id])
+		);
 		const goingSuggestions = suggestions
 			.filter((suggestion) => scope === 'all' || suggestion.status !== 'pending')
+			.filter((suggestion) => suggestion.createdAt <= seenBefore)
+			.filter((suggestion) => !newSince.has(discussed.get(suggestion.id) ?? ''))
 			.map((suggestion) => suggestion.id);
 		const going = new Set(goingSuggestions);
 		const goingThreads = threads
 			.filter((thread) =>
 				thread.suggestionId
 					? going.has(thread.suggestionId)
-					: scope === 'all' || thread.resolvedAt !== null
+					: (scope === 'all' || thread.resolvedAt !== null) && !newSince.has(thread.id)
 			)
 			.map((thread) => thread.id);
 		if (goingThreads.length > 0) {
