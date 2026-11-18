@@ -12,6 +12,7 @@ import {
 } from './db/schema.ts';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 import { listEntityRelationships } from './relationships.ts';
+import { storyAssistantOn } from './universe-scope.ts';
 import {
 	entityAliasColumn,
 	entityNameColumn,
@@ -100,7 +101,10 @@ export type PlanAppearance = {
 export async function entityAppearances(
 	db: Database,
 	target: { kind: EntityKind; id: string },
-	scope: { storyId: string } | { universeId: string }
+	scope: { storyId: string } | { universeId: string },
+	// assistant: leaves out stories the Assistant is muted on, for what is sent
+	// to a model; the Plan page's own "Appears in" list shows everything.
+	opts: { assistant?: boolean } = {}
 ): Promise<PlanAppearance[]> {
 	const targetType = target.kind === 'lore' ? 'lore_entry' : target.kind;
 	const scopeFilter =
@@ -125,6 +129,7 @@ export async function entityAppearances(
 				eq(entityMentions.targetType, targetType),
 				eq(entityMentions.targetId, target.id),
 				isNull(stories.deletedAt),
+				opts.assistant ? storyAssistantOn() : undefined,
 				scopeFilter
 			)
 		)

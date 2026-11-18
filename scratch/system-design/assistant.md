@@ -78,7 +78,11 @@ Assistant would stay live on them.
    that one book. The override only ever subtracts - the account master stays
    the kill switch, so a per-story setting cannot light the Assistant up when
    the account is off. On a muted story the editor and menu surfaces hide, but
-   the Assistant tab stays as the un-mute switch.
+   the Assistant tab stays as the un-mute switch. The mute also keeps the
+   story's prose out of universe-wide work started from elsewhere (the
+   universe outline and tools, universe continuity, enrichment, character
+   arcs), through one condition, `storyAssistantOn()` in `universe-scope.ts`
+   (#975).
 
 Concretely: the in-editor and in-menu surfaces (right-click "Ask the
 Assistant", left-menu review items, continuation, co-author) require

@@ -1431,6 +1431,20 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Muted stories stay out of universe-wide work (2026-11-18, #975). Mads
+      decided a story mute should keep that book's prose from the model
+      everywhere, not only hide the surfaces on it. One condition,
+      `storyAssistantOn()` (`universe-scope.ts`: `llm_config` does not contain
+      `enabled: false`), is added to every universe-wide read that feeds a
+      model: `universeSkeleton` (the universe outline in context and
+      `list_scenes`), the tools' `loadScene` (`get_scene` and the write tools),
+      `search_text` (a new `assistant` option on `searchAll`), `find_appearances`
+      and enrichment (a new `assistant` option on `entityAppearances`; the Plan
+      page's "Appears in" list still shows every story), the enrichment
+      candidate query, character arcs and their staleness, and the universe
+      continuity pass. An arc written before a story was muted keeps what it
+      said until it is refreshed.
+
 - [x] Character arc summaries (2026-11-18, #846). Migration 0079 adds
       `characters.arc_summary_md` and `arc_summary_at` (additive; characters
       only, YAGNI for places and lore). `llm/arc-summary.ts`:

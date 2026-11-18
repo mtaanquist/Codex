@@ -15,6 +15,7 @@ import { entityTable } from '../../entity-lookups.ts';
 import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
+import { storyAssistantOn } from '../../universe-scope.ts';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.
@@ -297,6 +298,7 @@ export async function universeSkeleton(
 			and(
 				eq(stories.universeId, universeId),
 				isNull(stories.deletedAt),
+				storyAssistantOn(),
 				onlyStoryId ? eq(stories.id, onlyStoryId) : undefined
 			)
 		)

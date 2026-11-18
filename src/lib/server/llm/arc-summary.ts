@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, max, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
-import { inLiveUniverse } from '../universe-scope.ts';
+import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { dbNow } from './enrich.ts';
@@ -51,7 +51,8 @@ async function arcScenes(
 				eq(entityMentions.targetId, characterId),
 				eq(stories.universeId, universeId),
 				isNull(stories.deletedAt),
-				isNull(scenes.deletedAt)
+				isNull(scenes.deletedAt),
+				storyAssistantOn()
 			)
 		)
 		.orderBy(
@@ -91,7 +92,8 @@ export async function arcIsStale(
 				eq(entityMentions.targetId, character.id),
 				eq(stories.universeId, character.universeId),
 				isNull(stories.deletedAt),
-				isNull(scenes.deletedAt)
+				isNull(scenes.deletedAt),
+				storyAssistantOn()
 			)
 		);
 	const lastChanged = row?.lastChanged ? new Date(row.lastChanged) : null;
