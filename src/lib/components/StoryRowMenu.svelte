@@ -37,7 +37,8 @@
 		onRenameChapter: (chapterId: string) => void;
 		// Opens the review modal for the picked scene or chapter.
 		onOpenReview: (request: { sceneId?: string; chapterId?: string }) => void;
-		onSuggestSplit: (sceneId: string) => void;
+		// Write only: Review's Assistant tab cannot confirm a split proposal.
+		onSuggestSplit?: (sceneId: string) => void;
 		onDuplicateScene: (sceneId: string) => void;
 		onMergeSelected: () => void;
 	} = $props();
@@ -206,14 +207,16 @@
 						>
 							Review with the Assistant...
 						</button>
-						<button
-							class="menu-item"
-							type="button"
-							role="menuitem"
-							onclick={() => onSuggestSplit(target.id)}
-						>
-							Suggest where to split
-						</button>
+						{#if onSuggestSplit}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => onSuggestSplit(target.id)}
+							>
+								Suggest where to split
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
