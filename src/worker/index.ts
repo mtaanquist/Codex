@@ -81,8 +81,9 @@ await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
 await boss.createQueue(LEGACY_ASSISTANT_SUMMARIES_QUEUE);
 
-// Assistant jobs run several at once, but one per writer (the job's group),
-// so one writer's slow or hung endpoint does not hold up anyone else. The
+// Each Assistant queue runs several jobs at once, but one per writer (the job's
+// group), so one writer's slow or hung endpoint does not hold up anyone else.
+// The limits are per queue: a writer can have one job running on each. The
 // metadata carries the start time and retry count shouldNotifyWriter reads.
 const ASSISTANT_WORK_OPTIONS = {
 	localConcurrency: ASSISTANT_JOB_CONCURRENCY,
@@ -100,10 +101,13 @@ await boss.work(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assista
 await boss.work(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantSummaries);
 await boss.work(ASSISTANT_ENRICH_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantEnrich);
 // LEGACY (#1041): the old queues' drain, removed with the createQueue calls above.
-await boss.work(LEGACY_ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantReview);
+// One job at a time on each: while old jobs remain, the drain adds a slot of its
+// own next to the new queue's, so a writer can briefly have two runs at once.
+const LEGACY_DRAIN_OPTIONS = { ...ASSISTANT_WORK_OPTIONS, localConcurrency: 1 };
+await boss.work(LEGACY_ASSISTANT_REVIEW_QUEUE, LEGACY_DRAIN_OPTIONS, handlers.assistantReview);
 await boss.work(
 	LEGACY_ASSISTANT_SUMMARIES_QUEUE,
-	ASSISTANT_WORK_OPTIONS,
+	LEGACY_DRAIN_OPTIONS,
 	handlers.assistantSummaries
 );
 await boss.work(BACKUP_QUEUE, handlers.backup);
