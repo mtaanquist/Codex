@@ -5,7 +5,7 @@ import { readingPageRef } from '#lib/server/publish';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
 import {
-	databaseNow,
+	reviewSeenCutoff,
 	addComment,
 	clearReviews,
 	createSuggestion,
@@ -46,7 +46,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const anchors = createAnchorMapper();
 	// Taken before the notes are read: "Clear review notes" only clears what
 	// was on the page, so a note posted after this moment is kept.
-	const seenAt = await databaseNow(db);
+	const seenAt = await reviewSeenCutoff(db);
 	const [
 		content,
 		mentions,
@@ -93,7 +93,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		trashedScenes,
 		threads,
 		suggestions,
-		seenAt: seenAt.toISOString(),
+		seenAt,
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins,
@@ -281,8 +281,8 @@ export const actions: Actions = {
 		if (scope !== 'finished' && scope !== 'all') {
 			return fail(400, { message: 'Pick what to clear.' });
 		}
-		const seenBefore = new Date(formText(data, 'seenAt'));
-		if (Number.isNaN(seenBefore.getTime())) {
+		const seenBefore = formText(data, 'seenAt');
+		if (!seenBefore || Number.isNaN(Date.parse(seenBefore))) {
 			return fail(400, { message: 'Reload the page and try again.' });
 		}
 		await clearReviews(db, story.id, scope, seenBefore);

@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	chapters,
 	entityMentions,
@@ -11,7 +11,7 @@ import {
 	sceneMarkers,
 	scenes,
 	stories
-} from './db/schema';
+} from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 
@@ -100,7 +100,7 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 			.update(scenes)
 			.set({ deletedAt: sql`now()` })
 			.where(eq(scenes.id, scene.id));
-		await markArcsStale(tx, [scene.id]);
+		await markMentionsStale(tx, { sceneIds: [scene.id] });
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
@@ -108,19 +108,35 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	return true;
 }
 
-/** Shows the arcs of the characters these scenes mention as out of date (the
- * watermark moves to the start of time). Call it before their mention rows are
- * deleted, since the arc's own staleness check reads those rows. */
-export async function markArcsStale(tx: Database, sceneIds: string[]): Promise<void> {
-	if (!sceneIds.length) return;
-	await tx.execute(sql`
-		update characters set arc_summary_at = to_timestamp(0)
-		where arc_summary_md is not null and id in (
-			select target_id from entity_mentions
-			where source_type = 'scene' and target_type = 'character'
-				and source_id in ${sceneIds}
-		)
-	`);
+/** Marks what these scenes (or this story's scenes) mention for a fresh look:
+ * the characters' arcs show as out of date (their watermark moves to the start
+ * of time), and with `enrich` the entities are read again on the next enrich
+ * pass. Call it before mention rows are deleted, since it reads them. */
+export async function markMentionsStale(
+	tx: Database,
+	source: { sceneIds: string[] } | { storyId: string },
+	opts: { enrich?: boolean } = {}
+): Promise<void> {
+	if ('sceneIds' in source && !source.sceneIds.length) return;
+	const from =
+		'sceneIds' in source
+			? sql`m.source_id in ${source.sceneIds}`
+			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
+	const mentioned = (type: string) =>
+		sql`(select m.target_id from entity_mentions m where m.source_type = 'scene' and m.target_type = ${type} and ${from})`;
+	await tx.execute(
+		sql`update characters set arc_summary_at = to_timestamp(0) where id in ${mentioned('character')}`
+	);
+	if (!opts.enrich) return;
+	await tx.execute(
+		sql`update characters set assistant_enriched_at = to_timestamp(0) where id in ${mentioned('character')}`
+	);
+	await tx.execute(
+		sql`update places set assistant_enriched_at = to_timestamp(0) where id in ${mentioned('place')}`
+	);
+	await tx.execute(
+		sql`update lore_entries set assistant_enriched_at = to_timestamp(0) where id in ${mentioned('lore_entry')}`
+	);
 }
 
 /** Brings a scene back from the trash, at the end of its chapter (or of the

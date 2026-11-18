@@ -78,7 +78,7 @@ export type WorkerServices = typeof defaultServices;
 
 export type WorkerDeps = {
 	db: Database;
-	boss: Pick<PgBoss, 'send' | 'getJobById'>;
+	boss: Pick<PgBoss, 'send' | 'getJobById' | 'complete'>;
 	// Absolute origin for links in emails.
 	origin: string;
 	services?: Partial<WorkerServices>;
@@ -172,7 +172,10 @@ export function createHandlers(deps: WorkerDeps) {
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
 			if (error instanceof ReplyCutOffError) {
-				// A retry would stop at the same limit, so say why and end here.
+				// A retry would stop at the same limit, so say why and end here. The
+				// job is settled as completed with a failed output, which the
+				// activity card reads as failed, and pg-boss does not run it again.
+				await boss.complete(ASSISTANT_ENRICH_QUEUE, job.id, { failed: true });
 				await queueDigests(
 					await insertNotifications(db, [userId], 'assistant_enrich', {
 						title: `The Assistant could not write the arc for ${character.name}. ${error.message}`,
@@ -556,7 +559,8 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
 				}
 				if (result.cutOff && result.entities > 0) {
-					title += ` ${result.failed} could not be read. ${result.cutOff}`;
+					const n = result.cutOffs ?? 0;
+					title += ` ${n} ${n === 1 ? 'entry' : 'entries'} could not be read: ${result.cutOff}`;
 				}
 				if (result.capped) {
 					const spent = (result.spentUsd ?? 0).toFixed(2);

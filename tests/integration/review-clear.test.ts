@@ -23,7 +23,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'review-test-secret';
 const {
 	addComment,
 	clearReviews,
-	databaseNow,
+	reviewSeenCutoff,
 	createReviewInvitation,
 	createSuggestion,
 	createThread,
@@ -151,7 +151,7 @@ const suggestionIds = async () =>
 describe('clearReviews', () => {
 	it('keeps notes and replies posted after the page was read', async () => {
 		const seeded = await seed();
-		const seenAt = await databaseNow(db);
+		const seenAt = await reviewSeenCutoff(db);
 		const fresh = await thread(storyId, sceneId, 'Posted since.');
 		const late = await suggestion('brown');
 		await addComment(db, {
@@ -197,14 +197,14 @@ describe('clearReviews', () => {
 			.select({ id: reviewThreads.id })
 			.from(reviewThreads)
 			.where(eq(reviewThreads.suggestionId, seeded.pending));
-		await clearReviews(db, storyId, 'finished', await databaseNow(db));
+		await clearReviews(db, storyId, 'finished', await reviewSeenCutoff(db));
 		expect(await threadIds()).toEqual([seeded.open, pendingThread.id, seeded.elsewhere].sort());
 		expect(await suggestionIds()).toEqual([seeded.pending]);
 	});
 
 	it('clears everything on the story and nothing on other stories', async () => {
 		const seeded = await seed();
-		await clearReviews(db, storyId, 'all', await databaseNow(db));
+		await clearReviews(db, storyId, 'all', await reviewSeenCutoff(db));
 		expect(await threadIds()).toEqual([seeded.elsewhere]);
 		expect(await suggestionIds()).toEqual([]);
 		const comments = await db.select({ threadId: reviewComments.threadId }).from(reviewComments);
@@ -214,7 +214,7 @@ describe('clearReviews', () => {
 	it('leaves notes on scenes in the deleted list with those scenes', async () => {
 		const open = await thread();
 		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
-		await clearReviews(db, storyId, 'all', await databaseNow(db));
+		await clearReviews(db, storyId, 'all', await reviewSeenCutoff(db));
 		expect(await threadIds()).toEqual([open]);
 	});
 
@@ -223,7 +223,7 @@ describe('clearReviews', () => {
 		const saved = await saveDraft(db, authorId, storyId, { label: 'First draft', note: '' });
 		if (!saved.ok) throw new Error(saved.reason);
 		const [before] = await db.select().from(storyDrafts);
-		await clearReviews(db, storyId, 'all', await databaseNow(db));
+		await clearReviews(db, storyId, 'all', await reviewSeenCutoff(db));
 		const [after] = await db.select().from(storyDrafts);
 		expect(after).toEqual(before);
 	});

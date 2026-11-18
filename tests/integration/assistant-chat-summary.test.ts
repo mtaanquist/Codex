@@ -159,8 +159,8 @@ describe('fitChatWithSummary', () => {
 		expect(await getChatSummary(db, userId, chatId)).toBeNull();
 	});
 
-	it('drops a summary longer than its share of the budget', async () => {
-		reply = 'word '.repeat(2000);
+	it('cuts a summary longer than its share of the budget to fit', async () => {
+		reply = 'A long summary sentence. '.repeat(200);
 		try {
 			const turns = conversation(12);
 			const result = await fitChatWithSummary(
@@ -168,9 +168,10 @@ describe('fitChatWithSummary', () => {
 				{ userId, scope: { storyId }, chatId, turns, budgetTokens: 1000 },
 				deps
 			);
-			expect(result.summarised).toBe(false);
-			expect(result.messages).toEqual(turns.slice(2));
-			expect(await getChatSummary(db, userId, chatId)).toBeNull();
+			expect(result.summarised).toBe(true);
+			const stored = (await getChatSummary(db, userId, chatId))?.summary ?? '';
+			expect(stored.length).toBeLessThanOrEqual(500 * 4);
+			expect(stored.endsWith('sentence.')).toBe(true);
 		} finally {
 			reply = null;
 		}

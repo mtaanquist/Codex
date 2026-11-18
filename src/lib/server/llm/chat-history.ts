@@ -75,11 +75,12 @@ export async function getChat(
 	db: Database,
 	userId: string,
 	chatId: string
-): Promise<{ id: string; scope: ChatScope } | null> {
+): Promise<{ id: string; title: string; scope: ChatScope } | null> {
 	if (!isUuid(chatId)) return null;
 	const [row] = await db
 		.select({
 			id: assistantChats.id,
+			title: assistantChats.title,
 			storyId: assistantChats.storyId,
 			universeId: assistantChats.universeId
 		})
@@ -88,6 +89,7 @@ export async function getChat(
 	if (!row) return null;
 	return {
 		id: row.id,
+		title: row.title,
 		scope: row.storyId ? { storyId: row.storyId } : { universeId: row.universeId! }
 	};
 }
@@ -129,15 +131,17 @@ export async function openNewChat(
 	scope: ChatScope,
 	newId: string,
 	title: string
-): Promise<{ id: string; created: boolean } | null> {
+): Promise<{ id: string; created: boolean; title: string } | null> {
 	const [row] = await db
 		.insert(assistantChats)
 		.values({ id: newId, ...scopeValues(scope), userId, title })
 		.onConflictDoNothing()
 		.returning({ id: assistantChats.id });
-	if (row) return { id: row.id, created: true };
+	if (row) return { id: row.id, created: true, title };
 	const chat = await getChat(db, userId, newId);
-	return chat && sameScope(chat.scope, scope) ? { id: chat.id, created: false } : null;
+	return chat && sameScope(chat.scope, scope)
+		? { id: chat.id, created: false, title: chat.title }
+		: null;
 }
 
 // The chat the panel opens with: the most recently used one, if any.

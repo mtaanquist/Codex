@@ -17,6 +17,8 @@ import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { trashScene } from '../../src/lib/server/scene-lifecycle';
+import { mergeScenes } from '../../src/lib/server/scene-split-merge';
+import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
 
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
@@ -320,17 +322,35 @@ describe('arc staleness', () => {
 		expect(await arcIsStale(db, after)).toBe(true);
 	});
 
-	it('goes stale when a story it read is deleted', async () => {
+	it('goes stale when a mentioning scene is merged into another', async () => {
+		const bram = await makeCharacter();
+		const [target] = await db
+			.insert(scenes)
+			.values({ storyId: firstStoryId, globalPosition: 1 })
+			.returning({ id: scenes.id });
+		const merged = await sceneMentioning(firstStoryId, bram.id, { position: 2, snippet: 'Bram' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const result = await mergeScenes(db, ownerId, firstStoryId, [target.id, merged]);
+		expect(result.ok).toBe(true);
+		expect((await readArc(bram.id)).arcSummaryAt?.getTime()).toBe(0);
+	});
+
+	it('goes stale when a story it read is deleted, and again when it is restored', async () => {
 		const bram = await makeCharacter();
 		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
 		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram again' });
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
-		const [written] = await db.select().from(characters).where(eq(characters.id, bram.id));
-		expect(await arcIsStale(db, written)).toBe(false);
-		await pool.query(`update stories set deleted_at = now() + interval '1 minute' where id = $1`, [
-			secondStoryId
-		]);
-		expect(await arcIsStale(db, written)).toBe(true);
+		expect(await trashStory(db, ownerId, secondStoryId)).toBe(true);
+		const [trashed] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, trashed)).toBe(true);
+		// Rewritten without the deleted story, then the story comes back.
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [rewritten] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, rewritten)).toBe(false);
+		expect(await restoreStory(db, ownerId, secondStoryId)).toBe(true);
+		const [restored] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, restored)).toBe(true);
+		expect(restored.assistantEnrichedAt?.getTime()).toBe(0);
 	});
 });
 
@@ -350,6 +370,19 @@ describe('muting and unmuting a story', () => {
 		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
 		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
 		expect((await readArc(other.id)).arcSummaryMd).toBeNull();
+	});
+
+	it('marks an arc written while the story was muted, even one started with none', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		// The mute cleared every arc; the story is unmuted while the arc is written.
+		duringCall = () => saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(after.arcSummaryMd).not.toBeNull();
+		expect(await arcIsStale(db, after)).toBe(true);
 	});
 
 	it('keeps arcs written after a mute when the story is muted again', async () => {
@@ -378,6 +411,6 @@ describe('muting and unmuting a story', () => {
 		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(after.arcSummaryMd).toBe(before.arcSummaryMd);
 		expect(await arcIsStale(db, after)).toBe(true);
-		expect(after.assistantEnrichedAt).toBeNull();
+		expect(after.assistantEnrichedAt?.getTime()).toBe(0);
 	});
 });

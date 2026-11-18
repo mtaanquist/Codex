@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import pg from 'pg';
 import { confirmPrompt } from './confirm';
 import { e2eDatabaseUrl } from './database';
@@ -180,14 +180,16 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 // A recap that fails in a new chat stores nothing, and the server drops the
 // chat it made for it; the panel must not hold on to that chat, or the next
 // question would be sent to a chat that is gone.
-test('a failed catch-up in a new chat leaves the next question in a new chat', async ({ page }) => {
+// Signs in as the Assistant account, starts a story in a fresh universe, and
+// opens the Assistant tab on a new chat.
+async function freshStoryPanel(page: Page, label: string) {
 	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('assistant-e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
 	await page.getByRole('button', { name: 'Sign in' }).click();
 	await expect(page).toHaveURL('/');
 
-	const name = `Recap ${Date.now()}`;
+	const name = `${label} ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
 	await page.getByLabel('New universe').fill(name);
 	await page.getByRole('button', { name: 'Create universe' }).click();
@@ -206,13 +208,21 @@ test('a failed catch-up in a new chat leaves the next question in a new chat', a
 		await expect(picker).toHaveText('New chat', { timeout: 2000 });
 	}).toPass();
 
+	return { panel, picker };
+}
+
+test('a failed catch-up in a new chat leaves the next question in a new chat', async ({ page }) => {
+	const { panel, picker } = await freshStoryPanel(page, 'Recap');
+
 	// The endpoint fails mid-recap; the server has already dropped the chat.
 	await page.route('**/api/assistant/recap', (route) =>
 		route.fulfill({
 			status: 200,
 			headers: {
 				'content-type': 'text/event-stream',
-				'x-chat-id': '00000000-0000-4000-8000-000000000001'
+				'x-chat-id': '00000000-0000-4000-8000-000000000001',
+				'x-chat-created': '1',
+				'x-chat-title': 'Catch%20me%20up'
 			},
 			body: `data: ${JSON.stringify({ type: 'error', message: 'The endpoint failed.' })}\n\n`
 		})
@@ -236,4 +246,43 @@ test('a failed catch-up in a new chat leaves the next question in a new chat', a
 	await composer.press('Enter');
 	await expect.poll(() => posted).not.toBeNull();
 	expect(posted!.chatId ?? null).toBeNull();
+});
+
+// A first question stopped before any reply reaches the panel may already be
+// stored, so the next question goes to the same chat, under the first one's
+// title as the server stored it.
+test('a question after a stopped first send lands in the same chat', async ({ page }) => {
+	const { panel, picker } = await freshStoryPanel(page, 'Stopped');
+
+	const ids: (string | undefined)[] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as { newChatId?: string };
+		ids.push(body.newChatId);
+		if (ids.length === 1) {
+			await route.abort();
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': body.newChatId ?? '',
+				'x-chat-created': '0',
+				'x-chat-title': encodeURIComponent('Who lit the fire?')
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'Nobody knows.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('Who lit the fire?');
+	await composer.press('Enter');
+	await expect.poll(() => ids.length).toBe(1);
+	await expect(panel.locator('.chat-scroll')).toContainText('something went wrong');
+	await composer.fill('And why?');
+	await composer.press('Enter');
+	await expect(panel.locator('.chat-scroll')).toContainText('Nobody knows.');
+	expect(ids[1]).toBe(ids[0]);
+	await expect(picker).toHaveText('Who lit the fire?');
 });
