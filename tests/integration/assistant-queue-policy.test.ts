@@ -1,29 +1,71 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PgBoss } from 'pg-boss';
-import { ASSISTANT_ENRICH_QUEUE_OPTIONS } from '../../src/lib/server/queues';
+import pg from 'pg';
+import {
+	ASSISTANT_QUEUE_OPTIONS,
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE,
+	LEGACY_ASSISTANT_REVIEW_QUEUE
+} from '../../src/lib/server/queues';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
-// The enrich queue relies on its policy, not the singletonKey alone, to turn a
-// repeat request into the job already queued or running (the 409 the client
-// shows). A test queue with the same options stands in for it.
+// The Assistant queues rely on their policy, not the singletonKey alone, to
+// turn a repeat request into the job already queued or running (the 409 the
+// client shows). The queueing functions run against a real pg-boss on the test
+// database; its maintenance timers are turned off so the file can stop it.
+const bosses: PgBoss[] = [];
+vi.mock('pg-boss', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('pg-boss')>();
+	class TestBoss extends actual.PgBoss {
+		constructor(connectionString: string) {
+			super({ connectionString, supervise: false, schedule: false });
+			bosses.push(this);
+		}
+	}
+	return { ...actual, PgBoss: TestBoss };
+});
+vi.mock('$app/env/private', async () => ({
+	DATABASE_URL: (await import('./test-db')).TEST_DATABASE_URL
+}));
+vi.mock('#lib/server/db', () => ({ db: {} }));
+
 const QUEUE = 'assistant-queue-policy-test';
 let boss: PgBoss;
+let pool: pg.Pool;
+
+const jobs = await import('../../src/lib/server/jobs');
+
+async function unfinished(queue: string): Promise<number> {
+	const { rows } = await pool.query(
+		`select count(*)::int as n from pgboss.job where name = $1 and state < 'completed'`,
+		[queue]
+	);
+	return rows[0].n;
+}
 
 beforeAll(async () => {
 	await ensureTestDatabase();
-	boss = new PgBoss({ connectionString: TEST_DATABASE_URL, supervise: false, schedule: false });
+	pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+	boss = new PgBoss(TEST_DATABASE_URL);
 	boss.on('error', (error) => console.error(error));
 	await boss.start();
-	await boss.deleteQueue(QUEUE);
-	await boss.createQueue(QUEUE, ASSISTANT_ENRICH_QUEUE_OPTIONS);
+	// Start from no queues, so the app creates them with the policy it declares
+	// rather than inheriting one another test file made.
+	for (const queue of [QUEUE, ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE]) {
+		await boss.deleteQueue(queue);
+	}
+	await boss.createQueue(QUEUE, ASSISTANT_QUEUE_OPTIONS);
 });
 
 afterAll(async () => {
-	await boss.deleteQueue(QUEUE);
-	await boss.stop({ graceful: false });
+	for (const queue of [QUEUE, ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE]) {
+		await boss.deleteQueue(queue);
+	}
+	for (const b of bosses) await b.stop({ graceful: false });
+	await pool.end();
 });
 
-describe('assistant enrich queue policy', () => {
+describe('assistant queue policy', () => {
 	it('holds one unfinished job per key, and takes a new one once it is done', async () => {
 		const first = await boss.send(QUEUE, {}, { singletonKey: 'u1' });
 		expect(first).toBeTruthy();
@@ -39,5 +81,49 @@ describe('assistant enrich queue policy', () => {
 			running.map((j) => j.id)
 		);
 		expect(await boss.send(QUEUE, {}, { singletonKey: 'u1' })).toBeTruthy();
+	});
+
+	it('coalesces a repeat review of the same scope into the queued one', async () => {
+		const input = { userId: 'u1', storyId: 's1', categories: [] };
+		const first = await jobs.queueAssistantReview(input);
+		expect(first).toEqual(expect.any(String));
+		expect(first).not.toBe('coalesced');
+
+		expect(await jobs.queueAssistantReview(input)).toBe('coalesced');
+		expect(await unfinished(ASSISTANT_REVIEW_QUEUE)).toBe(1);
+
+		// Another scope is its own job.
+		await jobs.queueAssistantReview({ ...input, chapterId: 'c1' });
+		expect(await unfinished(ASSISTANT_REVIEW_QUEUE)).toBe(2);
+	});
+
+	it('coalesces a repeat summary pass of the same story into the queued one', async () => {
+		const input = { userId: 'u1', storyId: 's1' };
+		const first = await jobs.queueAssistantSummaries(input);
+		expect(first).toEqual(expect.any(String));
+		expect(first).not.toBe('coalesced');
+
+		expect(await jobs.queueAssistantSummaries(input)).toBe('coalesced');
+		expect(await unfinished(ASSISTANT_SUMMARIES_QUEUE)).toBe(1);
+
+		// Once the pass is done, the writer can ask for another.
+		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
+		await boss.complete(ASSISTANT_SUMMARIES_QUEUE, first as string);
+		expect(await jobs.queueAssistantSummaries(input)).toEqual(expect.any(String));
+	});
+
+	it('reads the state of a job queued on the old review queue before the upgrade', async () => {
+		await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
+		const id = await boss.send(
+			LEGACY_ASSISTANT_REVIEW_QUEUE,
+			{ userId: 'u1', storyId: 's1' },
+			{ retryLimit: 0 }
+		);
+		expect(await jobs.getAssistantJobState('review', id!)).toBe('running');
+
+		await boss.fetch(LEGACY_ASSISTANT_REVIEW_QUEUE);
+		await boss.fail(LEGACY_ASSISTANT_REVIEW_QUEUE, id!);
+		expect(await jobs.getAssistantJobState('review', id!)).toBe('failed');
+		await boss.deleteAllJobs(LEGACY_ASSISTANT_REVIEW_QUEUE);
 	});
 });
