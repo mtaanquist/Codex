@@ -1461,6 +1461,15 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 6 (#1110, 2026-11-18). The round-5 estimate
+      counted streamed thinking, but current Claude models stream thinking
+      with its text omitted and bill it in full, so a stream that failed
+      mid-thought still metered about 1 output token. Once a thinking block
+      opens, a failed stream is now metered at the request's output cap, the
+      most it can cost; over-counting only stops a capped run early. A
+      finished stream whose message_delta carried no output count uses the
+      same estimate. The round's low findings went to #1111-#1114.
+
 - [x] Staging review round 5 (#1098-#1101, 2026-11-18). Writer trust
       first. A Claude stream that failed partway was metered at
       message_start's output count (about 1), since the real API sends

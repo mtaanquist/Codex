@@ -776,24 +776,12 @@ describe('anthropicProvider.respond over a stream', () => {
 	it('estimates the output of a failed stream that never reached message_delta', async () => {
 		// The real API sends message_delta once, at the end, so a stream that
 		// fails partway has only message_start's output count (about 1). The
-		// text, thinking and tool input streamed so far stand in for it.
+		// text and tool input streamed so far stand in for it.
 		const text = 'x'.repeat(40);
-		const thinking = 'y'.repeat(20);
 		const toolJson = '{"name":"Mira"}';
 		const http: HttpRequest = async () =>
 			sseResponse([
 				start({ input_tokens: 9, output_tokens: 1 }),
-				frame({
-					type: 'content_block_start',
-					index: 0,
-					content_block: { type: 'thinking', thinking: '' }
-				}),
-				frame({
-					type: 'content_block_delta',
-					index: 0,
-					delta: { type: 'thinking_delta', thinking }
-				}),
-				frame({ type: 'content_block_stop', index: 0 }),
 				frame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
 				frame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text } }),
 				frame({ type: 'content_block_stop', index: 1 }),
@@ -812,8 +800,47 @@ describe('anthropicProvider.respond over a stream', () => {
 		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
 		expect(billedUsage(err)).toEqual({
 			promptTokens: 9,
-			completionTokens: Math.ceil((text.length + thinking.length + toolJson.length) / 4)
+			completionTokens: Math.ceil((text.length + toolJson.length) / 4)
 		});
+	});
+
+	it('bills a failed stream the output cap once thinking had started', async () => {
+		// Current models stream thinking with its text omitted (a signature
+		// only), yet bill every thinking token, so the streamed length says
+		// nothing. The request's output cap is the most the attempt can cost.
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'signature_delta', signature: 'sig' }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: req.maxTokens });
+	});
+
+	it('estimates the output of a finished stream whose message_delta reports none', async () => {
+		// Some compatible endpoints end with a stop reason and no output count,
+		// leaving message_start's placeholder.
+		const text = 'x'.repeat(40);
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }),
+				frame({ type: 'content_block_stop', index: 0 }),
+				...end('end_turn', {})
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: text.length / 4 });
 	});
 
 	it('attaches no usage to a failure before message_start', async () => {
