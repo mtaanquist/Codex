@@ -118,6 +118,10 @@ export type SplitProposal = {
 export type StreamEvent =
 	| { type: 'token'; text: string }
 	| { type: 'proposal'; proposal: SplitProposal }
+	// A tool-using turn had to stop reading before the model was done: the
+	// tool-call limit ran out, or the context window filled. The panel shows a
+	// note under the reply so a thin answer is not mistaken for a full one.
+	| { type: 'stopped'; reason: 'context' | 'budget' }
 	// Token counts for the request, when the endpoint reports them mid-stream.
 	// The gateway consumes this frame for the usage log; it never reaches a
 	// client.

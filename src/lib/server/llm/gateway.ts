@@ -548,9 +548,10 @@ export async function* stream(
 	// A tool-using turn resolves its rounds buffered (tool results interleave
 	// with generation), then emits the final answer; a plain turn streams live.
 	if (prepared.tools) {
-		const { content, surfaces } = await runAgent(db, prepared, req);
+		const { content, surfaces, stopped } = await runAgent(db, prepared, req);
 		if (content) yield { type: 'token', text: content };
 		for (const surface of surfaces) yield surface;
+		if (stopped) yield { type: 'stopped', reason: stopped };
 		yield { type: 'done' };
 		return;
 	}

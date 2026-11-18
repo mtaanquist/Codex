@@ -1416,6 +1416,8 @@ export type AssistantChatMeta = {
 		rationale: string;
 		confirmed?: { splitSceneId: string; newSceneId: string };
 	}[];
+	// The reply was cut short by the tool-call limit or the context window.
+	stopped?: 'context' | 'budget';
 };
 
 // In-app notifications behind the topbar bell. payload carries the display

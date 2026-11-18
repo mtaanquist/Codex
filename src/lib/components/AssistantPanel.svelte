@@ -64,6 +64,7 @@
 			meta: {
 				reference?: { sceneId: string; text: string };
 				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
+				stopped?: StopReason;
 			} | null;
 		}[];
 		// Older turns of the stored conversation were summarised for the model.
@@ -98,11 +99,14 @@
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
+	type StopReason = 'context' | 'budget';
 	type Message = {
 		role: 'user' | 'assistant';
 		content: string;
 		reference?: ChatReference;
 		proposals?: SplitProposal[];
+		// The reply was cut short; a note under it says why.
+		stopped?: StopReason;
 		// A /rewrite reply: its affordance replaces the selection rather than
 		// inserting at the cursor.
 		rewrite?: boolean;
@@ -110,6 +114,7 @@
 	type StreamEvent =
 		| { type: 'token'; text: string }
 		| { type: 'proposal'; proposal: SplitProposal }
+		| { type: 'stopped'; reason: StopReason }
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
@@ -136,7 +141,8 @@
 		role: m.role,
 		content: m.content,
 		reference: m.meta?.reference,
-		proposals: m.meta?.proposals?.map((p) => ({ ...p }))
+		proposals: m.meta?.proposals?.map((p) => ({ ...p })),
+		stopped: m.meta?.stopped
 	}));
 	let messages = $state<Message[]>(
 		seeded.length > 0 ? seeded : [{ role: 'assistant', content: opening }]
@@ -179,6 +185,11 @@
 		if (last && last.role === 'assistant') {
 			last.proposals = [...(last.proposals ?? []), proposal];
 		}
+	}
+
+	function markStopped(reason: StopReason) {
+		const last = messages[messages.length - 1];
+		if (last && last.role === 'assistant') last.stopped = reason;
 	}
 
 	async function confirmSplit(proposal: SplitProposal) {
@@ -252,6 +263,7 @@
 				for (const event of events) {
 					if (event.type === 'token') appendToReply(event.text);
 					else if (event.type === 'proposal') attachProposal(event.proposal);
+					else if (event.type === 'stopped') markStopped(event.reason);
 					else if (event.type === 'error') streamError = event.message;
 				}
 			}
@@ -761,6 +773,17 @@
 								</button>
 							{/if}
 						{/if}
+						{#if message.stopped === 'budget'}
+							<p class="stopped-note">
+								The Assistant ran out of lookups for this reply, so it may have missed something. To
+								let it read more, raise Lookups per reply on your account page, under Assistant.
+							</p>
+						{:else if message.stopped === 'context'}
+							<p class="stopped-note">
+								The Assistant ran out of room to read more for this reply, so it may have missed
+								something. Try asking about fewer scenes at once.
+							</p>
+						{/if}
 						{#each message.proposals ?? [] as proposal, pi (pi)}
 							<AssistantProposal
 								{proposal}
@@ -1223,6 +1246,11 @@
 		text-align: center;
 		color: var(--text-muted);
 		font-size: 14px;
+	}
+	.stopped-note {
+		font-size: 12px;
+		color: var(--text-faint);
+		margin: 4px 0 0;
 	}
 	.summary-note {
 		font-size: 12px;

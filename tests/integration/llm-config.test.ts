@@ -92,6 +92,38 @@ describe('account config round-trip', () => {
 		expect(resolved.config.persona).toBe('concise');
 	});
 
+	it('defaults the tool-call limit, keeps a set one across other saves, and ignores the legacy key', async () => {
+		const base = {
+			enabled: true,
+			assistantName: 'Muse',
+			persona: 'concise' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' }
+		};
+		// A save that does not carry the limit stores none, so the default applies.
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).toolCallBudget).toBe(20);
+		const [row] = await db
+			.select({ llmConfig: users.llmConfig })
+			.from(users)
+			.where(eq(users.id, userId));
+		expect(row.llmConfig).not.toHaveProperty('toolCallLimit');
+
+		// The old key only ever held the old default; it no longer applies.
+		await pool.query(
+			`update users set llm_config = llm_config || '{"toolCallBudget": 8}'::jsonb where id = $1`,
+			[userId]
+		);
+		expect((await accountLlmView(db, userId)).toolCallBudget).toBe(20);
+
+		await saveAccountLlmConfig(db, userId, { ...base, toolCallBudget: 30 });
+		expect((await resolveLlmConfig(db, userId)).config.toolCallBudget).toBe(30);
+		// Another form's save leaves it alone.
+		await saveAccountLlmConfig(db, userId, { ...base, assistantName: 'Other' });
+		expect((await accountLlmView(db, userId)).toolCallBudget).toBe(30);
+	});
+
 	it('cleans the name and falls back to the default persona for an unknown value', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,

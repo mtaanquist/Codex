@@ -943,6 +943,90 @@ describe('gateway tool loop', () => {
 		expect(choices).toEqual([undefined, undefined, 'none']);
 	});
 
+	it('tells the stream when the tool-call limit cut a reply short', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 1
+		});
+		const { storyId, sceneId } = await seedStoryScene('Body.');
+		const reader: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				return req.toolChoice === 'none'
+					? { content: 'partial answer', toolCalls: [] }
+					: {
+							content: '',
+							toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+						};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'go' }]
+				},
+				{ provider: reader, http: noHttp }
+			)
+		);
+		expect(events).toContainEqual({ type: 'stopped', reason: 'budget' });
+		// The note comes before the terminator, so the route persists it with the reply.
+		const stoppedAt = events.findIndex((e) => e.type === 'stopped');
+		expect(stoppedAt).toBeLessThan(events.findIndex((e) => e.type === 'done'));
+	});
+
+	it('sends no stopped frame when the model finishes on its own', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 4
+		});
+		const { storyId } = await seedStoryScene('Body.');
+		const answerer: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				return { content: 'done reading', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'go' }]
+				},
+				{ provider: answerer, http: noHttp }
+			)
+		);
+		expect(events.some((e) => e.type === 'stopped')).toBe(false);
+	});
+
 	it('never drops the tools mid-conversation, and dispatches nothing on the concluding round', async () => {
 		await saveAccountLlmConfig(db, userId, {
 			enabled: true,

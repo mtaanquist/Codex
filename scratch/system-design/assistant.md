@@ -290,6 +290,14 @@ who pays for the tokens, so a shared hosted operator can bound it
 instance-wide. On self-host the operator is the writer, so the ceiling is
 theirs to raise or remove.
 
+The writer sets it as "Lookups per reply" on the Account Assistant page
+(1 to 100, default 20; #990). It is stored under `toolCallLimit` only once the
+writer sets it: the older `toolCallBudget` key was written on every save while
+no screen could set it, so it only holds the old default of 8 and is ignored.
+When a chat reply stops because the limit ran out or the context window
+filled, the stream carries a `stopped` frame, the reason persists in the
+message meta, and the panel shows a note under the reply.
+
 ## Three surfaces
 
 Everything the writer asked for sorts onto three surfaces, distinguished by

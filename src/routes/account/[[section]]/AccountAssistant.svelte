@@ -597,6 +597,25 @@
 					</p>
 				</div>
 				<div class="field">
+					<label for="tool_call_limit">Lookups per reply</label>
+					<input
+						id="tool_call_limit"
+						name="toolCallLimit"
+						type="number"
+						class="input"
+						min="1"
+						max={data.toolCallLimitMax}
+						step="1"
+						value={data.assistant.toolCallBudget}
+					/>
+					<p class="field-hint">
+						How many times the assistant may look something up (read a scene, find a character,
+						search your work) before it has to answer. A question about a whole chapter needs one
+						lookup per scene. Raise it if answers say they ran out of room to read; lower it if your
+						endpoint charges per request.
+					</p>
+				</div>
+				<div class="field">
 					<label for="spend_cap">Spend cap per background run (USD)</label>
 					<input
 						id="spend_cap"

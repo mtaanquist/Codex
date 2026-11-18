@@ -64,8 +64,8 @@ export function throwAssistantError(err: unknown, fallback: string): never {
 
 // Streams a gateway turn back as Server-Sent Events. The reply accumulates
 // and persists to the stored conversation only when the stream ends cleanly;
-// an aborted or failed turn stores nothing. Proposals (split cards) ride the
-// stream and persist with the reply when tools are enabled.
+// an aborted or failed turn stores nothing. Proposals (split cards) and a
+// cut-short note ride the stream and persist with the reply.
 export function assistantSseResponse(options: {
 	request: Request;
 	userId: string;
@@ -92,6 +92,7 @@ export function assistantSseResponse(options: {
 		async start(controller) {
 			let reply = '';
 			const proposals: SplitProposal[] = [];
+			let stopped: 'context' | 'budget' | undefined;
 			try {
 				for await (const event of stream(db, {
 					userId,
@@ -105,12 +106,17 @@ export function assistantSseResponse(options: {
 					controller.enqueue(frame(event));
 					if (event.type === 'token') reply += event.text;
 					else if (event.type === 'proposal') proposals.push(event.proposal);
+					else if (event.type === 'stopped') stopped = event.reason;
 					if (event.type === 'done') {
 						if (reply.trim() || proposals.length > 0) {
+							const meta = {
+								...(proposals.length > 0 ? { proposals } : {}),
+								...(stopped ? { stopped } : {})
+							};
 							await appendChat(db, userId, scope, {
 								role: 'assistant',
 								content: reply,
-								meta: proposals.length > 0 ? { proposals } : null
+								meta: Object.keys(meta).length > 0 ? meta : null
 							});
 						}
 						break;

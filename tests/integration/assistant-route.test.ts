@@ -279,6 +279,43 @@ describe('assistantSseResponse', () => {
 			}
 		]);
 	});
+
+	it('stores the cut-short note with a reply that hit the tool-call limit', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 1
+		});
+		providerSlot.current = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req) {
+				return req.toolChoice === 'none'
+					? { content: 'What I read so far.', toolCalls: [] }
+					: {
+							content: '',
+							toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+						};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const response = sse(
+			new Request('http://localhost/api/assistant/chat', { method: 'POST' }),
+			true
+		);
+		const frames = parseFrames(await response.text());
+		expect(frames).toContainEqual({ type: 'stopped', reason: 'budget' });
+		expect(await listChat(db, userId, { storyId })).toEqual([
+			{ role: 'assistant', content: 'What I read so far.', meta: { stopped: 'budget' } }
+		]);
+	});
 });
 
 describe('assistant gates', () => {

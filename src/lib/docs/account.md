@@ -78,6 +78,11 @@ contacts a model on its own.
   own machine: it is then offered only the three it needs most (read a scene,
   suggest an edit, leave a comment), and it stops sooner instead of retrying,
   which smaller models handle far more reliably.
+- **Lookups per reply**: how many times the Assistant may look something up
+  in your work (read a scene, check a character, run a search) before it has
+  to answer. The default is 20. A question about a whole chapter needs one
+  lookup per scene, so raise it if replies say they ran out of lookups. Lower
+  it if your endpoint charges per request.
 - **Spend cap per background run**: the most one background review, or one
   summary update, may spend before it stops. It checks between scenes, so it
   never stops half way through one, and it tells you how far it got and what it
