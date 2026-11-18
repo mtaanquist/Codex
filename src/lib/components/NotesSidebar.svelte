@@ -18,6 +18,7 @@
 		writeHref,
 		reviewHref,
 		modeNote,
+		storyId,
 		universeNotes = [],
 		universeNotesPath,
 		form
@@ -32,6 +33,8 @@
 		reviewHref?: ResolvedPathname;
 		// The line under the mode strip, when the strip needs explaining.
 		modeNote?: string;
+		// Story scope: the story whose running Assistant jobs show under the strip.
+		storyId?: string;
 		// Universe notes shown read-only at story scope, linking to the universe
 		// Notes view to edit. Empty at universe scope.
 		universeNotes?: NoteListItem[];
@@ -58,6 +61,7 @@
 			active={null}
 			hrefs={{ write: writeHref, plan: planHref, review: reviewHref }}
 			note={modeNote ?? NOTES_MODE_NOTE}
+			{storyId}
 		/>
 		<SidebarSearch bind:query placeholder="Filter notes..." />
 	</div>

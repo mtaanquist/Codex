@@ -142,7 +142,7 @@ To have the Assistant write a passage for you, select "Write" on the formatting 
 
 You can also ask the Assistant to review your writing and leave comments and suggested edits, which appear on the review page for you to accept or reject one at a time, the same way a guest reviewer's notes do. Right-click a scene or chapter in the left sidebar, choose Assistant, then "Review with the Assistant"; or type `/review` in the chat. A window opens where you pick what to review (this scene, this chapter, or the whole story) and what to check. The Review section of "Reviewing" covers the choices in full.
 
-A chapter or whole-story review runs in the background, since it reads every scene; a card in the bottom corner shows it working and you get a notification when its notes are ready. Nothing in your writing changes until you accept a suggestion.
+A chapter or whole-story review runs in the background, since it reads every scene; a card in the bottom corner shows it working, a line under the Write, Plan and Review buttons shows how many scenes it has read, and you get a notification when its notes are ready. Both stay visible if you reload the page. Nothing in your writing changes until you accept a suggestion.
 
 To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted. This does not change your other stories or your account setting.
 

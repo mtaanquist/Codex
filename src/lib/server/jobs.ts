@@ -43,6 +43,7 @@ import {
 	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
+import { findRunningAssistantJobs, type RunningAssistantJob } from './running-jobs.ts';
 import { errorFields, logEvent, redactEmail } from './log.ts';
 import type { ReviewRunState } from './db/schema.ts';
 
@@ -401,5 +402,15 @@ export async function queueBackup(): Promise<boolean> {
 	} catch (error) {
 		logEvent('error', 'job.queue_failed', { queue: BACKUP_QUEUE, ...errorFields(error) });
 		return false;
+	}
+}
+
+// The signed-in writer's unsettled Assistant jobs, for a page loaded mid-run.
+export async function listRunningAssistantJobs(userId: string): Promise<RunningAssistantJob[]> {
+	try {
+		return await findRunningAssistantJobs(db, userId);
+	} catch (error) {
+		logEvent('error', 'job.list_failed', { userId, ...errorFields(error) });
+		return [];
 	}
 }

@@ -10,7 +10,8 @@ vi.mock('#lib/activity.svelte', () => ({
 	trackJob: vi.fn(async () => {})
 }));
 
-const { startBackgroundReview } = await import('./assistant-actions');
+const { startBackgroundReview, resumeRunningJobs } = await import('./assistant-actions');
+const { trackJob } = await import('#lib/activity.svelte');
 
 type Handled = { jobId: string | null; message?: string; reason?: string };
 
@@ -82,5 +83,83 @@ describe('startBackgroundReview job start reporting', () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0].jobId).toBeNull();
 		expect(calls[0].reason).toBe('network');
+	});
+});
+
+describe('resumeRunningJobs', () => {
+	beforeEach(() => {
+		vi.unstubAllGlobals();
+		vi.mocked(trackJob).mockClear();
+	});
+
+	it('follows each job the server still has running, named by its title', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							jobs: [
+								{
+									id: 'j1',
+									kind: 'review',
+									mode: 'full',
+									storyId: 's1',
+									chapterId: null,
+									universeId: null,
+									title: 'Saltglass'
+								},
+								{
+									id: 'j2',
+									kind: 'review',
+									mode: 'continuity',
+									storyId: null,
+									chapterId: null,
+									universeId: 'u1',
+									title: 'Hollow Coast'
+								},
+								{
+									id: 'j3',
+									kind: 'summaries',
+									mode: 'full',
+									storyId: 's1',
+									chapterId: null,
+									universeId: null,
+									title: 'Saltglass'
+								}
+							]
+						}),
+						{ status: 200 }
+					)
+			)
+		);
+		await resumeRunningJobs();
+
+		const calls = vi.mocked(trackJob).mock.calls.map(([opts]) => opts);
+		expect(calls).toHaveLength(3);
+		expect(calls[0]).toMatchObject({
+			jobId: 'j1',
+			kind: 'review',
+			scope: { storyId: 's1', mode: 'full' },
+			runningLabel: 'Reviewing "Saltglass"...'
+		});
+		expect(calls[0].href).toMatch(/\/stories\/s1\/review$/);
+		expect(calls[1]).toMatchObject({
+			runningLabel: 'Checking continuity in "Hollow Coast"...',
+			href: undefined
+		});
+		expect(calls[2]).toMatchObject({
+			kind: 'summaries',
+			runningLabel: 'Updating summaries for "Saltglass"...'
+		});
+	});
+
+	it('does nothing when the list cannot be read', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response('', { status: 500 }))
+		);
+		await resumeRunningJobs();
+		expect(trackJob).not.toHaveBeenCalled();
 	});
 });

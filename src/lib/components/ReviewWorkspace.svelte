@@ -472,6 +472,7 @@
 						? { write: seg.writeHref, plan: seg.planHref }
 						: { write: 'disabled', plan: 'disabled' }}
 					note={seg ? undefined : GUEST_MODE_NOTE}
+					storyId={storyId ?? undefined}
 				/>
 				<SidebarSearch bind:query placeholder="Filter chapters and scenes..." />
 			</div>

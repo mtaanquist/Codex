@@ -30,6 +30,7 @@
 		writeHref,
 		reviewHref,
 		modeNote,
+		storyId,
 		selected,
 		revisionRows,
 		revisionPreview,
@@ -46,6 +47,8 @@
 		writeHref?: ResolvedPathname;
 		reviewHref?: ResolvedPathname;
 		modeNote?: string;
+		// Story scope: the story whose running Assistant jobs show under the strip.
+		storyId?: string;
 		selected: (ComponentProps<typeof NoteEditor>['note'] & { pinned: boolean }) | null;
 		revisionRows: ComponentProps<typeof RevisionHistory>['revisions'];
 		revisionPreview: ComponentProps<typeof RevisionPreview>['revision'] | null;
@@ -81,6 +84,7 @@
 			{writeHref}
 			{reviewHref}
 			{modeNote}
+			{storyId}
 			{form}
 		/>
 		<main id="main" class="pane center">
