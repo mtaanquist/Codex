@@ -476,6 +476,180 @@ describe('anthropicProvider.respond', () => {
 	});
 });
 
+describe('anthropicProvider.respond over a stream', () => {
+	const req = { model: 'claude-x', messages: [], maxTokens: 16 };
+	const frame = (obj: unknown) => `event: x\ndata: ${JSON.stringify(obj)}\n\n`;
+	const start = (usage: Record<string, unknown> = { input_tokens: 9, output_tokens: 1 }) =>
+		frame({ type: 'message_start', message: { usage } });
+	const end = (stop_reason: string, usage: Record<string, unknown> = { output_tokens: 5 }) => [
+		frame({ type: 'message_delta', delta: { stop_reason }, usage }),
+		frame({ type: 'message_stop' })
+	];
+
+	it('asks for a stream so a long reply keeps the connection busy', async () => {
+		let sent: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sent = JSON.parse(init.body ?? '{}');
+			return sseResponse([start(), ...end('end_turn')]);
+		};
+		await anthropicProvider.respond(req, conn, http);
+		expect(sent.stream).toBe(true);
+	});
+
+	it('assembles text deltas, usage and the stop reason', async () => {
+		const frames = [
+			start({ input_tokens: 9, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }),
+			frame({ type: 'ping' }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hel' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'lo' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('end_turn', { output_tokens: 7 })
+		];
+		// Split mid-frame to check lines are reassembled across chunks.
+		const joined = frames.join('');
+		const http: HttpRequest = async () =>
+			sseResponse([joined.slice(0, 50), joined.slice(50, 51), joined.slice(51)]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result).toEqual({
+			content: 'Hello',
+			toolCalls: [],
+			usage: { promptTokens: 129, completionTokens: 7, cachedPromptTokens: 100 },
+			finishReason: 'stop'
+		});
+	});
+
+	it('keeps thinking with its signature ahead of a tool call with split input JSON', async () => {
+		const frames = [
+			start(),
+			frame({
+				type: 'content_block_start',
+				index: 0,
+				content_block: { type: 'thinking', thinking: '' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'thinking_delta', thinking: 'Look up ' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'thinking_delta', thinking: 'Mira.' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'signature_delta', signature: 'sig-abc' }
+			}),
+			frame({ type: 'content_block_stop', index: 0 }),
+			frame({
+				type: 'content_block_start',
+				index: 1,
+				content_block: { type: 'tool_use', id: 'tu1', name: 'find_entity', input: {} }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 1,
+				delta: { type: 'input_json_delta', partial_json: '{"na' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 1,
+				delta: { type: 'input_json_delta', partial_json: 'me":"Mira"}' }
+			}),
+			frame({ type: 'content_block_stop', index: 1 }),
+			frame({
+				type: 'content_block_start',
+				index: 2,
+				content_block: { type: 'tool_use', id: 'tu2', name: 'list_scenes', input: {} }
+			}),
+			frame({ type: 'content_block_stop', index: 2 }),
+			...end('tool_use')
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.finishReason).toBe('toolCalls');
+		expect(result.toolCalls).toEqual([
+			{ id: 'tu1', name: 'find_entity', arguments: '{"name":"Mira"}' },
+			{ id: 'tu2', name: 'list_scenes', arguments: '{}' }
+		]);
+		expect(result.raw).toEqual([
+			{ type: 'thinking', thinking: 'Look up Mira.', signature: 'sig-abc' },
+			{ type: 'tool_use', id: 'tu1', name: 'find_entity', input: { name: 'Mira' } },
+			{ type: 'tool_use', id: 'tu2', name: 'list_scenes', input: {} }
+		]);
+	});
+
+	it('reports a reply cut off at the cap as length', async () => {
+		const frames = [
+			start(),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Half' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('max_tokens', { output_tokens: 16 })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.content).toBe('Half');
+		expect(result.finishReason).toBe('length');
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: 16 });
+	});
+
+	it('still reports length when the cap lands inside tool arguments', async () => {
+		const frames = [
+			start(),
+			frame({
+				type: 'content_block_start',
+				index: 0,
+				content_block: { type: 'tool_use', id: 'tu1', name: 'find_entity', input: {} }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'input_json_delta', partial_json: '{"name":"Mi' }
+			}),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('max_tokens', { output_tokens: 16 })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.finishReason).toBe('length');
+		expect(result.toolCalls).toEqual([{ id: 'tu1', name: 'find_entity', arguments: '{}' }]);
+	});
+
+	it('reads a last frame that has no trailing newline', async () => {
+		const frames = [
+			start(),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			frame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+			'data: {"type":"message_stop"}'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.content).toBe('Hi');
+		expect(result.finishReason).toBe('stop');
+	});
+
+	it('throws on an error event mid-stream', async () => {
+		const frames = [
+			start(),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+			frame({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		await expect(anthropicProvider.respond(req, conn, http)).rejects.toThrow(/Overloaded/);
+	});
+
+	it('throws when the stream ends before message_stop', async () => {
+		const http: HttpRequest = async () => sseResponse([start()]);
+		await expect(anthropicProvider.respond(req, conn, http)).rejects.toThrow(/before the reply/);
+	});
+});
+
 describe('anthropicProvider.chatStream', () => {
 	it('parses text deltas, usage, and the message_stop terminator', async () => {
 		const frames = [
