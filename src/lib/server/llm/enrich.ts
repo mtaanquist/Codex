@@ -183,6 +183,8 @@ export type UniverseEnrichResult = {
 	entities: number;
 	staged: number;
 	failed: number;
+	// Set when the job was stopped (expired, shut down) before the pass finished.
+	aborted?: boolean;
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
 	capped?: boolean;
 	spentUsd?: number;
@@ -229,6 +231,11 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 	return out;
 }
 
+async function dbNow(db: Database): Promise<Date> {
+	const { rows } = await db.execute<{ now: Date | string }>(sql`select now() as now`);
+	return new Date(rows[0].now);
+}
+
 // The background pass: enrich every entity in the universe that has new prose
 // to read, staging suggestions for the writer exactly as the inline button does.
 // Each entity is marked with the time its read started, so an edit made while
@@ -250,14 +257,20 @@ export async function enrichUniverse(
 	let staged = 0;
 	let failed = 0;
 	let capped = false;
+	let aborted = false;
 
 	for (const entity of await entitiesToEnrich(db, userId, universeId)) {
-		if (signal?.aborted) break;
+		if (signal?.aborted) {
+			aborted = true;
+			break;
+		}
 		if (meter.capReached) {
 			capped = true;
 			break;
 		}
-		const startedAt = new Date();
+		// The database clock, which scene saves stamp updated_at with, so a clock
+		// skew between the worker and the database cannot hide an edit.
+		const startedAt = await dbNow(db);
 		try {
 			const rows = await enrichEntity(
 				db,
@@ -272,7 +285,10 @@ export async function enrichUniverse(
 			entities += 1;
 			staged += rows.length;
 		} catch (err) {
-			if (signal?.aborted) break;
+			if (signal?.aborted) {
+				aborted = true;
+				break;
+			}
 			logEvent('error', 'assistant.enrich_failed', { entityId: entity.id, ...errorFields(err) });
 			failed += 1;
 		}
@@ -282,6 +298,7 @@ export async function enrichUniverse(
 		entities,
 		staged,
 		failed,
+		...(aborted ? { aborted: true } : {}),
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};

@@ -486,7 +486,9 @@ export function createHandlers(deps: WorkerDeps) {
 				const name = universe.name;
 				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
 				let title: string;
-				if (result.entities === 0 && result.failed > 0) {
+				if (result.aborted) {
+					title = `The Assistant stopped reading the entries in "${name}" before it finished, with ${suggestions} left. Type /enrich to carry on.`;
+				} else if (result.entities === 0 && result.failed > 0) {
 					title = `The Assistant could not read the entries in "${name}". Check the endpoint in your settings.`;
 				} else if (result.staged === 0) {
 					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
