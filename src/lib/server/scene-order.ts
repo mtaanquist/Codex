@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
+import { markMentionsStale } from './scene-lifecycle.ts';
 
 export type SceneOrder = {
 	chapters: { id: string; sceneIds: string[] }[];
@@ -27,7 +28,7 @@ export async function applySceneOrder(
 		.where(eq(chapters.storyId, storyId));
 	// Trashed scenes sit outside the order until restored.
 	const sceneRows = await db
-		.select({ id: scenes.id })
+		.select({ id: scenes.id, globalPosition: scenes.globalPosition })
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
 
@@ -54,8 +55,7 @@ export async function applySceneOrder(
 		return { ok: false, code: 'conflict', reason: STALE_ORDER };
 	}
 
-	// One UPDATE over unnested arrays instead of a statement per scene; a
-	// single statement is also atomic, so no transaction is needed.
+	// One UPDATE over unnested arrays instead of a statement per scene.
 	const ids: string[] = [];
 	const targetChapters: (string | null)[] = [];
 	const chapterPositions: (number | null)[] = [];
@@ -85,7 +85,10 @@ export async function applySceneOrder(
 				values.map((value) => sql`${value}`),
 				sql`, `
 			);
-		await db.execute(sql`
+		const was = new Map(sceneRows.map((row) => [row.id, row.globalPosition]));
+		const moved = ids.filter((id, i) => was.get(id) !== globalPositions[i]);
+		await db.transaction(async (tx) => {
+			await tx.execute(sql`
 			update scenes set
 				chapter_id = v.chapter_id,
 				position_in_chapter = v.position_in_chapter,
@@ -99,6 +102,9 @@ export async function applySceneOrder(
 			) as v
 			where scenes.id = v.id
 		`);
+			// Arcs retell the character's scenes in reading order.
+			await markMentionsStale(tx, { sceneIds: moved });
+		});
 	}
 	return { ok: true };
 }

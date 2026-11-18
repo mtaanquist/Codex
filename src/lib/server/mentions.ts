@@ -6,7 +6,8 @@ import {
 	entityMentions,
 	placeStoryMemberships,
 	scenes,
-	stories
+	stories,
+	universes
 } from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
 import { listMentionPins } from './mention-pins.ts';
@@ -18,7 +19,7 @@ import {
 	type EntityType
 } from './entity-lookups.ts';
 import { markEntitiesStale } from './scene-lifecycle.ts';
-import { storyAssistantOn, storyIsLive } from './universe-scope.ts';
+import { storyAssistantOn } from './universe-scope.ts';
 
 // Entities declared in the scene's story outrank the rest when a name is
 // shared; see the attribution rules in mention-detect.
@@ -113,10 +114,7 @@ export async function rebuildSceneMentions(
 			bodyMd: scenes.bodyMd,
 			storyId: scenes.storyId,
 			universeId: stories.universeId,
-			deletedAt: scenes.deletedAt,
-			// Whether the Assistant reads this scene. Restoring or unmuting a story
-			// marks what it mentions, so changes made meanwhile need no mark.
-			assistantReads: sql<boolean>`${storyIsLive()} and ${storyAssistantOn()}`
+			deletedAt: scenes.deletedAt
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
@@ -156,6 +154,18 @@ export async function rebuildSceneMentions(
 	}));
 
 	await db.transaction(async (tx) => {
+		// Whether the Assistant reads this scene. Restoring a story or universe,
+		// or unmuting a story, marks what it mentions, so a change made while it
+		// was out of reach needs no mark. The share lock waits for a restore or
+		// mute in flight, so the mark and that change cannot miss each other.
+		const [reach] = await tx
+			.select({
+				reads: sql<boolean>`${stories.deletedAt} is null and ${universes.deletedAt} is null and ${storyAssistantOn()}`
+			})
+			.from(stories)
+			.innerJoin(universes, eq(universes.id, stories.universeId))
+			.where(eq(stories.id, scene.storyId))
+			.for('share');
 		const previous = await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)))
@@ -165,7 +175,7 @@ export async function rebuildSceneMentions(
 				surroundingText: entityMentions.surroundingText
 			});
 		if (rows.length > 0) await tx.insert(entityMentions).values(rows);
-		if (scene.assistantReads) await markEntitiesStale(tx, changedTargets(previous, rows));
+		if (reach?.reads) await markEntitiesStale(tx, changedTargets(previous, rows));
 		// Stamp the watermark in the same transaction. Raw SQL so it does not trip
 		// the scene's updated_at $onUpdate, which would make every scene look
 		// perpetually stale. The context's load time marks "indexed against the

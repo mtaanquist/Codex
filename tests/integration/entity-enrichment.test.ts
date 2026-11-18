@@ -536,6 +536,53 @@ describe('enrichUniverse', () => {
 		expect(calls).toBe(2);
 	});
 
+	it('keeps a mark that lands in the same millisecond as the one it started from', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		await pool.query(
+			`update characters set assistant_enriched_at = '1976-01-01 00:00:00.123456+00' where id = $1`,
+			[bram]
+		);
+		duringCall = async () => {
+			await pool.query(
+				`update characters set assistant_enriched_at = '1976-01-01 00:00:00.123999+00' where id = $1`,
+				[bram]
+			);
+		};
+		try {
+			expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+		} finally {
+			duringCall = null;
+		}
+		expect((await enrichedAt(bram))!.getTime()).toBe(Date.parse('1976-01-01T00:00:00.123Z'));
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+	});
+
+	it('marks an entity newly mentioned while its story is being unmuted', async () => {
+		await makeCharacter({ name: 'Bram' });
+		const cass = await makeCharacter({ name: 'Cass' });
+		await pool.query(`update characters set assistant_enriched_at = now() where id = $1`, [cass]);
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		await db
+			.update(scenes)
+			.set({ bodyMd: 'Bram and Cass at the harbour.' })
+			.where(eq(scenes.id, sceneId));
+		// An unmute holds the story row while the scene is reindexed.
+		const unmute = await pool.connect();
+		try {
+			await unmute.query('begin');
+			await unmute.query(`update stories set llm_config = '{}'::jsonb where id = $1`, [storyId]);
+			const rebuild = rebuildSceneMentions(db, sceneId);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			await unmute.query('commit');
+			await rebuild;
+		} finally {
+			unmute.release();
+		}
+		expect((await enrichedAt(cass))! < new Date('2000-01-01T00:00:00Z')).toBe(true);
+	});
+
 	it('does not read an entity again for a status change, a reorder, or an edit away from it', async () => {
 		await makeCharacter({ name: 'Bram' });
 		const filler = ' The tide ran out over the flats.'.repeat(6);

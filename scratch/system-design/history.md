@@ -1479,7 +1479,16 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       and no migration. Edits outside a mention's snippet window no longer
       trigger a re-read, which is the intended precision. The summary job
       marks arcs for a scene whose summary it rewrites, since arcs read
-      scene summaries. Upgrade note: an entity or arc that was already
+      scene summaries, and a scene rename or a reorder that moves a scene
+      marks arcs only (titles and reading order are arc content, not enrich
+      input). Review follow-ups: restoring a universe (or reviving a trashed
+      standalone one) now marks like a story restore; the rebuild reads
+      whether the Assistant reaches the scene inside its transaction with a
+      share lock on the story and universe rows, so an unmute or restore in
+      flight cannot slip between the read and the mark; and the enrich and
+      arc compare-and-set compare the watermark to the microsecond (carried
+      as text), since a JS Date drops microseconds and marks are now
+      frequent. Upgrade note: an entity or arc that was already
       behind by the old rule at deploy is not re-read until its passages
       change again. For #992, Mads chose "never again once rejected";
       `summaryClosed` in `entity-suggestions.ts` holds the rule, and

@@ -113,20 +113,22 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
  * arc was written or an entity read. */
 export const STALE_MARK_BEFORE = new Date('2000-01-01T00:00:00Z');
 
-/** Marks what these scenes (or this story's scenes) mention for a fresh look:
- * the characters' arcs show as out of date, and with `enrich` the entities are
- * read again on the next enrich pass. Call it before mention rows are deleted,
- * since it reads them. */
+/** Marks what these scenes (or this story's or universe's scenes) mention for
+ * a fresh look: the characters' arcs show as out of date, and with `enrich` the
+ * entities are read again on the next enrich pass. Call it before mention rows
+ * are deleted, since it reads them. */
 export async function markMentionsStale(
 	tx: Database,
-	source: { sceneIds: string[] } | { storyId: string },
+	source: { sceneIds: string[] } | { storyId: string } | { universeId: string },
 	opts: { enrich?: boolean } = {}
 ): Promise<void> {
 	if ('sceneIds' in source && !source.sceneIds.length) return;
 	const from =
 		'sceneIds' in source
 			? sql`m.source_id in ${source.sceneIds}`
-			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
+			: 'storyId' in source
+				? sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`
+				: sql`m.source_id in (select s.id from scenes s join stories st on st.id = s.story_id where st.universe_id = ${source.universeId})`;
 	await markStale(
 		tx,
 		(type) =>

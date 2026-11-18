@@ -293,8 +293,10 @@ export async function enrichUniverse(
 		// A real time, so any mark set while the model reads stands apart from it.
 		const startedAt = await dbNow(db);
 		const table = entityTable(entity.type);
+		// As text, so the check below compares to the microsecond; a JS Date
+		// keeps only milliseconds, and marks land often.
 		const [{ before }] = await db
-			.select({ before: table.assistantEnrichedAt })
+			.select({ before: sql<string | null>`${table.assistantEnrichedAt}::text` })
 			.from(table)
 			.where(eq(table.id, entity.id));
 		try {
@@ -311,7 +313,7 @@ export async function enrichUniverse(
 				.where(
 					and(
 						eq(table.id, entity.id),
-						sql`date_trunc('milliseconds', ${table.assistantEnrichedAt}) is not distinct from ${before}`
+						sql`${table.assistantEnrichedAt} is not distinct from ${before}::timestamptz`
 					)
 				);
 			entities += 1;

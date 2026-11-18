@@ -21,6 +21,9 @@ import { mergeScenes } from '../../src/lib/server/scene-split-merge';
 import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
 import { rebuildSceneMentions, reconcileMentions } from '../../src/lib/server/mentions';
 import { setSceneStatus } from '../../src/lib/server/scene-status';
+import { applySceneOrder } from '../../src/lib/server/scene-order';
+import { saveSceneBody } from '../../src/lib/server/scene-save';
+import { restoreUniverse, trashUniverse } from '../../src/lib/server/universe-lifecycle';
 
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
@@ -264,6 +267,24 @@ describe('summariseCharacterArc', () => {
 		expect(sceneId).toBeTruthy();
 	});
 
+	it('keeps a mark that lands in the same millisecond as the one it started from', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram at the quay' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await pool.query(
+			`update characters set arc_summary_at = '1976-01-01 00:00:00.123456+00' where id = $1`,
+			[bram.id]
+		);
+		duringCall = async () => {
+			await pool.query(
+				`update characters set arc_summary_at = '1976-01-01 00:00:00.123999+00' where id = $1`,
+				[bram.id]
+			);
+		};
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(arcIsStale(await readArc(bram.id))).toBe(true);
+	});
+
 	it('asks nothing for a character no scene mentions', async () => {
 		const bram = await makeCharacter();
 		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
@@ -364,6 +385,68 @@ describe('arc staleness', () => {
 		await db.update(scenes).set({ bodyMd: 'Bram alone.' }).where(eq(scenes.id, privateId));
 		await rebuildSceneMentions(db, privateId);
 		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+	});
+
+	it('goes stale, without an enrich mark, when mentioning scenes change order', async () => {
+		const bram = await makeCharacter();
+		const first = await sceneWithProse('Bram at the harbour.');
+		const [second] = await db
+			.insert(scenes)
+			.values({ storyId: firstStoryId, globalPosition: 2, bodyMd: 'Bram on the road.' })
+			.returning({ id: scenes.id });
+		await rebuildSceneMentions(db, second.id);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const enrichedAt = new Date('2026-01-01T00:00:00Z');
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: enrichedAt })
+			.where(eq(characters.id, bram.id));
+
+		// The same order again moves nothing.
+		const same = { chapters: [], orphanSceneIds: [first, second.id] };
+		expect((await applySceneOrder(db, firstStoryId, same)).ok).toBe(true);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+
+		const swapped = { chapters: [], orphanSceneIds: [second.id, first] };
+		expect((await applySceneOrder(db, firstStoryId, swapped)).ok).toBe(true);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(true);
+		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
+	});
+
+	it('goes stale, without an enrich mark, when a mentioning scene is renamed', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const enrichedAt = new Date('2026-01-01T00:00:00Z');
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: enrichedAt })
+			.where(eq(characters.id, bram.id));
+		const save = {
+			bodyMd: 'Bram at the harbour.',
+			anchors: null,
+			baseHashes: null,
+			overwrite: false
+		};
+
+		expect((await saveSceneBody(db, sceneId, { ...save, title: null })).ok).toBe(true);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+		expect((await saveSceneBody(db, sceneId, { ...save, title: 'Low tide' })).ok).toBe(true);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(true);
+		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
+	});
+
+	it('goes stale, and is marked for enrichment, when its universe is restored', async () => {
+		const bram = await makeCharacter();
+		await sceneWithProse('Bram at the harbour.');
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(await trashUniverse(db, ownerId, universeId)).toBe(true);
+		expect(await restoreUniverse(db, ownerId, universeId)).toBe(true);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(true);
+		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 
 	it('goes stale when a new scene summary is written for a mentioning scene', async () => {

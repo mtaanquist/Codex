@@ -105,7 +105,9 @@ export async function summariseCharacterArc(
 			id: characters.id,
 			name: characters.name,
 			universeId: characters.universeId,
-			arcSummaryAt: characters.arcSummaryAt
+			arcSummaryAt: characters.arcSummaryAt,
+			// As text, so the write below compares to the microsecond.
+			arcSummaryAtText: sql<string | null>`${characters.arcSummaryAt}::text`
 		})
 		.from(characters)
 		.where(
@@ -175,7 +177,7 @@ export async function summariseCharacterArc(
 				arcSummaryMd: text,
 				// An unmute or a scene delete while the model was writing marked the
 				// arc out of date; that mark stands.
-				arcSummaryAt: sql`case when date_trunc('milliseconds', ${characters.arcSummaryAt}) is not distinct from ${character.arcSummaryAt} then ${startedAt} else ${characters.arcSummaryAt} end`,
+				arcSummaryAt: sql`case when ${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz then ${startedAt} else ${characters.arcSummaryAt} end`,
 				updatedAt: sql`${characters.updatedAt}`
 			})
 			.where(eq(characters.id, character.id));
