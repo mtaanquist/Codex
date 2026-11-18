@@ -639,17 +639,37 @@ describe('anthropicProvider.respond over a stream', () => {
 		expect(result.finishReason).toBe('stop');
 	});
 
-	it('throws a reply error on an error event mid-stream', async () => {
-		const frames = [
-			start(),
-			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
-			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
-			frame({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })
-		];
-		const http: HttpRequest = async () => sseResponse(frames);
-		const failure = anthropicProvider.respond(req, conn, http);
-		await expect(failure).rejects.toThrow(/Overloaded/);
-		await expect(failure).rejects.toBeInstanceOf(EndpointReplyError);
+	const errorMidStream = (error: unknown) => [
+		start(),
+		frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+		frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+		frame({ type: 'error', error })
+	];
+
+	it('reports an overload or server fault mid-stream as the status a buffered call gets', async () => {
+		for (const [type, status] of [
+			['overloaded_error', 529],
+			['api_error', 500]
+		] as const) {
+			const http: HttpRequest = async () =>
+				sseResponse(errorMidStream({ type, message: 'Overloaded' }));
+			const failure = anthropicProvider.respond(req, conn, http);
+			await expect(failure).rejects.toThrow(`Endpoint returned ${status}: Overloaded`);
+			await expect(failure).rejects.not.toBeInstanceOf(EndpointReplyError);
+		}
+	});
+
+	it('throws a reply error on any other error event mid-stream', async () => {
+		for (const error of [
+			{ type: 'invalid_request_error', message: 'Bad' },
+			{ type: 'constructor', message: 'Bad' },
+			{ message: 'Bad' }
+		]) {
+			const http: HttpRequest = async () => sseResponse(errorMidStream(error));
+			const failure = anthropicProvider.respond(req, conn, http);
+			await expect(failure).rejects.toThrow(/Bad/);
+			await expect(failure).rejects.toBeInstanceOf(EndpointReplyError);
+		}
 	});
 
 	it('throws when the stream ends before any stop reason', async () => {

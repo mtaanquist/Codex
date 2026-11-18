@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
 	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
+	LEGACY_ASSISTANT_REVIEW_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE
 } from '../lib/server/queues.ts';
 import * as schema from '../lib/server/db/schema.ts';
@@ -45,7 +46,7 @@ import {
 	reviewUniverseContinuity
 } from '../lib/server/llm/scene-review.ts';
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
-import type { ReviewCategory } from '../lib/review-shape.ts';
+import { parseCategories, type ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.ts';
 import {
@@ -153,6 +154,15 @@ export function createHandlers(deps: WorkerDeps) {
 		await queueDigests(await insertNotifications(db, [userId], kind, payload));
 	}
 
+	// LEGACY (#1041): what a review queued before the upgrade checked, read from
+	// its job, for continuing a run it capped (see adoptCappedRun). Null when
+	// pg-boss no longer has the job, or it does not say.
+	async function legacyJobCategories(jobId: string): Promise<ReviewCategory[] | null> {
+		const found = await boss.getJobById(LEGACY_ASSISTANT_REVIEW_QUEUE, jobId);
+		const categories = (found?.data as { categories?: unknown } | undefined)?.categories;
+		return Array.isArray(categories) ? parseCategories(categories) : null;
+	}
+
 	// One character's arc, from an assistant-enrich job that names it.
 	async function characterArc(job: JobWithMetadata<AssistantEnrichData>, characterId: string) {
 		const { userId, universeId } = job.data;
@@ -181,7 +191,9 @@ export function createHandlers(deps: WorkerDeps) {
 					? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
 					: result.outcome === 'unchanged'
 						? `The arc for ${character.name} is up to date. Nothing it reads has changed since it was written.`
-						: `The Assistant wrote the arc for ${character.name}.`;
+						: result.outcome === 'changed'
+							? `Something the arc for ${character.name} reads changed while the Assistant was checking it, so the arc is still out of date. To bring it up to date, ${ARC_AGAIN}.`
+							: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
 			if (error instanceof ReplyCutOffError) {
@@ -471,7 +483,8 @@ export function createHandlers(deps: WorkerDeps) {
 						chapterId,
 						categories,
 						jobId: job.id,
-						signal: job.signal
+						signal: job.signal,
+						legacyJobCategories
 					});
 					const problem = firstFailure(result.failures);
 					if (result.capped) {

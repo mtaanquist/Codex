@@ -382,6 +382,12 @@ type BufferedMessage = { content?: unknown; usage?: unknown; stop_reason?: unkno
 
 type Block = Record<string, unknown>;
 
+// The status a buffered call gets for the errors Anthropic sends mid-stream.
+const STREAM_ERROR_STATUS = new Map<unknown, number>([
+	['overloaded_error', 529],
+	['api_error', 500]
+]);
+
 // Rebuild, from a stream, the message a non-streaming call returns: content
 // blocks by index (thinking with its signature, tool_use with its input JSON
 // put back together), the stop reason, and usage, whose input side arrives on
@@ -401,7 +407,7 @@ async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<Buffere
 			delta?: Block;
 			message?: { usage?: Block };
 			usage?: Block;
-			error?: { message?: unknown };
+			error?: { type?: unknown; message?: unknown };
 		};
 		const index = typeof frame.index === 'number' ? frame.index : -1;
 		const block = blocks[index];
@@ -447,12 +453,16 @@ async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<Buffere
 				break;
 			case 'message_stop':
 				return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
-			case 'error':
-				throw new EndpointReplyError(
-					`Endpoint stream error: ${
-						typeof frame.error?.message === 'string' ? frame.error.message : 'unknown error'
-					}`
-				);
+			case 'error': {
+				const message =
+					typeof frame.error?.message === 'string' ? frame.error.message : 'unknown error';
+				// Once a stream is open, overload and server faults arrive here
+				// instead of as a 529 or 500. Reported as that status, so the gateway
+				// retries them as it would the status.
+				const status = STREAM_ERROR_STATUS.get(frame.error?.type);
+				if (status) throw new Error(`Endpoint returned ${status}: ${message}`);
+				throw new EndpointReplyError(`Endpoint stream error: ${message}`);
+			}
 		}
 	}
 	// Some Anthropic-compatible endpoints close the body after message_delta

@@ -62,9 +62,6 @@ export async function restoreStory(
 	const story = await ownedStoryRow(db, userId, storyId, { deleted: true });
 	if (!story) return false;
 	await untrash(db, 'stories', story.id);
-	// Its scenes are older than arcs and enrich marks written while it was in
-	// the trash, so neither would notice it is back.
-	await markMentionsStale(db, { storyId: story.id }, { enrich: true });
 	return true;
 }
 

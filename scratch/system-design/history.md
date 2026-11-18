@@ -1461,6 +1461,33 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 2 (#1064-#1068, 2026-11-18). Writer trust
+      first. `adoptCappedRun` took the newest capped row for a scope, so a
+      capped run that a later run had finished was carried into a fresh
+      review weeks later, which then skipped (and reported reviewed) scenes
+      the writer had rewritten. It now looks only at the newest row for the
+      scope and adopts it only if that row was capped (#1064). Clearing or
+      flagging the adopted row was weighed and dropped: the newest-row rule
+      covers it with no extra write. Copyedit keys gained their categories in
+      #1062, which orphaned runs capped before the upgrade (#1065). The old
+      rows do not record their categories, and adopting one for any
+      categories would report scenes as checked for categories nobody
+      checked, so the fallback reads the categories from the old job on the
+      legacy queue (pg-boss keeps a completed job for seven days by default)
+      and adopts only the newest legacy row, only if capped, only on a match.
+      A forgotten job starts the run over. Remove it with the legacy queues
+      (#1041). Reverses part of #1050: a stream `overloaded_error` or
+      `api_error` is now thrown as `Endpoint returned 529` or `500`, so the
+      gateway retries it exactly as it does that status (#1066). The earlier
+      reasoning held that a job's retry would try again, but the review and
+      summaries handlers catch everything, so nothing did, while a buffered
+      529 had always been retried. Other stream errors and a 2xx that is not
+      a reply stay final. An arc check whose compare-and-set loses to a mark
+      now returns `changed` with its own notice instead of `unchanged` (the
+      "up to date" notice) (#1067). `untrash` now marks what the row mentions
+      in the same transaction as the revive, one transaction per slug attempt
+      so a unique violation does not abort the retry; the three callers no
+      longer mark separately (#1068). Filed and left open: #1069-#1076.
 - [x] Review follow-ups on the enrich and arc marks (#1047, #1055-#1061,
       2026-11-18). Writer trust first. `rebuildSceneMentions` marked entities
       before stamping the scene, while saves (a title change), reorders, trash,

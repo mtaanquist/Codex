@@ -2012,16 +2012,56 @@ describe('gateway request retries', () => {
 	const sse = (frames: unknown[]) =>
 		frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('');
 
-	it('does not retry an error event partway through the stream', async () => {
+	const failingStream = (error: unknown) =>
+		sse([
+			{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+			{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+			{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hal' } },
+			{ type: 'error', error }
+		]);
+
+	it('retries an overload partway through the stream, as it would a 529', async () => {
+		await configure(true);
+		let attempt = 0;
+		const endpoint = scriptedHttp(() => {
+			attempt += 1;
+			return {
+				type: 'text/event-stream',
+				body:
+					attempt === 1
+						? failingStream({ type: 'overloaded_error', message: 'Overloaded' })
+						: sse([
+								{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+								{
+									type: 'content_block_start',
+									index: 0,
+									content_block: { type: 'text', text: '' }
+								},
+								{
+									type: 'content_block_delta',
+									index: 0,
+									delta: { type: 'text_delta', text: 'whole' }
+								},
+								{ type: 'content_block_stop', index: 0 },
+								{ type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+								{ type: 'message_stop' }
+							])
+			};
+		});
+		const reply = await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+		);
+		expect(reply).toBe('whole');
+		expect(endpoint.calls()).toBe(2);
+	});
+
+	it('gives up on a stream that keeps failing with a server fault after the usual retries', async () => {
 		await configure(true);
 		const endpoint = scriptedHttp(() => ({
 			type: 'text/event-stream',
-			body: sse([
-				{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
-				{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-				{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hal' } },
-				{ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
-			])
+			body: failingStream({ type: 'api_error', message: 'Internal error' })
 		}));
 		await expect(
 			complete(
@@ -2029,7 +2069,23 @@ describe('gateway request retries', () => {
 				{ userId, role: 'chat', messages: [] },
 				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
 			)
-		).rejects.toThrow(/Overloaded/);
+		).rejects.toThrow(/Endpoint returned 500: Internal error/);
+		expect(endpoint.calls()).toBe(3);
+	});
+
+	it('does not retry any other error event partway through the stream', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({
+			type: 'text/event-stream',
+			body: failingStream({ type: 'invalid_request_error', message: 'Bad request' })
+		}));
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/Bad request/);
 		expect(endpoint.calls()).toBe(1);
 	});
 

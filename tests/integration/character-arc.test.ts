@@ -600,6 +600,43 @@ describe('arc staleness', () => {
 		expect((await readCharacter(bram.id)).arcSummaryMd).toBe('A different arc.');
 	});
 
+	it('does not call an arc up to date when a mark lands while it is checked', async () => {
+		const bram = await makeCharacter();
+		const filler = ' The tide ran out over the flats.'.repeat(6);
+		const sceneId = await sceneWithProse(`Bram at the harbour.${filler} Bram waved.`);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(scenes)
+			.set({ bodyMd: `Bram at the harbour.${filler} Bram waved twice.` })
+			.where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+
+		// Another save marks the arc and holds its row, so the check reads the
+		// earlier mark and then waits on the row until the save commits.
+		const save = await pool.connect();
+		try {
+			await save.query('begin');
+			await save.query(
+				`update characters set arc_summary_at = clock_timestamp() - interval '50 years' where id = $1`,
+				[bram.id]
+			);
+			const check = summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+			for (let i = 0; i < 100; i++) {
+				const { rows } = await pool.query(
+					`select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`
+				);
+				if (rows[0].n > 0) break;
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			await save.query('commit');
+			expect((await check).outcome).toBe('changed');
+		} finally {
+			save.release(true);
+		}
+		expect(calls).toBe(1);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(true);
+	});
+
 	it('rewrites a current arc when asked, even with nothing changed', async () => {
 		const bram = await makeCharacter();
 		await sceneWithProse('Bram at the harbour.');
@@ -650,6 +687,42 @@ describe('arc staleness', () => {
 		const [restored] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(arcIsStale(restored)).toBe(true);
 		expect(restored.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+});
+
+describe('a restore that cannot mark what it brings back', () => {
+	// Any update to characters fails, the way a dropped connection would fail the
+	// mark after the row was revived.
+	async function withFailingMark(run: () => Promise<unknown>) {
+		await pool.query(`create or replace function arc_test_fail() returns trigger as $$
+			begin raise exception 'mark failed'; end $$ language plpgsql`);
+		await pool.query(
+			'create trigger arc_test_fail before update on characters for each statement execute function arc_test_fail()'
+		);
+		try {
+			await expect(run()).rejects.toThrow();
+		} finally {
+			await pool.query('drop trigger arc_test_fail on characters');
+			await pool.query('drop function arc_test_fail()');
+		}
+	}
+
+	it('leaves a story in the trash', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		expect(await trashStory(db, ownerId, secondStoryId)).toBe(true);
+		await withFailingMark(() => restoreStory(db, ownerId, secondStoryId));
+		const [story] = await db.select().from(stories).where(eq(stories.id, secondStoryId));
+		expect(story.deletedAt).not.toBeNull();
+	});
+
+	it('leaves a universe in the trash', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		expect(await trashUniverse(db, ownerId, universeId)).toBe(true);
+		await withFailingMark(() => restoreUniverse(db, ownerId, universeId));
+		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
+		expect(universe.deletedAt).not.toBeNull();
 	});
 });
 

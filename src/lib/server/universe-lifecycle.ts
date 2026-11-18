@@ -21,7 +21,6 @@ import {
 } from './db/schema.ts';
 import { scheduleObjectDeletions } from './assets.ts';
 import { untrash } from './slugs.ts';
-import { markMentionsStale } from './scene-lifecycle.ts';
 import { ENTITY_TYPES, entityTable } from './entity-lookups.ts';
 import { deleteStoryWithin, type Tx } from './story-delete.ts';
 import { ownedUniverseRow } from './universe-scope.ts';
@@ -54,9 +53,6 @@ export async function restoreUniverse(
 	const universe = await ownedUniverseRow(db, userId, universeId, { deleted: true });
 	if (!universe) return false;
 	await untrash(db, 'universes', universe.id);
-	// Its scenes are older than arcs and enrich marks written while it was in
-	// the trash, so neither would notice it is back.
-	await markMentionsStale(db, { universeId: universe.id }, { enrich: true });
 	return true;
 }
 
