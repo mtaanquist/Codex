@@ -1176,7 +1176,9 @@ export const reviewThreads = pgTable(
 			.unique(),
 		resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 		resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id),
-		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+		createdAt: timestamp('created_at', { withTimezone: true })
+			.notNull()
+			.default(sql`clock_timestamp()`)
 	},
 	(table) => [
 		index('review_threads_scene_idx').on(table.sceneId),
@@ -1203,7 +1205,9 @@ export const reviewComments = pgTable(
 		// rename relabels past comments on the fly.
 		assistant: boolean('assistant').notNull().default(false),
 		bodyMd: text('body_md').notNull(),
-		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		createdAt: timestamp('created_at', { withTimezone: true })
+			.notNull()
+			.default(sql`clock_timestamp()`),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
@@ -1245,7 +1249,9 @@ export const reviewSuggestions = pgTable(
 			.default('pending'),
 		decidedByUserId: uuid('decided_by_user_id').references(() => users.id),
 		decidedAt: timestamp('decided_at', { withTimezone: true }),
-		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+		createdAt: timestamp('created_at', { withTimezone: true })
+			.notNull()
+			.default(sql`clock_timestamp()`)
 	},
 	(table) => [
 		index('review_suggestions_scene_idx').on(table.sceneId),

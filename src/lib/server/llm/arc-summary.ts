@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
-import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { dbNow } from './enrich.ts';
 
@@ -79,12 +79,14 @@ async function arcScenes(
 // Whether a cached arc is out of date: a scene that mentions the character
 // changed after the arc was written, or was deleted since (or its story was).
 // An arc never written is not stale (there is nothing to refresh, only to
-// write).
+// write). A watermark at the start of time was set on purpose (a scene it read
+// was deleted, or a story was unmuted) and always counts as stale.
 export async function arcIsStale(
 	db: Database,
 	character: { id: string; universeId: string; arcSummaryAt: Date | null }
 ): Promise<boolean> {
 	if (!character.arcSummaryAt) return false;
+	if (character.arcSummaryAt.getTime() === 0) return true;
 	const [row] = await db
 		.select({ lastChanged: max(scenes.updatedAt) })
 		.from(entityMentions)
@@ -105,9 +107,7 @@ export async function arcIsStale(
 	if (lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime()) return true;
 	const [gone] = await db
 		.select({
-			lastDeleted: sql<
-				Date | string | null
-			>`max(greatest(${scenes.deletedAt}, ${stories.deletedAt}))`
+			lastDeleted: sql<Date | string | null>`max(${stories.deletedAt})`
 		})
 		.from(entityMentions)
 		.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
@@ -139,7 +139,12 @@ export async function summariseCharacterArc(
 ): Promise<ArcResult> {
 	const { userId, characterId, signal } = opts;
 	const [character] = await db
-		.select({ id: characters.id, name: characters.name, universeId: characters.universeId })
+		.select({
+			id: characters.id,
+			name: characters.name,
+			universeId: characters.universeId,
+			arcSummaryAt: characters.arcSummaryAt
+		})
 		.from(characters)
 		.where(
 			and(
@@ -181,7 +186,7 @@ export async function summariseCharacterArc(
 		deps
 	);
 	if (result.cutOff) {
-		throw new Error(
+		throw new ReplyCutOffError(
 			'The arc was cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
 		);
 	}
@@ -206,7 +211,9 @@ export async function summariseCharacterArc(
 			.update(characters)
 			.set({
 				arcSummaryMd: text,
-				arcSummaryAt: startedAt,
+				// An unmute or a scene delete while the model was writing marked the
+				// arc out of date; that mark stands.
+				arcSummaryAt: sql`case when date_trunc('milliseconds', ${characters.arcSummaryAt}) is not distinct from ${character.arcSummaryAt} then ${startedAt} else ${characters.arcSummaryAt} end`,
 				updatedAt: sql`${characters.updatedAt}`
 			})
 			.where(eq(characters.id, character.id));

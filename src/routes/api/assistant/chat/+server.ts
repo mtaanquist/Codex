@@ -7,7 +7,7 @@ import {
 	requireAssistantUniverse,
 	requireChat
 } from '#lib/server/llm/assistant-route';
-import { chatTitle } from '#lib/assistant-chat';
+import { CHAT_MISSING, chatTitle } from '#lib/assistant-chat';
 import {
 	assembleContext,
 	buildSystemMessage,
@@ -109,7 +109,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			content: newest.content,
 			meta: newest.reference ? { reference: newest.reference } : null
 		});
-		if (!stored) error(404, 'That chat does not exist.');
+		if (!stored) error(404, CHAT_MISSING);
 	}
 
 	// The assembled world rides as a system message after the gateway's persona

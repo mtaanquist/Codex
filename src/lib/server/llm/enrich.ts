@@ -2,7 +2,7 @@ import { and, asc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
-import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { resolveLlmConfig } from './config.ts';
 import { SpendMeter } from './spend.ts';
 import { buildEnrichMessage } from './prompts/enrich.ts';
@@ -172,7 +172,7 @@ export async function enrichEntity(
 	// Cut-off JSON parses to nothing; failing keeps the entity unmarked so the
 	// next pass reads it again.
 	if (result.cutOff) {
-		throw new Error(
+		throw new ReplyCutOffError(
 			'The suggestions were cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
 		);
 	}
@@ -192,6 +192,8 @@ export type UniverseEnrichResult = {
 	entities: number;
 	staged: number;
 	failed: number;
+	// Why a read failed, when it was a reply cut off at the limit.
+	cutOff?: string;
 	// Set when the job was stopped (expired, shut down) before the pass finished.
 	aborted?: boolean;
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
@@ -268,6 +270,7 @@ export async function enrichUniverse(
 	let failed = 0;
 	let capped = false;
 	let aborted = false;
+	let cutOff: string | undefined;
 
 	for (const entity of await entitiesToEnrich(db, userId, universeId)) {
 		if (signal?.aborted) {
@@ -281,17 +284,28 @@ export async function enrichUniverse(
 		// The database clock, which scene saves stamp updated_at with, so a clock
 		// skew between the worker and the database cannot hide an edit.
 		const startedAt = await dbNow(db);
+		const table = entityTable(entity.type);
+		const [{ before }] = await db
+			.select({ before: table.assistantEnrichedAt })
+			.from(table)
+			.where(eq(table.id, entity.id));
 		try {
 			const rows = await enrichEntity(
 				db,
 				{ userId, scope: { universeId }, entityId: entity.id, meter, signal },
 				deps
 			);
-			const table = entityTable(entity.type);
+			// An unmute while the model was reading cleared the mark so the next
+			// pass reads the entity again; that stands.
 			await db
 				.update(table)
 				.set({ assistantEnrichedAt: startedAt, updatedAt: sql`${table.updatedAt}` })
-				.where(eq(table.id, entity.id));
+				.where(
+					and(
+						eq(table.id, entity.id),
+						sql`date_trunc('milliseconds', ${table.assistantEnrichedAt}) is not distinct from ${before}`
+					)
+				);
 			entities += 1;
 			staged += rows.length;
 		} catch (err) {
@@ -301,6 +315,7 @@ export async function enrichUniverse(
 			}
 			logEvent('error', 'assistant.enrich_failed', { entityId: entity.id, ...errorFields(err) });
 			failed += 1;
+			if (err instanceof ReplyCutOffError) cutOff = err.message;
 		}
 	}
 
@@ -308,6 +323,7 @@ export async function enrichUniverse(
 		entities,
 		staged,
 		failed,
+		...(cutOff ? { cutOff } : {}),
 		...(aborted ? { aborted: true } : {}),
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})

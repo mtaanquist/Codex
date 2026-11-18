@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	chapters,
@@ -90,6 +90,27 @@ function cleanNote(raw: string): string | null | ActionFailure {
 		};
 	}
 	return note || null;
+}
+
+// The saved scenes that sit in the deleted list: deleted themselves, or added
+// back from a draft and that copy deleted. Paired the way the live outline is.
+export async function draftScenesInTrash(
+	db: Database,
+	storyId: string,
+	saved: { id: string }[]
+): Promise<string[]> {
+	const trashed = await db
+		.select({
+			id: scenes.id,
+			origin: sql<string | null>`${scenes.metadata} ->> ${FROM_DRAFT_SCENE}`,
+			root: sql<
+				string | null
+			>`coalesce(${scenes.metadata} ->> ${FIRST_DRAFT_SCENE}, ${scenes.metadata} ->> ${FROM_DRAFT_SCENE})`
+		})
+		.from(scenes)
+		.where(and(eq(scenes.storyId, storyId), isNotNull(scenes.deletedAt)))
+		.orderBy(sql`${scenes.deletedAt} desc`);
+	return [...matchScenes(saved, trashed).values()];
 }
 
 // Everything the draft freezes, read through one connection. The caller

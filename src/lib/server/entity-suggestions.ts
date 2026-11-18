@@ -178,6 +178,11 @@ export async function decideEntitySuggestion(
 	id: string,
 	decision: 'accept' | 'reject'
 ): Promise<{ ok: true; reindexUniverseId?: string } | ActionFailure> {
+	const gone: ActionFailure = {
+		ok: false,
+		code: 'not_found',
+		reason: 'That suggestion no longer exists.'
+	};
 	const [s] = await db
 		.select()
 		.from(entitySuggestions)
@@ -188,32 +193,40 @@ export async function decideEntitySuggestion(
 				eq(entitySuggestions.status, 'pending')
 			)
 		);
-	if (!s) return { ok: false, code: 'not_found', reason: 'That suggestion no longer exists.' };
+	if (!s) return gone;
+
+	// Only a still-pending row is decided, so a double click or a second tab
+	// cannot apply the same suggestion twice.
+	const stillPending = and(eq(entitySuggestions.id, id), eq(entitySuggestions.status, 'pending'));
 
 	if (decision === 'reject') {
-		await db
+		const rejected = await db
 			.update(entitySuggestions)
 			.set({ status: 'rejected', decidedAt: new Date() })
-			.where(eq(entitySuggestions.id, id));
-		return { ok: true };
+			.where(stillPending)
+			.returning({ id: entitySuggestions.id });
+		return rejected.length ? { ok: true } : gone;
 	}
 
 	const kind = s.entityKind as EntityKind;
 	let universeId: string | null = null;
 	try {
 		await db.transaction(async (tx) => {
+			const claimed = await tx
+				.update(entitySuggestions)
+				.set({ status: 'accepted', decidedAt: new Date() })
+				.where(stillPending)
+				.returning({ id: entitySuggestions.id });
+			if (!claimed.length) throw new AlreadyDecided();
 			universeId = await applyToEntity(tx, ownerId, kind, s.entityId, {
 				field: s.field as SuggestionField,
 				label: s.label,
 				value: s.value
 			});
 			await recordEntityRevision(tx, REVISION_TYPE[kind], s.entityId, 'suggestion');
-			await tx
-				.update(entitySuggestions)
-				.set({ status: 'accepted', decidedAt: new Date() })
-				.where(eq(entitySuggestions.id, id));
 		});
 	} catch (error) {
+		if (error instanceof AlreadyDecided) return gone;
 		if (error instanceof SummaryTaken) {
 			return {
 				ok: false,
@@ -231,6 +244,7 @@ export async function decideEntitySuggestion(
 // A summary suggestion can sit pending for days; the writer may have written
 // their own since, and accepting must never replace it.
 class SummaryTaken extends Error {}
+class AlreadyDecided extends Error {}
 
 // Apply one field to the entity inside a transaction, returning its universe.
 // Throws if the entity is not the user's (rolls the transaction back).

@@ -72,6 +72,15 @@ export class AssistantDisabledError extends Error {
 	}
 }
 
+// A reply stopped at its token limit. Trying again with the same limit stops in
+// the same place, so the worker reports it instead of retrying.
+export class ReplyCutOffError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ReplyCutOffError';
+	}
+}
+
 // The absolute ceiling on tool calls in one run, whatever the request asks
 // for; a cross-scene pass over a long story is the case that needs the room.
 const REQUEST_TOOL_BUDGET_CEILING = 200;

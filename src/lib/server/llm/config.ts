@@ -723,7 +723,7 @@ export async function saveStoryLlmOverride(
 			.where(eq(stories.id, storyId))
 			.for('update');
 		await tx.update(stories).set({ llmConfig: expression }).where(eq(stories.id, storyId));
-		if (patch.enabled === false) {
+		if (patch.enabled === false && !before?.muted) {
 			// A character arc written before the mute may retell this story, and
 			// it is sent with every other story's context. Which stories an arc
 			// read is not kept, and today's mentions can differ from the ones it
