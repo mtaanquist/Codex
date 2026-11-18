@@ -36,6 +36,17 @@
 				} catch (e) {
 					/* default accent stands */
 				}
+				// Side column widths chosen by dragging (src/lib/pane-widths.ts).
+				try {
+					var paneRe = /^clamp\(\d+px, \d+px, \d+vw\)$/;
+					['left', 'right'].forEach(function (side) {
+						var w = localStorage.getItem(side === 'left' ? 'codex-left-w' : 'codex-right-w');
+						if (w && paneRe.test(w))
+							document.documentElement.style.setProperty('--' + side + '-w', w);
+					});
+				} catch (e) {
+					/* default widths stand */
+				}
 			})();
 		</script>
 		%sveltekit.head%

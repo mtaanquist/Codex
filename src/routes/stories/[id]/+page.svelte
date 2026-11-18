@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { withQuery } from '#lib/href';
 	import { focusShownPane } from '#lib/pane-focus';
@@ -818,6 +819,7 @@
 	</nav>
 	<div class="body" data-mtab={paneTab}>
 		<aside class="pane left" aria-label={LEFT_PANE_LABEL} tabindex="-1" bind:this={paneEls.nav}>
+			<PaneResizer side="left" />
 			<div class="left-head">
 				<ModeSwitcher
 					active="write"
@@ -1034,6 +1036,7 @@
 			{/if}
 		</main>
 		<aside class="pane right" aria-label={RIGHT_PANE_LABEL} tabindex="-1" bind:this={paneEls.notes}>
+			<PaneResizer side="right" />
 			{#if inspectStack.length > 0}
 				{#if inspectCard}
 					<EntityCard
