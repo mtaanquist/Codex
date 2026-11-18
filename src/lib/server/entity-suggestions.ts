@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { entitySuggestions } from './db/schema';
@@ -86,7 +86,8 @@ async function loadEntity(
 
 // Stage proposals as pending suggestions, dropping any that duplicate what the
 // entity already has, an already-pending suggestion, or one the writer rejected:
-// an alias already listed or turned down, a detail whose label exists (or that
+// an alias already listed or ever suggested before (so one the writer accepted
+// and later removed stays gone), a detail whose label exists (or that
 // exact label and value was turned down), or a summary when one is set or
 // pending. Returns the staged rows. Skips silently when the entity is not the
 // user's.
@@ -110,8 +111,7 @@ export async function stageEntitySuggestions(
 			and(
 				eq(entitySuggestions.ownerId, ownerId),
 				eq(entitySuggestions.entityKind, kind),
-				eq(entitySuggestions.entityId, entityId),
-				inArray(entitySuggestions.status, ['pending', 'rejected'])
+				eq(entitySuggestions.entityId, entityId)
 			)
 		);
 	const pending = earlier.filter((p) => p.status === 'pending');

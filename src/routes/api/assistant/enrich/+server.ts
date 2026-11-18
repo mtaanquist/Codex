@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The enrichment is owner-scoped (the entity is checked against the same
 	// user inside enrichEntity).
 	let scope: EnrichScope;
-	if (payload.universeId !== undefined) {
+	if (typeof payload.universeId === 'string') {
 		const universe = await requireAssistantUniverse(userId, payload.universeId);
 		scope = { universeId: universe.id };
 	} else {
