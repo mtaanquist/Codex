@@ -555,8 +555,8 @@
 		if (intent.kind === 'reference') {
 			reference = { sceneId: intent.sceneId, text: intent.text };
 			composer?.focus();
-		} else if (intent.kind === 'send') {
-			void send(intent.text);
+		} else if (intent.kind === 'prefill') {
+			prefill(intent.text);
 		} else if (intent.kind === 'catchup') {
 			void catchUp();
 		} else if (intent.kind === 'focus') {
@@ -660,10 +660,25 @@
 		}
 	}
 
-	function grow(event: Event) {
-		const el = event.target as HTMLTextAreaElement;
+	// The textarea's value is one-way bound, so it is written here directly to
+	// be sized and to place the cursor at the end in the same tick.
+	function prefill(text: string) {
+		input = text;
+		if (!composer) return;
+		composer.value = text;
+		fit(composer);
+		composer.focus();
+		composer.setSelectionRange(text.length, text.length);
+	}
+
+	function fit(el: HTMLTextAreaElement) {
 		el.style.height = 'auto';
 		el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+	}
+
+	function grow(event: Event) {
+		const el = event.target as HTMLTextAreaElement;
+		fit(el);
 		input = el.value;
 	}
 

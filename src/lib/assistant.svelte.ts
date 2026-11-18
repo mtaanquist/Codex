@@ -8,8 +8,8 @@ export type AssistantIntent =
 	// Put a reference to scene text into the composer; the writer adds their
 	// question and sends.
 	| { kind: 'reference'; sceneId: string; text: string }
-	// Send a canned message as the writer's turn right away.
-	| { kind: 'send'; text: string }
+	// Put a starter prompt into the composer for the writer to edit and send.
+	| { kind: 'prefill'; text: string }
 	// Run the recap ("catch me up").
 	| { kind: 'catchup' }
 	// Just open the tab and focus the composer.

@@ -556,14 +556,14 @@
 		});
 	}
 
-	// "Suggest where to split": a canned chat turn naming the scene, so the
-	// Assistant reads it and stages a split proposal to confirm.
+	// "Suggest where to split": a starter prompt naming the scene, put in the
+	// composer so the writer can edit it (say, three scenes) before sending.
 	function suggestSplit(sceneId: string) {
 		rowMenu = null;
 		const scene = data.scenes.find((s) => s.id === sceneId);
 		const label = scene?.title ? `the scene "${scene.title}"` : 'this scene';
 		assistantIntent.pending = {
-			kind: 'send',
+			kind: 'prefill',
 			text: `Suggest a natural place to split ${label} (scene id: ${sceneId}) in two. Read the scene first, then propose the split for me to confirm, quoting the exact words the new scene should open with.`
 		};
 	}
