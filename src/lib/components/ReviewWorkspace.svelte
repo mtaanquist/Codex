@@ -353,6 +353,17 @@
 		rowMenuTrigger = null;
 	}
 
+	// The row menu's "Review with the Assistant..."; back on the row first, so
+	// closing the modal returns focus there.
+	function openReviewFor(request: { sceneId?: string; chapterId?: string }) {
+		closeRowMenu(true);
+		openReviewModal({
+			level: request.sceneId ? 'scene' : 'chapter',
+			sceneId: request.sceneId,
+			chapterId: request.chapterId
+		});
+	}
+
 	// Copies a scene in full directly after itself; the new scene becomes the one
 	// under review.
 	async function duplicateScene(sceneId: string) {
@@ -646,7 +657,7 @@
 	<StoryRowMenu
 		menu={rowMenu}
 		chapterCount={chapters.length}
-		assistantEnabled={false}
+		assistantEnabled={assistantSurfaces}
 		{selectedSceneId}
 		{mergeSelection}
 		onClose={closeRowMenu}
@@ -654,8 +665,7 @@
 			renamingChapterId = id;
 			rowMenu = null;
 		}}
-		onOpenReview={() => {}}
-		onSuggestSplit={() => {}}
+		onOpenReview={openReviewFor}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}
 	/>
