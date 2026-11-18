@@ -1933,6 +1933,23 @@ shipping as its own PR.
 
 ## Feedback backlog
 
+Running Assistant jobs after a reload (#963, 2026-11-18): the activity center
+and the review modal only knew a job id they had started, so a reload lost
+every running review. Options were discussed on the issue; Mads picked the
+activity center restored on load plus a progress line on the story. `GET
+/api/assistant/jobs` lists the writer's unsettled review and summary jobs
+(a direct query on `pgboss.job` by `data.userId` and the created, retry and
+active states, named from the writer's live stories and universes; pg-boss's
+`findJobs` has no state filter and returns the oldest rows first, capped, so a
+busy writer's running job could fall past the cap); the root layout resumes
+`trackJob` for each. `trackJob` now keeps a `trackedJobs` list (job, scope,
+latest progress) apart from the cards, so dismissing a card does not hide the
+run, and `RunningJobsNote` under `ModeSwitcher` reads it. The 15-minute give-up
+in `trackJob` went: a story review can run for hours, so polling slows to 15s
+after five minutes instead, stops on a 401, 403 or 404 (signed out), and a run
+the queue dropped (`stale`) now ends the card as stopped rather than spinning. Universe continuity passes show only as
+a card; a universe-page line was left out until asked for.
+
 From the design pass click-throughs (2026-07-30):
 
 - [x] Quick note capture while writing. Switching to the Notes tab (or

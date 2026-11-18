@@ -3,9 +3,16 @@
 // once. Server-side gating is re-checked by every endpoint; these just drive the
 // requests and report progress through the activity center.
 import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
 import { apiErrorMessage, pluralSuffix } from '#lib/format';
-import { flashActivity, resolveActivity, startActivity, trackJob } from '#lib/activity.svelte';
+import {
+	flashActivity,
+	resolveActivity,
+	startActivity,
+	trackJob,
+	type JobScope
+} from '#lib/activity.svelte';
 import type { ReviewCategory } from '#lib/review-shape';
 
 // Asks the Assistant to review one scene inline. Stages comments and suggested
@@ -133,9 +140,8 @@ export async function startBackgroundReview(opts: {
 		failLabel: `Could not review ${opts.label}`,
 		startFallback: 'Could not start the review.',
 		track: {
-			runningLabel: `Reviewing ${opts.label}...`,
-			doneLabel: `Review of ${opts.label} ready`,
-			failedLabel: `Could not review ${opts.label}`,
+			...jobLabels('review', 'full', opts.label),
+			scope: { storyId: opts.storyId, chapterId: opts.chapterId, mode: 'full' },
 			href: opts.reviewHref
 		}
 	});
@@ -157,9 +163,8 @@ export async function startContinuityReview(opts: {
 		failLabel: `Could not check continuity in ${opts.label}`,
 		startFallback: 'Could not start the continuity pass.',
 		track: {
-			runningLabel: `Checking continuity in ${opts.label}...`,
-			doneLabel: `Continuity check of ${opts.label} ready`,
-			failedLabel: `Could not check continuity in ${opts.label}`,
+			...jobLabels('review', 'continuity', opts.label),
+			scope: { ...opts.scope, mode: 'continuity' },
 			href: opts.reviewHref
 		}
 	});
@@ -174,10 +179,69 @@ export async function startSummariesJob(storyId: string): Promise<void> {
 		kind: 'summaries',
 		failLabel: 'Could not update summaries',
 		startFallback: 'Could not start the summary pass.',
-		track: {
-			runningLabel: 'Updating summaries...',
-			doneLabel: 'Summaries updated',
-			failedLabel: 'Could not update summaries'
-		}
+		track: { ...jobLabels('summaries', 'full'), scope: { storyId } }
 	});
+}
+
+// The activity card's three labels for a job. label names what the job is over
+// ("your story", or a quoted title for a job picked up after a reload); a
+// summary pass started from the panel needs none.
+function jobLabels(
+	kind: 'review' | 'summaries',
+	mode: 'full' | 'continuity',
+	label?: string
+): { runningLabel: string; doneLabel: string; failedLabel: string } {
+	if (kind === 'summaries') {
+		const of = label ? ` for ${label}` : '';
+		return {
+			runningLabel: `Updating summaries${of}...`,
+			doneLabel: `Summaries${of} updated`,
+			failedLabel: `Could not update summaries${of}`
+		};
+	}
+	if (mode === 'continuity') {
+		return {
+			runningLabel: `Checking continuity in ${label}...`,
+			doneLabel: `Continuity check of ${label} ready`,
+			failedLabel: `Could not check continuity in ${label}`
+		};
+	}
+	return {
+		runningLabel: `Reviewing ${label}...`,
+		doneLabel: `Review of ${label} ready`,
+		failedLabel: `Could not review ${label}`
+	};
+}
+
+// A job the server still has queued or running (GET /api/assistant/jobs).
+export type RunningJob = JobScope & {
+	id: string;
+	kind: 'review' | 'summaries';
+	mode: 'full' | 'continuity';
+	title: string;
+};
+
+// Picks up the writer's unfinished Assistant jobs after a page load, so their
+// activity cards and the story's run note come back. Jobs this tab already
+// follows are skipped by trackJob.
+export async function resumeRunningJobs(): Promise<void> {
+	let jobs: RunningJob[];
+	try {
+		const response = await fetch('/api/assistant/jobs');
+		if (!response.ok) return;
+		jobs = ((await response.json()) as { jobs: RunningJob[] }).jobs;
+	} catch {
+		return;
+	}
+	for (const job of jobs) {
+		const { id, kind, mode, title, storyId, chapterId, universeId } = job;
+		void trackJob({
+			jobId: id,
+			kind,
+			scope: { storyId, chapterId, universeId, mode },
+			...jobLabels(kind, mode, `"${title}"`),
+			href:
+				kind === 'review' && storyId ? resolve('/stories/[id]/review', { id: storyId }) : undefined
+		});
+	}
 }

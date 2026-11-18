@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import RunningJobsNote from './RunningJobsNote.svelte';
 	// The Write/Plan/Review strip above the left sidebar. It is always the
 	// same three modes in the same order at the same width, wherever it
 	// appears. Notes is not a mode: notes ride in the right panel of Write
@@ -13,7 +14,8 @@
 	let {
 		active,
 		hrefs,
-		note
+		note,
+		storyId
 	}: {
 		// null on a page that is not one of the three modes (insights reads
 		// the whole universe; the Notes page sits beside the modes). All
@@ -25,6 +27,8 @@
 		// Rendered under the strip, not as a tooltip, so it can be read by
 		// keyboard and by screen reader.
 		note?: string;
+		// On a story page: lists the Assistant runs still going on it.
+		storyId?: string;
 	} = $props();
 
 	const MODES: { mode: Mode; label: string }[] = [
@@ -47,4 +51,7 @@
 </div>
 {#if note}
 	<p class="mode-note">{note}</p>
+{/if}
+{#if storyId}
+	<RunningJobsNote {storyId} />
 {/if}

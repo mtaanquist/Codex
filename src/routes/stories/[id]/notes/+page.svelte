@@ -21,6 +21,7 @@
 	planHref={resolve('/stories/[id]/plan', { id: data.story.slug })}
 	writeHref={resolve('/stories/[id]', { id: data.story.slug })}
 	reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
+	storyId={data.story.id}
 	selected={data.selected}
 	revisionRows={data.revisionRows}
 	revisionPreview={data.revisionPreview}

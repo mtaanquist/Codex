@@ -300,6 +300,12 @@ The left slot is always `--left-w`, whatever fills it:
   one `.mode-note` line under the strip says why: rendered, not a tooltip,
   so it is readable by keyboard and by screen reader. The two lines live as
   `UNIVERSE_MODE_NOTE` and `GUEST_MODE_NOTE` in `#lib/chrome.ts`.
+- **Running Assistant jobs sit under the strip.** On a story page, pass
+  `storyId` to `ModeSwitcher` and it lists each Assistant job still running on
+  that story (`RunningJobsNote`: one `.mode-note` line with a pulsing accent
+  dot, linking to Review for a review). It reads `trackedJobs` from
+  `#lib/activity.svelte`, the same list the activity cards poll, so it needs
+  no data of its own.
 - **The mode strip may have nothing lit.** `ModeSwitcher` takes `active: Mode
   | null`; a universe page that is not one of the three (insights) passes null,
   keeps all three live, and says why in its `.mode-note`

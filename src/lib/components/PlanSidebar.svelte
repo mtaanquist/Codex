@@ -32,6 +32,7 @@
 		writeHref,
 		reviewHref,
 		modeNote,
+		storyId,
 		insightsHref,
 		categoriesHref,
 		boardHref,
@@ -59,6 +60,8 @@
 		reviewHref?: ResolvedPathname;
 		// The line under the mode strip, when the strip needs explaining.
 		modeNote?: string;
+		// Story scope: the story whose running Assistant jobs show under the strip.
+		storyId?: string;
 		// Universe scope only: insights covers the whole universe, so it sits
 		// at the foot of the sidebar rather than beside a single story.
 		insightsHref?: ResolvedPathname;
@@ -234,7 +237,12 @@
 
 <aside class="pane left" aria-label={LEFT_PANE_LABEL}>
 	<div class="left-head">
-		<ModeSwitcher active="plan" hrefs={{ write: writeHref, review: reviewHref }} note={modeNote} />
+		<ModeSwitcher
+			active="plan"
+			hrefs={{ write: writeHref, review: reviewHref }}
+			note={modeNote}
+			{storyId}
+		/>
 		<SidebarSearch bind:query placeholder="Filter characters, places, lore..." />
 	</div>
 	<div class="left-scroll">

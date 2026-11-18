@@ -32,6 +32,7 @@
 	import CommandPalette from '#lib/components/CommandPalette.svelte';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import ActivityCenter from '#lib/components/ActivityCenter.svelte';
+	import { resumeRunningJobs } from '#lib/assistant-actions';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -91,6 +92,15 @@
 	// and keeps following it while the page is open. A reader who has not chosen
 	// gets the theme their system asks for, including when it changes mid-page.
 	$effect(() => followSystemTheme());
+
+	// Pick up the Assistant jobs still running from before this page loaded, so
+	// their activity cards and the story's run note come back. Once per load.
+	let jobsResumed = false;
+	$effect(() => {
+		if (!data.user || jobsResumed) return;
+		jobsResumed = true;
+		void resumeRunningJobs();
+	});
 
 	// Apply the signed-in user's saved theme and accent, syncing the pre-paint
 	// keys so the next load matches without a flash.
