@@ -136,8 +136,9 @@
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
-	// The scope discriminant and its pieces. Fixed for the panel's life (a
-	// surface does not change scope), so plain consts off the prop.
+	// The scope discriminant and its pieces. Fixed for the panel's life (every
+	// page keys the panel on its scope id, so a new scope remounts it), so
+	// plain consts off the prop.
 	// svelte-ignore state_referenced_locally
 	const isStory = 'storyId' in scope;
 	// svelte-ignore state_referenced_locally
