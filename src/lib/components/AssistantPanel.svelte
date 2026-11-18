@@ -1,10 +1,35 @@
+<script lang="ts" module>
+	import type { ChatSummary } from '#lib/assistant-chat';
+	import type { SplitProposal } from './AssistantProposal.svelte';
+
+	export type StopReason = 'context' | 'budget';
+	export type StoredChatTurn = {
+		role: 'user' | 'assistant';
+		content: string;
+		meta: {
+			reference?: { sceneId: string; text: string };
+			proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
+			stopped?: StopReason;
+		} | null;
+	};
+	// The writer's chats for this scope and the one the panel opens with, as the
+	// page load returns them (loadAssistantChat).
+	export type AssistantChatData = {
+		chats: ChatSummary[];
+		chatId: string | null;
+		messages: StoredChatTurn[];
+		summarised: boolean;
+	};
+</script>
+
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	// The right pane's Assistant tab: a chat with the writing Assistant,
-	// grounded in the open story. The conversation is kept per story and user:
-	// the server stores each completed turn and the page load seeds the panel,
-	// so it survives a reload. The server holds the key and endpoint; this only
-	// POSTs the transcript and streams tokens back over Server-Sent Events.
+	// grounded in the open story. A writer keeps any number of chats per story
+	// (or universe); the server stores each completed turn, the page load opens
+	// the most recent chat, and the picker at the top switches between them.
+	// The server holds the key and endpoint; this only POSTs the transcript and
+	// streams tokens back over Server-Sent Events.
 	import { enhance } from '#lib/enhance';
 	import { assistantIntent } from '#lib/assistant.svelte';
 	import { askConfirm } from '#lib/confirm.svelte';
@@ -19,10 +44,13 @@
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
-	import { CHAT_WINDOW_TURNS } from '#lib/assistant-chat';
+	import { CHAT_WINDOW_TURNS, chatTitle, RECAP_CHAT_TITLE } from '#lib/assistant-chat';
+	import { relativeShort } from '#lib/format';
+	import { now } from '#lib/now.svelte';
+	import { page } from '$app/state';
 	import { commandsForScope, matchSlash, slashName, slashArgs } from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
-	import AssistantProposal, { type SplitProposal } from './AssistantProposal.svelte';
+	import AssistantProposal from './AssistantProposal.svelte';
 	import { dismiss } from '#lib/dismiss';
 	import { menu } from '#lib/menu';
 
@@ -32,8 +60,7 @@
 		name,
 		muted = false,
 		suggestions = [],
-		initialMessages = [],
-		summarised = false,
+		chat = null,
 		onConfirmSplit,
 		onRevertSplit,
 		onInsert,
@@ -57,19 +84,9 @@
 		muted?: boolean;
 		// Grounded starter prompts shown when the conversation is empty.
 		suggestions?: string[];
-		// The stored conversation, loaded with the page; the panel seeds from it
-		// at mount and the client transcript carries on from there.
-		initialMessages?: {
-			role: 'user' | 'assistant';
-			content: string;
-			meta: {
-				reference?: { sceneId: string; text: string };
-				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
-				stopped?: StopReason;
-			} | null;
-		}[];
-		// Older turns of the stored conversation were summarised for the model.
-		summarised?: boolean;
+		// The stored chats, loaded with the page; the panel seeds from them at
+		// mount and keeps its own copy from there.
+		chat?: AssistantChatData | null;
 		// Confirms a proposed scene split; resolves to the created scene pair (the
 		// page navigates to the new scene) or an error message.
 		onConfirmSplit?: (proposal: {
@@ -100,7 +117,6 @@
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
-	type StopReason = 'context' | 'budget';
 	type Message = {
 		role: 'user' | 'assistant';
 		content: string;
@@ -137,19 +153,27 @@
 	const opening = isStory
 		? `I've read your codex for ${scopeTitle}. Ask me about your characters, check continuity, or work a scene.`
 		: `I've read your codex for ${scopeTitle}. Ask me anything across its stories - characters, places, lore, or continuity between the books.`;
+	function toMessages(stored: StoredChatTurn[]): Message[] {
+		const seeded = stored.map((m) => ({
+			role: m.role,
+			content: m.content,
+			reference: m.meta?.reference,
+			proposals: m.meta?.proposals?.map((p) => ({ ...p })),
+			stopped: m.meta?.stopped
+		}));
+		return seeded.length > 0 ? seeded : [{ role: 'assistant', content: opening }];
+	}
 	// svelte-ignore state_referenced_locally
-	const seeded: Message[] = initialMessages.map((m) => ({
-		role: m.role,
-		content: m.content,
-		reference: m.meta?.reference,
-		proposals: m.meta?.proposals?.map((p) => ({ ...p })),
-		stopped: m.meta?.stopped
-	}));
-	let messages = $state<Message[]>(
-		seeded.length > 0 ? seeded : [{ role: 'assistant', content: opening }]
-	);
+	let messages = $state<Message[]>(toMessages(chat?.messages ?? []));
 	// svelte-ignore state_referenced_locally
-	let olderSummarised = $state(summarised);
+	let olderSummarised = $state(chat?.summarised ?? false);
+	// The scope's chats, newest first, and the open one; null until the first
+	// message of a new chat comes back with the id the server gave it.
+	// svelte-ignore state_referenced_locally
+	let chats = $state<ChatSummary[]>(chat?.chats ?? []);
+	// svelte-ignore state_referenced_locally
+	let chatId = $state<string | null>(chat?.chatId ?? null);
+	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
 	let input = $state('');
 	let busy = $state(false);
 	let composer = $state<HTMLTextAreaElement>();
@@ -230,10 +254,20 @@
 		}
 	}
 
+	// A turn was stored in a chat: it moves to the top of the list, and a chat
+	// the server just created joins it under the title the server gave it.
+	function noteChatUsed(id: string, title: string) {
+		const existing = chats.find((c) => c.id === id);
+		const updated = { id, title: existing?.title ?? title, updatedAt: new Date().toISOString() };
+		chats = [updated, ...chats.filter((c) => c.id !== id)];
+		chatId = id;
+	}
+
 	// Stream a reply into the empty assistant message the caller has already
 	// pushed. Shared by chat (send) and recap (catchUp): both POST JSON and read
-	// the same token/done/error Server-Sent Event frames.
-	async function streamInto(url: string, payload: unknown) {
+	// the same token/done/error Server-Sent Event frames. `title` names the chat
+	// if this request starts one.
+	async function streamInto(url: string, payload: object, title: string) {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
@@ -241,10 +275,12 @@
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(payload),
+				body: JSON.stringify({ ...payload, chatId }),
 				signal: controller.signal
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
+			const storedIn = response.headers.get('x-chat-id');
+			if (response.ok && storedIn) noteChatUsed(storedIn, title);
 			if (!response.ok || !response.body) {
 				appendToReply(
 					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
@@ -307,13 +343,17 @@
 		// assembled world, not the transcript.
 		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
-		await streamInto('/api/assistant/chat', {
-			...scopeBody(),
-			...(isStory ? { sceneId } : {}),
-			messages: turns
-				.slice(-CHAT_WINDOW_TURNS)
-				.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
-		});
+		await streamInto(
+			'/api/assistant/chat',
+			{
+				...scopeBody(),
+				...(isStory ? { sceneId } : {}),
+				messages: turns
+					.slice(-CHAT_WINDOW_TURNS)
+					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
+			},
+			chatTitle(question)
+		);
 	}
 
 	function runSlashCommand(raw: string) {
@@ -322,8 +362,10 @@
 		slashSelected = 0;
 		const name = slashName(raw);
 		switch (name) {
+			// 'clear' is the command's old name, from before chats were kept.
+			case 'new':
 			case 'clear':
-				void clearConversation();
+				newChat();
 				break;
 			case 'write':
 				void coauthorDraft(slashArgs(raw));
@@ -594,7 +636,7 @@
 		// universe surface has no catch-up.
 		if (busy || !('storyId' in scope)) return;
 		messages = [...messages, { role: 'assistant', content: '' }];
-		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId });
+		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId }, RECAP_CHAT_TITLE);
 	}
 
 	// Update summaries: a background pass that drafts and refreshes scene and
@@ -616,38 +658,94 @@
 		pending?.abort();
 	}
 
-	// Clear conversation: drops the stored transcript and starts fresh.
-	let clearing = $state(false);
-	async function clearConversation() {
-		if (clearing || busy) return;
+	// A new chat: an empty transcript that the server stores as a chat of its
+	// own once the first message goes. The earlier chats stay in the picker.
+	function newChat() {
+		if (busy) return;
+		chatId = null;
+		messages = [{ role: 'assistant', content: opening }];
+		olderSummarised = false;
+		pickerOpen = false;
+		composer?.focus();
+	}
+
+	// Switch to an earlier chat, loading its turns from the server.
+	let switching = $state(false);
+	async function openChat(id: string) {
+		if (busy || switching) return;
+		pickerOpen = false;
+		if (id === chatId) return;
+		switching = true;
+		try {
+			const response = await fetch(`/api/assistant/chats/${id}`);
+			if (!response.ok) {
+				flashActivity('failed', 'Could not open that chat', 'Try again in a moment.');
+				return;
+			}
+			const loaded = (await response.json()) as {
+				messages: StoredChatTurn[];
+				summarised: boolean;
+			};
+			chatId = id;
+			messages = toMessages(loaded.messages);
+			olderSummarised = loaded.summarised;
+		} finally {
+			switching = false;
+			composer?.focus();
+		}
+	}
+
+	// Delete the open chat for good, then start a new one.
+	let deleting = $state(false);
+	async function deleteChat() {
+		if (deleting || busy) return;
+		if (!chatId) {
+			newChat();
+			return;
+		}
 		const ok = await askConfirm({
-			title: 'Clear this conversation?',
-			body: 'The conversation is deleted for good.',
-			confirmLabel: 'Clear conversation',
+			title: 'Delete this chat?',
+			body: 'The chat is deleted for good. Your other chats are kept.',
+			confirmLabel: 'Delete chat',
 			danger: true
 		});
 		// The menu item that asked is gone by now, so focus goes back to the
 		// composer rather than being lost.
 		composer?.focus();
-		if (!ok || clearing || busy) return;
-		clearing = true;
+		if (!ok || deleting || busy || !chatId) return;
+		deleting = true;
+		const id = chatId;
 		try {
-			const response = await fetch('/api/assistant/chat', {
-				method: 'DELETE',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(scopeBody())
-			});
+			const response = await fetch(`/api/assistant/chats/${id}`, { method: 'DELETE' });
 			if (!response.ok) {
-				flashActivity('failed', 'Could not clear the conversation', 'Try again in a moment.');
+				flashActivity('failed', 'Could not delete the chat', 'Try again in a moment.');
 				return;
 			}
-			messages = [{ role: 'assistant', content: opening }];
+			chats = chats.filter((c) => c.id !== id);
+			newChat();
 			reference = null;
-			olderSummarised = false;
 		} finally {
-			clearing = false;
+			deleting = false;
 		}
 	}
+
+	// The chat picker: earlier chats, newest first, narrowed by a search over
+	// their titles.
+	let pickerOpen = $state(false);
+	let pickerTrigger = $state<HTMLButtonElement>();
+	let pickerSearch = $state<HTMLInputElement>();
+	let chatQuery = $state('');
+	const shownChats = $derived.by(() => {
+		const query = chatQuery.trim().toLowerCase();
+		return query ? chats.filter((c) => c.title.toLowerCase().includes(query)) : chats;
+	});
+	function togglePicker() {
+		pickerOpen = !pickerOpen;
+		if (pickerOpen) chatQuery = '';
+	}
+	$effect(() => {
+		if (pickerOpen) pickerSearch?.focus();
+	});
 
 	// The actions menu next to the send button; closes like the other inline
 	// menus, on an outside press or Escape.
@@ -746,11 +844,76 @@
 				{/if}
 			</div>
 		</div>
+		<div class="chat-bar">
+			<div
+				class="chat-picker-wrap"
+				use:dismiss={{
+					enabled: pickerOpen,
+					close: () => (pickerOpen = false),
+					refocus: () => pickerTrigger?.focus()
+				}}
+			>
+				<button
+					bind:this={pickerTrigger}
+					class="chat-picker-btn"
+					type="button"
+					title="Switch to an earlier chat"
+					aria-haspopup="dialog"
+					aria-expanded={pickerOpen}
+					disabled={busy || switching}
+					onclick={togglePicker}
+				>
+					<span class="chat-picker-title">{currentTitle}</span>
+					<Icon name="caret" size={12} />
+				</button>
+				{#if pickerOpen}
+					<div class="chat-picker popover" role="dialog" aria-label="Your chats">
+						<input
+							bind:this={pickerSearch}
+							class="chat-search"
+							type="search"
+							placeholder="Search chats"
+							aria-label="Search chats"
+							bind:value={chatQuery}
+						/>
+						<div class="chat-list">
+							{#each shownChats as item (item.id)}
+								<button
+									class="menu-item chat-row"
+									type="button"
+									aria-current={item.id === chatId ? 'true' : undefined}
+									onclick={() => void openChat(item.id)}
+								>
+									<span class="chat-row-title">{item.title || 'Untitled chat'}</span>
+									<span class="chat-row-time"
+										>{relativeShort(item.updatedAt, page.data.timeZone, now())}</span
+									>
+								</button>
+							{:else}
+								<p class="chat-empty">
+									{chats.length === 0 ? 'Your chats will be listed here.' : 'No chats match.'}
+								</p>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+			<button
+				class="icon-btn sm"
+				type="button"
+				title="New chat"
+				aria-label="New chat"
+				disabled={busy}
+				onclick={newChat}
+			>
+				<Icon name="plus" size={14} />
+			</button>
+		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
 			{#if olderSummarised}
 				<p class="summary-note">
 					The Assistant now sees the older messages here as a summary, so it may not recall their
-					exact wording. Type /clear to start a fresh conversation.
+					exact wording. Type /new to start a new chat.
 				</p>
 			{/if}
 			{#each messages as message, index (index)}
@@ -927,11 +1090,11 @@
 							class="menu-item danger"
 							type="button"
 							role="menuitem"
-							disabled={clearing || busy}
-							title="Delete this conversation and start fresh"
-							onclick={() => runAction(() => void clearConversation())}
+							disabled={deleting || busy}
+							title="Delete this chat for good"
+							onclick={() => runAction(() => void deleteChat())}
 						>
-							Clear conversation
+							Delete chat
 						</button>
 					</div>
 				{/if}
@@ -969,6 +1132,88 @@
 		flex-direction: column;
 		height: 100%;
 		min-height: 0;
+	}
+	.chat-bar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 10px;
+		border-bottom: 1px solid var(--border);
+	}
+	.chat-picker-wrap {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+	}
+	.chat-picker-btn {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		width: 100%;
+		min-width: 0;
+		border: 0;
+		background: none;
+		padding: 4px 6px;
+		border-radius: 6px;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.chat-picker-btn:hover:not(:disabled) {
+		background: var(--bg-hover);
+	}
+	.chat-picker-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	/* Skin from the shared .popover / .menu-item (menus.css); only the
+	   positioning and the list's own layout stay here. */
+	.chat-picker {
+		position: absolute;
+		top: calc(100% + 4px);
+		left: 0;
+		right: 0;
+		z-index: 30;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.chat-search {
+		width: 100%;
+		font: inherit;
+		font-size: 13px;
+		padding: 6px 8px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-card);
+		color: var(--text);
+	}
+	.chat-list {
+		max-height: 320px;
+		overflow-y: auto;
+	}
+	.chat-row {
+		justify-content: space-between;
+	}
+	.chat-row[aria-current='true'] {
+		background: var(--bg-hover);
+	}
+	.chat-row-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.chat-row-time {
+		flex: none;
+		font-size: 12px;
+		color: var(--text-faint);
+	}
+	.chat-empty {
+		margin: 4px 7px;
+		font-size: 13px;
+		color: var(--text-faint);
 	}
 	.assistant-head {
 		display: flex;

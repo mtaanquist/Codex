@@ -113,6 +113,20 @@ export default async function globalSetup() {
 		`delete from webauthn_credentials where user_id = (select id from users where email = $1)`,
 		['passkey-e2e@example.com']
 	);
+	// A separate account with the Assistant switched on (pointed at an endpoint
+	// nothing listens on), for the chat list journey; the Assistant tab would
+	// change the layout the other specs see on the shared account.
+	await pool.query(
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at, llm_config)
+		 values ($1, 'Assistant Tester', $2, 'user', now(), now(), $3)
+		 on conflict (email) do update set password_hash = excluded.password_hash,
+		   llm_config = excluded.llm_config`,
+		[
+			'assistant-e2e@example.com',
+			passwordHash,
+			JSON.stringify({ enabled: true, endpoint: 'http://127.0.0.1:9/v1' })
+		]
+	);
 	// A standing invite code for the invited sign-up journey; resetting the use
 	// count keeps repeated runs valid.
 	await pool.query(

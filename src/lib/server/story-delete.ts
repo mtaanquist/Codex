@@ -4,6 +4,7 @@ import { scheduleObjectDeletions } from './assets.ts';
 import {
 	assistantChatMessages,
 	assistantChatSummaries,
+	assistantChats,
 	chapters,
 	characterStoryMemberships,
 	characterStoryNotes,
@@ -96,6 +97,7 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 	// The Assistant chat transcripts on this story.
 	await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.storyId, storyId));
 	await tx.delete(assistantChatSummaries).where(eq(assistantChatSummaries.storyId, storyId));
+	await tx.delete(assistantChats).where(eq(assistantChats.storyId, storyId));
 
 	if (sceneIds.length > 0) {
 		await tx.delete(sceneMarkers).where(inArray(sceneMarkers.sceneId, sceneIds));

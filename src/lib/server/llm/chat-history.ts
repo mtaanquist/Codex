@@ -2,22 +2,24 @@ import { and, asc, desc, eq, notInArray, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import {
 	assistantChatMessages,
+	assistantChats,
 	assistantChatSummaries,
 	type AssistantChatMeta
 } from '../db/schema';
+import type { ChatSummary } from '../../assistant-chat.ts';
+import { isUuid } from '../../slug.ts';
 import { estimateTokens } from './context/assemble';
 import { CHAT_BUDGET_TOKENS } from './context/budgets';
 import type { ChatMessage } from './providers/types';
 
-// The persisted Assistant conversation: one transcript per scope per user,
-// loaded when the surface opens and appended as turns complete. The scope is a
-// story (the Write/Review/story-Plan thread) or a universe (the universe-Plan
-// thread); a row is keyed to exactly one. The synthesized opening line is never
-// stored; references and split proposals ride in meta so the panel can rebuild
-// its chips and cards after a reload.
+// The persisted Assistant chats: any number per scope per user, each loaded
+// when the writer opens it and appended as turns complete. The scope is a
+// story (the Write/Review/story-Plan surfaces) or a universe (universe Plan).
+// The synthesized opening line is never stored; references and split proposals
+// ride in meta so the panel can rebuild its chips and cards after a reload.
 
-// Keeps a conversation from growing without bound; the oldest turns drop on
-// append, like a scrollback buffer.
+// Keeps a chat from growing without bound; the oldest turns drop on append,
+// like a scrollback buffer.
 const MAX_TURNS = 200;
 
 // Which conversation a turn belongs to: a story or a universe, never both. The
@@ -29,6 +31,12 @@ function scopeWhere(scope: ChatScope): SQL {
 	return 'storyId' in scope
 		? eq(assistantChatMessages.storyId, scope.storyId)
 		: eq(assistantChatMessages.universeId, scope.universeId);
+}
+
+function chatScopeWhere(scope: ChatScope): SQL {
+	return 'storyId' in scope
+		? eq(assistantChats.storyId, scope.storyId)
+		: eq(assistantChats.universeId, scope.universeId);
 }
 
 // The story_id/universe_id pair an insert sets: one column, the other null.
@@ -44,10 +52,101 @@ export type StoredChatMessage = {
 	meta: AssistantChatMeta | null;
 };
 
-export async function listChat(
+// A scope's chats, the most recently used first.
+export async function listChats(
 	db: Database,
 	userId: string,
 	scope: ChatScope
+): Promise<ChatSummary[]> {
+	const rows = await db
+		.select({
+			id: assistantChats.id,
+			title: assistantChats.title,
+			updatedAt: assistantChats.updatedAt
+		})
+		.from(assistantChats)
+		.where(and(eq(assistantChats.userId, userId), chatScopeWhere(scope)))
+		.orderBy(desc(assistantChats.updatedAt), desc(assistantChats.id));
+	return rows.map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
+}
+
+// The writer's chat by id, or null when it is not theirs (or does not exist).
+export async function getChat(
+	db: Database,
+	userId: string,
+	chatId: string
+): Promise<{ id: string; scope: ChatScope } | null> {
+	if (!isUuid(chatId)) return null;
+	const [row] = await db
+		.select({
+			id: assistantChats.id,
+			storyId: assistantChats.storyId,
+			universeId: assistantChats.universeId
+		})
+		.from(assistantChats)
+		.where(and(eq(assistantChats.id, chatId), eq(assistantChats.userId, userId)));
+	if (!row) return null;
+	return {
+		id: row.id,
+		scope: row.storyId ? { storyId: row.storyId } : { universeId: row.universeId! }
+	};
+}
+
+function sameScope(a: ChatScope, b: ChatScope): boolean {
+	return 'storyId' in a
+		? 'storyId' in b && a.storyId === b.storyId
+		: 'universeId' in b && a.universeId === b.universeId;
+}
+
+// The chat a request continues: the named one when it is the writer's and
+// belongs to this scope, or, with no id, a new chat titled from its first
+// message. Returns null for an id that is not the writer's chat in this scope.
+export async function resolveChat(
+	db: Database,
+	userId: string,
+	scope: ChatScope,
+	chatId: string | null,
+	title: string
+): Promise<string | null> {
+	if (chatId) {
+		const chat = await getChat(db, userId, chatId);
+		return chat && sameScope(chat.scope, scope) ? chat.id : null;
+	}
+	const [row] = await db
+		.insert(assistantChats)
+		.values({ ...scopeValues(scope), userId, title })
+		.returning({ id: assistantChats.id });
+	return row.id;
+}
+
+// The chat the panel opens with: the most recently used one, if any.
+export async function loadAssistantChat(
+	db: Database,
+	userId: string,
+	scope: ChatScope
+): Promise<{
+	chats: ChatSummary[];
+	chatId: string | null;
+	messages: StoredChatMessage[];
+	summarised: boolean;
+}> {
+	const chats = await listChats(db, userId, scope);
+	const current = chats[0];
+	if (!current) return { chats, chatId: null, messages: [], summarised: false };
+	const [messages, [summary]] = await Promise.all([
+		listChat(db, userId, current.id),
+		db
+			.select({ id: assistantChatSummaries.id })
+			.from(assistantChatSummaries)
+			.where(eq(assistantChatSummaries.chatId, current.id))
+	]);
+	return { chats, chatId: current.id, messages, summarised: Boolean(summary) };
+}
+
+export async function listChat(
+	db: Database,
+	userId: string,
+	chatId: string
 ): Promise<StoredChatMessage[]> {
 	const rows = await db
 		.select({
@@ -56,7 +155,7 @@ export async function listChat(
 			meta: assistantChatMessages.meta
 		})
 		.from(assistantChatMessages)
-		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)))
+		.where(and(eq(assistantChatMessages.userId, userId), eq(assistantChatMessages.chatId, chatId)))
 		.orderBy(asc(assistantChatMessages.createdAt), asc(assistantChatMessages.id));
 	return rows;
 }
@@ -65,11 +164,13 @@ export async function appendChat(
 	db: Database,
 	userId: string,
 	scope: ChatScope,
+	chatId: string,
 	message: StoredChatMessage
 ): Promise<void> {
 	if (!message.content.trim() && !message.meta) return;
 	await db.insert(assistantChatMessages).values({
 		...scopeValues(scope),
+		chatId,
 		userId,
 		role: message.role,
 		content: message.content,
@@ -80,18 +181,19 @@ export async function appendChat(
 	const keep = db
 		.select({ id: assistantChatMessages.id })
 		.from(assistantChatMessages)
-		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)))
+		.where(eq(assistantChatMessages.chatId, chatId))
 		.orderBy(desc(assistantChatMessages.createdAt), desc(assistantChatMessages.id))
 		.limit(MAX_TURNS);
 	await db
 		.delete(assistantChatMessages)
 		.where(
-			and(
-				eq(assistantChatMessages.userId, userId),
-				scopeWhere(scope),
-				notInArray(assistantChatMessages.id, keep)
-			)
+			and(eq(assistantChatMessages.chatId, chatId), notInArray(assistantChatMessages.id, keep))
 		);
+	// The picker lists chats by when they were last used.
+	await db
+		.update(assistantChats)
+		.set({ updatedAt: new Date() })
+		.where(eq(assistantChats.id, chatId));
 }
 
 // Marks a stored split proposal as confirmed (recording what the split
@@ -157,18 +259,14 @@ export function fitChatTurns(
 	return kept;
 }
 
-export async function clearChat(db: Database, userId: string, scope: ChatScope): Promise<void> {
-	await db
-		.delete(assistantChatMessages)
-		.where(and(eq(assistantChatMessages.userId, userId), scopeWhere(scope)));
-	await db
-		.delete(assistantChatSummaries)
-		.where(
-			and(
-				eq(assistantChatSummaries.userId, userId),
-				'storyId' in scope
-					? eq(assistantChatSummaries.storyId, scope.storyId)
-					: eq(assistantChatSummaries.universeId, scope.universeId)
-			)
-		);
+// Deletes one of the writer's chats with its turns and summary. Returns false
+// when the chat is not theirs.
+export async function deleteChat(db: Database, userId: string, chatId: string): Promise<boolean> {
+	if (!(await getChat(db, userId, chatId))) return false;
+	await db.transaction(async (tx) => {
+		await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.chatId, chatId));
+		await tx.delete(assistantChatSummaries).where(eq(assistantChatSummaries.chatId, chatId));
+		await tx.delete(assistantChats).where(eq(assistantChats.id, chatId));
+	});
+	return true;
 }

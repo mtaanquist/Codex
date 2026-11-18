@@ -561,6 +561,13 @@
 			"when": 1795001674632,
 			"tag": "0079_character-arc-summary",
 			"breakpoints": true
+		},
+		{
+			"idx": 80,
+			"version": "7",
+			"when": 1795007132971,
+			"tag": "0080_assistant-chats",
+			"breakpoints": true
 		}
 	]
 }

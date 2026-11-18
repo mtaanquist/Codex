@@ -24,8 +24,7 @@ import { reviewMentionData } from '#lib/server/mention-entities';
 import { createAnchorMapper } from '#lib/review-anchor';
 import { queueSceneMentions } from '#lib/server/jobs';
 import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
-import { listChat } from '#lib/server/llm/chat-history';
-import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { loadAssistantChat } from '#lib/server/llm/chat-history';
 import { notifySuggestionDiscussion, notifyThreadReviewers } from '#lib/server/notify';
 import { teaser } from '#lib/notifications';
 import { listTrashedScenes } from '#lib/server/scene-lifecycle';
@@ -78,10 +77,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// The stored conversation seeds the review page's Assistant tab, the same
 	// transcript as the Write editor's; nothing to load when the tab is off.
 	const assistantChat = assistant.tabEnabled
-		? await listChat(db, locals.user!.id, { storyId: story.id })
-		: [];
-	const assistantChatSummarised =
-		assistant.tabEnabled && (await hasChatSummary(db, locals.user!.id, { storyId: story.id }));
+		? await loadAssistantChat(db, locals.user!.id, { storyId: story.id })
+		: null;
 	return {
 		story: { id: story.id, slug: story.slug, title: story.title, universeId: story.universeId },
 		universe: { slug: universe.slug, name: universe.name },
@@ -102,8 +99,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		// Whether the Assistant answers in its threads here, and under what name.
 		assistant,
 		// The stored chat transcript for the Assistant tab.
-		assistantChat,
-		assistantChatSummarised
+		assistantChat
 	};
 };
 

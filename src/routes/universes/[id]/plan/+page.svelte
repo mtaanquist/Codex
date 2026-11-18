@@ -218,8 +218,7 @@
 								scope={{ universeId: data.universe.id, universeName: data.universe.name }}
 								name={data.assistant.name}
 								suggestions={assistantSuggestions}
-								initialMessages={data.assistantChat}
-								summarised={data.assistantChatSummarised}
+								chat={data.assistantChat}
 							/>
 						{:else if id === 'history'}
 							{#if data.revisionTarget}

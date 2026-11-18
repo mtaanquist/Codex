@@ -1,0 +1,95 @@
+import { expect, test } from '@playwright/test';
+import pg from 'pg';
+import { confirmPrompt } from './confirm';
+import { e2eDatabaseUrl } from './database';
+import { gotoReady } from './navigate';
+import { pickFromLibraryMenu } from './library';
+
+// Signs in as the account with the Assistant switched on.
+test.use({ storageState: { cookies: [], origins: [] } });
+
+// A writer with two earlier chats in a universe opens the newest, switches to
+// the other from the chat list (searching it), starts a new chat, and deletes
+// one. The chats are seeded straight into the database; no reply is needed.
+test('the Assistant keeps several chats and switches between them', async ({ page }) => {
+	await gotoReady(page, '/login');
+	await page.getByLabel('Email').fill('assistant-e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page).toHaveURL('/');
+
+	const name = `Chats ${Date.now()}`;
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(name);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
+
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	let universeId: string;
+	try {
+		const { rows } = await pool.query<{ id: string; owner_id: string }>(
+			'select id, owner_id from universes where name = $1',
+			[name]
+		);
+		universeId = rows[0].id;
+		const seed = async (title: string, at: string, turns: [string, string][]) => {
+			const chat = await pool.query<{ id: string }>(
+				`insert into assistant_chats (universe_id, user_id, title, created_at, updated_at)
+				 values ($1, $2, $3, $4, $4) returning id`,
+				[universeId, rows[0].owner_id, title, at]
+			);
+			for (const [role, content] of turns) {
+				await pool.query(
+					`insert into assistant_chat_messages (chat_id, universe_id, user_id, role, content, created_at)
+					 values ($1, $2, $3, $4, $5, $6)`,
+					[chat.rows[0].id, universeId, rows[0].owner_id, role, content, at]
+				);
+			}
+		};
+		await seed('About the harbour', '2026-11-01T10:00:00Z', [
+			['user', 'About the harbour'],
+			['assistant', 'The harbour freezes in winter.']
+		]);
+		await seed('Who is Marra?', '2026-11-02T10:00:00Z', [
+			['user', 'Who is Marra?'],
+			['assistant', 'Marra is a ferrywoman.']
+		]);
+	} finally {
+		await pool.end();
+	}
+
+	await gotoReady(page, `/universes/${universeId}/insights`);
+	const panel = page.locator('.assistant');
+	const picker = panel.locator('.chat-picker-btn');
+	// The most recent chat opens.
+	await expect(picker).toHaveText('Who is Marra?');
+	await expect(panel.locator('.chat-scroll')).toContainText('Marra is a ferrywoman.');
+
+	// The list shows both, newest first; a search narrows it.
+	await picker.click();
+	const list = page.getByRole('dialog', { name: 'Your chats' });
+	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?', 'About the harbour']);
+	await list.getByLabel('Search chats').fill('harb');
+	await expect(list.locator('.chat-row-title')).toHaveText(['About the harbour']);
+	await list.locator('.chat-row').click();
+	await expect(picker).toHaveText('About the harbour');
+	await expect(panel.locator('.chat-scroll')).toContainText('The harbour freezes in winter.');
+	await expect(panel.locator('.chat-scroll')).not.toContainText('ferrywoman');
+
+	// A new chat starts empty and the earlier ones stay listed.
+	await panel.getByRole('button', { name: 'New chat' }).click();
+	await expect(picker).toHaveText('New chat');
+	await expect(panel.locator('.chat-scroll')).not.toContainText('harbour freezes');
+
+	// Deleting a chat removes it from the list, and it stays gone on a reload.
+	await picker.click();
+	await list.locator('.chat-row', { hasText: 'About the harbour' }).click();
+	await panel.getByRole('button', { name: 'More actions' }).click();
+	await page.getByRole('menuitem', { name: 'Delete chat' }).click();
+	await confirmPrompt(page, 'Delete chat');
+	await expect(picker).toHaveText('New chat');
+	await page.reload();
+	await expect(picker).toHaveText('Who is Marra?');
+	await picker.click();
+	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?']);
+});

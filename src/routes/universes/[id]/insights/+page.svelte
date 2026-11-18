@@ -462,8 +462,7 @@
 							scope={{ universeId: data.universe.id, universeName: data.universe.name }}
 							name={data.assistant.name}
 							suggestions={assistantSuggestions}
-							initialMessages={data.assistantChat}
-							summarised={data.assistantChatSummarised}
+							chat={data.assistantChat}
 						/>
 					{/snippet}
 				</PanelStrip>

@@ -38,7 +38,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
-const { listChat } = await import('../../src/lib/server/llm/chat-history');
+const { listChat, listChats, resolveChat } = await import('../../src/lib/server/llm/chat-history');
 const {
 	assistantSseResponse,
 	requireAssistantGate,
@@ -46,11 +46,13 @@ const {
 	requireAssistantUniverse
 } = await import('../../src/lib/server/llm/assistant-route');
 const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
+const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
 
 let userId: string;
 let universeId: string;
 let storyId: string;
 let sceneId: string;
+let chatId: string;
 
 beforeAll(async () => {
 	await ensureTestDatabase();
@@ -86,6 +88,7 @@ beforeEach(async () => {
 		})
 		.returning({ id: scenes.id });
 	sceneId = scene.id;
+	chatId = (await resolveChat(db, userId, { storyId }, null, 'Chat'))!;
 	await configure(true);
 });
 
@@ -126,6 +129,7 @@ function sse(request: Request, enableTools = false) {
 		request,
 		userId,
 		scope: { storyId },
+		chatId,
 		role: 'chat',
 		enableTools,
 		messages: [{ role: 'user', content: 'hello' }],
@@ -165,7 +169,7 @@ describe('assistantSseResponse', () => {
 			{ type: 'token', text: 'writer.' },
 			{ type: 'done' }
 		]);
-		expect(await listChat(db, userId, { storyId })).toEqual([
+		expect(await listChat(db, userId, chatId)).toEqual([
 			{ role: 'assistant', content: 'Hello, writer.', meta: null }
 		]);
 	});
@@ -202,7 +206,7 @@ describe('assistantSseResponse', () => {
 		}
 		// No error frame for a client that has gone, and no partial reply stored.
 		expect(parseFrames(rest)).toEqual([]);
-		expect(await listChat(db, userId, { storyId })).toEqual([]);
+		expect(await listChat(db, userId, chatId)).toEqual([]);
 	});
 
 	it('stores nothing when the provider reports an error', async () => {
@@ -213,7 +217,7 @@ describe('assistantSseResponse', () => {
 		const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
 		const frames = parseFrames(await response.text());
 		expect(frames.at(-1)).toEqual({ type: 'error', message: 'upstream failed' });
-		expect(await listChat(db, userId, { storyId })).toEqual([]);
+		expect(await listChat(db, userId, chatId)).toEqual([]);
 	});
 
 	it('stores nothing and sends the fallback error when the provider throws', async () => {
@@ -227,7 +231,7 @@ describe('assistantSseResponse', () => {
 			type: 'error',
 			message: 'The Assistant could not complete that request.'
 		});
-		expect(await listChat(db, userId, { storyId })).toEqual([]);
+		expect(await listChat(db, userId, chatId)).toEqual([]);
 	});
 
 	it('attaches a proposal to the stored reply', async () => {
@@ -271,7 +275,7 @@ describe('assistantSseResponse', () => {
 			before: 'The second half',
 			rationale: 'A clean change of focus.'
 		};
-		expect(await listChat(db, userId, { storyId })).toEqual([
+		expect(await listChat(db, userId, chatId)).toEqual([
 			{
 				role: 'assistant',
 				content: 'Split before the second half.',
@@ -312,7 +316,7 @@ describe('assistantSseResponse', () => {
 		);
 		const frames = parseFrames(await response.text());
 		expect(frames).toContainEqual({ type: 'stopped', reason: 'budget' });
-		expect(await listChat(db, userId, { storyId })).toEqual([
+		expect(await listChat(db, userId, chatId)).toEqual([
 			{ role: 'assistant', content: 'What I read so far.', meta: { stopped: 'budget' } }
 		]);
 	});
@@ -363,6 +367,99 @@ describe('assistant gates', () => {
 			} as unknown as Parameters<typeof chatRoute.POST>[0]) as Promise<unknown>,
 			403
 		);
-		expect(await listChat(db, userId, { storyId })).toEqual([]);
+		expect(await listChat(db, userId, chatId)).toEqual([]);
+	});
+});
+
+describe('chats over the endpoints', () => {
+	function chatPost(body: object, as = userId) {
+		const request = new Request('http://localhost/api/assistant/chat', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		return chatRoute.POST({
+			request,
+			locals: { user: { id: as } }
+		} as unknown as Parameters<typeof chatRoute.POST>[0]) as Promise<Response>;
+	}
+
+	function onChat(method: 'GET' | 'DELETE', id: string, as = userId) {
+		return chatsRoute[method]({
+			params: { id },
+			locals: { user: { id: as } }
+		} as unknown as Parameters<typeof chatsRoute.GET>[0]) as Promise<Response>;
+	}
+
+	// The chat endpoint offers tools, so a reply can come back either way.
+	beforeEach(() => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {
+				yield { type: 'token', text: 'Answer.' };
+				yield { type: 'done' };
+			}),
+			async respond() {
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+	});
+
+	it('starts a new chat titled from the first message and says which', async () => {
+		const response = await chatPost({
+			storyId,
+			messages: [{ role: 'user', content: 'Who is   Marra?' }]
+		});
+		await response.text();
+		const newId = response.headers.get('x-chat-id')!;
+		expect(newId).not.toBe(chatId);
+		const chats = await listChats(db, userId, { storyId });
+		expect(chats[0]).toMatchObject({ id: newId, title: 'Who is Marra?' });
+		expect((await listChat(db, userId, newId)).map((m) => m.content)).toEqual([
+			'Who is   Marra?',
+			'Answer.'
+		]);
+	});
+
+	it('continues the named chat', async () => {
+		const response = await chatPost({
+			storyId,
+			chatId,
+			messages: [{ role: 'user', content: 'Go on.' }]
+		});
+		await response.text();
+		expect(response.headers.get('x-chat-id')).toBe(chatId);
+		expect(await listChat(db, userId, chatId)).toHaveLength(2);
+		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
+	});
+
+	it('404s a chat from another scope or another writer', async () => {
+		const universeChat = (await resolveChat(db, userId, { universeId }, null, 'U'))!;
+		await expectStatus(
+			chatPost({ storyId, chatId: universeChat, messages: [{ role: 'user', content: 'x' }] }),
+			404
+		);
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'O', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await expectStatus(onChat('GET', chatId, other.id), 404);
+		await expectStatus(onChat('DELETE', chatId, other.id), 404);
+		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
+	});
+
+	it('loads and deletes a chat', async () => {
+		await (
+			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })
+		).text();
+		const loaded = await (await onChat('GET', chatId)).json();
+		expect(loaded).toEqual({
+			messages: [
+				{ role: 'user', content: 'Hi.', meta: null },
+				{ role: 'assistant', content: 'Answer.', meta: null }
+			],
+			summarised: false
+		});
+		expect((await onChat('DELETE', chatId)).status).toBe(200);
+		expect(await listChats(db, userId, { storyId })).toEqual([]);
 	});
 });
