@@ -6,7 +6,7 @@
 		MAX_REPLY_TOKENS,
 		MAX_TEMPERATURE,
 		TEMPERATURE_STEP,
-		claudeRoleEffort,
+		claudeEffort,
 		defaultMaxTokens,
 		roleMayThink,
 		type AssistantRole,
@@ -31,6 +31,7 @@
 		suggestion,
 		saved,
 		anthropic,
+		model,
 		contextWindow,
 		onClose
 	}: {
@@ -41,6 +42,9 @@
 		// Claude reads effort and ignores temperature and extra settings; every
 		// other endpoint is the other way round. Show only what will be read.
 		anthropic: boolean;
+		// The model the role runs on; Codex only sends a default effort to the
+		// Claude models that take one.
+		model: string;
 		// The chosen model's context window, when the endpoint reported one or
 		// the writer typed one: it bounds the reply-length slider.
 		contextWindow: number | undefined;
@@ -48,6 +52,10 @@
 		// not write the config or report a save that changed nothing.
 		onClose: (changed: boolean) => void;
 	} = $props();
+
+	// The effort Codex sends when none is set here, or nothing for a model
+	// that takes no default.
+	const defaultEffort = $derived(claudeEffort(role.id, model, undefined));
 
 	// A fresh modal per open, so the saved values are a starting point rather
 	// than something to keep in step.
@@ -171,7 +179,9 @@
 						onchange={(event) =>
 							(effort = (event.currentTarget.value || undefined) as EffortLevel | undefined)}
 					>
-						<option value="">Codex default ({claudeRoleEffort(role.id)})</option>
+						<option value="">
+							{defaultEffort ? `Codex default (${defaultEffort})` : 'Endpoint default'}
+						</option>
 						{#each EFFORT_LEVELS as level (level)}
 							<option value={level}>{level}</option>
 						{/each}

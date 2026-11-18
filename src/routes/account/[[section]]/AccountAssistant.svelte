@@ -269,10 +269,17 @@
 	// What a role runs on with nothing picked. This follows the saved provider,
 	// not the live select, since that is what the server runs until a switch
 	// lands.
-	function unpickedLabel(role: AssistantRole): string {
+	function suggestedModel(role: AssistantRole): string {
 		const saved = data.modelGuide.providers[data.assistant.provider];
-		const suggested = saved[data.modelGuide.tiers[role]].id ?? '';
-		const runs = resolveRoleModel(savedModels, role, suggested);
+		return saved[data.modelGuide.tiers[role]].id ?? '';
+	}
+	// The model a role runs on, picked or not.
+	function runningModel(role: AssistantRole): string {
+		return resolveRoleModel(savedModels, role, suggestedModel(role));
+	}
+	function unpickedLabel(role: AssistantRole): string {
+		const suggested = suggestedModel(role);
+		const runs = runningModel(role);
 		if (!runs) return 'Pick a model';
 		if (runs === suggested) return `Suggested: ${runs}`;
 		if (runs === savedModels.chat) return 'Same as Rubber duck';
@@ -750,6 +757,7 @@
 							suggestion={suggestionLine(tuningRole.id)}
 							saved={savedTuning[tuningRole.id] ?? {}}
 							anthropic={anthropicShown}
+							model={runningModel(tuningRole.id)}
 							contextWindow={savedModels[tuningRole.id]
 								? contextWindow(savedModels[tuningRole.id]!)
 								: undefined}

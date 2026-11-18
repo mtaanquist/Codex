@@ -95,12 +95,33 @@ const POLL_MS = 3000;
 const SLOW_POLL_MS = 15000;
 const SLOW_AFTER_MS = 5 * 60 * 1000;
 
+// A hidden tab does not poll: it waits until it is shown again, then checks
+// at once. Every open tab follows every running job, so this keeps the
+// requests to the tabs someone is looking at.
+function whenVisible(): Promise<void> {
+	if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => {
+		const onChange = () => {
+			if (document.visibilityState === 'hidden') return;
+			document.removeEventListener('visibilitychange', onChange);
+			resolve();
+		};
+		document.addEventListener('visibilitychange', onChange);
+	});
+}
+
+// The jobs this tab follows, so a second call for the same job waits on the
+// first rather than returning at once.
+const following: Record<string, Promise<void>> = {};
+
 // Polls a queued background job (review, summaries, or enrichment) to completion, driving one
 // activity card from running to done or failed. When the enqueue could not hand
 // back a job id (a coalesced singleton, say), it shows the work as accepted and
 // leaves the notification bell to announce the result. A job this tab already
-// follows is not tracked twice.
-export async function trackJob(opts: {
+// follows is not tracked twice: the second call settles with the first.
+type TrackOptions = {
 	jobId: string | null;
 	kind: 'review' | 'summaries' | 'enrich' | 'arc';
 	scope?: JobScope;
@@ -108,9 +129,22 @@ export async function trackJob(opts: {
 	doneLabel: string;
 	failedLabel: string;
 	href?: string;
-}): Promise<void> {
+};
+
+export function trackJob(opts: TrackOptions): Promise<void> {
 	const jobId = opts.jobId;
-	if (jobId && trackedJobs.list.some((job) => job.id === jobId)) return;
+	if (!jobId) return followJob(opts, null);
+	if (trackedJobs.list.some((job) => job.id === jobId)) {
+		return following[jobId] ?? Promise.resolve();
+	}
+	const run = followJob(opts, jobId).finally(() => {
+		if (following[jobId] === run) delete following[jobId];
+	});
+	following[jobId] = run;
+	return run;
+}
+
+async function followJob(opts: TrackOptions, jobId: string | null): Promise<void> {
 	const id = startActivity(opts.runningLabel);
 	if (!jobId) {
 		resolveActivity(id, {
@@ -126,6 +160,7 @@ export async function trackJob(opts: {
 	try {
 		for (;;) {
 			await delay(Date.now() - startedAt < SLOW_AFTER_MS ? POLL_MS : SLOW_POLL_MS);
+			await whenVisible();
 			let state: ActivityState | 'stale' = 'running';
 			try {
 				const response = await fetch(
