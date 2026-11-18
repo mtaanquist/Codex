@@ -17,8 +17,7 @@
 	import ReviewEditor from './ReviewEditor.svelte';
 	import ReviewPanel from './ReviewPanel.svelte';
 	import type { Composer } from './ReviewPanel.svelte';
-	import AssistantPanel from './AssistantPanel.svelte';
-	import type { SplitProposal } from './AssistantProposal.svelte';
+	import AssistantPanel, { type AssistantChatData } from './AssistantPanel.svelte';
 	import type { MentionEntity } from '#lib/editor-mentions';
 	import type { MarkVisibility } from '#lib/editor';
 	import {
@@ -61,8 +60,7 @@
 		commandMarkers = 'shown',
 		editorStyle,
 		assistant = null,
-		assistantChat = [],
-		assistantChatSummarised = false,
+		assistantChat = null,
 		onSaveStatus = () => {}
 	}: {
 		chapters: { id: string; title: string | null }[];
@@ -103,17 +101,8 @@
 		// thread answers and the "Review with the Assistant" launcher, both off
 		// when the story is muted. Never set on the guest page.
 		assistant?: { name: string; surfacesEnabled: boolean; muted: boolean } | null;
-		// The stored Assistant conversation, seeding the Assistant tab's chat.
-		assistantChat?: {
-			role: 'user' | 'assistant';
-			content: string;
-			meta: {
-				reference?: { sceneId: string; text: string };
-				proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
-			} | null;
-		}[];
-		// Older turns of that conversation were summarised for the model.
-		assistantChatSummarised?: boolean;
+		// The stored Assistant chats, seeding the Assistant tab.
+		assistantChat?: AssistantChatData | null;
 		// The author editor's autosave feedback, surfaced in the page's app bar.
 		onSaveStatus?: (status: SaveStatus) => void;
 	} = $props();
@@ -632,8 +621,7 @@
 									name={assistant?.name ?? 'Assistant'}
 									muted={assistant?.muted ?? false}
 									suggestions={assistantSuggestions}
-									initialMessages={assistantChat}
-									summarised={assistantChatSummarised}
+									chat={assistantChat}
 								/>
 							</div>
 						{:else}

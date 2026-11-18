@@ -1284,17 +1284,47 @@ export const entitySuggestions = pgTable(
 	]
 );
 
-// The Assistant chat transcript, one conversation per scope per user. A turn
-// is keyed to exactly one scope: a story (the Write/Review/story-Plan thread)
-// or a universe (the universe-Plan thread); the CHECK enforces the exclusive
-// or. meta carries what a turn pointed at (a passage reference on user turns,
-// staged split proposals on assistant turns) so the panel can rebuild its
-// cards. Capped per conversation on append; cleared by the writer, the story
-// or universe delete cascade, and account purge.
+// One Assistant chat. A writer keeps any number per scope: a story (the
+// Write/Review/story-Plan surfaces) or a universe (universe Plan); the CHECK
+// enforces the exclusive or. The title is taken from the first message. The
+// panel lists a scope's chats newest first by updated_at, which each stored
+// turn bumps. Deleted by the writer, the story or universe delete cascade, and
+// account purge, together with its turns and summary.
+export const assistantChats = pgTable(
+	'assistant_chats',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		storyId: uuid('story_id').references(() => stories.id),
+		universeId: uuid('universe_id').references(() => universes.id),
+		userId: uuid('user_id')
+			.references(() => users.id)
+			.notNull(),
+		title: text('title').notNull().default(''),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('assistant_chats_story_idx').on(table.storyId, table.userId, table.updatedAt),
+		index('assistant_chats_universe_idx').on(table.universeId, table.userId, table.updatedAt),
+		check(
+			'assistant_chats_scope_ck',
+			sql`(${table.storyId} is null) <> (${table.universeId} is null)`
+		)
+	]
+);
+
+// The turns of an Assistant chat. A turn carries its chat and, redundantly,
+// the chat's scope, so the scope-wide deletes (story, universe, account) and
+// the split-proposal lookup stay single-table. meta carries what a turn pointed
+// at (a passage reference on user turns, staged split proposals on assistant
+// turns) so the panel can rebuild its cards. Capped per chat on append.
 export const assistantChatMessages = pgTable(
 	'assistant_chat_messages',
 	{
 		id: uuid('id').primaryKey().defaultRandom(),
+		chatId: uuid('chat_id')
+			.references(() => assistantChats.id)
+			.notNull(),
 		storyId: uuid('story_id').references(() => stories.id),
 		universeId: uuid('universe_id').references(() => universes.id),
 		userId: uuid('user_id')
@@ -1306,6 +1336,7 @@ export const assistantChatMessages = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [
+		index('assistant_chat_messages_chat_idx').on(table.chatId, table.createdAt),
 		index('assistant_chat_messages_conv_idx').on(table.storyId, table.userId, table.createdAt),
 		index('assistant_chat_messages_universe_idx').on(
 			table.universeId,
@@ -1319,15 +1350,17 @@ export const assistantChatMessages = pgTable(
 	]
 );
 
-// The running summary of the older turns of one chat conversation, kept so the
-// turns that no longer fit the transcript budget still reach the model in
-// condensed form. covered_digest fingerprints the newest turn the summary
-// covers, so the next request can find where the verbatim turns pick up.
-// Cleared with the conversation it summarises.
+// The running summary of the older turns of one chat, kept so the turns that
+// no longer fit the transcript budget still reach the model in condensed form.
+// covered_digest fingerprints the newest turn the summary covers, so the next
+// request can find where the verbatim turns pick up. Deleted with its chat.
 export const assistantChatSummaries = pgTable(
 	'assistant_chat_summaries',
 	{
 		id: uuid('id').primaryKey().defaultRandom(),
+		chatId: uuid('chat_id')
+			.references(() => assistantChats.id)
+			.notNull(),
 		storyId: uuid('story_id').references(() => stories.id),
 		universeId: uuid('universe_id').references(() => universes.id),
 		userId: uuid('user_id')
@@ -1338,8 +1371,9 @@ export const assistantChatSummaries = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [
-		uniqueIndex('assistant_chat_summaries_story_idx').on(table.storyId, table.userId),
-		uniqueIndex('assistant_chat_summaries_universe_idx').on(table.universeId, table.userId),
+		uniqueIndex('assistant_chat_summaries_chat_idx').on(table.chatId),
+		index('assistant_chat_summaries_story_idx').on(table.storyId, table.userId),
+		index('assistant_chat_summaries_universe_idx').on(table.universeId, table.userId),
 		check(
 			'assistant_chat_summaries_scope_ck',
 			sql`(${table.storyId} is null) <> (${table.universeId} is null)`

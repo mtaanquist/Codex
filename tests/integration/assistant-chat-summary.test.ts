@@ -12,7 +12,7 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 process.env.APP_SECRET = process.env.APP_SECRET || 'chat-summary-test-secret';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
-const { clearChat } = await import('../../src/lib/server/llm/chat-history');
+const { deleteChat, resolveChat } = await import('../../src/lib/server/llm/chat-history');
 const { fitChatWithSummary, getChatSummary, coveredAnchor } =
 	await import('../../src/lib/server/llm/chat-summary');
 
@@ -41,6 +41,7 @@ let pool: pg.Pool;
 let db: Database;
 let userId: string;
 let storyId: string;
+let chatId: string;
 
 function conversation(count: number): ChatMessage[] {
 	return Array.from({ length: count }, (_, i) => ({
@@ -60,7 +61,7 @@ beforeEach(async () => {
 	prompts = [];
 	failing = false;
 	await pool.query(
-		'truncate table assistant_chat_summaries, assistant_chat_messages, stories, universes, users cascade'
+		'truncate table assistant_chat_summaries, assistant_chat_messages, assistant_chats, stories, universes, users cascade'
 	);
 	const [user] = await db
 		.insert(users)
@@ -85,6 +86,7 @@ beforeEach(async () => {
 		.values({ universeId: universe.id, ownerId: userId, title: 'The Tide Below' })
 		.returning({ id: stories.id });
 	storyId = story.id;
+	chatId = (await resolveChat(db, userId, { storyId }, null, 'Chat'))!;
 });
 
 afterAll(async () => {
@@ -96,7 +98,7 @@ describe('fitChatWithSummary', () => {
 		const turns = conversation(4);
 		const result = await fitChatWithSummary(
 			db,
-			{ userId, scope: { storyId }, turns, budgetTokens: 1000 },
+			{ userId, scope: { storyId }, chatId, turns, budgetTokens: 1000 },
 			deps
 		);
 		expect(result).toEqual({ messages: turns, summarised: false });
@@ -108,7 +110,7 @@ describe('fitChatWithSummary', () => {
 		const first = conversation(12);
 		const result = await fitChatWithSummary(
 			db,
-			{ userId, scope, turns: first, budgetTokens: 1000 },
+			{ userId, scope, chatId, turns: first, budgetTokens: 1000 },
 			deps
 		);
 		expect(result.summarised).toBe(true);
@@ -117,7 +119,7 @@ describe('fitChatWithSummary', () => {
 		expect(result.messages.slice(1)).toEqual(first.slice(8));
 		expect(prompts[0]).toContain('turn 0');
 		expect(prompts[0]).not.toContain('turn 8');
-		expect(await getChatSummary(db, userId, scope)).toEqual({
+		expect(await getChatSummary(db, userId, chatId)).toEqual({
 			summary: 'SUMMARY-1',
 			coveredDigest: coveredAnchor(first, 8)
 		});
@@ -126,7 +128,7 @@ describe('fitChatWithSummary', () => {
 		const second = conversation(14);
 		const again = await fitChatWithSummary(
 			db,
-			{ userId, scope, turns: second, budgetTokens: 1000 },
+			{ userId, scope, chatId, turns: second, budgetTokens: 1000 },
 			deps
 		);
 		expect(prompts).toHaveLength(1);
@@ -134,12 +136,12 @@ describe('fitChatWithSummary', () => {
 
 		// More turns fall out: the refresh carries the old summary forward.
 		const third = conversation(20);
-		await fitChatWithSummary(db, { userId, scope, turns: third, budgetTokens: 1000 }, deps);
+		await fitChatWithSummary(db, { userId, scope, chatId, turns: third, budgetTokens: 1000 }, deps);
 		expect(prompts).toHaveLength(2);
 		expect(prompts[1]).toContain('SUMMARY-1');
 		expect(prompts[1]).toContain('turn 8');
 		expect(prompts[1]).not.toContain('turn 0 ');
-		expect((await getChatSummary(db, userId, scope))?.summary).toBe('SUMMARY-2');
+		expect((await getChatSummary(db, userId, chatId))?.summary).toBe('SUMMARY-2');
 	});
 
 	it('drops the overflow as before when the summary cannot be made', async () => {
@@ -147,22 +149,40 @@ describe('fitChatWithSummary', () => {
 		const turns = conversation(12);
 		const result = await fitChatWithSummary(
 			db,
-			{ userId, scope: { storyId }, turns, budgetTokens: 1000 },
+			{ userId, scope: { storyId }, chatId, turns, budgetTokens: 1000 },
 			deps
 		);
 		expect(result.summarised).toBe(false);
 		expect(result.messages).toEqual(turns.slice(2));
-		expect(await getChatSummary(db, userId, { storyId })).toBeNull();
+		expect(await getChatSummary(db, userId, chatId)).toBeNull();
 	});
 
-	it('clearing the conversation clears its summary', async () => {
+	it('keeps one summary per chat', async () => {
+		const scope = { storyId };
+		const other = (await resolveChat(db, userId, scope, null, 'Other'))!;
+		await fitChatWithSummary(
+			db,
+			{ userId, scope, chatId, turns: conversation(12), budgetTokens: 1000 },
+			deps
+		);
+		expect(await getChatSummary(db, userId, other)).toBeNull();
+		await fitChatWithSummary(
+			db,
+			{ userId, scope, chatId: other, turns: conversation(12), budgetTokens: 1000 },
+			deps
+		);
+		expect((await getChatSummary(db, userId, chatId))?.summary).toBe('SUMMARY-1');
+		expect((await getChatSummary(db, userId, other))?.summary).toBe('SUMMARY-2');
+	});
+
+	it('deleting the chat deletes its summary', async () => {
 		const scope = { storyId };
 		await fitChatWithSummary(
 			db,
-			{ userId, scope, turns: conversation(12), budgetTokens: 1000 },
+			{ userId, scope, chatId, turns: conversation(12), budgetTokens: 1000 },
 			deps
 		);
-		await clearChat(db, userId, scope);
-		expect(await getChatSummary(db, userId, scope)).toBeNull();
+		await deleteChat(db, userId, chatId);
+		expect(await getChatSummary(db, userId, chatId)).toBeNull();
 	});
 });

@@ -2048,6 +2048,23 @@ shipping as its own PR.
 
 ## Feedback backlog
 
+Several Assistant chats per story (#985, 2026-11-18): asked for alongside
+#984, modelled on the session picker in Claude Code for VS Code. Each scope
+(story or universe) and user had one transcript; now `assistant_chats` holds
+any number, and turns and summaries carry a `chat_id`. The turns keep their
+story_id / universe_id as well, so the scope-wide deletes and the split
+proposal lookup did not change. Migration 0080 adds the column nullable,
+backfills one chat per old conversation titled from its first user turn
+(the same rule as `chatTitle`, in SQL; Mads approved the one-time rewrite),
+drops summaries with no turns left, then sets NOT NULL; an integration test
+seeds a database at 0079 and runs it through. A new chat is created by the
+server on its first message rather than by the browser, so an abandoned "New
+chat" leaves nothing behind and no client-chosen ids are trusted; the id comes
+back as `x-chat-id`. Search is over titles in the browser, since one scope's
+list is short. `/clear` became `/new` (the old name still works) because
+clearing no longer deletes. Left out until asked: renaming chats, deleting
+from the list itself, a cap on chats per scope.
+
 Drag-to-resize side columns (#984, 2026-11-18): the follow-up #733 deferred,
 asked for so long Assistant chats get more room. Mads chose one right-column
 width for every tab rather than a wider one only while the Assistant is open.

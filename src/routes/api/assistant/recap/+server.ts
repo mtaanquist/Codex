@@ -5,8 +5,10 @@ import { scenes } from '#lib/server/db/schema';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
-	requireAssistantStory
+	requireAssistantStory,
+	requireChat
 } from '#lib/server/llm/assistant-route';
+import { RECAP_CHAT_TITLE } from '#lib/assistant-chat';
 import { assembleRecapContext } from '#lib/server/llm/context/assemble';
 import { buildRecapMessage } from '#lib/server/llm/prompts/recap';
 import type { ChatMessage } from '#lib/server/llm/providers/types';
@@ -20,6 +22,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const { userId, payload } = await readAssistantPayload<{
 		storyId?: unknown;
 		sceneId?: unknown;
+		chatId?: unknown;
 	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const story = await requireAssistantStory(userId, payload.storyId);
@@ -42,12 +45,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		{ role: 'user', content: buildRecapMessage(throughTitle) }
 	];
 
-	// The recap joins the stored conversation as an assistant turn once its
-	// stream ends cleanly.
+	// The recap joins the open chat (or starts one) as an assistant turn once
+	// its stream ends cleanly.
+	const scope = { storyId: story.id };
+	const chat = await requireChat(userId, scope, payload.chatId, RECAP_CHAT_TITLE);
 	return assistantSseResponse({
 		request,
 		userId,
-		scope: { storyId: story.id },
+		scope,
+		chat,
 		role: 'utility',
 		enableTools: false,
 		messages,

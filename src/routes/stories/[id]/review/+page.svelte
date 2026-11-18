@@ -69,7 +69,6 @@
 				}
 			: null}
 		assistantChat={data.assistantChat}
-		assistantChatSummarised={data.assistantChatSummarised}
 		onSaveStatus={(status) => (saveStatus = status)}
 	/>
 	{#if data.assistant.surfacesEnabled}

@@ -6,6 +6,7 @@ import {
 	assets,
 	assistantChatMessages,
 	assistantChatSummaries,
+	assistantChats,
 	exportArtifacts,
 	notifications,
 	publications,
@@ -151,6 +152,7 @@ export async function purgeAccount(
 		// belt-and-braces sweep by user).
 		await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.userId, userId));
 		await tx.delete(assistantChatSummaries).where(eq(assistantChatSummaries.userId, userId));
+		await tx.delete(assistantChats).where(eq(assistantChats.userId, userId));
 
 		await tx.delete(authTokens).where(eq(authTokens.userId, userId));
 		await tx.delete(totpRecoveryCodes).where(eq(totpRecoveryCodes.userId, userId));

@@ -44,7 +44,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		detail: 'Suggest aliases and details for every entry in this universe',
 		scope: 'both'
 	},
-	{ name: 'clear', detail: 'Clear this conversation', scope: 'both' },
+	{ name: 'new', detail: 'Start a new chat (this one stays in your chat list)', scope: 'both' },
 	{ name: 'help', detail: 'List these commands', scope: 'both' }
 ];
 

@@ -29,8 +29,7 @@ import {
 import { assistantLayout } from '#lib/server/llm/config';
 import { listPendingForEntity, type EntitySuggestion } from '#lib/server/entity-suggestions';
 import { planArc } from '#lib/server/llm/arc-summary';
-import { listChat } from '#lib/server/llm/chat-history';
-import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { loadAssistantChat } from '#lib/server/llm/chat-history';
 import { listUniverseNotes } from '#lib/server/notes';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 import { formText } from '#lib/server/validation';
@@ -99,11 +98,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// gate is account-level here - there is no per-universe mute.
 	const assistant = await assistantLayout(db, locals.user!.id);
 	const assistantChat = assistant.tabEnabled
-		? await listChat(db, locals.user!.id, { universeId: universe.id })
-		: [];
-	const assistantChatSummarised =
-		assistant.tabEnabled &&
-		(await hasChatSummary(db, locals.user!.id, { universeId: universe.id }));
+		? await loadAssistantChat(db, locals.user!.id, { universeId: universe.id })
+		: null;
 
 	// The entity lists do not depend on the selection; resolve the selected
 	// entity (if the URL names one) alongside them.
@@ -183,8 +179,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		entitySuggestions,
 		arc,
 		assistant,
-		assistantChat,
-		assistantChatSummarised
+		assistantChat
 	};
 };
 

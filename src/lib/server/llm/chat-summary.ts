@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { assistantChatSummaries } from '../db/schema';
 import { estimateTokens } from './context/assemble';
-import { fitChatTurns, type ChatScope } from './chat-history';
+import { fitChatTurns, isForeignKeyViolation, type ChatScope } from './chat-history';
 import { complete, type GatewayDeps } from './gateway';
 import { buildChatSummaryMessage, chatSummarySystemMessage } from './prompts/chat-summary';
 import type { ChatMessage } from './providers/types';
@@ -105,16 +105,10 @@ export function planChatTurns(
 	};
 }
 
-function scopeWhere(scope: ChatScope) {
-	return 'storyId' in scope
-		? eq(assistantChatSummaries.storyId, scope.storyId)
-		: eq(assistantChatSummaries.universeId, scope.universeId);
-}
-
 export async function getChatSummary(
 	db: Database,
 	userId: string,
-	scope: ChatScope
+	chatId: string
 ): Promise<StoredChatSummary | null> {
 	const [row] = await db
 		.select({
@@ -122,39 +116,46 @@ export async function getChatSummary(
 			coveredDigest: assistantChatSummaries.coveredDigest
 		})
 		.from(assistantChatSummaries)
-		.where(and(eq(assistantChatSummaries.userId, userId), scopeWhere(scope)));
+		.where(
+			and(eq(assistantChatSummaries.userId, userId), eq(assistantChatSummaries.chatId, chatId))
+		);
 	return row ?? null;
 }
 
 export async function hasChatSummary(
 	db: Database,
 	userId: string,
-	scope: ChatScope
+	chatId: string
 ): Promise<boolean> {
-	return (await getChatSummary(db, userId, scope)) !== null;
+	return (await getChatSummary(db, userId, chatId)) !== null;
 }
 
 async function saveChatSummary(
 	db: Database,
 	userId: string,
 	scope: ChatScope,
+	chatId: string,
 	value: StoredChatSummary
 ): Promise<void> {
 	const storyScope = 'storyId' in scope;
-	await db
-		.insert(assistantChatSummaries)
-		.values({
-			userId,
-			storyId: storyScope ? scope.storyId : null,
-			universeId: storyScope ? null : scope.universeId,
-			...value
-		})
-		.onConflictDoUpdate({
-			target: storyScope
-				? [assistantChatSummaries.storyId, assistantChatSummaries.userId]
-				: [assistantChatSummaries.universeId, assistantChatSummaries.userId],
-			set: { ...value, updatedAt: new Date() }
-		});
+	try {
+		await db
+			.insert(assistantChatSummaries)
+			.values({
+				chatId,
+				userId,
+				storyId: storyScope ? scope.storyId : null,
+				universeId: storyScope ? null : scope.universeId,
+				...value
+			})
+			.onConflictDoUpdate({
+				target: assistantChatSummaries.chatId,
+				set: { ...value, updatedAt: new Date() }
+			});
+	} catch (err) {
+		// The chat was deleted mid-request; there is nothing to summarise now.
+		if (!isForeignKeyViolation(err)) throw err;
+	}
 }
 
 // Fits a chat transcript to its budget, summarising the turns that fall out.
@@ -166,13 +167,14 @@ export async function fitChatWithSummary(
 	opts: {
 		userId: string;
 		scope: ChatScope;
+		chatId: string;
 		turns: ChatMessage[];
 		budgetTokens: number;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps = {}
 ): Promise<{ messages: ChatMessage[]; summarised: boolean }> {
-	const stored = await getChatSummary(db, opts.userId, opts.scope);
+	const stored = await getChatSummary(db, opts.userId, opts.chatId);
 	const plan = planChatTurns(opts.turns, opts.budgetTokens, stored);
 	let summary = plan.summary;
 	let verbatim = plan.verbatim;
@@ -201,7 +203,7 @@ export async function fitChatWithSummary(
 			).trim();
 			if (refreshed) {
 				summary = refreshed;
-				await saveChatSummary(db, opts.userId, opts.scope, {
+				await saveChatSummary(db, opts.userId, opts.scope, opts.chatId, {
 					summary,
 					coveredDigest: plan.refresh.coveredDigest
 				});

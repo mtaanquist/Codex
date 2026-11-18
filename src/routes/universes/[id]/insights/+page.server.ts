@@ -10,8 +10,7 @@ import {
 import { userPreferences } from '#lib/server/preferences';
 import { requestTimeZone } from '#lib/server/timezone';
 import { assistantLayout } from '#lib/server/llm/config';
-import { listChat } from '#lib/server/llm/chat-history';
-import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { loadAssistantChat } from '#lib/server/llm/chat-history';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -29,11 +28,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	// The Assistant is the one panel with a subject on this page: the numbers in
 	// the middle. Nothing to load while the account has it switched off.
 	const assistantChat = assistant.tabEnabled
-		? await listChat(db, locals.user!.id, { universeId: universe.id })
-		: [];
-	const assistantChatSummarised =
-		assistant.tabEnabled &&
-		(await hasChatSummary(db, locals.user!.id, { universeId: universe.id }));
+		? await loadAssistantChat(db, locals.user!.id, { universeId: universe.id })
+		: null;
 	return {
 		universe,
 		stories,
@@ -42,7 +38,6 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 		web,
 		assistant,
 		assistantChat,
-		assistantChatSummarised,
 		dailyGoal: preferences.dailyWordGoal,
 		showStreak: preferences.sessionStreak === 'shown'
 	};

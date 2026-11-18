@@ -114,11 +114,11 @@ When a reply contains something you want in the manuscript, select "Insert at cu
 
 The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". This puts a request in the chat box for you to change if you like, for example to ask for three scenes instead of two; press Enter to send it. Its suggestion appears in the conversation as a card quoting the text the new scene would start with, alongside its reasoning. Nothing happens until you select "Split here" on the card. A confirmed card shows the split as done and offers "Revert", which merges the two scenes back into one. If the Assistant proposes several splits for one scene, confirm them in any order; each cut lands at its quoted text even after the earlier ones move it into a new scene.
 
-The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button and confirm; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
+Your chats are kept per story, so they are still there when you come back or reload, and the panel opens on the one you used last. To start a new chat, select the + at the top of the panel or type `/new`; the earlier chats are kept. To go back to one, select the chat's name at the top of the panel: a list shows your chats for this story, newest first, with a box to search them by name. Each chat is named after its first message. To delete the open chat for good, select "Delete chat" from the menu next to the send button and confirm. Only the most recent stretch of a long chat is kept.
 
 To answer, the Assistant looks things up in your work: each scene it reads, character it checks, or search it runs is one lookup. It has a set number of lookups per reply, so a question that covers many scenes can use them up. When that happens, a note under the reply says it may have missed something. Ask about fewer scenes at a time, or raise "Lookups per reply" on your account page. A different note says the Assistant ran out of room to read: the model can only hold so much text at once, so ask about fewer scenes at a time.
 
-In a long conversation, the Assistant reads your recent messages in full and the older ones as a short summary, which it writes using the model you picked for Background work. A note at the top of the conversation tells you when that has started. The summary keeps what you decided and asked for, but not the exact wording, so repeat a detail if the Assistant seems to have lost it, or clear the conversation to start fresh. If the summary cannot be written, for example because your endpoint is unreachable, the oldest messages are left out instead.
+In a long conversation, the Assistant reads your recent messages in full and the older ones as a short summary, which it writes using the model you picked for Background work. A note at the top of the conversation tells you when that has started. The summary keeps what you decided and asked for, but not the exact wording, so repeat a detail if the Assistant seems to have lost it, or start a new chat. If the summary cannot be written, for example because your endpoint is unreachable, the oldest messages are left out instead.
 
 You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it. Some commands take the rest of the line as input, so type what you want after the command:
 
@@ -132,10 +132,10 @@ You can also type a command in the chat box. Start a line with a slash and a sho
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
 - `/enrich` suggests aliases, quick details, and summaries for every character, place, and lore entry in the universe that appears in your scenes. It runs in the background and notifies you when it is done; the suggestions wait on each entry's page in Plan for you to accept or reject. Run it again later and it only reads entries whose scenes have changed since.
-- `/clear` clears the conversation.
+- `/new` starts a new chat. The current one stays in your list.
 - `/help` lists these commands.
 
-On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/enrich`, `/who`, `/find`, `/clear`, and `/help`.
+On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/enrich`, `/who`, `/find`, `/new`, and `/help`. Its chats are separate from the chats in each story.
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 

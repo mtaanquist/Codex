@@ -6,7 +6,7 @@ import { rateLimitAssistant } from '../write-guard';
 import { readJson } from '../validation';
 import { assistantLayout } from './config';
 import { AssistantDisabledError, stream } from './gateway';
-import { appendChat, type ChatScope } from './chat-history';
+import { appendChat, dropChatIfEmpty, resolveChat, type ChatScope } from './chat-history';
 import type { ChatMessage, SplitProposal, StreamEvent } from './providers/types';
 
 // The shared front door and transport of the assistant endpoints, so the
@@ -62,6 +62,25 @@ export function throwAssistantError(err: unknown, fallback: string): never {
 	error(502, fallback);
 }
 
+// The chat a turn belongs to: the writer's chat named by payload.chatId in this
+// scope, or a new one titled `title` when the payload names none (created says
+// which). A chatId that is not the writer's chat in this scope is a 404, so ids
+// cannot be probed.
+export async function requireChat(
+	userId: string,
+	scope: ChatScope,
+	rawChatId: unknown,
+	title: string
+): Promise<{ id: string; created: boolean }> {
+	if (rawChatId !== undefined && rawChatId !== null && typeof rawChatId !== 'string') {
+		error(400, 'chatId must be a string.');
+	}
+	const named = rawChatId || null;
+	const chatId = await resolveChat(db, userId, scope, named, title);
+	if (!chatId) error(404, 'That chat does not exist.');
+	return { id: chatId, created: !named };
+}
+
 // Streams a gateway turn back as Server-Sent Events. The reply accumulates
 // and persists to the stored conversation only when the stream ends cleanly;
 // an aborted or failed turn stores nothing. Proposals (split cards) and a
@@ -73,6 +92,10 @@ export function assistantSseResponse(options: {
 	// or a universe (universe-Plan). Drives both the gateway's tool reach and
 	// where the reply is persisted.
 	scope: ChatScope;
+	// The chat the reply is stored in; sent back as x-chat-id so a panel that
+	// started a new chat learns its id. A chat this request created is dropped
+	// again if the stream stores nothing in it.
+	chat: { id: string; created: boolean };
 	// Conversational turns run as 'chat'; the recap runs as 'utility'. Both land
 	// in the same stored conversation.
 	role: 'chat' | 'utility';
@@ -83,6 +106,7 @@ export function assistantSseResponse(options: {
 	errorMessage: string;
 }): Response {
 	const { request, userId, scope } = options;
+	const chatId = options.chat.id;
 	const storyId = 'storyId' in scope ? scope.storyId : undefined;
 	const universeId = 'universeId' in scope ? scope.universeId : undefined;
 	const encoder = new TextEncoder();
@@ -113,7 +137,8 @@ export function assistantSseResponse(options: {
 								...(proposals.length > 0 ? { proposals } : {}),
 								...(stopped ? { stopped } : {})
 							};
-							await appendChat(db, userId, scope, {
+							// False when the chat was deleted mid-reply; the reply goes with it.
+							await appendChat(db, userId, scope, chatId, {
 								role: 'assistant',
 								content: reply,
 								meta: Object.keys(meta).length > 0 ? meta : null
@@ -135,6 +160,9 @@ export function assistantSseResponse(options: {
 					}
 				}
 			} finally {
+				if (options.chat.created) {
+					await dropChatIfEmpty(db, chatId).catch(() => {});
+				}
 				try {
 					controller.close();
 				} catch {
@@ -149,6 +177,7 @@ export function assistantSseResponse(options: {
 			'content-type': 'text/event-stream',
 			'cache-control': 'no-cache, no-transform',
 			connection: 'keep-alive',
+			'x-chat-id': chatId,
 			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
 		}
 	});

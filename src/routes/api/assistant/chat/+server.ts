@@ -1,19 +1,19 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
-import { ownedStory } from '#lib/server/story-access';
-import { ownedUniverse } from '#lib/server/universe-access';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
 	requireAssistantStory,
-	requireAssistantUniverse
+	requireAssistantUniverse,
+	requireChat
 } from '#lib/server/llm/assistant-route';
+import { chatTitle } from '#lib/assistant-chat';
 import {
 	assembleContext,
 	buildSystemMessage,
 	type AssembleOptions
 } from '#lib/server/llm/context/assemble';
-import { appendChat, clearChat, type ChatScope } from '#lib/server/llm/chat-history';
+import { appendChat, type ChatScope } from '#lib/server/llm/chat-history';
 import { fitChatWithSummary } from '#lib/server/llm/chat-summary';
 import { chatBudgetTokens, contextBudgetTokens } from '#lib/server/llm/context/budgets';
 import { modelContextWindow, resolveLlmConfig } from '#lib/server/llm/config';
@@ -27,9 +27,10 @@ import type { ChatMessage } from '#lib/server/llm/providers/types';
 // The chat surface: the browser POSTs its transcript and either the open story
 // (and scene) or the universe in view, the server assembles the in-scope world,
 // runs the gateway, and streams tokens back as Server-Sent Events. The key and
-// endpoint never leave the server. The conversation persists per scope and
-// user: the newest user turn is stored when the request is accepted, the reply
-// when its stream completes.
+// endpoint never leave the server. Turns persist in the chat named by chatId,
+// or a new chat when there is none (its id comes back as x-chat-id): the newest
+// user turn is stored when the request is accepted, the reply when its stream
+// completes.
 //
 // Tools are offered (grounding reads, suggest_edit/leave_comment writes); the
 // gateway withholds them when the endpoint cannot call them. A muted story
@@ -70,6 +71,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		storyId?: unknown;
 		universeId?: unknown;
 		sceneId?: unknown;
+		chatId?: unknown;
 		messages?: unknown;
 	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
@@ -92,12 +94,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The newest user turn joins the stored transcript; the earlier turns are
 	// already there from their own requests.
 	const newest = turns[turns.length - 1];
+	const chat = await requireChat(userId, scope, payload.chatId, chatTitle(newest.content));
+	const chatId = chat.id;
 	if (newest.role === 'user') {
-		await appendChat(db, userId, scope, {
+		const stored = await appendChat(db, userId, scope, chatId, {
 			role: 'user',
 			content: newest.content,
 			meta: newest.reference ? { reference: newest.reference } : null
 		});
+		if (!stored) error(404, 'That chat does not exist.');
 	}
 
 	// The assembled world rides as a system message after the gateway's persona
@@ -120,6 +125,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const fitted = await fitChatWithSummary(db, {
 		userId,
 		scope,
+		chatId,
 		turns: turns.map((turn) => ({
 			role: turn.role,
 			content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
@@ -135,29 +141,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		request,
 		userId,
 		scope,
+		chat,
 		role: 'chat',
 		enableTools: true,
 		messages,
 		summarised: fitted.summarised,
 		errorMessage: 'The Assistant could not complete that request.'
 	});
-};
-
-// Clear conversation: drops the stored transcript for this scope. Deletes only,
-// so it needs ownership but no Assistant gate.
-export const DELETE: RequestHandler = async ({ request, locals }) => {
-	const { userId, payload } = await readAssistantPayload<{
-		storyId?: unknown;
-		universeId?: unknown;
-	}>(request, locals);
-	if (typeof payload.storyId === 'string' && payload.storyId) {
-		const { story } = await ownedStory(payload.storyId, userId);
-		await clearChat(db, userId, { storyId: story.id });
-	} else if (typeof payload.universeId === 'string' && payload.universeId) {
-		const universe = await ownedUniverse(payload.universeId, userId);
-		await clearChat(db, userId, { universeId: universe.id });
-	} else {
-		error(400, 'storyId or universeId is required.');
-	}
-	return Response.json({ ok: true });
 };

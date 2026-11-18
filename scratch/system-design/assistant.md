@@ -350,13 +350,14 @@ The chat is sync and streaming. It is the home of:
   tonight with X, Y, Z" (see "Tool use"),
 - the usual chat affordances: regenerate a message, copy, stop generation.
 
-Persistence: the first cut is ephemeral (conversation state lives in the
-client and is lost on reload). Regenerate works because the surrounding
-turns are retained in the client for the session. Persisted conversations
-(a `conversations` / `messages` pair of tables, browsing past chats,
-resumption) are a deferred refinement, taken on only once the chat has
-proven its worth. This matches the roadmap's "Session tab refinements" item
-and the project's "revisions are cheap to skip early" instinct.
+Persistence: chats are stored per scope (story or universe) and user, any
+number of them (`assistant_chats`, with turns in `assistant_chat_messages`;
+issue #985, migration 0080). The panel opens the most recently used chat; a
+picker at the top lists the scope's chats newest first, searchable by title,
+and the + (or `/new`) starts a new one, which the server creates on its first
+message and names after it (`x-chat-id` on the response tells the panel the
+id). "Delete chat" removes one with its turns and summary. Titles are not
+editable yet.
 
 ### 2. Inline (the editor)
 
@@ -502,7 +503,7 @@ world budget, since the per-scene cost and the up-front estimate depend on it.
 
 When the chat transcript outgrows its budget, the turns that fall out are not
 just dropped: they are folded into a running summary on the utility role
-(`chat-summary.ts`), stored per conversation in `assistant_chat_summaries`, and
+(`chat-summary.ts`), stored per chat in `assistant_chat_summaries`, and
 sent as a system message ahead of the newer turns. The summary is refreshed only
 when more turns fall out of the budget, or when 30 turns have built up after it
 (the browser sends its newest 40, so the anchor must not slide out of that
@@ -511,7 +512,7 @@ Because the browser sends a sliding window of turns with no ids, the summary
 records a digest of the newest writer turn it covers, paired with the writer
 turn before it, to find its place; writer turns are always stored, so the
 anchor survives a reload. A failed refresh falls back to dropping turns and is
-retried on the next message; clearing the conversation clears the summary. One
+retried on the next message; deleting the chat deletes its summary. One
 summarising step serves every provider rather than Claude's
 server-side compaction, so the behaviour is the same everywhere.
 
@@ -725,9 +726,9 @@ cannot deliver.
 
 ### Surfaces, wired
 
-- Chat: `POST /api/assistant/chat`, SSE, client-held ephemeral conversation
-  (regenerate works from retained turns); persistence is a later
-  `conversations`/`messages` pair.
+- Chat: `POST /api/assistant/chat`, SSE, stored per chat (`chatId` in the
+  body, `x-chat-id` back); `GET` and `DELETE /api/assistant/chats/[id]` load
+  and delete one.
 - Inline: continuation is its own CodeMirror compartment (kept distinct from
   the entity-autocomplete compartment), calling `/api/assistant/continuation`;
   co-author is a side panel calling `/api/assistant/coauthor`.
@@ -827,8 +828,9 @@ context assembly and the cross-scene pass read them.
   reviewer row or a flag column), TBD at build time.
 - Cached character arc summaries with a staleness watermark:
   `characters.arc_summary_md` and `arc_summary_at` (migration 0079).
-- Deferred: persisted chat (`conversations` / `messages`), only if and when
-  chat persistence is taken on.
+- Persisted chats: `assistant_chats`, with `chat_id` on
+  `assistant_chat_messages` and `assistant_chat_summaries` (migration 0080,
+  which made each earlier conversation its scope's first chat).
 
 ## Open questions
 

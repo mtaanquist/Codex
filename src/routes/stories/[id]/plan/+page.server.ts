@@ -41,8 +41,7 @@ import {
 	type RelationshipView
 } from '#lib/server/relationships';
 import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
-import { listChat } from '#lib/server/llm/chat-history';
-import { hasChatSummary } from '#lib/server/llm/chat-summary';
+import { loadAssistantChat } from '#lib/server/llm/chat-history';
 import { listPendingForEntity, type EntitySuggestion } from '#lib/server/entity-suggestions';
 import { planArc } from '#lib/server/llm/arc-summary';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
@@ -153,10 +152,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// the Write page), so the stored transcript loads when the tab is available.
 	const assistant = await assistantLayout(db, locals.user!.id, story.id);
 	const assistantChat = assistant.tabEnabled
-		? await listChat(db, locals.user!.id, { storyId: story.id })
-		: [];
-	const assistantChatSummarised =
-		assistant.tabEnabled && (await hasChatSummary(db, locals.user!.id, { storyId: story.id }));
+		? await loadAssistantChat(db, locals.user!.id, { storyId: story.id })
+		: null;
 	let assistantSuggestions: EntitySuggestion[] = [];
 	if (selected) {
 		assistantSuggestions = await listPendingForEntity(
@@ -241,7 +238,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		assistantEnabled: assistant.surfacesEnabled,
 		assistant,
 		assistantChat,
-		assistantChatSummarised,
 		assistantSuggestions,
 		arc
 	};

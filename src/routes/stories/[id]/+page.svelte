@@ -1065,8 +1065,7 @@
 								name={data.assistant.name}
 								muted={data.assistant.muted}
 								suggestions={assistantSuggestions}
-								initialMessages={data.assistantChat}
-								summarised={data.assistantChatSummarised}
+								chat={data.assistantChat}
 								onConfirmSplit={confirmAssistantSplit}
 								onRevertSplit={revertAssistantSplit}
 								insertPaused={leavingScene}
