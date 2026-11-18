@@ -340,6 +340,23 @@ describe('restoreDraftScene', () => {
 		expect(copies).toHaveLength(1);
 	});
 
+	it('restores onto a scene that was added back and then edited', async () => {
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const added = await restoreDraftScene(db, storyId, id, sceneId);
+		if (!added.ok) throw new Error('expected a restore');
+		await db.update(scenes).set({ bodyMd: 'Rewritten since.' }).where(eq(scenes.id, added.sceneId));
+		const again = await restoreDraftScene(db, storyId, id, sceneId);
+		expect(again).toEqual({ ok: true, sceneId: added.sceneId, created: false });
+		const [copy] = await db.select().from(scenes).where(eq(scenes.id, added.sceneId));
+		expect(copy.bodyMd).toBe('Halden left at dawn.');
+		const history = await db.select().from(revisions).where(eq(revisions.entityId, added.sceneId));
+		expect(history.map((row) => row.bodyMd)).toContain('Rewritten since.');
+		const live = await db.select().from(scenes).where(eq(scenes.storyId, storyId));
+		expect(live.filter((row) => row.bodyMd === 'Halden left at dawn.')).toHaveLength(1);
+	});
+
 	it('adds a scene back even when another scene has the same text', async () => {
 		const id = await save();
 		await db.delete(notes);
