@@ -127,10 +127,11 @@ You can also type a command in the chat box. Start a line with a slash and a sho
 - `/find <text>` searches this universe and lists what it finds.
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
+- `/enrich` suggests aliases, quick details, and summaries for every character, place, and lore entry in the universe that appears in your scenes. It runs in the background and notifies you when it is done; the suggestions wait on each entry's page in Plan for you to accept or reject. Run it again later and it only reads entries whose scenes have changed since.
 - `/clear` clears the conversation.
 - `/help` lists these commands.
 
-On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/who`, `/find`, `/clear`, and `/help`.
+On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/enrich`, `/who`, `/find`, `/clear`, and `/help`.
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
@@ -144,7 +145,7 @@ You can also ask the Assistant to review your writing and leave comments and sug
 
 A chapter or whole-story review runs in the background, since it reads every scene; a card in the bottom corner shows it working, a line under the Write, Plan and Review buttons shows how many scenes it has read, and you get a notification when its notes are ready. Both stay visible if you reload the page. Nothing in your writing changes until you accept a suggestion.
 
-To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted. This does not change your other stories or your account setting.
+To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted, including when you use the Assistant from another story or from the universe's Plan: it leaves the muted story's scenes out. This does not change your other stories or your account setting.
 
 ## Spelling
 

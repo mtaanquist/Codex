@@ -10,6 +10,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	assets,
+	characters,
 	notifications,
 	reviewComments,
 	reviewers,
@@ -197,6 +198,19 @@ describe('assistant jobs skip trashed work', () => {
 		expect(await titles(owner.id)).toEqual([]);
 	});
 
+	it('skips an enrichment pass once the universe is in the trash, or for someone else', async () => {
+		const { owner, universe } = await seedStory();
+		const other = await makeUser('other-enrich@example.com');
+		const { handlers } = harness({ enrichUniverse: neverCalled });
+
+		await handlers.assistantEnrich([job({ userId: other.id, universeId: universe.id })]);
+		await trash(universes, universe.id);
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([]);
+		expect(await titles(other.id)).toEqual([]);
+	});
+
 	it('skips a universe continuity pass once the universe is in the trash', async () => {
 		const { owner, universe } = await seedStory();
 		await trash(universes, universe.id);
@@ -229,6 +243,65 @@ describe('assistant notices link by id', () => {
 		expect((await hrefs(owner.id)).sort()).toEqual(
 			[`/stories/${story.id}/review`, `/stories/${story.id}`].sort()
 		);
+	});
+
+	it('links a character arc to the character in the universe Plan', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers } = harness({
+			summariseCharacterArc: async () => ({ outcome: 'written' as const }),
+			enrichUniverse: neverCalled
+		});
+
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await hrefs(owner.id)).toEqual([
+			`/universes/${universe.id}/plan?entity=${character.id}`
+		]);
+		expect(await titles(owner.id)).toEqual(['The Assistant wrote the arc for Bram.']);
+	});
+
+	it('tells the writer when an arc could not be written', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers } = harness({
+			summariseCharacterArc: async () => {
+				throw new Error('endpoint down');
+			}
+		});
+
+		// The job fails, so the activity card shows it did not work.
+		await expect(
+			handlers.assistantEnrich([
+				job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+			])
+		).rejects.toThrow('endpoint down');
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not write the arc for Bram. Check the endpoint in your settings.'
+		]);
+	});
+
+	it('links an enrichment pass to the universe Plan by id', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({ entities: 3, staged: 2, failed: 0 })
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await hrefs(owner.id)).toEqual([`/universes/${universe.id}/plan`]);
+		expect(await titles(owner.id)).toEqual([
+			`The Assistant left 2 suggestions on the entries in "${universe.name}". Open an entry in Plan to accept or reject them.`
+		]);
 	});
 
 	it('links a universe continuity pass to the universe id', async () => {

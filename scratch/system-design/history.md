@@ -1428,8 +1428,95 @@ endpoint. Started 2026-06-09. Every step below through entity enrichment
 merged as #324-#335 and shipped together as v3.0.0; later items carry their
 own PR and version.
 
-Still open in Phase 9: whole-universe background enrichment
-(`assistant-enrich`) and character arc summaries.
+Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
+2026-11-18).
+
+- [x] Staging review fixes for Phase 9 (2026-11-18). A fresh review of the
+      whole staging diff found three things. The enrich queue is now created
+      with pg-boss's `exclusive` policy: under the default policy a
+      `singletonKey` does not stop a second job, so repeat `/enrich` or "Write
+      arc" clicks each ran (and paid). A policy cannot change once a queue
+      exists, which is why the older review and summaries queues are a
+      separate issue. An arc is only stored if no story it read was muted
+      while the model was writing (the job fails and its retry reads without
+      that story), and muting plus clearing arcs is one transaction. A pending
+      summary suggestion can no longer replace a summary the writer wrote
+      after it was staged: the server refuses it, and the editor hides it
+      while the summary field has text.
+
+- [x] Muted stories stay out of universe-wide work (2026-11-18, #975). Mads
+      decided a story mute should keep that book's prose from the model
+      everywhere, not only hide the surfaces on it. One condition,
+      `storyAssistantOn()` (`universe-scope.ts`: `llm_config` does not contain
+      `enabled: false`), is added to every universe-wide read that feeds a
+      model: `universeSkeleton` (the universe outline in context and
+      `list_scenes`), the tools' `loadScene` (`get_scene` and the write tools),
+      `search_text` (a new `assistant` option on `searchAll`), `find_appearances`
+      and enrichment (a new `assistant` option on `entityAppearances`; the Plan
+      page's "Appears in" list still shows every story), the enrichment
+      candidate query, character arcs and their staleness, and the universe
+      continuity pass. Muting a story also drops the stored arcs of the
+      characters it mentions (`saveStoryLlmOverride`), since an arc written
+      before the mute may retell it; an arc rewrite that finds no scenes left
+      clears the old arc too.
+
+- [x] Character arc summaries (2026-11-18, #846). Migration 0079 adds
+      `characters.arc_summary_md` and `arc_summary_at` (additive; characters
+      only, YAGNI for places and lore). `llm/arc-summary.ts`:
+      `summariseCharacterArc` reads the live scenes in the character's universe
+      that mention them, one per scene in reading order (story series position,
+      then scene position), each as its `summary_md` or else the passage around
+      the first mention, evenly sampled to 60 so a long arc keeps its opening and
+      latest scene, and asks for at most five sentences (role `utility`, no
+      tools). It writes the columns directly, stamping the database time the read
+      started and keeping `updated_at`: generated metadata in its own column, the
+      way scene summaries are, never the writer's summary. An empty reply throws
+      and leaves the earlier arc. Stale (`arcIsStale`) when a mentioning scene's
+      `updated_at` is after `arc_summary_at`; shown, never regenerated on view.
+      The job shares the `assistant-enrich` queue (data carries `characterId`;
+      singleton key `arc:<id>`; job kind `arc` in the activity center,
+      job-status, and running-jobs) and notifies with the `assistant_enrich`
+      kind, linking to the character. `POST /api/assistant/arc-job`; the
+      "Arc across the stories" section in `EntityEditor` (characters, both Plan
+      pages) waits on the job and refreshes the page data. Context assembly adds
+      the arc to the character block ("Across the stories: ..."). Not in the
+      export: it is regenerable Assistant output, not the writer's words, and
+      nothing on the import side would read it back.
+
+- [x] Background universe enrichment (2026-11-18, #845 part 2). The
+      `assistant-enrich` queue (`ASSISTANT_ENRICH_QUEUE`), `queueAssistantEnrich`
+      (singleton per universe, the shared Assistant send options), and the
+      worker's `assistantEnrich` handler, which re-checks the owner and calls
+      `enrichUniverse` (`llm/enrich.ts`). The pass picks the universe's
+      characters, places, and lore that are mentioned in a live scene and either
+      were never enriched or have a mentioning scene with `updated_at` after
+      their new `assistant_enriched_at` (migration 0078, additive, one column per
+      entity table). Each entity runs the same `enrichEntity` as the inline
+      button at universe scope, metered against the account spend cap, and is
+      marked with the database time its read started (preserving `updated_at`), so an edit
+      during the pass is caught next time and a failed read is retried. Started
+      by `/enrich` (scope both; a story focus runs over its universe) through
+      `POST /api/assistant/enrich-job`; tracked as job kind `enrich` in the
+      activity center, job-status, and running-jobs, and announced with a new
+      `assistant_enrich` notification kind linking to the universe Plan.
+      `decideEntitySuggestion` no longer queues the mention reindex itself (it
+      returns the universe for the route to queue), so `entity-suggestions.ts`
+      stays loadable by the worker, which cannot load `jobs.ts`.
+
+- [x] Universe-scope entity enrichment (2026-11-18, #845 part 1). The
+      enrich endpoint takes a `universeId` as well as a `storyId`, and the
+      universe Plan entity editor now shows "Suggest details" and the pending
+      suggestions (before, only the story Plan did). At universe scope the
+      appearances are spread across stories (`spreadAppearances`: round-robin
+      per story, returned in reading order) so the first story does not fill
+      all 16 slots, and each passage is labelled with its story. The universe
+      scope runs on the account settings (no story mute or model override to
+      apply). `enrichEntity` reads the entity through `resolveOwnedEntity`
+      rather than `getEntityCard`, which also loaded relationships it never
+      used. Staging now drops what the writer rejected: an alias rejected in
+      any case, and a detail rejected with the same label and value (a new
+      value for that label can still come back). Summaries keep the old rule
+      (only when none is set or pending).
 
 - [x] Step 1 - gateway plumbing (server-only, no surfaces). The
       `$lib/server/llm/` module: `config.ts` (account/story `llm_config`

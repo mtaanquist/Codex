@@ -39,6 +39,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	{ name: 'find', detail: 'Search this universe', scope: 'both', args: true },
 	{ name: 'catchup', detail: 'Recap the story so far', scope: 'story' },
 	{ name: 'summaries', detail: 'Refresh scene and chapter summaries', scope: 'story' },
+	{
+		name: 'enrich',
+		detail: 'Suggest aliases and details for every entry in this universe',
+		scope: 'both'
+	},
 	{ name: 'clear', detail: 'Clear this conversation', scope: 'both' },
 	{ name: 'help', detail: 'List these commands', scope: 'both' }
 ];

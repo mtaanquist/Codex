@@ -36,6 +36,13 @@ export async function ownedUniverseRow(
 	return row ?? null;
 }
 
+/** A where-clause condition: the Assistant is not muted on this story. Its
+ * prose stays out of universe-wide Assistant work (chat tools, context,
+ * continuity, enrichment, arcs) as well as its own surfaces. */
+export function storyAssistantOn(): SQL {
+	return sql`not (${stories.llmConfig} @> '{"enabled": false}'::jsonb)`;
+}
+
 /** A where-clause condition for a query with stories in its FROM: the story
  * is not in the trash and neither is its universe. */
 export function storyIsLive(): SQL {

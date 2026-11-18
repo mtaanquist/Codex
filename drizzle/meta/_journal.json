@@ -547,6 +547,20 @@
 			"when": 1794915198314,
 			"tag": "0077_trash-frees-slugs",
 			"breakpoints": true
+		},
+		{
+			"idx": 78,
+			"version": "7",
+			"when": 1795001190868,
+			"tag": "0078_assistant-enriched-at",
+			"breakpoints": true
+		},
+		{
+			"idx": 79,
+			"version": "7",
+			"when": 1795001674632,
+			"tag": "0079_character-arc-summary",
+			"breakpoints": true
 		}
 	]
 }

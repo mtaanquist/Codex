@@ -18,7 +18,9 @@ import {
 	USER_EXPORT_QUEUE,
 	ASSISTANT_JOB_CONCURRENCY,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE
+	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_ENRICH_QUEUE_OPTIONS
 } from '../lib/server/queues.ts';
 import { createPool } from '../lib/server/db/pool.ts';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -71,6 +73,7 @@ await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 await boss.createQueue(USER_EXPORT_QUEUE);
 await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
+await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_ENRICH_QUEUE_OPTIONS);
 
 // Assistant jobs run several at once, but one per writer (the job's group),
 // so one writer's slow or hung endpoint does not hold up anyone else. The
@@ -89,6 +92,7 @@ await boss.work(MIGRATE_ASSETS_QUEUE, handlers.migrateAssets);
 await boss.work(USER_EXPORT_QUEUE, handlers.userExport);
 await boss.work(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantReview);
 await boss.work(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantSummaries);
+await boss.work(ASSISTANT_ENRICH_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantEnrich);
 await boss.work(BACKUP_QUEUE, handlers.backup);
 await boss.work(EMAIL_QUEUE, handlers.email);
 await boss.work(EMAIL_DEAD_LETTER_QUEUE, handlers.emailDeadLetter);

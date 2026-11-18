@@ -23,6 +23,11 @@ export const SWEEP_DELETED_OBJECTS_QUEUE = 'sweep-deleted-objects';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
 export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
 export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
+export const ASSISTANT_ENRICH_QUEUE = 'assistant-enrich';
+// Under pg-boss's default policy a singletonKey does not stop a second job, so
+// this queue is exclusive: one queued or running job per key (a universe's
+// pass, or one character's arc). A policy cannot change after the queue exists.
+export const ASSISTANT_ENRICH_QUEUE_OPTIONS = { policy: 'exclusive' } as const;
 // Sweeps the recorded progress of long-finished Assistant runs (see
 // review-runs.ts); the rows are disposable, so nothing is lost with them.
 export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';

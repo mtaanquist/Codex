@@ -1,18 +1,17 @@
-import { and, asc, eq } from 'drizzle-orm';
-import type { ActionFailure } from './action-result';
-import type { Database } from './auth';
-import { entitySuggestions } from './db/schema';
-import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups';
-import { recordEntityRevision } from './revisions';
-import { queueUniverseMentions } from './jobs';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import type { ActionFailure } from './action-result.ts';
+import type { Database } from './auth.ts';
+import { entitySuggestions } from './db/schema.ts';
+import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups.ts';
+import { recordEntityRevision } from './revisions.ts';
 import { MAX_DETAILS, type EntityDetail } from '#lib/entity-snapshot';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 
 // The Assistant's staged enrichments for an entity: a new alias, a quick detail,
 // or a drafted summary. Nothing here touches an entity until the writer accepts;
 // accepting applies the one field and records a 'suggestion' revision, so the
-// change shows in History and can be rolled back like any edit. This module runs
-// in the app (it queues a mention reindex on an accepted alias), never the worker.
+// change shows in History and can be rolled back like any edit. The app and the
+// worker (the background enrichment pass) both use it.
 
 export type { EntityKind };
 export type SuggestionField = 'alias' | 'detail' | 'summary';
@@ -85,9 +84,12 @@ async function loadEntity(
 }
 
 // Stage proposals as pending suggestions, dropping any that duplicate what the
-// entity already has or an already-pending suggestion: an alias already listed, a
-// detail whose label exists, or a summary when one is set. Returns the staged
-// rows. Skips silently when the entity is not the user's.
+// entity already has, an already-pending suggestion, or one the writer rejected:
+// an alias already listed or ever suggested before (so one the writer accepted
+// and later removed stays gone), a detail whose label exists (or that
+// exact label and value was turned down), or a summary when one is set or
+// pending. Returns the staged rows. Skips silently when the entity is not the
+// user's.
 export async function stageEntitySuggestions(
 	db: Database,
 	opts: { ownerId: string; kind: EntityKind; entityId: string; proposals: ProposedSuggestion[] }
@@ -96,16 +98,36 @@ export async function stageEntitySuggestions(
 	const entity = await loadEntity(db, ownerId, kind, entityId);
 	if (!entity) return [];
 
-	const pending = await listPendingForEntity(db, ownerId, kind, entityId);
+	const earlier = await db
+		.select({
+			field: entitySuggestions.field,
+			label: entitySuggestions.label,
+			value: entitySuggestions.value,
+			status: entitySuggestions.status
+		})
+		.from(entitySuggestions)
+		.where(
+			and(
+				eq(entitySuggestions.ownerId, ownerId),
+				eq(entitySuggestions.entityKind, kind),
+				eq(entitySuggestions.entityId, entityId)
+			)
+		);
+	const pending = earlier.filter((p) => p.status === 'pending');
+	const rejected = earlier.filter((p) => p.status === 'rejected');
 	const lower = (s: string) => s.trim().toLowerCase();
+	const detailKey = (label: string, value: string) => `${lower(label)}\u0000${lower(value)}`;
 	const aliasSet = new Set([
 		...entity.aliases.map(lower),
-		...pending.filter((p) => p.field === 'alias').map((p) => lower(p.value))
+		...earlier.filter((p) => p.field === 'alias').map((p) => lower(p.value))
 	]);
 	const labelSet = new Set([
 		...entity.details.map((d) => lower(d.label)),
 		...pending.filter((p) => p.field === 'detail').map((p) => lower(p.label ?? ''))
 	]);
+	const rejectedDetails = new Set(
+		rejected.filter((p) => p.field === 'detail').map((p) => detailKey(p.label ?? '', p.value))
+	);
 	const hasSummary = !!entity.summaryMd?.trim() || pending.some((p) => p.field === 'summary');
 
 	const toInsert: { field: SuggestionField; label: string | null; value: string }[] = [];
@@ -119,6 +141,7 @@ export async function stageEntitySuggestions(
 			const label = p.label.trim();
 			const value = p.value.trim();
 			if (!label || !value || labelSet.has(lower(label))) continue;
+			if (rejectedDetails.has(detailKey(label, value))) continue;
 			labelSet.add(lower(label));
 			toInsert.push({ field: 'detail', label, value });
 		} else {
@@ -144,13 +167,15 @@ export async function stageEntitySuggestions(
 
 // Accept or reject one suggestion, owner-scoped. Accepting applies the single
 // field to the entity and records a 'suggestion' revision; an accepted alias
-// requeues the universe mention index (a new alias can match more prose).
+// names the universe whose mention index the caller should requeue (a new alias
+// can match more prose). The queueing is left to the caller so this module stays
+// importable by the worker, which cannot load jobs.ts.
 export async function decideEntitySuggestion(
 	db: Database,
 	ownerId: string,
 	id: string,
 	decision: 'accept' | 'reject'
-): Promise<{ ok: true } | ActionFailure> {
+): Promise<{ ok: true; reindexUniverseId?: string } | ActionFailure> {
 	const [s] = await db
 		.select()
 		.from(entitySuggestions)
@@ -186,13 +211,24 @@ export async function decideEntitySuggestion(
 				.set({ status: 'accepted', decidedAt: new Date() })
 				.where(eq(entitySuggestions.id, id));
 		});
-	} catch {
+	} catch (error) {
+		if (error instanceof SummaryTaken) {
+			return {
+				ok: false,
+				code: 'conflict',
+				reason: 'This entry already has a summary, so the suggestion was not added.'
+			};
+		}
 		return { ok: false, code: 'conflict', reason: 'That suggestion could not be applied.' };
 	}
 
-	if (s.field === 'alias' && universeId) await queueUniverseMentions(universeId);
+	if (s.field === 'alias' && universeId) return { ok: true, reindexUniverseId: universeId };
 	return { ok: true };
 }
+
+// A summary suggestion can sit pending for days; the writer may have written
+// their own since, and accepting must never replace it.
+class SummaryTaken extends Error {}
 
 // Apply one field to the entity inside a transaction, returning its universe.
 // Throws if the entity is not the user's (rolls the transaction back).
@@ -213,6 +249,7 @@ async function applyToEntity(
 		summaryMd?: string;
 	} = {};
 	if (s.field === 'summary') {
+		if (entity.summaryMd?.trim()) throw new SummaryTaken();
 		set.summaryMd = s.value;
 	} else if (s.field === 'detail') {
 		set.details = [...entity.details, { label: s.label ?? '', value: s.value }].slice(
@@ -228,6 +265,17 @@ async function applyToEntity(
 	}
 
 	const table = entityTable(REVISION_TYPE[kind]);
-	await tx.update(table).set(set).where(eq(table.id, entityId));
+	// The summary check is repeated in the write itself, so a save that lands
+	// between the read and this update is not replaced.
+	const updated = await tx
+		.update(table)
+		.set(set)
+		.where(
+			s.field === 'summary'
+				? and(eq(table.id, entityId), sql`coalesce(trim(${table.summaryMd}), '') = ''`)
+				: eq(table.id, entityId)
+		)
+		.returning({ id: table.id });
+	if (updated.length === 0) throw new SummaryTaken();
 	return entity.universeId;
 }

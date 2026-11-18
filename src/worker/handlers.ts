@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
 	NOTIFICATION_DIGEST_QUEUE
 } from '../lib/server/queues.ts';
@@ -48,6 +49,8 @@ import {
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
+import { enrichUniverse } from '../lib/server/llm/enrich.ts';
+import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -64,6 +67,8 @@ const defaultServices = {
 	reviewStoryContinuity,
 	reviewUniverseContinuity,
 	summariseStory,
+	enrichUniverse,
+	summariseCharacterArc,
 	sendEmail,
 	s3AssetStore
 };
@@ -88,6 +93,9 @@ export type AssistantReviewData = {
 };
 
 export type AssistantSummariesData = { userId: string; storyId: string };
+
+// characterId set: rewrite that character's arc instead of the enrichment pass.
+export type AssistantEnrichData = { userId: string; universeId: string; characterId?: string };
 
 // The first distinct thing that went wrong in a run, for the notification
 // title. The whole list rides on the job status the review modal polls.
@@ -131,6 +139,47 @@ export function createHandlers(deps: WorkerDeps) {
 			return;
 		}
 		await queueDigests(await insertNotifications(db, [userId], kind, payload));
+	}
+
+	// One character's arc, from an assistant-enrich job that names it.
+	async function characterArc(job: JobWithMetadata<AssistantEnrichData>, characterId: string) {
+		const { userId, universeId } = job.data;
+		const [character] = await db
+			.select({ name: schema.characters.name })
+			.from(schema.characters)
+			.where(and(eq(schema.characters.id, characterId), eq(schema.characters.ownerId, userId)));
+		if (!character) {
+			logEvent('warn', 'assistant.arc_skipped', { characterId, userId, reason: 'gone' });
+			return;
+		}
+		const href = `/universes/${universeId}/plan?entity=${characterId}`;
+		let title: string;
+		try {
+			const result = await services.summariseCharacterArc(db, {
+				userId,
+				characterId,
+				signal: job.signal
+			});
+			if (result.outcome === 'missing') {
+				logEvent('warn', 'assistant.arc_skipped', { characterId, userId, reason: 'not owner' });
+				return;
+			}
+			title =
+				result.outcome === 'empty'
+					? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
+					: `The Assistant wrote the arc for ${character.name}.`;
+		} catch (error) {
+			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
+			title = job.signal?.aborted
+				? `Writing the arc for ${character.name} was stopped before it finished.`
+				: `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			// The notice is held back while pg-boss will try again; the job is
+			// failed either way, so the activity card shows it did not work.
+			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
+			throw error;
+		}
+		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
+		logEvent('info', 'assistant.arc', { characterId });
 	}
 
 	return {
@@ -446,6 +495,68 @@ export function createHandlers(deps: WorkerDeps) {
 					storyId,
 					scenes: result.scenes,
 					chapters: result.chapters,
+					failed: result.failed
+				});
+			}
+		},
+
+		// The background enrichment pass over a universe's entities: stages alias,
+		// detail, and summary suggestions for every entry with new prose to read.
+		// A job naming a character rewrites that character's arc instead. Owner
+		// re-checked at run time; the writer is notified when it is done.
+		async assistantEnrich(jobs: JobWithMetadata<AssistantEnrichData>[]) {
+			for (const job of jobs) {
+				if (job.data.characterId) {
+					await characterArc(job, job.data.characterId);
+					continue;
+				}
+				const { userId, universeId } = job.data;
+				const [universe] = await db
+					.select({
+						ownerId: schema.universes.ownerId,
+						name: schema.universes.name
+					})
+					.from(schema.universes)
+					.where(and(eq(schema.universes.id, universeId), isNull(schema.universes.deletedAt)));
+				if (!universe || universe.ownerId !== userId) {
+					logEvent('warn', 'assistant.enrich_skipped', {
+						universeId,
+						userId,
+						reason: universe ? 'not owner' : 'gone'
+					});
+					continue;
+				}
+				const result = await services.enrichUniverse(db, {
+					userId,
+					universeId,
+					signal: job.signal
+				});
+				const href = `/universes/${universeId}/plan`;
+				const name = universe.name;
+				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
+				let title: string;
+				if (result.aborted) {
+					title = `The Assistant stopped reading the entries in "${name}" before it finished, with ${suggestions} left. Type /enrich to carry on.`;
+				} else if (result.entities === 0 && result.failed > 0) {
+					title = `The Assistant could not read the entries in "${name}". Check the endpoint in your settings.`;
+				} else if (result.staged === 0) {
+					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
+				} else {
+					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
+				}
+				if (result.capped) {
+					const spent = (result.spentUsd ?? 0).toFixed(2);
+					title = `The Assistant stopped reading the entries in "${name}" at about $${spent}, with ${suggestions} left. Raise the cap in settings or run it again to continue.`;
+				}
+				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
+				await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', {
+					title,
+					href
+				});
+				logEvent('info', 'assistant.enrich', {
+					universeId,
+					entities: result.entities,
+					staged: result.staged,
 					failed: result.failed
 				});
 			}

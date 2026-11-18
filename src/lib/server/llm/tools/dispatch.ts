@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import { scenes, stories } from '../../db/schema.ts';
-import { ownedUniverseRow, storyIsLive } from '../../universe-scope.ts';
+import { ownedUniverseRow, storyAssistantOn, storyIsLive } from '../../universe-scope.ts';
 import { entityAppearances, getEntityCard } from '../../plan-data.ts';
 import { searchAll } from '../../search.ts';
 import {
@@ -210,6 +210,7 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 				eq(stories.ownerId, ctx.userId),
 				isNull(stories.deletedAt),
 				isNull(scenes.deletedAt),
+				storyAssistantOn(),
 				ctx.scope?.storyOnly && ctx.storyId ? eq(scenes.storyId, ctx.storyId) : undefined
 			)
 		);
@@ -284,7 +285,8 @@ async function findAppearances(ctx: ToolContext, entityId: string): Promise<stri
 	const appearances = await entityAppearances(
 		ctx.db,
 		{ kind: card.kind, id: entityId },
-		{ universeId: ctx.universeId }
+		{ universeId: ctx.universeId },
+		{ assistant: true }
 	);
 	return JSON.stringify(
 		appearances.slice(0, MAX_APPEARANCES).map((a) => ({
@@ -300,7 +302,10 @@ async function findAppearances(ctx: ToolContext, entityId: string): Promise<stri
 
 async function searchText(ctx: ToolContext, query: string): Promise<string> {
 	if (!query.trim()) return 'Provide a search query.';
-	const results = await searchAll(ctx.db, ctx.userId, query, { universeId: ctx.universeId });
+	const results = await searchAll(ctx.db, ctx.userId, query, {
+		universeId: ctx.universeId,
+		assistant: true
+	});
 	return JSON.stringify(
 		results.map((r) => ({ type: r.type, label: r.label, detail: r.sublabel, href: r.href }))
 	);

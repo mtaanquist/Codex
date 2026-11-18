@@ -183,14 +183,63 @@ export async function startSummariesJob(storyId: string): Promise<void> {
 	});
 }
 
+// Kicks off the background enrichment pass over a universe's entries (the story
+// focus runs over its universe) and tracks it in the activity center; the writer
+// is also notified when it ends.
+export async function startEnrichJob(
+	scope: { storyId: string } | { universeId: string },
+	label: string
+): Promise<void> {
+	await launchJob({
+		url: '/api/assistant/enrich-job',
+		payload: scope,
+		kind: 'enrich',
+		failLabel: `Could not suggest details for ${label}`,
+		startFallback: 'Could not start the pass.',
+		track: { ...jobLabels('enrich', 'full', label), scope }
+	});
+}
+
+// Queues a rewrite of one character's arc and waits for it to finish, tracked
+// in the activity center. Resolves when the job settles, so the caller can
+// reload the page data to show the new arc.
+export async function startArcJob(opts: {
+	characterId: string;
+	universeId: string;
+	name: string;
+}): Promise<void> {
+	await launchJob({
+		url: '/api/assistant/arc-job',
+		payload: { characterId: opts.characterId },
+		kind: 'arc',
+		failLabel: `Could not write the arc for ${opts.name}`,
+		startFallback: 'Could not start writing the arc.',
+		track: { ...jobLabels('arc', 'full', opts.name), scope: { universeId: opts.universeId } }
+	});
+}
+
 // The activity card's three labels for a job. label names what the job is over
 // ("your story", or a quoted title for a job picked up after a reload); a
 // summary pass started from the panel needs none.
 function jobLabels(
-	kind: 'review' | 'summaries',
+	kind: 'review' | 'summaries' | 'enrich' | 'arc',
 	mode: 'full' | 'continuity',
 	label?: string
 ): { runningLabel: string; doneLabel: string; failedLabel: string } {
+	if (kind === 'arc') {
+		return {
+			runningLabel: `Writing the arc for ${label}...`,
+			doneLabel: `Arc for ${label} written`,
+			failedLabel: `Could not write the arc for ${label}`
+		};
+	}
+	if (kind === 'enrich') {
+		return {
+			runningLabel: `Suggesting details for the entries in ${label}...`,
+			doneLabel: `Suggestions for the entries in ${label} ready`,
+			failedLabel: `Could not suggest details for ${label}`
+		};
+	}
 	if (kind === 'summaries') {
 		const of = label ? ` for ${label}` : '';
 		return {
@@ -216,7 +265,7 @@ function jobLabels(
 // A job the server still has queued or running (GET /api/assistant/jobs).
 export type RunningJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc';
 	mode: 'full' | 'continuity';
 	title: string;
 };

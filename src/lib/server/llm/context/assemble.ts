@@ -727,6 +727,7 @@ function renderEntities(entities: ScopeEntity[]): string {
 		for (const detail of entity.details) lines.push(`- ${detail.label}: ${detail.value}`);
 		for (const rel of entity.relationships) lines.push(`- ${rel.label} ${rel.otherName}`);
 		if (entity.storyNote) lines.push(`In this story: ${entity.storyNote}`);
+		if (entity.arcSummaryMd) lines.push(`Across the stories: ${entity.arcSummaryMd}`);
 	}
 	return lines.join('\n');
 }

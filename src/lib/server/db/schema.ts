@@ -358,6 +358,15 @@ export const characters = pgTable(
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 		metadata: jsonb('metadata').notNull().default({}),
+		// When the background enrichment pass last read this entity; a later pass
+		// skips it unless a scene that mentions it changed since.
+		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
+		// The Assistant's summary of what happens to this character across the
+		// universe's stories, and when its read of the scenes started. Generated,
+		// never written by the writer; stale once a mentioning scene changes after
+		// arc_summary_at.
+		arcSummaryMd: text('arc_summary_md'),
+		arcSummaryAt: timestamp('arc_summary_at', { withTimezone: true }),
 		// Original card data if imported (SillyTavern etc).
 		importedFrom: jsonb('imported_from'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -444,6 +453,9 @@ export const loreEntries = pgTable(
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 		metadata: jsonb('metadata').notNull().default({}),
+		// When the background enrichment pass last read this entity; a later pass
+		// skips it unless a scene that mentions it changed since.
+		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
@@ -507,6 +519,9 @@ export const places = pgTable(
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 		metadata: jsonb('metadata').notNull().default({}),
+		// When the background enrichment pass last read this entity; a later pass
+		// skips it unless a scene that mentions it changed since.
+		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()

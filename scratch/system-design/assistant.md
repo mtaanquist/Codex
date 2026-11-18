@@ -1,6 +1,7 @@
 # The Assistant (LLM integration)
 
-Status: Phase 9, shipped (status reconciled 2026-07-29). The gateway
+Status: Phase 9, shipped (status reconciled 2026-07-29; the universe-wide
+enrichment pass and character arcs followed on 2026-11-18, #845 and #846). The gateway
 (`src/lib/server/llm/`), the account settings page, the chat tab, inline
 co-author and continuation, the reviewer role, the admin egress panel, the
 per-story mute, and the background jobs with their activity cards are all
@@ -77,7 +78,11 @@ Assistant would stay live on them.
    that one book. The override only ever subtracts - the account master stays
    the kill switch, so a per-story setting cannot light the Assistant up when
    the account is off. On a muted story the editor and menu surfaces hide, but
-   the Assistant tab stays as the un-mute switch.
+   the Assistant tab stays as the un-mute switch. The mute also keeps the
+   story's prose out of universe-wide work started from elsewhere (the
+   universe outline and tools, universe continuity, enrichment, character
+   arcs), through one condition, `storyAssistantOn()` in `universe-scope.ts`
+   (#975).
 
 Concretely: the in-editor and in-menu surfaces (right-click "Ask the
 Assistant", left-menu review items, continuation, co-author) require
@@ -553,6 +558,8 @@ Same vein, worth specifying:
   tense drift.
 - Character arc summaries: an on-demand "what happened to this character
   across their stories" summary, cached per entity (see Background jobs).
+  Built (#846): `characters.arc_summary_md` / `arc_summary_at`, written by the
+  `assistant-enrich` job for one character, shown in the character editor.
 
 Not to be resurrected: the Outline view was retired (migration 0039).
 "What scene comes next" planning belongs on the scene board and in notes,
@@ -809,8 +816,8 @@ context assembly and the cross-scene pass read them.
   the optional tool-call-budget ceiling.
 - Review tables: a third reviewer attribution for the Assistant (synthetic
   reviewer row or a flag column), TBD at build time.
-- Possible additive columns for cached entity arc summaries with a staleness
-  watermark.
+- Cached character arc summaries with a staleness watermark:
+  `characters.arc_summary_md` and `arc_summary_at` (migration 0079).
 - Deferred: persisted chat (`conversations` / `messages`), only if and when
   chat persistence is taken on.
 
@@ -1024,12 +1031,17 @@ calls the gateway, which proxies through the egress guard.
 
 ### Background jobs - sequencing steps 4 and 7
 
-- [built] pg-boss queues `assistant-review` and `assistant-summaries` (names in
+- [built] pg-boss queues `assistant-review`, `assistant-summaries`, and
+  `assistant-enrich` (names in
   `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
   registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
   helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
-  than a queue.
+  than a queue, for one entity from a story (story Plan) or across its
+  universe (universe Plan); the `assistant-enrich` job runs the same call over
+  every entity in a universe with new prose since its `assistant_enriched_at`
+  watermark (`/enrich`), and a job naming a character rewrites that
+  character's arc (`arc_summary_md`) instead.
 
 ### Tool use and structural actions - sequencing step 6
 

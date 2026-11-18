@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import {
 	chapters,
@@ -15,6 +15,7 @@ import { entityTable } from '../../entity-lookups.ts';
 import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
+import { storyAssistantOn } from '../../universe-scope.ts';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.
@@ -297,6 +298,7 @@ export async function universeSkeleton(
 			and(
 				eq(stories.universeId, universeId),
 				isNull(stories.deletedAt),
+				storyAssistantOn(),
 				onlyStoryId ? eq(stories.id, onlyStoryId) : undefined
 			)
 		)
@@ -362,6 +364,9 @@ export type ScopeEntity = {
 	// The per-story overlay note (character/place/lore_story_notes), if any.
 	storyNote: string | null;
 	relationships: { label: string; otherName: string }[];
+	// A character's arc across the universe's stories, when the Assistant has
+	// written one.
+	arcSummaryMd?: string | null;
 };
 
 // Characters and places that are declared members of, or mentioned in, this
@@ -422,7 +427,8 @@ async function buildScopeEntities(
 				name: table.name,
 				summaryMd: table.summaryMd,
 				details: table.details,
-				aliases: table.aliases
+				aliases: table.aliases,
+				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`
 			})
 			.from(table)
 			.where(inArray(table.id, ids))
@@ -485,6 +491,7 @@ function buildEntity(
 		summaryMd: string | null;
 		details: EntityDetail[];
 		aliases: string[] | null;
+		arcSummaryMd: string | null;
 	},
 	noteFor: Map<string, string | null>
 ): ScopeEntity {
@@ -496,7 +503,8 @@ function buildEntity(
 		details: row.details ?? [],
 		aliases: row.aliases ?? [],
 		storyNote: noteFor.get(row.id) ?? null,
-		relationships: []
+		relationships: [],
+		arcSummaryMd: row.arcSummaryMd
 	};
 }
 

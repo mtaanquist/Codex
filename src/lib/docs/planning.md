@@ -30,7 +30,11 @@ Details are short facts about an entry, each with a label and a value: Status, A
 
 ## Assistant suggestions
 
-When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
+When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. In a story's Plan it reads that story; in the universe's Plan it reads every story in the universe. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it, and the Assistant will not suggest a rejected item again. To get suggestions for every entry in a universe at once, type `/enrich` in the Assistant tab. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
+
+## Character arcs
+
+A character's page has an "Arc across the stories" section. Select "Write arc" and the Assistant reads every scene the character appears in, across all the stories in the universe, and writes a few sentences on what happens to them. It runs in the background and notifies you when it is done. When you later change a scene the character is in, the section says the arc may be out of date; select "Refresh arc" to rewrite it. The arc is kept apart from your own summary and description, and the Assistant uses it to keep track of the character when you chat or ask it for help.
 
 ## The Assistant panel
 
@@ -40,7 +44,7 @@ On a story's plan, the panel talks about that story, and it shares one conversat
 
 The Assistant can read across every story in the universe, not just the one in front of you. So while you plan a new book you can ask it to check a detail, an event, or a character against the earlier ones, and it will find the scene it comes from and tell you where. Ask it to check continuity across the stories and it will look for facts, timelines, and character details that disagree between the books.
 
-If you do not want the Assistant on a particular story, open its panel and select "Mute for this story"; the panel stays so you can turn it back on. To turn the Assistant off everywhere, use the master switch on your account page.
+If you do not want the Assistant on a particular story, open its panel and select "Mute for this story"; the panel stays so you can turn it back on, and the Assistant leaves that story's scenes out when it works across the universe. To turn the Assistant off everywhere, use the master switch on your account page.
 
 ## Relationships
 

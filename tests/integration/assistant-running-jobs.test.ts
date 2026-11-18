@@ -5,11 +5,15 @@ import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
 import * as schema from '../../src/lib/server/db/schema';
-import { chapters, stories, universes, users } from '../../src/lib/server/db/schema';
+import { chapters, characters, stories, universes, users } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { findRunningAssistantJobs } from '../../src/lib/server/running-jobs';
-import { ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE } from '../../src/lib/server/queues';
+import {
+	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
+} from '../../src/lib/server/queues';
 
 // Against a real pg-boss, because the list reads its job table directly: this
 // pins the query to the installed version's table, columns and states.
@@ -39,11 +43,13 @@ beforeAll(async () => {
 	await boss.start();
 	await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 	await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
+	await boss.createQueue(ASSISTANT_ENRICH_QUEUE);
 });
 
 beforeEach(async () => {
 	await boss.deleteAllJobs(ASSISTANT_REVIEW_QUEUE);
 	await boss.deleteAllJobs(ASSISTANT_SUMMARIES_QUEUE);
+	await boss.deleteAllJobs(ASSISTANT_ENRICH_QUEUE);
 	await pool.query('truncate table chapters, stories, universes, users cascade');
 	userId = await user('p@example.com');
 	otherId = await user('o@example.com');
@@ -65,6 +71,36 @@ afterAll(async () => {
 });
 
 describe('findRunningAssistantJobs', () => {
+	it('lists a character arc as its own kind, named for the character', async () => {
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId, ownerId: userId, name: 'Bram' })
+			.returning({ id: characters.id });
+		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, {
+			userId,
+			universeId,
+			characterId: character.id
+		});
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs).toMatchObject([{ id, kind: 'arc', universeId, title: 'Bram' }]);
+	});
+
+	it('lists an enrichment pass under its universe', async () => {
+		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, { userId, universeId });
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs).toEqual([
+			{
+				id,
+				kind: 'enrich',
+				mode: 'full',
+				storyId: null,
+				chapterId: null,
+				universeId,
+				title: 'Hollow Coast'
+			}
+		]);
+	});
+
 	it('lists queued and running review and summary jobs with their names', async () => {
 		const queued = await boss.send(ASSISTANT_REVIEW_QUEUE, {
 			userId,

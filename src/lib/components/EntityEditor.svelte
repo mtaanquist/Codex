@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
@@ -18,6 +18,7 @@
 	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
 	import type { SaveStatus } from '#lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '#lib/format';
+	import { startArcJob } from '#lib/assistant-actions';
 
 	let {
 		kind,
@@ -34,6 +35,7 @@
 		universeRef,
 		assistantEnabled = false,
 		assistantSuggestions = [],
+		arc = null,
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -46,6 +48,7 @@
 			summaryMd: string | null;
 			bodyMd: string;
 			details?: { label: string; value: string }[];
+			universeId?: string;
 			badgeColor?: string | null;
 			badgeAssetId?: string | null;
 		};
@@ -67,10 +70,14 @@
 		// universe's prose (the universe slug for the API path).
 		universeRef?: string;
 		// The Assistant can suggest aliases, details, and a summary for this entity
-		// (needs a story for the appearances it reads, and the account on).
+		// from where it appears: in the story when storyId is set, otherwise across
+		// the universe named by universeRef. Needs the Assistant on.
 		assistantEnabled?: boolean;
 		// Pending Assistant suggestions for this entity, awaiting accept or reject.
 		assistantSuggestions?: AssistantSuggestion[];
+		// A character's arc across the universe's stories, written by the
+		// Assistant, and whether a scene that mentions them changed since.
+		arc?: { summaryMd: string | null; stale: boolean } | null;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -117,18 +124,27 @@
 	// "Suggest details" and pruned as the writer accepts or rejects each one.
 	// svelte-ignore state_referenced_locally
 	let suggestions = $state<AssistantSuggestion[]>([...assistantSuggestions]);
+	// A suggested summary is only offered while the entry has none, so accepting
+	// it can never replace the writer's own (typed but unsaved included).
+	const shownSuggestions = $derived(
+		summary.trim() ? suggestions.filter((s) => s.field !== 'summary') : suggestions
+	);
 	let enriching = $state(false);
 	let enrichNote = $state('');
 
 	async function runEnrich() {
-		if (enriching || !storyId) return;
+		if (enriching || !(storyId || universeRef)) return;
 		enriching = true;
 		enrichNote = '';
 		try {
 			const response = await fetch('/api/assistant/enrich', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, entityId: entity.id })
+				body: JSON.stringify(
+					storyId
+						? { storyId, entityId: entity.id }
+						: { universeId: universeRef, entityId: entity.id }
+				)
 			});
 			if (!response.ok) {
 				enrichNote = await apiErrorMessage(response, 'The Assistant could not suggest anything.');
@@ -137,7 +153,8 @@
 			const body = (await response.json()) as { suggestions: AssistantSuggestion[] };
 			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
 			suggestions = [...suggestions, ...fresh];
-			if (fresh.length === 0) enrichNote = 'Nothing new to suggest from this story.';
+			if (fresh.length === 0)
+				enrichNote = `Nothing new to suggest from this ${storyId ? 'story' : 'universe'}.`;
 		} catch {
 			enrichNote = 'Something went wrong reaching the Assistant.';
 		} finally {
@@ -149,7 +166,7 @@
 	// the server already persisted it, so this does not trigger a save.
 	function applyLocally(s: AssistantSuggestion) {
 		if (s.field === 'summary') {
-			summary = s.value;
+			if (!summary.trim()) summary = s.value;
 		} else if (s.field === 'detail') {
 			details = [...details, { label: s.label ?? '', value: s.value }];
 		} else if (kind === 'lore') {
@@ -171,6 +188,23 @@
 		}
 		if (decision === 'accept') applyLocally(s);
 		suggestions = suggestions.filter((p) => p.id !== s.id);
+	}
+
+	// Queues the arc and follows it in the activity card; once it settles, the
+	// page data reloads so the new arc shows, unless the writer has moved on to
+	// another entry in the meantime.
+	let writingArc = $state(false);
+	let mounted = true;
+	onDestroy(() => (mounted = false));
+	async function writeArc() {
+		if (writingArc || !entity.universeId) return;
+		writingArc = true;
+		try {
+			await startArcJob({ characterId: entity.id, universeId: entity.universeId, name });
+			if (mounted) await refreshAll();
+		} finally {
+			writingArc = false;
+		}
 	}
 
 	function suggestionLabel(s: AssistantSuggestion): string {
@@ -406,7 +440,7 @@
 		</div>
 	{/if}
 
-	{#if assistantEnabled && storyId}
+	{#if assistantEnabled && (storyId || universeRef)}
 		<div class="assist-enrich">
 			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={runEnrich}>
 				{enriching ? 'Thinking...' : 'Suggest details with the Assistant'}
@@ -417,11 +451,11 @@
 		</div>
 	{/if}
 
-	{#if suggestions.length > 0}
+	{#if shownSuggestions.length > 0}
 		<div class="assist-suggestions">
 			<div class="section-label">Assistant suggestions</div>
 			<p class="field-hint">Drawn from where this entry appears in your prose. Accept to add it.</p>
-			{#each suggestions as s (s.id)}
+			{#each shownSuggestions as s (s.id)}
 				<div class="assist-row">
 					<span class="assist-kind">{suggestionLabel(s)}</span>
 					<span class="assist-value">{s.value}</span>
@@ -589,6 +623,28 @@
 		</button>
 	{/if}
 
+	{#if kind === 'character' && (assistantEnabled || arc?.summaryMd)}
+		<div class="section-label">Arc across the stories</div>
+		{#if arc?.summaryMd}
+			<p class="arc-text">{arc.summaryMd}</p>
+			{#if arc.stale}
+				<p class="field-hint">Scenes with this character have changed since this was written.</p>
+			{/if}
+		{:else}
+			<p class="field-hint">
+				The Assistant can write what happens to this character across your stories, from the scenes
+				they appear in.
+			</p>
+		{/if}
+		{#if assistantEnabled && entity.universeId}
+			<div class="assist-enrich">
+				<button class="btn btn-secondary" type="button" disabled={writingArc} onclick={writeArc}>
+					{writingArc ? 'Writing...' : arc?.summaryMd ? 'Refresh arc' : 'Write arc'}
+				</button>
+			</div>
+		{/if}
+	{/if}
+
 	{#if storyId}
 		<div class="section-label">In this book</div>
 		{#if membership}
@@ -624,6 +680,13 @@
 		gap: 10px;
 		flex-wrap: wrap;
 		margin: 12px 0 0;
+	}
+	.arc-text {
+		margin: 4px 0 0;
+		font-size: 13.5px;
+		line-height: 1.55;
+		color: var(--text);
+		white-space: pre-line;
 	}
 	.assist-note {
 		font-size: 12.5px;

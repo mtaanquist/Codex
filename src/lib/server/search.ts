@@ -2,6 +2,7 @@ import type { SearchResult } from '#lib/wire-types';
 import { and, asc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { scenes, stories, universes } from './db/schema.ts';
+import { storyAssistantOn } from './universe-scope.ts';
 import {
 	entityAliasColumn,
 	entityNameColumn,
@@ -31,7 +32,8 @@ export async function searchAll(
 	query: string,
 	// Restricts the search to one universe (the Assistant's universe-scoped
 	// search_text tool); the command palette omits it and searches everything.
-	opts?: { universeId?: string }
+	// assistant: leaves out stories the Assistant is muted on, and their scenes.
+	opts?: { universeId?: string; assistant?: boolean }
 ): Promise<SearchResult[]> {
 	const trimmed = query.trim();
 	if (trimmed === '') return [];
@@ -39,6 +41,7 @@ export async function searchAll(
 	// Folded into every subquery's filter; undefined conditions are ignored by
 	// drizzle's and(), so an absent universe means no restriction.
 	const inUniverse = opts?.universeId ? eq(universes.id, opts.universeId) : undefined;
+	const assistantOn = opts?.assistant ? storyAssistantOn() : undefined;
 
 	const entityMatches = (type: EntityType) => {
 		const table = entityTable(type);
@@ -99,7 +102,8 @@ export async function searchAll(
 						ilike(stories.title, like),
 						isNull(stories.deletedAt),
 						isNull(universes.deletedAt),
-						inUniverse
+						inUniverse,
+						assistantOn
 					)
 				)
 				.orderBy(asc(stories.title))
@@ -121,7 +125,8 @@ export async function searchAll(
 						isNull(scenes.deletedAt),
 						isNull(stories.deletedAt),
 						isNull(universes.deletedAt),
-						inUniverse
+						inUniverse,
+						assistantOn
 					)
 				)
 				.orderBy(asc(scenes.title))
@@ -156,7 +161,8 @@ export async function searchAll(
 											eq(stories.ownerId, userId),
 											isNull(stories.deletedAt),
 											isNull(universes.deletedAt),
-											inUniverse
+											inUniverse,
+											assistantOn
 										)
 									)}))`,
 								ilike(scenes.bodyMd, like),
