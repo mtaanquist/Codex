@@ -50,6 +50,7 @@
 		threads={data.threads}
 		suggestions={data.suggestions}
 		role="author"
+		seenAt={data.seenAt}
 		storyId={data.story.id}
 		storySlug={data.story.slug}
 		book={{ title: data.story.title, subtitle: data.universe.name }}

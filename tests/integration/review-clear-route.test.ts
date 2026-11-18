@@ -62,9 +62,10 @@ afterAll(async () => {
 	await pool.end();
 });
 
-function clear(user: User, scope: string) {
+function clear(user: User, scope: string, seenAt = new Date(Date.now() + 60_000).toISOString()) {
 	const form = new FormData();
 	form.set('scope', scope);
+	form.set('seenAt', seenAt);
 	const url = new URL(`http://localhost/stories/${storyId}/review`);
 	return page.actions.clearReviews({
 		params: { id: storyId },
@@ -84,6 +85,12 @@ describe('clearReviews action', () => {
 
 	it('rejects an unknown scope', async () => {
 		const result = await clear(owner, 'everything');
+		expect(result).toMatchObject({ status: 400 });
+		expect(await db.select().from(reviewThreads)).toHaveLength(1);
+	});
+
+	it('asks for a reload when the page time is missing', async () => {
+		const result = await clear(owner, 'all', '');
 		expect(result).toMatchObject({ status: 400 });
 		expect(await db.select().from(reviewThreads)).toHaveLength(1);
 	});

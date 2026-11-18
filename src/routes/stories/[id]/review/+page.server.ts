@@ -5,6 +5,7 @@ import { readingPageRef } from '#lib/server/publish';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
 import {
+	databaseNow,
 	addComment,
 	clearReviews,
 	createSuggestion,
@@ -43,6 +44,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// Threads and suggestions re-anchor against the same scene revisions, so one
 	// mapper covers both and each revision is diffed once for the page.
 	const anchors = createAnchorMapper();
+	// Taken before the notes are read: "Clear review notes" only clears what
+	// was on the page, so a note posted after this moment is kept.
+	const seenAt = await databaseNow(db);
 	const [
 		content,
 		mentions,
@@ -89,6 +93,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		trashedScenes,
 		threads,
 		suggestions,
+		seenAt: seenAt.toISOString(),
 		mentionEntities: mentions.entities,
 		mentionMembers: mentions.storyMembers,
 		mentionPins: mentions.pins,
@@ -271,11 +276,16 @@ export const actions: Actions = {
 	// Clears the story's finished review notes, or all of them.
 	clearReviews: async ({ params, request, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);
-		const scope = formText(await request.formData(), 'scope');
+		const data = await request.formData();
+		const scope = formText(data, 'scope');
 		if (scope !== 'finished' && scope !== 'all') {
 			return fail(400, { message: 'Pick what to clear.' });
 		}
-		await clearReviews(db, story.id, scope);
+		const seenBefore = new Date(formText(data, 'seenAt'));
+		if (Number.isNaN(seenBefore.getTime())) {
+			return fail(400, { message: 'Reload the page and try again.' });
+		}
+		await clearReviews(db, story.id, scope, seenBefore);
 		return { done: true };
 	},
 	// The Assistant tab's mute and un-mute, the same per-story override as the

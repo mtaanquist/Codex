@@ -253,7 +253,7 @@ describe('buildUserDigest', () => {
 			}
 		]);
 
-		await clearReviews(db, story.id, 'finished');
+		await clearReviews(db, story.id, 'finished', new Date(Date.now() + 60_000));
 
 		const digest = await buildUserDigest(db, me.id, 'https://codex.test');
 		expect(digest!.email.text).toContain('On the open thread');
@@ -296,7 +296,7 @@ describe('buildUserDigest', () => {
 		);
 		await notifyReviewActivity(db, story.id, 'Maren', 'replied', { threadId: kept.id }, 'Kept.');
 
-		await clearReviews(db, story.id, 'finished');
+		await clearReviews(db, story.id, 'finished', new Date(Date.now() + 60_000));
 
 		const digest = await buildUserDigest(db, me.id, 'https://codex.test');
 		expect(digest!.email.text).toContain('Kept.');
