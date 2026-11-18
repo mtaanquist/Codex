@@ -1431,6 +1431,21 @@ own PR and version.
 Still open in Phase 9: whole-universe background enrichment
 (`assistant-enrich`) and character arc summaries.
 
+- [x] Universe-scope entity enrichment (2026-11-18, #845 part 1). The
+      enrich endpoint takes a `universeId` as well as a `storyId`, and the
+      universe Plan entity editor now shows "Suggest details" and the pending
+      suggestions (before, only the story Plan did). At universe scope the
+      appearances are spread across stories (`spreadAppearances`: round-robin
+      per story, returned in reading order) so the first story does not fill
+      all 16 slots, and each passage is labelled with its story. The universe
+      scope runs on the account settings (no story mute or model override to
+      apply). `enrichEntity` reads the entity through `resolveOwnedEntity`
+      rather than `getEntityCard`, which also loaded relationships it never
+      used. Staging now drops what the writer rejected: an alias rejected in
+      any case, and a detail rejected with the same label and value (a new
+      value for that label can still come back). Summaries keep the old rule
+      (only when none is set or pending).
+
 - [x] Step 1 - gateway plumbing (server-only, no surfaces). The
       `$lib/server/llm/` module: `config.ts` (account/story `llm_config`
       read/merge/decrypt + the pure `assistantGate` and save helpers, reusing

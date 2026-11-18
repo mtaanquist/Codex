@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { entitySuggestions } from './db/schema';
@@ -85,9 +85,11 @@ async function loadEntity(
 }
 
 // Stage proposals as pending suggestions, dropping any that duplicate what the
-// entity already has or an already-pending suggestion: an alias already listed, a
-// detail whose label exists, or a summary when one is set. Returns the staged
-// rows. Skips silently when the entity is not the user's.
+// entity already has, an already-pending suggestion, or one the writer rejected:
+// an alias already listed or turned down, a detail whose label exists (or that
+// exact label and value was turned down), or a summary when one is set or
+// pending. Returns the staged rows. Skips silently when the entity is not the
+// user's.
 export async function stageEntitySuggestions(
 	db: Database,
 	opts: { ownerId: string; kind: EntityKind; entityId: string; proposals: ProposedSuggestion[] }
@@ -96,16 +98,37 @@ export async function stageEntitySuggestions(
 	const entity = await loadEntity(db, ownerId, kind, entityId);
 	if (!entity) return [];
 
-	const pending = await listPendingForEntity(db, ownerId, kind, entityId);
+	const earlier = await db
+		.select({
+			field: entitySuggestions.field,
+			label: entitySuggestions.label,
+			value: entitySuggestions.value,
+			status: entitySuggestions.status
+		})
+		.from(entitySuggestions)
+		.where(
+			and(
+				eq(entitySuggestions.ownerId, ownerId),
+				eq(entitySuggestions.entityKind, kind),
+				eq(entitySuggestions.entityId, entityId),
+				inArray(entitySuggestions.status, ['pending', 'rejected'])
+			)
+		);
+	const pending = earlier.filter((p) => p.status === 'pending');
+	const rejected = earlier.filter((p) => p.status === 'rejected');
 	const lower = (s: string) => s.trim().toLowerCase();
+	const detailKey = (label: string, value: string) => `${lower(label)}\u0000${lower(value)}`;
 	const aliasSet = new Set([
 		...entity.aliases.map(lower),
-		...pending.filter((p) => p.field === 'alias').map((p) => lower(p.value))
+		...earlier.filter((p) => p.field === 'alias').map((p) => lower(p.value))
 	]);
 	const labelSet = new Set([
 		...entity.details.map((d) => lower(d.label)),
 		...pending.filter((p) => p.field === 'detail').map((p) => lower(p.label ?? ''))
 	]);
+	const rejectedDetails = new Set(
+		rejected.filter((p) => p.field === 'detail').map((p) => detailKey(p.label ?? '', p.value))
+	);
 	const hasSummary = !!entity.summaryMd?.trim() || pending.some((p) => p.field === 'summary');
 
 	const toInsert: { field: SuggestionField; label: string | null; value: string }[] = [];
@@ -119,6 +142,7 @@ export async function stageEntitySuggestions(
 			const label = p.label.trim();
 			const value = p.value.trim();
 			if (!label || !value || labelSet.has(lower(label))) continue;
+			if (rejectedDetails.has(detailKey(label, value))) continue;
 			labelSet.add(lower(label));
 			toInsert.push({ field: 'detail', label, value });
 		} else {
