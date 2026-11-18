@@ -594,8 +594,8 @@ describe('enrichUniverse', () => {
 		expect(await setSceneStatus(db, ownerId, sceneId, 'revised')).toBe(true);
 		const order = { chapters: [], orphanSceneIds: [otherId, sceneId] };
 		expect((await applySceneOrder(db, storyId, order)).ok).toBe(true);
-		// Both moved updated_at, so the sweep reindexes the scene.
-		expect(await reconcileMentions(db)).toBeGreaterThan(0);
+		// Neither touches the prose, so neither leaves the mention index behind.
+		expect(await reconcileMentions(db)).toBe(0);
 		// Text added far from the only mention leaves the passage the model reads as it was.
 		await rewrite(sceneId, `Bram at the harbour.${filler} The boats came in.`);
 

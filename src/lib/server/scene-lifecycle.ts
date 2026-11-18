@@ -13,7 +13,7 @@ import {
 	stories
 } from './db/schema.ts';
 import type { EntityType } from './entity-lookups.ts';
-import { ownedScene } from './scene-access.ts';
+import { keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
@@ -99,7 +99,7 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	await db.transaction(async (tx) => {
 		await tx
 			.update(scenes)
-			.set({ deletedAt: sql`now()` })
+			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(eq(scenes.id, scene.id));
 		await markMentionsStale(tx, { sceneIds: [scene.id] });
 		await tx
@@ -223,10 +223,15 @@ export async function restoreScene(
 			if (!chapter) chapterId = null;
 		}
 		// Positions are renumbered wholesale on every reorder, so appending past
-		// the current maximums is enough to avoid collisions.
+		// the current maximums is enough to avoid collisions. The trash cleared
+		// the scene's mentions without touching its watermark, so the watermark
+		// is cleared here: the reconcile sweep then rebuilds them if the queued
+		// rebuild is lost.
 		await tx
 			.update(scenes)
 			.set({
+				...keepUpdatedAt(),
+				mentionsIndexedAt: null,
 				deletedAt: null,
 				chapterId,
 				positionInChapter: chapterId
@@ -358,7 +363,7 @@ export async function deleteChapter(
 	await db.transaction(async (tx) => {
 		await tx
 			.update(scenes)
-			.set({ chapterId: null, positionInChapter: null })
+			.set({ chapterId: null, positionInChapter: null, ...keepUpdatedAt() })
 			.where(eq(scenes.chapterId, chapter.id));
 		await tx.delete(chapters).where(eq(chapters.id, chapter.id));
 		const rest = await tx
