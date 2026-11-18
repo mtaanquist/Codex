@@ -11,7 +11,7 @@ function scriptStatus(replies: object[]) {
 	return fetch;
 }
 
-const labels = { runningLabel: 'Running', doneLabel: 'Done', failedLabel: 'Failed' };
+const labels = { runningLabel: 'Running...', doneLabel: 'Done', failedLabel: 'Failed' };
 
 beforeEach(() => {
 	vi.useFakeTimers();
@@ -74,5 +74,18 @@ describe('trackJob', () => {
 			state: 'failed',
 			detail: 'It stopped before it finished. Run it again to continue.'
 		});
+	});
+
+	it('stops following a job the page can no longer check, such as after signing out', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response('', { status: 401 }))
+		);
+		const run = trackJob({ jobId: 'j1', kind: 'review', scope: { storyId: 's1' }, ...labels });
+		await vi.advanceTimersByTimeAsync(3000);
+		await run;
+
+		expect(trackedJobs.list).toEqual([]);
+		expect(activity.items[0]).toMatchObject({ state: 'failed', label: 'Running' });
 	});
 });

@@ -131,6 +131,16 @@ export async function trackJob(opts: {
 				const response = await fetch(
 					`/api/assistant/job-status?kind=${opts.kind}&id=${encodeURIComponent(jobId)}`
 				);
+				// Signed out, or the job is not this writer's: this page can no
+				// longer follow it, so stop rather than poll for good.
+				if ([401, 403, 404].includes(response.status)) {
+					resolveActivity(id, {
+						state: 'failed',
+						label: opts.runningLabel.replace(/\.\.\.$/, ''),
+						detail: 'Could not check on it from this page. You will be notified when it is ready.'
+					});
+					return;
+				}
 				if (response.ok) {
 					const body = (await response.json()) as {
 						state: ActivityState | 'stale';

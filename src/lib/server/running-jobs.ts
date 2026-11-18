@@ -1,5 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { PgBoss } from 'pg-boss';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { chapters, stories, universes } from './db/schema.ts';
 import { ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE } from './queues.ts';
@@ -28,24 +27,29 @@ type JobData = {
 	mode?: 'full' | 'continuity';
 };
 
-// pg-boss keeps settled jobs for a while; these are the states still to run.
-const UNSETTLED = new Set(['created', 'retry', 'active']);
-
+// Reads pg-boss's job table directly (the default "pgboss" schema the app and
+// worker use). Its findJobs has no state filter and returns the oldest rows
+// first, capped, and settled jobs stay in the table for days, so a busy writer's
+// running job could fall past the cap. The integration test pins this query to
+// the installed pg-boss.
 export async function findRunningAssistantJobs(
-	boss: Pick<PgBoss, 'findJobs'>,
 	db: Database,
 	userId: string
 ): Promise<RunningAssistantJob[]> {
-	const found: { id: string; kind: 'review' | 'summaries'; data: JobData }[] = [];
-	for (const [kind, queue] of [
-		['review', ASSISTANT_REVIEW_QUEUE],
-		['summaries', ASSISTANT_SUMMARIES_QUEUE]
-	] as const) {
-		const jobs = await boss.findJobs<JobData>(queue, { data: { userId } });
-		for (const job of jobs) {
-			if (UNSETTLED.has(job.state)) found.push({ id: job.id, kind, data: job.data });
-		}
-	}
+	const { rows } = await db.execute<{ id: string; name: string; data: JobData }>(sql`
+		select id, name, data from pgboss.job
+		where name in (${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE})
+			and state in ('created', 'retry', 'active')
+			and data @> ${JSON.stringify({ userId })}::jsonb
+		order by created_on
+		limit 100
+	`);
+	const found = rows.map((row) => ({
+		id: row.id,
+		kind: (row.name === ASSISTANT_SUMMARIES_QUEUE ? 'summaries' : 'review') as
+			'review' | 'summaries',
+		data: row.data
+	}));
 	if (found.length === 0) return [];
 
 	// Names come from the writer's own live stories and universes, so a job over
@@ -112,7 +116,7 @@ export async function findRunningAssistantJobs(
 			title = storyTitles.get(storyId);
 			const chapter = chapterId ? chapterTitles.get(chapterId) : undefined;
 			if (title !== undefined && chapter?.storyId === storyId && chapter.title) {
-				title = chapter.title;
+				title = `${title}: ${chapter.title}`;
 			}
 		}
 		if (title === undefined) continue;

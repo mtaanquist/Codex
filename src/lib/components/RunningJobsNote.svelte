@@ -24,7 +24,7 @@
 </script>
 
 {#each jobs as job (job.id)}
-	<p class="mode-note run-note" role="status">
+	<p class="mode-note run-note">
 		<span class="run-dot" aria-hidden="true"></span>
 		{#if job.kind === 'review'}
 			<a href={resolve('/stories/[id]/review', { id: storyId })}>{describe(job)}</a>

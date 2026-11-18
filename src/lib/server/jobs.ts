@@ -408,7 +408,7 @@ export async function queueBackup(): Promise<boolean> {
 // The signed-in writer's unsettled Assistant jobs, for a page loaded mid-run.
 export async function listRunningAssistantJobs(userId: string): Promise<RunningAssistantJob[]> {
 	try {
-		return await findRunningAssistantJobs(await getBoss(), db, userId);
+		return await findRunningAssistantJobs(db, userId);
 	} catch (error) {
 		logEvent('error', 'job.list_failed', { userId, ...errorFields(error) });
 		return [];

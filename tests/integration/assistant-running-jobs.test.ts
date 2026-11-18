@@ -11,8 +11,8 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { findRunningAssistantJobs } from '../../src/lib/server/running-jobs';
 import { ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE } from '../../src/lib/server/queues';
 
-// Against a real pg-boss, because the list leans on its job states and its
-// payload matching (findJobs with data).
+// Against a real pg-boss, because the list reads its job table directly: this
+// pins the query to the installed version's table, columns and states.
 let pool: pg.Pool;
 let db: Database;
 let boss: PgBoss;
@@ -80,7 +80,7 @@ describe('findRunningAssistantJobs', () => {
 			mode: 'continuity'
 		});
 
-		const jobs = await findRunningAssistantJobs(boss, db, userId);
+		const jobs = await findRunningAssistantJobs(db, userId);
 		expect(jobs).toHaveLength(3);
 		expect(jobs).toContainEqual({
 			id: queued,
@@ -117,8 +117,54 @@ describe('findRunningAssistantJobs', () => {
 			categories: []
 		});
 
-		const [job] = await findRunningAssistantJobs(boss, db, userId);
-		expect(job).toMatchObject({ storyId, chapterId: chapter.id, title: 'The Tidewall' });
+		const [job] = await findRunningAssistantJobs(db, userId);
+		expect(job).toMatchObject({ storyId, chapterId: chapter.id, title: 'Saltglass: The Tidewall' });
+	});
+
+	it('keeps the story title when the chapter belongs to another story', async () => {
+		const [elsewhere] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: userId, title: 'Elsewhere' })
+			.returning({ id: stories.id });
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId: elsewhere.id, position: 1, title: 'Wrong' })
+			.returning({ id: chapters.id });
+		await boss.send(ASSISTANT_REVIEW_QUEUE, {
+			userId,
+			storyId,
+			chapterId: chapter.id,
+			categories: []
+		});
+
+		const [job] = await findRunningAssistantJobs(db, userId);
+		expect(job.title).toBe('Saltglass');
+	});
+
+	it('lists a job waiting to retry after a failed attempt', async () => {
+		const id = await boss.send(
+			ASSISTANT_REVIEW_QUEUE,
+			{ userId, storyId, categories: [] },
+			{ retryLimit: 2, retryDelay: 60 }
+		);
+		await boss.fetch(ASSISTANT_REVIEW_QUEUE);
+		await boss.fail(ASSISTANT_REVIEW_QUEUE, id!);
+		const [job] = await boss.findJobs(ASSISTANT_REVIEW_QUEUE, { id: id! });
+		expect(job.state).toBe('retry');
+
+		expect((await findRunningAssistantJobs(db, userId)).map((j) => j.id)).toEqual([id]);
+	});
+
+	it('finds a running job past many settled ones', async () => {
+		for (let i = 0; i < 120; i++) {
+			const id = await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
+			await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
+			await boss.complete(ASSISTANT_SUMMARIES_QUEUE, id!);
+		}
+		const running = await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
+		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
+
+		expect((await findRunningAssistantJobs(db, userId)).map((j) => j.id)).toEqual([running]);
 	});
 
 	it('leaves out settled jobs', async () => {
@@ -133,10 +179,24 @@ describe('findRunningAssistantJobs', () => {
 		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
 		await boss.fail(ASSISTANT_SUMMARIES_QUEUE, failed!);
 
-		expect(await findRunningAssistantJobs(boss, db, userId)).toEqual([]);
+		expect(await findRunningAssistantJobs(db, userId)).toEqual([]);
 	});
 
 	it("leaves out another writer's jobs, and jobs over deleted work", async () => {
+		const [otherUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: otherId, name: 'Theirs' })
+			.returning({ id: universes.id });
+		const [otherStory] = await db
+			.insert(stories)
+			.values({ universeId: otherUniverse.id, ownerId: otherId, title: 'Theirs' })
+			.returning({ id: stories.id });
+		await boss.send(ASSISTANT_REVIEW_QUEUE, {
+			userId: otherId,
+			storyId: otherStory.id,
+			categories: []
+		});
+		// A job naming this writer's story under someone else's id is not theirs either.
 		await boss.send(ASSISTANT_REVIEW_QUEUE, { userId: otherId, storyId, categories: [] });
 		const [gone] = await db
 			.insert(stories)
@@ -145,7 +205,7 @@ describe('findRunningAssistantJobs', () => {
 		await db.update(stories).set({ deletedAt: new Date() }).where(eq(stories.id, gone.id));
 		await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId: gone.id });
 
-		expect(await findRunningAssistantJobs(boss, db, userId)).toEqual([]);
-		expect(await findRunningAssistantJobs(boss, db, otherId)).toEqual([]);
+		expect(await findRunningAssistantJobs(db, userId)).toEqual([]);
+		expect((await findRunningAssistantJobs(db, otherId)).map((j) => j.title)).toEqual(['Theirs']);
 	});
 });
