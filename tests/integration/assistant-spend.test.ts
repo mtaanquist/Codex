@@ -15,7 +15,8 @@ import type { ReviewCategory } from '../../src/lib/review-shape';
 
 const { accountLlmView, saveAccountLlmConfig, saveModelPricing } =
 	await import('../../src/lib/server/llm/config');
-const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
+const { reviewStoryScenes, SUMMARIES_CAPPED_MESSAGE } =
+	await import('../../src/lib/server/llm/scene-review');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { CAP_NOT_APPLIED_MESSAGE } = await import('../../src/lib/server/llm/spend');
 const { estimateStoryReview } = await import('../../src/lib/server/llm/estimate');
@@ -574,6 +575,63 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.failures.map((f) => f.message)).toContain(
 			'A spend cap is set but the model has no known price, so it was not applied.'
 		);
+	});
+
+	it("does not repeat the earlier run's own messages when it continues", async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'msg-1' }, provider());
+		const capped = await loadReviewRun(db, 'msg-1');
+		const [first] = await db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.where(eq(scenes.storyId, storyId))
+			.orderBy(asc(scenes.globalPosition))
+			.limit(1);
+		// The capped run's summary phase hit the cap too, and one scene failed.
+		await saveReviewRun(db, {
+			jobId: 'msg-1',
+			userId,
+			state: {
+				...capped!,
+				failures: [
+					{ message: SUMMARIES_CAPPED_MESSAGE },
+					{ message: CAP_NOT_APPLIED_MESSAGE },
+					{ sceneId: first.id, sceneTitle: 'Scene 1', message: 'Scene one broke' }
+				]
+			}
+		});
+
+		await configure({ spendCapUsd: 10 });
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'msg-2' },
+			{ provider: provider().provider }
+		);
+		expect(result.capped).toBeUndefined();
+		expect(result.failures.map((f) => f.message)).toEqual(['Scene one broke']);
+		const run = await loadReviewRun(db, 'msg-2');
+		expect(run?.failures.map((f) => f.message)).toEqual(['Scene one broke']);
+	});
+
+	it('lists a cap it could not apply once when the same job runs again', async () => {
+		const storyId = await seedStory(2);
+		await configure({ spendCapUsd: 0.5 });
+		// The first attempt stops after one scene, as a worker restart would.
+		const controller = new AbortController();
+		const first = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'np-1', signal: controller.signal },
+			{ provider: cancelledAfterOneScene(controller).provider }
+		);
+		expect(first.failures.map((f) => f.message)).toEqual([CAP_NOT_APPLIED_MESSAGE]);
+		const again = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'np-1' },
+			{ provider: provider().provider }
+		);
+		expect(again.failures.map((f) => f.message)).toEqual([CAP_NOT_APPLIED_MESSAGE]);
 	});
 
 	it('spends one ceiling across the summary phase and the scene passes', async () => {

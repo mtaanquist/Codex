@@ -3,7 +3,7 @@ import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
-import { ownedScene } from './scene-access.ts';
+import { keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
@@ -51,14 +51,14 @@ export async function splitScene(
 		// Make room directly after the source scene.
 		await tx
 			.update(scenes)
-			.set({ globalPosition: sql`${scenes.globalPosition} + 1` })
+			.set({ globalPosition: sql`${scenes.globalPosition} + 1`, ...keepUpdatedAt() })
 			.where(
 				and(eq(scenes.storyId, scene.storyId), gt(scenes.globalPosition, scene.globalPosition))
 			);
 		if (scene.chapterId) {
 			await tx
 				.update(scenes)
-				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1` })
+				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1`, ...keepUpdatedAt() })
 				.where(
 					and(
 						eq(scenes.chapterId, scene.chapterId),
@@ -191,14 +191,14 @@ export async function duplicateScene(
 		// Make room directly after the source scene, the same shift split uses.
 		await tx
 			.update(scenes)
-			.set({ globalPosition: sql`${scenes.globalPosition} + 1` })
+			.set({ globalPosition: sql`${scenes.globalPosition} + 1`, ...keepUpdatedAt() })
 			.where(
 				and(eq(scenes.storyId, scene.storyId), gt(scenes.globalPosition, scene.globalPosition))
 			);
 		if (scene.chapterId) {
 			await tx
 				.update(scenes)
-				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1` })
+				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1`, ...keepUpdatedAt() })
 				.where(
 					and(
 						eq(scenes.chapterId, scene.chapterId),
@@ -335,7 +335,7 @@ export async function mergeScenes(
 		const restIds = rest.map((scene) => scene.id);
 		await tx
 			.update(scenes)
-			.set({ deletedAt: sql`now()` })
+			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(inArray(scenes.id, restIds));
 		await markMentionsStale(tx, { sceneIds: restIds });
 		await tx

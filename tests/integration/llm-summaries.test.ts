@@ -16,7 +16,10 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'llm-summaries-test-secret';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
-const { duplicateScene } = await import('../../src/lib/server/scene-split-merge');
+const { duplicateScene, splitScene } = await import('../../src/lib/server/scene-split-merge');
+const { setSceneStatus } = await import('../../src/lib/server/scene-status');
+const { trashScene, restoreScene, deleteChapter } =
+	await import('../../src/lib/server/scene-lifecycle');
 const { saveDraft, restoreDraftScene, newStoryFromDraft } =
 	await import('../../src/lib/server/story-drafts');
 
@@ -322,14 +325,61 @@ describe('copied summaries', () => {
 		return row;
 	}
 
+	// Scene C gets prose, so the Assistant summarises a scene after A that the
+	// position shift of a duplicate or split moves along.
+	async function summariseWithSceneAfterA() {
+		await db.update(scenes).set({ bodyMd: 'Bram rowed out alone.' }).where(eq(scenes.id, sceneCId));
+		const first = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(first.scenes).toBe(2);
+	}
+
 	it('skips a duplicated scene whose summary was current', async () => {
-		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await summariseWithSceneAfterA();
 		const result = await duplicateScene(db, ownerId, sceneAId);
 		if (!result.ok) throw new Error('duplicate failed');
 		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		// Neither the copy nor scene C, which only moved down one place.
 		expect(again.scenes).toBe(0);
 		const copy = await readScene(result.newSceneId);
 		expect(copy.summaryGeneratedAt).not.toBeNull();
+	});
+
+	it('refreshes only the two halves of a split, not the scenes after it', async () => {
+		await summariseWithSceneAfterA();
+		const split = await splitScene(db, ownerId, sceneAId, 'Alice met Bram'.length);
+		if (!split.ok) throw new Error('split failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(2);
+	});
+
+	it('keeps a summary current through a status change', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(await setSceneStatus(db, ownerId, sceneAId, 'revised')).toBe(true);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+	});
+
+	it('keeps a summary current through a chapter delete', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(await deleteChapter(db, ownerId, chapterId)).toBe(true);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+	});
+
+	it('keeps a summary current through the trash and back', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		// Indexed, the way the mention job leaves it (raw SQL, as that job writes).
+		await pool.query('update scenes set mentions_indexed_at = now() where id = $1', [sceneAId]);
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		expect(await restoreScene(db, ownerId, sceneAId)).toBe(true);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+		// Its mentions went with the trash, so the restored scene is due a rebuild.
+		const [row] = await db
+			.select({ mentionsIndexedAt: scenes.mentionsIndexedAt })
+			.from(scenes)
+			.where(eq(scenes.id, sceneAId));
+		expect(row.mentionsIndexedAt).toBeNull();
 	});
 
 	it('refreshes a duplicated scene whose summary was stale', async () => {

@@ -12,6 +12,7 @@ import {
 	type StreamEvent,
 	type TokenUsage
 } from './types.ts';
+import { tokensForChars } from '../context/budgets.ts';
 
 // The native Anthropic adapter: speaks the Messages API (/v1/messages), which
 // is not OpenAI-compatible. Raw fetch over the injected transport, like the
@@ -280,17 +281,28 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	};
 }
 
+// What has streamed so far, for billing a stream that fails partway.
+// sawDelta is set once a message_delta has reported the output count.
+type StreamProgress = { outputChars: number; sawDelta: boolean };
+
 // What a stream that failed partway had been billed: the input side from
-// message_start and the output so far from message_delta, which may not have
-// arrived yet. Undefined when message_start never came.
-function partialUsage(raw: Block): TokenUsage | undefined {
+// message_start and the output so far. The real API sends message_delta once,
+// at the end, so before it arrives message_start's output count (about 1) is
+// all there is; the text, thinking and tool input streamed so far are
+// estimated instead, so a retried long reply cannot slip past the spend cap.
+// Undefined when message_start never came.
+function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefined {
 	const prompt = promptTotal(raw);
 	if (!Number.isFinite(prompt)) return undefined;
-	const completion = Number(raw.output_tokens);
+	const reported = Number(raw.output_tokens);
+	const counted = Number.isFinite(reported) ? reported : 0;
+	const completion = progress.sawDelta
+		? counted
+		: Math.max(counted, tokensForChars(progress.outputChars));
 	const cached = cacheRead(raw);
 	return {
 		promptTokens: prompt,
-		completionTokens: Number.isFinite(completion) ? completion : 0,
+		completionTokens: completion,
 		...(cached > 0 ? { cachedPromptTokens: cached } : {})
 	};
 }
@@ -418,18 +430,20 @@ const STREAM_ERROR_STATUS = new Map<unknown, number>([
 // timeout only fires on real silence.
 async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<BufferedMessage> {
 	const usage: Block = {};
+	const progress: StreamProgress = { outputChars: 0, sawDelta: false };
 	try {
-		return await assembleFrames(body, usage);
+		return await assembleFrames(body, usage, progress);
 	} catch (err) {
-		throw err instanceof Error ? withBilledUsage(err, partialUsage(usage)) : err;
+		throw err instanceof Error ? withBilledUsage(err, partialUsage(usage, progress)) : err;
 	}
 }
 
-// Fills usage in place as the frames arrive, so a failure partway still knows
-// what had been billed.
+// Fills usage and progress in place as the frames arrive, so a failure partway
+// still knows what had been billed.
 async function assembleFrames(
 	body: AsyncIterable<Uint8Array>,
-	usage: Block
+	usage: Block,
+	progress: StreamProgress
 ): Promise<BufferedMessage> {
 	const blocks: Block[] = [];
 	const inputJson = new Map<number, string>();
@@ -458,13 +472,20 @@ async function assembleFrames(
 				break;
 			case 'content_block_delta':
 				if (!block || !delta) break;
-				if (delta.type === 'text_delta') block.text = `${block.text ?? ''}${delta.text ?? ''}`;
-				else if (delta.type === 'thinking_delta') {
-					block.thinking = `${block.thinking ?? ''}${delta.thinking ?? ''}`;
+				if (delta.type === 'text_delta') {
+					const text = `${delta.text ?? ''}`;
+					block.text = `${block.text ?? ''}${text}`;
+					progress.outputChars += text.length;
+				} else if (delta.type === 'thinking_delta') {
+					const thinking = `${delta.thinking ?? ''}`;
+					block.thinking = `${block.thinking ?? ''}${thinking}`;
+					progress.outputChars += thinking.length;
 				} else if (delta.type === 'signature_delta') {
 					block.signature = `${block.signature ?? ''}${delta.signature ?? ''}`;
 				} else if (delta.type === 'input_json_delta') {
-					inputJson.set(index, `${inputJson.get(index) ?? ''}${delta.partial_json ?? ''}`);
+					const json = `${delta.partial_json ?? ''}`;
+					inputJson.set(index, `${inputJson.get(index) ?? ''}${json}`);
+					progress.outputChars += json.length;
 				} else if (delta.type === 'citations_delta') {
 					const citations = Array.isArray(block.citations) ? block.citations : [];
 					block.citations = [...citations, delta.citation];
@@ -481,6 +502,7 @@ async function assembleFrames(
 				break;
 			}
 			case 'message_delta':
+				if (typeof frame.usage?.output_tokens === 'number') progress.sawDelta = true;
 				if (delta?.stop_reason) stopReason = delta.stop_reason;
 				for (const [key, value] of Object.entries(frame.usage ?? {})) {
 					if (value === null || value === undefined) continue;

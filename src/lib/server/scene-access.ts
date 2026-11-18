@@ -1,7 +1,14 @@
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { scenes, stories } from './db/schema.ts';
 import { storyIsLive } from './universe-scope.ts';
+
+// Spread into the set of an update that leaves the prose alone (a move, a
+// status, the trash). Without it updated_at's $onUpdate bumps the row, and the
+// scene's Assistant summary then reads as out of date and is paid for again.
+export function keepUpdatedAt() {
+	return { updatedAt: sql`${scenes.updatedAt}` };
+}
 
 // The owned-scene lookup shared by everything that reads or mutates a scene:
 // ownership flows through the story, and soft-deleted scenes and scenes in a

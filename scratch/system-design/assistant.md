@@ -286,7 +286,9 @@ them, or a stated static 2.5 where there are not. The gateway records every
 request into the run's meter (passed on the request) as it logs its usage
 row, including an attempt that failed partway through a stream and was
 retried or given up on: the endpoint bills the tokens it had used, which the
-adapter attaches to the error.
+adapter attaches to the error. Claude reports the output count only at the
+end of a stream, so for a stream that failed before then the adapter
+estimates it from the characters streamed so far.
 
 The tool-call budget is a writer-set value in `users.llm_config`, not a
 fixed number Codex chooses. The point of bring-your-own-endpoint is that the

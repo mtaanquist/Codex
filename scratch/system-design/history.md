@@ -1461,6 +1461,33 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 5 (#1098-#1101, 2026-11-18). Writer trust
+      first. A Claude stream that failed partway was metered at
+      message_start's output count (about 1), since the real API sends
+      message_delta only at the end; the round-4 fixture had sent one before
+      the error. Until a message_delta reports the count, the output is now
+      estimated from the text, thinking and tool input streamed so far, with
+      the same four-characters-per-token estimate the context budgets use
+      (moved to `context/budgets.ts` so the adapter does not pull in the
+      database modules) (#1098). A resumed review carried the earlier run's
+      run-level messages (the summary cap, the unpriced cap) into its notice,
+      and a same-job retry listed the unpriced cap twice; only scene failures
+      carry over now, and each attempt raises its own run-level messages
+      (#1099). Non-prose scene updates (the position shift of a split or
+      duplicate, a status change, trash, merge's trash, restore, a chapter
+      delete) no longer bump `updated_at` through `$onUpdate`, which had made
+      the scenes' Assistant summaries look stale and re-billed them
+      (`keepUpdatedAt` in `scene-access.ts`). Every consumer was checked: save
+      conflicts use body hashes, the sweep's watermark only needs prose
+      changes, and the story page's "last edited scene" is better for it. The
+      one path that relied on the bump was restore: the trash deletes the
+      mention rows, and the bump was what let the reconcile sweep rebuild
+      them if the queued rebuild was lost. Restore now clears
+      `mentions_indexed_at` instead (#1100). The mute path clears the arcs it
+      locked by id rather than re-running the filter (#1101). The
+      `DraftScene` comment now says what happens to summaries copied from
+      drafts saved before the stamp was recorded (they stay the writer's
+      own). Filed and left open: #1102-#1108; #1031 and #1080 gained notes.
 - [x] Staging review round 4 (#1075, #1089-#1092, 2026-11-18). Writer
       trust first. A stream that failed partway (overload, server fault, a
       close before the stop reason) was billed but its tokens were dropped

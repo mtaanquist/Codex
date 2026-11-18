@@ -956,7 +956,11 @@ export async function reviewStoryScenes(
 				: undefined
 	});
 	const done = new Set(run.state.completed);
-	const failures: ReviewFailure[] = [...run.state.failures];
+	// Only the scene failures carry over from an earlier attempt, alongside the
+	// scenes they belong to. Run-level messages (the summary phase, the cap, the
+	// cross-scene pass) are this attempt's own and are raised again if they still
+	// apply, so an earlier attempt's cap is not reported for one that hit none.
+	const failures: ReviewFailure[] = run.state.failures.filter((failure) => failure.sceneId);
 	let reviewed = run.state.reviewed;
 	let failed = run.state.failed;
 	let notes = run.state.notes;
@@ -975,13 +979,7 @@ export async function reviewStoryScenes(
 	run.state.phase = 'summaries';
 	await run.save();
 	const summaries = await refreshSummaries(db, { ...opts, meter }, deps);
-	// The summary phase runs again on every attempt, so a message the earlier
-	// attempt already recorded is not listed twice.
-	for (const failure of summaries.failures) {
-		if (!failures.some((seen) => seen.message === failure.message && !seen.sceneId)) {
-			failures.push(failure);
-		}
-	}
+	failures.push(...summaries.failures);
 	if (summaries.refreshed) run.state.summariesRefreshed = true;
 
 	const where = [

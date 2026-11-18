@@ -375,7 +375,8 @@ describe('arc staleness', () => {
 		const sceneId = await sceneWithProse('Bram at the harbour.');
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		expect(await setSceneStatus(db, ownerId, sceneId, 'final')).toBe(true);
-		expect(await reconcileMentions(db)).toBe(1);
+		// Mentions read only the body, so a status change leaves nothing to rebuild.
+		expect(await reconcileMentions(db)).toBe(0);
 		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
 	});
 
