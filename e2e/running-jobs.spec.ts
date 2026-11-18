@@ -22,7 +22,11 @@ test('a queued Assistant review shows again after a reload', async ({ page }) =>
 	await expect(page).toHaveURL(`/stories/runs-${stamp}`);
 
 	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
-	const boss = new PgBoss({ connectionString: e2eDatabaseUrl(), supervise: false, schedule: false });
+	const boss = new PgBoss({
+		connectionString: e2eDatabaseUrl(),
+		supervise: false,
+		schedule: false
+	});
 	await boss.start();
 	let jobId: string | null = null;
 	try {
