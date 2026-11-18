@@ -1096,11 +1096,14 @@ export async function deleteSuggestion(
 	// them in, so the two cannot deadlock.
 	return await db.transaction(async (tx) => {
 		const [locked] = await tx
-			.select({ id: reviewSuggestions.id })
+			.select({ status: reviewSuggestions.status })
 			.from(reviewSuggestions)
-			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')))
+			.where(eq(reviewSuggestions.id, suggestionId))
 			.for('update');
-		if (!locked) return { ok: false, reason: 'That suggestion was already decided.' };
+		if (!locked) return { ok: false, reason: 'That suggestion does not exist.' };
+		if (locked.status !== 'pending') {
+			return { ok: false, reason: 'That suggestion was already decided.' };
+		}
 		const [thread] = await tx
 			.select({ id: reviewThreads.id })
 			.from(reviewThreads)
@@ -1130,9 +1133,20 @@ export type ClearScope = 'finished' | 'all';
 // before this moment. Read from the database clock, which stamps each note's
 // created_at, to the microsecond, so a note written in the same millisecond is
 // still told apart; it is compared in SQL for the same reason.
+//
+// A note stamped inside a transaction that has not committed yet is not on
+// the page, so the cutoff goes back to the start of the oldest open
+// transaction: anything such a transaction writes is stamped after that.
 export async function reviewSeenCutoff(db: Database): Promise<string> {
 	const { rows } = await db.execute<{ at: string }>(
-		sql`select to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at`
+		sql`select to_char(
+			least(
+				now(),
+				(select min(xact_start) from pg_stat_activity
+					where datname = current_database() and pid <> pg_backend_pid())
+			) at time zone 'UTC',
+			'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+		) as at`
 	);
 	return rows[0].at;
 }
@@ -1146,8 +1160,8 @@ export async function reviewSeenCutoff(db: Database): Promise<string> {
 // Only what the writer could have seen goes: a thread or suggestion created
 // after `seenBefore` (when their page loaded), or one with a reply posted
 // since, is kept, so a guest's new note is never cleared unread. Notes are
-// stamped when written (clock_timestamp), after their thread lock, so the one
-// gap left is a note mid-commit at the moment the page loaded.
+// stamped when written (clock_timestamp), after their thread lock, and the
+// cutoff allows for notes still being committed (see reviewSeenCutoff).
 //
 // Suggestions are locked before threads: a first reply on a suggestion
 // creates its thread, and that insert waits on the suggestion lock, so no

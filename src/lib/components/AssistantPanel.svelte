@@ -50,7 +50,8 @@
 		CHAT_WINDOW_TURNS,
 		chatTitle,
 		newChatId,
-		RECAP_CHAT_TITLE
+		RECAP_CHAT_TITLE,
+		withPrompt
 	} from '#lib/assistant-chat';
 	import { relativeShort } from '#lib/format';
 	import { now } from '#lib/now.svelte';
@@ -343,9 +344,8 @@
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
 				freshChatId();
-				appendToReply(
-					'This chat was deleted. Your message was not sent; send it again to start a new chat.'
-				);
+				messages = [{ role: 'assistant', content: 'This chat was deleted.' }];
+				olderSummarised = false;
 				return 'gone';
 			}
 			if (!response.ok || !response.body) {
@@ -392,7 +392,8 @@
 			pending = null;
 			// A recap that did not start its chat leaves it to be dropped by the
 			// server, so the next send must not reuse its id.
-			if (creating && !storesTurnFirst && chatId === null) freshChatId();
+			// A chat an earlier, stopped send stored a turn in is kept, so its id stays.
+			if (creating && !storesTurnFirst && chatId === null && !nextChatMayExist) freshChatId();
 		}
 	}
 
@@ -443,7 +444,6 @@
 						'This chat was deleted. Your message was not sent; send it again to start a new chat.'
 				}
 			];
-			olderSummarised = false;
 			if (turn.reference && !reference) reference = turn.reference;
 			if (!input.trim()) {
 				input = question;
@@ -911,14 +911,10 @@
 
 	// The textarea's value is one-way bound, so it is written here directly to
 	// be sized and to place the cursor at the end in the same tick.
-	let lastPrefill = '';
+	let lastPrompt = '';
 	function prefill(text: string) {
-		// Text the writer typed and has not sent stays, with the prompt after it;
-		// an earlier prompt left as it was, or a half-typed command, is replaced.
-		const typed = input.trim();
-		const keep = typed && typed !== lastPrefill.trim() && !typed.startsWith('/');
-		const value = keep ? `${typed}\n\n${text}` : text;
-		lastPrefill = value;
+		const value = withPrompt(input, lastPrompt, text);
+		lastPrompt = text;
 		input = value;
 		if (!composer) return;
 		composer.value = value;

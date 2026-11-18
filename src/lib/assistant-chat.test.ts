@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CHAT_TITLE_MAX, chatTitle, newChatId } from './assistant-chat';
+import { CHAT_TITLE_MAX, chatTitle, newChatId, withPrompt } from './assistant-chat';
 
 describe('chatTitle', () => {
 	it('collapses whitespace', () => {
@@ -31,5 +31,32 @@ describe('newChatId', () => {
 		} finally {
 			vi.unstubAllGlobals();
 		}
+	});
+});
+
+describe('withPrompt', () => {
+	it('puts the prompt in an empty box', () => {
+		expect(withPrompt('  ', '', 'Check this.')).toBe('Check this.');
+	});
+
+	it('keeps typed text, with the prompt after it', () => {
+		expect(withPrompt("Check Marra's age", '', 'A')).toBe("Check Marra's age\n\nA");
+	});
+
+	it('swaps an earlier prompt and keeps the text typed before it', () => {
+		const first = withPrompt("Check Marra's age", '', 'A');
+		expect(withPrompt(first, 'A', 'B')).toBe("Check Marra's age\n\nB");
+	});
+
+	it('replaces an earlier prompt left on its own', () => {
+		expect(withPrompt('A', 'A', 'B')).toBe('B');
+	});
+
+	it('keeps an earlier prompt the writer added to', () => {
+		expect(withPrompt('A and more', 'A', 'B')).toBe('A and more\n\nB');
+	});
+
+	it('replaces a half-typed command', () => {
+		expect(withPrompt('/rec', '', 'B')).toBe('B');
 	});
 });

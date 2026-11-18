@@ -92,8 +92,8 @@ beforeEach(async () => {
 	reviewerId = reviewer!.id;
 });
 
-async function thread(story = storyId, scene = sceneId, body = 'A note.') {
-	const made = await createThread(db, {
+async function thread(story = storyId, scene = sceneId, body = 'A note.', on: Database = db) {
+	const made = await createThread(on, {
 		storyId: story,
 		sceneId: scene,
 		anchor: null,
@@ -149,6 +149,18 @@ const suggestionIds = async () =>
 		.sort();
 
 describe('clearReviews', () => {
+	it('keeps a note that was still being saved when the page was read', async () => {
+		await seed();
+		let inFlight = '';
+		let seenAt = '';
+		await db.transaction(async (tx) => {
+			inFlight = await thread(storyId, sceneId, 'Saving.', tx as unknown as Database);
+			seenAt = await reviewSeenCutoff(db);
+		});
+		await clearReviews(db, storyId, 'all', seenAt);
+		expect(await threadIds()).toContain(inFlight);
+	});
+
 	it('keeps notes and replies posted after the page was read', async () => {
 		const seeded = await seed();
 		const seenAt = await reviewSeenCutoff(db);

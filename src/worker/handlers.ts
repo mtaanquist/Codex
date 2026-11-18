@@ -175,7 +175,7 @@ export function createHandlers(deps: WorkerDeps) {
 				// A retry would stop at the same limit, so say why and end here. The
 				// job is settled as completed with a failed output, which the
 				// activity card reads as failed, and pg-boss does not run it again.
-				await boss.complete(ASSISTANT_ENRICH_QUEUE, job.id, { failed: true });
+				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
 				await queueDigests(
 					await insertNotifications(db, [userId], 'assistant_enrich', {
 						title: `The Assistant could not write the arc for ${character.name}. ${error.message}`,

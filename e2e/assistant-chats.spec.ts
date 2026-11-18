@@ -177,9 +177,6 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	).toHaveCount(0);
 });
 
-// A recap that fails in a new chat stores nothing, and the server drops the
-// chat it made for it; the panel must not hold on to that chat, or the next
-// question would be sent to a chat that is gone.
 // Signs in as the Assistant account, starts a story in a fresh universe, and
 // opens the Assistant tab on a new chat.
 async function freshStoryPanel(page: Page, label: string) {
@@ -211,12 +208,17 @@ async function freshStoryPanel(page: Page, label: string) {
 	return { panel, picker };
 }
 
+// A recap that fails in a new chat stores nothing, and the server drops the
+// chat it made for it; the panel must not hold on to that chat, or the next
+// question would be sent to a chat that is gone.
 test('a failed catch-up in a new chat leaves the next question in a new chat', async ({ page }) => {
 	const { panel, picker } = await freshStoryPanel(page, 'Recap');
 
 	// The endpoint fails mid-recap; the server has already dropped the chat.
-	await page.route('**/api/assistant/recap', (route) =>
-		route.fulfill({
+	let recapChatId: string | undefined;
+	await page.route('**/api/assistant/recap', (route) => {
+		recapChatId = (route.request().postDataJSON() as { newChatId?: string }).newChatId;
+		return route.fulfill({
 			status: 200,
 			headers: {
 				'content-type': 'text/event-stream',
@@ -225,14 +227,14 @@ test('a failed catch-up in a new chat leaves the next question in a new chat', a
 				'x-chat-title': 'Catch%20me%20up'
 			},
 			body: `data: ${JSON.stringify({ type: 'error', message: 'The endpoint failed.' })}\n\n`
-		})
-	);
+		});
+	});
 	await panel.getByRole('button', { name: 'More actions' }).click();
 	await page.getByRole('menuitem', { name: 'Catch me up' }).click();
 	await expect(panel.locator('.chat-scroll')).toContainText('The endpoint failed.');
 	await expect(picker).toHaveText('New chat');
 
-	let posted: { chatId?: string | null } | null = null;
+	let posted: { chatId?: string | null; newChatId?: string } | null = null;
 	await page.route('**/api/assistant/chat', async (route) => {
 		posted = route.request().postDataJSON();
 		await route.fulfill({
@@ -246,6 +248,9 @@ test('a failed catch-up in a new chat leaves the next question in a new chat', a
 	await composer.press('Enter');
 	await expect.poll(() => posted).not.toBeNull();
 	expect(posted!.chatId ?? null).toBeNull();
+	// A fresh id, so the question cannot land in the chat the server is dropping.
+	expect(recapChatId).toBeTruthy();
+	expect(posted!.newChatId).not.toBe(recapChatId);
 });
 
 // A first question stopped before any reply reaches the panel may already be

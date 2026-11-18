@@ -42,6 +42,8 @@ const { loadStoryLive } = await import('../../src/lib/server/story-live');
 const dashboard = await import('../../src/routes/+page.server');
 const settingsPage =
 	await import('../../src/routes/stories/[id]/settings/[[section]]/+page.server');
+const { saveDraft } = await import('../../src/lib/server/story-drafts');
+const draftPage = await import('../../src/routes/stories/[id]/drafts/[draft=uuid]/+page.server');
 
 let ownerId: string;
 let strangerId: string;
@@ -259,5 +261,21 @@ describe('story trash', () => {
 		expect(await listTrashedStories(db, ownerId)).toEqual([]);
 		await purgeUniverse(db, universeId);
 		expect(await db.select().from(stories).where(eq(stories.universeId, universeId))).toEqual([]);
+	});
+});
+
+describe('a saved draft page', () => {
+	it('points a saved scene that was deleted to the deleted list', async () => {
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('expected a saved draft');
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
+		const page = (await draftPage.load(
+			event(
+				{ id: ownerId, displayName: 'T' },
+				{ params: { id: storyId, draft: saved.id } }
+			) as never
+		)) as { inTrash: string[]; live: Record<string, string> };
+		expect(page.inTrash).toEqual([sceneId]);
+		expect(page.live[sceneId]).toBeUndefined();
 	});
 });

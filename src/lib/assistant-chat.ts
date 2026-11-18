@@ -35,3 +35,13 @@ export function newChatId(): string {
 	const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+// The composer's text after a prompt is put in it. Text the writer typed and
+// has not sent stays, with the prompt after it; an earlier prompt still at the
+// end, or a half-typed command, is replaced.
+export function withPrompt(input: string, lastPrompt: string, prompt: string): string {
+	let typed = input.trim();
+	const earlier = lastPrompt.trim();
+	if (earlier && typed.endsWith(earlier)) typed = typed.slice(0, -earlier.length).trim();
+	return typed && !typed.startsWith('/') ? `${typed}\n\n${prompt}` : prompt;
+}
