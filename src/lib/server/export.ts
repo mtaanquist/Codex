@@ -756,15 +756,28 @@ function joinBody(summaryMd: string | null, bodyMd: string): string {
 }
 
 // Freeform notes as archive docs under a notebook/ folder, one file each.
+// Pinning and the scene a note hangs off are written when the rows carry
+// them; scenePath gives that scene's file path, as the importer reads it.
 function notebookDocs(
-	rows: { id: string; title: string | null; bodyMd: string }[],
-	dir: string
+	rows: {
+		id: string;
+		title: string | null;
+		bodyMd: string;
+		pinned?: boolean;
+		sceneId?: string | null;
+	}[],
+	dir: string,
+	scenePath?: (sceneId: string) => string | undefined
 ): Doc[] {
 	const namer = uniqueNamer();
 	return rows.map((note) => ({
 		dir,
 		name: `${namer(slugify(note.title ?? '', note.id))}.md`,
-		front: { title: note.title },
+		front: {
+			title: note.title,
+			pinned: note.pinned ? 'true' : null,
+			scene: note.sceneId ? (scenePath?.(note.sceneId) ?? null) : null
+		},
 		body: note.bodyMd
 	}));
 }
@@ -846,10 +859,14 @@ function draftDocs(draft: ExportDraft, dir: string): Doc[] {
 		}
 	];
 	const outline = draftOutline(content);
+	// Each scene's file path inside the draft folder, for the notes that name it.
+	const scenePaths = new Map<string, string>();
 	const addScene = (scene: DraftContent['scenes'][number], index: number, sceneDir: string) => {
+		const name = `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`;
+		scenePaths.set(scene.id, `${sceneDir.slice(dir.length + 1)}/${name}`);
 		docs.push({
 			dir: sceneDir,
-			name: `${String(index + 1).padStart(2, '0')}-${slugify(scene.title, 'scene')}.md`,
+			name,
 			front: { title: scene.title, status: scene.status },
 			body: scene.bodyMd
 		});
@@ -865,7 +882,7 @@ function draftDocs(draft: ExportDraft, dir: string): Doc[] {
 		chapter.scenes.forEach((scene, si) => addScene(scene, si, chapterDir));
 	});
 	outline.unfiled.forEach((scene, si) => addScene(scene, si, `${dir}/unfiled`));
-	docs.push(...notebookDocs(content.notes, `${dir}/notebook`));
+	docs.push(...notebookDocs(content.notes, `${dir}/notebook`, (id) => scenePaths.get(id)));
 
 	const entityName = new Map(content.entities.map((entity) => [entity.id, entity.name]));
 	const fileNamers = { character: uniqueNamer(), place: uniqueNamer(), lore_entry: uniqueNamer() };

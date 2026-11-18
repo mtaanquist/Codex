@@ -19,6 +19,7 @@ import { rateLimitWrites } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
 import { detectMentions, type MentionTarget } from '#lib/mention-detect';
 import { matchScenes } from '#lib/drafts';
+import { listTrashedScenes } from '#lib/server/scene-lifecycle';
 
 // The working draft's text for each saved scene, paired the same way the
 // Compare tab pairs them.
@@ -48,13 +49,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const tabParam = url.searchParams.get('tab');
 	const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'story';
 
-	const [drafts, liveScenes, reading, [archive]] = await Promise.all([
+	const [drafts, liveScenes, trashed, reading, [archive]] = await Promise.all([
 		listDrafts(db, story.id),
 		// The working draft's text for each scene, to compare against and to
 		// say which scenes have changed since.
 		tab === 'story'
 			? workingOutline(db, story.id).then((outline) => outline.scenes)
 			: Promise.resolve([]),
+		// Saved scenes that sit in the deleted list, so the page can point there
+		// before offering to add a second copy.
+		tab === 'story' ? listTrashedScenes(db, story.id) : Promise.resolve([]),
 		readingPageRef(db, story.id),
 		db
 			.select({ enabled: users.publicArchiveEnabled, handle: users.handle })
@@ -101,6 +105,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				: draft,
 		drafts: drafts.map((row) => ({ id: row.id, label: row.label })),
 		live: liveByDraftScene(draft.content.scenes, liveScenes),
+		inTrash: trashed.map((scene) => scene.id),
 		mentions,
 		tab,
 		canPublish: Boolean(archive?.enabled && archive?.handle)

@@ -699,6 +699,10 @@ describe('exports', () => {
 			'Halden left at dawn.'
 		);
 		expect(text(byPath.get(`${base}/relationships.md`))).toContain('Halden - lives in - Saltmarsh');
+		// A notebook note keeps the scene it hangs off, by its path in the draft.
+		expect(text(byPath.get(`${base}/notebook/dawn-light.md`))).toContain(
+			'scene: "chapters/01-departure/01-dawn.md"'
+		);
 	});
 
 	it('include drafts in the story archive too', async () => {
