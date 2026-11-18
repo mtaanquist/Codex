@@ -28,6 +28,8 @@ const { saveAccountLlmConfig, saveStoryLlmOverride } =
 let lastPrompt = '';
 let calls = 0;
 let reply = 'Bram leaves the harbour and becomes a captain.';
+// Set to 'length' to have the stub report a reply cut off at the cap.
+let finish: 'length' | undefined;
 // Runs while the model is "writing", to change things under a running job.
 let duringCall: (() => Promise<void>) | null = null;
 const stubProvider: Provider = {
@@ -38,7 +40,7 @@ const stubProvider: Provider = {
 		lastPrompt = JSON.stringify(req.messages);
 		calls += 1;
 		if (duringCall) await duringCall();
-		return { content: reply, toolCalls: [] };
+		return { content: reply, toolCalls: [], finishReason: finish };
 	},
 	async listModels() {
 		return [];
@@ -66,6 +68,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	calls = 0;
+	finish = undefined;
 	lastPrompt = '';
 	duringCall = null;
 	reply = 'Bram leaves the harbour and becomes a captain.';
@@ -247,6 +250,20 @@ describe('summariseCharacterArc', () => {
 		await expect(
 			summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps)
 		).rejects.toThrow();
+		expect((await readArc(bram.id)).arcSummaryMd).toBe(
+			'Bram leaves the harbour and becomes a captain.'
+		);
+	});
+
+	it('keeps the earlier arc when the reply is cut off at the cap', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		reply = 'Bram leaves the harbour and';
+		finish = 'length';
+		await expect(
+			summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps)
+		).rejects.toThrow(/cut off/);
 		expect((await readArc(bram.id)).arcSummaryMd).toBe(
 			'Bram leaves the harbour and becomes a captain.'
 		);

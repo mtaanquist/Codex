@@ -32,6 +32,8 @@ const enrichJson =
 // how many completions it served.
 let lastPrompt = '';
 let calls = 0;
+// Set to 'length' to have the stub report a reply cut off at the cap.
+let finish: 'length' | undefined;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -39,7 +41,7 @@ const stubProvider: Provider = {
 	async respond(req) {
 		lastPrompt = JSON.stringify(req.messages);
 		calls += 1;
-		return { content: enrichJson, toolCalls: [] };
+		return { content: enrichJson, toolCalls: [], finishReason: finish };
 	},
 	async listModels() {
 		return [];
@@ -65,6 +67,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+	finish = undefined;
 	await pool.query(
 		'truncate table entity_suggestions, entity_mentions, revisions, characters, stories, universes, users cascade'
 	);
@@ -380,6 +383,15 @@ describe('enrichUniverse', () => {
 		const third = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
 		expect(third.entities).toBe(1);
 		expect(calls).toBe(2);
+	});
+
+	it('leaves an entity unmarked when its reply is cut off at the cap', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneMentioning(bram, 'Bram at the harbour');
+		finish = 'length';
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(result).toMatchObject({ entities: 0, staged: 0, failed: 1 });
+		expect(await enrichedAt(bram)).toBeNull();
 	});
 
 	async function enrichedAt(id: string) {
