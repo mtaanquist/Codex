@@ -63,7 +63,8 @@ async function loadEntity(
 	db: Database,
 	ownerId: string,
 	kind: EntityKind,
-	entityId: string
+	entityId: string,
+	options: { lock?: boolean } = {}
 ): Promise<{
 	universeId: string;
 	aliases: string[];
@@ -71,7 +72,7 @@ async function loadEntity(
 	summaryMd: string | null;
 } | null> {
 	const table = entityTable(REVISION_TYPE[kind]);
-	const [row] = await db
+	const query = db
 		.select({
 			universeId: table.universeId,
 			aliases: entityAliasColumn(table),
@@ -80,6 +81,7 @@ async function loadEntity(
 		})
 		.from(table)
 		.where(ownedLiveEntity(table, entityId, ownerId));
+	const [row] = options.lock ? await query.for('update') : await query;
 	return row ?? null;
 }
 
@@ -239,7 +241,9 @@ async function applyToEntity(
 	entityId: string,
 	s: { field: SuggestionField; label: string | null; value: string }
 ): Promise<string> {
-	const entity = await loadEntity(tx, ownerId, kind, entityId);
+	// Locked, so a save that lands meanwhile is read before the arrays are
+	// rewritten rather than overwritten by them.
+	const entity = await loadEntity(tx, ownerId, kind, entityId, { lock: true });
 	if (!entity) throw new Error('entity not found');
 
 	const set: {

@@ -183,6 +183,39 @@ describe('decideEntitySuggestion', () => {
 		expect(await listPendingForEntity(db, ownerId, 'character', id)).toHaveLength(0);
 	});
 
+	it('accepting a detail keeps a detail saved while the accept waited', async () => {
+		const id = await makeCharacter({ details: [{ label: 'Age', value: '40' }] });
+		const [s] = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [{ field: 'detail', label: 'Eyes', value: 'grey' }]
+		});
+		// A save in flight: it holds the row until it commits.
+		const save = await pool.connect();
+		try {
+			await save.query('begin');
+			await save.query('update characters set details = $1 where id = $2', [
+				JSON.stringify([
+					{ label: 'Age', value: '40' },
+					{ label: 'Scar', value: 'left cheek' }
+				]),
+				id
+			]);
+			const accept = decideEntitySuggestion(db, ownerId, s.id, 'accept');
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			await save.query('commit');
+			expect((await accept).ok).toBe(true);
+		} finally {
+			save.release();
+		}
+		expect((await readChar(id)).details).toEqual([
+			{ label: 'Age', value: '40' },
+			{ label: 'Scar', value: 'left cheek' },
+			{ label: 'Eyes', value: 'grey' }
+		]);
+	});
+
 	it('accepting a detail and a summary applies each to the entity', async () => {
 		const id = await makeCharacter();
 		const staged = await stageEntitySuggestions(db, {
