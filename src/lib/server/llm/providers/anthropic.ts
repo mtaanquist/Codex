@@ -1,13 +1,15 @@
-import type {
-	ChatMessage,
-	CompletionRequest,
-	Connection,
-	FinishReason,
-	ModelInfo,
-	ProviderToolCall,
-	Provider,
-	StreamEvent,
-	TokenUsage
+import {
+	EndpointReplyError,
+	type ChatMessage,
+	type CompletionRequest,
+	type Connection,
+	type FinishReason,
+	type HttpResponse,
+	type ModelInfo,
+	type ProviderToolCall,
+	type Provider,
+	type StreamEvent,
+	type TokenUsage
 } from './types.ts';
 
 // The native Anthropic adapter: speaks the Messages API (/v1/messages), which
@@ -446,14 +448,35 @@ async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<Buffere
 			case 'message_stop':
 				return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
 			case 'error':
-				throw new Error(
+				throw new EndpointReplyError(
 					`Endpoint stream error: ${
 						typeof frame.error?.message === 'string' ? frame.error.message : 'unknown error'
 					}`
 				);
 		}
 	}
+	// Some Anthropic-compatible endpoints close the body after message_delta
+	// without a message_stop. Once the stop reason is in, the reply is whole.
+	if (stopReason !== undefined) {
+		return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
+	}
 	throw new Error('The endpoint closed the stream before the reply finished.');
+}
+
+// The reply to a stream: true request. An endpoint that ignores the flag and
+// answers in one JSON body is read as one, with or without a JSON content
+// type; a broken JSON body throws SyntaxError, which the gateway does not
+// retry. Anything else (a captive portal's web page, say) is not a reply.
+async function readReply(res: HttpResponse): Promise<BufferedMessage> {
+	const type = (res.headers['content-type'] ?? '').toLowerCase();
+	if (type.includes('text/event-stream')) return assembleMessage(res.body);
+	const text = await res.text();
+	if (type.includes('json') || (!type && /^\s*\{/.test(text))) {
+		return JSON.parse(text) as BufferedMessage;
+	}
+	throw new EndpointReplyError(
+		`The endpoint answered with ${type || 'an unlabelled body'} instead of a reply: ${truncate(text)}`
+	);
 }
 
 export const anthropicProvider: Provider = {
@@ -490,11 +513,7 @@ export const anthropicProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(await res.text())}`);
 		}
-		// An endpoint that ignores stream: true and answers in one JSON body is
-		// read as one.
-		const json = /json/i.test(res.headers['content-type'] ?? '')
-			? (JSON.parse(await res.text()) as BufferedMessage)
-			: await assembleMessage(res.body);
+		const json = await readReply(res);
 		const finishReason = parseStopReason(json?.stop_reason);
 		return {
 			...parseContent(json?.content),

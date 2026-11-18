@@ -48,9 +48,16 @@ describe('Assistant job send options (long runs)', () => {
 	});
 
 	it('holds one unfinished review per scope, keyed the way a run records it', async () => {
-		await queueAssistantReview({ userId: 'u', storyId: 's', chapterId: 'c', categories: [] });
+		await queueAssistantReview({
+			userId: 'u',
+			storyId: 's',
+			chapterId: 'c',
+			categories: ['prose']
+		});
 
-		expect(sends[0].options.singletonKey).toBe(reviewScopeKey({ storyId: 's', chapterId: 'c' }));
+		expect(sends[0].options.singletonKey).toBe(
+			reviewScopeKey({ storyId: 's', chapterId: 'c', categories: ['prose'] })
+		);
 	});
 });
 
@@ -69,9 +76,24 @@ describe('reviewJobState', () => {
 
 describe('reviewScopeKey', () => {
 	it('names the mode and the target', () => {
-		expect(reviewScopeKey({ storyId: 's' })).toBe('full:s');
-		expect(reviewScopeKey({ storyId: 's', chapterId: 'c' })).toBe('full:s:c');
+		expect(reviewScopeKey({ storyId: 's' })).toBe('full:s:general');
+		expect(reviewScopeKey({ storyId: 's', chapterId: 'c', categories: ['prose'] })).toBe(
+			'full:s:c:prose'
+		);
 		expect(reviewScopeKey({ storyId: 's', mode: 'continuity' })).toBe('continuity:s');
 		expect(reviewScopeKey({ universeId: 'u', mode: 'continuity' })).toBe('continuity:universe:u');
+	});
+
+	it('tells copyedits with different categories apart, whatever order they arrive in', () => {
+		const prose = reviewScopeKey({ storyId: 's', categories: ['prose'] });
+		expect(prose).not.toBe(reviewScopeKey({ storyId: 's', categories: ['mechanics'] }));
+		expect(prose).not.toBe(reviewScopeKey({ storyId: 's', categories: [] }));
+		expect(reviewScopeKey({ storyId: 's', categories: ['lore', 'mechanics', 'lore'] })).toBe(
+			reviewScopeKey({ storyId: 's', categories: ['mechanics', 'lore'] })
+		);
+		// The continuity pass ignores categories, so they do not split its key.
+		expect(reviewScopeKey({ storyId: 's', mode: 'continuity', categories: ['prose'] })).toBe(
+			'continuity:s'
+		);
 	});
 });

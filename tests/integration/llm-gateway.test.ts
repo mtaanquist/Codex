@@ -30,6 +30,7 @@ const { saveAccountLlmConfig, saveModelContext } = await import('../../src/lib/s
 const { listSuggestions, decideSuggestion } = await import('../../src/lib/server/review');
 const { complete, completeDetailed, stream, AssistantDisabledError } =
 	await import('../../src/lib/server/llm/gateway');
+const { anthropicProvider } = await import('../../src/lib/server/llm/providers/anthropic');
 
 let pool: pg.Pool;
 let db: Database;
@@ -1985,5 +1986,98 @@ describe('gateway request retries', () => {
 		const controller = new AbortController();
 		controller.abort();
 		expect(await attemptsFor(new Error('fetch failed'), controller.signal)).toBe(1);
+	});
+
+	// The real Anthropic adapter over a scripted transport, so what is retried is
+	// decided by what the adapter throws for a given body.
+	function scriptedHttp(answer: () => { type: string; body: string }): {
+		http: HttpRequest;
+		calls: () => number;
+	} {
+		let calls = 0;
+		const http: HttpRequest = async () => {
+			calls += 1;
+			const { type, body } = answer();
+			return {
+				status: 200,
+				headers: { 'content-type': type },
+				body: (async function* () {
+					yield new TextEncoder().encode(body);
+				})(),
+				text: async () => body
+			};
+		};
+		return { http, calls: () => calls };
+	}
+	const sse = (frames: unknown[]) =>
+		frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('');
+
+	it('does not retry an error event partway through the stream', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({
+			type: 'text/event-stream',
+			body: sse([
+				{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+				{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+				{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hal' } },
+				{ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
+			])
+		}));
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/Overloaded/);
+		expect(endpoint.calls()).toBe(1);
+	});
+
+	it('does not retry a 2xx web page in place of a reply', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({
+			type: 'text/html',
+			body: '<html>Sign in to the network</html>'
+		}));
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/text\/html/);
+		expect(endpoint.calls()).toBe(1);
+	});
+
+	it('still retries a stream cut off before the reply finished', async () => {
+		await configure(true);
+		let attempt = 0;
+		const endpoint = scriptedHttp(() => {
+			attempt += 1;
+			const opening = [
+				{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+				{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+				{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'whole' } }
+			];
+			return {
+				type: 'text/event-stream',
+				body: sse(
+					attempt === 1
+						? opening
+						: [
+								...opening,
+								{ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: {} },
+								{ type: 'message_stop' }
+							]
+				)
+			};
+		});
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+		);
+		expect(text).toBe('whole');
+		expect(endpoint.calls()).toBe(2);
 	});
 });

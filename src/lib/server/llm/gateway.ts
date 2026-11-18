@@ -33,16 +33,17 @@ import {
 	type ToolOutcome
 } from './tools/dispatch.ts';
 import { MINIMAL_TOOL_NAMES, toolSpecs } from './tools/registry.ts';
-import type {
-	ChatMessage,
-	CompletionRequest,
-	Connection,
-	HttpRequest,
-	Provider,
-	ProviderResponse,
-	StreamEvent,
-	TokenUsage,
-	ToolSpec
+import {
+	EndpointReplyError,
+	type ChatMessage,
+	type CompletionRequest,
+	type Connection,
+	type HttpRequest,
+	type Provider,
+	type ProviderResponse,
+	type StreamEvent,
+	type TokenUsage,
+	type ToolSpec
 } from './providers/types.ts';
 
 // Adds one request's reported counts to a running total, so a caller can price
@@ -165,10 +166,12 @@ const RETRY_DELAYS_MS = [250, 1000];
 // adapters report as `Endpoint returned <status>: ...`. A 4xx other than 429 is
 // the request's own fault, an egress denial is policy, and an abort was asked
 // for; none of those improve on a second try. Nor does an endpoint that already
-// sat silent for the whole idle timeout.
+// sat silent for the whole idle timeout, or one that answered with something
+// other than a reply (see EndpointReplyError).
 function isTransientFailure(err: unknown): boolean {
 	if (err instanceof EgressDeniedError) return false;
 	if (err instanceof EgressTimeoutError) return false;
+	if (err instanceof EndpointReplyError) return false;
 	if (!(err instanceof Error)) return false;
 	if (err.name === 'AbortError') return false;
 	// A 200 whose body is not JSON fails the same way every time; retrying it

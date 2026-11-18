@@ -773,7 +773,8 @@ and the failure list). The job-status endpoint reads it while the job runs, so
 the review window can show where the pass is; a retry of the same job after a
 worker restart reads it too and skips the scenes already handled. The state
 also records the scope the run was over (the same key the queue holds one
-unfinished job per), so a run that stopped at the spend cap is picked up by the
+unfinished job per: the mode, the target and, for a copyedit, the categories
+it checks), so a run that stopped at the spend cap is picked up by the
 next run over that scope even though it arrives with a new job id; only a
 capped run is adopted, and it starts again with the whole ceiling. The rows are
 disposable, and a daily worker sweep drops those older than 30 days. The
