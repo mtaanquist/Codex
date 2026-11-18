@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result.ts';
 import type { Database } from './auth.ts';
 import { entitySuggestions } from './db/schema.ts';
@@ -265,6 +265,17 @@ async function applyToEntity(
 	}
 
 	const table = entityTable(REVISION_TYPE[kind]);
-	await tx.update(table).set(set).where(eq(table.id, entityId));
+	// The summary check is repeated in the write itself, so a save that lands
+	// between the read and this update is not replaced.
+	const updated = await tx
+		.update(table)
+		.set(set)
+		.where(
+			s.field === 'summary'
+				? and(eq(table.id, entityId), sql`coalesce(trim(${table.summaryMd}), '') = ''`)
+				: eq(table.id, entityId)
+		)
+		.returning({ id: table.id });
+	if (updated.length === 0) throw new SummaryTaken();
 	return entity.universeId;
 }

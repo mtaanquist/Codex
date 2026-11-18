@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, max, not, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
@@ -164,28 +164,28 @@ export async function summariseCharacterArc(
 	if (!text) throw new Error('The Assistant returned an empty arc.');
 
 	// A story muted while the model was writing must not end up in the arc:
-	// store it only if every story it read is still open to the Assistant.
-	const stored = await db
-		.update(characters)
-		.set({
-			arcSummaryMd: text,
-			arcSummaryAt: startedAt,
-			updatedAt: sql`${characters.updatedAt}`
-		})
-		.where(
-			and(
-				eq(characters.id, character.id),
-				notExists(
-					db
-						.select({ id: stories.id })
-						.from(stories)
-						.where(and(inArray(stories.id, storyIds), not(storyAssistantOn())))
-				)
-			)
-		)
-		.returning({ id: characters.id });
-	// Thrown so the job retries, and the retry reads without the muted story.
-	if (stored.length === 0) throw new Error('A story was muted while the arc was being written.');
+	// store it only if every story it read is still open to the Assistant. The
+	// share lock waits for a mute in flight to commit and then reads its result.
+	await db.transaction(async (tx) => {
+		// Every story read is locked (not only the muted ones), so the flag is
+		// read from the committed row once any mute in flight has finished.
+		const read = await tx
+			.select({ open: sql<boolean>`${storyAssistantOn()}` })
+			.from(stories)
+			.where(inArray(stories.id, storyIds))
+			.for('share');
+		// Thrown so the job retries, and the retry reads without the muted story.
+		if (read.some((r) => !r.open))
+			throw new Error('A story was muted while the arc was being written.');
+		await tx
+			.update(characters)
+			.set({
+				arcSummaryMd: text,
+				arcSummaryAt: startedAt,
+				updatedAt: sql`${characters.updatedAt}`
+			})
+			.where(eq(characters.id, character.id));
+	});
 	return { outcome: 'written' };
 }
 
