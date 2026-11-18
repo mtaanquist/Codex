@@ -236,7 +236,7 @@ const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(reso
 // itself. Undefined when the role sets none of them, which is what keeps a
 // request identical to one from an account that never tuned anything.
 // On Claude the effort comes resolved (the role's own or the Codex default for
-// the role), so it is passed in rather than read from the stored tuning.
+// the role); elsewhere it is the stored one, which those adapters ignore.
 function roleRequestTuning(
 	tuning: RoleTuning | undefined,
 	effort = tuning?.effort

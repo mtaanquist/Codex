@@ -196,7 +196,7 @@ describe('gateway gating', () => {
 		expect(captured?.tuning).toBeUndefined();
 	});
 
-	it('sends each role its default effort on Claude, and none elsewhere', async () => {
+	it('sends each role its default effort on Claude', async () => {
 		const base = {
 			enabled: true,
 			assistantName: '',

@@ -47,6 +47,7 @@ describe('claudeEffort', () => {
 		expect(claudeEffort('reviewer', 'claude-opus-5-5', undefined)).toBe('high');
 		expect(claudeEffort('reviewer', 'claude-opus-4-8', undefined)).toBe('high');
 		expect(claudeEffort('reviewer', 'claude-fable-5-2', undefined)).toBe('high');
+		expect(claudeEffort('reviewer', 'claude-opus-4-5-20251101', undefined)).toBe('high');
 	});
 
 	it('sends none to a model that rejects effort or is not recognised', () => {
