@@ -615,14 +615,17 @@
 								</button>
 							{/if}
 							<div class="rv-assistant-wrap">
-								<AssistantPanel
-									scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
-									sceneId={selectedSceneId || null}
-									name={assistant?.name ?? 'Assistant'}
-									muted={assistant?.muted ?? false}
-									suggestions={assistantSuggestions}
-									chat={assistantChat}
-								/>
+								<!-- Remount on a new scope: the panel seeds its chats once. -->
+								{#key storyId}
+									<AssistantPanel
+										scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
+										sceneId={selectedSceneId || null}
+										name={assistant?.name ?? 'Assistant'}
+										muted={assistant?.muted ?? false}
+										suggestions={assistantSuggestions}
+										chat={assistantChat}
+									/>
+								{/key}
 							</div>
 						{:else}
 							{@render commentsPanel()}

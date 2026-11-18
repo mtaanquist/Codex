@@ -3,7 +3,7 @@ import pg from 'pg';
 import { confirmPrompt } from './confirm';
 import { e2eDatabaseUrl } from './database';
 import { gotoReady } from './navigate';
-import { pickFromLibraryMenu } from './library';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Signs in as the account with the Assistant switched on.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -92,4 +92,76 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 	await expect(picker).toHaveText('Who is Marra?');
 	await picker.click();
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?']);
+});
+
+// Switching to another story of the universe from the outline keeps the page
+// mounted; the Assistant panel must follow to the new story's chats rather
+// than keep the old ones.
+test('the Assistant panel follows a switch to another story', async ({ page }) => {
+	await gotoReady(page, '/login');
+	await page.getByLabel('Email').fill('assistant-e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page).toHaveURL('/');
+
+	const name = `Switch ${Date.now()}`;
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(name);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
+	for (const title of ['Ashfall', 'Birchwood']) {
+		await gotoReady(page, '/');
+		await startStoryInUniverse(page, name);
+		await page.getByLabel('New story').fill(title);
+		await page.getByRole('button', { name: 'Create story' }).click();
+		await expect(page.locator('.story-title')).toHaveText(title);
+	}
+
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	try {
+		const { rows } = await pool.query<{ id: string; owner_id: string }>(
+			`select s.id, s.owner_id from stories s join universes u on u.id = s.universe_id
+			 where u.name = $1 and s.title = 'Ashfall'`,
+			[name]
+		);
+		const chat = await pool.query<{ id: string }>(
+			`insert into assistant_chats (story_id, user_id, title) values ($1, $2, 'Ash questions')
+			 returning id`,
+			[rows[0].id, rows[0].owner_id]
+		);
+		for (const [role, content] of [
+			['user', 'Ash questions'],
+			['assistant', 'The ash falls for a week.']
+		]) {
+			await pool.query(
+				`insert into assistant_chat_messages (chat_id, story_id, user_id, role, content)
+				 values ($1, $2, $3, $4, $5)`,
+				[chat.rows[0].id, rows[0].id, rows[0].owner_id, role, content]
+			);
+		}
+	} finally {
+		await pool.end();
+	}
+
+	await page.locator('.story-switch').click();
+	await page.locator('.story-menu button', { hasText: 'Ashfall' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Ashfall');
+	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
+	const panel = page.locator('.assistant');
+	const picker = panel.locator('.chat-picker-btn');
+	await expect(async () => {
+		await tab.click();
+		await expect(picker).toHaveText('Ash questions', { timeout: 2000 });
+	}).toPass();
+	await expect(panel.locator('.chat-scroll')).toContainText('The ash falls for a week.');
+
+	await page.locator('.story-switch').click();
+	await page.locator('.story-menu button', { hasText: 'Birchwood' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Birchwood');
+	await expect(picker).toHaveText('New chat');
+	await expect(panel.locator('.chat-scroll')).not.toContainText('ash falls');
+	await picker.click();
+	await expect(
+		page.getByRole('dialog', { name: 'Your chats' }).locator('.chat-row-title')
+	).toHaveCount(0);
 });

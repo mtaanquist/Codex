@@ -1059,33 +1059,36 @@
 				>
 					{#snippet panel(id)}
 						{#if id === 'assistant'}
-							<AssistantPanel
-								scope={{ storyId: data.story.id, storyTitle: data.story.title }}
-								sceneId={data.selectedScene?.id ?? null}
-								name={data.assistant.name}
-								muted={data.assistant.muted}
-								suggestions={assistantSuggestions}
-								chat={data.assistantChat}
-								onConfirmSplit={confirmAssistantSplit}
-								onRevertSplit={revertAssistantSplit}
-								insertPaused={leavingScene}
-								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
-								onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? (text) => {
-											void showPane('read');
-											sceneEditor?.insertAtCursor(text);
-										}
-									: undefined}
-								getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? () => sceneEditor?.getSelectionText() ?? null
-									: undefined}
-								onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
-									? (text) => {
-											void showPane('read');
-											sceneEditor?.replaceSelection(text);
-										}
-									: undefined}
-							/>
+							<!-- Remount on a new scope: the panel seeds its chats once. -->
+							{#key data.story.id}
+								<AssistantPanel
+									scope={{ storyId: data.story.id, storyTitle: data.story.title }}
+									sceneId={data.selectedScene?.id ?? null}
+									name={data.assistant.name}
+									muted={data.assistant.muted}
+									suggestions={assistantSuggestions}
+									chat={data.assistantChat}
+									onConfirmSplit={confirmAssistantSplit}
+									onRevertSplit={revertAssistantSplit}
+									insertPaused={leavingScene}
+									reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
+									onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
+										? (text) => {
+												void showPane('read');
+												sceneEditor?.insertAtCursor(text);
+											}
+										: undefined}
+									getSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+										? () => sceneEditor?.getSelectionText() ?? null
+										: undefined}
+									onReplaceSelection={data.selectedScene && !inWholeStory && !data.revisionPreview
+										? (text) => {
+												void showPane('read');
+												sceneEditor?.replaceSelection(text);
+											}
+										: undefined}
+								/>
+							{/key}
 						{:else if id === 'history' && data.selectedScene}
 							<RevisionHistory
 								entityType="scene"

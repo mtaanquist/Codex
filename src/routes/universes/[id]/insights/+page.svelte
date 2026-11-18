@@ -461,12 +461,15 @@
 				<PaneResizer side="right" />
 				<PanelStrip {panels} active="assistant" onSelect={() => {}} sub="this universe">
 					{#snippet panel()}
-						<AssistantPanel
-							scope={{ universeId: data.universe.id, universeName: data.universe.name }}
-							name={data.assistant.name}
-							suggestions={assistantSuggestions}
-							chat={data.assistantChat}
-						/>
+						<!-- Remount on a new scope: the panel seeds its chats once. -->
+						{#key data.universe.id}
+							<AssistantPanel
+								scope={{ universeId: data.universe.id, universeName: data.universe.name }}
+								name={data.assistant.name}
+								suggestions={assistantSuggestions}
+								chat={data.assistantChat}
+							/>
+						{/key}
 					{/snippet}
 				</PanelStrip>
 			</aside>
