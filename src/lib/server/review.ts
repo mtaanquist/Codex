@@ -1091,7 +1091,16 @@ export async function deleteSuggestion(
 	// stays and gets decided instead. Checked under the thread's row lock
 	// (addComment takes the same lock) so a reply cannot land between the
 	// check and the delete.
+	//
+	// The suggestion is locked before its thread, the order clearReviews takes
+	// them in, so the two cannot deadlock.
 	return await db.transaction(async (tx) => {
+		const [locked] = await tx
+			.select({ id: reviewSuggestions.id })
+			.from(reviewSuggestions)
+			.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')))
+			.for('update');
+		if (!locked) return { ok: false, reason: 'That suggestion was already decided.' };
 		const [thread] = await tx
 			.select({ id: reviewThreads.id })
 			.from(reviewThreads)

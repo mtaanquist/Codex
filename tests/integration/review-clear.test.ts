@@ -28,6 +28,7 @@ const {
 	createSuggestion,
 	createThread,
 	decideSuggestion,
+	deleteSuggestion,
 	ensureReviewer,
 	ensureSuggestionThread,
 	setThreadResolved
@@ -225,5 +226,31 @@ describe('clearReviews', () => {
 		await clearReviews(db, storyId, 'all', await databaseNow(db));
 		const [after] = await db.select().from(storyDrafts);
 		expect(after).toEqual(before);
+	});
+});
+
+describe('deleteSuggestion', () => {
+	// clearReviews locks the suggestion, then its thread. A retraction that took
+	// them the other way round could deadlock against it.
+	it('locks the suggestion before its discussion thread', async () => {
+		const id = await suggestion('quick');
+		const discussion = await ensureSuggestionThread(db, { storyId, suggestionId: id });
+		if (!discussion.ok) throw new Error(discussion.reason);
+		const clearing = await pool.connect();
+		try {
+			await clearing.query('begin');
+			await clearing.query('select id from review_suggestions where id = $1 for update', [id]);
+			const retracting = deleteSuggestion(db, { reviewerId }, storyId, id);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			// The retraction is waiting on the suggestion, so the thread is free.
+			await clearing.query("set local lock_timeout = '1s'");
+			await clearing.query('select id from review_threads where id = $1 for update', [
+				discussion.threadId
+			]);
+			await clearing.query('commit');
+			expect(await retracting).toEqual({ ok: true });
+		} finally {
+			clearing.release();
+		}
 	});
 });
