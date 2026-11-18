@@ -1478,6 +1478,14 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       now returns 'coalesced' like the others, so the endpoint answers 409
       instead of a 503. The app-side check-before-send alternative was
       rejected as racy.
+- [x] Enrich and arc failure notices (#988, #991, 2026-11-18). The enrich
+      pass now stops after three failed reads in a row (`MAX_FAILURES_IN_A_ROW`)
+      when entities remain, and on `AssistantDisabledError` at once, each with
+      its own notice. A cut-off reply does not count toward the run and resets
+      it, since the endpoint answered. A pass that read some entries counts
+      the failed ones in its notice. The arc job settles as failed without a
+      retry when the Assistant is off, like a cut-off; a story muted mid-write
+      raises `ArcStoryMutedError`, still retried, with its own wording.
 - [x] Claude's buffered replies stream under the hood (#967, 2026-11-18).
       The Anthropic adapter's `respond` (every agent loop round, so every
       Assistant review round) sent `stream: false`, so a long thinking reply

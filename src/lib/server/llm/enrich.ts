@@ -2,7 +2,12 @@ import { and, asc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
-import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
+import {
+	AssistantDisabledError,
+	completeDetailed,
+	ReplyCutOffError,
+	type GatewayDeps
+} from './gateway.ts';
 import { resolveLlmConfig } from './config.ts';
 import { SpendMeter } from './spend.ts';
 import { buildEnrichMessage } from './prompts/enrich.ts';
@@ -32,6 +37,9 @@ export type EnrichScope = { storyId: string } | { universeId: string };
 
 const MAX_APPEARANCES = 16;
 const MAX_ENRICH_TOKENS = 700;
+// Failed reads in a row after which the pass stops rather than keep calling an
+// endpoint that is down. A cut-off reply is not counted: the endpoint answered.
+export const MAX_FAILURES_IN_A_ROW = 3;
 
 // Defensive parse of the model's reply into proposals. Endpoints vary, so this
 // pulls the first JSON object out of the text and validates each field, ignoring
@@ -197,6 +205,10 @@ export type UniverseEnrichResult = {
 	cutOffs?: number;
 	// Set when the job was stopped (expired, shut down) before the pass finished.
 	aborted?: boolean;
+	// Set when the Assistant was turned off while the pass ran.
+	disabled?: boolean;
+	// Set when the pass gave up after MAX_FAILURES_IN_A_ROW failed reads.
+	stoppedFailing?: boolean;
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
 	capped?: boolean;
 	spentUsd?: number;
@@ -254,7 +266,8 @@ export async function dbNow(db: Database): Promise<Date> {
 // Each entity is marked with the time its read started, so an edit made while
 // the pass runs is picked up next time. A failed entity is not marked, so the
 // next pass tries it again. Stops between entities at the spend cap or when the
-// job is stopped.
+// job is stopped, and stops early when the Assistant is turned off or the
+// endpoint keeps failing.
 export async function enrichUniverse(
 	db: Database,
 	opts: { userId: string; universeId: string; signal?: AbortSignal },
@@ -271,10 +284,14 @@ export async function enrichUniverse(
 	let failed = 0;
 	let capped = false;
 	let aborted = false;
+	let disabled = false;
+	let stoppedFailing = false;
+	let failedInARow = 0;
 	let cutOff: string | undefined;
 	let cutOffs = 0;
 
-	for (const entity of await entitiesToEnrich(db, userId, universeId)) {
+	const todo = await entitiesToEnrich(db, userId, universeId);
+	for (const [index, entity] of todo.entries()) {
 		if (signal?.aborted) {
 			aborted = true;
 			break;
@@ -310,9 +327,15 @@ export async function enrichUniverse(
 				);
 			entities += 1;
 			staged += rows.length;
+			failedInARow = 0;
 		} catch (err) {
 			if (signal?.aborted) {
 				aborted = true;
+				break;
+			}
+			// Every later entity would be refused the same way.
+			if (err instanceof AssistantDisabledError) {
+				disabled = true;
 				break;
 			}
 			logEvent('error', 'assistant.enrich_failed', { entityId: entity.id, ...errorFields(err) });
@@ -320,6 +343,15 @@ export async function enrichUniverse(
 			if (err instanceof ReplyCutOffError) {
 				cutOff = err.message;
 				cutOffs += 1;
+				failedInARow = 0;
+			} else {
+				failedInARow += 1;
+				// Only a stop with entities still to read; a pass that failed on its
+				// last entity finished anyway.
+				if (failedInARow >= MAX_FAILURES_IN_A_ROW && index < todo.length - 1) {
+					stoppedFailing = true;
+					break;
+				}
 			}
 		}
 	}
@@ -330,6 +362,8 @@ export async function enrichUniverse(
 		failed,
 		...(cutOff ? { cutOff, cutOffs } : {}),
 		...(aborted ? { aborted: true } : {}),
+		...(disabled ? { disabled: true } : {}),
+		...(stoppedFailing ? { stoppedFailing: true } : {}),
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
