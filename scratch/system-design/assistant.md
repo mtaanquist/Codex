@@ -757,9 +757,13 @@ machinery instead of building a parallel apply-and-undo path.
 ### Background jobs
 
 New pg-boss queues alongside exports and backups (names in the existing queue
-SSOT): `assistant-review` (scene/chapter/story passes), `assistant-enrich`
-(entity alias/detail/summary suggestions), `assistant-summaries` (summary_md
-maintenance). Expensive derived artifacts (a character's arc summary) cache on
+SSOT): `assistant-review-v2` (scene/chapter/story passes), `assistant-enrich`
+(entity alias/detail/summary suggestions), `assistant-summaries-v2` (summary_md
+maintenance). All three are created with pg-boss's `exclusive` policy, which is
+what makes a `singletonKey` hold one queued or running job per key; review and
+summaries moved off their original default-policy names (`assistant-review`,
+`assistant-summaries`) for that, and the worker drains the old names for one
+release (#1041). Expensive derived artifacts (a character's arc summary) cache on
 the entity with a staleness watermark, mirroring `mentions_indexed_at`, and
 the reconcile-sweep pattern used for stale mentions applies directly.
 
@@ -773,8 +777,9 @@ unfinished job per), so a run that stopped at the spend cap is picked up by the
 next run over that scope even though it arrives with a new job id; only a
 capped run is adopted, and it starts again with the whole ceiling. The rows are
 disposable, and a daily worker sweep drops those older than 30 days. The
-`assistant-review` enqueue holds one unfinished job per scope, so a duplicate
-request cannot start a second pass over the same scenes, and both Assistant
+review enqueue holds one unfinished job per scope (and the summaries enqueue one
+per story), so a duplicate request cannot start a second pass over the same
+scenes and is answered with a 409, and the Assistant
 queues send with an expiry of hours rather than the pg-boss default of 15
 minutes, which would hand a long run to a second worker while the first is
 still going. A heartbeat (60 seconds) catches a worker that died, so its job
@@ -1043,8 +1048,8 @@ calls the gateway, which proxies through the egress guard.
 
 ### Background jobs - sequencing steps 4 and 7
 
-- [built] pg-boss queues `assistant-review`, `assistant-summaries`, and
-  `assistant-enrich` (names in
+- [built] pg-boss queues `assistant-review-v2`, `assistant-summaries-v2`, and
+  `assistant-enrich`, all `exclusive` (names in
   `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
   registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity

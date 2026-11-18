@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
 import * as schema from '../../src/lib/server/db/schema';
@@ -11,13 +12,26 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { findRunningAssistantJobs } from '../../src/lib/server/running-jobs';
 import {
 	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_QUEUE_OPTIONS,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE
+	ASSISTANT_SUMMARIES_QUEUE,
+	LEGACY_ASSISTANT_REVIEW_QUEUE,
+	LEGACY_ASSISTANT_SUMMARIES_QUEUE
 } from '../../src/lib/server/queues';
 
 // Against a real pg-boss, because the list reads its job table directly: this
 // pins the query to the installed version's table, columns and states.
+const ASSISTANT_QUEUES = [
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE
+];
 let pool: pg.Pool;
+
+// The queues are exclusive, so each job here is given its own singleton key.
+function send(queue: string, data: object, options: { retryLimit?: number } = {}) {
+	return boss.send(queue, data, { singletonKey: randomUUID(), ...options });
+}
 let db: Database;
 let boss: PgBoss;
 let userId: string;
@@ -41,15 +55,22 @@ beforeAll(async () => {
 	boss = new PgBoss({ connectionString: TEST_DATABASE_URL, supervise: false, schedule: false });
 	boss.on('error', (error) => console.error(error));
 	await boss.start();
-	await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
-	await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
-	await boss.createQueue(ASSISTANT_ENRICH_QUEUE);
+	for (const queue of ASSISTANT_QUEUES) {
+		await boss.deleteQueue(queue);
+		await boss.createQueue(queue, ASSISTANT_QUEUE_OPTIONS);
+	}
+	await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
+	await boss.createQueue(LEGACY_ASSISTANT_SUMMARIES_QUEUE);
 });
 
 beforeEach(async () => {
-	await boss.deleteAllJobs(ASSISTANT_REVIEW_QUEUE);
-	await boss.deleteAllJobs(ASSISTANT_SUMMARIES_QUEUE);
-	await boss.deleteAllJobs(ASSISTANT_ENRICH_QUEUE);
+	for (const queue of [
+		...ASSISTANT_QUEUES,
+		LEGACY_ASSISTANT_REVIEW_QUEUE,
+		LEGACY_ASSISTANT_SUMMARIES_QUEUE
+	]) {
+		await boss.deleteAllJobs(queue);
+	}
 	await pool.query('truncate table chapters, stories, universes, users cascade');
 	userId = await user('p@example.com');
 	otherId = await user('o@example.com');
@@ -76,7 +97,7 @@ describe('findRunningAssistantJobs', () => {
 			.insert(characters)
 			.values({ universeId, ownerId: userId, name: 'Bram' })
 			.returning({ id: characters.id });
-		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, {
+		const id = await send(ASSISTANT_ENRICH_QUEUE, {
 			userId,
 			universeId,
 			characterId: character.id
@@ -86,7 +107,7 @@ describe('findRunningAssistantJobs', () => {
 	});
 
 	it('lists an enrichment pass under its universe', async () => {
-		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, { userId, universeId });
+		const id = await send(ASSISTANT_ENRICH_QUEUE, { userId, universeId });
 		const jobs = await findRunningAssistantJobs(db, userId);
 		expect(jobs).toEqual([
 			{
@@ -102,14 +123,14 @@ describe('findRunningAssistantJobs', () => {
 	});
 
 	it('lists queued and running review and summary jobs with their names', async () => {
-		const queued = await boss.send(ASSISTANT_REVIEW_QUEUE, {
+		const queued = await send(ASSISTANT_REVIEW_QUEUE, {
 			userId,
 			storyId,
 			categories: []
 		});
-		const summaries = await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
+		const summaries = await send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
 		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
-		const universePass = await boss.send(ASSISTANT_REVIEW_QUEUE, {
+		const universePass = await send(ASSISTANT_REVIEW_QUEUE, {
 			userId,
 			universeId,
 			categories: [],
@@ -146,7 +167,7 @@ describe('findRunningAssistantJobs', () => {
 			.insert(chapters)
 			.values({ storyId, position: 1, title: 'The Tidewall' })
 			.returning({ id: chapters.id });
-		await boss.send(ASSISTANT_REVIEW_QUEUE, {
+		await send(ASSISTANT_REVIEW_QUEUE, {
 			userId,
 			storyId,
 			chapterId: chapter.id,
@@ -166,7 +187,7 @@ describe('findRunningAssistantJobs', () => {
 			.insert(chapters)
 			.values({ storyId: elsewhere.id, position: 1, title: 'Wrong' })
 			.returning({ id: chapters.id });
-		await boss.send(ASSISTANT_REVIEW_QUEUE, {
+		await send(ASSISTANT_REVIEW_QUEUE, {
 			userId,
 			storyId,
 			chapterId: chapter.id,
@@ -193,18 +214,18 @@ describe('findRunningAssistantJobs', () => {
 
 	it('finds a running job past many settled ones', async () => {
 		for (let i = 0; i < 120; i++) {
-			const id = await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
+			const id = await send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
 			await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
 			await boss.complete(ASSISTANT_SUMMARIES_QUEUE, id!);
 		}
-		const running = await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
+		const running = await send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
 		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
 
 		expect((await findRunningAssistantJobs(db, userId)).map((j) => j.id)).toEqual([running]);
 	});
 
 	it('leaves out settled jobs', async () => {
-		const done = await boss.send(ASSISTANT_REVIEW_QUEUE, { userId, storyId, categories: [] });
+		const done = await send(ASSISTANT_REVIEW_QUEUE, { userId, storyId, categories: [] });
 		await boss.fetch(ASSISTANT_REVIEW_QUEUE);
 		await boss.complete(ASSISTANT_REVIEW_QUEUE, done!);
 		const failed = await boss.send(
@@ -218,6 +239,20 @@ describe('findRunningAssistantJobs', () => {
 		expect(await findRunningAssistantJobs(db, userId)).toEqual([]);
 	});
 
+	// LEGACY (#1041): jobs queued on the old queues before the upgrade.
+	it('lists review and summary jobs still on the old queues', async () => {
+		const review = await boss.send(LEGACY_ASSISTANT_REVIEW_QUEUE, {
+			userId,
+			storyId,
+			categories: []
+		});
+		const summaries = await boss.send(LEGACY_ASSISTANT_SUMMARIES_QUEUE, { userId, storyId });
+
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs.find((j) => j.id === review)).toMatchObject({ kind: 'review', storyId });
+		expect(jobs.find((j) => j.id === summaries)).toMatchObject({ kind: 'summaries', storyId });
+	});
+
 	it("leaves out another writer's jobs, and jobs over deleted work", async () => {
 		const [otherUniverse] = await db
 			.insert(universes)
@@ -227,19 +262,19 @@ describe('findRunningAssistantJobs', () => {
 			.insert(stories)
 			.values({ universeId: otherUniverse.id, ownerId: otherId, title: 'Theirs' })
 			.returning({ id: stories.id });
-		await boss.send(ASSISTANT_REVIEW_QUEUE, {
+		await send(ASSISTANT_REVIEW_QUEUE, {
 			userId: otherId,
 			storyId: otherStory.id,
 			categories: []
 		});
 		// A job naming this writer's story under someone else's id is not theirs either.
-		await boss.send(ASSISTANT_REVIEW_QUEUE, { userId: otherId, storyId, categories: [] });
+		await send(ASSISTANT_REVIEW_QUEUE, { userId: otherId, storyId, categories: [] });
 		const [gone] = await db
 			.insert(stories)
 			.values({ universeId, ownerId: userId, title: 'Gone' })
 			.returning({ id: stories.id });
 		await db.update(stories).set({ deletedAt: new Date() }).where(eq(stories.id, gone.id));
-		await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId: gone.id });
+		await send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId: gone.id });
 
 		expect(await findRunningAssistantJobs(db, userId)).toEqual([]);
 		expect((await findRunningAssistantJobs(db, otherId)).map((j) => j.title)).toEqual(['Theirs']);

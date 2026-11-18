@@ -1493,6 +1493,23 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       change again. For #992, Mads chose "never again once rejected";
       `summaryClosed` in `entity-suggestions.ts` holds the rule, and
       `enrichEntity` uses it to stop asking the model for a summary.
+- [x] De-duplicate Assistant review and summary jobs (#986, 2026-11-18).
+      Both queues ran under pg-boss's default policy, where a `singletonKey`
+      alone adds no unique index, so a repeat request queued (and paid for) a
+      second run and the 409 branch never fired. A policy cannot change once a
+      queue exists, so the jobs moved to new queues created `exclusive`
+      (`assistant-review-v2`, `assistant-summaries-v2`); exclusive is "one
+      queued, retrying or running job per key", where `singleton` would still
+      allow many queued and `stately` one queued plus one running. The old
+      queues keep a worker for one release so jobs queued before the upgrade
+      drain, and the status and running-jobs lookups read both names; removal
+      is #1041 (search `LEGACY_ASSISTANT_`). Handlers pass the job's own queue
+      name to the retry-notice check so a drained job is looked up where it
+      lives. The summaries send dropped its 30-second `singletonSeconds`
+      window (the only thing deduping it before, and only within a slot) and
+      now returns 'coalesced' like the others, so the endpoint answers 409
+      instead of a 503. The app-side check-before-send alternative was
+      rejected as racy.
 - [x] Enrich and arc failure notices (#988, #991, 2026-11-18). The enrich
       pass now stops after three failed reads in a row (`MAX_FAILURES_IN_A_ROW`)
       when entities remain, and on `AssistantDisabledError` at once, each with

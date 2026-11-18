@@ -13,6 +13,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const story = await requireAssistantStory(userId, payload.storyId);
 
 	const jobId = await queueAssistantSummaries({ userId, storyId: story.id });
+	if (jobId === 'coalesced') {
+		error(
+			409,
+			'A summary update for this story is already queued or running. It carries on; this request started nothing new.'
+		);
+	}
 	if (!jobId) error(503, 'Could not start the summary pass. Try again in a moment.');
 
 	return new Response(JSON.stringify({ ok: true, jobId }), {

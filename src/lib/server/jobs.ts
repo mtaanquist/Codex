@@ -41,7 +41,9 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
-	ASSISTANT_ENRICH_QUEUE_OPTIONS,
+	ASSISTANT_QUEUE_OPTIONS,
+	LEGACY_ASSISTANT_REVIEW_QUEUE,
+	LEGACY_ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_JOB_EXPIRY_SECONDS,
 	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
@@ -67,9 +69,12 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 		await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
-		await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
-		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
-		await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_ENRICH_QUEUE_OPTIONS);
+		await boss.createQueue(ASSISTANT_REVIEW_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+		await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+		// LEGACY (#1041): so getAssistantJobState can look in them on any install.
+		await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
+		await boss.createQueue(LEGACY_ASSISTANT_SUMMARIES_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -302,19 +307,19 @@ export async function queueAssistantReview(input: {
 }
 
 // Queues a whole-story summary-maintenance pass. The singleton key (the story)
-// coalesces repeat requests so a writer cannot pile up duplicate passes over the
-// same scenes while one is already running.
+// coalesces a repeat request into the pass already queued or running, so a
+// writer cannot pile up duplicate passes over the same scenes.
 export async function queueAssistantSummaries(input: {
 	userId: string;
 	storyId: string;
-}): Promise<string | null> {
+}): Promise<string | 'coalesced' | null> {
 	try {
 		const boss = await getBoss();
-		return await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
+		const jobId = await boss.send(ASSISTANT_SUMMARIES_QUEUE, input, {
 			singletonKey: input.storyId,
-			singletonSeconds: 30,
 			...assistantSendOptions(input.userId)
 		});
+		return jobId ?? 'coalesced';
 	} catch (error) {
 		logEvent('error', 'job.queue_failed', {
 			queue: ASSISTANT_SUMMARIES_QUEUE,
@@ -392,21 +397,27 @@ export function reviewJobState(
 	return state === 'done' && phase !== 'done' ? 'stale' : state;
 }
 
+// The queues a job of each kind can be on, searched in order. LEGACY (#1041):
+// a job queued before the upgrade is on the old review or summaries queue.
 const JOB_QUEUES = {
-	review: ASSISTANT_REVIEW_QUEUE,
-	summaries: ASSISTANT_SUMMARIES_QUEUE,
-	enrich: ASSISTANT_ENRICH_QUEUE,
-	arc: ASSISTANT_ENRICH_QUEUE
+	review: [ASSISTANT_REVIEW_QUEUE, LEGACY_ASSISTANT_REVIEW_QUEUE],
+	summaries: [ASSISTANT_SUMMARIES_QUEUE, LEGACY_ASSISTANT_SUMMARIES_QUEUE],
+	enrich: [ASSISTANT_ENRICH_QUEUE],
+	arc: [ASSISTANT_ENRICH_QUEUE]
 } as const;
 
 export async function getAssistantJobState(
 	kind: keyof typeof JOB_QUEUES,
 	id: string
 ): Promise<AssistantJobState> {
-	const queue = JOB_QUEUES[kind];
+	const queues = JOB_QUEUES[kind];
 	try {
 		const boss = await getBoss();
-		const job = await boss.getJobById(queue, id);
+		let job = null;
+		for (const queue of queues) {
+			job = await boss.getJobById(queue, id);
+			if (job) break;
+		}
 		if (!job) return 'done';
 		if (job.state === 'failed' || job.state === 'cancelled') return 'failed';
 		// A run that settled itself as failed (see the worker's arc handler).
@@ -415,7 +426,7 @@ export async function getAssistantJobState(
 		}
 		return 'running';
 	} catch (error) {
-		logEvent('error', 'job.state_failed', { queue, jobId: id, ...errorFields(error) });
+		logEvent('error', 'job.state_failed', { queue: queues[0], jobId: id, ...errorFields(error) });
 		return 'done';
 	}
 }
