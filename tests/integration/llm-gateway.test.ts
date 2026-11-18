@@ -400,6 +400,37 @@ describe('gateway gating', () => {
 		expect(captured?.maxTokens).toBe(4096);
 	});
 
+	it('gives a role that may think a longer default reply', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, {
+			...base,
+			tuning: { reviewer: { thinking: true } }
+		});
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(16_384);
+		// A known window holds the room to a quarter of it, so a small local
+		// model keeps space for the prompt and its tools.
+		await saveModelContext(db, userId, { 'chat-model': 32_768 });
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(8192);
+		await saveModelContext(db, userId, {});
+		// Claude thinks on its own, so the provider alone is enough.
+		await saveAccountLlmConfig(db, userId, { ...base, provider: 'anthropic', tuning: {} });
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(16_384);
+		// A figure the surface asked for still wins over the default.
+		await complete(db, { userId, role: 'reviewer', maxTokens: 900, messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(900);
+	});
+
 	it('falls back to the chat model when a role has none set', async () => {
 		await configure(true);
 		await drain(stream(db, { userId, role: 'continuation', messages: [] }, stubDeps));
