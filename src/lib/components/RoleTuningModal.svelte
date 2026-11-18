@@ -72,9 +72,8 @@
 	// Where a slider starts when you take the value off its default. Temperature
 	// begins at the midpoint, which is also what most endpoints use.
 	const TEMPERATURE_START = 1;
-	const codexMaxTokens = $derived(
-		defaultMaxTokens(role.id, roleMayThink(anthropic, { thinking, effort }), contextWindow)
-	);
+	const mayThink = $derived(roleMayThink(anthropic, { thinking, effort }));
+	const codexMaxTokens = $derived(defaultMaxTokens(role.id, mayThink, contextWindow));
 	// Arrow keys and drags land on round numbers; the box beside them still
 	// takes any figure you type.
 	const MAX_TOKENS_STEP = 128;
@@ -276,6 +275,11 @@
 					mid-sentence, lower it to keep them brief.
 					{#if contextWindow}
 						The slider stops at this model's context window, {formatNumber(contextWindow)} tokens.
+					{/if}
+					{#if role.id === 'utility' && maxTokens === null && mayThink}
+						Thinking counts toward this length, so short tasks such as summaries and character arcs
+						also get the full default and can use more tokens. Set your own figure to keep them
+						smaller.
 					{/if}
 				</p>
 			</div>
