@@ -1500,7 +1500,24 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       longer name the button, which reads Write arc or Refresh arc. A generic
       arc failure now waits for the last attempt before notifying (#1047),
       like the muted-story case.
-
+- [x] Staging review fixes for the streamed Claude replies and the
+      exclusive queues (#1049-#1054, 2026-11-18). The buffered path now
+      accepts a stream that ends after `message_delta` without
+      `message_stop`, as `chatStream` already did. A mid-stream `error`
+      event and a 2xx that is neither an event stream nor JSON throw
+      `EndpointReplyError`, which `isTransientFailure` treats as final. The
+      mid-stream case was considered for a longer backoff limited to
+      `overloaded_error` and `api_error`, but overload outlasts any wait a
+      request can sensibly hold, and the failed attempt already generated
+      tokens; the review job's own retry or the writer tries again. Its
+      partial usage is not recorded, like every other failed request. A
+      stream cut off with no stop reason is still retried, as a transport
+      drop. JSON with no content type is read as JSON (sniffed by a leading
+      `{`). Review scope keys now carry the categories (see #986 below).
+      Tests added for the streamed web search and citation blocks,
+      `redacted_thinking`, cache usage merged across `message_start` and
+      `message_delta`, and a job in pg-boss's `retry` state still holding
+      its key on the exclusive queue.
 - [x] Enrich and arc re-reads follow the passages, not `scenes.updated_at`;
       a rejected summary is never suggested again (#977, #992, 2026-11-18).
       The staleness checks compared `max(scenes.updated_at)` over mentioning
@@ -1552,7 +1569,15 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       window (the only thing deduping it before, and only within a slot) and
       now returns 'coalesced' like the others, so the endpoint answers 409
       instead of a 503. The app-side check-before-send alternative was
-      rejected as racy.
+      rejected as racy. A copyedit's key includes its categories in
+      canonical order (`full:<story>[:<chapter>]:<cats>`, `general` for the
+      sparing pass), so a review for other categories is its own job rather
+      than a 409, and a capped run is only adopted by a run checking the same
+      categories (#1052). Release note (#1053, also on #1041): rolling back
+      to a version before this strands jobs queued on the v2 queues, which
+      the older worker does not read; and while a deploy has the new web up
+      before the new worker, jobs sent to the v2 queues wait for the worker
+      restart.
 - [x] Enrich and arc failure notices (#988, #991, 2026-11-18). The enrich
       pass now stops after three failed reads in a row (`MAX_FAILURES_IN_A_ROW`)
       when entities remain, and on `AssistantDisabledError` at once, each with
@@ -1571,10 +1596,13 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       from `message_start` merged with `message_delta`), then reuses the
       existing parsers, so the result, cut-off retry and spend accounting are
       unchanged. The SSE line splitting moved into `sseFrames`, shared with
-      `chatStream`. An error event mid-stream throws (retried as transient,
-      like the 529 or 5xx it replaces); a stream that ends without
-      `message_stop` throws too. A 200 with a JSON body is still read as one,
-      for an Anthropic-compatible proxy that ignores `stream`. Not changed: the
+      `chatStream`. An error event mid-stream throws `EndpointReplyError`,
+      which the gateway does not retry (#1050); a stream that ends with no
+      stop reason throws, and one that ends after `message_delta` without
+      `message_stop` is returned whole (#1049). A 2xx body that is JSON, with
+      or without a JSON content type, is still read as one, for an
+      Anthropic-compatible proxy that ignores `stream`; any other non-stream
+      body is an `EndpointReplyError` too (#1051). Not changed: the
       OpenAI-compatible adapter's `respond` buffers the same way, but its
       streams differ by server (tool-call deltas, usage frames), so it waits
       for a sign that local reasoning models actually hit the timeout.

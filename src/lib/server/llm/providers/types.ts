@@ -153,6 +153,19 @@ export type HttpResponse = {
 	text(): Promise<string>;
 };
 
+// The endpoint answered 2xx, but not with a usable reply: a body that is
+// neither the stream nor the JSON asked for (a captive portal's web page), or an
+// error event partway through the stream. The gateway does not retry it: a
+// resend gets the same page, and a mid-stream failure has already spent the
+// tokens it generated, while its usual cause (overload) outlasts a short
+// backoff. The caller above (the writer, or a job's own retry) tries again.
+export class EndpointReplyError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'EndpointReplyError';
+	}
+}
+
 export type HttpRequestInit = {
 	method: string;
 	headers: Record<string, string>;
