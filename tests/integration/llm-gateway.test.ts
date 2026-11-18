@@ -196,6 +196,32 @@ describe('gateway gating', () => {
 		expect(captured?.tuning).toBeUndefined();
 	});
 
+	it('sends each role its default effort on Claude, and none elsewhere', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.anthropic.com',
+			apiKey: 'sk',
+			provider: 'anthropic' as const,
+			models: {
+				chat: 'claude-sonnet-5-5',
+				reviewer: 'claude-opus-5-5',
+				continuation: 'claude-haiku-4-5'
+			},
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, { ...base, tuning: { chat: { effort: 'xhigh' } } });
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.tuning).toEqual({ effort: 'high' });
+		// The role's own effort wins.
+		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
+		expect(captured?.tuning).toEqual({ effort: 'xhigh' });
+		// A model that rejects effort gets none.
+		await complete(db, { userId, role: 'continuation', messages: [] }, stubDeps);
+		expect(captured?.tuning).toBeUndefined();
+	});
+
 	it('keeps the stored tuning when a save omits it, and clears it on {}', async () => {
 		await configure(true);
 		const base = {

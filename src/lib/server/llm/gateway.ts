@@ -1,6 +1,6 @@
 import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
-import { defaultMaxTokens, roleMayThink } from '../../assistant-tuning.ts';
+import { claudeEffort, defaultMaxTokens, roleMayThink } from '../../assistant-tuning.ts';
 import {
 	modelContextWindow,
 	pickModel,
@@ -235,14 +235,16 @@ const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(reso
 // The tuning an adapter acts on, without the fields the gateway resolves for
 // itself. Undefined when the role sets none of them, which is what keeps a
 // request identical to one from an account that never tuned anything.
+// On Claude the effort comes resolved (the role's own or the Codex default for
+// the role), so it is passed in rather than read from the stored tuning.
 function roleRequestTuning(
-	tuning: RoleTuning | undefined
+	tuning: RoleTuning | undefined,
+	effort = tuning?.effort
 ): { thinking?: boolean; effort?: EffortLevel; temperature?: number } | undefined {
-	if (!tuning) return undefined;
 	const out: { thinking?: boolean; effort?: EffortLevel; temperature?: number } = {};
-	if (tuning.thinking !== undefined) out.thinking = tuning.thinking;
-	if (tuning.effort !== undefined) out.effort = tuning.effort;
-	if (tuning.temperature !== undefined) out.temperature = tuning.temperature;
+	if (tuning?.thinking !== undefined) out.thinking = tuning.thinking;
+	if (effort !== undefined) out.effort = effort;
+	if (tuning?.temperature !== undefined) out.temperature = tuning.temperature;
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -352,7 +354,12 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 			resolved.config.toolProfile === 'minimal'
 				? Math.max(MINIMAL_PROFILE_MIN_BUDGET, Math.floor(budget / MINIMAL_PROFILE_BUDGET_DIVISOR))
 				: budget,
-		tuning: roleRequestTuning(resolved.config.tuning[req.role]),
+		tuning: roleRequestTuning(
+			resolved.config.tuning[req.role],
+			adapterKind(resolved.config.provider) === 'anthropic'
+				? claudeEffort(req.role, model, resolved.config.tuning[req.role])
+				: undefined
+		),
 		extraParams: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
 		// A figure the writer set for the role wins over the surface's own: a

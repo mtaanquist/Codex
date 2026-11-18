@@ -168,9 +168,10 @@ contacts a model on its own.
   thinking and effort settings instead.
 - **Effort (Claude only)**: with the Claude provider, a role's Tune window also
   has an effort list. Effort sets how hard the model works on each request, from low (fast and
-  cheap) to max (thorough and expensive); leave it unset to use the model's
-  default. A good starting point: thinking on with high effort for the reviewer,
-  everything unset for continuation so suggestions stay fast. Not every model
+  cheap) to max (thorough and expensive). Current Claude models always think a
+  little, so effort is how you keep a role quick. Left on the Codex default,
+  Continuation and Background work run at low, Rubber duck and Co-author at
+  medium, and the Reviewer at high, which suits most writers. Not every model
   accepts every level ("xhigh" needs a recent Opus model, and small models may
   reject effort entirely); if a request starts failing after a change here, clear
   the effort for that role.
@@ -211,7 +212,8 @@ models and pick the newest one of the kind described.
 
 Turn thinking off for Continuation and Background work. For the Reviewer, set a
 low temperature so it quotes your text faithfully instead of paraphrasing it;
-thinking is worth turning on if you can afford the wait.
+thinking is worth turning on if you can afford the wait. On Claude, the Codex
+default effort already does this for you, so there is nothing to change.
 
 On your own machine, search for "MoE instruct GGUF" to find mixture-of-experts
 models. They hold many parameters but use only a small slice of them per word,
