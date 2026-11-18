@@ -1461,6 +1461,23 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Claude's buffered replies stream under the hood (#967, 2026-11-18).
+      The Anthropic adapter's `respond` (every agent loop round, so every
+      Assistant review round) sent `stream: false`, so a long thinking reply
+      wrote nothing until it was done and could outlast the 10 minute egress
+      idle timeout. It now sends `stream: true` and `assembleMessage` rebuilds
+      the message a buffered call returns (blocks by index, thinking with its
+      signature, tool input from `input_json_delta`, the stop reason, usage
+      from `message_start` merged with `message_delta`), then reuses the
+      existing parsers, so the result, cut-off retry and spend accounting are
+      unchanged. The SSE line splitting moved into `sseFrames`, shared with
+      `chatStream`. An error event mid-stream throws (retried as transient,
+      like the 529 or 5xx it replaces); a stream that ends without
+      `message_stop` throws too. A 200 with a JSON body is still read as one,
+      for an Anthropic-compatible proxy that ignores `stream`. Not changed: the
+      OpenAI-compatible adapter's `respond` buffers the same way, but its
+      streams differ by server (tool-call deltas, usage frames), so it waits
+      for a sign that local reasoning models actually hit the timeout.
 - [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
       particular, answer in Markdown, which the chat showed raw apart from a
       `**bold**` regex. Chosen approach, by surface: text that is only read

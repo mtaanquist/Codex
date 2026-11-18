@@ -277,18 +277,11 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	};
 }
 
-// Parse an Anthropic streaming response: "data: {json}" frames whose JSON
-// carries a type. Text arrives as content_block_delta/text_delta; the stream
-// ends with message_stop. Thinking and tool-input deltas are ignored. Usage
-// arrives split across frames: input tokens on message_start, the output
-// total on message_delta; the combined count is emitted before done.
-async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
+// The parsed JSON of each "data:" line of a server-sent event stream. Event
+// name lines and unparseable data are skipped.
+async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unknown> {
 	const decoder = new TextDecoder();
 	let buffer = '';
-	let promptTokens: number | undefined;
-	let cachedPromptTokens = 0;
-	let completionTokens: number | undefined;
-	let finishReason: FinishReason | undefined;
 	for await (const chunk of body) {
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
@@ -304,62 +297,155 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			} catch {
 				continue;
 			}
-			const frame = json as {
-				type?: unknown;
-				delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
-				message?: {
-					usage?: {
-						input_tokens?: unknown;
-						cache_creation_input_tokens?: unknown;
-						cache_read_input_tokens?: unknown;
-					};
+			yield json;
+		}
+	}
+}
+
+// Parse an Anthropic streaming response: "data: {json}" frames whose JSON
+// carries a type. Text arrives as content_block_delta/text_delta; the stream
+// ends with message_stop. Thinking and tool-input deltas are ignored. Usage
+// arrives split across frames: input tokens on message_start, the output
+// total on message_delta; the combined count is emitted before done.
+async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
+	let promptTokens: number | undefined;
+	let cachedPromptTokens = 0;
+	let completionTokens: number | undefined;
+	let finishReason: FinishReason | undefined;
+	for await (const json of sseFrames(body)) {
+		const frame = json as {
+			type?: unknown;
+			delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
+			message?: {
+				usage?: {
+					input_tokens?: unknown;
+					cache_creation_input_tokens?: unknown;
+					cache_read_input_tokens?: unknown;
 				};
-				usage?: { output_tokens?: unknown };
-				error?: { message?: unknown };
 			};
-			if (frame.type === 'message_start') {
-				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
-				if (Number.isFinite(input)) promptTokens = input;
-				if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
-				continue;
+			usage?: { output_tokens?: unknown };
+			error?: { message?: unknown };
+		};
+		if (frame.type === 'message_start') {
+			const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
+			if (Number.isFinite(input)) promptTokens = input;
+			if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
+			continue;
+		}
+		if (frame.type === 'message_delta') {
+			const output = Number(frame.usage?.output_tokens);
+			if (Number.isFinite(output)) completionTokens = output;
+			finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
+			continue;
+		}
+		if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
+			if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
+				yield { type: 'token', text: frame.delta.text };
 			}
-			if (frame.type === 'message_delta') {
-				const output = Number(frame.usage?.output_tokens);
-				if (Number.isFinite(output)) completionTokens = output;
-				finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
-				continue;
-			}
-			if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
-				if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
-					yield { type: 'token', text: frame.delta.text };
-				}
-				continue;
-			}
-			if (frame.type === 'message_stop') {
-				if (promptTokens !== undefined || completionTokens !== undefined) {
-					yield {
-						type: 'usage',
-						usage: {
-							promptTokens: promptTokens ?? 0,
-							completionTokens: completionTokens ?? 0,
-							...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
-						}
-					};
-				}
-				yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
-				return;
-			}
-			if (frame.type === 'error') {
+			continue;
+		}
+		if (frame.type === 'message_stop') {
+			if (promptTokens !== undefined || completionTokens !== undefined) {
 				yield {
-					type: 'error',
-					message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
+					type: 'usage',
+					usage: {
+						promptTokens: promptTokens ?? 0,
+						completionTokens: completionTokens ?? 0,
+						...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
+					}
 				};
-				return;
 			}
+			yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
+			return;
+		}
+		if (frame.type === 'error') {
+			yield {
+				type: 'error',
+				message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
+			};
+			return;
 		}
 	}
 	// The stream ended without an explicit message_stop; close it out anyway.
 	yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
+}
+
+type BufferedMessage = { content?: unknown; usage?: unknown; stop_reason?: unknown };
+
+type Block = Record<string, unknown>;
+
+// Rebuild, from a stream, the message a non-streaming call returns: content
+// blocks by index (thinking with its signature, tool_use with its input JSON
+// put back together), the stop reason, and usage, whose input side arrives on
+// message_start and whose running totals arrive on message_delta. The buffered
+// path streams so that a long reply keeps bytes moving and the egress idle
+// timeout only fires on real silence.
+async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<BufferedMessage> {
+	const blocks: Block[] = [];
+	const inputJson = new Map<number, string>();
+	let usage: Block = {};
+	let stopReason: unknown;
+	for await (const json of sseFrames(body)) {
+		const frame = json as {
+			type?: unknown;
+			index?: unknown;
+			content_block?: unknown;
+			delta?: Block;
+			message?: { usage?: Block };
+			usage?: Block;
+			error?: { message?: unknown };
+		};
+		const index = typeof frame.index === 'number' ? frame.index : -1;
+		const block = blocks[index];
+		const delta = frame.delta;
+		switch (frame.type) {
+			case 'message_start':
+				usage = { ...frame.message?.usage };
+				break;
+			case 'content_block_start':
+				if (index >= 0 && frame.content_block && typeof frame.content_block === 'object') {
+					blocks[index] = { ...(frame.content_block as Block) };
+				}
+				break;
+			case 'content_block_delta':
+				if (!block || !delta) break;
+				if (delta.type === 'text_delta') block.text = `${block.text ?? ''}${delta.text ?? ''}`;
+				else if (delta.type === 'thinking_delta') {
+					block.thinking = `${block.thinking ?? ''}${delta.thinking ?? ''}`;
+				} else if (delta.type === 'signature_delta') {
+					block.signature = `${block.signature ?? ''}${delta.signature ?? ''}`;
+				} else if (delta.type === 'input_json_delta') {
+					inputJson.set(index, `${inputJson.get(index) ?? ''}${delta.partial_json ?? ''}`);
+				} else if (delta.type === 'citations_delta') {
+					const citations = Array.isArray(block.citations) ? block.citations : [];
+					block.citations = [...citations, delta.citation];
+				}
+				break;
+			case 'content_block_stop': {
+				const raw = inputJson.get(index);
+				// The start frame carries an empty input; the deltas carry the real
+				// one, and a call with no arguments sends none.
+				if (block && raw !== undefined) block.input = raw ? JSON.parse(raw) : {};
+				inputJson.delete(index);
+				break;
+			}
+			case 'message_delta':
+				if (delta?.stop_reason) stopReason = delta.stop_reason;
+				for (const [key, value] of Object.entries(frame.usage ?? {})) {
+					if (value !== null && value !== undefined) usage[key] = value;
+				}
+				break;
+			case 'message_stop':
+				return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
+			case 'error':
+				throw new Error(
+					`Endpoint stream error: ${
+						typeof frame.error?.message === 'string' ? frame.error.message : 'unknown error'
+					}`
+				);
+		}
+	}
+	throw new Error('The endpoint closed the stream before the reply finished.');
 }
 
 export const anthropicProvider: Provider = {
@@ -390,14 +476,17 @@ export const anthropicProvider: Provider = {
 		const res = await http(`${base(conn.endpoint)}/v1/messages`, {
 			method: 'POST',
 			headers: headers(conn),
-			body: requestBody(req, false),
+			body: requestBody(req, true),
 			signal
 		});
-		const text = await res.text();
 		if (res.status < 200 || res.status >= 300) {
-			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
+			throw new Error(`Endpoint returned ${res.status}: ${truncate(await res.text())}`);
 		}
-		const json = JSON.parse(text) as { content?: unknown; usage?: unknown; stop_reason?: unknown };
+		// An endpoint that ignores stream: true and answers in one JSON body is
+		// read as one.
+		const json = /json/i.test(res.headers['content-type'] ?? '')
+			? (JSON.parse(await res.text()) as BufferedMessage)
+			: await assembleMessage(res.body);
 		const finishReason = parseStopReason(json?.stop_reason);
 		return {
 			...parseContent(json?.content),
