@@ -1461,6 +1461,14 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Enrich and arc failure notices (#988, #991, 2026-11-18). The enrich
+      pass now stops after three failed reads in a row (`MAX_FAILURES_IN_A_ROW`)
+      when entities remain, and on `AssistantDisabledError` at once, each with
+      its own notice. A cut-off reply does not count toward the run and resets
+      it, since the endpoint answered. A pass that read some entries counts
+      the failed ones in its notice. The arc job settles as failed without a
+      retry when the Assistant is off, like a cut-off; a story muted mid-write
+      raises `ArcStoryMutedError`, still retried, with its own wording.
 - [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
       particular, answer in Markdown, which the chat showed raw apart from a
       `**bold**` regex. Chosen approach, by surface: text that is only read

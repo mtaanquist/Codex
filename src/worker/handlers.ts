@@ -49,9 +49,9 @@ import {
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
-import { enrichUniverse } from '../lib/server/llm/enrich.ts';
-import { ReplyCutOffError } from '../lib/server/llm/gateway.ts';
-import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
+import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.ts';
+import { AssistantDisabledError, ReplyCutOffError } from '../lib/server/llm/gateway.ts';
+import { ArcStoryMutedError, summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -109,6 +109,11 @@ function firstFailure(failures: ReviewFailure[] | undefined): string {
 function staged(notes: number): string {
 	if (notes === 0) return '';
 	return `, with ${notes} note${notes === 1 ? '' : 's'} left`;
+}
+
+// "1 entry", "3 other entries", for an enrich notice.
+function entries(n: number, other = false): string {
+	return `${n} ${other ? 'other ' : ''}${n === 1 ? 'entry' : 'entries'}`;
 }
 
 export function createHandlers(deps: WorkerDeps) {
@@ -184,9 +189,25 @@ export function createHandlers(deps: WorkerDeps) {
 				);
 				return;
 			}
-			title = job.signal?.aborted
-				? `Writing the arc for ${character.name} was stopped before it finished.`
-				: `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			if (error instanceof AssistantDisabledError) {
+				// A retry would be refused the same way, so end here, settled as
+				// failed like a cut-off.
+				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_enrich', {
+						title: `The Assistant is turned off, so it did not write the arc for ${character.name}. Switch it back on from your account page, then select Write arc to try again.`,
+						href
+					})
+				);
+				return;
+			}
+			if (job.signal?.aborted) {
+				title = `Writing the arc for ${character.name} was stopped before it finished.`;
+			} else if (error instanceof ArcStoryMutedError) {
+				title = `A story was muted while the Assistant was writing the arc for ${character.name}, so the arc was not saved. Select Write arc to try again.`;
+			} else {
+				title = `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			}
 			// The notice is held back while pg-boss will try again; the job is
 			// failed either way, so the activity card shows it did not work.
 			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
@@ -549,7 +570,11 @@ export function createHandlers(deps: WorkerDeps) {
 				const name = universe.name;
 				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
 				let title: string;
-				if (result.aborted) {
+				if (result.disabled) {
+					title = `The Assistant is turned off, so it stopped reading the entries in "${name}" with ${suggestions} left. Switch it back on from your account page, then type /enrich to carry on.`;
+				} else if (result.stoppedFailing) {
+					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read, with ${suggestions} left. Check the endpoint in your settings, then type /enrich to carry on.`;
+				} else if (result.aborted) {
 					title = `The Assistant stopped reading the entries in "${name}" before it finished, with ${suggestions} left. Type /enrich to carry on.`;
 				} else if (result.entities === 0 && result.failed > 0) {
 					title = `The Assistant could not read the entries in "${name}". ${result.cutOff ?? 'Check the endpoint in your settings.'}`;
@@ -558,9 +583,17 @@ export function createHandlers(deps: WorkerDeps) {
 				} else {
 					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
 				}
-				if (result.cutOff && result.entities > 0) {
-					const n = result.cutOffs ?? 0;
-					title += ` ${n} ${n === 1 ? 'entry' : 'entries'} could not be read: ${result.cutOff}`;
+				// The entries that failed in a pass that read others. A pass stopped
+				// for failing already says why.
+				if (result.entities > 0 && !result.stoppedFailing) {
+					const cutOffs = result.cutOffs ?? 0;
+					const others = result.failed - cutOffs;
+					if (cutOffs > 0) {
+						title += ` ${entries(cutOffs)} could not be read: ${result.cutOff}`;
+					}
+					if (others > 0) {
+						title += ` ${entries(others, cutOffs > 0)} could not be read. Check the endpoint in your settings.`;
+					}
 				}
 				if (result.capped) {
 					const spent = (result.spentUsd ?? 0).toFixed(2);
@@ -575,7 +608,9 @@ export function createHandlers(deps: WorkerDeps) {
 					universeId,
 					entities: result.entities,
 					staged: result.staged,
-					failed: result.failed
+					failed: result.failed,
+					...(result.disabled ? { disabled: true } : {}),
+					...(result.stoppedFailing ? { stoppedFailing: true } : {})
 				});
 			}
 		},

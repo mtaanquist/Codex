@@ -35,7 +35,8 @@ import type { StoryReviewResult } from '../../src/lib/server/llm/scene-review';
 import type { Database } from '../../src/lib/server/auth';
 import { NOTIFICATION_DIGEST_QUEUE } from '../../src/lib/server/queues';
 import { createHandlers, type WorkerDeps, type WorkerServices } from '../../src/worker/handlers';
-import { ReplyCutOffError } from '../../src/lib/server/llm/gateway';
+import { AssistantDisabledError, ReplyCutOffError } from '../../src/lib/server/llm/gateway';
+import { ArcStoryMutedError } from '../../src/lib/server/llm/arc-summary';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 // The worker's job handlers run here without pg-boss: jobs are plain objects
@@ -318,6 +319,97 @@ describe('assistant notices link by id', () => {
 		]);
 		// Settled as failed for the activity card.
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it('ends an arc job without retrying when the Assistant is turned off', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers, completed } = harness({
+			summariseCharacterArc: async () => {
+				throw new AssistantDisabledError();
+			}
+		});
+
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant is turned off, so it did not write the arc for Bram. Switch it back on from your account page, then select Write arc to try again.'
+		]);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it('says a story was muted when that dropped the arc', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers } = harness({
+			summariseCharacterArc: async () => {
+				throw new ArcStoryMutedError();
+			}
+		});
+
+		// Still thrown, so the retry writes the arc without the muted story.
+		await expect(
+			handlers.assistantEnrich([
+				job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+			])
+		).rejects.toThrow(ArcStoryMutedError);
+
+		expect(await titles(owner.id)).toEqual([
+			'A story was muted while the Assistant was writing the arc for Bram, so the arc was not saved. Select Write arc to try again.'
+		]);
+	});
+
+	it('counts the entries that failed in a pass that read others', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({
+				entities: 3,
+				staged: 2,
+				failed: 3,
+				cutOff: 'The suggestions were cut off at the reply limit.',
+				cutOffs: 1
+			})
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant left 2 suggestions on the entries in "Mythos". Open an entry in Plan to accept or reject them. 1 entry could not be read: The suggestions were cut off at the reply limit. 2 other entries could not be read. Check the endpoint in your settings.'
+		]);
+	});
+
+	it('says why a pass stopped after failing several entries in a row', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({ entities: 1, staged: 1, failed: 3, stoppedFailing: true })
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant stopped reading the entries in "Mythos" after 3 in a row could not be read, with 1 suggestion left. Check the endpoint in your settings, then type /enrich to carry on.'
+		]);
+	});
+
+	it('says the Assistant is turned off when that stopped a pass', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({ entities: 1, staged: 2, failed: 0, disabled: true })
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant is turned off, so it stopped reading the entries in "Mythos" with 2 suggestions left. Switch it back on from your account page, then type /enrich to carry on.'
+		]);
 	});
 
 	it('says why when every entry was cut off at the reply limit', async () => {
