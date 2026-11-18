@@ -1,8 +1,6 @@
 import type { Job, JobWithMetadata, PgBoss } from 'pg-boss';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
-	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
 	NOTIFICATION_DIGEST_QUEUE
@@ -353,7 +351,7 @@ export function createHandlers(deps: WorkerDeps) {
 					} catch (err) {
 						title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
 					}
-					await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
+					await notifyWriter(job.name, job, userId, 'assistant_review', {
 						title,
 						href
 					});
@@ -412,7 +410,7 @@ export function createHandlers(deps: WorkerDeps) {
 					} catch (err) {
 						title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
 					}
-					await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
+					await notifyWriter(job.name, job, userId, 'assistant_review', {
 						title,
 						href
 					});
@@ -456,7 +454,7 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
 					done = { threw: true };
 				}
-				await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
+				await notifyWriter(job.name, job, userId, 'assistant_review', {
 					title,
 					href
 				});
@@ -501,7 +499,7 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant stopped summarising "${story.title}" at about $${(result.spentUsd ?? 0).toFixed(2)}, after ${written} ${written === 1 ? 'summary' : 'summaries'}. Raise the cap in settings or run it again to continue.`;
 				}
 				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
-				await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
+				await notifyWriter(job.name, job, userId, 'assistant_summaries', {
 					title,
 					href
 				});

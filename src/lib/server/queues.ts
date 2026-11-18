@@ -21,13 +21,21 @@ export const PURGE_UNIVERSES_QUEUE = 'purge-universes';
 // retention window (see sweepDeletedObjects in assets.ts).
 export const SWEEP_DELETED_OBJECTS_QUEUE = 'sweep-deleted-objects';
 export const MIGRATE_ASSETS_QUEUE = 'migrate-assets';
-export const ASSISTANT_REVIEW_QUEUE = 'assistant-review';
-export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
+// The Assistant queues are exclusive: one queued or running job per
+// singletonKey (a review scope, a story's summary pass, a universe's enrichment,
+// one character's arc). Under pg-boss's default policy a singletonKey does not
+// stop a second job. A policy cannot change after the queue exists, which is why
+// review and summaries moved to new names (#986).
+export const ASSISTANT_QUEUE_OPTIONS = { policy: 'exclusive' } as const;
+export const ASSISTANT_REVIEW_QUEUE = 'assistant-review-v2';
+export const ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries-v2';
 export const ASSISTANT_ENRICH_QUEUE = 'assistant-enrich';
-// Under pg-boss's default policy a singletonKey does not stop a second job, so
-// this queue is exclusive: one queued or running job per key (a universe's
-// pass, or one character's arc). A policy cannot change after the queue exists.
-export const ASSISTANT_ENRICH_QUEUE_OPTIONS = { policy: 'exclusive' } as const;
+// LEGACY, remove in a later release (#1041): the default-policy queues
+// review and summaries used before #986. Nothing sends to them any more; the
+// worker drains jobs queued there before the upgrade, and the job lookups
+// (status polling, running jobs) still read them until they are empty.
+export const LEGACY_ASSISTANT_REVIEW_QUEUE = 'assistant-review';
+export const LEGACY_ASSISTANT_SUMMARIES_QUEUE = 'assistant-summaries';
 // Sweeps the recorded progress of long-finished Assistant runs (see
 // review-runs.ts); the rows are disposable, so nothing is lost with them.
 export const PURGE_REVIEW_RUNS_QUEUE = 'purge-review-runs';

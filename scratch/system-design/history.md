@@ -1461,6 +1461,23 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] De-duplicate Assistant review and summary jobs (#986, 2026-11-18).
+      Both queues ran under pg-boss's default policy, where a `singletonKey`
+      alone adds no unique index, so a repeat request queued (and paid for) a
+      second run and the 409 branch never fired. A policy cannot change once a
+      queue exists, so the jobs moved to new queues created `exclusive`
+      (`assistant-review-v2`, `assistant-summaries-v2`); exclusive is "one
+      queued, retrying or running job per key", where `singleton` would still
+      allow many queued and `stately` one queued plus one running. The old
+      queues keep a worker for one release so jobs queued before the upgrade
+      drain, and the status and running-jobs lookups read both names; removal
+      is #1041 (search `LEGACY_ASSISTANT_`). Handlers pass the job's own queue
+      name to the retry-notice check so a drained job is looked up where it
+      lives. The summaries send dropped its 30-second `singletonSeconds`
+      window (the only thing deduping it before, and only within a slot) and
+      now returns 'coalesced' like the others, so the endpoint answers 409
+      instead of a 503. The app-side check-before-send alternative was
+      rejected as racy.
 - [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
       particular, answer in Markdown, which the chat showed raw apart from a
       `**bold**` regex. Chosen approach, by surface: text that is only read
