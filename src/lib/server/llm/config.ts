@@ -6,6 +6,7 @@ import { normaliseAssistantName, normalisePersona, type Persona } from './prompt
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
 import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
+import { markMentionsStale } from '../scene-lifecycle.ts';
 import {
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
@@ -736,31 +737,8 @@ export async function saveStoryLlmOverride(
 			`);
 		} else if (patch.enabled === null && before?.muted) {
 			// Unmuted: the story's scenes are older than the arcs and the enrich
-			// pass's marks, so neither would notice them. Arcs of the characters it
-			// mentions show as out of date (their watermark moves to the start of
-			// time), and the entities it mentions are read again on the next pass.
-			const mentioned = (type: string) => sql`(
-				select m.target_id from entity_mentions m
-				join scenes s on s.id = m.source_id
-				where m.source_type = 'scene' and m.target_type = ${type}
-					and s.story_id = ${storyId}
-			)`;
-			await tx.execute(sql`
-				update characters set arc_summary_at = to_timestamp(0)
-				where arc_summary_md is not null and id in ${mentioned('character')}
-			`);
-			await tx.execute(sql`
-				update characters set assistant_enriched_at = null
-				where id in ${mentioned('character')}
-			`);
-			await tx.execute(sql`
-				update places set assistant_enriched_at = null
-				where id in ${mentioned('place')}
-			`);
-			await tx.execute(sql`
-				update lore_entries set assistant_enriched_at = null
-				where id in ${mentioned('lore_entry')}
-			`);
+			// pass's marks, so neither would notice them without this.
+			await markMentionsStale(tx, { storyId }, { enrich: true });
 		}
 	});
 }

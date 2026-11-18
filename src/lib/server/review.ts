@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { textHash } from '#lib/text-hash';
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql, type AnyColumn } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	reviewComments,
@@ -1126,10 +1126,15 @@ export async function deleteSuggestion(
 
 export type ClearScope = 'finished' | 'all';
 
-// The database clock, which stamps every note's created_at.
-export async function databaseNow(db: Database): Promise<Date> {
-	const { rows } = await db.execute<{ now: Date | string }>(sql`select now() as now`);
-	return new Date(rows[0].now);
+// What a page load counts as seen for "Clear review notes": notes stamped
+// before this moment. Read from the database clock, which stamps each note's
+// created_at, to the microsecond, so a note written in the same millisecond is
+// still told apart; it is compared in SQL for the same reason.
+export async function reviewSeenCutoff(db: Database): Promise<string> {
+	const { rows } = await db.execute<{ at: string }>(
+		sql`select to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at`
+	);
+	return rows[0].at;
 }
 
 // Clears the story's review notes in one go. 'finished' takes resolved
@@ -1140,7 +1145,9 @@ export async function databaseNow(db: Database): Promise<Date> {
 //
 // Only what the writer could have seen goes: a thread or suggestion created
 // after `seenBefore` (when their page loaded), or one with a reply posted
-// since, is kept, so a guest's new note is never cleared unread.
+// since, is kept, so a guest's new note is never cleared unread. Notes are
+// stamped when written (clock_timestamp), after their thread lock, so the one
+// gap left is a note mid-commit at the moment the page loaded.
 //
 // Suggestions are locked before threads: a first reply on a suggestion
 // creates its thread, and that insert waits on the suggestion lock, so no
@@ -1150,15 +1157,16 @@ export async function clearReviews(
 	db: Database,
 	storyId: string,
 	scope: ClearScope,
-	seenBefore: Date
+	seenBefore: string
 ): Promise<void> {
+	const after = (column: AnyColumn) => sql<boolean>`${column} > ${seenBefore}::timestamptz`;
 	await db.transaction(async (tx) => {
 		const liveScene = sql`(select ${scenes.id} from ${scenes} where ${scenes.storyId} = ${storyId} and ${scenes.deletedAt} is null)`;
 		const suggestions = await tx
 			.select({
 				id: reviewSuggestions.id,
 				status: reviewSuggestions.status,
-				createdAt: reviewSuggestions.createdAt
+				fresh: after(reviewSuggestions.createdAt)
 			})
 			.from(reviewSuggestions)
 			.where(
@@ -1170,7 +1178,7 @@ export async function clearReviews(
 				id: reviewThreads.id,
 				resolvedAt: reviewThreads.resolvedAt,
 				suggestionId: reviewThreads.suggestionId,
-				createdAt: reviewThreads.createdAt
+				fresh: after(reviewThreads.createdAt)
 			})
 			.from(reviewThreads)
 			.where(and(eq(reviewThreads.storyId, storyId), inArray(reviewThreads.sceneId, liveScene)))
@@ -1188,12 +1196,12 @@ export async function clearReviews(
 									reviewComments.threadId,
 									threads.map((thread) => thread.id)
 								),
-								gt(reviewComments.createdAt, seenBefore)
+								after(reviewComments.createdAt)
 							)
 						);
 		const newSince = new Set(replied.map((row) => row.threadId));
 		for (const thread of threads) {
-			if (thread.createdAt > seenBefore) newSince.add(thread.id);
+			if (thread.fresh) newSince.add(thread.id);
 		}
 		const discussed = new Map(
 			threads
@@ -1202,7 +1210,7 @@ export async function clearReviews(
 		);
 		const goingSuggestions = suggestions
 			.filter((suggestion) => scope === 'all' || suggestion.status !== 'pending')
-			.filter((suggestion) => suggestion.createdAt <= seenBefore)
+			.filter((suggestion) => !suggestion.fresh)
 			.filter((suggestion) => !newSince.has(discussed.get(suggestion.id) ?? ''))
 			.map((suggestion) => suggestion.id);
 		const going = new Set(goingSuggestions);

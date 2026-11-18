@@ -44,8 +44,10 @@ const {
 	assistantSseResponse,
 	requireAssistantGate,
 	requireAssistantStory,
-	requireAssistantUniverse
+	requireAssistantUniverse,
+	throwAssistantError
 } = await import('../../src/lib/server/llm/assistant-route');
+const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
 
@@ -482,6 +484,7 @@ describe('chats over the endpoints', () => {
 		});
 		await first.text();
 		expect(first.headers.get('x-chat-id')).toBe(picked);
+		expect(first.headers.get('x-chat-created')).toBe('1');
 		// The panel never learned the id (stopped early), so it sends it again.
 		const again = await chatPost({
 			storyId,
@@ -490,6 +493,9 @@ describe('chats over the endpoints', () => {
 		});
 		await again.text();
 		expect(again.headers.get('x-chat-id')).toBe(picked);
+		// The chat already held the first send: its stored title comes back.
+		expect(again.headers.get('x-chat-created')).toBe('0');
+		expect(decodeURIComponent(again.headers.get('x-chat-title') ?? '')).toBe('First.');
 		expect((await listChat(db, userId, picked)).map((m) => m.content)).toEqual([
 			'First.',
 			'Answer.',
@@ -574,5 +580,17 @@ describe('chats over the endpoints', () => {
 		});
 		expect((await onChat('DELETE', chatId)).status).toBe(200);
 		expect(await listChats(db, userId, { storyId })).toEqual([]);
+	});
+});
+
+describe('throwAssistantError', () => {
+	it('passes a cut-off reply on with its own advice', () => {
+		try {
+			throwAssistantError(new ReplyCutOffError('Raise Longest reply.'), 'Generic.');
+		} catch (err) {
+			expect(isHttpError(err) && err.status).toBe(502);
+			expect(isHttpError(err) && err.body.message).toBe('Raise Longest reply.');
+		}
+		expect.assertions(2);
 	});
 });

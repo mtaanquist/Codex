@@ -77,7 +77,8 @@ async function arcScenes(
 }
 
 // Whether a cached arc is out of date: a scene that mentions the character
-// changed after the arc was written, or was deleted since (or its story was).
+// changed after the arc was written. Deleting or restoring a scene or story,
+// and unmuting one, mark the arc directly (see markMentionsStale).
 // An arc never written is not stale (there is nothing to refresh, only to
 // write). A watermark at the start of time was set on purpose (a scene it read
 // was deleted, or a story was unmuted) and always counts as stale.
@@ -104,24 +105,7 @@ export async function arcIsStale(
 			)
 		);
 	const lastChanged = row?.lastChanged ? new Date(row.lastChanged) : null;
-	if (lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime()) return true;
-	const [gone] = await db
-		.select({
-			lastDeleted: sql<Date | string | null>`max(${stories.deletedAt})`
-		})
-		.from(entityMentions)
-		.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
-		.innerJoin(stories, eq(stories.id, scenes.storyId))
-		.where(
-			and(
-				eq(entityMentions.sourceType, 'scene'),
-				eq(entityMentions.targetType, 'character'),
-				eq(entityMentions.targetId, character.id),
-				eq(stories.universeId, character.universeId)
-			)
-		);
-	const lastDeleted = gone?.lastDeleted ? new Date(gone.lastDeleted) : null;
-	return !!lastDeleted && lastDeleted.getTime() > character.arcSummaryAt.getTime();
+	return !!lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime();
 }
 
 export type ArcResult = {
@@ -240,6 +224,9 @@ export async function planArc(
 	const arcSummaryAt = entity.arcSummaryAt ?? null;
 	return {
 		summaryMd: entity.arcSummaryMd ?? null,
-		stale: await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt })
+		// A mark on an arc never written means nothing to refresh.
+		stale:
+			!!entity.arcSummaryMd &&
+			(await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt }))
 	};
 }

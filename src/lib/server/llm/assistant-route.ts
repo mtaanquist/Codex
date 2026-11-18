@@ -5,7 +5,7 @@ import { ownedUniverse } from '../universe-access';
 import { rateLimitAssistant } from '../write-guard';
 import { readJson } from '../validation';
 import { assistantLayout } from './config';
-import { AssistantDisabledError, stream } from './gateway';
+import { AssistantDisabledError, ReplyCutOffError, stream } from './gateway';
 import {
 	appendChat,
 	dropChatIfEmpty,
@@ -67,6 +67,7 @@ export async function requireAssistantUniverse(userId: string, universeId: unkno
 // The 403/502 split every synchronous assistant endpoint makes.
 export function throwAssistantError(err: unknown, fallback: string): never {
 	if (err instanceof AssistantDisabledError) error(403, err.message);
+	if (err instanceof ReplyCutOffError) error(502, err.message);
 	error(502, fallback);
 }
 
@@ -81,7 +82,7 @@ export async function requireChat(
 	rawChatId: unknown,
 	title: string,
 	rawNewChatId?: unknown
-): Promise<{ id: string; created: boolean }> {
+): Promise<{ id: string; created: boolean; title?: string }> {
 	if (rawChatId !== undefined && rawChatId !== null && typeof rawChatId !== 'string') {
 		error(400, 'chatId must be a string.');
 	}
@@ -96,7 +97,7 @@ export async function requireChat(
 	}
 	const chatId = await resolveChat(db, userId, scope, named, title);
 	if (!chatId) error(404, CHAT_MISSING);
-	return { id: chatId, created: !named };
+	return { id: chatId, created: !named, ...(named ? {} : { title }) };
 }
 
 // Streams a gateway turn back as Server-Sent Events. The reply accumulates
@@ -113,7 +114,7 @@ export function assistantSseResponse(options: {
 	// The chat the reply is stored in; sent back as x-chat-id so a panel that
 	// started a new chat learns its id. A chat this request created is dropped
 	// again if the stream stores nothing in it.
-	chat: { id: string; created: boolean };
+	chat: { id: string; created: boolean; title?: string };
 	// Conversational turns run as 'chat'; the recap runs as 'utility'. Both land
 	// in the same stored conversation.
 	role: 'chat' | 'utility';
@@ -196,6 +197,14 @@ export function assistantSseResponse(options: {
 			'cache-control': 'no-cache, no-transform',
 			connection: 'keep-alive',
 			'x-chat-id': chatId,
+			// A chat the panel had not opened yet: its stored title, and whether
+			// this request made it (else an earlier, stopped send did).
+			...(options.chat.title !== undefined
+				? {
+						'x-chat-title': encodeURIComponent(options.chat.title),
+						'x-chat-created': options.chat.created ? '1' : '0'
+					}
+				: {}),
 			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
 		}
 	});

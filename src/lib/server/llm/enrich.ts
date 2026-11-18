@@ -192,8 +192,9 @@ export type UniverseEnrichResult = {
 	entities: number;
 	staged: number;
 	failed: number;
-	// Why a read failed, when it was a reply cut off at the limit.
+	// Why reads failed when replies were cut off at the limit, and how many.
 	cutOff?: string;
+	cutOffs?: number;
 	// Set when the job was stopped (expired, shut down) before the pass finished.
 	aborted?: boolean;
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
@@ -271,6 +272,7 @@ export async function enrichUniverse(
 	let capped = false;
 	let aborted = false;
 	let cutOff: string | undefined;
+	let cutOffs = 0;
 
 	for (const entity of await entitiesToEnrich(db, userId, universeId)) {
 		if (signal?.aborted) {
@@ -315,7 +317,10 @@ export async function enrichUniverse(
 			}
 			logEvent('error', 'assistant.enrich_failed', { entityId: entity.id, ...errorFields(err) });
 			failed += 1;
-			if (err instanceof ReplyCutOffError) cutOff = err.message;
+			if (err instanceof ReplyCutOffError) {
+				cutOff = err.message;
+				cutOffs += 1;
+			}
 		}
 	}
 
@@ -323,7 +328,7 @@ export async function enrichUniverse(
 		entities,
 		staged,
 		failed,
-		...(cutOff ? { cutOff } : {}),
+		...(cutOff ? { cutOff, cutOffs } : {}),
 		...(aborted ? { aborted: true } : {}),
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})

@@ -67,7 +67,12 @@ type JobState = { state: 'active' | 'retry'; startedOn: Date } | null;
 
 function harness(services: Partial<WorkerServices> = {}, current: JobState = null) {
 	const sent: { queue: string; data: unknown }[] = [];
+	const completed: { id: string; data: unknown }[] = [];
 	const boss = {
+		async complete(_queue: string, id: string, data: unknown) {
+			completed.push({ id, data });
+			return null;
+		},
 		async send(queue: string, data: unknown) {
 			sent.push({ queue, data });
 			return null;
@@ -77,7 +82,7 @@ function harness(services: Partial<WorkerServices> = {}, current: JobState = nul
 		}
 	} as unknown as WorkerDeps['boss'];
 	const handlers = createHandlers({ db, boss, origin: 'https://codex.test', services });
-	return { handlers, sent };
+	return { handlers, sent, completed };
 }
 
 const STARTED = new Date('2026-01-01T00:00:00Z');
@@ -297,7 +302,7 @@ describe('assistant notices link by id', () => {
 			.insert(characters)
 			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
 			.returning({ id: characters.id });
-		const { handlers } = harness({
+		const { handlers, completed } = harness({
 			summariseCharacterArc: async () => {
 				throw new ReplyCutOffError('The arc was cut off at the reply limit.');
 			}
@@ -311,6 +316,8 @@ describe('assistant notices link by id', () => {
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant could not write the arc for Bram. The arc was cut off at the reply limit.'
 		]);
+		// Settled as failed for the activity card.
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 
 	it('says why when every entry was cut off at the reply limit', async () => {

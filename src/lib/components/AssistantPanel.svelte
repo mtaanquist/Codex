@@ -185,12 +185,12 @@
 	// stopped before the reply starts still lands in the chat the next one
 	// goes to, rather than leaving the question in a chat of its own.
 	let nextChatId = newChatId();
-	// The title the server gave the chat under nextChatId, when a send stored a
-	// turn there that the panel never adopted (stopped before the reply).
-	let nextChatTitle: string | null = null;
+	// A send under nextChatId may have stored its turn there without the panel
+	// learning so (stopped before the reply started).
+	let nextChatMayExist = false;
 	function freshChatId() {
 		nextChatId = newChatId();
-		nextChatTitle = null;
+		nextChatMayExist = false;
 	}
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
 	let input = $state('');
@@ -314,10 +314,11 @@
 		const controller = new AbortController();
 		pending = controller;
 		let startedIn: string | null = null;
+		let storedTitle = title;
 		const creating = chatId === null;
 		// A chat message is stored before its reply, so a stopped send leaves its
-		// turn, and its title, in the chat the next send reuses.
-		if (creating && storesTurnFirst) nextChatTitle ??= title;
+		// turn in the chat the next send reuses.
+		if (creating && storesTurnFirst) nextChatMayExist = true;
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
@@ -327,9 +328,13 @@
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			const storedIn = response.headers.get('x-chat-id');
+			const serverTitle = response.headers.get('x-chat-title');
+			if (serverTitle) storedTitle = decodeURIComponent(serverTitle);
+			// A chat an earlier, stopped send started already holds a turn, so it
+			// is kept whatever happens to this reply.
+			const existed = response.headers.get('x-chat-created') === '0';
 			if (response.ok && storedIn) {
-				if (storesTurnFirst || chatId === storedIn)
-					noteChatUsed(storedIn, creating ? (nextChatTitle ?? title) : title);
+				if (storesTurnFirst || existed || chatId === storedIn) noteChatUsed(storedIn, storedTitle);
 				else startedIn = storedIn;
 			}
 			if (response.status === 404 && (await errorMessage(response)) === CHAT_MISSING) {
@@ -374,7 +379,7 @@
 				finished &&
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
-			if (startedIn && stored) noteChatUsed(startedIn, title);
+			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
 			if (reply && reply.role === 'assistant' && reply.content === '') {
 				reply.content = streamError || 'The Assistant did not return a response.';
 			}
@@ -428,12 +433,24 @@
 			chatTitle(question),
 			true
 		);
-		// Not sent: put the question back so it need not be typed again.
-		if (outcome === 'gone' && !input.trim()) {
-			input = question;
-			if (composer) {
-				composer.value = question;
-				fit(composer);
+		// Not sent: start afresh, and put the question (and its passage) back so
+		// it need not be typed again.
+		if (outcome === 'gone') {
+			messages = [
+				{
+					role: 'assistant',
+					content:
+						'This chat was deleted. Your message was not sent; send it again to start a new chat.'
+				}
+			];
+			olderSummarised = false;
+			if (turn.reference && !reference) reference = turn.reference;
+			if (!input.trim()) {
+				input = question;
+				if (composer) {
+					composer.value = question;
+					fit(composer);
+				}
 			}
 		}
 	}
@@ -787,6 +804,10 @@
 	async function deleteChat() {
 		if (deleting || busy) return;
 		if (!chatId) {
+			// A stopped first send may have stored its question; it goes too.
+			if (nextChatMayExist) {
+				void fetch(`/api/assistant/chats/${nextChatId}`, { method: 'DELETE' }).catch(() => {});
+			}
 			newChat();
 			return;
 		}
