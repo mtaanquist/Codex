@@ -43,6 +43,7 @@ import {
 	type ModelContextMap,
 	type ModelMap,
 	type SaveResult,
+	MAX_TOOL_BUDGET,
 	TOOL_PROFILES,
 	type ToolProfile
 } from '#lib/server/llm/config';
@@ -145,6 +146,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		preferences: await userPreferences(db, user.id),
 		pageSetup: await userPageSetup(db, user.id),
 		assistant: await accountLlmView(db, user.id),
+		toolCallLimitMax: MAX_TOOL_BUDGET,
 		// The usage log pages through ?usage=N (zero-based, newest first).
 		assistantUsage: await recentAssistantUsage(
 			db,
@@ -227,6 +229,7 @@ async function patchAssistant(
 		extraParams: ExtraParams;
 		webSearch: boolean;
 		toolProfile: ToolProfile;
+		toolCallBudget: number;
 		modelContextManual: ModelContextMap;
 		spendCapUsd: number | null;
 		spendWarnUsd: number | null;
@@ -246,7 +249,7 @@ async function patchAssistant(
 		tuning: patch.tuning ?? current.tuning,
 		extraParams: patch.extraParams,
 		webSearch: patch.webSearch,
-		toolCallBudget: current.toolCallBudget,
+		toolCallBudget: patch.toolCallBudget,
 		toolProfile: patch.toolProfile ?? current.toolProfile,
 		modelContextManual: patch.modelContextManual,
 		spendCapUsd: patch.spendCapUsd,
@@ -271,6 +274,24 @@ async function saveEndpointForm(userId: string, data: FormData) {
 		if (!Number.isFinite(value) || value < 0) return 'invalid';
 		return value > 0 ? value : null;
 	};
+	// A whole number from 1 up to the instance maximum. The box is always shown
+	// filled in and rides every save of this form, so it is only written when it
+	// differs from the value the page loaded with; otherwise an account that
+	// never chose a limit would have the default pinned by an unrelated save.
+	const limitRaw = formText(data, 'toolCallLimit').trim();
+	const toolCallBudget =
+		limitRaw && limitRaw !== formText(data, 'toolCallLimitShown').trim()
+			? Number(limitRaw)
+			: undefined;
+	if (
+		toolCallBudget !== undefined &&
+		(!Number.isInteger(toolCallBudget) || toolCallBudget < 1 || toolCallBudget > MAX_TOOL_BUDGET)
+	) {
+		return fail(400, {
+			scope: 'assistant-endpoint',
+			message: `Enter a whole number of lookups from 1 to ${MAX_TOOL_BUDGET}.`
+		});
+	}
 	const spendCapUsd = usdField('spendCapUsd');
 	const spendWarnUsd = usdField('spendWarnUsd');
 	if (spendCapUsd === 'invalid' || spendWarnUsd === 'invalid') {
@@ -298,6 +319,7 @@ async function saveEndpointForm(userId: string, data: FormData) {
 		webSearch,
 		spendCapUsd,
 		spendWarnUsd,
+		toolCallBudget,
 		toolProfile: (TOOL_PROFILES as readonly string[]).includes(profile)
 			? (profile as ToolProfile)
 			: undefined

@@ -114,6 +114,8 @@ The Assistant can also suggest where to split a long scene: ask it in the chat, 
 
 The conversation is kept per story, so it is still there when you come back or reload. To start over, select "Clear conversation" from the menu next to the send button and confirm; this deletes the conversation for good. Only the most recent stretch of a long conversation is kept.
 
+To answer, the Assistant looks things up in your work: each scene it reads, character it checks, or search it runs is one lookup. It has a set number of lookups per reply, so a question that covers many scenes can use them up. When that happens, a note under the reply says it may have missed something. Ask about fewer scenes at a time, or raise "Lookups per reply" on your account page. A different note says the Assistant ran out of room to read: the model can only hold so much text at once, so ask about fewer scenes at a time.
+
 In a long conversation, the Assistant reads your recent messages in full and the older ones as a short summary, which it writes using the model you picked for Background work. A note at the top of the conversation tells you when that has started. The summary keeps what you decided and asked for, but not the exact wording, so repeat a detail if the Assistant seems to have lost it, or clear the conversation to start fresh. If the summary cannot be written, for example because your endpoint is unreachable, the oldest messages are left out instead.
 
 You can also type a command in the chat box. Start a line with a slash and a short menu lists the commands; press Enter or click one to run it. Some commands take the rest of the line as input, so type what you want after the command:

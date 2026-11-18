@@ -126,8 +126,10 @@ export type StoredAccountConfig = {
 	// search can settle. The search runs on the provider's servers, so it adds
 	// no outbound traffic of Codex's own.
 	webSearch: boolean;
-	// The most tool calls the Assistant may make in one turn (tools are a later
-	// surface; the value is carried now so the config shape is stable).
+	// The most tool calls the Assistant may make in one turn. Stored under the
+	// toolCallLimit key: the older toolCallBudget key was written on every save
+	// while no screen could set it, so it only ever holds the old default and is
+	// ignored rather than rewritten.
 	toolCallBudget: number;
 	// Which tools a tool-enabled turn offers (see TOOL_PROFILES).
 	toolProfile: ToolProfile;
@@ -227,8 +229,8 @@ export type StoredStoryOverride = {
 	models?: ModelMap;
 };
 
-const DEFAULT_TOOL_BUDGET = 8;
-const MAX_TOOL_BUDGET = 100;
+export const DEFAULT_TOOL_BUDGET = 20;
+export const MAX_TOOL_BUDGET = 100;
 
 function normaliseModels(raw: unknown): ModelMap {
 	const out: ModelMap = {};
@@ -262,7 +264,7 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		tuning: normaliseTuning(raw.tuning),
 		extraParams: normaliseExtraParams(raw.extraParams),
 		webSearch: raw.webSearch === true,
-		toolCallBudget: normaliseBudget(raw.toolCallBudget),
+		toolCallBudget: normaliseBudget(raw.toolCallLimit),
 		toolProfile: normaliseToolProfile(raw.toolProfile),
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
 		supportsTools: normaliseCapability(raw.supportsTools),
@@ -530,7 +532,8 @@ export type SaveAccountInput = {
 	extraParams?: ExtraParams;
 	// Absent keeps the stored setting (the partial-save pattern).
 	webSearch?: boolean;
-	toolCallBudget: number;
+	// Absent keeps the stored limit (or the default, when none was ever set).
+	toolCallBudget?: number;
 	// Absent keeps the stored profile (the partial-save pattern).
 	toolProfile?: ToolProfile;
 	// The writer's own context windows; absent keeps the stored map, {} clears it.
@@ -656,7 +659,10 @@ export async function saveAccountLlmConfig(
 				? {}
 				: { extraParams }),
 		webSearch: input.webSearch === undefined ? existing.webSearch : input.webSearch === true,
-		toolCallBudget: normaliseBudget(input.toolCallBudget),
+		toolCallBudget:
+			input.toolCallBudget === undefined
+				? existing.toolCallBudget
+				: normaliseBudget(input.toolCallBudget),
 		toolProfile:
 			input.toolProfile === undefined
 				? existing.toolProfile
@@ -677,7 +683,12 @@ export async function saveAccountLlmConfig(
 	// What the last discovery reported describes the old provider's models.
 	const snapshots = connectionChanged ? { modelPricing: {}, modelContext: {} } : {};
 	// A jsonb merge, so any unknown keys (a future config field) survive.
-	const stored: Record<string, unknown> = { ...value, ...spend, ...snapshots };
+	// The limit is written only when the writer set it, under its own key (see
+	// StoredAccountConfig), so an account that never chose one follows the
+	// default.
+	const { toolCallBudget, ...rest } = value;
+	const limit = input.toolCallBudget === undefined ? {} : { toolCallLimit: toolCallBudget };
+	const stored: Record<string, unknown> = { ...rest, ...limit, ...spend, ...snapshots };
 	await db
 		.update(users)
 		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })

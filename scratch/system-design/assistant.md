@@ -289,11 +289,20 @@ fixed number Codex chooses. The point of bring-your-own-endpoint is that the
 writer owns the trade-off: someone running a model on their own server
 incurs only electricity and may want a generous budget, while someone on a
 metered API may want a tight one. The setting has a sensible default and an
-optional admin ceiling in `app_settings`: a runaway loop still ties up a
+instance ceiling (today the fixed `MAX_TOOL_BUDGET` of 100; an admin setting in
+`app_settings` is not built): a runaway loop still ties up a
 server connection (and, for a background job, a worker slot) regardless of
 who pays for the tokens, so a shared hosted operator can bound it
 instance-wide. On self-host the operator is the writer, so the ceiling is
 theirs to raise or remove.
+
+The writer sets it as "Lookups per reply" on the Account Assistant page
+(1 to 100, default 20; #990). It is stored under `toolCallLimit` only once the
+writer sets it: the older `toolCallBudget` key was written on every save while
+no screen could set it, so it only holds the old default of 8 and is ignored.
+When a chat reply stops because the limit ran out or the context window
+filled, the stream carries a `stopped` frame, the reason persists in the
+message meta, and the panel shows a note under the reply.
 
 ## Three surfaces
 
@@ -918,7 +927,8 @@ calls the gateway, which proxies through the egress guard.
 ### Account Assistant settings (configure + enable)
 
 - [built] Read: `accountLlmView` (never exposes the key; has `hasKey`,
-  `assistantName`, `persona`, `models`, `toolCallBudget`, `toolProfile`,
+  `assistantName`, `persona`, `models`, `toolCallBudget` (stored as
+  `toolCallLimit`), `toolProfile`,
   capability flags, `modelPricing`, and the context windows: `modelContext` (the
   discovery snapshot) and `modelContextManual` (what the writer entered, which
   wins). `modelContextWindow(config, role)` resolves the window for a role's
@@ -1048,7 +1058,9 @@ calls the gateway, which proxies through the egress guard.
 - [built] Read tools (`get_scene`, `get_entity`, `find_appearances`,
   `search_text`) and prose write tools (`suggest_edit`, `leave_comment`) in
   `llm/tools/`. The gateway loop dispatches them, capped by the account
-  `toolCallBudget`. The frontend only renders the staged results (the
+  tool-call limit (Lookups per reply). The run concludes once the model asks for a
+  call past the limit, so using exactly the limit and then answering is not
+  flagged as cut short. The frontend only renders the staged results (the
   `isAssistant` suggestions/comments).
 - [built] The account `toolProfile` shapes the default set: `minimal` offers only
   `get_scene`, `suggest_edit`, and `leave_comment` and halves the budget, for

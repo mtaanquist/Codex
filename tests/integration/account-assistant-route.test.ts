@@ -212,6 +212,39 @@ describe('saveAssistantEndpoint spend fields', () => {
 	});
 });
 
+describe('saveAssistantEndpoint lookups per reply', () => {
+	async function storedLimit() {
+		const [row] = await db
+			.select({ llmConfig: users.llmConfig })
+			.from(users)
+			.where(eq(users.id, userId));
+		return (row.llmConfig as Record<string, unknown>).toolCallLimit;
+	}
+
+	it('does not pin the default when an unrelated field is saved', async () => {
+		await saveEndpoint({ toolCallLimit: '20', toolCallLimitShown: '20', spendCapUsd: '5' });
+		expect(await storedLimit()).toBeUndefined();
+		expect((await stored()).toolCallBudget).toBe(20);
+	});
+
+	it('stores a limit the writer changed', async () => {
+		await saveEndpoint({ toolCallLimit: '35', toolCallLimitShown: '20' });
+		expect(await storedLimit()).toBe(35);
+		expect((await stored()).toolCallBudget).toBe(35);
+	});
+
+	it('refuses a limit outside 1 to 100, or not a whole number', async () => {
+		await storeConfig({ toolCallLimit: 30 });
+		for (const value of ['0', '101', '2.5', 'abc']) {
+			const result = (await saveEndpoint({ toolCallLimit: value, toolCallLimitShown: '30' })) as {
+				status?: number;
+			};
+			expect(result.status).toBe(400);
+		}
+		expect((await stored()).toolCallBudget).toBe(30);
+	});
+});
+
 describe('which saves carry the provider', () => {
 	it('the endpoint form switches to the picked provider', async () => {
 		await saveEndpoint({ provider: 'anthropic' });
