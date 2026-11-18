@@ -4,7 +4,8 @@ import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
-import { dbNow } from './enrich.ts';
+import { dbNow, requestHash } from './enrich.ts';
+import type { ChatMessage } from './providers/types.ts';
 import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 
 // Character arc summaries: what happens to a character across the universe's
@@ -96,9 +97,11 @@ export class ArcStoryMutedError extends Error {
 }
 
 export type ArcResult = {
-	// written: a new arc is stored; empty: the character appears in no scene,
-	// so nothing was asked; missing: not the user's character.
-	outcome: 'written' | 'empty' | 'missing';
+	// written: a new arc is stored; unchanged: the arc was out of date but would
+	// be written from the same request, so it was only marked current; empty:
+	// the character appears in no scene, so nothing was asked; missing: not the
+	// user's character.
+	outcome: 'written' | 'unchanged' | 'empty' | 'missing';
 };
 
 // Write (or rewrite) one character's arc. Owner scoped. Throws when the
@@ -115,6 +118,8 @@ export async function summariseCharacterArc(
 			name: characters.name,
 			universeId: characters.universeId,
 			arcSummaryAt: characters.arcSummaryAt,
+			arcSummaryMd: characters.arcSummaryMd,
+			arcSummaryInput: characters.arcSummaryInput,
 			// As text, so the write below compares to the microsecond.
 			arcSummaryAtText: sql<string | null>`${characters.arcSummaryAt}::text`
 		})
@@ -136,9 +141,39 @@ export async function summariseCharacterArc(
 		// earlier arc goes too rather than lingering in the context.
 		await db
 			.update(characters)
-			.set({ arcSummaryMd: null, arcSummaryAt: null, updatedAt: sql`${characters.updatedAt}` })
+			.set({
+				arcSummaryMd: null,
+				arcSummaryAt: null,
+				arcSummaryInput: null,
+				updatedAt: sql`${characters.updatedAt}`
+			})
 			.where(eq(characters.id, character.id));
 		return { outcome: 'empty' };
+	}
+
+	const messages: ChatMessage[] = [
+		{ role: 'user', content: buildArcMessage(character.name, sampleEvenly(found, MAX_ARC_SCENES)) }
+	];
+	const input = requestHash(messages);
+	// An arc marked out of date by a change it does not read (a passage past
+	// the first mention, a scene outside the sample) would be written from the
+	// same request, so it is only marked current. A current arc is rewritten
+	// when asked: the writer wants another take.
+	if (character.arcSummaryMd && arcIsStale(character) && input === character.arcSummaryInput) {
+		// A mark set since the read above stands.
+		await db
+			.update(characters)
+			.set({
+				arcSummaryAt: startedAt,
+				updatedAt: sql`${characters.updatedAt}`
+			})
+			.where(
+				and(
+					eq(characters.id, character.id),
+					sql`${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz`
+				)
+			);
+		return { outcome: 'unchanged' };
 	}
 
 	const result = await completeDetailed(
@@ -147,12 +182,7 @@ export async function summariseCharacterArc(
 			userId,
 			role: 'utility',
 			enableTools: false,
-			messages: [
-				{
-					role: 'user',
-					content: buildArcMessage(character.name, sampleEvenly(found, MAX_ARC_SCENES))
-				}
-			],
+			messages,
 			maxTokens: MAX_ARC_TOKENS,
 			signal
 		},
@@ -182,6 +212,7 @@ export async function summariseCharacterArc(
 			.update(characters)
 			.set({
 				arcSummaryMd: text,
+				arcSummaryInput: input,
 				// An unmute or a scene delete while the model was writing marked the
 				// arc out of date; that mark stands.
 				arcSummaryAt: sql`case when ${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz then ${startedAt} else ${characters.arcSummaryAt} end`,

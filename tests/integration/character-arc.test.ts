@@ -16,7 +16,8 @@ import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
-import { STALE_MARK_BEFORE, trashScene } from '../../src/lib/server/scene-lifecycle';
+import { restoreScene, STALE_MARK_BEFORE, trashScene } from '../../src/lib/server/scene-lifecycle';
+import { standaloneUniverse } from '../../src/lib/server/story-create';
 import { mergeScenes } from '../../src/lib/server/scene-split-merge';
 import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
 import { rebuildSceneMentions, reconcileMentions } from '../../src/lib/server/mentions';
@@ -271,6 +272,8 @@ describe('summariseCharacterArc', () => {
 		const bram = await makeCharacter();
 		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram at the quay' });
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		// A changed passage, so the refresh asks the model.
+		await db.update(entityMentions).set({ surroundingText: 'Bram on the road' });
 		await pool.query(
 			`update characters set arc_summary_at = '1976-01-01 00:00:00.123456+00' where id = $1`,
 			[bram.id]
@@ -481,6 +484,154 @@ describe('arc staleness', () => {
 		const result = await mergeScenes(db, ownerId, firstStoryId, [target.id, merged]);
 		expect(result.ok).toBe(true);
 		expect((await readArc(bram.id)).arcSummaryAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+
+	it('goes stale, and is marked for enrichment, when a deleted scene is restored and reindexed', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		const [kept] = await db
+			.insert(scenes)
+			.values({ storyId: firstStoryId, globalPosition: 2, bodyMd: 'Bram on the road.' })
+			.returning({ id: scenes.id });
+		await rebuildSceneMentions(db, kept.id);
+		expect(await trashScene(db, ownerId, sceneId)).toBe(true);
+		// Rewritten without the deleted scene, then the scene comes back.
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: new Date() })
+			.where(eq(characters.id, bram.id));
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+
+		expect(await restoreScene(db, ownerId, sceneId)).toBe(true);
+		await rebuildSceneMentions(db, sceneId);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(true);
+		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+
+	it('goes stale, and is marked for enrichment, when a trashed standalone home is revived', async () => {
+		const home = await standaloneUniverse(db, ownerId);
+		const [story] = await db
+			.insert(stories)
+			.values({ universeId: home.id, ownerId, title: 'A One-Off' })
+			.returning({ id: stories.id });
+		const [bram] = await db
+			.insert(characters)
+			.values({ universeId: home.id, ownerId, name: 'Bram' })
+			.returning({ id: characters.id });
+		await sceneMentioning(story.id, bram.id, { position: 1, snippet: 'Bram at the quay' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: new Date() })
+			.where(eq(characters.id, bram.id));
+		await db.update(universes).set({ deletedAt: new Date() }).where(eq(universes.id, home.id));
+
+		// Asking for the standalone home again brings it back.
+		expect((await standaloneUniverse(db, ownerId)).deletedAt).toBeNull();
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(true);
+		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+
+	it('stays current when a reorder after a deletion keeps the reading order', async () => {
+		const bram = await makeCharacter();
+		const ids: string[] = [];
+		for (const [i, bodyMd] of [
+			'An empty quay.',
+			'Nobody here.',
+			'Bram at the harbour.'
+		].entries()) {
+			const [scene] = await db
+				.insert(scenes)
+				.values({ storyId: firstStoryId, globalPosition: i + 1, bodyMd })
+				.returning({ id: scenes.id });
+			await rebuildSceneMentions(db, scene.id);
+			ids.push(scene.id);
+		}
+		const [first, gap, last] = ids;
+		expect(await trashScene(db, ownerId, gap)).toBe(true);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+
+		// Renumbering closes the gap, but Bram's scene still comes second.
+		const order = { chapters: [], orphanSceneIds: [first, last] };
+		expect((await applySceneOrder(db, firstStoryId, order)).ok).toBe(true);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+
+		const swapped = { chapters: [], orphanSceneIds: [last, first] };
+		expect((await applySceneOrder(db, firstStoryId, swapped)).ok).toBe(true);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(true);
+	});
+
+	it('refreshes an out-of-date arc without the model when nothing it reads changed', async () => {
+		const bram = await makeCharacter();
+		const filler = ' The tide ran out over the flats.'.repeat(6);
+		const sceneId = await sceneWithProse(`Bram at the harbour.${filler} Bram waved.`);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(calls).toBe(1);
+
+		// The arc reads the passage around the first mention only, so an edit at
+		// the second marks it without changing what it would send.
+		await db
+			.update(scenes)
+			.set({ bodyMd: `Bram at the harbour.${filler} Bram waved twice.` })
+			.where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(true);
+		reply = 'A different arc.';
+		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(result.outcome).toBe('unchanged');
+		expect(calls).toBe(1);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(false);
+		expect(after.arcSummaryMd).toBe('Bram leaves the harbour and becomes a captain.');
+
+		// An edit it does read is sent.
+		await db
+			.update(scenes)
+			.set({ bodyMd: `Bram on the quay.${filler} Bram waved twice.` })
+			.where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+		expect(
+			(await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps)).outcome
+		).toBe('written');
+		expect(calls).toBe(2);
+		expect((await readCharacter(bram.id)).arcSummaryMd).toBe('A different arc.');
+	});
+
+	it('rewrites a current arc when asked, even with nothing changed', async () => {
+		const bram = await makeCharacter();
+		await sceneWithProse('Bram at the harbour.');
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		reply = 'A different arc.';
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(calls).toBe(2);
+		expect((await readCharacter(bram.id)).arcSummaryMd).toBe('A different arc.');
+	});
+
+	it('does not deadlock with a save that holds the scene row and then marks entities', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		await db.update(scenes).set({ bodyMd: 'Bram on the quay.' }).where(eq(scenes.id, sceneId));
+		// A title save takes the scene row first, as saveSceneBody does.
+		const save = await pool.connect();
+		try {
+			await save.query('begin');
+			await save.query('select id from scenes where id = $1 for update', [sceneId]);
+			const rebuild = rebuildSceneMentions(db, sceneId).catch((err: unknown) => err);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			// Then marks what the scene mentions.
+			await save.query(
+				`update characters set arc_summary_at = clock_timestamp() - interval '50 years' where id = $1`,
+				[bram.id]
+			);
+			await save.query('commit');
+			expect(await rebuild).toEqual({ ok: true, count: 1 });
+		} finally {
+			// Dropped rather than pooled, in case a failure left it mid-transaction.
+			save.release(true);
+		}
 	});
 
 	it('goes stale when a story it read is deleted, and again when it is restored', async () => {

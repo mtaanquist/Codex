@@ -361,12 +361,18 @@ export const characters = pgTable(
 		// When the background enrichment pass last read this entity; a later pass
 		// skips it unless a scene that mentions it changed since.
 		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
+		// A hash of the request that read, so a marked entity whose request would
+		// be the same is not sent again.
+		assistantEnrichedInput: text('assistant_enriched_input'),
 		// The Assistant's summary of what happens to this character across the
 		// universe's stories, and when its read of the scenes started. Generated,
 		// never written by the writer; stale once a mentioning scene changes after
 		// arc_summary_at.
 		arcSummaryMd: text('arc_summary_md'),
 		arcSummaryAt: timestamp('arc_summary_at', { withTimezone: true }),
+		// A hash of the request the arc was written from, so refreshing a marked
+		// arc whose request would be the same does not call the model.
+		arcSummaryInput: text('arc_summary_input'),
 		// Original card data if imported (SillyTavern etc).
 		importedFrom: jsonb('imported_from'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -456,6 +462,9 @@ export const loreEntries = pgTable(
 		// When the background enrichment pass last read this entity; a later pass
 		// skips it unless a scene that mentions it changed since.
 		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
+		// A hash of the request that read, so a marked entity whose request would
+		// be the same is not sent again.
+		assistantEnrichedInput: text('assistant_enriched_input'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
@@ -522,6 +531,9 @@ export const places = pgTable(
 		// When the background enrichment pass last read this entity; a later pass
 		// skips it unless a scene that mentions it changed since.
 		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
+		// A hash of the request that read, so a marked entity whose request would
+		// be the same is not sent again.
+		assistantEnrichedInput: text('assistant_enriched_input'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()

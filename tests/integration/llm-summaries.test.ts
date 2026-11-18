@@ -21,6 +21,8 @@ const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 // visible as a changed value. The transport is never reached.
 let calls = 0;
 let prompts: string[] = [];
+// Runs while the stub is answering, to land a change mid-call.
+let duringCall: ((call: number) => Promise<void>) | null = null;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -28,6 +30,7 @@ const stubProvider: Provider = {
 	async respond(req) {
 		calls += 1;
 		prompts.push(req.messages.map((m) => m.content ?? '').join('\n'));
+		if (duringCall) await duringCall(calls);
 		return { content: `SUMMARY-${calls}`, toolCalls: [] };
 	},
 	async listModels() {
@@ -58,6 +61,7 @@ beforeAll(async () => {
 beforeEach(async () => {
 	calls = 0;
 	prompts = [];
+	duringCall = null;
 	await pool.query('truncate table scenes, chapters, stories, universes, users cascade');
 	const [owner] = await db
 		.insert(users)
@@ -194,6 +198,52 @@ describe('summariseStory', () => {
 		expect(second.summaryGeneratedAt!.getTime()).toBeGreaterThan(
 			first.summaryGeneratedAt!.getTime()
 		);
+	});
+
+	it('keeps a summary the writer types while the model is writing one', async () => {
+		duringCall = async (call) => {
+			// Raw SQL so the writer's summary does not move updated_at either.
+			if (call === 1) {
+				await pool.query(`update scenes set summary_md = 'Mine.' where id = $1`, [sceneAId]);
+			}
+			if (call === 2) {
+				await pool.query(`update chapters set summary_md = 'My chapter.' where id = $1`, [
+					chapterId
+				]);
+			}
+		};
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ scenes: 0, chapters: 0 });
+		const a = await readScene(sceneAId);
+		expect(a.summaryMd).toBe('Mine.');
+		expect(a.summaryGeneratedAt).toBeNull();
+		const [chapter] = await db
+			.select({ summaryMd: chapters.summaryMd, summaryGeneratedAt: chapters.summaryGeneratedAt })
+			.from(chapters)
+			.where(eq(chapters.id, chapterId));
+		expect(chapter).toEqual({ summaryMd: 'My chapter.', summaryGeneratedAt: null });
+	});
+
+	it('does not roll back an edit made while the model is writing', async () => {
+		let edited: Date | null = null;
+		duringCall = async (call) => {
+			if (call !== 1) return;
+			const [row] = await db
+				.update(scenes)
+				.set({ bodyMd: 'Alice met Bram, then ran.' })
+				.where(eq(scenes.id, sceneAId))
+				.returning({ updatedAt: scenes.updatedAt });
+			edited = row.updatedAt;
+		};
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const a = await readScene(sceneAId);
+		expect(a.updatedAt).toEqual(edited);
+		// Summarised from the old text, so it is left for the next run.
+		expect(a.summaryMd).toBeNull();
+
+		duringCall = null;
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).scenes).toBe(1);
+		expect(prompts.at(-2)).toContain('then ran');
 	});
 
 	it('does not run for a story the user does not own', async () => {

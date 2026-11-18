@@ -23,6 +23,7 @@ import {
 } from '../../src/lib/server/mentions';
 import { setSceneStatus } from '../../src/lib/server/scene-status';
 import { applySceneOrder } from '../../src/lib/server/scene-order';
+import { STALE_MARK_BEFORE } from '../../src/lib/server/scene-lifecycle';
 
 // Storing the account API key encrypts it with APP_SECRET (needed for enrich).
 process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-test-secret';
@@ -827,6 +828,46 @@ describe('enrichUniverse', () => {
 		}
 		expect(calls).toBe(1);
 		expect(await enrichedAt(alda)).not.toBeNull();
+		expect(await enrichedAt(bram)).toBeNull();
+	});
+
+	it('clears a mark without asking the model when the passages it would send are unchanged', async () => {
+		// A summary already, so whether to ask for one does not change between passes.
+		const bram = await makeCharacter({ name: 'Bram', summaryMd: 'A sailor.' });
+		const ids: string[] = [];
+		for (let i = 1; i <= 17; i++) ids.push(await sceneWithProse(`Bram in scene ${i}.`, i));
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+		expect(calls).toBe(1);
+		expect(lastPrompt).not.toContain('scene 17.');
+
+		// Only the first sixteen passages are sent, so an edit to the seventeenth
+		// marks Bram without changing what the model would read.
+		await rewrite(ids[16], 'Bram in the last scene.');
+		expect((await enrichedAt(bram))! < STALE_MARK_BEFORE).toBe(true);
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(0);
+		expect(calls).toBe(1);
+		expect((await enrichedAt(bram))! > STALE_MARK_BEFORE).toBe(true);
+
+		await rewrite(ids[0], 'Bram in the first scene.');
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+		expect(calls).toBe(2);
+	});
+
+	it('stops with its own reason when no model is chosen', async () => {
+		await saveAccountLlmConfig(db, ownerId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: {},
+			toolCallBudget: 8
+		});
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneMentioning(bram, 'Bram at the harbour');
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(result).toMatchObject({ entities: 0, failed: 0, noModel: true });
+		expect(result.disabled).toBeUndefined();
 		expect(await enrichedAt(bram)).toBeNull();
 	});
 

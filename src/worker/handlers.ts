@@ -48,7 +48,11 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.ts';
-import { AssistantDisabledError, ReplyCutOffError } from '../lib/server/llm/gateway.ts';
+import {
+	AssistantDisabledError,
+	NoModelError,
+	ReplyCutOffError
+} from '../lib/server/llm/gateway.ts';
 import { ArcStoryMutedError, summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
@@ -108,6 +112,10 @@ function staged(notes: number): string {
 	if (notes === 0) return '';
 	return `, with ${notes} note${notes === 1 ? '' : 's'} left`;
 }
+
+// The arc button reads Write arc or Refresh arc, so the notices name neither.
+const ARC_AGAIN = "try again from the character's entry in Plan";
+const PICK_MODEL = 'Pick one under Account, Assistant, Models per role';
 
 // "1 entry", "3 other entries", for an enrich notice.
 function entries(n: number, other = false): string {
@@ -171,7 +179,9 @@ export function createHandlers(deps: WorkerDeps) {
 			title =
 				result.outcome === 'empty'
 					? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
-					: `The Assistant wrote the arc for ${character.name}.`;
+					: result.outcome === 'unchanged'
+						? `The arc for ${character.name} is up to date. Nothing it reads has changed since it was written.`
+						: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
 			if (error instanceof ReplyCutOffError) {
@@ -193,16 +203,20 @@ export function createHandlers(deps: WorkerDeps) {
 				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
 				await queueDigests(
 					await insertNotifications(db, [userId], 'assistant_enrich', {
-						title: `The Assistant is turned off, so it did not write the arc for ${character.name}. Switch it back on in your settings, then select Write arc to try again.`,
+						title:
+							error instanceof NoModelError
+								? `No model is chosen for the Assistant, so it did not write the arc for ${character.name}. ${PICK_MODEL}, then ${ARC_AGAIN}.`
+								: `The Assistant is turned off, so it did not write the arc for ${character.name}. Switch it back on in your settings, then ${ARC_AGAIN}.`,
 						href
 					})
 				);
 				return;
 			}
-			if (error instanceof ArcStoryMutedError && job.retryCount < job.retryLimit) {
-				// The retry reads without the muted story and usually writes the
-				// arc, so say nothing until the last attempt. notifyWriter would
-				// not hold this back: a thrown job is still active when it runs.
+			if (!job.signal?.aborted && job.retryCount < job.retryLimit) {
+				// pg-boss runs it again, and a retry usually writes the arc (one
+				// muted story is left out, a passing endpoint fault has cleared),
+				// so say nothing until the last attempt. notifyWriter would not hold
+				// this back: a thrown job is still active when it runs.
 				throw error;
 			}
 			if (job.signal?.aborted) {
@@ -577,7 +591,9 @@ export function createHandlers(deps: WorkerDeps) {
 				// For a pass that stopped early: what it still left behind, if anything.
 				const left = result.staged > 0 ? `, with ${suggestions} left` : '';
 				let title: string;
-				if (result.disabled) {
+				if (result.noModel) {
+					title = `No model is chosen for the Assistant, so it stopped reading the entries in "${name}"${left}. ${PICK_MODEL}, then type /enrich to carry on.`;
+				} else if (result.disabled) {
 					title = `The Assistant is turned off, so it stopped reading the entries in "${name}"${left}. Switch it back on in your settings, then type /enrich to carry on.`;
 				} else if (result.stoppedFailing) {
 					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read${left}. Check the endpoint in your settings, then type /enrich to carry on.`;
@@ -617,6 +633,7 @@ export function createHandlers(deps: WorkerDeps) {
 					staged: result.staged,
 					failed: result.failed,
 					...(result.disabled ? { disabled: true } : {}),
+					...(result.noModel ? { noModel: true } : {}),
 					...(result.stoppedFailing ? { stoppedFailing: true } : {})
 				});
 			}
