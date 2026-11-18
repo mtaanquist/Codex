@@ -23,7 +23,8 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-test-secret';
 const { stageEntitySuggestions, decideEntitySuggestion, listPendingForEntity } =
 	await import('../../src/lib/server/entity-suggestions');
 const { enrichEntity, enrichUniverse } = await import('../../src/lib/server/llm/enrich');
-const { saveAccountLlmConfig, saveModelPricing } = await import('../../src/lib/server/llm/config');
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
+	await import('../../src/lib/server/llm/config');
 
 const enrichJson =
 	'{"aliases":["The Grey"],"details":[{"label":"Eyes","value":"grey"}],"summary":"A weary swordsman."}';
@@ -453,6 +454,15 @@ describe('enrichUniverse', () => {
 		);
 		expect(result).toMatchObject({ entities: 0, aborted: true });
 		expect(await enrichedAt(id)).toBeNull();
+	});
+
+	it('leaves out an entity seen only in a story the Assistant is muted on', async () => {
+		const id = await makeCharacter();
+		await sceneMentioning(id, 'Bram at the harbour');
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(result.entities).toBe(0);
+		expect(calls).toBe(0);
 	});
 
 	it("leaves another writer's universe alone", async () => {

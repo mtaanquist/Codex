@@ -22,7 +22,8 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
 
 const { summariseCharacterArc, arcIsStale, planArc } =
 	await import('../../src/lib/server/llm/arc-summary');
-const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
+const { saveAccountLlmConfig, saveStoryLlmOverride } =
+	await import('../../src/lib/server/llm/config');
 
 let lastPrompt = '';
 let calls = 0;
@@ -172,6 +173,35 @@ describe('summariseCharacterArc', () => {
 		// Generated metadata: not an edit, and the writer's summary is untouched.
 		expect(row.updatedAt.getTime()).toBe(bram.updatedAt.getTime());
 		expect(row.summaryMd).toBe('A sailor.');
+	});
+
+	it('leaves out a story the Assistant is muted on', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram at the quay' });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(lastPrompt).toContain('Bram at the quay');
+		expect(lastPrompt).not.toContain('Bram in private');
+		expect(lastPrompt).not.toContain('The Salt Road');
+	});
+
+	it('drops an arc when its story is muted, and when nothing is left to retell', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect((await readArc(bram.id)).arcSummaryMd).not.toBeNull();
+
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
+
+		await db
+			.update(characters)
+			.set({ arcSummaryMd: 'Old arc.', arcSummaryAt: new Date() })
+			.where(eq(characters.id, bram.id));
+		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(result.outcome).toBe('empty');
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
 	});
 
 	it('asks nothing for a character no scene mentions', async () => {

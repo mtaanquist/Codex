@@ -43,7 +43,7 @@ import { modelContextWindow, resolveLlmConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
 import { errorFields, logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
-import { storyIsLive } from '../universe-scope.ts';
+import { storyAssistantOn, storyIsLive } from '../universe-scope.ts';
 
 // Tool budgets for the exhaustive passes. A focused or full pass stages one
 // tool call per note plus the scene read, so the account's conservative
@@ -825,6 +825,7 @@ export async function reviewUniverseContinuity(
 				eq(stories.universeId, opts.universeId),
 				eq(stories.ownerId, opts.userId),
 				storyIsLive(),
+				storyAssistantOn(),
 				isNull(scenes.deletedAt)
 			)
 		)

@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, max, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
-import { inLiveUniverse } from '../universe-scope.ts';
+import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { dbNow } from './enrich.ts';
@@ -51,7 +51,8 @@ async function arcScenes(
 				eq(entityMentions.targetId, characterId),
 				eq(stories.universeId, universeId),
 				isNull(stories.deletedAt),
-				isNull(scenes.deletedAt)
+				isNull(scenes.deletedAt),
+				storyAssistantOn()
 			)
 		)
 		.orderBy(
@@ -91,7 +92,8 @@ export async function arcIsStale(
 				eq(entityMentions.targetId, character.id),
 				eq(stories.universeId, character.universeId),
 				isNull(stories.deletedAt),
-				isNull(scenes.deletedAt)
+				isNull(scenes.deletedAt),
+				storyAssistantOn()
 			)
 		);
 	const lastChanged = row?.lastChanged ? new Date(row.lastChanged) : null;
@@ -127,7 +129,15 @@ export async function summariseCharacterArc(
 	// The database clock, which scene saves stamp updated_at with.
 	const startedAt = await dbNow(db);
 	const found = await arcScenes(db, character.id, character.universeId);
-	if (found.length === 0) return { outcome: 'empty' };
+	if (found.length === 0) {
+		// Nothing left to retell (scenes deleted, or only in muted stories), so an
+		// earlier arc goes too rather than lingering in the context.
+		await db
+			.update(characters)
+			.set({ arcSummaryMd: null, arcSummaryAt: null, updatedAt: sql`${characters.updatedAt}` })
+			.where(eq(characters.id, character.id));
+		return { outcome: 'empty' };
+	}
 
 	const result = await completeDetailed(
 		db,

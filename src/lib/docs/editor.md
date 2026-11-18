@@ -145,7 +145,7 @@ You can also ask the Assistant to review your writing and leave comments and sug
 
 A chapter or whole-story review runs in the background, since it reads every scene; a card in the bottom corner shows it working, a line under the Write, Plan and Review buttons shows how many scenes it has read, and you get a notification when its notes are ready. Both stay visible if you reload the page. Nothing in your writing changes until you accept a suggestion.
 
-To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted. This does not change your other stories or your account setting.
+To turn the Assistant off for just this book, select "Mute for this story" at the top of the tab. The tab stays so you can turn it back on, but nothing is sent for this story while it is muted, including when you use the Assistant from another story or from the universe's Plan: it leaves the muted story's scenes out. This does not change your other stories or your account setting.
 
 ## Spelling
 

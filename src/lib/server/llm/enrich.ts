@@ -14,7 +14,7 @@ import {
 	entityTable,
 	resolveOwnedEntity
 } from '../entity-lookups.ts';
-import { inLiveUniverse } from '../universe-scope.ts';
+import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import {
 	stageEntitySuggestions,
 	type EntitySuggestion,
@@ -129,7 +129,9 @@ export async function enrichEntity(
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 
 	const universeWide = 'universeId' in opts.scope;
-	const appearances = await entityAppearances(db, { kind, id: opts.entityId }, opts.scope);
+	const appearances = await entityAppearances(db, { kind, id: opts.entityId }, opts.scope, {
+		assistant: true
+	});
 	const snippets = spreadAppearances(appearances, MAX_APPEARANCES).map((a) =>
 		snippetLine(a, universeWide)
 	);
@@ -220,6 +222,7 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 					eq(stories.universeId, universeId),
 					isNull(stories.deletedAt),
 					isNull(scenes.deletedAt),
+					storyAssistantOn(),
 					inLiveUniverse(table.universeId)
 				)
 			)
