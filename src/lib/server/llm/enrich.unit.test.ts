@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseEnrichResponse } from './enrich';
+import { parseEnrichResponse, spreadAppearances } from './enrich';
 
 describe('parseEnrichResponse', () => {
 	it('parses aliases, details, and a summary from clean JSON', () => {
@@ -39,5 +39,25 @@ describe('parseEnrichResponse', () => {
 			{ field: 'alias', value: 'Good' },
 			{ field: 'detail', label: 'Rank', value: 'captain' }
 		]);
+	});
+});
+
+describe('spreadAppearances', () => {
+	const row = (storyId: string, n: number) => ({ storyId, n });
+
+	it('takes appearances from each story in turn, kept in reading order', () => {
+		const rows = [row('a', 1), row('a', 2), row('a', 3), row('b', 1), row('c', 1), row('c', 2)];
+		expect(spreadAppearances(rows, 4)).toEqual([
+			row('a', 1),
+			row('a', 2),
+			row('b', 1),
+			row('c', 1)
+		]);
+	});
+
+	it('returns everything, in order, when under the limit', () => {
+		const rows = [row('a', 1), row('a', 2)];
+		expect(spreadAppearances(rows, 16)).toEqual(rows);
+		expect(spreadAppearances([], 16)).toEqual([]);
 	});
 });

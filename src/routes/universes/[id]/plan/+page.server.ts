@@ -27,6 +27,7 @@ import {
 	type RevisionRow
 } from '#lib/server/revisions';
 import { assistantLayout } from '#lib/server/llm/config';
+import { listPendingForEntity, type EntitySuggestion } from '#lib/server/entity-suggestions';
 import { listChat } from '#lib/server/llm/chat-history';
 import { hasChatSummary } from '#lib/server/llm/chat-summary';
 import { listUniverseNotes } from '#lib/server/notes';
@@ -134,7 +135,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		relationships,
 		revisionRows,
 		revisionPreview,
-		storyBoard
+		storyBoard,
+		entitySuggestions
 	] = await Promise.all([
 		listRelationTypes(db, universe.id),
 		selected
@@ -152,7 +154,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionTarget && revisionId && isUuid(revisionId)
 			? getRevision(db, revisionId, revisionTarget.type, revisionTarget.id).then((r) => r ?? null)
 			: Promise.resolve(null),
-		selected ? Promise.resolve([] as StoryBoardRow[]) : loadStoryBoard(universe.id)
+		selected ? Promise.resolve([] as StoryBoardRow[]) : loadStoryBoard(universe.id),
+		// Pending Assistant suggestions for the selected entity.
+		selected
+			? listPendingForEntity(db, locals.user!.id, selectedKind, selected.id)
+			: Promise.resolve([] as EntitySuggestion[])
 	]);
 
 	return {
@@ -171,6 +177,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionTarget,
 		revisionRows,
 		revisionPreview,
+		entitySuggestions,
 		assistant,
 		assistantChat,
 		assistantChatSummarised

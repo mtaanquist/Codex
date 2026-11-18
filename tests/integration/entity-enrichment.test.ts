@@ -4,7 +4,14 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { characters, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	characters,
+	entityMentions,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
@@ -20,11 +27,14 @@ const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config')
 
 const enrichJson =
 	'{"aliases":["The Grey"],"details":[{"label":"Eyes","value":"grey"}],"summary":"A weary swordsman."}';
+// The last prompt the stub was sent, to check which passages reached it.
+let lastPrompt = '';
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
 	},
-	async respond() {
+	async respond(req) {
+		lastPrompt = JSON.stringify(req.messages);
 		return { content: enrichJson, toolCalls: [] };
 	},
 	async listModels() {
@@ -52,7 +62,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table entity_suggestions, revisions, characters, stories, universes, users cascade'
+		'truncate table entity_suggestions, entity_mentions, revisions, characters, stories, universes, users cascade'
 	);
 	const [owner] = await db
 		.insert(users)
@@ -125,6 +135,33 @@ describe('stageEntitySuggestions', () => {
 		expect(fields).not.toContain('alias:Al');
 		expect(fields.some((f) => f.startsWith('summary'))).toBe(false);
 	});
+
+	it('does not stage again what the writer rejected', async () => {
+		const id = await makeCharacter();
+		const first = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [
+				{ field: 'alias', value: 'The Grey' },
+				{ field: 'detail', label: 'Eyes', value: 'blue' }
+			]
+		});
+		for (const s of first) await decideEntitySuggestion(db, ownerId, s.id, 'reject');
+		const again = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [
+				{ field: 'alias', value: 'the grey' }, // rejected, any case
+				{ field: 'detail', label: 'Eyes', value: 'Blue' }, // rejected pair
+				{ field: 'detail', label: 'Eyes', value: 'grey' } // same label, new value
+			]
+		});
+		expect(again.map((s) => `${s.field}:${s.label ?? ''}:${s.value}`)).toEqual([
+			'detail:Eyes:grey'
+		]);
+	});
 });
 
 describe('decideEntitySuggestion', () => {
@@ -187,8 +224,8 @@ describe('decideEntitySuggestion', () => {
 });
 
 describe('enrichEntity', () => {
-	it('stages the aliases, details, and summary the Assistant returns', async () => {
-		await saveAccountLlmConfig(db, ownerId, {
+	const enableAssistant = () =>
+		saveAccountLlmConfig(db, ownerId, {
 			enabled: true,
 			assistantName: '',
 			persona: 'balanced',
@@ -197,12 +234,69 @@ describe('enrichEntity', () => {
 			models: { chat: 'chat-model' },
 			toolCallBudget: 8
 		});
+
+	async function mention(inStoryId: string, entityId: string, text: string) {
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: inStoryId, globalPosition: 1, title: `Scene of ${text}` })
+			.returning({ id: scenes.id });
+		await db.insert(entityMentions).values({
+			sourceType: 'scene',
+			sourceId: scene.id,
+			targetType: 'character',
+			targetId: entityId,
+			position: 0,
+			surroundingText: text
+		});
+	}
+
+	it('stages the aliases, details, and summary the Assistant returns', async () => {
+		await enableAssistant();
 		const id = await makeCharacter();
-		const staged = await enrichEntity(db, { userId: ownerId, storyId, entityId: id }, deps);
+		const staged = await enrichEntity(
+			db,
+			{ userId: ownerId, scope: { storyId }, entityId: id },
+			deps
+		);
 		const fields = staged.map((s) => s.field);
 		expect(fields).toContain('alias');
 		expect(fields).toContain('detail');
 		expect(fields).toContain('summary');
 		expect(await listPendingForEntity(db, ownerId, 'character', id)).toHaveLength(staged.length);
+	});
+
+	it('reads appearances from every story at universe scope, and only this one at story scope', async () => {
+		await enableAssistant();
+		const id = await makeCharacter();
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'The Salt Road' })
+			.returning({ id: stories.id });
+		await mention(storyId, id, 'Bram at the harbour');
+		await mention(other.id, id, 'Bram on the road');
+
+		await enrichEntity(db, { userId: ownerId, scope: { universeId }, entityId: id }, deps);
+		expect(lastPrompt).toContain('Bram at the harbour');
+		expect(lastPrompt).toContain('Bram on the road');
+		expect(lastPrompt).toContain('The Salt Road');
+
+		await enrichEntity(db, { userId: ownerId, scope: { storyId }, entityId: id }, deps);
+		expect(lastPrompt).toContain('Bram at the harbour');
+		expect(lastPrompt).not.toContain('Bram on the road');
+	});
+
+	it('stages nothing for an entity outside the given universe', async () => {
+		await enableAssistant();
+		const id = await makeCharacter();
+		const [elsewhere] = await db
+			.insert(universes)
+			.values({ ownerId, name: 'Elsewhere' })
+			.returning({ id: universes.id });
+		const staged = await enrichEntity(
+			db,
+			{ userId: ownerId, scope: { universeId: elsewhere.id }, entityId: id },
+			deps
+		);
+		expect(staged).toEqual([]);
 	});
 });

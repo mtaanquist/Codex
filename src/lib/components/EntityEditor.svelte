@@ -67,7 +67,8 @@
 		// universe's prose (the universe slug for the API path).
 		universeRef?: string;
 		// The Assistant can suggest aliases, details, and a summary for this entity
-		// (needs a story for the appearances it reads, and the account on).
+		// from where it appears: in the story when storyId is set, otherwise across
+		// the universe named by universeRef. Needs the Assistant on.
 		assistantEnabled?: boolean;
 		// Pending Assistant suggestions for this entity, awaiting accept or reject.
 		assistantSuggestions?: AssistantSuggestion[];
@@ -121,14 +122,18 @@
 	let enrichNote = $state('');
 
 	async function runEnrich() {
-		if (enriching || !storyId) return;
+		if (enriching || !(storyId || universeRef)) return;
 		enriching = true;
 		enrichNote = '';
 		try {
 			const response = await fetch('/api/assistant/enrich', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, entityId: entity.id })
+				body: JSON.stringify(
+					storyId
+						? { storyId, entityId: entity.id }
+						: { universeId: universeRef, entityId: entity.id }
+				)
 			});
 			if (!response.ok) {
 				enrichNote = await apiErrorMessage(response, 'The Assistant could not suggest anything.');
@@ -137,7 +142,8 @@
 			const body = (await response.json()) as { suggestions: AssistantSuggestion[] };
 			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
 			suggestions = [...suggestions, ...fresh];
-			if (fresh.length === 0) enrichNote = 'Nothing new to suggest from this story.';
+			if (fresh.length === 0)
+				enrichNote = `Nothing new to suggest from this ${storyId ? 'story' : 'universe'}.`;
 		} catch {
 			enrichNote = 'Something went wrong reaching the Assistant.';
 		} finally {
@@ -406,7 +412,7 @@
 		</div>
 	{/if}
 
-	{#if assistantEnabled && storyId}
+	{#if assistantEnabled && (storyId || universeRef)}
 		<div class="assist-enrich">
 			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={runEnrich}>
 				{enriching ? 'Thinking...' : 'Suggest details with the Assistant'}

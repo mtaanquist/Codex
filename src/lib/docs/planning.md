@@ -30,7 +30,7 @@ Details are short facts about an entry, each with a label and a value: Status, A
 
 ## Assistant suggestions
 
-When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
+When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. In a story's Plan it reads that story; in the universe's Plan it reads every story in the universe. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it, and the Assistant will not suggest a rejected item again. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
 
 ## The Assistant panel
 
