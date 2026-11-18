@@ -100,6 +100,19 @@ describe('renderReplyMarkdown', () => {
 		expect(html).toContain('the gate');
 	});
 
+	it('escapes markup that reaches an image alt text', () => {
+		const inputs = [
+			'![&lt;img src=x onerror=alert(1)&gt;](https://example.com/a.png)',
+			'![`<b>`](https://example.com/a.png)',
+			'![\\<svg onload=alert(1)\\>](https://example.com/a.png)'
+		];
+		for (const input of inputs) {
+			const html = renderReplyMarkdown(input);
+			expect(html).not.toMatch(/<(img|b|svg)[\s>]/);
+			expect(html).toContain('&lt;');
+		}
+	});
+
 	it('opens web links in a new tab without a referrer', () => {
 		const html = renderReplyMarkdown('[site](https://example.com)');
 		expect(html).toContain(

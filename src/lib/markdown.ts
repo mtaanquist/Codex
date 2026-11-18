@@ -84,7 +84,10 @@ export function renderMarkdown(markdown: string, options: { xhtml?: boolean } = 
 // use to leak story text), and links open in a new tab without a referrer.
 const replyRenderer = new MarkdownIt({ html: false, linkify: false, typographer: false });
 replyRenderer.renderer.rules.image = (tokens, index, options, env, self) =>
-	self.renderInlineAsText(tokens[index].children ?? [], options, env);
+	// renderInlineAsText returns raw token content, so it must be escaped here.
+	replyRenderer.utils.escapeHtml(
+		self.renderInlineAsText(tokens[index].children ?? [], options, env)
+	);
 replyRenderer.renderer.rules.link_open = (tokens, index, options, env, self) => {
 	tokens[index].attrSet('target', '_blank');
 	tokens[index].attrSet('rel', 'noopener noreferrer nofollow');
