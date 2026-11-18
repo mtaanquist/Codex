@@ -71,6 +71,13 @@ afterAll(async () => {
 });
 
 describe('findRunningAssistantJobs', () => {
+	it('lists a character arc as its own kind', async () => {
+		const characterId = '00000000-0000-4000-8000-000000000001';
+		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, { userId, universeId, characterId });
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs).toMatchObject([{ id, kind: 'arc', universeId, title: 'Hollow Coast' }]);
+	});
+
 	it('lists an enrichment pass under its universe', async () => {
 		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, { userId, universeId });
 		const jobs = await findRunningAssistantJobs(db, userId);

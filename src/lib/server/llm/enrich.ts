@@ -231,7 +231,7 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 	return out;
 }
 
-async function dbNow(db: Database): Promise<Date> {
+export async function dbNow(db: Database): Promise<Date> {
 	const { rows } = await db.execute<{ now: Date | string }>(sql`select now() as now`);
 	return new Date(rows[0].now);
 }

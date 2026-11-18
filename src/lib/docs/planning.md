@@ -32,6 +32,10 @@ Details are short facts about an entry, each with a label and a value: Status, A
 
 When you have set up the Assistant on your account page, an entry's page shows "Suggest details with the Assistant". Select it and the Assistant reads the scenes where the entry appears and proposes new aliases, quick details, and a summary if it has none. In a story's Plan it reads that story; in the universe's Plan it reads every story in the universe. Each suggestion shows with Accept and Reject buttons: accept adds it to the entry, reject discards it, and the Assistant will not suggest a rejected item again. To get suggestions for every entry in a universe at once, type `/enrich` in the Assistant tab. Nothing changes until you accept, and an accepted suggestion is recorded in History like any other edit, so you can roll it back.
 
+## Character arcs
+
+A character's page has an "Arc across the stories" section. Select "Write arc" and the Assistant reads every scene the character appears in, across all the stories in the universe, and writes a few sentences on what happens to them. It runs in the background and notifies you when it is done. When you later change a scene the character is in, the section says the arc may be out of date; select "Refresh arc" to rewrite it. The arc is kept apart from your own summary and description, and the Assistant uses it to keep track of the character when you chat or ask it for help.
+
 ## The Assistant panel
 
 When you have set up the Assistant on your account page, the right column of the plan gains an Assistant panel, next to Reference and History. It is a chat grounded in your world, so you can ask questions and work through ideas while you plan.

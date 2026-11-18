@@ -117,7 +117,8 @@ beforeEach(async () => {
 			name: 'Alice',
 			summaryMd: 'A brave knight.',
 			aliases: ['Al'],
-			details: [{ label: 'Eyes', value: 'green' }]
+			details: [{ label: 'Eyes', value: 'green' }],
+			arcSummaryMd: 'Alice rises from squire to queen.'
 		})
 		.returning({ id: characters.id });
 	await db.insert(characterStoryMemberships).values({ characterId: alice.id, storyId });
@@ -213,6 +214,7 @@ describe('assembleContext', () => {
 		expect(context!.text).toContain('green'); // a quick detail
 		expect(context!.text).toContain('Al'); // an alias
 		expect(context!.text).toContain('Wounded in the first chapter.'); // the per-story note
+		expect(context!.text).toContain('Across the stories: Alice rises from squire to queen.');
 		expect(context!.sources.entities.map((e) => e.name)).toContain('Alice');
 	});
 

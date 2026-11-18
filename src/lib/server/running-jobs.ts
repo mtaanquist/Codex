@@ -14,7 +14,7 @@ import {
 
 export type RunningAssistantJob = {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc';
 	mode: 'full' | 'continuity';
 	storyId: string | null;
 	chapterId: string | null;
@@ -28,6 +28,7 @@ type JobData = {
 	storyId?: string;
 	chapterId?: string;
 	universeId?: string;
+	characterId?: string;
 	mode?: 'full' | 'continuity';
 };
 
@@ -54,7 +55,9 @@ export async function findRunningAssistantJobs(
 			row.name === ASSISTANT_SUMMARIES_QUEUE
 				? ('summaries' as const)
 				: row.name === ASSISTANT_ENRICH_QUEUE
-					? ('enrich' as const)
+					? row.data.characterId
+						? ('arc' as const)
+						: ('enrich' as const)
 					: ('review' as const),
 		data: row.data
 	}));

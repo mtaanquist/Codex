@@ -4,6 +4,7 @@ import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse } from '../universe-scope.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
+import { dbNow } from './enrich.ts';
 
 // Character arc summaries: what happens to a character across the universe's
 // stories, cached on the character with a watermark (arc_summary_at) and
@@ -123,7 +124,8 @@ export async function summariseCharacterArc(
 		);
 	if (!character) return { outcome: 'missing' };
 
-	const startedAt = new Date();
+	// The database clock, which scene saves stamp updated_at with.
+	const startedAt = await dbNow(db);
 	const found = await arcScenes(db, character.id, character.universeId);
 	if (found.length === 0) return { outcome: 'empty' };
 
@@ -156,4 +158,27 @@ export async function summariseCharacterArc(
 		})
 		.where(eq(characters.id, character.id));
 	return { outcome: 'written' };
+}
+
+// The arc for a Plan page's selected entity: its stored text and whether it is
+// stale, for a character; null for anything else.
+export async function planArc(
+	db: Database,
+	resolved: {
+		kind: string;
+		entity: {
+			id: string;
+			universeId: string;
+			arcSummaryMd?: string | null;
+			arcSummaryAt?: Date | null;
+		};
+	} | null
+): Promise<{ summaryMd: string | null; stale: boolean } | null> {
+	if (resolved?.kind !== 'character') return null;
+	const { entity } = resolved;
+	const arcSummaryAt = entity.arcSummaryAt ?? null;
+	return {
+		summaryMd: entity.arcSummaryMd ?? null,
+		stale: await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt })
+	};
 }

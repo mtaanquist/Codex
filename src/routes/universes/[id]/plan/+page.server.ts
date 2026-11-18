@@ -28,6 +28,7 @@ import {
 } from '#lib/server/revisions';
 import { assistantLayout } from '#lib/server/llm/config';
 import { listPendingForEntity, type EntitySuggestion } from '#lib/server/entity-suggestions';
+import { planArc } from '#lib/server/llm/arc-summary';
 import { listChat } from '#lib/server/llm/chat-history';
 import { hasChatSummary } from '#lib/server/llm/chat-summary';
 import { listUniverseNotes } from '#lib/server/notes';
@@ -136,7 +137,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionRows,
 		revisionPreview,
 		storyBoard,
-		entitySuggestions
+		entitySuggestions,
+		arc
 	] = await Promise.all([
 		listRelationTypes(db, universe.id),
 		selected
@@ -158,7 +160,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		// Pending Assistant suggestions for the selected entity.
 		selected
 			? listPendingForEntity(db, locals.user!.id, selectedKind, selected.id)
-			: Promise.resolve([] as EntitySuggestion[])
+			: Promise.resolve([] as EntitySuggestion[]),
+		planArc(db, resolved)
 	]);
 
 	return {
@@ -178,6 +181,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		revisionRows,
 		revisionPreview,
 		entitySuggestions,
+		arc,
 		assistant,
 		assistantChat,
 		assistantChatSummarised

@@ -44,6 +44,7 @@ import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
 import { listChat } from '#lib/server/llm/chat-history';
 import { hasChatSummary } from '#lib/server/llm/chat-summary';
 import { listPendingForEntity, type EntitySuggestion } from '#lib/server/entity-suggestions';
+import { planArc } from '#lib/server/llm/arc-summary';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 import { formText } from '#lib/server/validation';
 
@@ -71,12 +72,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const entityId = url.searchParams.get('entity');
 	let selected = null;
 	let selectedKind: EntityKind = 'character';
+	let arc: Awaited<ReturnType<typeof planArc>> = null;
 	let storyNotesMd = '';
 	if (entityId && isUuid(entityId)) {
 		const resolved = await resolvePlanEntity(db, universe.id, entityId);
 		if (resolved) {
 			selected = resolved.entity;
 			selectedKind = resolved.kind;
+			arc = await planArc(db, resolved);
 			// The per-story "In this book" notes live in a table per kind.
 			let notes: { notesMd: string } | undefined;
 			if (resolved.kind === 'character') {
@@ -239,7 +242,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		assistant,
 		assistantChat,
 		assistantChatSummarised,
-		assistantSuggestions
+		assistantSuggestions,
+		arc
 	};
 };
 

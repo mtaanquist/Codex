@@ -18,7 +18,7 @@ export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
 	account_pending: 'New accounts awaiting approval',
 	assistant_review: 'Assistant reviews you asked for',
 	assistant_summaries: 'Assistant summaries you asked for',
-	assistant_enrich: 'Assistant entry suggestions you asked for',
+	assistant_enrich: 'Assistant entry suggestions and character arcs you asked for',
 	export_ready: 'Exports you asked for are ready'
 };
 

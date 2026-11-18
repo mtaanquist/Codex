@@ -18,6 +18,7 @@
 	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
 	import type { SaveStatus } from '#lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '#lib/format';
+	import { startArcJob } from '#lib/assistant-actions';
 
 	let {
 		kind,
@@ -34,6 +35,7 @@
 		universeRef,
 		assistantEnabled = false,
 		assistantSuggestions = [],
+		arc = null,
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -72,6 +74,9 @@
 		assistantEnabled?: boolean;
 		// Pending Assistant suggestions for this entity, awaiting accept or reject.
 		assistantSuggestions?: AssistantSuggestion[];
+		// A character's arc across the universe's stories, written by the
+		// Assistant, and whether a scene that mentions them changed since.
+		arc?: { summaryMd: string | null; stale: boolean } | null;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -177,6 +182,18 @@
 		}
 		if (decision === 'accept') applyLocally(s);
 		suggestions = suggestions.filter((p) => p.id !== s.id);
+	}
+
+	let writingArc = $state(false);
+	async function writeArc() {
+		if (writingArc || !universeRef) return;
+		writingArc = true;
+		try {
+			await startArcJob({ characterId: entity.id, universeId: universeRef, name });
+			await refreshAll();
+		} finally {
+			writingArc = false;
+		}
 	}
 
 	function suggestionLabel(s: AssistantSuggestion): string {
@@ -595,6 +612,28 @@
 		</button>
 	{/if}
 
+	{#if kind === 'character' && (assistantEnabled || arc?.summaryMd)}
+		<div class="section-label">Arc across the stories</div>
+		{#if arc?.summaryMd}
+			<p class="arc-text">{arc.summaryMd}</p>
+			{#if arc.stale}
+				<p class="field-hint">Scenes with this character have changed since this was written.</p>
+			{/if}
+		{:else}
+			<p class="field-hint">
+				The Assistant can write what happens to this character across your stories, from the scenes
+				they appear in.
+			</p>
+		{/if}
+		{#if assistantEnabled && universeRef}
+			<div class="assist-enrich">
+				<button class="btn btn-secondary" type="button" disabled={writingArc} onclick={writeArc}>
+					{writingArc ? 'Writing...' : arc?.summaryMd ? 'Refresh arc' : 'Write arc'}
+				</button>
+			</div>
+		{/if}
+	{/if}
+
 	{#if storyId}
 		<div class="section-label">In this book</div>
 		{#if membership}
@@ -630,6 +669,13 @@
 		gap: 10px;
 		flex-wrap: wrap;
 		margin: 12px 0 0;
+	}
+	.arc-text {
+		margin: 4px 0 0;
+		font-size: 13.5px;
+		line-height: 1.55;
+		color: var(--text);
+		white-space: pre-line;
 	}
 	.assist-note {
 		font-size: 12.5px;

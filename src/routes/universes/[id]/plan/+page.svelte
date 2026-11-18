@@ -172,6 +172,7 @@
 						universeRef={data.universe.slug}
 						assistantEnabled={data.assistant.surfacesEnabled}
 						assistantSuggestions={data.entitySuggestions}
+						arc={data.arc}
 						onStatus={(status) => (saveStatus = status)}
 					/>
 				{/key}

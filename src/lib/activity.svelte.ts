@@ -79,7 +79,7 @@ export type JobProgress = {
 
 export type TrackedJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc';
 	progress?: JobProgress;
 };
 
@@ -102,7 +102,7 @@ const SLOW_AFTER_MS = 5 * 60 * 1000;
 // follows is not tracked twice.
 export async function trackJob(opts: {
 	jobId: string | null;
-	kind: 'review' | 'summaries' | 'enrich';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc';
 	scope?: JobScope;
 	runningLabel: string;
 	doneLabel: string;
