@@ -5,6 +5,7 @@ import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { dbNow } from './enrich.ts';
+import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 
 // Character arc summaries: what happens to a character across the universe's
 // stories, cached on the character with a watermark (arc_summary_at) and
@@ -80,14 +81,14 @@ async function arcScenes(
 // changed after the arc was written. Deleting or restoring a scene or story,
 // and unmuting one, mark the arc directly (see markMentionsStale).
 // An arc never written is not stale (there is nothing to refresh, only to
-// write). A watermark at the start of time was set on purpose (a scene it read
+// write). A watermark before STALE_MARK_BEFORE was set on purpose (a scene it read
 // was deleted, or a story was unmuted) and always counts as stale.
 export async function arcIsStale(
 	db: Database,
 	character: { id: string; universeId: string; arcSummaryAt: Date | null }
 ): Promise<boolean> {
 	if (!character.arcSummaryAt) return false;
-	if (character.arcSummaryAt.getTime() === 0) return true;
+	if (character.arcSummaryAt < STALE_MARK_BEFORE) return true;
 	const [row] = await db
 		.select({ lastChanged: max(scenes.updatedAt) })
 		.from(entityMentions)

@@ -108,10 +108,16 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	return true;
 }
 
+/** A watermark before this is a mark set by markMentionsStale, not a time an
+ * arc was written or an entity read. */
+export const STALE_MARK_BEFORE = new Date('2000-01-01T00:00:00Z');
+
 /** Marks what these scenes (or this story's scenes) mention for a fresh look:
- * the characters' arcs show as out of date (their watermark moves to the start
- * of time), and with `enrich` the entities are read again on the next enrich
- * pass. Call it before mention rows are deleted, since it reads them. */
+ * the characters' arcs show as out of date, and with `enrich` the entities are
+ * read again on the next enrich pass. The mark is the clock fifty years back:
+ * older than any scene, and different each time, so a job that started from
+ * an earlier mark still sees a new one. Call it before mention rows are
+ * deleted, since it reads them. */
 export async function markMentionsStale(
 	tx: Database,
 	source: { sceneIds: string[] } | { storyId: string },
@@ -122,20 +128,21 @@ export async function markMentionsStale(
 		'sceneIds' in source
 			? sql`m.source_id in ${source.sceneIds}`
 			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
+	const mark = sql`clock_timestamp() - interval '50 years'`;
 	const mentioned = (type: string) =>
 		sql`(select m.target_id from entity_mentions m where m.source_type = 'scene' and m.target_type = ${type} and ${from})`;
 	await tx.execute(
-		sql`update characters set arc_summary_at = to_timestamp(0) where id in ${mentioned('character')}`
+		sql`update characters set arc_summary_at = ${mark} where id in ${mentioned('character')}`
 	);
 	if (!opts.enrich) return;
 	await tx.execute(
-		sql`update characters set assistant_enriched_at = to_timestamp(0) where id in ${mentioned('character')}`
+		sql`update characters set assistant_enriched_at = ${mark} where id in ${mentioned('character')}`
 	);
 	await tx.execute(
-		sql`update places set assistant_enriched_at = to_timestamp(0) where id in ${mentioned('place')}`
+		sql`update places set assistant_enriched_at = ${mark} where id in ${mentioned('place')}`
 	);
 	await tx.execute(
-		sql`update lore_entries set assistant_enriched_at = to_timestamp(0) where id in ${mentioned('lore_entry')}`
+		sql`update lore_entries set assistant_enriched_at = ${mark} where id in ${mentioned('lore_entry')}`
 	);
 }
 

@@ -16,7 +16,7 @@ import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
-import { trashScene } from '../../src/lib/server/scene-lifecycle';
+import { STALE_MARK_BEFORE, trashScene } from '../../src/lib/server/scene-lifecycle';
 import { mergeScenes } from '../../src/lib/server/scene-split-merge';
 import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
 
@@ -231,14 +231,34 @@ describe('summariseCharacterArc', () => {
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		// An unmute or a scene delete lands while the model writes the new arc.
 		duringCall = async () => {
-			await pool.query(`update characters set arc_summary_at = to_timestamp(0) where id = $1`, [
-				bram.id
-			]);
+			await pool.query(
+				`update characters set arc_summary_at = now() - interval '50 years' where id = $1`,
+				[bram.id]
+			);
 		};
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
-		expect(after.arcSummaryAt?.getTime()).toBe(0);
+		expect(after.arcSummaryAt! < STALE_MARK_BEFORE).toBe(true);
 		expect(await arcIsStale(db, after)).toBe(true);
+	});
+
+	it('keeps a second mark that lands while an out-of-date arc is refreshed', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneMentioning(firstStoryId, bram.id, {
+			position: 1,
+			snippet: 'Bram at the quay'
+		});
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await trashStory(db, ownerId, secondStoryId);
+		// Refreshing the marked arc; the story comes back while the model writes.
+		duringCall = async () => {
+			await restoreStory(db, ownerId, secondStoryId);
+		};
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, after)).toBe(true);
+		expect(sceneId).toBeTruthy();
 	});
 
 	it('asks nothing for a character no scene mentions', async () => {
@@ -332,7 +352,7 @@ describe('arc staleness', () => {
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		const result = await mergeScenes(db, ownerId, firstStoryId, [target.id, merged]);
 		expect(result.ok).toBe(true);
-		expect((await readArc(bram.id)).arcSummaryAt?.getTime()).toBe(0);
+		expect((await readArc(bram.id)).arcSummaryAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 
 	it('goes stale when a story it read is deleted, and again when it is restored', async () => {
@@ -350,7 +370,7 @@ describe('arc staleness', () => {
 		expect(await restoreStory(db, ownerId, secondStoryId)).toBe(true);
 		const [restored] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(await arcIsStale(db, restored)).toBe(true);
-		expect(restored.assistantEnrichedAt?.getTime()).toBe(0);
+		expect(restored.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 });
 
@@ -411,6 +431,6 @@ describe('muting and unmuting a story', () => {
 		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(after.arcSummaryMd).toBe(before.arcSummaryMd);
 		expect(await arcIsStale(db, after)).toBe(true);
-		expect(after.assistantEnrichedAt?.getTime()).toBe(0);
+		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 });
