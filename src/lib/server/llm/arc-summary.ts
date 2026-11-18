@@ -160,6 +160,11 @@ export async function summariseCharacterArc(
 		},
 		deps
 	);
+	if (result.cutOff) {
+		throw new Error(
+			'The arc was cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
+		);
+	}
 	const text = result.content.trim();
 	if (!text) throw new Error('The Assistant returned an empty arc.');
 

@@ -199,6 +199,21 @@ async function respondWithRetry(
 	}
 }
 
+// The reply cap when the writer set none: the surface's own, or the role's
+// default. Thinking counts toward the cap, so when the role may think a
+// surface's small cap is raised to the thinking default; the prompt still
+// keeps the text itself short.
+export function surfaceMaxTokens(
+	role: AssistantRole,
+	requested: number | undefined,
+	thinks: boolean,
+	contextWindow?: number
+): number {
+	const fallback = defaultMaxTokens(role, thinks, contextWindow);
+	if (requested === undefined) return fallback;
+	return thinks ? Math.max(requested, fallback) : requested;
+}
+
 type Prepared = {
 	conn: Connection;
 	model: string;
@@ -367,9 +382,9 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		// to know, and the surfaces cannot.
 		maxTokens:
 			roleMaxTokens(resolved.config, req.role) ??
-			req.maxTokens ??
-			defaultMaxTokens(
+			surfaceMaxTokens(
 				req.role,
+				req.maxTokens,
 				roleMayThink(
 					adapterKind(resolved.config.provider) === 'anthropic',
 					resolved.config.tuning[req.role]
@@ -599,6 +614,10 @@ export type CompletionResult = {
 	// usage is absent when the endpoint reported no counts.
 	model: string;
 	usage?: TokenUsage;
+	// Set when the reply stopped at the token cap, so its text is incomplete.
+	// Only the plain path reports it; the agent loop retries a cut-off round
+	// and throws if it is cut off again.
+	cutOff?: boolean;
 };
 
 export async function complete(
@@ -636,5 +655,11 @@ export async function completeDetailed(
 		webSearch: prepared.webSearch
 	});
 	await recordUsage(db, prepared, req, prepared.messages, response.usage);
-	return { content: response.content, notes: 0, usage: response.usage, model: prepared.model };
+	return {
+		content: response.content,
+		notes: 0,
+		usage: response.usage,
+		model: prepared.model,
+		cutOff: response.finishReason === 'length'
+	};
 }

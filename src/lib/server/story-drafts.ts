@@ -31,6 +31,7 @@ import {
 	DRAFT_NOTE_MAX,
 	compareDrafts,
 	draftOutline,
+	matchScenes,
 	type DraftContent,
 	type DraftEntity,
 	type DraftEntityType
@@ -517,25 +518,25 @@ export async function restoreDraftScene(
 			.where(and(eq(scenes.id, sceneId), eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 			.for('update');
 		if (live) return await restoreOnto(live);
-		// Added back once already: the copy has a new id and remembers the
-		// saved scene it came from. Restoring puts the saved text on that copy.
-		// The lock keeps a double submit from making two copies.
+		// Added back already: the copy has a new id and remembers the saved
+		// scene it came from (or the first one in a chain of add-backs). The
+		// copy is found the same way the draft page pairs scenes, so restoring
+		// lands on the scene the page showed as changed. The lock keeps a double
+		// submit from making two copies.
 		await tx.execute(
 			sql`select pg_advisory_xact_lock(hashtext(${`draft-restore:${storyId}:${sceneId}`}))`
 		);
-		const [copy] = await tx
-			.select({ id: scenes.id, bodyMd: scenes.bodyMd })
-			.from(scenes)
-			.where(
-				and(
-					eq(scenes.storyId, storyId),
-					isNull(scenes.deletedAt),
-					sql`${scenes.metadata} ->> ${FROM_DRAFT_SCENE} = ${sceneId}`
-				)
-			)
-			.limit(1)
-			.for('update');
-		if (copy) return await restoreOnto(copy);
+		const { scenes: liveScenes } = await workingOutline(tx, storyId);
+		const pairs = matchScenes(draft.content.scenes, liveScenes);
+		const pairedId = liveScenes.find((scene) => pairs.get(scene.id) === sceneId)?.id;
+		if (pairedId) {
+			const [copy] = await tx
+				.select({ id: scenes.id, bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(and(eq(scenes.id, pairedId), isNull(scenes.deletedAt)))
+				.for('update');
+			if (copy) return await restoreOnto(copy);
+		}
 		const [chapter] = saved.chapterId
 			? await tx
 					.select({ id: chapters.id })
