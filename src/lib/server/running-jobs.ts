@@ -1,7 +1,11 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { chapters, stories, universes } from './db/schema.ts';
-import { ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE } from './queues.ts';
+import {
+	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_REVIEW_QUEUE,
+	ASSISTANT_SUMMARIES_QUEUE
+} from './queues.ts';
 
 // The writer's Assistant jobs that have not settled yet, so a page that loads
 // mid-run can pick them up again: the activity center resumes their cards and
@@ -10,7 +14,7 @@ import { ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE } from './queues.ts';
 
 export type RunningAssistantJob = {
 	id: string;
-	kind: 'review' | 'summaries';
+	kind: 'review' | 'summaries' | 'enrich';
 	mode: 'full' | 'continuity';
 	storyId: string | null;
 	chapterId: string | null;
@@ -38,7 +42,7 @@ export async function findRunningAssistantJobs(
 ): Promise<RunningAssistantJob[]> {
 	const { rows } = await db.execute<{ id: string; name: string; data: JobData }>(sql`
 		select id, name, data from pgboss.job
-		where name in (${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE})
+		where name in (${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE}, ${ASSISTANT_ENRICH_QUEUE})
 			and state in ('created', 'retry', 'active')
 			and data @> ${JSON.stringify({ userId })}::jsonb
 		order by created_on
@@ -46,8 +50,12 @@ export async function findRunningAssistantJobs(
 	`);
 	const found = rows.map((row) => ({
 		id: row.id,
-		kind: (row.name === ASSISTANT_SUMMARIES_QUEUE ? 'summaries' : 'review') as
-			'review' | 'summaries',
+		kind:
+			row.name === ASSISTANT_SUMMARIES_QUEUE
+				? ('summaries' as const)
+				: row.name === ASSISTANT_ENRICH_QUEUE
+					? ('enrich' as const)
+					: ('review' as const),
 		data: row.data
 	}));
 	if (found.length === 0) return [];

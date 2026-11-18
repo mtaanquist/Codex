@@ -1024,13 +1024,16 @@ calls the gateway, which proxies through the egress guard.
 
 ### Background jobs - sequencing steps 4 and 7
 
-- [built] pg-boss queues `assistant-review` and `assistant-summaries` (names in
+- [built] pg-boss queues `assistant-review`, `assistant-summaries`, and
+  `assistant-enrich` (names in
   `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
   registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
   helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
   than a queue, for one entity from a story (story Plan) or across its
-  universe (universe Plan).
+  universe (universe Plan); the `assistant-enrich` job runs the same call over
+  every entity in a universe with new prose since its `assistant_enriched_at`
+  watermark (`/enrich`).
 
 ### Tool use and structural actions - sequencing step 6
 

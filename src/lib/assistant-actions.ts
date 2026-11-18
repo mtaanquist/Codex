@@ -183,14 +183,38 @@ export async function startSummariesJob(storyId: string): Promise<void> {
 	});
 }
 
+// Kicks off the background enrichment pass over a universe's entries (the story
+// focus runs over its universe) and tracks it in the activity center; the writer
+// is also notified when it ends.
+export async function startEnrichJob(
+	scope: { storyId: string } | { universeId: string },
+	label: string
+): Promise<void> {
+	await launchJob({
+		url: '/api/assistant/enrich-job',
+		payload: scope,
+		kind: 'enrich',
+		failLabel: `Could not suggest details for ${label}`,
+		startFallback: 'Could not start the pass.',
+		track: { ...jobLabels('enrich', 'full', label), scope }
+	});
+}
+
 // The activity card's three labels for a job. label names what the job is over
 // ("your story", or a quoted title for a job picked up after a reload); a
 // summary pass started from the panel needs none.
 function jobLabels(
-	kind: 'review' | 'summaries',
+	kind: 'review' | 'summaries' | 'enrich',
 	mode: 'full' | 'continuity',
 	label?: string
 ): { runningLabel: string; doneLabel: string; failedLabel: string } {
+	if (kind === 'enrich') {
+		return {
+			runningLabel: `Suggesting details for the entries in ${label}...`,
+			doneLabel: `Suggestions for the entries in ${label} ready`,
+			failedLabel: `Could not suggest details for ${label}`
+		};
+	}
 	if (kind === 'summaries') {
 		const of = label ? ` for ${label}` : '';
 		return {
@@ -216,7 +240,7 @@ function jobLabels(
 // A job the server still has queued or running (GET /api/assistant/jobs).
 export type RunningJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries';
+	kind: 'review' | 'summaries' | 'enrich';
 	mode: 'full' | 'continuity';
 	title: string;
 };

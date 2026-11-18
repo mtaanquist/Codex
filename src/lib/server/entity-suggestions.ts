@@ -1,18 +1,17 @@
 import { and, asc, eq } from 'drizzle-orm';
-import type { ActionFailure } from './action-result';
-import type { Database } from './auth';
-import { entitySuggestions } from './db/schema';
-import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups';
-import { recordEntityRevision } from './revisions';
-import { queueUniverseMentions } from './jobs';
+import type { ActionFailure } from './action-result.ts';
+import type { Database } from './auth.ts';
+import { entitySuggestions } from './db/schema.ts';
+import { entityAliasColumn, entityTable, ownedLiveEntity } from './entity-lookups.ts';
+import { recordEntityRevision } from './revisions.ts';
 import { MAX_DETAILS, type EntityDetail } from '#lib/entity-snapshot';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 
 // The Assistant's staged enrichments for an entity: a new alias, a quick detail,
 // or a drafted summary. Nothing here touches an entity until the writer accepts;
 // accepting applies the one field and records a 'suggestion' revision, so the
-// change shows in History and can be rolled back like any edit. This module runs
-// in the app (it queues a mention reindex on an accepted alias), never the worker.
+// change shows in History and can be rolled back like any edit. The app and the
+// worker (the background enrichment pass) both use it.
 
 export type { EntityKind };
 export type SuggestionField = 'alias' | 'detail' | 'summary';
@@ -168,13 +167,15 @@ export async function stageEntitySuggestions(
 
 // Accept or reject one suggestion, owner-scoped. Accepting applies the single
 // field to the entity and records a 'suggestion' revision; an accepted alias
-// requeues the universe mention index (a new alias can match more prose).
+// names the universe whose mention index the caller should requeue (a new alias
+// can match more prose). The queueing is left to the caller so this module stays
+// importable by the worker, which cannot load jobs.ts.
 export async function decideEntitySuggestion(
 	db: Database,
 	ownerId: string,
 	id: string,
 	decision: 'accept' | 'reject'
-): Promise<{ ok: true } | ActionFailure> {
+): Promise<{ ok: true; reindexUniverseId?: string } | ActionFailure> {
 	const [s] = await db
 		.select()
 		.from(entitySuggestions)
@@ -214,7 +215,7 @@ export async function decideEntitySuggestion(
 		return { ok: false, code: 'conflict', reason: 'That suggestion could not be applied.' };
 	}
 
-	if (s.field === 'alias' && universeId) await queueUniverseMentions(universeId);
+	if (s.field === 'alias' && universeId) return { ok: true, reindexUniverseId: universeId };
 	return { ok: true };
 }
 
