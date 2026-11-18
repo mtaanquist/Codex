@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
@@ -435,6 +435,27 @@ describe('restoreDraftScene', () => {
 		const draft = await getDraft(db, storyId, first);
 		const result = compareDrafts(draft!.content, await workingOutline(db, storyId));
 		expect(result.counts).toEqual({ same: 2, changed: 0, added: 0, removed: 0 });
+	});
+
+	it('restores onto a scene added back twice instead of making another copy', async () => {
+		const first = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const once = await restoreDraftScene(db, storyId, first, sceneId);
+		if (!once.ok) throw new Error('expected a restore');
+		const second = await save('Second draft');
+		await db.delete(scenes).where(eq(scenes.id, once.sceneId));
+		const twice = await restoreDraftScene(db, storyId, second, once.sceneId);
+		if (!twice.ok) throw new Error('expected a restore');
+		await db.update(scenes).set({ bodyMd: 'Rewritten since.' }).where(eq(scenes.id, twice.sceneId));
+		const result = await restoreDraftScene(db, storyId, first, sceneId);
+		expect(result).toEqual({ ok: true, sceneId: twice.sceneId, created: false });
+		const live = await db
+			.select()
+			.from(scenes)
+			.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
+		expect(live.filter((row) => row.bodyMd === 'Halden left at dawn.')).toHaveLength(1);
+		expect(live.some((row) => row.bodyMd === 'Rewritten since.')).toBe(false);
 	});
 
 	it('refuses a scene that is not in the draft', async () => {
