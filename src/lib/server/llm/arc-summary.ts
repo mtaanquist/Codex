@@ -77,8 +77,9 @@ async function arcScenes(
 }
 
 // Whether a cached arc is out of date: a scene that mentions the character
-// changed after the arc was written. An arc never written is not stale (there
-// is nothing to refresh, only to write).
+// changed after the arc was written, or was deleted since (or its story was).
+// An arc never written is not stale (there is nothing to refresh, only to
+// write).
 export async function arcIsStale(
 	db: Database,
 	character: { id: string; universeId: string; arcSummaryAt: Date | null }
@@ -101,7 +102,26 @@ export async function arcIsStale(
 			)
 		);
 	const lastChanged = row?.lastChanged ? new Date(row.lastChanged) : null;
-	return !!lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime();
+	if (lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime()) return true;
+	const [gone] = await db
+		.select({
+			lastDeleted: sql<
+				Date | string | null
+			>`max(greatest(${scenes.deletedAt}, ${stories.deletedAt}))`
+		})
+		.from(entityMentions)
+		.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
+		.innerJoin(stories, eq(stories.id, scenes.storyId))
+		.where(
+			and(
+				eq(entityMentions.sourceType, 'scene'),
+				eq(entityMentions.targetType, 'character'),
+				eq(entityMentions.targetId, character.id),
+				eq(stories.universeId, character.universeId)
+			)
+		);
+	const lastDeleted = gone?.lastDeleted ? new Date(gone.lastDeleted) : null;
+	return !!lastDeleted && lastDeleted.getTime() > character.arcSummaryAt.getTime();
 }
 
 export type ArcResult = {
