@@ -1431,6 +1431,19 @@ own PR and version.
 Still open in Phase 9: whole-universe background enrichment
 (`assistant-enrich`) and character arc summaries.
 
+Lookups per reply (2026-11-18, #990, PR #993): a universe chat question about
+chapter lengths answered from part of a chapter because the per-reply tool-call
+limit was a fixed 8 with no setting and no notice. The limit became an Account
+field (default 20). It moved to a new stored key, `toolCallLimit`, written only
+when the writer changes the box: the old `toolCallBudget` key had been written
+on every save, so it only held the old default and could not tell a choice
+from a default; a data migration was avoided because staging carries its own
+migrations. Cut-short replies now carry a `stopped` frame and meta note. Review
+found that hitting the limit exactly flagged every such reply as cut short, so
+the loop now concludes only once the model asks for a call past the limit (at
+the cost of one extra round in that case). Considered and left: a batched
+`get_scene`, and dropping the minimal profile's halving (documented instead).
+
 - [x] Step 1 - gateway plumbing (server-only, no surfaces). The
       `$lib/server/llm/` module: `config.ts` (account/story `llm_config`
       read/merge/decrypt + the pure `assistantGate` and save helpers, reusing

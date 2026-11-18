@@ -421,9 +421,9 @@ type AgentResult = {
 
 // The agent loop: ask the model, run any tool calls it requests (read tools
 // fetch, write tools stage), feed the results back, and repeat until it answers
-// or the tool-call budget is spent. Once the budget is reached, one concluding
-// round runs with tool calls forbidden, so the model must answer; that bounds
-// the loop. The same happens when the conversation nears the model's context
+// or the tool-call budget is spent. Once the model asks for a call past the
+// budget, one concluding round runs with tool calls forbidden, so the model must
+// answer; that bounds the loop. The same happens when the conversation nears the model's context
 // window, since every tool result appended to it brings the whole run closer to
 // overflowing.
 async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise<AgentResult> {
@@ -438,6 +438,11 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		: undefined;
 	let estimated = conversationTokens(messages);
 	let calls = 0;
+	// Set once the model asked for a call past the budget. Reaching the budget
+	// exactly is not enough: the next round still offers the tools, so a model
+	// that had read all it needed answers there without a false cut-short note.
+	// A budget of zero allows no call at all, so it concludes from the start.
+	let overBudget = p.toolBudget <= 0;
 	let notes = 0;
 	let usage: TokenUsage | undefined;
 	let stopped: AgentResult['stopped'];
@@ -452,7 +457,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		// and tool_result turns is only valid alongside the definitions that
 		// produced them, and dropping them would also break the cached prefix -
 		// and tool_choice none is what actually forbids another call.
-		const concluding = Boolean(p.tools) && (calls >= p.toolBudget || outOfContext);
+		const concluding = Boolean(p.tools) && (overBudget || outOfContext);
 		if (concluding && !stopped) {
 			stopped = outOfContext ? 'context' : 'budget';
 			if (outOfContext) {
@@ -515,6 +520,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		});
 		for (const call of response.toolCalls) {
 			calls += 1;
+			if (calls > p.toolBudget) overBudget = true;
 			const outcome: ToolOutcome =
 				calls > p.toolBudget
 					? { result: 'Tool-call budget reached; answer with what you have.', staged: false }

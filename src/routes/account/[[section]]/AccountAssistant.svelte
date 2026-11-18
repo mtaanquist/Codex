@@ -608,11 +608,13 @@
 						step="1"
 						value={data.assistant.toolCallBudget}
 					/>
+					<input type="hidden" name="toolCallLimitShown" value={data.assistant.toolCallBudget} />
 					<p class="field-hint">
-						How many times the assistant may look something up (read a scene, find a character,
-						search your work) before it has to answer. A question about a whole chapter needs one
-						lookup per scene. Raise it if answers say they ran out of room to read; lower it if your
-						endpoint charges per request.
+						How many times the Assistant may look something up (read a scene, check a character,
+						search your work) before it has to answer. This also applies to reviews. A question
+						about a whole chapter needs one lookup per scene. Raise it if replies say they ran out
+						of lookups; lower it if your endpoint charges per request. With Fewer tools, the
+						Assistant gets half this number.
 					</p>
 				</div>
 				<div class="field">

@@ -274,10 +274,15 @@ async function saveEndpointForm(userId: string, data: FormData) {
 		if (!Number.isFinite(value) || value < 0) return 'invalid';
 		return value > 0 ? value : null;
 	};
-	// A whole number from 1 up to the instance maximum; an empty box keeps the
-	// stored limit, since the field is always shown filled in.
+	// A whole number from 1 up to the instance maximum. The box is always shown
+	// filled in and rides every save of this form, so it is only written when it
+	// differs from the value the page loaded with; otherwise an account that
+	// never chose a limit would have the default pinned by an unrelated save.
 	const limitRaw = formText(data, 'toolCallLimit').trim();
-	const toolCallBudget = limitRaw ? Number(limitRaw) : undefined;
+	const toolCallBudget =
+		limitRaw && limitRaw !== formText(data, 'toolCallLimitShown').trim()
+			? Number(limitRaw)
+			: undefined;
 	if (
 		toolCallBudget !== undefined &&
 		(!Number.isInteger(toolCallBudget) || toolCallBudget < 1 || toolCallBudget > MAX_TOOL_BUDGET)

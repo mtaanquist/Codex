@@ -935,12 +935,12 @@ describe('gateway tool loop', () => {
 			{ provider: alwaysTool, http: noHttp }
 		);
 		expect(text).toBe('forced answer');
-		// Two tool rounds (budget) plus the concluding answer.
-		expect(calls).toBe(3);
+		// Two tool rounds (budget), one that asks past it, then the concluding answer.
+		expect(calls).toBe(4);
 		// The tools are declared on every round, the history depends on them; only
 		// the choice changes on the last one.
 		expect(toolCounts.every((count) => count > 0)).toBe(true);
-		expect(choices).toEqual([undefined, undefined, 'none']);
+		expect(choices).toEqual([undefined, undefined, undefined, 'none']);
 	});
 
 	it('tells the stream when the tool-call limit cut a reply short', async () => {
@@ -987,6 +987,52 @@ describe('gateway tool loop', () => {
 		// The note comes before the terminator, so the route persists it with the reply.
 		const stoppedAt = events.findIndex((e) => e.type === 'stopped');
 		expect(stoppedAt).toBeLessThan(events.findIndex((e) => e.type === 'done'));
+	});
+
+	it('sends no stopped frame when the model uses exactly the budget, then answers', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'm' },
+			toolCallBudget: 1
+		});
+		const { storyId, sceneId } = await seedStoryScene('Body.');
+		const turns = [
+			{
+				content: '',
+				toolCalls: [{ id: 'c1', name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+			},
+			{ content: 'all read', toolCalls: [] }
+		];
+		const exact: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				return turns.shift() ?? { content: '', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'go' }]
+				},
+				{ provider: exact, http: noHttp }
+			)
+		);
+		expect(events).toContainEqual({ type: 'token', text: 'all read' });
+		expect(events.some((e) => e.type === 'stopped')).toBe(false);
 	});
 
 	it('sends no stopped frame when the model finishes on its own', async () => {
@@ -1076,15 +1122,16 @@ describe('gateway tool loop', () => {
 			{ provider: defiant, http: noHttp }
 		);
 
-		expect(calls).toBe(2);
+		expect(calls).toBe(3);
 		expect(result.content).toBe('concluded');
 		expect(result.stopped).toBe('budget');
 		expect(requests[0]).toMatchObject({ choice: undefined });
-		expect(requests[1]).toMatchObject({ choice: 'none' });
+		expect(requests[1]).toMatchObject({ choice: undefined });
+		expect(requests[2]).toMatchObject({ choice: 'none' });
 		expect(requests[0].tools).toBeGreaterThan(0);
-		expect(requests[1].tools).toBe(requests[0].tools);
-		// One edit staged by the budgeted round; the concluding round's call was
-		// ignored rather than dispatched.
+		expect(requests[2].tools).toBe(requests[0].tools);
+		// One edit staged by the budgeted round; the call past the budget was
+		// refused and the concluding round's call ignored, neither dispatched.
 		const staged = await db
 			.select({ id: reviewSuggestions.id })
 			.from(reviewSuggestions)
@@ -1139,8 +1186,9 @@ describe('gateway tool loop', () => {
 		);
 		expect(seenTools[0]).toEqual(['get_scene', 'suggest_edit', 'leave_comment']);
 		expect(text).toBe('forced answer');
-		// Budget 8 halved to 4: four tool rounds plus the concluding answer.
-		expect(calls).toBe(5);
+		// Budget 8 halved to 4: four tool rounds, one that asks past the budget,
+		// then the concluding answer.
+		expect(calls).toBe(6);
 	});
 
 	it('a surface naming its own tools is unaffected by the minimal profile', async () => {
@@ -1687,13 +1735,13 @@ describe('gateway context guard', () => {
 		);
 		expect(result.content).toBe('wrapping up');
 		expect(result.stopped).toBe('budget');
-		// Three tool rounds (the budget) plus the concluding answer, with no
-		// context nudge among them.
-		expect(script.offered).toHaveLength(4);
-		expect(script.offered[2].length).toBeGreaterThan(0);
-		expect(script.offered[3]).toEqual(script.offered[0]);
-		expect(script.choices).toEqual([undefined, undefined, undefined, 'none']);
-		expect(script.seen[3].some((m) => m.content.includes('context window is nearly full'))).toBe(
+		// Three tool rounds (the budget), one that asks past it, then the
+		// concluding answer, with no context nudge among them.
+		expect(script.offered).toHaveLength(5);
+		expect(script.offered[3].length).toBeGreaterThan(0);
+		expect(script.offered[4]).toEqual(script.offered[0]);
+		expect(script.choices).toEqual([undefined, undefined, undefined, undefined, 'none']);
+		expect(script.seen[4].some((m) => m.content.includes('context window is nearly full'))).toBe(
 			false
 		);
 	});
