@@ -171,9 +171,10 @@ export async function summariseStory(
 			const stored = await db.transaction(async (tx) => {
 				// Raw SQL so updated_at's $onUpdate does not fire. A scene edited, or
 				// given a summary, since it was read keeps what it has; the next run
-				// looks at it again.
+				// looks at it again. The stamp comes from the app clock, the one that
+				// sets updated_at, since the two are compared.
 				const { rows } = await tx.execute(sql`
-					update scenes set summary_md = ${text}, summary_generated_at = now()
+					update scenes set summary_md = ${text}, summary_generated_at = ${new Date()}
 					where id = ${scene.id}
 						and updated_at = ${scene.updatedAtText}::timestamptz
 						and summary_md is not distinct from ${scene.summaryMd}
@@ -271,7 +272,7 @@ export async function summariseStory(
 			if (!text) continue;
 			// As for scenes: only over the chapter as it was read.
 			const { rows } = await db.execute(sql`
-				update chapters set summary_md = ${text}, summary_generated_at = now()
+				update chapters set summary_md = ${text}, summary_generated_at = ${new Date()}
 				where id = ${chapter.id}
 					and updated_at = ${chapter.updatedAtText}::timestamptz
 					and summary_md is not distinct from ${chapter.summaryMd}

@@ -1468,7 +1468,10 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       streamed no text; otherwise the streamed characters are the estimate.
       Mid-stream timeout_error and rate_limit_error are retried as 504 and
       429, as their HTTP statuses were before the buffered path streamed.
-      The round's low findings went to #1123-#1125.
+      Summary stamps are written from the app clock again, the clock that
+      sets updated_at, since the two are compared (#1120; the database's
+      now() had made a same-millisecond edit read as summarised, which CI
+      caught). The round's low findings went to #1123-#1125.
 
 - [x] Staging review round 7 (#1118, 2026-11-18). Web search results are
       billed as input but only message_delta's running totals report them,
