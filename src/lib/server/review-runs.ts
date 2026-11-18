@@ -153,7 +153,9 @@ function carryForward(state: ReviewRunState, scope: string): ReviewRunState {
 		reviewed: state.reviewed,
 		failed: state.failed,
 		notes: state.notes,
-		failures: state.failures,
+		// Scene failures only: the earlier run's own messages (a cap it hit, a
+		// price it lacked) say nothing about this one.
+		failures: state.failures.filter((failure) => failure.sceneId),
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
 		capped: false,
 		spentUsd: 0,
