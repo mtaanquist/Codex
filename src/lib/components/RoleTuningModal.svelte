@@ -7,7 +7,9 @@
 		MAX_TEMPERATURE,
 		TEMPERATURE_STEP,
 		defaultMaxTokens,
+		roleMayThink,
 		type AssistantRole,
+		type EffortLevel,
 		type RoleTuning
 	} from '#lib/assistant-tuning';
 
@@ -52,11 +54,18 @@
 	let temperature = $state<number | null>(saved.temperature ?? null);
 	// svelte-ignore state_referenced_locally
 	let maxTokens = $state<number | null>(saved.maxTokens ?? null);
+	// Held so the default reply length below follows them: thinking needs room.
+	// svelte-ignore state_referenced_locally
+	let thinking = $state(saved.thinking);
+	// svelte-ignore state_referenced_locally
+	let effort = $state(saved.effort);
 
 	// Where a slider starts when you take the value off its default. Temperature
 	// begins at the midpoint, which is also what most endpoints use.
 	const TEMPERATURE_START = 1;
-	const codexMaxTokens = $derived(defaultMaxTokens(role.id));
+	const codexMaxTokens = $derived(
+		defaultMaxTokens(role.id, roleMayThink(anthropic, { thinking, effort }))
+	);
 	// Arrow keys and drags land on round numbers; the box beside them still
 	// takes any figure you type.
 	const MAX_TOKENS_STEP = 128;
@@ -135,6 +144,10 @@
 					class="select"
 					name="{role.id}-thinking"
 					value={saved.thinking === true ? 'on' : saved.thinking === false ? 'off' : ''}
+					onchange={(event) => {
+						const value = event.currentTarget.value;
+						thinking = value === 'on' ? true : value === 'off' ? false : undefined;
+					}}
 				>
 					<option value="">Endpoint default</option>
 					<option value="on">On</option>
@@ -154,6 +167,8 @@
 						class="select"
 						name="{role.id}-effort"
 						value={saved.effort ?? ''}
+						onchange={(event) =>
+							(effort = (event.currentTarget.value || undefined) as EffortLevel | undefined)}
 					>
 						<option value="">Endpoint default</option>
 						{#each EFFORT_LEVELS as level (level)}

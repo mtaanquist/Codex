@@ -55,9 +55,21 @@ const DEFAULT_MAX_TOKENS = 2048;
 // A review round emits several tool calls at once, each quoting the passage it
 // edits, so it needs more room than a chat turn before it runs into the cap.
 const REVIEWER_MAX_TOKENS = 4096;
+// Thinking counts toward the reply length, and at high effort it can spend a
+// few thousand tokens before the answer starts, so a role that may think gets
+// far more room.
+const THINKING_MAX_TOKENS = 16_384;
 
-export function defaultMaxTokens(role: AssistantRole): number {
-	return role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
+// Whether a role's requests may think: Claude models think on their own unless
+// told otherwise (Off on the Claude provider changes nothing), and elsewhere
+// only when Thinking is On. Setting an effort level implies it too.
+export function roleMayThink(anthropic: boolean, tuning: RoleTuning | undefined): boolean {
+	return anthropic || tuning?.thinking === true || tuning?.effort !== undefined;
+}
+
+export function defaultMaxTokens(role: AssistantRole, thinks = false): number {
+	const base = role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
+	return thinks ? Math.max(base, THINKING_MAX_TOKENS) : base;
 }
 
 // The model a role runs on: its own, else the chat model, else the provider's

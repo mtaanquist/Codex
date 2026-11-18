@@ -140,6 +140,10 @@ contacts a model on its own.
   answers get cut off mid-sentence, or lower it to keep a model brief. The slider
   stops at the model's context window where that is known. Tick "Use the Codex
   default" to go back to the length Codex asks for, which suits most setups.
+  Thinking counts toward this length, so the default is much larger for a role
+  that may think: any role on the Claude provider, or one with Thinking on or
+  an effort set. If a review fails because a reply was cut off, raise the
+  Reviewer's Longest reply or lower its effort.
 - **Let the assistant search the web (Claude only)**: off unless you turn it on.
   With it on, Claude may look things up when it reviews your work or answers you
   in the side panel, and only in a universe you have marked as an established

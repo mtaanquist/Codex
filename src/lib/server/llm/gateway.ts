@@ -1,6 +1,6 @@
 import type { Database } from '../auth.ts';
 import { logEvent } from '../log.ts';
-import { defaultMaxTokens } from '../../assistant-tuning.ts';
+import { defaultMaxTokens, roleMayThink } from '../../assistant-tuning.ts';
 import {
 	modelContextWindow,
 	pickModel,
@@ -359,7 +359,15 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		// local model that answers in 300 tokens or one that needs 8000 is theirs
 		// to know, and the surfaces cannot.
 		maxTokens:
-			roleMaxTokens(resolved.config, req.role) ?? req.maxTokens ?? defaultMaxTokens(req.role),
+			roleMaxTokens(resolved.config, req.role) ??
+			req.maxTokens ??
+			defaultMaxTokens(
+				req.role,
+				roleMayThink(
+					adapterKind(resolved.config.provider) === 'anthropic',
+					resolved.config.tuning[req.role]
+				)
+			),
 		contextWindow,
 		sleep: deps.sleep ?? realSleep
 	};
@@ -480,7 +488,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			response = await round(retryTokens);
 			if (response.finishReason === 'length') {
 				throw new Error(
-					`The model's reply was cut off at the ${retryTokens} token limit, twice in a row. Nothing was applied. Try a shorter passage, or a model that answers more briefly.`
+					`The model's reply was cut off at the ${retryTokens} token limit, twice in a row. Nothing was applied. Raise the role's Longest reply in its Tune window under Account, Assistant.`
 				);
 			}
 		}
