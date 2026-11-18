@@ -220,6 +220,8 @@ export async function duplicateScene(
 				charactersPresent: scene.charactersPresent,
 				status: scene.status,
 				summaryMd: scene.summaryMd,
+				// Whether the Assistant wrote the summary travels with it.
+				summaryGeneratedAt: scene.summaryGeneratedAt,
 				wordCount: wordCount(scene.bodyMd),
 				metadata: scene.metadata
 			})

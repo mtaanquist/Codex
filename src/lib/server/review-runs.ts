@@ -78,6 +78,11 @@ export async function loadReviewRun(
 // the same story must really review every scene again, even when an older
 // capped run is still on record.
 //
+// A continuation of a capped run saves its own row (not capped) as soon as it
+// starts, so it becomes the newest. If it then never finished (it threw, which
+// completes its job with the row part-way, or it was cancelled), its row holds
+// the capped run's scenes plus its own, and that is what is carried forward.
+//
 // The counts come across, but not the ceiling: each run gets the whole budget
 // again, which is what "run the review again to continue" promises.
 //
@@ -100,10 +105,10 @@ export async function adoptCappedRun(
 	}
 ): Promise<ReviewRunState | null> {
 	const row = await newestRun(db, opts.userId, opts.scope);
-	if (row) return row.state.capped ? carryForward(row.state, opts.scope) : null;
+	if (row) return resumable(row.state) ? carryForward(row.state, opts.scope) : null;
 	if (!opts.legacy) return null;
 	const legacy = await newestRun(db, opts.userId, opts.legacy.scope);
-	if (!legacy?.state.capped) return null;
+	if (!legacy || !resumable(legacy.state)) return null;
 	const checked = await opts.legacy.jobCategories(legacy.jobId);
 	if (!checked || !sameCategories(checked, opts.legacy.categories)) return null;
 	return carryForward(legacy.state, opts.scope);
@@ -128,6 +133,14 @@ async function newestRun(
 	return row ?? null;
 }
 
+// Capped, or a continuation of a capped run that stopped before it finished.
+// A run that finished cleanly, or a fresh run that never carried anything
+// forward, is not resumed.
+function resumable(state: ReviewRunState): boolean {
+	if (state.capped) return true;
+	return !!state.carriedForward && (state.phase !== 'done' || !!state.aborted);
+}
+
 function sameCategories(a: ReviewCategory[], b: ReviewCategory[]): boolean {
 	return parseCategories(a).join('+') === parseCategories(b).join('+');
 }
@@ -143,7 +156,8 @@ function carryForward(state: ReviewRunState, scope: string): ReviewRunState {
 		failures: state.failures,
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
 		capped: false,
-		spentUsd: 0
+		spentUsd: 0,
+		carriedForward: true
 	};
 }
 

@@ -1461,6 +1461,36 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 3 (#1078-#1082, 2026-11-18). Writer trust
+      first. The #1064 rule (adopt only a capped newest row) lost progress
+      when a continuation of a capped run threw or was cancelled: its own
+      uncapped row is saved as soon as it starts and became the newest
+      (#1078). A run that starts from a capped run's progress now records
+      `carriedForward` on its state, and the newest row is adopted when it is
+      capped, or carried forward and never finished (still part-way, or
+      aborted); a newer run that finished cleanly still blocks adoption, and
+      the legacy key follows the same rule. Marking the capped row as
+      consumed was weighed and dropped: the continuation's row already holds
+      the capped run's scenes plus its own. Migration 0083 (custom SQL)
+      backfills the stale marks that the move from watermark staleness to
+      marks dropped at upgrade (#1079), mirroring the old `arcIsStale` and
+      `entitiesToEnrich` queries from `main` (live, unmuted story; the arc at
+      millisecond precision as the old JavaScript compare was; enrich also
+      skipping a trashed universe); 0082 was left as it was. Duplicate scene,
+      draft add-back and new story from a draft now copy
+      `summary_generated_at` with the summary, so a copied Assistant summary
+      stays refreshable (#1080); drafts record it in their content from now
+      on, and older drafts, which never stored it, still copy the summary as
+      the writer's own. There is no writer edit path for scene summaries, so
+      nothing else changes. `markStale` locks every target `order by id for
+      update` (characters, places, lore) before it updates, so a mark by
+      scene and a mark by entity cannot deadlock (#1081); the test holds the
+      lowest id and checks the mark has not taken a higher one. The arc
+      card's done label is now "Finished with the arc for X", true for every
+      outcome (the notification says which); the enrich result counts
+      entities passed over as unchanged, and the notice only says it could
+      not read the entries when none were read or passed over (#1082). Filed
+      and left open: #1083-#1087; the suggested fix for #1073 is on the issue.
 - [x] Staging review round 2 (#1064-#1068, 2026-11-18). Writer trust
       first. `adoptCappedRun` took the newest capped row for a scope, so a
       capped run that a later run had finished was carried into a fresh

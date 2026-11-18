@@ -34,7 +34,8 @@ import {
 	matchScenes,
 	type DraftContent,
 	type DraftEntity,
-	type DraftEntityType
+	type DraftEntityType,
+	type DraftScene
 } from '#lib/drafts';
 
 // Saved drafts: private, frozen copies of a whole story. Saving one reads
@@ -133,6 +134,7 @@ export async function workingOutline(
 			title: scenes.title,
 			bodyMd: scenes.bodyMd,
 			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
 			status: scenes.status,
 			storyTime: scenes.storyTime,
 			wordCount: scenes.wordCount,
@@ -144,7 +146,13 @@ export async function workingOutline(
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
-	return { chapters: chapterRows, scenes: sceneRows };
+	return {
+		chapters: chapterRows,
+		scenes: sceneRows.map((row) => ({
+			...row,
+			summaryGeneratedAt: row.summaryGeneratedAt?.toISOString() ?? null
+		}))
+	};
 }
 
 // Everything the draft freezes, read through one connection. The caller
@@ -493,6 +501,12 @@ export async function draftUsesCover(
 	return Boolean(row);
 }
 
+// Whether the Assistant wrote a saved scene's summary goes with the summary,
+// so the summary job keeps refreshing it (and keeps off the writer's own).
+function generatedAt(scene: DraftScene): Date | null {
+	return scene.summaryGeneratedAt ? new Date(scene.summaryGeneratedAt) : null;
+}
+
 // Puts one scene's saved text back into the working draft. The live scene's
 // current text is kept in History first, and the restored text lands as a
 // new revision on top, so the step can be undone from History. A scene that
@@ -577,6 +591,7 @@ export async function restoreDraftScene(
 				title: saved.title,
 				bodyMd: saved.bodyMd,
 				summaryMd: saved.summaryMd,
+				summaryGeneratedAt: generatedAt(saved),
 				status: saved.status as (typeof scenes.$inferInsert)['status'],
 				storyTime: saved.storyTime,
 				wordCount: wordCount(saved.bodyMd),
@@ -652,6 +667,7 @@ export async function newStoryFromDraft(
 						title: scene.title,
 						bodyMd: scene.bodyMd,
 						summaryMd: scene.summaryMd,
+						summaryGeneratedAt: generatedAt(scene),
 						storyTime: scene.storyTime,
 						status: scene.status as (typeof scenes.$inferInsert)['status'],
 						wordCount: wordCount(scene.bodyMd)

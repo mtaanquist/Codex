@@ -1453,6 +1453,9 @@ export type ReviewRunState = {
 	// what it had spent in USD. A retry of the same job resumes from here.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when the run started from an earlier capped run's progress, so its
+	// completed list includes that run's scenes (see adoptCappedRun).
+	carriedForward?: boolean;
 };
 
 // The progress of one queued review, keyed by its pg-boss job id: what the

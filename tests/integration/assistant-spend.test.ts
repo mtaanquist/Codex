@@ -56,6 +56,19 @@ function provider(): { provider: Provider; seen: ChatMessage[][] } {
 	};
 }
 
+// A provider that cancels the run once it has answered, so the run stops after
+// the scene it was reviewing.
+function cancelledAfterOneScene(controller: AbortController) {
+	const stub = provider();
+	const respond = stub.provider.respond.bind(stub.provider);
+	stub.provider.respond = async (...args) => {
+		const reply = await respond(...args);
+		controller.abort();
+		return reply;
+	};
+	return stub;
+}
+
 async function configure(opts: { spendCapUsd?: number | null; spendWarnUsd?: number | null } = {}) {
 	await saveAccountLlmConfig(db, userId, {
 		enabled: true,
@@ -436,6 +449,120 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.reviewed).toBe(3);
 	});
 
+	// A continuation saves its own uncapped row as soon as it starts, so a
+	// continuation that never finished must not hide the capped run behind it.
+	it('carries on from a continuation that threw part-way', async () => {
+		const storyId = await seedStory(4);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-12' }, provider());
+		const capped = await loadReviewRun(db, 'cap-12');
+		expect(capped?.completed).toHaveLength(2);
+
+		// What the continuation's row holds when it throws after one more scene:
+		// its job completes and the row stays in the scene phase.
+		const ids = await db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.where(eq(scenes.storyId, storyId))
+			.orderBy(asc(scenes.globalPosition));
+		await saveReviewRun(db, {
+			jobId: 'cap-13',
+			userId,
+			state: {
+				...capped!,
+				phase: 'scenes',
+				completed: ids.slice(0, 3).map((row) => row.id),
+				reviewed: 3,
+				capped: false,
+				spentUsd: 0,
+				carriedForward: true
+			}
+		});
+
+		await configure({ spendCapUsd: 10 });
+		const next = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-14' },
+			{ provider: next.provider }
+		);
+		expect(next.seen).toHaveLength(1);
+		expect(next.seen[0].map((m) => m.content).join('\n')).toContain('Review the scene "Scene 4"');
+		expect(result.reviewed).toBe(4);
+	});
+
+	it('carries on from a continuation that was cancelled', async () => {
+		const storyId = await seedStory(4);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-15' }, provider());
+
+		// The continuation is cancelled after it reviews one more scene.
+		await configure({ spendCapUsd: 10 });
+		const controller = new AbortController();
+		const cancelled = cancelledAfterOneScene(controller);
+		const stopped = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-16', signal: controller.signal },
+			{ provider: cancelled.provider }
+		);
+		expect(stopped.aborted).toBe(true);
+		const row = await loadReviewRun(db, 'cap-16');
+		expect(row?.completed.length).toBeGreaterThanOrEqual(2);
+
+		const next = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-17' },
+			{ provider: next.provider }
+		);
+		expect(next.seen).toHaveLength(4 - row!.completed.length);
+		expect(result.reviewed).toBe(4);
+	});
+
+	it('does not adopt a fresh run that was cancelled', async () => {
+		const storyId = await seedStory(3);
+		const controller = new AbortController();
+		const cancelled = cancelledAfterOneScene(controller);
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-18', signal: controller.signal },
+			{ provider: cancelled.provider }
+		);
+
+		const next = provider();
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-19' }, { provider: next.provider });
+		expect(next.seen).toHaveLength(3);
+	});
+
+	it('does not adopt a continuation that went on to finish', async () => {
+		const storyId = await seedStory(4);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-20' }, provider());
+
+		// The first continuation is cancelled, the second picks it up and finishes.
+		await configure({ spendCapUsd: 10 });
+		const controller = new AbortController();
+		const cancelled = cancelledAfterOneScene(controller);
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-21', signal: controller.signal },
+			{ provider: cancelled.provider }
+		);
+		const finish = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-22' },
+			{ provider: provider().provider }
+		);
+		expect(finish.reviewed).toBe(4);
+
+		const fresh = provider();
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-23' }, { provider: fresh.provider });
+		expect(fresh.seen).toHaveLength(4);
+	});
+
 	it('says so when the model has no price, rather than skipping the cap in silence', async () => {
 		const storyId = await seedStory(2);
 		await configure({ spendCapUsd: 0.5 });
@@ -469,7 +596,12 @@ describe('a capped run saved before categories were part of its key', () => {
 	async function legacyRun(
 		storyId: string,
 		jobId: string,
-		opts: { capped: boolean; scenes: number }
+		opts: {
+			capped: boolean;
+			scenes: number;
+			phase?: 'scenes' | 'done';
+			carriedForward?: boolean;
+		}
 	): Promise<void> {
 		const ids = await db
 			.select({ id: scenes.id })
@@ -481,12 +613,13 @@ describe('a capped run saved before categories were part of its key', () => {
 			userId,
 			state: {
 				...emptyReviewRun(),
-				phase: 'done',
+				phase: opts.phase ?? 'done',
 				scope: `full:${storyId}`,
 				total: ids.length,
 				completed: ids.slice(0, opts.scenes).map((row) => row.id),
 				reviewed: opts.scenes,
-				capped: opts.capped
+				capped: opts.capped,
+				...(opts.carriedForward ? { carriedForward: true } : {})
 			}
 		});
 	}
@@ -540,6 +673,19 @@ describe('a capped run saved before categories were part of its key', () => {
 		await legacyRun(storyId, 'legacy-5', { capped: false, scenes: 3 });
 		const { sent } = await continueReview(storyId, [], async () => []);
 		expect(sent).toBe(3);
+	});
+
+	it('continues from a legacy continuation that never finished', async () => {
+		const storyId = await seedStory(3);
+		await legacyRun(storyId, 'legacy-7', { capped: true, scenes: 1 });
+		await legacyRun(storyId, 'legacy-8', {
+			capped: false,
+			scenes: 2,
+			phase: 'scenes',
+			carriedForward: true
+		});
+		const { sent } = await continueReview(storyId, [], async () => []);
+		expect(sent).toBe(1);
 	});
 
 	it('is passed over once a run under the new key exists', async () => {

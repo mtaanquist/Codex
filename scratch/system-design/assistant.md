@@ -776,8 +776,9 @@ also records the scope the run was over (the same key the queue holds one
 unfinished job per: the mode, the target and, for a copyedit, the categories
 it checks), so a run that stopped at the spend cap is picked up by the
 next run over that scope even though it arrives with a new job id; only the
-newest run over the scope is looked at, it is adopted only if it was capped,
-and it starts again with the whole ceiling. A copyedit capped before the
+newest run over the scope is looked at, it is adopted only if it was capped
+(or was itself a continuation of a capped run that threw or was cancelled
+before it finished), and it starts again with the whole ceiling. A copyedit capped before the
 categories joined the key is continued only when its job (still on the legacy
 queue) shows it checked the same categories; otherwise it starts over. The rows are
 disposable, and a daily worker sweep drops those older than 30 days. The

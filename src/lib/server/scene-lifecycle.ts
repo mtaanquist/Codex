@@ -163,6 +163,22 @@ async function markStale(
 ): Promise<void> {
 	const mark = sql`clock_timestamp() - interval '50 years'`;
 	const characterIds = ids('character');
+	const placeIds = enrich ? ids('place') : null;
+	const loreIds = enrich ? ids('lore_entry') : null;
+	// Lock every target lowest id first, table by table, before any update: an
+	// update takes its rows in whatever order its plan meets them, so two marks
+	// over the same entities could otherwise each hold a row the other needs.
+	for (const [table, targets] of [
+		['characters', characterIds],
+		['places', placeIds],
+		['lore_entries', loreIds]
+	] as const) {
+		if (targets) {
+			await tx.execute(
+				sql`select id from ${sql.identifier(table)} where id in ${targets} order by id for update`
+			);
+		}
+	}
 	if (characterIds) {
 		await tx.execute(
 			sql`update characters set arc_summary_at = ${mark} where id in ${characterIds}`
@@ -174,13 +190,11 @@ async function markStale(
 			sql`update characters set assistant_enriched_at = ${mark} where id in ${characterIds}`
 		);
 	}
-	const placeIds = ids('place');
 	if (placeIds) {
 		await tx.execute(
 			sql`update places set assistant_enriched_at = ${mark} where id in ${placeIds}`
 		);
 	}
-	const loreIds = ids('lore_entry');
 	if (loreIds) {
 		await tx.execute(
 			sql`update lore_entries set assistant_enriched_at = ${mark} where id in ${loreIds}`

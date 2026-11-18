@@ -319,6 +319,22 @@ describe('restoreDraftScene', () => {
 		expect(scene.globalPosition).toBeGreaterThan(2);
 	});
 
+	it('keeps an Assistant summary refreshable on a scene it adds back', async () => {
+		const stamp = new Date('2026-11-01T10:00:00Z');
+		await db
+			.update(scenes)
+			.set({ summaryMd: 'From the Assistant', summaryGeneratedAt: stamp })
+			.where(eq(scenes.id, sceneId));
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const result = await restoreDraftScene(db, storyId, id, sceneId);
+		if (!result.ok) throw new Error('restore failed');
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, result.sceneId));
+		expect(scene.summaryMd).toBe('From the Assistant');
+		expect(scene.summaryGeneratedAt?.toISOString()).toBe(stamp.toISOString());
+	});
+
 	it('leaves a trashed scene in the trash and makes a new one', async () => {
 		const id = await save();
 		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
@@ -513,6 +529,31 @@ describe('newStoryFromDraft', () => {
 		expect(overlay.notesMd).toBe('Limps in act two.');
 		const [original] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
 		expect(original.bodyMd).toBe('Changed since.');
+	});
+
+	it('keeps which scene summaries the Assistant wrote', async () => {
+		const stamp = new Date('2026-11-01T10:00:00Z');
+		await db
+			.update(scenes)
+			.set({ summaryMd: 'From the Assistant', summaryGeneratedAt: stamp })
+			.where(eq(scenes.id, sceneId));
+		await db.update(scenes).set({ summaryMd: 'From the writer' }).where(eq(scenes.id, unfiledId));
+		const id = await save();
+		const [story] = await db.select().from(stories).where(eq(stories.id, storyId));
+		const result = await newStoryFromDraft(db, ownerId, story, id, 'Copy');
+		if (!result.ok) throw new Error('copy failed');
+		const [copy] = await db
+			.select()
+			.from(stories)
+			.where(and(eq(stories.ownerId, ownerId), eq(stories.slug, result.slug)));
+		const copied = await db
+			.select()
+			.from(scenes)
+			.where(eq(scenes.storyId, copy.id))
+			.orderBy(asc(scenes.globalPosition));
+		expect(copied[0].summaryGeneratedAt?.toISOString()).toBe(stamp.toISOString());
+		expect(copied[1].summaryMd).toBe('From the writer');
+		expect(copied[1].summaryGeneratedAt).toBeNull();
 	});
 
 	it('copies relationships that held only in this story', async () => {
