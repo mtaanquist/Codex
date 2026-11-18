@@ -94,13 +94,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The newest user turn joins the stored transcript; the earlier turns are
 	// already there from their own requests.
 	const newest = turns[turns.length - 1];
-	const chatId = await requireChat(userId, scope, payload.chatId, chatTitle(newest.content));
+	const chat = await requireChat(userId, scope, payload.chatId, chatTitle(newest.content));
+	const chatId = chat.id;
 	if (newest.role === 'user') {
-		await appendChat(db, userId, scope, chatId, {
+		const stored = await appendChat(db, userId, scope, chatId, {
 			role: 'user',
 			content: newest.content,
 			meta: newest.reference ? { reference: newest.reference } : null
 		});
+		if (!stored) error(404, 'That chat does not exist.');
 	}
 
 	// The assembled world rides as a system message after the gateway's persona
@@ -139,7 +141,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		request,
 		userId,
 		scope,
-		chatId,
+		chat,
 		role: 'chat',
 		enableTools: true,
 		messages,

@@ -3,6 +3,8 @@
 // gateway places after the persona). The result is offered for insert / edit /
 // reject; it is never written to the prose on its own.
 
+import { PROSE_FORMAT } from './format.ts';
+
 // Where the writer is in the prose when they ask: a selected passage, or the
 // text leading up to the cursor. Lets a brief like "continue from here" land.
 export type CoauthorReference = { kind: 'selection' | 'cursor'; text: string };
@@ -38,7 +40,8 @@ export function buildCoauthorMessage(
 		'',
 		`"${instruction.trim()}"`,
 		'',
-		'Write it as finished prose ready to drop into the manuscript, in the established voice, tense, and point of view, and consistent with the world and characters in your context. Reply with only the passage: no preamble, no commentary, and no surrounding quotation marks.'
+		'Write it as finished prose ready to drop into the manuscript, in the established voice, tense, and point of view, and consistent with the world and characters in your context. Reply with only the passage: no preamble, no commentary, and no surrounding quotation marks.',
+		PROSE_FORMAT
 	);
 	return parts.join('\n');
 }

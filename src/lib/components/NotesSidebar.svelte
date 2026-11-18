@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import Icon from './Icon.svelte';
@@ -54,6 +55,7 @@
 </script>
 
 <aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+	<PaneResizer side="left" />
 	<div class="left-head">
 		<!-- The Notes page sits beside the modes, so nothing is lit and one
 		     line says how you got here. -->

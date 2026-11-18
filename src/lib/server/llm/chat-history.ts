@@ -166,16 +166,22 @@ export async function appendChat(
 	scope: ChatScope,
 	chatId: string,
 	message: StoredChatMessage
-): Promise<void> {
-	if (!message.content.trim() && !message.meta) return;
-	await db.insert(assistantChatMessages).values({
-		...scopeValues(scope),
-		chatId,
-		userId,
-		role: message.role,
-		content: message.content,
-		meta: message.meta
-	});
+): Promise<boolean> {
+	if (!message.content.trim() && !message.meta) return true;
+	try {
+		await db.insert(assistantChatMessages).values({
+			...scopeValues(scope),
+			chatId,
+			userId,
+			role: message.role,
+			content: message.content,
+			meta: message.meta
+		});
+	} catch (err) {
+		// The chat was deleted (in another tab) since the request named it.
+		if (isForeignKeyViolation(err)) return false;
+		throw err;
+	}
 	// Trim the scrollback to the newest MAX_TURNS rows. Rows can share a
 	// created_at, so the cut is by row (id breaks ties), not by timestamp.
 	const keep = db
@@ -194,6 +200,7 @@ export async function appendChat(
 		.update(assistantChats)
 		.set({ updatedAt: new Date() })
 		.where(eq(assistantChats.id, chatId));
+	return true;
 }
 
 // Marks a stored split proposal as confirmed (recording what the split
@@ -259,11 +266,36 @@ export function fitChatTurns(
 	return kept;
 }
 
+export function isForeignKeyViolation(err: unknown): boolean {
+	for (let e = err as { code?: unknown; cause?: unknown } | undefined; e; e = e.cause as typeof e) {
+		if (e.code === '23503') return true;
+	}
+	return false;
+}
+
+// A chat the request created that ended with no turns stored (a recap that
+// failed or was stopped) is dropped, so it does not sit empty in the list.
+export async function dropChatIfEmpty(db: Database, chatId: string): Promise<void> {
+	const [turn] = await db
+		.select({ id: assistantChatMessages.id })
+		.from(assistantChatMessages)
+		.where(eq(assistantChatMessages.chatId, chatId))
+		.limit(1);
+	if (!turn) await db.delete(assistantChats).where(eq(assistantChats.id, chatId));
+}
+
 // Deletes one of the writer's chats with its turns and summary. Returns false
 // when the chat is not theirs.
 export async function deleteChat(db: Database, userId: string, chatId: string): Promise<boolean> {
 	if (!(await getChat(db, userId, chatId))) return false;
 	await db.transaction(async (tx) => {
+		// Locking the chat row first makes a turn being stored at the same moment
+		// wait, then find the chat gone, instead of landing between the deletes.
+		await tx
+			.select({ id: assistantChats.id })
+			.from(assistantChats)
+			.where(eq(assistantChats.id, chatId))
+			.for('update');
 		await tx.delete(assistantChatMessages).where(eq(assistantChatMessages.chatId, chatId));
 		await tx.delete(assistantChatSummaries).where(eq(assistantChatSummaries.chatId, chatId));
 		await tx.delete(assistantChats).where(eq(assistantChats.id, chatId));

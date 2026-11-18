@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { assistantChatSummaries } from '../db/schema';
 import { estimateTokens } from './context/assemble';
-import { fitChatTurns, type ChatScope } from './chat-history';
+import { fitChatTurns, isForeignKeyViolation, type ChatScope } from './chat-history';
 import { complete, type GatewayDeps } from './gateway';
 import { buildChatSummaryMessage, chatSummarySystemMessage } from './prompts/chat-summary';
 import type { ChatMessage } from './providers/types';
@@ -138,19 +138,24 @@ async function saveChatSummary(
 	value: StoredChatSummary
 ): Promise<void> {
 	const storyScope = 'storyId' in scope;
-	await db
-		.insert(assistantChatSummaries)
-		.values({
-			chatId,
-			userId,
-			storyId: storyScope ? scope.storyId : null,
-			universeId: storyScope ? null : scope.universeId,
-			...value
-		})
-		.onConflictDoUpdate({
-			target: assistantChatSummaries.chatId,
-			set: { ...value, updatedAt: new Date() }
-		});
+	try {
+		await db
+			.insert(assistantChatSummaries)
+			.values({
+				chatId,
+				userId,
+				storyId: storyScope ? scope.storyId : null,
+				universeId: storyScope ? null : scope.universeId,
+				...value
+			})
+			.onConflictDoUpdate({
+				target: assistantChatSummaries.chatId,
+				set: { ...value, updatedAt: new Date() }
+			});
+	} catch (err) {
+		// The chat was deleted mid-request; there is nothing to summarise now.
+		if (!isForeignKeyViolation(err)) throw err;
+	}
 }
 
 // Fits a chat transcript to its budget, summarising the turns that fall out.

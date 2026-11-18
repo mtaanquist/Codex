@@ -38,7 +38,8 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
-const { listChat, listChats, resolveChat } = await import('../../src/lib/server/llm/chat-history');
+const { deleteChat, listChat, listChats, resolveChat } =
+	await import('../../src/lib/server/llm/chat-history');
 const {
 	assistantSseResponse,
 	requireAssistantGate,
@@ -124,12 +125,12 @@ function streamingProvider(
 	};
 }
 
-function sse(request: Request, enableTools = false) {
+function sse(request: Request, enableTools = false, created = false) {
 	return assistantSseResponse({
 		request,
 		userId,
 		scope: { storyId },
-		chatId,
+		chat: { id: chatId, created },
 		role: 'chat',
 		enableTools,
 		messages: [{ role: 'user', content: 'hello' }],
@@ -207,6 +208,31 @@ describe('assistantSseResponse', () => {
 		// No error frame for a client that has gone, and no partial reply stored.
 		expect(parseFrames(rest)).toEqual([]);
 		expect(await listChat(db, userId, chatId)).toEqual([]);
+	});
+
+	it('drops a chat it created when the stream stores nothing', async () => {
+		providerSlot.current = streamingProvider(async function* () {
+			yield { type: 'error', message: 'upstream failed' };
+		});
+		const response = sse(
+			new Request('http://localhost/api/assistant/recap', { method: 'POST' }),
+			false,
+			true
+		);
+		await response.text();
+		expect(await listChats(db, userId, { storyId })).toEqual([]);
+	});
+
+	it('loses a reply quietly when its chat was deleted mid-stream', async () => {
+		providerSlot.current = streamingProvider(async function* () {
+			await deleteChat(db, userId, chatId);
+			yield { type: 'token', text: 'Too late.' };
+			yield { type: 'done' };
+		});
+		const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
+		const frames = parseFrames(await response.text());
+		expect(frames.at(-1)).toEqual({ type: 'done' });
+		expect(await listChats(db, userId, { storyId })).toEqual([]);
 	});
 
 	it('stores nothing when the provider reports an error', async () => {

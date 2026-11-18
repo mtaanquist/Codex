@@ -490,6 +490,11 @@
 	margin-top: 1px;
 	white-space: pre-wrap;
 }
+/* Assistant notes are rendered Markdown, where source newlines are not text. */
+.rv-body.reply-md,
+.rv-reply-body.reply-md {
+	white-space: normal;
+}
 
 .rv-reply {
 	display: flex;

@@ -8,6 +8,8 @@ If the same scene changed in another tab or on another device since you opened i
 
 The story's title in the path at the top of the window is a menu. Select it to open the story: its settings (details, cover, page setup, publishing, review links, exports, and more), the print preview, and the public reading page once you have published one. The first item in that menu, "Go to the story", brings you back to the editor from anywhere.
 
+To make a sidebar wider, drag its inner edge. You can also select the edge with Tab and use the arrow keys. Double-click the edge, or press Enter while it is selected, to put the default width back. The width you pick applies on every page and is remembered in this browser.
+
 On a narrow window, such as a phone or a zoomed-in browser, the editor shows one area at a time. Use the tabs under the top bar to switch between Scenes (the chapter and scene list), Writing, and Side panel. Picking a scene from the list takes you back to the writing.
 
 ## Scenes and chapters
@@ -108,7 +110,7 @@ When you have set up the Assistant on your account page, an Assistant panel appe
 
 To ask about a particular passage, select it in the editor, right-click, and choose Assistant, then "Ask the Assistant about this". The passage appears above the chat box as a quote; type your question and send, or select the x on the quote to drop it.
 
-When a reply contains something you want in the manuscript, select "Insert at cursor" under it to drop the reply's text into the open scene where your cursor is. The action only shows while a single scene is open in the editor.
+When a reply contains something you want in the manuscript, select "Insert at cursor" under it to drop the reply's text into the open scene where your cursor is. The action only shows while a single scene is open in the editor. Replies can use formatting such as bold text, lists and headings. Inserting a reply copies its text as written, formatting marks included, so check the inserted text and remove any marks you do not want in the scene.
 
 The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". This puts a request in the chat box for you to change if you like, for example to ask for three scenes instead of two; press Enter to send it. Its suggestion appears in the conversation as a card quoting the text the new scene would start with, alongside its reasoning. Nothing happens until you select "Split here" on the card. A confirmed card shows the split as done and offers "Revert", which merges the two scenes back into one. If the Assistant proposes several splits for one scene, confirm them in any order; each cut lands at its quoted text even after the earlier ones move it into a new scene.
 

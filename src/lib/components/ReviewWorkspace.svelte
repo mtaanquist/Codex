@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import { withQuery } from '#lib/href';
 	import { focusShownPane } from '#lib/pane-focus';
 	import { tick } from 'svelte';
@@ -464,6 +465,7 @@
 	</nav>
 	<div class="body" data-mtab={mobileTab}>
 		<aside class="pane left" aria-label={LEFT_PANE_LABEL} tabindex="-1" bind:this={paneEls.nav}>
+			<PaneResizer side="left" />
 			<div class="left-head">
 				<!-- A reviewer stays in review mode; the other views are out of reach. -->
 				<ModeSwitcher
@@ -557,6 +559,7 @@
 		</main>
 
 		<aside class="pane right" aria-label={RIGHT_PANE_LABEL} tabindex="-1" bind:this={paneEls.notes}>
+			<PaneResizer side="right" />
 			<!-- One panel invocation, two shapes of pane: with the Assistant the strip
 			     is a real tablist, without it the pane is just the Comments panel,
 			     which carries its own title. The props must not drift between the

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import { withQuery } from '#lib/href';
 	import type { ResolvedPathname } from '$app/types';
 	import { tick, untrack } from 'svelte';
@@ -236,6 +237,7 @@
 {/snippet}
 
 <aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+	<PaneResizer side="left" />
 	<div class="left-head">
 		<ModeSwitcher
 			active="plan"

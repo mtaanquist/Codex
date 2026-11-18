@@ -48,12 +48,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The recap joins the open chat (or starts one) as an assistant turn once
 	// its stream ends cleanly.
 	const scope = { storyId: story.id };
-	const chatId = await requireChat(userId, scope, payload.chatId, RECAP_CHAT_TITLE);
+	const chat = await requireChat(userId, scope, payload.chatId, RECAP_CHAT_TITLE);
 	return assistantSseResponse({
 		request,
 		userId,
 		scope,
-		chatId,
+		chat,
 		role: 'utility',
 		enableTools: false,
 		messages,

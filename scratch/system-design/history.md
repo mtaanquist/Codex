@@ -1431,6 +1431,21 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
+      particular, answer in Markdown, which the chat showed raw apart from a
+      `**bold**` regex. Chosen approach, by surface: text that is only read
+      (chat bubble, Assistant review notes and replies, character arcs) goes
+      through `renderReplyMarkdown`, a second markdown-it instance with raw
+      HTML off, images rendered as their alt text (a remote image would let a
+      prompt injection make the browser fetch a URL carrying story text; the
+      CSP has no `img-src`), and only http(s) and mailto links, opened in a
+      new tab without a referrer. Text that becomes the writer's own gets
+      prompt guidance instead (`prompts/format.ts`): coauthor, continuation
+      and `suggest_edit` replacements ask for manuscript prose with italics
+      only; summaries and enrich values ask for plain text. People's review
+      comments still show as typed. A stripping backstop for short fields
+      was left out until guidance proves not to be enough. Insert at cursor
+      still copies the raw reply, since scene bodies are Markdown.
 - [x] Staging review fixes for Phase 9 (2026-11-18). A fresh review of the
       whole staging diff found three things. The enrich queue is now created
       with pg-boss's `exclusive` policy: under the default policy a
@@ -2049,6 +2064,20 @@ back as `x-chat-id`. Search is over titles in the browser, since one scope's
 list is short. `/clear` became `/new` (the old name still works) because
 clearing no longer deletes. Left out until asked: renaming chats, deleting
 from the list itself, a cap on chats per scope.
+
+Drag-to-resize side columns (#984, 2026-11-18): the follow-up #733 deferred,
+asked for so long Assistant chats get more room. Mads chose one right-column
+width for every tab rather than a wider one only while the Assistant is open.
+`PaneResizer.svelte` overrides `--left-w` / `--right-w` on the root element, so
+every reader of the tokens (including the settings shell) follows, and the
+value is a CSS `clamp(floor, chosen, cap-vw)` so a width picked on a big screen
+still fits a smaller one. localStorage holds that exact string and the app.html
+pre-paint script applies it after a strict regex check, so there is no flash
+and no way to inject other CSS. Per browser rather than per account: a width
+that suits one screen rarely suits another. The handle lives inside the aside
+(axe's region rule flags content outside landmarks) but is positioned against
+the `.body`, which keeps it out of the pane's scroll and clip. Hidden under
+960px, where panes are tabs or scroll sideways.
 
 Running Assistant jobs after a reload (#963, 2026-11-18): the activity center
 and the review modal only knew a job id they had started, so a reload lost

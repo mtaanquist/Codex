@@ -19,6 +19,7 @@
 	import type { SaveStatus } from '#lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '#lib/format';
 	import { startArcJob } from '#lib/assistant-actions';
+	import { renderReplyMarkdown } from '#lib/markdown';
 
 	let {
 		kind,
@@ -626,7 +627,8 @@
 	{#if kind === 'character' && (assistantEnabled || arc?.summaryMd)}
 		<div class="section-label">Arc across the stories</div>
 		{#if arc?.summaryMd}
-			<p class="arc-text">{arc.summaryMd}</p>
+			<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
+			<div class="arc-text reply-md">{@html renderReplyMarkdown(arc.summaryMd)}</div>
 			{#if arc.stale}
 				<p class="field-hint">Scenes with this character have changed since this was written.</p>
 			{/if}
@@ -686,7 +688,6 @@
 		font-size: 13.5px;
 		line-height: 1.55;
 		color: var(--text);
-		white-space: pre-line;
 	}
 	.assist-note {
 		font-size: 12.5px;

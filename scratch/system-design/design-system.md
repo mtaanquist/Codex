@@ -174,8 +174,12 @@ work centre, reference right (`--right-w`). Both tokens live in `tokens.css`
 and clamp with the window: left 264px to 320px, right 312px to 380px, so the
 right column grows from about 1640px and the left from about 1760px, taking
 the extra space from the gutters. The prose column keeps its reading
-width. The settings shell reads the same `--left-w`. Drag-to-resize is
-deferred. Focus mode (`.app.focus-mode`) hides both
+width. The settings shell reads the same `--left-w`. The writer can drag
+either inner edge (`PaneResizer.svelte`, first child of each `aside.pane.left`
+and `aside.pane.right` in a workspace shell): the chosen width overrides the
+token on the root element, clamped between the token's floor and a share of
+the window (left 30vw, right 40vw), and is stored in localStorage for the
+app.html pre-paint script. One width per side for every tab and page. Focus mode (`.app.focus-mode`) hides both
 sidebars with `visibility: hidden` so the prose column does not shift. Add
 `.body.no-right` when no panel has a subject, so the centre takes the space
 instead of a fixed empty column.
@@ -742,6 +746,16 @@ inline ad-hoc SVG in components.
   controls. There is no custom tooltip primitive; do not build one ad hoc.
 - Banners: `.revision-banner` for the past-revision state is the reference
   pattern for a centre-column banner.
+
+### Assistant text
+
+- Model output that is shown for reading (chat replies, Assistant review
+  notes, character arcs) renders through `renderReplyMarkdown` from
+  `#lib/markdown` inside a `.reply-md` element (`theme.css`). The class only
+  spaces and styles the rendered blocks; the container sets the type size.
+  Do not hand-roll Markdown parsing for a new surface, and do not use
+  `renderMarkdown` (the prose renderer) for model text, since it allows
+  images.
 
 ## Writing in the UI
 

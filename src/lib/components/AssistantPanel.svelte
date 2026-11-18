@@ -44,6 +44,7 @@
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
+	import { renderReplyMarkdown } from '#lib/markdown';
 	import { CHAT_WINDOW_TURNS, chatTitle, RECAP_CHAT_TITLE } from '#lib/assistant-chat';
 	import { relativeShort } from '#lib/format';
 	import { now } from '#lib/now.svelte';
@@ -176,6 +177,9 @@
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
 	let input = $state('');
 	let busy = $state(false);
+	// An earlier chat is loading; nothing is sent until it is in place, or the
+	// message would go to the chat being left.
+	let switching = $state(false);
 	let composer = $state<HTMLTextAreaElement>();
 	let scroll = $state<HTMLDivElement>();
 	let pending: AbortController | null = null;
@@ -281,6 +285,16 @@
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			const storedIn = response.headers.get('x-chat-id');
 			if (response.ok && storedIn) noteChatUsed(storedIn, title);
+			if (response.status === 404 && chatId) {
+				// The open chat was deleted elsewhere (another tab).
+				const gone = chatId;
+				chats = chats.filter((c) => c.id !== gone);
+				chatId = null;
+				appendToReply(
+					'This chat was deleted. Your message was not sent; send it again to start a new chat.'
+				);
+				return;
+			}
 			if (!response.ok || !response.body) {
 				appendToReply(
 					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
@@ -330,7 +344,7 @@
 			runSlashCommand(question);
 			return;
 		}
-		if (busy) return;
+		if (busy || switching) return;
 		input = '';
 		if (composer) composer.style.height = 'auto';
 		const turn: Message = { role: 'user', content: question };
@@ -495,7 +509,7 @@
 			assistantSay('Add a brief after the command, like "/write a tense standoff at the gate".');
 			return;
 		}
-		if (busy) return;
+		if (busy || switching) return;
 		messages = [
 			...messages,
 			{ role: 'user', content: `/write ${brief}` },
@@ -525,7 +539,7 @@
 			assistantSay('Say how to rewrite it, like "/rewrite tighten this and cut the adverbs".');
 			return;
 		}
-		if (busy) return;
+		if (busy || switching) return;
 		const ask: Message = { role: 'user', content: `/rewrite ${how}` };
 		if (sceneId) ask.reference = { sceneId, text: selection };
 		messages = [...messages, ask, { role: 'assistant', content: '' }];
@@ -634,7 +648,7 @@
 	async function catchUp() {
 		// Recap is "the story so far"; there is no universe-wide recap, so the
 		// universe surface has no catch-up.
-		if (busy || !('storyId' in scope)) return;
+		if (busy || switching || !('storyId' in scope)) return;
 		messages = [...messages, { role: 'assistant', content: '' }];
 		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId }, RECAP_CHAT_TITLE);
 	}
@@ -661,7 +675,7 @@
 	// A new chat: an empty transcript that the server stores as a chat of its
 	// own once the first message goes. The earlier chats stay in the picker.
 	function newChat() {
-		if (busy) return;
+		if (busy || switching) return;
 		chatId = null;
 		messages = [{ role: 'assistant', content: opening }];
 		olderSummarised = false;
@@ -670,7 +684,6 @@
 	}
 
 	// Switch to an earlier chat, loading its turns from the server.
-	let switching = $state(false);
 	async function openChat(id: string) {
 		if (busy || switching) return;
 		pickerOpen = false;
@@ -802,22 +815,6 @@
 		fit(el);
 		input = el.value;
 	}
-
-	// Crude **bold** rendering, matching the prototype: split into bold and plain
-	// spans so the bubble shows emphasis without a full markdown pass.
-	function segments(text: string): { bold: boolean; text: string }[] {
-		return text
-			.split(/(\*\*[^*]+\*\*)/g)
-			.map((part) =>
-				part.startsWith('**') && part.endsWith('**')
-					? { bold: true, text: part.slice(2, -2) }
-					: { bold: false, text: part }
-			);
-	}
-
-	function paragraphs(text: string): string[] {
-		return text.split(/\n{2,}/);
-	}
 </script>
 
 {#if muted}
@@ -858,6 +855,7 @@
 					class="chat-picker-btn"
 					type="button"
 					title="Switch to an earlier chat"
+					aria-label="{currentTitle}, switch chat"
 					aria-haspopup="dialog"
 					aria-expanded={pickerOpen}
 					disabled={busy || switching}
@@ -926,17 +924,12 @@
 				{:else}
 					<div class="msg assistant-msg">
 						<div class="who"><Icon name="sparkles" size={12} /> {name}</div>
-						<div class="bubble">
+						<div class="bubble reply-md">
 							{#if message.content === '' && busy && index === messages.length - 1}
 								<div class="typing"><i></i><i></i><i></i></div>
 							{:else}
-								{#each paragraphs(message.content) as para, pi (pi)}
-									<p>
-										{#each segments(para) as seg, si (si)}
-											{#if seg.bold}<strong>{seg.text}</strong>{:else}{seg.text}{/if}
-										{/each}
-									</p>
-								{/each}
+								<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
+								{@html renderReplyMarkdown(message.content)}
 							{/if}
 						</div>
 						{#if message.content && !(busy && index === messages.length - 1) && index > 0}
@@ -1113,7 +1106,7 @@
 				<button
 					class="icon-btn"
 					type="button"
-					disabled={!input.trim()}
+					disabled={!input.trim() || switching}
 					title="Send"
 					aria-label="Send"
 					onclick={() => send()}
@@ -1292,12 +1285,6 @@
 		border: 1px solid var(--border);
 		padding: 11px 13px;
 		border-radius: 4px 13px 13px 13px;
-	}
-	.msg.assistant-msg .bubble p {
-		margin: 0 0 0.7em;
-	}
-	.msg.assistant-msg .bubble p:last-child {
-		margin: 0;
 	}
 	.typing {
 		display: inline-flex;
