@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
 	NOTIFICATION_DIGEST_QUEUE
 } from '../lib/server/queues.ts';
@@ -48,6 +49,7 @@ import {
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
+import { enrichUniverse } from '../lib/server/llm/enrich.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -64,6 +66,7 @@ const defaultServices = {
 	reviewStoryContinuity,
 	reviewUniverseContinuity,
 	summariseStory,
+	enrichUniverse,
 	sendEmail,
 	s3AssetStore
 };
@@ -88,6 +91,8 @@ export type AssistantReviewData = {
 };
 
 export type AssistantSummariesData = { userId: string; storyId: string };
+
+export type AssistantEnrichData = { userId: string; universeId: string };
 
 // The first distinct thing that went wrong in a run, for the notification
 // title. The whole list rides on the job status the review modal polls.
@@ -446,6 +451,61 @@ export function createHandlers(deps: WorkerDeps) {
 					storyId,
 					scenes: result.scenes,
 					chapters: result.chapters,
+					failed: result.failed
+				});
+			}
+		},
+
+		// The background enrichment pass over a universe's entities: stages alias,
+		// detail, and summary suggestions for every entry with new prose to read.
+		// Owner re-checked at run time; the writer is notified when it is done.
+		async assistantEnrich(jobs: JobWithMetadata<AssistantEnrichData>[]) {
+			for (const job of jobs) {
+				const { userId, universeId } = job.data;
+				const [universe] = await db
+					.select({
+						ownerId: schema.universes.ownerId,
+						name: schema.universes.name
+					})
+					.from(schema.universes)
+					.where(and(eq(schema.universes.id, universeId), isNull(schema.universes.deletedAt)));
+				if (!universe || universe.ownerId !== userId) {
+					logEvent('warn', 'assistant.enrich_skipped', {
+						universeId,
+						userId,
+						reason: universe ? 'not owner' : 'gone'
+					});
+					continue;
+				}
+				const result = await services.enrichUniverse(db, {
+					userId,
+					universeId,
+					signal: job.signal
+				});
+				const href = `/universes/${universeId}/plan`;
+				const name = universe.name;
+				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
+				let title: string;
+				if (result.entities === 0 && result.failed > 0) {
+					title = `The Assistant could not read the entries in "${name}". Check the endpoint in your settings.`;
+				} else if (result.staged === 0) {
+					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
+				} else {
+					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
+				}
+				if (result.capped) {
+					const spent = (result.spentUsd ?? 0).toFixed(2);
+					title = `The Assistant stopped reading the entries in "${name}" at about $${spent}, with ${suggestions} left. Raise the cap in settings or run it again to continue.`;
+				}
+				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
+				await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', {
+					title,
+					href
+				});
+				logEvent('info', 'assistant.enrich', {
+					universeId,
+					entities: result.entities,
+					staged: result.staged,
 					failed: result.failed
 				});
 			}

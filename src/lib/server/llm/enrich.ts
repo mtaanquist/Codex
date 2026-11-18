@@ -1,14 +1,26 @@
-import type { Database } from '../auth';
-import { complete, type GatewayDeps } from './gateway';
-import { buildEnrichMessage } from './prompts/enrich';
-import { entityAppearances, type PlanAppearance } from '../plan-data';
-import { entityAliasColumn, entityNameColumn, resolveOwnedEntity } from '../entity-lookups';
+import { and, asc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
+import type { Database } from '../auth.ts';
+import { entityMentions, scenes, stories } from '../db/schema.ts';
+import { errorFields, logEvent } from '../log.ts';
+import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import { resolveLlmConfig } from './config.ts';
+import { SpendMeter } from './spend.ts';
+import { buildEnrichMessage } from './prompts/enrich.ts';
+import { entityAppearances, type PlanAppearance } from '../plan-data.ts';
+import {
+	ENTITY_TYPES,
+	entityAliasColumn,
+	entityNameColumn,
+	entityTable,
+	resolveOwnedEntity
+} from '../entity-lookups.ts';
+import { inLiveUniverse } from '../universe-scope.ts';
 import {
 	stageEntitySuggestions,
 	type EntitySuggestion,
 	type ProposedSuggestion
-} from '../entity-suggestions';
-import type { ChatMessage } from './providers/types';
+} from '../entity-suggestions.ts';
+import type { ChatMessage } from './providers/types.ts';
 
 // Inline per-entity enrichment: gather where an entity appears (in one story, or
 // across its universe), ask the Assistant for new aliases, quick details, and a
@@ -96,7 +108,13 @@ function snippetLine(a: PlanAppearance, withStory: boolean): string {
 
 export async function enrichEntity(
 	db: Database,
-	opts: { userId: string; scope: EnrichScope; entityId: string; signal?: AbortSignal },
+	opts: {
+		userId: string;
+		scope: EnrichScope;
+		entityId: string;
+		meter?: SpendMeter;
+		signal?: AbortSignal;
+	},
 	deps: GatewayDeps = {}
 ): Promise<EntitySuggestion[]> {
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
@@ -133,7 +151,7 @@ export async function enrichEntity(
 		}
 	];
 
-	const text = await complete(
+	const result = await completeDetailed(
 		db,
 		{
 			userId: opts.userId,
@@ -148,8 +166,9 @@ export async function enrichEntity(
 		},
 		deps
 	);
+	opts.meter?.record(result.model, result.usage);
 
-	const proposals = parseEnrichResponse(text);
+	const proposals = parseEnrichResponse(result.content);
 	if (proposals.length === 0) return [];
 	return stageEntitySuggestions(db, {
 		ownerId: opts.userId,
@@ -157,4 +176,113 @@ export async function enrichEntity(
 		entityId: opts.entityId,
 		proposals
 	});
+}
+
+export type UniverseEnrichResult = {
+	// Entities the pass read, and how many suggestions it staged across them.
+	entities: number;
+	staged: number;
+	failed: number;
+	// Set when the spend ceiling stopped the pass early, with what it had spent.
+	capped?: boolean;
+	spentUsd?: number;
+	// Why a cap that was set could not be enforced.
+	capNotApplied?: string;
+};
+
+// The universe's entities worth enriching: those mentioned in at least one live
+// scene, never enriched or with a mentioning scene changed since the last pass.
+// Characters, then places, then lore, each by name.
+async function entitiesToEnrich(db: Database, userId: string, universeId: string) {
+	const out: { id: string; type: (typeof ENTITY_TYPES)[number] }[] = [];
+	for (const type of ENTITY_TYPES) {
+		const table = entityTable(type);
+		const lastChanged = max(scenes.updatedAt);
+		const rows = await db
+			.select({ id: table.id })
+			.from(table)
+			.innerJoin(
+				entityMentions,
+				and(
+					eq(entityMentions.targetType, type),
+					eq(entityMentions.targetId, table.id),
+					eq(entityMentions.sourceType, 'scene')
+				)
+			)
+			.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
+			.innerJoin(stories, eq(stories.id, scenes.storyId))
+			.where(
+				and(
+					eq(table.universeId, universeId),
+					eq(table.ownerId, userId),
+					eq(stories.universeId, universeId),
+					isNull(stories.deletedAt),
+					isNull(scenes.deletedAt),
+					inLiveUniverse(table.universeId)
+				)
+			)
+			.groupBy(table.id, table.assistantEnrichedAt, entityNameColumn(table))
+			.having(or(isNull(table.assistantEnrichedAt), gt(lastChanged, table.assistantEnrichedAt)))
+			.orderBy(asc(entityNameColumn(table)));
+		out.push(...rows.map((row) => ({ id: row.id, type })));
+	}
+	return out;
+}
+
+// The background pass: enrich every entity in the universe that has new prose
+// to read, staging suggestions for the writer exactly as the inline button does.
+// Each entity is marked with the time its read started, so an edit made while
+// the pass runs is picked up next time. A failed entity is not marked, so the
+// next pass tries it again. Stops between entities at the spend cap or when the
+// job is stopped.
+export async function enrichUniverse(
+	db: Database,
+	opts: { userId: string; universeId: string; signal?: AbortSignal },
+	deps: GatewayDeps = {}
+): Promise<UniverseEnrichResult> {
+	const { userId, universeId, signal } = opts;
+	const resolved = await resolveLlmConfig(db, userId);
+	const meter = new SpendMeter({
+		pricing: resolved.config.modelPricing,
+		capUsd: resolved.config.spendCapUsd
+	});
+	let entities = 0;
+	let staged = 0;
+	let failed = 0;
+	let capped = false;
+
+	for (const entity of await entitiesToEnrich(db, userId, universeId)) {
+		if (signal?.aborted) break;
+		if (meter.capReached) {
+			capped = true;
+			break;
+		}
+		const startedAt = new Date();
+		try {
+			const rows = await enrichEntity(
+				db,
+				{ userId, scope: { universeId }, entityId: entity.id, meter, signal },
+				deps
+			);
+			const table = entityTable(entity.type);
+			await db
+				.update(table)
+				.set({ assistantEnrichedAt: startedAt, updatedAt: sql`${table.updatedAt}` })
+				.where(eq(table.id, entity.id));
+			entities += 1;
+			staged += rows.length;
+		} catch (err) {
+			if (signal?.aborted) break;
+			logEvent('error', 'assistant.enrich_failed', { entityId: entity.id, ...errorFields(err) });
+			failed += 1;
+		}
+	}
+
+	return {
+		entities,
+		staged,
+		failed,
+		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
+	};
 }

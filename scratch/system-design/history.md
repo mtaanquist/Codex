@@ -1428,8 +1428,27 @@ endpoint. Started 2026-06-09. Every step below through entity enrichment
 merged as #324-#335 and shipped together as v3.0.0; later items carry their
 own PR and version.
 
-Still open in Phase 9: whole-universe background enrichment
-(`assistant-enrich`) and character arc summaries.
+Still open in Phase 9: character arc summaries (#846).
+
+- [x] Background universe enrichment (2026-11-18, #845 part 2). The
+      `assistant-enrich` queue (`ASSISTANT_ENRICH_QUEUE`), `queueAssistantEnrich`
+      (singleton per universe, the shared Assistant send options), and the
+      worker's `assistantEnrich` handler, which re-checks the owner and calls
+      `enrichUniverse` (`llm/enrich.ts`). The pass picks the universe's
+      characters, places, and lore that are mentioned in a live scene and either
+      were never enriched or have a mentioning scene with `updated_at` after
+      their new `assistant_enriched_at` (migration 0078, additive, one column per
+      entity table). Each entity runs the same `enrichEntity` as the inline
+      button at universe scope, metered against the account spend cap, and is
+      marked with the time its read started (preserving `updated_at`), so an edit
+      during the pass is caught next time and a failed read is retried. Started
+      by `/enrich` (scope both; a story focus runs over its universe) through
+      `POST /api/assistant/enrich-job`; tracked as job kind `enrich` in the
+      activity center, job-status, and running-jobs, and announced with a new
+      `assistant_enrich` notification kind linking to the universe Plan.
+      `decideEntitySuggestion` no longer queues the mention reindex itself (it
+      returns the universe for the route to queue), so `entity-suggestions.ts`
+      stays loadable by the worker, which cannot load `jobs.ts`.
 
 - [x] Universe-scope entity enrichment (2026-11-18, #845 part 1). The
       enrich endpoint takes a `universeId` as well as a `storyId`, and the

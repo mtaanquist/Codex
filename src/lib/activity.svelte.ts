@@ -79,7 +79,7 @@ export type JobProgress = {
 
 export type TrackedJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries';
+	kind: 'review' | 'summaries' | 'enrich';
 	progress?: JobProgress;
 };
 
@@ -95,14 +95,14 @@ const POLL_MS = 3000;
 const SLOW_POLL_MS = 15000;
 const SLOW_AFTER_MS = 5 * 60 * 1000;
 
-// Polls a queued background job (review or summaries) to completion, driving one
+// Polls a queued background job (review, summaries, or enrichment) to completion, driving one
 // activity card from running to done or failed. When the enqueue could not hand
 // back a job id (a coalesced singleton, say), it shows the work as accepted and
 // leaves the notification bell to announce the result. A job this tab already
 // follows is not tracked twice.
 export async function trackJob(opts: {
 	jobId: string | null;
-	kind: 'review' | 'summaries';
+	kind: 'review' | 'summaries' | 'enrich';
 	scope?: JobScope;
 	runningLabel: string;
 	doneLabel: string;

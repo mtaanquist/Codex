@@ -23,7 +23,8 @@ export {
 	NOTIFICATION_DIGEST_QUEUE,
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE
+	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE
 } from './queues.ts';
 import {
 	DIGEST_DELAY_SECONDS,
@@ -39,6 +40,7 @@ import {
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
+	ASSISTANT_ENRICH_QUEUE,
 	ASSISTANT_JOB_EXPIRY_SECONDS,
 	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
@@ -66,6 +68,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 		await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
 		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
+		await boss.createQueue(ASSISTANT_ENRICH_QUEUE);
 		return boss;
 	})();
 	return starting;
@@ -321,6 +324,30 @@ export async function queueAssistantSummaries(input: {
 	}
 }
 
+// Queues the background enrichment pass over a universe's entities. The
+// singleton key (the universe) coalesces a repeat request into the pass already
+// queued or running.
+export async function queueAssistantEnrich(input: {
+	userId: string;
+	universeId: string;
+}): Promise<string | 'coalesced' | null> {
+	try {
+		const boss = await getBoss();
+		const jobId = await boss.send(ASSISTANT_ENRICH_QUEUE, input, {
+			singletonKey: input.universeId,
+			...assistantSendOptions(input.userId)
+		});
+		return jobId ?? 'coalesced';
+	} catch (error) {
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_ENRICH_QUEUE,
+			universeId: input.universeId,
+			...errorFields(error)
+		});
+		return null;
+	}
+}
+
 // Where the activity center's polling reads a queued Assistant job's progress.
 // pg-boss archives a job once it settles, so a job it can no longer find by id
 // is treated as done rather than lost.
@@ -339,11 +366,17 @@ export function reviewJobState(
 	return state === 'done' && phase !== 'done' ? 'stale' : state;
 }
 
+const JOB_QUEUES = {
+	review: ASSISTANT_REVIEW_QUEUE,
+	summaries: ASSISTANT_SUMMARIES_QUEUE,
+	enrich: ASSISTANT_ENRICH_QUEUE
+} as const;
+
 export async function getAssistantJobState(
-	kind: 'review' | 'summaries',
+	kind: keyof typeof JOB_QUEUES,
 	id: string
 ): Promise<AssistantJobState> {
-	const queue = kind === 'review' ? ASSISTANT_REVIEW_QUEUE : ASSISTANT_SUMMARIES_QUEUE;
+	const queue = JOB_QUEUES[kind];
 	try {
 		const boss = await getBoss();
 		const job = await boss.getJobById(queue, id);

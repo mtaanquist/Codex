@@ -127,10 +127,11 @@ You can also type a command in the chat box. Start a line with a slash and a sho
 - `/find <text>` searches this universe and lists what it finds.
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
+- `/enrich` suggests aliases, quick details, and summaries for every character, place, and lore entry in the universe that appears in your scenes. It runs in the background and notifies you when it is done; the suggestions wait on each entry's page in Plan for you to accept or reject. Run it again later and it only reads entries whose scenes have changed since.
 - `/clear` clears the conversation.
 - `/help` lists these commands.
 
-On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/who`, `/find`, `/clear`, and `/help`.
+On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/enrich`, `/who`, `/find`, `/clear`, and `/help`.
 
 When you come back to a story after time away, select "Catch me up" from the menu next to the send button. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 

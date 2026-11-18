@@ -12,7 +12,8 @@
 		startSummariesJob,
 		reviewSceneWithAssistant,
 		startBackgroundReview,
-		startContinuityReview
+		startContinuityReview,
+		startEnrichJob
 	} from '#lib/assistant-actions';
 	import { openReviewModal } from '#lib/review-modal.svelte';
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
@@ -340,6 +341,9 @@
 			case 'summaries':
 				void updateSummaries();
 				break;
+			case 'enrich':
+				void enrichEntries();
+				break;
 			case 'help':
 				messages = [
 					...messages,
@@ -513,6 +517,13 @@
 			label: isStory ? 'this story' : 'this universe',
 			reviewHref: isStory ? reviewHref : undefined
 		});
+	}
+
+	// /enrich: a background pass that suggests aliases, details, and summaries for
+	// every entry in the universe with new prose to read. A story focus runs over
+	// its universe. Suggestions wait in each entry's editor in Plan.
+	async function enrichEntries() {
+		await startEnrichJob(scopeBody(), isStory ? "this story's universe" : 'this universe');
 	}
 
 	// /who: show a character or place sheet inline, a templated chat send that
