@@ -2048,6 +2048,20 @@ shipping as its own PR.
 
 ## Feedback backlog
 
+Drag-to-resize side columns (#984, 2026-11-18): the follow-up #733 deferred,
+asked for so long Assistant chats get more room. Mads chose one right-column
+width for every tab rather than a wider one only while the Assistant is open.
+`PaneResizer.svelte` overrides `--left-w` / `--right-w` on the root element, so
+every reader of the tokens (including the settings shell) follows, and the
+value is a CSS `clamp(floor, chosen, cap-vw)` so a width picked on a big screen
+still fits a smaller one. localStorage holds that exact string and the app.html
+pre-paint script applies it after a strict regex check, so there is no flash
+and no way to inject other CSS. Per browser rather than per account: a width
+that suits one screen rarely suits another. The handle lives inside the aside
+(axe's region rule flags content outside landmarks) but is positioned against
+the `.body`, which keeps it out of the pane's scroll and clip. Hidden under
+960px, where panes are tabs or scroll sideways.
+
 Running Assistant jobs after a reload (#963, 2026-11-18): the activity center
 and the review modal only knew a job id they had started, so a reload lost
 every running review. Options were discussed on the issue; Mads picked the

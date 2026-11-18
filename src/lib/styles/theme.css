@@ -99,12 +99,64 @@
 
 /* ---- Body 3-pane ---- */
 .body {
+	position: relative;
 	display: grid;
 	grid-template-columns: var(--left-w) 1fr var(--right-w);
 	min-height: 0;
 }
 .body.no-right {
 	grid-template-columns: var(--left-w) 1fr;
+}
+
+/* Drag handles on the inner edges of the side columns (PaneResizer.svelte).
+   Each sits in its aside.pane but is positioned against the .body (the panes
+   are not positioned), so it stays put while the pane scrolls and is not
+   clipped by it. z-index 1 matches the centre's: the left handle comes before
+   the centre in the page, so the centre and its menus paint over the part of
+   it that overlaps them, and the visible strip stays on the left pane. */
+.pane-resizer {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	z-index: 1;
+	width: 9px;
+	cursor: col-resize;
+	touch-action: none;
+}
+.pane-resizer.left {
+	left: calc(var(--left-w) - 5px);
+}
+/* Kept off the centre's edge, where its scrollbar sits. */
+.pane-resizer.right {
+	right: calc(var(--right-w) - 8px);
+}
+.pane-resizer::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 2px;
+	width: 3px;
+	border-radius: 2px;
+	background: transparent;
+	transition: background 0.12s;
+}
+.pane-resizer.right::after {
+	left: 0;
+}
+.pane-resizer:hover::after,
+.pane-resizer:focus-visible::after,
+.pane-resizer.dragging::after {
+	background: var(--accent);
+}
+.pane-resizer:focus-visible {
+	outline: none;
+}
+/* While dragging, keep the cursor and stop text selection under the pointer. */
+html.pane-resizing,
+html.pane-resizing * {
+	cursor: col-resize !important;
+	user-select: none;
 }
 
 /* Narrow windows: the two side columns and the centre cannot sit side by
@@ -128,6 +180,10 @@
 	.seg.full.pane-tabs {
 		display: flex;
 		margin: 8px 10px 0;
+	}
+	/* One pane at a time, or columns that scroll sideways: nothing to resize. */
+	.pane-resizer {
+		display: none;
 	}
 	.app:has(> .pane-tabs) {
 		grid-template-rows: 52px auto 1fr;
@@ -1005,7 +1061,8 @@
 	grid-template-columns: 1fr;
 }
 .app.focus-mode .left,
-.app.focus-mode .right {
+.app.focus-mode .right,
+.app.focus-mode .pane-resizer {
 	display: none;
 }
 /* Focus mode always shows the writing, whichever narrow-window tab was open. */

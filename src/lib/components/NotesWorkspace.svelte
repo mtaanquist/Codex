@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { withQuery } from '#lib/href';
 	import { RIGHT_PANE_LABEL } from '#lib/chrome';
@@ -137,6 +138,7 @@
 		{#if selected}
 			{@const openNote = selected}
 			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+				<PaneResizer side="right" />
 				<PanelStrip {panels} active="history" onSelect={() => {}} sub="this note">
 					{#snippet panel()}
 						<RevisionHistory

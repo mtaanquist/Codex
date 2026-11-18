@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
 	import EntityEditor from '#lib/components/EntityEditor.svelte';
@@ -206,6 +207,7 @@
 		</main>
 		{#if rightTab}
 			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+				<PaneResizer side="right" />
 				<PanelStrip
 					{panels}
 					active={rightTab}

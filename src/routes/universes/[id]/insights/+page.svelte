@@ -1,4 +1,5 @@
 <script lang="ts">
+	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import { withQuery } from '#lib/href';
 	import { resolve } from '$app/paths';
 	import { entityColor } from '#lib/entity-color';
@@ -130,6 +131,7 @@
 	/>
 	<div class="body" class:no-right={panels.length === 0}>
 		<aside class="pane left" aria-label={LEFT_PANE_LABEL}>
+			<PaneResizer side="left" />
 			<div class="left-head">
 				<!-- Insights is not one of the three modes, so none of them is lit and
 				     one line says why. -->
@@ -456,6 +458,7 @@
 		</main>
 		{#if panels.length > 0}
 			<aside class="pane right" aria-label={RIGHT_PANE_LABEL}>
+				<PaneResizer side="right" />
 				<PanelStrip {panels} active="assistant" onSelect={() => {}} sub="this universe">
 					{#snippet panel()}
 						<AssistantPanel
