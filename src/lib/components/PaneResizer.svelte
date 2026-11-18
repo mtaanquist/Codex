@@ -19,7 +19,17 @@
 	let handle: HTMLDivElement | undefined = $state();
 	let width = $state(0);
 	let viewport = $state(0);
-	let drag: { startX: number; startW: number } | null = $state(null);
+	let drag: { startX: number; startW: number; moved: boolean } | null = $state(null);
+
+	// Pixels the pointer must travel before a press counts as a drag, so a plain
+	// click does not pin the window-relative default to a fixed width.
+	const DRAG_THRESHOLD = 3;
+
+	// Values for assistive tech from the start, not only after a focus.
+	$effect(() => {
+		measure();
+		return () => document.documentElement.classList.remove('pane-resizing');
+	});
 
 	function pane(): HTMLElement | null {
 		return handle?.closest<HTMLElement>('.pane') ?? null;
@@ -41,7 +51,7 @@
 		if (event.button !== 0) return;
 		event.preventDefault();
 		measure();
-		drag = { startX: event.clientX, startW: width };
+		drag = { startX: event.clientX, startW: width, moved: false };
 		handle?.setPointerCapture(event.pointerId);
 		document.documentElement.classList.add('pane-resizing');
 	}
@@ -49,9 +59,14 @@
 	function onPointerMove(event: PointerEvent) {
 		if (!drag) return;
 		const dx = event.clientX - drag.startX;
+		if (!drag.moved && Math.abs(dx) < DRAG_THRESHOLD) return;
+		drag.moved = true;
 		apply(side === 'left' ? drag.startW + dx : drag.startW - dx);
 	}
 
+	// Also runs on lostpointercapture, which fires when the handle is hidden or
+	// removed mid-drag (focus mode, a narrow window), so the page never keeps the
+	// resize cursor and the selection lock.
 	function endDrag(event: PointerEvent) {
 		if (!drag) return;
 		drag = null;
@@ -100,6 +115,7 @@
 	onpointermove={onPointerMove}
 	onpointerup={endDrag}
 	onpointercancel={endDrag}
+	onlostpointercapture={endDrag}
 	ondblclick={reset}
 	onkeydown={onKeydown}
 	onfocus={measure}

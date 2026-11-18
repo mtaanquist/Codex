@@ -84,8 +84,18 @@ test('side columns resize by drag and keyboard, and remember the width', async (
 	await page.keyboard.press('ArrowRight');
 	expect(await width(page, '.pane.left')).toBeCloseTo(280, 0);
 
+	await page.keyboard.press('Home');
+	expect(await width(page, '.pane.left')).toBeCloseTo(264, 0);
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Enter');
+	expect(await width(page, '.pane.left')).toBeCloseTo(264, 0);
+
+	// A plain click is not a drag: the default stays window-relative.
 	await handle.dblclick();
-	await left.dblclick();
+	await handle.click();
+	expect(await page.evaluate(() => localStorage.getItem('codex-right-w'))).toBeNull();
+	// The centre paints over the part of the left handle that overlaps it.
+	await left.dblclick({ position: { x: 2, y: 100 } });
 	expect(await width(page, '.pane.right')).toBeCloseTo(312, 0);
 	expect(await width(page, '.pane.left')).toBeCloseTo(264, 0);
 });
