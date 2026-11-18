@@ -6,7 +6,7 @@ The prototype (`scratch/app-design/`) is gitignored, so a fresh clone will not h
 
 Before building a new page or changing an existing one, read the components sheet at `scratch/system-design/design-system.md`. It names the canonical primitives and shells, the legacy patterns that must not be copied, and the per-page checklist; keep it updated when a primitive is added or changed.
 
-Progress is tracked in `TODO.md` (open items, one checked line per shipped step, feedback backlog, review follow-ups); keep it updated as steps complete. Notes on how shipped work was built (reasoning, what was tried, what was deferred) go in `scratch/system-design/history.md`, newest first in the matching section, never back into `TODO.md`.
+Progress is tracked in GitHub milestones and issues: open work is an open issue in its milestone, and shipped work is a closed one. File an issue for new work, put it in the matching milestone, and close it when it ships (a "Closes #N" line in the PR does this). Notes on how shipped work was built (reasoning, what was tried, what was deferred) go in `scratch/system-design/history.md`, newest first in the matching section.
 
 Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for background jobs, CodeMirror 6 for the editor, Caddy for TLS.
 

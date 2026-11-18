@@ -244,8 +244,7 @@ the copy, since their secrets were encrypted with the source instance's key.
 - `drizzle` - generated SQL migrations
 - `tests`, `e2e` - integration (Vitest against Postgres) and Playwright
 - `scratch` - design documents; planning material, not part of the app
-- `TODO.md` - progress tracker and feedback backlog
-- `scratch/system-design/history.md` - notes on how shipped work was built
+- `scratch/system-design/history.md` - notes on how shipped work was built (progress is tracked in GitHub milestones and issues)
 
 ## License
 

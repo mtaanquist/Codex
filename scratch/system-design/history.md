@@ -2,7 +2,8 @@
 
 How shipped work was built: the reasoning, what was tried, and what was
 deferred. These notes used to live in `TODO.md`; they moved here verbatim on
-2026-10-29 (#630). `TODO.md` keeps one line per shipped step.
+2026-10-29 (#630). `TODO.md` itself was retired on 2026-11-18: its open items and shipped
+steps became GitHub issues grouped in milestones.
 
 Newer notes go at the top of the matching section. Each note names its
 version, date, branch or PR where it had one.
