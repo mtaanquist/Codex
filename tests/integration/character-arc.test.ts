@@ -28,6 +28,8 @@ const { saveAccountLlmConfig, saveStoryLlmOverride } =
 let lastPrompt = '';
 let calls = 0;
 let reply = 'Bram leaves the harbour and becomes a captain.';
+// Runs while the model is "writing", to change things under a running job.
+let duringCall: (() => Promise<void>) | null = null;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -35,6 +37,7 @@ const stubProvider: Provider = {
 	async respond(req) {
 		lastPrompt = JSON.stringify(req.messages);
 		calls += 1;
+		if (duringCall) await duringCall();
 		return { content: reply, toolCalls: [] };
 	},
 	async listModels() {
@@ -64,6 +67,7 @@ beforeAll(async () => {
 beforeEach(async () => {
 	calls = 0;
 	lastPrompt = '';
+	duringCall = null;
 	reply = 'Bram leaves the harbour and becomes a captain.';
 	await pool.query(
 		'truncate table entity_mentions, scenes, characters, stories, universes, users cascade'
@@ -201,6 +205,17 @@ describe('summariseCharacterArc', () => {
 			.where(eq(characters.id, bram.id));
 		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		expect(result.outcome).toBe('empty');
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
+	});
+
+	it('does not store an arc when a story it read is muted while it is written', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram at the quay' });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		duringCall = () => saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await expect(
+			summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps)
+		).rejects.toThrow();
 		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
 	});
 

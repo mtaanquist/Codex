@@ -124,6 +124,11 @@
 	// "Suggest details" and pruned as the writer accepts or rejects each one.
 	// svelte-ignore state_referenced_locally
 	let suggestions = $state<AssistantSuggestion[]>([...assistantSuggestions]);
+	// A suggested summary is only offered while the entry has none, so accepting
+	// it can never replace the writer's own (typed but unsaved included).
+	const shownSuggestions = $derived(
+		summary.trim() ? suggestions.filter((s) => s.field !== 'summary') : suggestions
+	);
 	let enriching = $state(false);
 	let enrichNote = $state('');
 
@@ -161,7 +166,7 @@
 	// the server already persisted it, so this does not trigger a save.
 	function applyLocally(s: AssistantSuggestion) {
 		if (s.field === 'summary') {
-			summary = s.value;
+			if (!summary.trim()) summary = s.value;
 		} else if (s.field === 'detail') {
 			details = [...details, { label: s.label ?? '', value: s.value }];
 		} else if (kind === 'lore') {
@@ -446,11 +451,11 @@
 		</div>
 	{/if}
 
-	{#if suggestions.length > 0}
+	{#if shownSuggestions.length > 0}
 		<div class="assist-suggestions">
 			<div class="section-label">Assistant suggestions</div>
 			<p class="field-hint">Drawn from where this entry appears in your prose. Accept to add it.</p>
-			{#each suggestions as s (s.id)}
+			{#each shownSuggestions as s (s.id)}
 				<div class="assist-row">
 					<span class="assist-kind">{suggestionLabel(s)}</span>
 					<span class="assist-value">{s.value}</span>

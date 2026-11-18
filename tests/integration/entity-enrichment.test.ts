@@ -200,6 +200,20 @@ describe('decideEntitySuggestion', () => {
 		expect(c.summaryMd).toBe('A weary swordsman.');
 	});
 
+	it('never replaces a summary the writer wrote after the suggestion was staged', async () => {
+		const id = await makeCharacter();
+		const [s] = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [{ field: 'summary', value: 'A weary swordsman.' }]
+		});
+		await db.update(characters).set({ summaryMd: 'My own words.' }).where(eq(characters.id, id));
+		const result = await decideEntitySuggestion(db, ownerId, s.id, 'accept');
+		expect(result.ok).toBe(false);
+		expect((await readChar(id)).summaryMd).toBe('My own words.');
+	});
+
 	it('rejecting leaves the entity untouched', async () => {
 		const id = await makeCharacter();
 		const [s] = await stageEntitySuggestions(db, {
