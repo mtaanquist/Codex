@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
+import { markMentionsStale } from './scene-lifecycle.ts';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 
@@ -50,6 +51,8 @@ export async function saveSceneBody(
 				conflict: { bodyMd: current.bodyMd, title: current.title }
 			};
 		}
+		// Arcs name the scenes they retell.
+		if (current.title !== save.title) await markMentionsStale(tx, { sceneIds: [sceneId] });
 		const count = wordCount(save.bodyMd);
 		// An idle editor keeps resending the same text. History already ends on
 		// it and the anchors have nothing to move through, so only a new title

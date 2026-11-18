@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
@@ -77,36 +77,13 @@ async function arcScenes(
 	return { scenes: out, storyIds: [...storyIds] };
 }
 
-// Whether a cached arc is out of date: a scene that mentions the character
-// changed after the arc was written. Deleting or restoring a scene or story,
-// and unmuting one, mark the arc directly (see markMentionsStale).
-// An arc never written is not stale (there is nothing to refresh, only to
-// write). A watermark before STALE_MARK_BEFORE was set on purpose (a scene it read
-// was deleted, or a story was unmuted) and always counts as stale.
-export async function arcIsStale(
-	db: Database,
-	character: { id: string; universeId: string; arcSummaryAt: Date | null }
-): Promise<boolean> {
-	if (!character.arcSummaryAt) return false;
-	if (character.arcSummaryAt < STALE_MARK_BEFORE) return true;
-	const [row] = await db
-		.select({ lastChanged: max(scenes.updatedAt) })
-		.from(entityMentions)
-		.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
-		.innerJoin(stories, eq(stories.id, scenes.storyId))
-		.where(
-			and(
-				eq(entityMentions.sourceType, 'scene'),
-				eq(entityMentions.targetType, 'character'),
-				eq(entityMentions.targetId, character.id),
-				eq(stories.universeId, character.universeId),
-				isNull(stories.deletedAt),
-				isNull(scenes.deletedAt),
-				storyAssistantOn()
-			)
-		);
-	const lastChanged = row?.lastChanged ? new Date(row.lastChanged) : null;
-	return !!lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime();
+// Whether a cached arc is out of date: something it reads was marked since it
+// was written (see markStale in scene-lifecycle): a passage that mentions the
+// character changed, a new summary was written for a scene that does, or such a
+// scene or story was deleted, restored, or unmuted. An arc never written is not
+// stale (there is nothing to refresh, only to write).
+export function arcIsStale(character: { arcSummaryAt: Date | null }): boolean {
+	return !!character.arcSummaryAt && character.arcSummaryAt < STALE_MARK_BEFORE;
 }
 
 // A story the arc read was muted before the arc was stored. Thrown so the job
@@ -137,7 +114,9 @@ export async function summariseCharacterArc(
 			id: characters.id,
 			name: characters.name,
 			universeId: characters.universeId,
-			arcSummaryAt: characters.arcSummaryAt
+			arcSummaryAt: characters.arcSummaryAt,
+			// As text, so the write below compares to the microsecond.
+			arcSummaryAtText: sql<string | null>`${characters.arcSummaryAt}::text`
 		})
 		.from(characters)
 		.where(
@@ -149,7 +128,7 @@ export async function summariseCharacterArc(
 		);
 	if (!character) return { outcome: 'missing' };
 
-	// The database clock, which scene saves stamp updated_at with.
+	// A real time, so any mark set while the model writes stands apart from it.
 	const startedAt = await dbNow(db);
 	const { scenes: found, storyIds } = await arcScenes(db, character.id, character.universeId);
 	if (found.length === 0) {
@@ -205,7 +184,7 @@ export async function summariseCharacterArc(
 				arcSummaryMd: text,
 				// An unmute or a scene delete while the model was writing marked the
 				// arc out of date; that mark stands.
-				arcSummaryAt: sql`case when date_trunc('milliseconds', ${characters.arcSummaryAt}) is not distinct from ${character.arcSummaryAt} then ${startedAt} else ${characters.arcSummaryAt} end`,
+				arcSummaryAt: sql`case when ${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz then ${startedAt} else ${characters.arcSummaryAt} end`,
 				updatedAt: sql`${characters.updatedAt}`
 			})
 			.where(eq(characters.id, character.id));
@@ -215,26 +194,21 @@ export async function summariseCharacterArc(
 
 // The arc for a Plan page's selected entity: its stored text and whether it is
 // stale, for a character; null for anything else.
-export async function planArc(
-	db: Database,
+export function planArc(
 	resolved: {
 		kind: string;
 		entity: {
 			id: string;
-			universeId: string;
 			arcSummaryMd?: string | null;
 			arcSummaryAt?: Date | null;
 		};
 	} | null
-): Promise<{ summaryMd: string | null; stale: boolean } | null> {
+): { summaryMd: string | null; stale: boolean } | null {
 	if (resolved?.kind !== 'character') return null;
 	const { entity } = resolved;
-	const arcSummaryAt = entity.arcSummaryAt ?? null;
 	return {
 		summaryMd: entity.arcSummaryMd ?? null,
 		// A mark on an arc never written means nothing to refresh.
-		stale:
-			!!entity.arcSummaryMd &&
-			(await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt }))
+		stale: !!entity.arcSummaryMd && arcIsStale({ arcSummaryAt: entity.arcSummaryAt ?? null })
 	};
 }

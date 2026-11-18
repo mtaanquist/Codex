@@ -1461,6 +1461,38 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Enrich and arc re-reads follow the passages, not `scenes.updated_at`;
+      a rejected summary is never suggested again (#977, #992, 2026-11-18).
+      The staleness checks compared `max(scenes.updated_at)` over mentioning
+      scenes with the watermark, so a status change, reorder, or lifecycle
+      update re-read every entity those scenes mention, while an accepted
+      alias that linked older scenes went unread. `mentions_indexed_at` was
+      considered and rejected: the reconcile sweep reindexes a scene whose
+      `updated_at` moved (so a status change still moves it) and a rename
+      reindexes the whole universe. Instead `rebuildSceneMentions` compares
+      each entity's passages (the snippets enrich and arcs read) before and
+      after, and marks only the entities whose passages changed, with the
+      existing fifty-years-back mark (`markEntitiesStale`), only for scenes
+      the Assistant reads (a live, unmuted story; restore and unmute already
+      mark). The checks are
+      now just "never read or marked", so there is no query against scenes
+      and no migration. Edits outside a mention's snippet window no longer
+      trigger a re-read, which is the intended precision. The summary job
+      marks arcs for a scene whose summary it rewrites, since arcs read
+      scene summaries, and a scene rename or a reorder that moves a scene
+      marks arcs only (titles and reading order are arc content, not enrich
+      input). Review follow-ups: restoring a universe (or reviving a trashed
+      standalone one) now marks like a story restore; the rebuild reads
+      whether the Assistant reaches the scene inside its transaction with a
+      share lock on the story and universe rows, so an unmute or restore in
+      flight cannot slip between the read and the mark; and the enrich and
+      arc compare-and-set compare the watermark to the microsecond (carried
+      as text), since a JS Date drops microseconds and marks are now
+      frequent. Upgrade note: an entity or arc that was already
+      behind by the old rule at deploy is not re-read until its passages
+      change again. For #992, Mads chose "never again once rejected";
+      `summaryClosed` in `entity-suggestions.ts` holds the rule, and
+      `enrichEntity` uses it to stop asking the model for a summary.
 - [x] De-duplicate Assistant review and summary jobs (#986, 2026-11-18).
       Both queues ran under pg-boss's default policy, where a `singletonKey`
       alone adds no unique index, so a repeat request queued (and paid for) a

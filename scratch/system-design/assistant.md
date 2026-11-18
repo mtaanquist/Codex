@@ -1056,8 +1056,10 @@ calls the gateway, which proxies through the egress guard.
   helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
   than a queue, for one entity from a story (story Plan) or across its
   universe (universe Plan); the `assistant-enrich` job runs the same call over
-  every entity in a universe with new prose since its `assistant_enriched_at`
-  watermark (`/enrich`), and a job naming a character rewrites that
+  every entity in a universe whose passages changed since its
+  `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
+  entity when a reindex changes its passages, so status changes and reorders
+  do not count and an alias that links older scenes does), and a job naming a character rewrites that
   character's arc (`arc_summary_md`) instead.
 
 ### Tool use and structural actions - sequencing step 6

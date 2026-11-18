@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import { isUniqueViolation } from './db-errors.ts';
 import { entityCategories, stories, universes } from './db/schema';
 import { uniqueSlug, untrash } from './slugs';
+import { markMentionsStale } from './scene-lifecycle.ts';
 
 // Creates a story with a readable slug, shared by the library's new-story
 // card and the universe plan board. Retries once when a concurrent create
@@ -74,6 +75,8 @@ export async function standaloneUniverse(db: Database, ownerId: string) {
 async function reviveIfTrashed(db: Database, universe: typeof universes.$inferSelect) {
 	if (!universe.deletedAt) return universe;
 	await untrash(db, 'universes', universe.id);
+	// As restoreUniverse: arcs and enrich would not notice its scenes are back.
+	await markMentionsStale(db, { universeId: universe.id }, { enrich: true });
 	// Re-read: the restore may have given it a fresh slug.
 	const [live] = await db.select().from(universes).where(eq(universes.id, universe.id));
 	return live ?? { ...universe, deletedAt: null };

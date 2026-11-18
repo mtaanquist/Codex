@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
@@ -20,8 +20,10 @@ import {
 	resolveOwnedEntity
 } from '../entity-lookups.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
+import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 import {
 	stageEntitySuggestions,
+	summarySuggestionClosed,
 	type EntitySuggestion,
 	type ProposedSuggestion
 } from '../entity-suggestions.ts';
@@ -154,7 +156,12 @@ export async function enrichEntity(
 					aliases: entity.aliases ?? [],
 					details: entity.details ?? [],
 					summaryMd: entity.summaryMd,
-					hasSummary: !!entity.summaryMd?.trim()
+					hasSummary: await summarySuggestionClosed(db, {
+						ownerId: opts.userId,
+						kind,
+						entityId: opts.entityId,
+						summaryMd: entity.summaryMd
+					})
 				},
 				snippets
 			)
@@ -217,13 +224,13 @@ export type UniverseEnrichResult = {
 };
 
 // The universe's entities worth enriching: those mentioned in at least one live
-// scene, never enriched or with a mentioning scene changed since the last pass.
-// Characters, then places, then lore, each by name.
+// scene, never enriched or marked since the last pass (a passage that mentions
+// them changed, or a scene or story holding them was deleted, restored, or
+// unmuted). Characters, then places, then lore, each by name.
 async function entitiesToEnrich(db: Database, userId: string, universeId: string) {
 	const out: { id: string; type: (typeof ENTITY_TYPES)[number] }[] = [];
 	for (const type of ENTITY_TYPES) {
 		const table = entityTable(type);
-		const lastChanged = max(scenes.updatedAt);
 		const rows = await db
 			.select({ id: table.id })
 			.from(table)
@@ -245,11 +252,11 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 					isNull(stories.deletedAt),
 					isNull(scenes.deletedAt),
 					storyAssistantOn(),
-					inLiveUniverse(table.universeId)
+					inLiveUniverse(table.universeId),
+					or(isNull(table.assistantEnrichedAt), lt(table.assistantEnrichedAt, STALE_MARK_BEFORE))
 				)
 			)
-			.groupBy(table.id, table.assistantEnrichedAt, entityNameColumn(table))
-			.having(or(isNull(table.assistantEnrichedAt), gt(lastChanged, table.assistantEnrichedAt)))
+			.groupBy(table.id, entityNameColumn(table))
 			.orderBy(asc(entityNameColumn(table)));
 		out.push(...rows.map((row) => ({ id: row.id, type })));
 	}
@@ -300,12 +307,13 @@ export async function enrichUniverse(
 			capped = true;
 			break;
 		}
-		// The database clock, which scene saves stamp updated_at with, so a clock
-		// skew between the worker and the database cannot hide an edit.
+		// A real time, so any mark set while the model reads stands apart from it.
 		const startedAt = await dbNow(db);
 		const table = entityTable(entity.type);
+		// As text, so the check below compares to the microsecond; a JS Date
+		// keeps only milliseconds, and marks land often.
 		const [{ before }] = await db
-			.select({ before: table.assistantEnrichedAt })
+			.select({ before: sql<string | null>`${table.assistantEnrichedAt}::text` })
 			.from(table)
 			.where(eq(table.id, entity.id));
 		try {
@@ -322,7 +330,7 @@ export async function enrichUniverse(
 				.where(
 					and(
 						eq(table.id, entity.id),
-						sql`date_trunc('milliseconds', ${table.assistantEnrichedAt}) is not distinct from ${before}`
+						sql`${table.assistantEnrichedAt} is not distinct from ${before}::timestamptz`
 					)
 				);
 			entities += 1;

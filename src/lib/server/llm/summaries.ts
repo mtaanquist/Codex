@@ -8,6 +8,7 @@ import { resolveLlmConfig } from './config.ts';
 import { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
+import { markMentionsStale } from '../scene-lifecycle.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
@@ -162,12 +163,16 @@ export async function summariseStory(
 				deps
 			);
 			if (!text) continue;
-			await db
-				.update(scenes)
-				// Keep updated_at as it was so the summary write is not seen as an edit
-				// (and so the row does not look stale next run).
-				.set({ summaryMd: text, summaryGeneratedAt: new Date(), updatedAt: scene.updatedAt })
-				.where(eq(scenes.id, scene.id));
+			await db.transaction(async (tx) => {
+				await tx
+					.update(scenes)
+					// Keep updated_at as it was so the summary write is not seen as an
+					// edit (and so the row does not look stale next run).
+					.set({ summaryMd: text, summaryGeneratedAt: new Date(), updatedAt: scene.updatedAt })
+					.where(eq(scenes.id, scene.id));
+				// Character arcs read scene summaries.
+				await markMentionsStale(tx, { sceneIds: [scene.id] });
+			});
 			written += 1;
 			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {

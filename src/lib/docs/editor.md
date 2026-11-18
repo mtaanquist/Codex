@@ -131,7 +131,7 @@ You can also type a command in the chat box. Start a line with a slash and a sho
 - `/find <text>` searches this universe and lists what it finds.
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
-- `/enrich` suggests aliases, quick details, and summaries for every character, place, and lore entry in the universe that appears in your scenes. It runs in the background and notifies you when it is done; the suggestions wait on each entry's page in Plan for you to accept or reject. Run it again later and it only reads entries whose scenes have changed since.
+- `/enrich` suggests aliases, quick details, and summaries for every character, place, and lore entry in the universe that appears in your scenes. It runs in the background and notifies you when it is done; the suggestions wait on each entry's page in Plan for you to accept or reject. Run it again later and it only reads entries whose passages in your scenes have changed since.
 - `/new` starts a new chat. The current one stays in your list.
 - `/help` lists these commands.
 
