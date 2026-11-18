@@ -1440,7 +1440,7 @@ Still open in Phase 9: character arc summaries (#846).
       their new `assistant_enriched_at` (migration 0078, additive, one column per
       entity table). Each entity runs the same `enrichEntity` as the inline
       button at universe scope, metered against the account spend cap, and is
-      marked with the time its read started (preserving `updated_at`), so an edit
+      marked with the database time its read started (preserving `updated_at`), so an edit
       during the pass is caught next time and a failed read is retried. Started
       by `/enrich` (scope both; a story focus runs over its universe) through
       `POST /api/assistant/enrich-job`; tracked as job kind `enrich` in the
