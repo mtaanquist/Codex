@@ -10,7 +10,8 @@ vi.mock('#lib/activity.svelte', () => ({
 	trackJob: vi.fn(async () => {})
 }));
 
-const { startBackgroundReview, resumeRunningJobs } = await import('./assistant-actions');
+const { startBackgroundReview, resumeRunningJobs, watchRunningJobs } =
+	await import('./assistant-actions');
 const { trackJob } = await import('#lib/activity.svelte');
 
 type Handled = { jobId: string | null; message?: string; reason?: string };
@@ -161,5 +162,37 @@ describe('resumeRunningJobs', () => {
 		);
 		await resumeRunningJobs();
 		expect(trackJob).not.toHaveBeenCalled();
+	});
+});
+
+describe('watchRunningJobs', () => {
+	it('checks again when the tab comes back into view, at most every ten seconds', async () => {
+		vi.useFakeTimers();
+		const fetch = vi.fn(async () => new Response(JSON.stringify({ jobs: [] }), { status: 200 }));
+		vi.stubGlobal('fetch', fetch);
+		const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+		vi.stubGlobal('document', doc);
+		const show = () => doc.dispatchEvent(new Event('visibilitychange'));
+
+		const stop = watchRunningJobs();
+		expect(fetch).toHaveBeenCalledTimes(1);
+
+		show();
+		expect(fetch).toHaveBeenCalledTimes(1);
+
+		vi.advanceTimersByTime(10_000);
+		doc.visibilityState = 'hidden';
+		show();
+		expect(fetch).toHaveBeenCalledTimes(1);
+		doc.visibilityState = 'visible';
+		show();
+		expect(fetch).toHaveBeenCalledTimes(2);
+
+		stop();
+		vi.advanceTimersByTime(10_000);
+		show();
+		expect(fetch).toHaveBeenCalledTimes(2);
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	});
 });

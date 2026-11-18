@@ -245,3 +245,22 @@ export async function resumeRunningJobs(): Promise<void> {
 		});
 	}
 }
+
+// How soon a tab coming back into view checks for new jobs again.
+const RECHECK_AFTER_MS = 10_000;
+
+// Resumes the running jobs now, and again whenever the tab comes back into
+// view, so a job started in another tab shows here as well. Returns the
+// cleanup that stops listening.
+export function watchRunningJobs(): () => void {
+	let lastCheck = Date.now();
+	void resumeRunningJobs();
+	const onVisible = () => {
+		if (document.visibilityState !== 'visible') return;
+		if (Date.now() - lastCheck < RECHECK_AFTER_MS) return;
+		lastCheck = Date.now();
+		void resumeRunningJobs();
+	};
+	document.addEventListener('visibilitychange', onVisible);
+	return () => document.removeEventListener('visibilitychange', onVisible);
+}

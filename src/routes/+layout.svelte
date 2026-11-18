@@ -32,7 +32,7 @@
 	import CommandPalette from '#lib/components/CommandPalette.svelte';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import ActivityCenter from '#lib/components/ActivityCenter.svelte';
-	import { resumeRunningJobs } from '#lib/assistant-actions';
+	import { watchRunningJobs } from '#lib/assistant-actions';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -93,13 +93,12 @@
 	// gets the theme their system asks for, including when it changes mid-page.
 	$effect(() => followSystemTheme());
 
-	// Pick up the Assistant jobs still running from before this page loaded, so
-	// their activity cards and the story's run note come back. Once per load.
-	let jobsResumed = false;
+	// Pick up the Assistant jobs still running from before this page loaded or
+	// started in another tab, so their activity cards and the story's run note
+	// show here too.
+	const signedIn = $derived(Boolean(data.user));
 	$effect(() => {
-		if (!data.user || jobsResumed) return;
-		jobsResumed = true;
-		void resumeRunningJobs();
+		if (signedIn) return watchRunningJobs();
 	});
 
 	// Apply the signed-in user's saved theme and accent, syncing the pre-paint
