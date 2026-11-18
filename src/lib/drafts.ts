@@ -9,7 +9,14 @@ import { isSceneStatus, SCENE_STATUS_LABELS } from './scene-status.ts';
 
 export type DraftEntityType = 'character' | 'place' | 'lore_entry';
 
-export type DraftChapter = { id: string; title: string | null; summaryMd: string | null };
+export type DraftChapter = {
+	id: string;
+	title: string | null;
+	summaryMd: string | null;
+	// As on DraftScene. Absent in drafts saved before this was recorded.
+	summaryGeneratedAt?: string | null;
+	summaryCurrent?: boolean;
+};
 
 export type DraftScene = {
 	id: string;
@@ -20,6 +27,10 @@ export type DraftScene = {
 	// When the Assistant wrote the summary (ISO time), null for the writer's
 	// own. Absent in drafts saved before this was recorded.
 	summaryGeneratedAt?: string | null;
+	// Whether that summary was current for the saved text, so a copy made from
+	// the draft need not summarise the same text again. Absent in drafts saved
+	// before this was recorded, which are treated as stale.
+	summaryCurrent?: boolean;
 	status: string;
 	storyTime: string | null;
 	wordCount: number;

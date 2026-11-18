@@ -729,11 +729,14 @@ export async function saveStoryLlmOverride(
 			// it is sent with every other story's context. Which stories an arc
 			// read is not kept, and today's mentions can differ from the ones it
 			// was written from, so every arc in the universe goes; a rewrite
-			// leaves the muted story out.
+			// leaves the muted story out. The rows are locked lowest id first, the
+			// order a rebuild's marks take them in, so the two cannot deadlock.
+			const arcs = sql`arc_summary_md is not null
+					and universe_id = (select universe_id from stories where id = ${storyId})`;
+			await tx.execute(sql`select id from characters where ${arcs} order by id for update`);
 			await tx.execute(sql`
 				update characters set arc_summary_md = null, arc_summary_at = null
-				where arc_summary_md is not null
-					and universe_id = (select universe_id from stories where id = ${storyId})
+				where ${arcs}
 			`);
 		} else if (patch.enabled === null && before?.muted) {
 			// Unmuted: the story's scenes are older than the arcs and the enrich

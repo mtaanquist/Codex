@@ -23,6 +23,7 @@ import { recordRevision } from './revisions.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { uniqueSlug } from './slugs.ts';
 import { isSerializationFailure, isUniqueViolation } from './db-errors.ts';
+import { copiedSummaryStamp, summaryIsCurrent } from './summary-currency.ts';
 import { deleteAsset } from './assets.ts';
 import { wordCount } from '#lib/word-count';
 import { isUuid } from '#lib/slug';
@@ -123,7 +124,13 @@ export async function workingOutline(
 	storyId: string
 ): Promise<Pick<DraftContent, 'chapters' | 'scenes'>> {
 	const chapterRows = await tx
-		.select({ id: chapters.id, title: chapters.title, summaryMd: chapters.summaryMd })
+		.select({
+			id: chapters.id,
+			title: chapters.title,
+			summaryMd: chapters.summaryMd,
+			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			updatedAt: chapters.updatedAt
+		})
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId))
 		.orderBy(asc(chapters.position));
@@ -135,6 +142,7 @@ export async function workingOutline(
 			bodyMd: scenes.bodyMd,
 			summaryMd: scenes.summaryMd,
 			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt,
 			status: scenes.status,
 			storyTime: scenes.storyTime,
 			wordCount: scenes.wordCount,
@@ -147,10 +155,15 @@ export async function workingOutline(
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
 	return {
-		chapters: chapterRows,
-		scenes: sceneRows.map((row) => ({
+		chapters: chapterRows.map(({ updatedAt, ...row }) => ({
 			...row,
-			summaryGeneratedAt: row.summaryGeneratedAt?.toISOString() ?? null
+			summaryGeneratedAt: row.summaryGeneratedAt?.toISOString() ?? null,
+			summaryCurrent: summaryIsCurrent(row.summaryGeneratedAt, updatedAt)
+		})),
+		scenes: sceneRows.map(({ updatedAt, ...row }) => ({
+			...row,
+			summaryGeneratedAt: row.summaryGeneratedAt?.toISOString() ?? null,
+			summaryCurrent: summaryIsCurrent(row.summaryGeneratedAt, updatedAt)
 		}))
 	};
 }
@@ -501,10 +514,16 @@ export async function draftUsesCover(
 	return Boolean(row);
 }
 
-// Whether the Assistant wrote a saved scene's summary goes with the summary,
-// so the summary job keeps refreshing it (and keeps off the writer's own).
-function generatedAt(scene: DraftScene): Date | null {
-	return scene.summaryGeneratedAt ? new Date(scene.summaryGeneratedAt) : null;
+// Whether the Assistant wrote a saved summary goes with the summary, so the
+// summary job keeps refreshing it (and keeps off the writer's own). A copy
+// inserted with updatedAt set to stamp counts as current when the saved
+// summary was (see summary-currency).
+function copiedStamp(
+	saved: Pick<DraftScene, 'summaryGeneratedAt' | 'summaryCurrent'>,
+	stamp: Date
+): Date | null {
+	const generatedAt = saved.summaryGeneratedAt ? new Date(saved.summaryGeneratedAt) : null;
+	return copiedSummaryStamp(generatedAt, saved.summaryCurrent === true, stamp);
 }
 
 // Puts one scene's saved text back into the working draft. The live scene's
@@ -579,6 +598,7 @@ export async function restoreDraftScene(
 					.where(and(eq(chapters.id, saved.chapterId), eq(chapters.storyId, storyId)))
 			: [];
 		const chapterId = chapter?.id ?? null;
+		const stamp = new Date();
 		const [created] = await tx
 			.insert(scenes)
 			.values({
@@ -591,7 +611,8 @@ export async function restoreDraftScene(
 				title: saved.title,
 				bodyMd: saved.bodyMd,
 				summaryMd: saved.summaryMd,
-				summaryGeneratedAt: generatedAt(saved),
+				summaryGeneratedAt: copiedStamp(saved, stamp),
+				updatedAt: stamp,
 				status: saved.status as (typeof scenes.$inferInsert)['status'],
 				storyTime: saved.storyTime,
 				wordCount: wordCount(saved.bodyMd),
@@ -650,6 +671,7 @@ export async function newStoryFromDraft(
 				.returning({ id: stories.id, slug: stories.slug });
 
 			const sceneIds = new Map<string, string>();
+			const stamp = new Date();
 			let globalPosition = 0;
 			const insertScene = async (
 				scene: DraftContent['scenes'][number],
@@ -667,7 +689,8 @@ export async function newStoryFromDraft(
 						title: scene.title,
 						bodyMd: scene.bodyMd,
 						summaryMd: scene.summaryMd,
-						summaryGeneratedAt: generatedAt(scene),
+						summaryGeneratedAt: copiedStamp(scene, stamp),
+						updatedAt: stamp,
 						storyTime: scene.storyTime,
 						status: scene.status as (typeof scenes.$inferInsert)['status'],
 						wordCount: wordCount(scene.bodyMd)
@@ -682,6 +705,8 @@ export async function newStoryFromDraft(
 						storyId: created.id,
 						title: chapter.title,
 						summaryMd: chapter.summaryMd,
+						summaryGeneratedAt: copiedStamp(chapter, stamp),
+						updatedAt: stamp,
 						position: index + 1
 					})
 					.returning({ id: chapters.id });

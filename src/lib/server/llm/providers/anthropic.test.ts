@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { anthropicProvider } from './anthropic';
 import {
+	billedUsage,
 	EndpointReplyError,
 	type Connection,
 	type HttpRequest,
@@ -729,6 +730,54 @@ describe('anthropicProvider.respond over a stream', () => {
 			completionTokens: 12,
 			cachedPromptTokens: 150
 		});
+	});
+
+	it('keeps the input count from message_start when message_delta reports it as 0', async () => {
+		// Some compatible endpoints send 0 for the input side on message_delta.
+		const frames = [
+			start({ input_tokens: 9, cache_read_input_tokens: 100 }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('end_turn', { input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 12 })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({
+			promptTokens: 109,
+			completionTokens: 12,
+			cachedPromptTokens: 100
+		});
+	});
+
+	it('attaches what a failed stream was billed so far to the error it throws', async () => {
+		const opening = [
+			start({ input_tokens: 9, output_tokens: 1 }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Ha' } }),
+			frame({ type: 'message_delta', delta: {}, usage: { output_tokens: 4 } })
+		];
+		const cases = [
+			[...opening, frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })],
+			[
+				...opening,
+				frame({ type: 'error', error: { type: 'invalid_request_error', message: 'x' } })
+			],
+			opening
+		];
+		for (const frames of cases) {
+			const http: HttpRequest = async () => sseResponse(frames);
+			const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+			expect(err).toBeInstanceOf(Error);
+			expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: 4 });
+		}
+	});
+
+	it('attaches no usage to a failure before message_start', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toBeUndefined();
 	});
 
 	it('assembles web search blocks and citations, kept verbatim for a thinking tool turn', async () => {

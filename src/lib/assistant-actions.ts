@@ -238,7 +238,8 @@ function jobLabels(
 	if (kind === 'enrich') {
 		return {
 			runningLabel: `Suggesting details for the entries in ${label}...`,
-			doneLabel: `Suggestions for the entries in ${label} ready`,
+			// A finished pass may have found nothing new; the notification says.
+			doneLabel: `Finished suggesting details for the entries in ${label}`,
 			failedLabel: `Could not suggest details for ${label}`
 		};
 	}

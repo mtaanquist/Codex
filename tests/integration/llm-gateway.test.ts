@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assistantUsage,
 	reviewSuggestions,
 	scenes,
 	stories,
@@ -31,6 +32,7 @@ const { listSuggestions, decideSuggestion } = await import('../../src/lib/server
 const { complete, completeDetailed, stream, AssistantDisabledError } =
 	await import('../../src/lib/server/llm/gateway');
 const { anthropicProvider } = await import('../../src/lib/server/llm/providers/anthropic');
+const { SpendMeter } = await import('../../src/lib/server/llm/spend');
 
 let pool: pg.Pool;
 let db: Database;
@@ -2055,6 +2057,96 @@ describe('gateway request retries', () => {
 		);
 		expect(reply).toBe('whole');
 		expect(endpoint.calls()).toBe(2);
+	});
+
+	// An overload that arrives after the endpoint has started generating: the
+	// input side is billed on message_start and the output so far on
+	// message_delta. A compatible endpoint may repeat the input count as 0 there.
+	const billedFailure = sse([
+		{ type: 'message_start', message: { usage: { input_tokens: 40, output_tokens: 1 } } },
+		{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+		{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hal' } },
+		{ type: 'message_delta', delta: {}, usage: { input_tokens: 0, output_tokens: 7 } },
+		{ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
+	]);
+	const pricing = { 'chat-model': { prompt: 0.001, completion: 0.01 } };
+	const usageRows = () =>
+		db
+			.select({
+				promptTokens: assistantUsage.promptTokens,
+				completionTokens: assistantUsage.completionTokens
+			})
+			.from(assistantUsage)
+			.where(eq(assistantUsage.userId, userId));
+
+	it('records and meters the tokens a failed attempt was billed for, then retries', async () => {
+		await configure(true);
+		let attempt = 0;
+		const endpoint = scriptedHttp(() => {
+			attempt += 1;
+			return {
+				type: 'text/event-stream',
+				body:
+					attempt === 1
+						? billedFailure
+						: sse([
+								{ type: 'message_start', message: { usage: { input_tokens: 40 } } },
+								{
+									type: 'content_block_start',
+									index: 0,
+									content_block: { type: 'text', text: '' }
+								},
+								{
+									type: 'content_block_delta',
+									index: 0,
+									delta: { type: 'text_delta', text: 'whole' }
+								},
+								{ type: 'content_block_stop', index: 0 },
+								{
+									type: 'message_delta',
+									delta: { stop_reason: 'end_turn' },
+									usage: { output_tokens: 2 }
+								},
+								{ type: 'message_stop' }
+							])
+			};
+		});
+		const meter = new SpendMeter({ pricing, capUsd: 100 });
+		const result = await completeDetailed(
+			db,
+			{ userId, role: 'chat', messages: [], meter },
+			{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+		);
+		expect(result.content).toBe('whole');
+		const rows = await usageRows();
+		expect(rows).toHaveLength(2);
+		expect(rows).toEqual(
+			expect.arrayContaining([
+				{ promptTokens: 40, completionTokens: 7 },
+				{ promptTokens: 40, completionTokens: 2 }
+			])
+		);
+		expect(result.usage).toEqual({ promptTokens: 80, completionTokens: 9 });
+		expect(meter.spentUsd).toBeCloseTo(80 * 0.001 + 9 * 0.01);
+		expect(meter.notApplied).toBe(false);
+	});
+
+	it('records and meters every billed attempt when it gives up', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({ type: 'text/event-stream', body: billedFailure }));
+		const meter = new SpendMeter({ pricing, capUsd: 100 });
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, role: 'chat', messages: [], meter },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/Endpoint returned 529/);
+		expect(endpoint.calls()).toBe(3);
+		const rows = await usageRows();
+		expect(rows).toHaveLength(3);
+		for (const row of rows) expect(row).toEqual({ promptTokens: 40, completionTokens: 7 });
+		expect(meter.spentUsd).toBeCloseTo(3 * (40 * 0.001 + 7 * 0.01));
 	});
 
 	it('gives up on a stream that keeps failing with a server fault after the usual retries', async () => {

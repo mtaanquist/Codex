@@ -181,7 +181,15 @@ describe('saveDraft', () => {
 		expect(draft?.wordCount).toBe(7);
 		const content = draft!.content;
 		expect(content.story.title).toBe('The Salt Road');
-		expect(content.chapters).toEqual([{ id: chapterId, title: 'Departure', summaryMd: null }]);
+		expect(content.chapters).toEqual([
+			{
+				id: chapterId,
+				title: 'Departure',
+				summaryMd: null,
+				summaryGeneratedAt: null,
+				summaryCurrent: false
+			}
+		]);
 		expect(content.scenes.map((scene) => [scene.id, scene.chapterId, scene.bodyMd])).toEqual([
 			[sceneId, chapterId, 'Halden left at dawn.'],
 			[unfiledId, null, 'A stray page.']

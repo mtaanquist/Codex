@@ -205,11 +205,11 @@ async function enrichRead(
 			enableTools: false,
 			messages,
 			maxTokens: MAX_ENRICH_TOKENS,
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	opts.meter?.record(result.model, result.usage);
 	// Cut-off JSON parses to nothing; failing keeps the entity unmarked so the
 	// next pass reads it again.
 	if (result.cutOff) {

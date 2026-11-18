@@ -603,6 +603,7 @@ export function createHandlers(deps: WorkerDeps) {
 				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
 				// For a pass that stopped early: what it still left behind, if anything.
 				const left = result.staged > 0 ? `, with ${suggestions} left` : '';
+				const readNothing = result.entities === 0 && !result.unchanged && result.failed > 0;
 				let title: string;
 				if (result.noModel) {
 					title = `No model is chosen for the Assistant, so it stopped reading the entries in "${name}"${left}. ${PICK_MODEL}, then type /enrich to carry on.`;
@@ -612,7 +613,7 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read${left}. Check the endpoint in your settings, then type /enrich to carry on.`;
 				} else if (result.aborted) {
 					title = `The Assistant stopped reading the entries in "${name}" before it finished${left}. Type /enrich to carry on.`;
-				} else if (result.entities === 0 && !result.unchanged && result.failed > 0) {
+				} else if (readNothing) {
 					title = `The Assistant could not read the entries in "${name}". ${result.cutOff ?? 'Check the endpoint in your settings.'}`;
 				} else if (result.staged === 0) {
 					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
@@ -649,6 +650,13 @@ export function createHandlers(deps: WorkerDeps) {
 					...(result.noModel ? { noModel: true } : {}),
 					...(result.stoppedFailing ? { stoppedFailing: true } : {})
 				});
+				// A pass that stopped on a problem, or could read nothing, is settled
+				// as completed with a failed output, which the activity card reads as
+				// failed instead of ready. pg-boss does not run it again: a retry
+				// would stop the same way.
+				if (result.noModel || result.disabled || result.stoppedFailing || readNothing) {
+					await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
+				}
 			}
 		},
 
