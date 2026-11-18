@@ -473,6 +473,58 @@ describe('chats over the endpoints', () => {
 		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
 	});
 
+	it('starts a new chat under the id the panel picked, and reaches it again by that id', async () => {
+		const picked = '0f8fad5b-d9cb-469f-a165-70867728950e';
+		const first = await chatPost({
+			storyId,
+			newChatId: picked,
+			messages: [{ role: 'user', content: 'First.' }]
+		});
+		await first.text();
+		expect(first.headers.get('x-chat-id')).toBe(picked);
+		// The panel never learned the id (stopped early), so it sends it again.
+		const again = await chatPost({
+			storyId,
+			newChatId: picked,
+			messages: [{ role: 'user', content: 'Second.' }]
+		});
+		await again.text();
+		expect(again.headers.get('x-chat-id')).toBe(picked);
+		expect((await listChat(db, userId, picked)).map((m) => m.content)).toEqual([
+			'First.',
+			'Answer.',
+			'Second.',
+			'Answer.'
+		]);
+	});
+
+	it("refuses a picked id that is another writer's chat or not a uuid", async () => {
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'p@example.com', displayName: 'P', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await expectStatus(
+			chatPost(
+				{ storyId, newChatId: chatId, messages: [{ role: 'user', content: 'x' }] },
+				other.id
+			),
+			404
+		);
+		await expectStatus(
+			chatPost({ storyId, newChatId: 'nope', messages: [{ role: 'user', content: 'x' }] }),
+			400
+		);
+		expect(await listChat(db, userId, chatId)).toHaveLength(0);
+	});
+
+	it('does not load or delete a chat whose story is in the trash', async () => {
+		await db.update(stories).set({ deletedAt: new Date() });
+		await expectStatus(onChat('GET', chatId), 404);
+		await expectStatus(onChat('DELETE', chatId), 404);
+		await db.update(stories).set({ deletedAt: null });
+		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
+	});
+
 	it('loads and deletes a chat', async () => {
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })

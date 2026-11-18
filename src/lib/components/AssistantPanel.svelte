@@ -45,7 +45,13 @@
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyMarkdown } from '#lib/markdown';
-	import { CHAT_WINDOW_TURNS, chatTitle, RECAP_CHAT_TITLE } from '#lib/assistant-chat';
+	import {
+		CHAT_MISSING,
+		CHAT_WINDOW_TURNS,
+		chatTitle,
+		newChatId,
+		RECAP_CHAT_TITLE
+	} from '#lib/assistant-chat';
 	import { relativeShort } from '#lib/format';
 	import { now } from '#lib/now.svelte';
 	import { page } from '$app/state';
@@ -175,6 +181,10 @@
 	let chats = $state<ChatSummary[]>(chat?.chats ?? []);
 	// svelte-ignore state_referenced_locally
 	let chatId = $state<string | null>(chat?.chatId ?? null);
+	// The id the next new chat gets. The panel picks it, so a first message
+	// stopped before the reply starts still lands in the chat the next one
+	// goes to, rather than leaving the question in a chat of its own.
+	let nextChatId = newChatId();
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
 	let input = $state('');
 	let busy = $state(false);
@@ -259,6 +269,16 @@
 		}
 	}
 
+	// The message of a refused request, or '' when its body is not JSON.
+	async function errorMessage(response: Response): Promise<string> {
+		try {
+			const body = (await response.json()) as { message?: unknown };
+			return typeof body.message === 'string' ? body.message : '';
+		} catch {
+			return '';
+		}
+	}
+
 	// A turn was stored in a chat: it moves to the top of the list, and a chat
 	// the server just created joins it under the title the server gave it.
 	function noteChatUsed(id: string, title: string) {
@@ -290,7 +310,7 @@
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...payload, chatId }),
+				body: JSON.stringify({ ...payload, chatId, ...(chatId ? {} : { newChatId: nextChatId }) }),
 				signal: controller.signal
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
@@ -299,11 +319,12 @@
 				if (storesTurnFirst || chatId === storedIn) noteChatUsed(storedIn, title);
 				else startedIn = storedIn;
 			}
-			if (response.status === 404 && chatId) {
+			if (response.status === 404 && (await errorMessage(response)) === CHAT_MISSING) {
 				// The open chat was deleted elsewhere (another tab).
 				const gone = chatId;
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
+				nextChatId = newChatId();
 				appendToReply(
 					'This chat was deleted. Your message was not sent; send it again to start a new chat.'
 				);
@@ -713,6 +734,7 @@
 	function newChat() {
 		if (busy || switching) return;
 		chatId = null;
+		nextChatId = newChatId();
 		messages = [{ role: 'assistant', content: opening }];
 		olderSummarised = false;
 		pickerOpen = false;
@@ -830,15 +852,38 @@
 		}
 	}
 
+	// Up and down arrows move between the search box and the chat rows, Home
+	// and End jump to the first and last row.
+	function pickerKeydown(event: KeyboardEvent) {
+		if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+		const picker = event.currentTarget as HTMLElement;
+		const rows = [...picker.querySelectorAll<HTMLButtonElement>('.chat-row')];
+		if (rows.length === 0) return;
+		const inSearch = event.target === pickerSearch;
+		if (inSearch && (event.key === 'Home' || event.key === 'End')) return;
+		const at = rows.indexOf(event.target as HTMLButtonElement);
+		let next: HTMLElement | undefined;
+		if (event.key === 'Home') next = rows[0];
+		else if (event.key === 'End') next = rows[rows.length - 1];
+		else if (event.key === 'ArrowDown') next = inSearch ? rows[0] : rows[at + 1];
+		else next = at <= 0 ? pickerSearch : rows[at - 1];
+		if (!next) return;
+		event.preventDefault();
+		next.focus();
+	}
+
 	// The textarea's value is one-way bound, so it is written here directly to
 	// be sized and to place the cursor at the end in the same tick.
 	function prefill(text: string) {
-		input = text;
+		// Text the writer typed and has not sent stays, with the prompt after it.
+		const typed = input.trim();
+		const value = typed ? `${typed}\n\n${text}` : text;
+		input = value;
 		if (!composer) return;
-		composer.value = text;
+		composer.value = value;
 		fit(composer);
 		composer.focus();
-		composer.setSelectionRange(text.length, text.length);
+		composer.setSelectionRange(value.length, value.length);
 	}
 
 	function fit(el: HTMLTextAreaElement) {
@@ -901,7 +946,13 @@
 					<Icon name="caret" size={12} />
 				</button>
 				{#if pickerOpen}
-					<div class="chat-picker popover" role="dialog" aria-label="Your chats">
+					<div
+						class="chat-picker popover"
+						role="dialog"
+						aria-label="Your chats"
+						tabindex="-1"
+						onkeydown={pickerKeydown}
+					>
 						<input
 							bind:this={pickerSearch}
 							class="chat-search"

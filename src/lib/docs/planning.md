@@ -40,7 +40,7 @@ A character's page has an "Arc across the stories" section. Select "Write arc" a
 
 When you have set up the Assistant on your account page, the right column of the plan gains an Assistant panel, next to Reference and History. It is a chat grounded in your world, so you can ask questions and work through ideas while you plan.
 
-On a story's plan, the panel talks about that story, and it shares one conversation with the story's Write and Review views: send a message in one and it is there when you open another. On a universe's plan, the panel talks about the whole universe and keeps its own separate conversation.
+On a story's plan, the panel talks about that story, and it shares the story's chats with its Write and Review views: a chat you start in one is listed when you open another. On a universe's plan, the panel talks about the whole universe and keeps its own chats. See [the editor article](/docs/editor) for starting, switching and deleting chats.
 
 The Assistant can read across every story in the universe, not just the one in front of you. So while you plan a new book you can ask it to check a detail, an event, or a character against the earlier ones, and it will find the scene it comes from and tell you where. Ask it to check continuity across the stories and it will look for facts, timelines, and character details that disagree between the books.
 

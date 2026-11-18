@@ -6,7 +6,15 @@ import { rateLimitAssistant } from '../write-guard';
 import { readJson } from '../validation';
 import { assistantLayout } from './config';
 import { AssistantDisabledError, stream } from './gateway';
-import { appendChat, dropChatIfEmpty, resolveChat, type ChatScope } from './chat-history';
+import {
+	appendChat,
+	dropChatIfEmpty,
+	openNewChat,
+	resolveChat,
+	type ChatScope
+} from './chat-history';
+import { CHAT_MISSING } from '#lib/assistant-chat';
+import { isUuid } from '#lib/slug';
 import type { ChatMessage, SplitProposal, StreamEvent } from './providers/types';
 
 // The shared front door and transport of the assistant endpoints, so the
@@ -64,20 +72,30 @@ export function throwAssistantError(err: unknown, fallback: string): never {
 
 // The chat a turn belongs to: the writer's chat named by payload.chatId in this
 // scope, or a new one titled `title` when the payload names none (created says
-// which). A chatId that is not the writer's chat in this scope is a 404, so ids
+// which). A new chat takes the id the panel picked (newChatId) when it sent
+// one. A chatId that is not the writer's chat in this scope is a 404, so ids
 // cannot be probed.
 export async function requireChat(
 	userId: string,
 	scope: ChatScope,
 	rawChatId: unknown,
-	title: string
+	title: string,
+	rawNewChatId?: unknown
 ): Promise<{ id: string; created: boolean }> {
 	if (rawChatId !== undefined && rawChatId !== null && typeof rawChatId !== 'string') {
 		error(400, 'chatId must be a string.');
 	}
 	const named = rawChatId || null;
+	if (!named && rawNewChatId !== undefined && rawNewChatId !== null) {
+		if (typeof rawNewChatId !== 'string' || !isUuid(rawNewChatId)) {
+			error(400, 'newChatId must be a uuid.');
+		}
+		const opened = await openNewChat(db, userId, scope, rawNewChatId, title);
+		if (!opened) error(404, CHAT_MISSING);
+		return opened;
+	}
 	const chatId = await resolveChat(db, userId, scope, named, title);
-	if (!chatId) error(404, 'That chat does not exist.');
+	if (!chatId) error(404, CHAT_MISSING);
 	return { id: chatId, created: !named };
 }
 

@@ -119,6 +119,27 @@ export async function resolveChat(
 	return row.id;
 }
 
+// A new chat under an id the panel picked, so the panel knows the id even if
+// the request is stopped before the reply starts. Sending under the same id
+// again reaches the same chat (created false); an id that is someone else's
+// chat, or this writer's chat in another scope, is null.
+export async function openNewChat(
+	db: Database,
+	userId: string,
+	scope: ChatScope,
+	newId: string,
+	title: string
+): Promise<{ id: string; created: boolean } | null> {
+	const [row] = await db
+		.insert(assistantChats)
+		.values({ id: newId, ...scopeValues(scope), userId, title })
+		.onConflictDoNothing()
+		.returning({ id: assistantChats.id });
+	if (row) return { id: row.id, created: true };
+	const chat = await getChat(db, userId, newId);
+	return chat && sameScope(chat.scope, scope) ? { id: chat.id, created: false } : null;
+}
+
 // The chat the panel opens with: the most recently used one, if any.
 export async function loadAssistantChat(
 	db: Database,
