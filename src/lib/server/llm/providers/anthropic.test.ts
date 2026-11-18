@@ -773,6 +773,49 @@ describe('anthropicProvider.respond over a stream', () => {
 		}
 	});
 
+	it('estimates the output of a failed stream that never reached message_delta', async () => {
+		// The real API sends message_delta once, at the end, so a stream that
+		// fails partway has only message_start's output count (about 1). The
+		// text, thinking and tool input streamed so far stand in for it.
+		const text = 'x'.repeat(40);
+		const thinking = 'y'.repeat(20);
+		const toolJson = '{"name":"Mira"}';
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'thinking_delta', thinking }
+				}),
+				frame({ type: 'content_block_stop', index: 0 }),
+				frame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text } }),
+				frame({ type: 'content_block_stop', index: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 2,
+					content_block: { type: 'tool_use', id: 't1', name: 'find', input: {} }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 2,
+					delta: { type: 'input_json_delta', partial_json: toolJson }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 9,
+			completionTokens: Math.ceil((text.length + thinking.length + toolJson.length) / 4)
+		});
+	});
+
 	it('attaches no usage to a failure before message_start', async () => {
 		const http: HttpRequest = async () =>
 			sseResponse([frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })]);

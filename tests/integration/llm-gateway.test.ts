@@ -2059,14 +2059,18 @@ describe('gateway request retries', () => {
 		expect(endpoint.calls()).toBe(2);
 	});
 
-	// An overload that arrives after the endpoint has started generating: the
-	// input side is billed on message_start and the output so far on
-	// message_delta. A compatible endpoint may repeat the input count as 0 there.
+	// An overload that arrives after the endpoint has started generating. The
+	// input side is billed on message_start; the real API sends message_delta only
+	// at the end, so the output so far is estimated from the 28 characters
+	// streamed (7 tokens at four characters each), not message_start's 1.
 	const billedFailure = sse([
 		{ type: 'message_start', message: { usage: { input_tokens: 40, output_tokens: 1 } } },
 		{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
-		{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hal' } },
-		{ type: 'message_delta', delta: {}, usage: { input_tokens: 0, output_tokens: 7 } },
+		{
+			type: 'content_block_delta',
+			index: 0,
+			delta: { type: 'text_delta', text: 'Halfway through a long reply' }
+		},
 		{ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
 	]);
 	const pricing = { 'chat-model': { prompt: 0.001, completion: 0.01 } };

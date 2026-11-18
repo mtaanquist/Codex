@@ -1,6 +1,6 @@
 import type { Database } from '../../auth.ts';
 import type { ChatMessage } from '../providers/types.ts';
-import { DEFAULT_BUDGET_TOKENS } from './budgets.ts';
+import { DEFAULT_BUDGET_TOKENS, estimateTokens } from './budgets.ts';
 import {
 	activeLore,
 	inScopeEntities,
@@ -37,11 +37,7 @@ import type { MentionEntity } from '#lib/editor-mentions';
 // So the numbers and the drop order here are deliberately simple and provisional
 // - a single overall budget and a greedy fit - not a tuned per-tier strategy.
 
-// A rough token estimate (about four characters per token); good enough to keep
-// a request from blowing past a context window, not a real tokenizer.
-export function estimateTokens(text: string): number {
-	return Math.ceil(text.length / 4);
-}
+export { estimateTokens };
 
 export type ContextTier = { name: string; text: string };
 
