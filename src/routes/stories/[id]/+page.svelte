@@ -825,6 +825,7 @@
 						plan: resolve('/stories/[id]/plan', { id: data.story.slug }),
 						review: resolve('/stories/[id]/review', { id: data.story.slug })
 					}}
+					storyId={data.story.id}
 				/>
 				<SidebarSearch bind:query={sidebarQuery} placeholder="Filter chapters and scenes..." />
 			</div>

@@ -61,20 +61,58 @@ export function flashActivity(
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The Assistant jobs this tab is following, by job id, with their latest
+// progress. Separate from the cards so dismissing a card does not hide the run
+// from the story's mode strip (RunningJobsNote), which reads this list.
+export type JobScope = {
+	storyId?: string | null;
+	chapterId?: string | null;
+	universeId?: string | null;
+	mode?: 'full' | 'continuity';
+};
+
+export type JobProgress = {
+	phase: 'summaries' | 'scenes' | 'consistency' | 'done';
+	completed: number;
+	total: number;
+};
+
+export type TrackedJob = JobScope & {
+	id: string;
+	kind: 'review' | 'summaries';
+	progress?: JobProgress;
+};
+
+export const trackedJobs = $state<{ list: TrackedJob[] }>({ list: [] });
+
+function updateJob(id: string, patch: Partial<TrackedJob>): void {
+	trackedJobs.list = trackedJobs.list.map((job) => (job.id === id ? { ...job, ...patch } : job));
+}
+
+// How often a running job is polled: briskly at first, then less often for a
+// long run, which can take hours on local hardware.
+const POLL_MS = 3000;
+const SLOW_POLL_MS = 15000;
+const SLOW_AFTER_MS = 5 * 60 * 1000;
+
 // Polls a queued background job (review or summaries) to completion, driving one
 // activity card from running to done or failed. When the enqueue could not hand
 // back a job id (a coalesced singleton, say), it shows the work as accepted and
-// leaves the notification bell to announce the result.
+// leaves the notification bell to announce the result. A job this tab already
+// follows is not tracked twice.
 export async function trackJob(opts: {
 	jobId: string | null;
 	kind: 'review' | 'summaries';
+	scope?: JobScope;
 	runningLabel: string;
 	doneLabel: string;
 	failedLabel: string;
 	href?: string;
 }): Promise<void> {
+	const jobId = opts.jobId;
+	if (jobId && trackedJobs.list.some((job) => job.id === jobId)) return;
 	const id = startActivity(opts.runningLabel);
-	if (!opts.jobId) {
+	if (!jobId) {
 		resolveActivity(id, {
 			state: 'done',
 			label: opts.doneLabel,
@@ -83,38 +121,55 @@ export async function trackJob(opts: {
 		});
 		return;
 	}
-	const POLL_MS = 3000;
-	const TIMEOUT_MS = 15 * 60 * 1000;
+	trackedJobs.list = [...trackedJobs.list, { id: jobId, kind: opts.kind, ...opts.scope }];
 	const startedAt = Date.now();
-	while (Date.now() - startedAt < TIMEOUT_MS) {
-		await delay(POLL_MS);
-		let state: ActivityState = 'running';
-		try {
-			const response = await fetch(
-				`/api/assistant/job-status?kind=${opts.kind}&id=${encodeURIComponent(opts.jobId)}`
-			);
-			if (response.ok) state = ((await response.json()) as { state: ActivityState }).state;
-		} catch {
-			// A blip leaves the card running; the next poll catches up.
+	try {
+		for (;;) {
+			await delay(Date.now() - startedAt < SLOW_AFTER_MS ? POLL_MS : SLOW_POLL_MS);
+			let state: ActivityState | 'stale' = 'running';
+			try {
+				const response = await fetch(
+					`/api/assistant/job-status?kind=${opts.kind}&id=${encodeURIComponent(jobId)}`
+				);
+				if (response.ok) {
+					const body = (await response.json()) as {
+						state: ActivityState | 'stale';
+						phase?: JobProgress['phase'];
+						completed?: number;
+						total?: number;
+					};
+					state = body.state;
+					if (body.phase) {
+						updateJob(jobId, {
+							progress: {
+								phase: body.phase,
+								completed: body.completed ?? 0,
+								total: body.total ?? 0
+							}
+						});
+					}
+				}
+			} catch {
+				// A blip leaves the card running; the next poll catches up.
+			}
+			if (state === 'done') {
+				resolveActivity(id, { state: 'done', label: opts.doneLabel, href: opts.href });
+				return;
+			}
+			if (state === 'failed' || state === 'stale') {
+				resolveActivity(id, {
+					state: 'failed',
+					label: opts.failedLabel,
+					// A stale run was dropped by the queue part-way and will not finish.
+					detail:
+						state === 'stale'
+							? 'It stopped before it finished. Run it again to continue.'
+							: 'Check the Assistant endpoint in your settings.'
+				});
+				return;
+			}
 		}
-		if (state === 'done') {
-			resolveActivity(id, { state: 'done', label: opts.doneLabel, href: opts.href });
-			return;
-		}
-		if (state === 'failed') {
-			resolveActivity(id, {
-				state: 'failed',
-				label: opts.failedLabel,
-				detail: 'Check the Assistant endpoint in your settings.'
-			});
-			return;
-		}
+	} finally {
+		trackedJobs.list = trackedJobs.list.filter((job) => job.id !== jobId);
 	}
-	// Stopped waiting after a long run; let the notification bell carry the result.
-	resolveActivity(id, {
-		state: 'done',
-		label: opts.doneLabel,
-		detail: 'Still finishing. You will be notified when it is ready.',
-		href: opts.href
-	});
 }
