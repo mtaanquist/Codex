@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
 import {
 	chapters,
@@ -362,6 +362,9 @@ export type ScopeEntity = {
 	// The per-story overlay note (character/place/lore_story_notes), if any.
 	storyNote: string | null;
 	relationships: { label: string; otherName: string }[];
+	// A character's arc across the universe's stories, when the Assistant has
+	// written one.
+	arcSummaryMd?: string | null;
 };
 
 // Characters and places that are declared members of, or mentioned in, this
@@ -422,7 +425,8 @@ async function buildScopeEntities(
 				name: table.name,
 				summaryMd: table.summaryMd,
 				details: table.details,
-				aliases: table.aliases
+				aliases: table.aliases,
+				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`
 			})
 			.from(table)
 			.where(inArray(table.id, ids))
@@ -485,6 +489,7 @@ function buildEntity(
 		summaryMd: string | null;
 		details: EntityDetail[];
 		aliases: string[] | null;
+		arcSummaryMd: string | null;
 	},
 	noteFor: Map<string, string | null>
 ): ScopeEntity {
@@ -496,7 +501,8 @@ function buildEntity(
 		details: row.details ?? [],
 		aliases: row.aliases ?? [],
 		storyNote: noteFor.get(row.id) ?? null,
-		relationships: []
+		relationships: [],
+		arcSummaryMd: row.arcSummaryMd
 	};
 }
 

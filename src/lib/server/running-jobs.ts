@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import { chapters, stories, universes } from './db/schema.ts';
+import { chapters, characters, stories, universes } from './db/schema.ts';
 import {
 	ASSISTANT_ENRICH_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
@@ -14,7 +14,7 @@ import {
 
 export type RunningAssistantJob = {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc';
 	mode: 'full' | 'continuity';
 	storyId: string | null;
 	chapterId: string | null;
@@ -28,6 +28,7 @@ type JobData = {
 	storyId?: string;
 	chapterId?: string;
 	universeId?: string;
+	characterId?: string;
 	mode?: 'full' | 'continuity';
 };
 
@@ -54,7 +55,9 @@ export async function findRunningAssistantJobs(
 			row.name === ASSISTANT_SUMMARIES_QUEUE
 				? ('summaries' as const)
 				: row.name === ASSISTANT_ENRICH_QUEUE
-					? ('enrich' as const)
+					? row.data.characterId
+						? ('arc' as const)
+						: ('enrich' as const)
 					: ('review' as const),
 		data: row.data
 	}));
@@ -103,6 +106,19 @@ export async function findRunningAssistantJobs(
 				).map((r) => [r.id, r.name])
 			: []
 	);
+	const characterIds = [
+		...new Set(found.flatMap((j) => (j.data.characterId ? [j.data.characterId] : [])))
+	];
+	const characterNames = new Map(
+		characterIds.length
+			? (
+					await db
+						.select({ id: characters.id, name: characters.name })
+						.from(characters)
+						.where(and(inArray(characters.id, characterIds), eq(characters.ownerId, userId)))
+				).map((r) => [r.id, r.name])
+			: []
+	);
 	const chapterTitles = new Map(
 		chapterIds.length
 			? (
@@ -120,6 +136,10 @@ export async function findRunningAssistantJobs(
 		let title: string | undefined;
 		if (universeId) {
 			title = universeNames.get(universeId);
+			// An arc job is named for its character, within a live universe.
+			if (title !== undefined && job.data.characterId) {
+				title = characterNames.get(job.data.characterId);
+			}
 		} else if (storyId) {
 			title = storyTitles.get(storyId);
 			const chapter = chapterId ? chapterTitles.get(chapterId) : undefined;

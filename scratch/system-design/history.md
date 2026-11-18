@@ -1428,7 +1428,31 @@ endpoint. Started 2026-06-09. Every step below through entity enrichment
 merged as #324-#335 and shipped together as v3.0.0; later items carry their
 own PR and version.
 
-Still open in Phase 9: character arc summaries (#846).
+Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
+2026-11-18).
+
+- [x] Character arc summaries (2026-11-18, #846). Migration 0079 adds
+      `characters.arc_summary_md` and `arc_summary_at` (additive; characters
+      only, YAGNI for places and lore). `llm/arc-summary.ts`:
+      `summariseCharacterArc` reads the live scenes in the character's universe
+      that mention them, one per scene in reading order (story series position,
+      then scene position), each as its `summary_md` or else the passage around
+      the first mention, evenly sampled to 60 so a long arc keeps its opening and
+      latest scene, and asks for at most five sentences (role `utility`, no
+      tools). It writes the columns directly, stamping the database time the read
+      started and keeping `updated_at`: generated metadata in its own column, the
+      way scene summaries are, never the writer's summary. An empty reply throws
+      and leaves the earlier arc. Stale (`arcIsStale`) when a mentioning scene's
+      `updated_at` is after `arc_summary_at`; shown, never regenerated on view.
+      The job shares the `assistant-enrich` queue (data carries `characterId`;
+      singleton key `arc:<id>`; job kind `arc` in the activity center,
+      job-status, and running-jobs) and notifies with the `assistant_enrich`
+      kind, linking to the character. `POST /api/assistant/arc-job`; the
+      "Arc across the stories" section in `EntityEditor` (characters, both Plan
+      pages) waits on the job and refreshes the page data. Context assembly adds
+      the arc to the character block ("Across the stories: ..."). Not in the
+      export: it is regenerable Assistant output, not the writer's words, and
+      nothing on the import side would read it back.
 
 - [x] Background universe enrichment (2026-11-18, #845 part 2). The
       `assistant-enrich` queue (`ASSISTANT_ENRICH_QUEUE`), `queueAssistantEnrich`

@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
@@ -18,6 +18,7 @@
 	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
 	import type { SaveStatus } from '#lib/autosave';
 	import { apiErrorMessage, pluralSuffix } from '#lib/format';
+	import { startArcJob } from '#lib/assistant-actions';
 
 	let {
 		kind,
@@ -34,6 +35,7 @@
 		universeRef,
 		assistantEnabled = false,
 		assistantSuggestions = [],
+		arc = null,
 		onStatus
 	}: {
 		kind: EntityKind;
@@ -46,6 +48,7 @@
 			summaryMd: string | null;
 			bodyMd: string;
 			details?: { label: string; value: string }[];
+			universeId?: string;
 			badgeColor?: string | null;
 			badgeAssetId?: string | null;
 		};
@@ -72,6 +75,9 @@
 		assistantEnabled?: boolean;
 		// Pending Assistant suggestions for this entity, awaiting accept or reject.
 		assistantSuggestions?: AssistantSuggestion[];
+		// A character's arc across the universe's stories, written by the
+		// Assistant, and whether a scene that mentions them changed since.
+		arc?: { summaryMd: string | null; stale: boolean } | null;
 		onStatus: (status: SaveStatus) => void;
 	} = $props();
 
@@ -177,6 +183,23 @@
 		}
 		if (decision === 'accept') applyLocally(s);
 		suggestions = suggestions.filter((p) => p.id !== s.id);
+	}
+
+	// Queues the arc and follows it in the activity card; once it settles, the
+	// page data reloads so the new arc shows, unless the writer has moved on to
+	// another entry in the meantime.
+	let writingArc = $state(false);
+	let mounted = true;
+	onDestroy(() => (mounted = false));
+	async function writeArc() {
+		if (writingArc || !entity.universeId) return;
+		writingArc = true;
+		try {
+			await startArcJob({ characterId: entity.id, universeId: entity.universeId, name });
+			if (mounted) await refreshAll();
+		} finally {
+			writingArc = false;
+		}
 	}
 
 	function suggestionLabel(s: AssistantSuggestion): string {
@@ -595,6 +618,28 @@
 		</button>
 	{/if}
 
+	{#if kind === 'character' && (assistantEnabled || arc?.summaryMd)}
+		<div class="section-label">Arc across the stories</div>
+		{#if arc?.summaryMd}
+			<p class="arc-text">{arc.summaryMd}</p>
+			{#if arc.stale}
+				<p class="field-hint">Scenes with this character have changed since this was written.</p>
+			{/if}
+		{:else}
+			<p class="field-hint">
+				The Assistant can write what happens to this character across your stories, from the scenes
+				they appear in.
+			</p>
+		{/if}
+		{#if assistantEnabled && entity.universeId}
+			<div class="assist-enrich">
+				<button class="btn btn-secondary" type="button" disabled={writingArc} onclick={writeArc}>
+					{writingArc ? 'Writing...' : arc?.summaryMd ? 'Refresh arc' : 'Write arc'}
+				</button>
+			</div>
+		{/if}
+	{/if}
+
 	{#if storyId}
 		<div class="section-label">In this book</div>
 		{#if membership}
@@ -630,6 +675,13 @@
 		gap: 10px;
 		flex-wrap: wrap;
 		margin: 12px 0 0;
+	}
+	.arc-text {
+		margin: 4px 0 0;
+		font-size: 13.5px;
+		line-height: 1.55;
+		color: var(--text);
+		white-space: pre-line;
 	}
 	.assist-note {
 		font-size: 12.5px;

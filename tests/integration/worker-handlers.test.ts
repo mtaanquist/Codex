@@ -10,6 +10,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	assets,
+	characters,
 	notifications,
 	reviewComments,
 	reviewers,
@@ -242,6 +243,51 @@ describe('assistant notices link by id', () => {
 		expect((await hrefs(owner.id)).sort()).toEqual(
 			[`/stories/${story.id}/review`, `/stories/${story.id}`].sort()
 		);
+	});
+
+	it('links a character arc to the character in the universe Plan', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers } = harness({
+			summariseCharacterArc: async () => ({ outcome: 'written' as const }),
+			enrichUniverse: neverCalled
+		});
+
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await hrefs(owner.id)).toEqual([
+			`/universes/${universe.id}/plan?entity=${character.id}`
+		]);
+		expect(await titles(owner.id)).toEqual(['The Assistant wrote the arc for Bram.']);
+	});
+
+	it('tells the writer when an arc could not be written', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers } = harness({
+			summariseCharacterArc: async () => {
+				throw new Error('endpoint down');
+			}
+		});
+
+		// The job fails, so the activity card shows it did not work.
+		await expect(
+			handlers.assistantEnrich([
+				job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+			])
+		).rejects.toThrow('endpoint down');
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not write the arc for Bram. Check the endpoint in your settings.'
+		]);
 	});
 
 	it('links an enrichment pass to the universe Plan by id', async () => {

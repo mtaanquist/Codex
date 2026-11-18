@@ -50,6 +50,7 @@ import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import type { ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { enrichUniverse } from '../lib/server/llm/enrich.ts';
+import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -67,6 +68,7 @@ const defaultServices = {
 	reviewUniverseContinuity,
 	summariseStory,
 	enrichUniverse,
+	summariseCharacterArc,
 	sendEmail,
 	s3AssetStore
 };
@@ -92,7 +94,8 @@ export type AssistantReviewData = {
 
 export type AssistantSummariesData = { userId: string; storyId: string };
 
-export type AssistantEnrichData = { userId: string; universeId: string };
+// characterId set: rewrite that character's arc instead of the enrichment pass.
+export type AssistantEnrichData = { userId: string; universeId: string; characterId?: string };
 
 // The first distinct thing that went wrong in a run, for the notification
 // title. The whole list rides on the job status the review modal polls.
@@ -136,6 +139,47 @@ export function createHandlers(deps: WorkerDeps) {
 			return;
 		}
 		await queueDigests(await insertNotifications(db, [userId], kind, payload));
+	}
+
+	// One character's arc, from an assistant-enrich job that names it.
+	async function characterArc(job: JobWithMetadata<AssistantEnrichData>, characterId: string) {
+		const { userId, universeId } = job.data;
+		const [character] = await db
+			.select({ name: schema.characters.name })
+			.from(schema.characters)
+			.where(and(eq(schema.characters.id, characterId), eq(schema.characters.ownerId, userId)));
+		if (!character) {
+			logEvent('warn', 'assistant.arc_skipped', { characterId, userId, reason: 'gone' });
+			return;
+		}
+		const href = `/universes/${universeId}/plan?entity=${characterId}`;
+		let title: string;
+		try {
+			const result = await services.summariseCharacterArc(db, {
+				userId,
+				characterId,
+				signal: job.signal
+			});
+			if (result.outcome === 'missing') {
+				logEvent('warn', 'assistant.arc_skipped', { characterId, userId, reason: 'not owner' });
+				return;
+			}
+			title =
+				result.outcome === 'empty'
+					? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
+					: `The Assistant wrote the arc for ${character.name}.`;
+		} catch (error) {
+			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
+			title = job.signal?.aborted
+				? `Writing the arc for ${character.name} was stopped before it finished.`
+				: `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			// The notice is held back while pg-boss will try again; the job is
+			// failed either way, so the activity card shows it did not work.
+			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
+			throw error;
+		}
+		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
+		logEvent('info', 'assistant.arc', { characterId });
 	}
 
 	return {
@@ -458,9 +502,14 @@ export function createHandlers(deps: WorkerDeps) {
 
 		// The background enrichment pass over a universe's entities: stages alias,
 		// detail, and summary suggestions for every entry with new prose to read.
-		// Owner re-checked at run time; the writer is notified when it is done.
+		// A job naming a character rewrites that character's arc instead. Owner
+		// re-checked at run time; the writer is notified when it is done.
 		async assistantEnrich(jobs: JobWithMetadata<AssistantEnrichData>[]) {
 			for (const job of jobs) {
+				if (job.data.characterId) {
+					await characterArc(job, job.data.characterId);
+					continue;
+				}
 				const { userId, universeId } = job.data;
 				const [universe] = await db
 					.select({

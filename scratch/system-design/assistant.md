@@ -1,6 +1,7 @@
 # The Assistant (LLM integration)
 
-Status: Phase 9, shipped (status reconciled 2026-07-29). The gateway
+Status: Phase 9, shipped (status reconciled 2026-07-29; the universe-wide
+enrichment pass and character arcs followed on 2026-11-18, #845 and #846). The gateway
 (`src/lib/server/llm/`), the account settings page, the chat tab, inline
 co-author and continuation, the reviewer role, the admin egress panel, the
 per-story mute, and the background jobs with their activity cards are all
@@ -553,6 +554,8 @@ Same vein, worth specifying:
   tense drift.
 - Character arc summaries: an on-demand "what happened to this character
   across their stories" summary, cached per entity (see Background jobs).
+  Built (#846): `characters.arc_summary_md` / `arc_summary_at`, written by the
+  `assistant-enrich` job for one character, shown in the character editor.
 
 Not to be resurrected: the Outline view was retired (migration 0039).
 "What scene comes next" planning belongs on the scene board and in notes,
@@ -809,8 +812,8 @@ context assembly and the cross-scene pass read them.
   the optional tool-call-budget ceiling.
 - Review tables: a third reviewer attribution for the Assistant (synthetic
   reviewer row or a flag column), TBD at build time.
-- Possible additive columns for cached entity arc summaries with a staleness
-  watermark.
+- Cached character arc summaries with a staleness watermark:
+  `characters.arc_summary_md` and `arc_summary_at` (migration 0079).
 - Deferred: persisted chat (`conversations` / `messages`), only if and when
   chat persistence is taken on.
 
@@ -1033,7 +1036,8 @@ calls the gateway, which proxies through the egress guard.
   than a queue, for one entity from a story (story Plan) or across its
   universe (universe Plan); the `assistant-enrich` job runs the same call over
   every entity in a universe with new prose since its `assistant_enriched_at`
-  watermark (`/enrich`).
+  watermark (`/enrich`), and a job naming a character rewrites that
+  character's arc (`arc_summary_md`) instead.
 
 ### Tool use and structural actions - sequencing step 6
 

@@ -348,6 +348,31 @@ export async function queueAssistantEnrich(input: {
 	}
 }
 
+// Queues a rewrite of one character's arc across the universe's stories. It
+// shares the enrichment queue (and so the one-job-per-writer limit); the
+// singleton key holds one unfinished rewrite per character.
+export async function queueAssistantArc(input: {
+	userId: string;
+	universeId: string;
+	characterId: string;
+}): Promise<string | 'coalesced' | null> {
+	try {
+		const boss = await getBoss();
+		const jobId = await boss.send(ASSISTANT_ENRICH_QUEUE, input, {
+			singletonKey: `arc:${input.characterId}`,
+			...assistantSendOptions(input.userId)
+		});
+		return jobId ?? 'coalesced';
+	} catch (error) {
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_ENRICH_QUEUE,
+			characterId: input.characterId,
+			...errorFields(error)
+		});
+		return null;
+	}
+}
+
 // Where the activity center's polling reads a queued Assistant job's progress.
 // pg-boss archives a job once it settles, so a job it can no longer find by id
 // is treated as done rather than lost.
@@ -369,7 +394,8 @@ export function reviewJobState(
 const JOB_QUEUES = {
 	review: ASSISTANT_REVIEW_QUEUE,
 	summaries: ASSISTANT_SUMMARIES_QUEUE,
-	enrich: ASSISTANT_ENRICH_QUEUE
+	enrich: ASSISTANT_ENRICH_QUEUE,
+	arc: ASSISTANT_ENRICH_QUEUE
 } as const;
 
 export async function getAssistantJobState(
