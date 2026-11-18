@@ -288,6 +288,9 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 // maxTokens is the request's output cap, the most an attempt can be billed.
 type StreamProgress = {
 	outputChars: number;
+	// Server tool results (web search) are billed as input, but only
+	// message_delta's running totals report them.
+	resultChars: number;
 	sawDelta: boolean;
 	sawThinking: boolean;
 	maxTokens: number;
@@ -309,8 +312,9 @@ function estimatedOutput(progress: StreamProgress): number {
 // cannot slip past the spend cap.
 // Undefined when message_start never came.
 function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefined {
-	const prompt = promptTotal(raw);
-	if (!Number.isFinite(prompt)) return undefined;
+	const started = promptTotal(raw);
+	if (!Number.isFinite(started)) return undefined;
+	const prompt = progress.sawDelta ? started : started + tokensForChars(progress.resultChars);
 	const reported = Number(raw.output_tokens);
 	const counted = Number.isFinite(reported) ? reported : 0;
 	const completion = progress.sawDelta ? counted : Math.max(counted, estimatedOutput(progress));
@@ -450,6 +454,7 @@ async function assembleMessage(
 	const usage: Block = {};
 	const progress: StreamProgress = {
 		outputChars: 0,
+		resultChars: 0,
 		sawDelta: false,
 		sawThinking: false,
 		maxTokens
@@ -503,6 +508,9 @@ async function assembleFrames(
 					blocks[index] = { ...(frame.content_block as Block) };
 					const type = blocks[index].type;
 					if (type === 'thinking' || type === 'redacted_thinking') progress.sawThinking = true;
+					if (type === 'web_search_tool_result') {
+						progress.resultChars += JSON.stringify(frame.content_block).length;
+					}
 				}
 				break;
 			case 'content_block_delta':
@@ -537,7 +545,13 @@ async function assembleFrames(
 				break;
 			}
 			case 'message_delta':
-				if (typeof frame.usage?.output_tokens === 'number') progress.sawDelta = true;
+				// Some compatible endpoints send the count as a string.
+				if (
+					frame.usage?.output_tokens != null &&
+					Number.isFinite(Number(frame.usage.output_tokens))
+				) {
+					progress.sawDelta = true;
+				}
 				if (delta?.stop_reason) stopReason = delta.stop_reason;
 				for (const [key, value] of Object.entries(frame.usage ?? {})) {
 					if (value === null || value === undefined) continue;
