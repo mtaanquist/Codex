@@ -270,11 +270,21 @@
 	// Stream a reply into the empty assistant message the caller has already
 	// pushed. Shared by chat (send) and recap (catchUp): both POST JSON and read
 	// the same token/done/error Server-Sent Event frames. `title` names the chat
-	// if this request starts one.
-	async function streamInto(url: string, payload: object, title: string) {
+	// if this request starts one. `storesTurnFirst` says the server stores the
+	// writer's turn before the reply (a chat message), so a chat it starts is
+	// kept whatever happens to the reply; otherwise (a recap) the server drops
+	// the new chat again unless a reply is stored, so the panel only adopts it
+	// then. Returns 'gone' when the open chat no longer exists.
+	async function streamInto(
+		url: string,
+		payload: object,
+		title: string,
+		storesTurnFirst: boolean
+	): Promise<'gone' | void> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
+		let startedIn: string | null = null;
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
@@ -284,7 +294,10 @@
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			const storedIn = response.headers.get('x-chat-id');
-			if (response.ok && storedIn) noteChatUsed(storedIn, title);
+			if (response.ok && storedIn) {
+				if (storesTurnFirst || chatId === storedIn) noteChatUsed(storedIn, title);
+				else startedIn = storedIn;
+			}
 			if (response.status === 404 && chatId) {
 				// The open chat was deleted elsewhere (another tab).
 				const gone = chatId;
@@ -293,7 +306,7 @@
 				appendToReply(
 					'This chat was deleted. Your message was not sent; send it again to start a new chat.'
 				);
-				return;
+				return 'gone';
 			}
 			if (!response.ok || !response.body) {
 				appendToReply(
@@ -305,6 +318,7 @@
 			const decoder = new TextDecoder();
 			let buffer = '';
 			let streamError = '';
+			let finished = false;
 			for (;;) {
 				const { done, value } = await reader.read();
 				if (done) break;
@@ -316,9 +330,16 @@
 					else if (event.type === 'proposal') attachProposal(event.proposal);
 					else if (event.type === 'stopped') markStopped(event.reason);
 					else if (event.type === 'error') streamError = event.message;
+					else if (event.type === 'done') finished = true;
 				}
 			}
 			const reply = messages[messages.length - 1];
+			// The same test the server applies before it stores a reply.
+			const stored =
+				finished &&
+				reply?.role === 'assistant' &&
+				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
+			if (startedIn && stored) noteChatUsed(startedIn, title);
 			if (reply && reply.role === 'assistant' && reply.content === '') {
 				reply.content = streamError || 'The Assistant did not return a response.';
 			}
@@ -357,7 +378,7 @@
 		// assembled world, not the transcript.
 		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
-		await streamInto(
+		const outcome = await streamInto(
 			'/api/assistant/chat',
 			{
 				...scopeBody(),
@@ -366,8 +387,17 @@
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 			},
-			chatTitle(question)
+			chatTitle(question),
+			true
 		);
+		// Not sent: put the question back so it need not be typed again.
+		if (outcome === 'gone' && !input.trim()) {
+			input = question;
+			if (composer) {
+				composer.value = question;
+				fit(composer);
+			}
+		}
 	}
 
 	function runSlashCommand(raw: string) {
@@ -650,7 +680,12 @@
 		// universe surface has no catch-up.
 		if (busy || switching || !('storyId' in scope)) return;
 		messages = [...messages, { role: 'assistant', content: '' }];
-		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId }, RECAP_CHAT_TITLE);
+		await streamInto(
+			'/api/assistant/recap',
+			{ storyId: scope.storyId, sceneId },
+			RECAP_CHAT_TITLE,
+			false
+		);
 	}
 
 	// Update summaries: a background pass that drafts and refreshes scene and

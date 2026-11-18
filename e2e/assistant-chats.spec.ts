@@ -3,7 +3,7 @@ import pg from 'pg';
 import { confirmPrompt } from './confirm';
 import { e2eDatabaseUrl } from './database';
 import { gotoReady } from './navigate';
-import { pickFromLibraryMenu } from './library';
+import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // Signs in as the account with the Assistant switched on.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -92,4 +92,65 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 	await expect(picker).toHaveText('Who is Marra?');
 	await picker.click();
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?']);
+});
+
+// A recap that fails in a new chat stores nothing, and the server drops the
+// chat it made for it; the panel must not hold on to that chat, or the next
+// question would be sent to a chat that is gone.
+test('a failed catch-up in a new chat leaves the next question in a new chat', async ({ page }) => {
+	await gotoReady(page, '/login');
+	await page.getByLabel('Email').fill('assistant-e2e@example.com');
+	await page.getByLabel('Password').fill('e2e-password');
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await expect(page).toHaveURL('/');
+
+	const name = `Recap ${Date.now()}`;
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(name);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, name);
+	await page.getByLabel('New story').fill('Cinders');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Cinders');
+
+	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
+	const panel = page.locator('.assistant');
+	const picker = panel.locator('.chat-picker-btn');
+	await expect(async () => {
+		await tab.click();
+		await expect(picker).toHaveText('New chat', { timeout: 2000 });
+	}).toPass();
+
+	// The endpoint fails mid-recap; the server has already dropped the chat.
+	await page.route('**/api/assistant/recap', (route) =>
+		route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': '00000000-0000-4000-8000-000000000001'
+			},
+			body: `data: ${JSON.stringify({ type: 'error', message: 'The endpoint failed.' })}\n\n`
+		})
+	);
+	await panel.getByRole('button', { name: 'More actions' }).click();
+	await page.getByRole('menuitem', { name: 'Catch me up' }).click();
+	await expect(panel.locator('.chat-scroll')).toContainText('The endpoint failed.');
+	await expect(picker).toHaveText('New chat');
+
+	let posted: { chatId?: string | null } | null = null;
+	await page.route('**/api/assistant/chat', async (route) => {
+		posted = route.request().postDataJSON();
+		await route.fulfill({
+			status: 200,
+			headers: { 'content-type': 'text/event-stream' },
+			body: `data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('Who lit the fire?');
+	await composer.press('Enter');
+	await expect.poll(() => posted).not.toBeNull();
+	expect(posted!.chatId ?? null).toBeNull();
 });
