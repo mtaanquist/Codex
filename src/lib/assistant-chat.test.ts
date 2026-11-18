@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { CHAT_TITLE_MAX, chatTitle } from './assistant-chat';
+import { describe, expect, it, vi } from 'vitest';
+import { CHAT_TITLE_MAX, chatTitle, newChatId } from './assistant-chat';
 
 describe('chatTitle', () => {
 	it('collapses whitespace', () => {
@@ -16,5 +16,20 @@ describe('chatTitle', () => {
 	it('keeps a message that already fits', () => {
 		const text = 'x'.repeat(CHAT_TITLE_MAX);
 		expect(chatTitle(text)).toBe(text);
+	});
+});
+
+describe('newChatId', () => {
+	it('makes a version 4 uuid, also where crypto.randomUUID is missing', () => {
+		const shape = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+		expect(newChatId()).toMatch(shape);
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		try {
+			const made = newChatId();
+			expect(made).toMatch(shape);
+			expect(newChatId()).not.toBe(made);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

@@ -72,6 +72,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		universeId?: unknown;
 		sceneId?: unknown;
 		chatId?: unknown;
+		newChatId?: unknown;
 		messages?: unknown;
 	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
@@ -94,7 +95,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The newest user turn joins the stored transcript; the earlier turns are
 	// already there from their own requests.
 	const newest = turns[turns.length - 1];
-	const chat = await requireChat(userId, scope, payload.chatId, chatTitle(newest.content));
+	const chat = await requireChat(
+		userId,
+		scope,
+		payload.chatId,
+		chatTitle(newest.content),
+		payload.newChatId
+	);
 	const chatId = chat.id;
 	if (newest.role === 'user') {
 		const stored = await appendChat(db, userId, scope, chatId, {

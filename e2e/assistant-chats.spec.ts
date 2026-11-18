@@ -69,7 +69,18 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 	await picker.click();
 	const list = page.getByRole('dialog', { name: 'Your chats' });
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?', 'About the harbour']);
-	await list.getByLabel('Search chats').fill('harb');
+	// Arrow keys move between the search box and the rows.
+	const search = list.getByLabel('Search chats');
+	await search.focus();
+	await page.keyboard.press('ArrowDown');
+	await expect(list.locator('.chat-row').first()).toBeFocused();
+	await page.keyboard.press('ArrowDown');
+	await expect(list.locator('.chat-row').nth(1)).toBeFocused();
+	await page.keyboard.press('Home');
+	await expect(list.locator('.chat-row').first()).toBeFocused();
+	await page.keyboard.press('ArrowUp');
+	await expect(search).toBeFocused();
+	await search.fill('harb');
 	await expect(list.locator('.chat-row-title')).toHaveText(['About the harbour']);
 	await list.locator('.chat-row').click();
 	await expect(picker).toHaveText('About the harbour');

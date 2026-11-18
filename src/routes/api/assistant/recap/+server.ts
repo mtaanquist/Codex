@@ -23,6 +23,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		storyId?: unknown;
 		sceneId?: unknown;
 		chatId?: unknown;
+		newChatId?: unknown;
 	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const story = await requireAssistantStory(userId, payload.storyId);
@@ -48,7 +49,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The recap joins the open chat (or starts one) as an assistant turn once
 	// its stream ends cleanly.
 	const scope = { storyId: story.id };
-	const chat = await requireChat(userId, scope, payload.chatId, RECAP_CHAT_TITLE);
+	const chat = await requireChat(
+		userId,
+		scope,
+		payload.chatId,
+		RECAP_CHAT_TITLE,
+		payload.newChatId
+	);
 	return assistantSseResponse({
 		request,
 		userId,
