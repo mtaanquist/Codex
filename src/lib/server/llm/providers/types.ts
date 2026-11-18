@@ -155,10 +155,11 @@ export type HttpResponse = {
 
 // The endpoint answered 2xx, but not with a usable reply: a body that is
 // neither the stream nor the JSON asked for (a captive portal's web page), or an
-// error event partway through the stream. The gateway does not retry it: a
-// resend gets the same page, and a mid-stream failure has already spent the
-// tokens it generated, while its usual cause (overload) outlasts a short
-// backoff. The caller above (the writer, or a job's own retry) tries again.
+// error event partway through the stream that is not an overload or a server
+// fault (those are reported as their status, and retried like it). The gateway
+// does not retry it, since a resend gets the same answer, and nothing above it
+// does either: the review and summary jobs record the failure and finish, so
+// the writer starts the run again.
 export class EndpointReplyError extends Error {
 	constructor(message: string) {
 		super(message);

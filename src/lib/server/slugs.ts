@@ -2,6 +2,7 @@ import { and, eq, isNull, like } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { stories, universes } from './db/schema.ts';
+import { markMentionsStale } from './scene-lifecycle.ts';
 import { isUuid, slugify } from '../slug.ts';
 
 // Suffix room: a deduped slug must still fit the column conventions.
@@ -41,6 +42,12 @@ export async function uniqueSlug(
  * Takes a universe or story out of the trash. A live row may have claimed its
  * slug meanwhile; it then comes back under a fresh one picked from its name,
  * the same as a rename. Retries once if a concurrent write takes that pick.
+ *
+ * Its scenes are older than the arcs and enrich marks written while it was in
+ * the trash, so what they mention is marked for a fresh look in the same
+ * transaction: restored content never looks current to the Assistant. Each
+ * attempt is its own transaction, since a unique violation aborts the one it
+ * hits. The row is locked before the entities, as everywhere else.
  */
 export async function untrash(db: Database, table: 'universes' | 'stories', id: string) {
 	const [row] =
@@ -54,18 +61,23 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 					.from(stories)
 					.where(eq(stories.id, id));
 	if (!row) return;
-	const revive = (slug?: string) => {
+	const revive = (tx: Database, slug?: string) => {
 		const values = slug ? { deletedAt: null, slug } : { deletedAt: null };
 		return table === 'universes'
-			? db.update(universes).set(values).where(eq(universes.id, id))
-			: db.update(stories).set(values).where(eq(stories.id, id));
+			? tx.update(universes).set(values).where(eq(universes.id, id))
+			: tx.update(stories).set(values).where(eq(stories.id, id));
 	};
+	const source = table === 'universes' ? { universeId: id } : { storyId: id };
 	const fallback = table === 'universes' ? 'universe' : 'story';
 	const fresh = () => uniqueSlug(db, table, row.ownerId, row.name, fallback);
 	const attempts = [undefined, fresh, fresh];
 	for (const [i, pick] of attempts.entries()) {
 		try {
-			await revive(pick && (await pick()));
+			const slug = pick && (await pick());
+			await db.transaction(async (tx) => {
+				await revive(tx, slug);
+				await markMentionsStale(tx, source, { enrich: true });
+			});
 			return;
 		} catch (err) {
 			if (!isUniqueViolation(err) || i === attempts.length - 1) throw err;

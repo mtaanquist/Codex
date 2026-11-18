@@ -13,6 +13,7 @@ import {
 import {
 	adoptCappedRun,
 	emptyReviewRun,
+	legacyReviewScopeKey,
 	loadReviewRun,
 	reviewScopeKey,
 	saveReviewRun
@@ -646,7 +647,12 @@ type RunWriter = { state: ReviewRunState; save: () => Promise<void> };
 
 async function openRun(
 	db: Database,
-	opts: { jobId?: string; userId: string; scope: string }
+	opts: {
+		jobId?: string;
+		userId: string;
+		scope: string;
+		legacy?: Parameters<typeof adoptCappedRun>[1]['legacy'];
+	}
 ): Promise<RunWriter> {
 	let state: ReviewRunState | null = null;
 	if (opts.jobId) {
@@ -656,7 +662,11 @@ async function openRun(
 			// to continue" arrives as a new job with no row of its own. The capped
 			// run over the same scope is adopted under the new id, so the scenes it
 			// already reviewed are not reviewed (and billed) a second time.
-			state ??= await adoptCappedRun(db, { userId: opts.userId, scope: opts.scope });
+			state ??= await adoptCappedRun(db, {
+				userId: opts.userId,
+				scope: opts.scope,
+				legacy: opts.legacy
+			});
 		} catch (err) {
 			logEvent('error', 'review_run.load_failed', { jobId: opts.jobId, ...errorFields(err) });
 		}
@@ -920,16 +930,30 @@ export async function reviewStoryScenes(
 		categories?: ReviewCategory[];
 		jobId?: string;
 		signal?: AbortSignal;
+		// LEGACY (#1041): the categories a job queued before the upgrade
+		// checked, or null once the queue has forgotten it (see adoptCappedRun).
+		legacyJobCategories?: (jobId: string) => Promise<ReviewCategory[] | null>;
 	},
 	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
+	const scope = {
+		storyId: opts.storyId,
+		chapterId: opts.chapterId,
+		categories: opts.categories
+	};
+	const legacyScope = legacyReviewScopeKey(scope);
 	const run = await openRun(db, {
-		...opts,
-		scope: reviewScopeKey({
-			storyId: opts.storyId,
-			chapterId: opts.chapterId,
-			categories: opts.categories
-		})
+		userId: opts.userId,
+		jobId: opts.jobId,
+		scope: reviewScopeKey(scope),
+		legacy:
+			legacyScope && opts.legacyJobCategories
+				? {
+						scope: legacyScope,
+						categories: opts.categories ?? [],
+						jobCategories: opts.legacyJobCategories
+					}
+				: undefined
 	});
 	const done = new Set(run.state.completed);
 	const failures: ReviewFailure[] = [...run.state.failures];

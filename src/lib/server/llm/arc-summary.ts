@@ -98,10 +98,11 @@ export class ArcStoryMutedError extends Error {
 
 export type ArcResult = {
 	// written: a new arc is stored; unchanged: the arc was out of date but would
-	// be written from the same request, so it was only marked current; empty:
-	// the character appears in no scene, so nothing was asked; missing: not the
-	// user's character.
-	outcome: 'written' | 'unchanged' | 'empty' | 'missing';
+	// be written from the same request, so it was only marked current; changed:
+	// as unchanged, but something the arc reads was marked while it was checked,
+	// so it is left out of date; empty: the character appears in no scene, so
+	// nothing was asked; missing: not the user's character.
+	outcome: 'written' | 'unchanged' | 'changed' | 'empty' | 'missing';
 };
 
 // Write (or rewrite) one character's arc. Owner scoped. Throws when the
@@ -160,8 +161,8 @@ export async function summariseCharacterArc(
 	// same request, so it is only marked current. A current arc is rewritten
 	// when asked: the writer wants another take.
 	if (character.arcSummaryMd && arcIsStale(character) && input === character.arcSummaryInput) {
-		// A mark set since the read above stands.
-		await db
+		// A mark set since the read above stands, and the arc stays out of date.
+		const marked = await db
 			.update(characters)
 			.set({
 				arcSummaryAt: startedAt,
@@ -172,8 +173,9 @@ export async function summariseCharacterArc(
 					eq(characters.id, character.id),
 					sql`${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz`
 				)
-			);
-		return { outcome: 'unchanged' };
+			)
+			.returning({ id: characters.id });
+		return { outcome: marked.length ? 'unchanged' : 'changed' };
 	}
 
 	const result = await completeDetailed(

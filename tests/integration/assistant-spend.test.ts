@@ -11,6 +11,7 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 process.env.APP_SECRET = process.env.APP_SECRET || 'assistant-spend-test-secret';
 
 import type { ChatMessage, Provider } from '../../src/lib/server/llm/providers/types';
+import type { ReviewCategory } from '../../src/lib/review-shape';
 
 const { accountLlmView, saveAccountLlmConfig, saveModelPricing } =
 	await import('../../src/lib/server/llm/config');
@@ -18,7 +19,8 @@ const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-revie
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { CAP_NOT_APPLIED_MESSAGE } = await import('../../src/lib/server/llm/spend');
 const { estimateStoryReview } = await import('../../src/lib/server/llm/estimate');
-const { loadReviewRun } = await import('../../src/lib/server/review-runs');
+const { emptyReviewRun, loadReviewRun, saveReviewRun } =
+	await import('../../src/lib/server/review-runs');
 
 let pool: pg.Pool;
 let db: Database;
@@ -407,6 +409,33 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.reviewed).toBe(3);
 	});
 
+	it('does not adopt a capped run that a later run already finished', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'cap-9' }, provider());
+
+		// The writer continues it, and that run finishes the story.
+		await configure({ spendCapUsd: 10 });
+		const finish = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-10' },
+			{ provider: provider().provider }
+		);
+		expect(finish.reviewed).toBe(3);
+
+		// Weeks later a fresh review must read every scene again, not carry the
+		// capped run's scenes forward a second time.
+		const fresh = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'cap-11' },
+			{ provider: fresh.provider }
+		);
+		expect(fresh.seen).toHaveLength(3);
+		expect(result.reviewed).toBe(3);
+	});
+
 	it('says so when the model has no price, rather than skipping the cap in silence', async () => {
 		const storyId = await seedStory(2);
 		await configure({ spendCapUsd: 0.5 });
@@ -432,6 +461,96 @@ describe('per-run spend cap (#549)', () => {
 		// The summary phase spends the ceiling first, so no scene is reviewed.
 		expect(result.reviewed).toBe(0);
 		expect(result.capped).toBe(true);
+	});
+});
+
+describe('a capped run saved before categories were part of its key', () => {
+	// What the release before the upgrade stored: the key had no categories.
+	async function legacyRun(
+		storyId: string,
+		jobId: string,
+		opts: { capped: boolean; scenes: number }
+	): Promise<void> {
+		const ids = await db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.where(eq(scenes.storyId, storyId))
+			.orderBy(asc(scenes.globalPosition));
+		await saveReviewRun(db, {
+			jobId,
+			userId,
+			state: {
+				...emptyReviewRun(),
+				phase: 'done',
+				scope: `full:${storyId}`,
+				total: ids.length,
+				completed: ids.slice(0, opts.scenes).map((row) => row.id),
+				reviewed: opts.scenes,
+				capped: opts.capped
+			}
+		});
+	}
+
+	async function continueReview(
+		storyId: string,
+		categories: ReviewCategory[],
+		jobCategories: (jobId: string) => Promise<ReviewCategory[] | null>,
+		jobId = 'after-upgrade'
+	) {
+		const p = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories, jobId, legacyJobCategories: jobCategories },
+			{ provider: p.provider }
+		);
+		return { result, sent: p.seen.length };
+	}
+
+	it('continues it when its job checked the same categories', async () => {
+		const storyId = await seedStory(3);
+		await legacyRun(storyId, 'legacy-1', { capped: true, scenes: 2 });
+		const asked: string[] = [];
+		const { result, sent } = await continueReview(storyId, ['prose'], async (jobId) => {
+			asked.push(jobId);
+			return ['prose'];
+		});
+
+		expect(asked).toEqual(['legacy-1']);
+		expect(sent).toBe(1);
+		expect(result.reviewed).toBe(3);
+	});
+
+	it('reviews every scene when its job checked other categories', async () => {
+		const storyId = await seedStory(3);
+		await legacyRun(storyId, 'legacy-2', { capped: true, scenes: 2 });
+		const { sent } = await continueReview(storyId, ['prose'], async () => ['mechanics']);
+		expect(sent).toBe(3);
+	});
+
+	it('reviews every scene when its job is no longer known', async () => {
+		const storyId = await seedStory(3);
+		await legacyRun(storyId, 'legacy-3', { capped: true, scenes: 2 });
+		const { sent } = await continueReview(storyId, [], async () => null);
+		expect(sent).toBe(3);
+	});
+
+	it('reviews every scene when a later run over the old key finished', async () => {
+		const storyId = await seedStory(3);
+		await legacyRun(storyId, 'legacy-4', { capped: true, scenes: 2 });
+		await legacyRun(storyId, 'legacy-5', { capped: false, scenes: 3 });
+		const { sent } = await continueReview(storyId, [], async () => []);
+		expect(sent).toBe(3);
+	});
+
+	it('is passed over once a run under the new key exists', async () => {
+		const storyId = await seedStory(3);
+		await legacyRun(storyId, 'legacy-6', { capped: true, scenes: 2 });
+		const first = await continueReview(storyId, [], async () => []);
+		expect(first.sent).toBe(1);
+
+		// That run finished, so the next one starts over.
+		const second = await continueReview(storyId, [], async () => [], 'later');
+		expect(second.sent).toBe(3);
 	});
 });
 
